@@ -142,8 +142,157 @@ def create_lean_tools_server(workspace: str | None = None):
             "error": result.error,
         })}]}
 
+    @tool(
+        name="show_file_state",
+        description=(
+            "Get complete proof state of a Lean file: all theorems with sorry/proved status, "
+            "whether it compiles, and which is the main theorem."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path from project root",
+                },
+            },
+            "required": ["file_path"],
+        },
+    )
+    async def show_file_state(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+        result = tools.show_file_state(input["file_path"])
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    @tool(
+        name="write_helper_lemma",
+        description=(
+            "Create a helper lemma file AND replace a sorry in the target file with a tactic "
+            "that uses the helper. TRANSACTIONAL: if anything fails (helper doesn't compile, "
+            "replacement doesn't type-check), everything is reverted.\n\n"
+            "The tool: (1) writes helper to decomposed/, (2) builds it, (3) adds import to target, "
+            "(4) replaces sorry at the given line/col with the replacement tactic, (5) verifies target compiles."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "theorem_name": {
+                    "type": "string",
+                    "description": "Name of the helper theorem (must match the theorem in theorem_statement)",
+                },
+                "theorem_statement": {
+                    "type": "string",
+                    "description": "Full Lean theorem statement with sorry body (e.g. 'theorem foo (x : Nat) : x > 0 := by sorry')",
+                },
+                "additional_imports": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Extra import lines the helper needs (e.g. ['import Strata.DL.Imperative.SemanticsProps'])",
+                },
+                "sorry_line": {
+                    "type": "integer",
+                    "description": "0-indexed line number of the sorry to replace in the target file",
+                },
+                "sorry_col": {
+                    "type": "integer",
+                    "description": "Column number of the sorry",
+                },
+                "replacement_tactic": {
+                    "type": "string",
+                    "description": "Tactic to replace sorry with (e.g. 'exact helper_name x h')",
+                },
+            },
+            "required": ["theorem_name", "theorem_statement", "additional_imports", "sorry_line", "sorry_col", "replacement_tactic"],
+        },
+    )
+    async def write_helper_lemma_tool(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+
+        if not workspace:
+            return {"content": [{"type": "text", "text": json.dumps({"error": "no workspace configured"})}]}
+
+        # Determine target file (Stub.lean in workspace)
+        target_file = f"{workspace}/Stub.lean"
+
+        result = tools.write_helper_lemma(
+            theorem_name=input["theorem_name"],
+            theorem_statement=input["theorem_statement"],
+            additional_imports=input.get("additional_imports", []),
+            sorry_line=input["sorry_line"],
+            sorry_col=input["sorry_col"],
+            replacement_tactic=input["replacement_tactic"],
+            target_file=target_file,
+            workspace=workspace,
+        )
+
+        if result.error:
+            return {"content": [{"type": "text", "text": json.dumps({
+                "success": False, "error": result.error,
+            })}]}
+
+        return {"content": [{"type": "text", "text": json.dumps({
+            "success": True,
+            "file_path": result.file_path,
+            "theorem_name": result.theorem_name,
+        })}]}
+
+    @tool(
+        name="get_sorry_positions",
+        description=(
+            "Get all sorry positions in a Lean file (line and column, 0-indexed). "
+            "Comment-aware — ignores sorry in comments. Use this to know WHERE to "
+            "call lean_goal for each sorry."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path from project root",
+                },
+            },
+            "required": ["file_path"],
+        },
+    )
+    async def get_sorry_positions(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+        positions = tools.get_sorry_positions(input["file_path"])
+        return {"content": [{"type": "text", "text": json.dumps({"positions": positions})}]}
+
+    @tool(
+        name="get_sorries_by_theorem",
+        description=(
+            "Get sorry positions grouped by theorem. Shows which theorems have sorry "
+            "and exactly where each sorry is (line, col). Optionally filter by theorem names."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path from project root",
+                },
+                "filter_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only include these theorem names (omit for all)",
+                },
+            },
+            "required": ["file_path"],
+        },
+    )
+    async def get_sorries_by_theorem(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+        result = tools.get_sorries_by_theorem(
+            input["file_path"],
+            filter_names=input.get("filter_names"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
     return create_sdk_mcp_server(
         name="lean_tools",
         version="1.0.0",
-        tools=[write_decomposed_lemma, count_sorries, list_theorems, check_imports],
+        tools=[write_decomposed_lemma, count_sorries, list_theorems,
+               check_imports, show_file_state, write_helper_lemma_tool,
+               get_sorry_positions, get_sorries_by_theorem],
     )

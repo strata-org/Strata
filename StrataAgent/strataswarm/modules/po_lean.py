@@ -354,6 +354,95 @@ class SwarmLeanTools:
 
     # ─── Convenience methods ─────────────────────────────────────────────
 
+    def show_file_state(self, file_path: str) -> dict:
+        """Complete summary of a Lean file's proof state.
+
+        Returns a dict with:
+        - theorems: [{name, status, start_line, end_line, has_sorry}]
+        - sorry_count: total sorries
+        - compiles: bool
+        - main_theorem: name of last theorem (assumed to be the main one)
+        - main_theorem_sorry_free: bool
+        """
+        split = self.split_theorems(file_path)
+        sorry_info = self.count_sorries(file_path)
+        compile_result = self.check_compiles(file_path)
+
+        theorems = []
+        for b in (split.blocks if not split.error else []):
+            theorems.append({
+                "name": b.name,
+                "status": "sorry" if b.has_sorry else "proved",
+                "start_line": b.start,
+                "end_line": b.end,
+                "has_sorry": b.has_sorry,
+            })
+
+        main_thm = theorems[-1] if theorems else None
+
+        return {
+            "theorems": theorems,
+            "sorry_count": sorry_info.total,
+            "compiles": compile_result.success,
+            "has_error": compile_result.has_error,
+            "main_theorem": main_thm["name"] if main_thm else None,
+            "main_theorem_sorry_free": (not main_thm["has_sorry"]) if main_thm else False,
+        }
+
+    def get_sorry_positions(self, file_path: str) -> list[dict]:
+        """Get all sorry positions in a file (comment-aware).
+
+        Returns list of {"line": int, "col": int} (0-indexed).
+        Uses the Lean RPC which strips comments before scanning.
+        """
+        result = self._send("sorry_positions", file_path)
+        if "error" in result:
+            return []
+        return result.get("positions", [])
+
+    def get_sorries_by_theorem(self, file_path: str, filter_names: list[str] | None = None) -> dict:
+        """Get sorry positions grouped by theorem name.
+
+        Combines split_theorems_ (for block boundaries) with sorry_positions
+        (for exact coordinates) to produce a per-theorem breakdown.
+
+        Args:
+            file_path: Relative path from project root.
+            filter_names: If provided, only include these theorem names.
+                          If None, include all theorems with sorry.
+
+        Returns:
+            {
+                "theorem_name": [{"line": int, "col": int}, ...],
+                ...
+            }
+        """
+        split = self.split_theorems(file_path)
+        if split.error:
+            return {}
+
+        positions = self.get_sorry_positions(file_path)
+        if not positions:
+            return {}
+
+        # Group sorry positions by which theorem block they fall in
+        result = {}
+        for block in split.blocks:
+            if not block.has_sorry:
+                continue
+            if filter_names and block.name not in filter_names:
+                continue
+
+            block_sorries = []
+            for pos in positions:
+                if block.start <= pos["line"] <= block.end:
+                    block_sorries.append(pos)
+
+            if block_sorries:
+                result[block.name] = block_sorries
+
+        return result
+
     def has_sorry(self, file_path: str) -> bool:
         """Quick check: does the file have any sorry?"""
         info = self.count_sorries(file_path)
@@ -570,6 +659,155 @@ class SwarmLeanTools:
             return WriteResult(error=f"Does not compile")
 
         return WriteResult(file_path=rel_path, theorem_name=actual_name, has_sorry=cr.has_sorry)
+
+    # ─── write_helper_lemma (v3 transactional tool) ────────────────────
+
+    def write_helper_lemma(self, theorem_name: str, theorem_statement: str,
+                           additional_imports: list[str],
+                           sorry_line: int, sorry_col: int,
+                           replacement_tactic: str,
+                           target_file: str, workspace: str) -> WriteResult:
+        """Transactional: create helper file + replace sorry in target.
+
+        Order of operations (line numbers stay valid):
+        1. Build helper file (parent header + additional_imports + theorem_statement)
+        2. Write to decomposed/lemma_helper_<name>.lean, verify compiles
+        3. Backup target
+        4. Replace sorry at (line, col) with replacement_tactic (original line numbers)
+        5. Add import for helper at top (AFTER replacement, so line nums were valid)
+        6. Verify target compiles
+        7. If ANY step fails → revert everything
+
+        Args:
+            theorem_name: Name of the helper theorem
+            theorem_statement: Full theorem (e.g. "theorem foo ... := by sorry")
+            additional_imports: Extra imports helper needs beyond parent header
+            sorry_line: 0-indexed line of the sorry in the ORIGINAL target file
+            sorry_col: Column of the sorry
+            replacement_tactic: What replaces sorry (e.g. "exact foo x h")
+            target_file: Relative path to file containing the sorry
+            workspace: Workspace relative path
+
+        Returns:
+            WriteResult with helper file_path on success, error on failure.
+        """
+        root = self._root
+        target_path = root / target_file
+
+        if not target_path.exists():
+            return WriteResult(error=f"Target file not found: {target_file}")
+
+        target_content = target_path.read_text()
+        target_lines = target_content.splitlines()
+
+        # Extract header from target (imports + open + variable)
+        header_lines = []
+        for line in target_lines:
+            stripped = line.strip()
+            if (stripped.startswith("import ") or stripped.startswith("open ") or
+                    stripped.startswith("variable ") or stripped.startswith("set_option") or
+                    stripped.startswith("/-") or stripped.startswith("--") or not stripped):
+                header_lines.append(line)
+            else:
+                break
+        header = "\n".join(header_lines)
+
+        # ── Step 1: Build helper file ──
+        helper_imports = header.rstrip()
+        if additional_imports:
+            helper_imports += "\n" + "\n".join(additional_imports)
+        helper_content = helper_imports + "\n\n" + theorem_statement.rstrip() + "\n"
+
+        # ── Step 2: Write and verify helper ──
+        out_dir = root / workspace / "decomposed"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_name = _ascii_escape(theorem_name)
+        helper_filename = f"lemma_helper_{safe_name}.lean"
+        helper_path = out_dir / helper_filename
+        helper_rel = f"{workspace}/decomposed/{helper_filename}"
+
+        helper_path.write_text(helper_content)
+
+        cr = self.check_compiles(helper_rel)
+        if not cr.success:
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(error=f"Helper does not compile")
+
+        ax = self.check_axioms(helper_rel)
+        if ax.has_axiom:
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(error=f"Helper uses axiom: {ax.axiom_names}")
+
+        split = self.split_theorems(helper_rel)
+        if split.error or len(split.blocks) != 1:
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(error=f"Helper must have exactly 1 theorem")
+
+        if split.blocks[0].name != theorem_name:
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(error=f"Name mismatch: expected '{theorem_name}', got '{split.blocks[0].name}'")
+
+        # Build helper .olean (required before other files can import it)
+        helper_module = helper_rel.replace("/", ".").removesuffix(".lean")
+        build = subprocess.run(
+            ["lake", "build", helper_module],
+            cwd=str(root), capture_output=True, text=True, timeout=120,
+        )
+        if build.returncode != 0:
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(error=f"Helper failed to build: {(build.stdout + build.stderr)[:200]}")
+
+        # ── Step 3: Backup target ──
+        backup_path = root / f"{target_file}.helper_bak"
+        shutil.copy2(target_path, backup_path)
+
+        # ── Step 4: Replace sorry at (line, col) — using ORIGINAL line numbers ──
+        if sorry_line >= len(target_lines):
+            helper_path.unlink(missing_ok=True)
+            backup_path.unlink(missing_ok=True)
+            return WriteResult(error=f"sorry_line {sorry_line} out of range ({len(target_lines)} lines)")
+
+        line_content = target_lines[sorry_line]
+        sorry_idx = line_content.find("sorry", sorry_col)
+        if sorry_idx == -1:
+            sorry_idx = line_content.find("sorry")
+        if sorry_idx == -1:
+            helper_path.unlink(missing_ok=True)
+            backup_path.unlink(missing_ok=True)
+            return WriteResult(error=f"No 'sorry' at line {sorry_line} (content: {line_content.strip()!r})")
+
+        target_lines[sorry_line] = line_content[:sorry_idx] + replacement_tactic + line_content[sorry_idx + 5:]
+
+        # ── Step 5: Add import AFTER replacement (so line nums were valid above) ──
+        import_module = helper_rel.replace("/", ".").removesuffix(".lean")
+        import_line = f"import {import_module}"
+
+        last_import_idx = -1
+        for i, line in enumerate(target_lines):
+            if line.strip().startswith("import "):
+                last_import_idx = i
+        if last_import_idx >= 0:
+            target_lines.insert(last_import_idx + 1, import_line)
+        else:
+            target_lines.insert(0, import_line)
+
+        # Write modified target
+        target_path.write_text("\n".join(target_lines) + "\n")
+
+        # ── Step 6: Verify target compiles ──
+        cr = self.check_compiles(target_file)
+        if not cr.success:
+            shutil.copy2(backup_path, target_path)
+            backup_path.unlink(missing_ok=True)
+            helper_path.unlink(missing_ok=True)
+            return WriteResult(
+                error=f"Target doesn't compile after replacement. "
+                      f"'{replacement_tactic}' may not type-check at this goal.")
+
+        # ── Success ──
+        backup_path.unlink(missing_ok=True)
+        return WriteResult(file_path=helper_rel, theorem_name=theorem_name, has_sorry=True)
 
     # ─── Lifecycle ───────────────────────────────────────────────────────
 

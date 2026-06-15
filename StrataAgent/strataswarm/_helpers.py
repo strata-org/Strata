@@ -78,12 +78,15 @@ class swarm_agent:
     The agent gets a unique name (suffixed with timestamp) to avoid collisions.
     """
 
-    def __init__(self, name: str, swarm: Any, cwd: str | None = None, workspace: str | None = None, **overrides):
+    def __init__(self, name: str, swarm: Any, cwd: str | None = None, workspace: str | None = None,
+                 template_vars: dict[str, str] | None = None, can_see: list[str] | None = None, **overrides):
         import time as _time
         self._swarm = swarm
         self._cwd = cwd
         self._spec_name = name
         self._workspace = workspace
+        self._template_vars = template_vars or {}
+        self._can_see = can_see  # if set, restrict visibility to these agents only
         self._overrides = overrides
         self._unique_name: str | None = None
         self._agent: SwarmAgent | None = None
@@ -97,6 +100,11 @@ class swarm_agent:
                 f"Available: {[f.stem for f in AGENT_SPECS_DIR.glob('*.yaml')]}"
             )
         spec = _load_spec(path, self._overrides)
+
+        # Render Jinja template variables in system_prompt
+        if self._template_vars and spec.system_prompt:
+            from jinja2 import Template
+            spec.system_prompt = Template(spec.system_prompt).render(**self._template_vars)
 
         # Workspace scoping: override spec's workspace and tool permissions
         if self._workspace:
@@ -209,10 +217,25 @@ class swarm_agent:
         self._swarm._registry.add(spec)
         self._swarm._registry.agents[self._unique_name] = self._agent
 
-        # Add to visibility graph (visible to all, can see all)
-        self._swarm._registry.visibility_graph[self._unique_name] = set(
-            self._swarm._registry.visibility_graph.keys()
-        )
+        # Add to visibility graph
+        if self._can_see is not None:
+            # Restricted visibility: only see specified agents
+            visible_to_me = set()
+            for target in self._can_see:
+                # Match by logical name or exact name
+                for node_name in self._swarm._registry.visibility_graph:
+                    if node_name == target or node_name.startswith(f"{target}_"):
+                        visible_to_me.add(node_name)
+                # Also check sharded agents
+                if target in self._swarm._registry.sharded_agents:
+                    visible_to_me.add(target)
+            self._swarm._registry.visibility_graph[self._unique_name] = visible_to_me
+        else:
+            # Default: can see all
+            self._swarm._registry.visibility_graph[self._unique_name] = set(
+                self._swarm._registry.visibility_graph.keys()
+            )
+        # Everyone can see this agent
         for visible_set in self._swarm._registry.visibility_graph.values():
             visible_set.add(self._unique_name)
 

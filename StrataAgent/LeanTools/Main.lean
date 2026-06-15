@@ -48,7 +48,8 @@ def commandNames : List String := [
   "split_theorems_",
   "check___axioms_",
   "thm_signature__",
-  "thm_depends_on_"
+  "thm_depends_on_",
+  "sorry_positions"
 ]
 
 def commandMaxPad : Nat := 15
@@ -373,6 +374,33 @@ private def handleThmDependsOn (input : String) : IO String := do
   catch e =>
     return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
 
+private def handleSorryPositions (filePath : String) : IO String := do
+  try
+    let content ← FS.readFile ⟨filePath⟩
+    let code := stripComments content
+    let lines := code.splitOn "\n"
+    let mut positions : Array (Nat × Nat) := #[]
+    for i in [:lines.length] do
+      let line := lines[i]!
+      -- Find all "sorry" occurrences in this line
+      let mut searchFrom : Nat := 0
+      let mut searching := true
+      while searching do
+        let remaining := (line.drop searchFrom).toString
+        let idx := remaining.splitOn "sorry"
+        if idx.length > 1 then
+          -- Found one at position searchFrom + length_of_first_part
+          let col := searchFrom + (idx[0]!).length
+          positions := positions.push (i, col)
+          searchFrom := col + 5  -- skip past "sorry"
+        else
+          searching := false
+    let items := String.intercalate "," (positions.toList.map fun (l, c) =>
+      s!"\{\"line\":{l},\"col\":{c}}")
+    return s!"\{\"positions\":[{items}]}"
+  catch e =>
+    return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
+
 private def handleCheckAxioms (filePath : String) : IO String := do
   try
     let content ← FS.readFile ⟨filePath⟩
@@ -454,6 +482,7 @@ unsafe def main (_args : List String) : IO Unit := do
           | "check___axioms_" => handleCheckAxioms req.content
           | "thm_signature__" => handleThmSignature req.content
           | "thm_depends_on_" => handleThmDependsOn req.content
+          | "sorry_positions" => handleSorryPositions req.content
           | cmd => pure s!"\{\"error\":\"unknown command: {jsonEscape cmd}\"}"
         stdout.putStrLn result
         stdout.flush
