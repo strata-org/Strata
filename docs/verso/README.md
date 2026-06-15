@@ -9,6 +9,14 @@ make <doc>
 
 Where `<doc>` matches any of the `<doc>Doc.lean` files in this folder. On top of building the documentation, it will automatically open its preview using your default browser.
 
+The preview server runs in the foreground and blocks until you stop it. When
+you only want to build (e.g. from an editor's `:make`), use the `build-`
+target, which builds without launching the server:
+
+```shell
+make build-<doc>       # build only, no server
+```
+
 ## Step-by-step
 
 This Verso package provides documentation of the core Strata language

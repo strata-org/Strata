@@ -3,6 +3,8 @@ BOOKS := ddm langdef laurel transforms
 
 .PHONY: $(BOOKS) all clean build-% serve-%
 
+# `make <book>` builds and serves; `make build-<book>` builds only (no
+# blocking http.server, e.g. for vim's `:make`).
 $(BOOKS): %: build-% serve-%
 
 build-%:
