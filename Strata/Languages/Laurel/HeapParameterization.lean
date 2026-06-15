@@ -285,6 +285,13 @@ where
         let some qualifiedName := resolveQualifiedFieldName model fieldName
           | return [⟨ .Hole, source ⟩]
 
+        -- Recurse into the target so a nested field access (`a#b#c`) has its
+        -- inner `FieldSelect` eliminated. Without this, the un-eliminated
+        -- `FieldSelect` reaches a downstream guard and aborts with a
+        -- `strata-bug`. This is the single point that unblocks *both* chained
+        -- reads and chained writes: the write arm's `recurseOne target`
+        -- bottoms out here for any nested target.
+        let selectTarget ← recurseOne selectTarget
         let valTy := (model.get fieldName).getType
         let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor

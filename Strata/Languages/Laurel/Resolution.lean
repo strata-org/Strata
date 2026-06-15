@@ -158,18 +158,41 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
-/-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
-private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
+/-- Look up the declared type of `fieldName` within the scope of the composite
+    type named `typeName`. Returns `none` if the type or field is unknown. -/
+private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
   let s ← get
-  match target.val with
-  | .Var (.Local ref) =>
-    match s.scope.get? ref.text with
-    | some (_, node) =>
-      match node.getType.val with
-      | .UserDefined typRef => pure (some typRef.text)
-      | _ => pure none
+  match s.typeScopes.get? typeName with
+  | some typeScope =>
+    match typeScope.get? fieldName.text with
+    | some (_, node) => pure (some node.getType.val)
     | none => pure none
-  | _ => pure none
+  | none => pure none
+
+/-- Determine the user-defined type name of a target expression.
+    Handles a local variable (`.Var (.Local _)`, scope lookup) and a chained
+    field access (`.Var (.Field tgt f)`, recursing on `tgt` then looking the
+    field up in the inner type's scope). `fuel` keeps the function total;
+    chains longer than `fuel` simply stop (the conservative, no-false-positive
+    direction, as with `underlyingBaseType`). -/
+private def targetTypeNameAux (fuel : Nat) (target : StmtExprMd) : ResolveM (Option String) := do
+  match fuel with
+  | 0 => pure none
+  | fuel + 1 =>
+    let ty? ← match target.val with
+      | .Var (.Local ref) => pure ((← get).scope.get? ref.text |>.map (·.2.getType.val))
+      | .Var (.Field tgt fieldName) =>
+        -- Resolve the inner target's type, then look the field up in its scope.
+        match (← targetTypeNameAux fuel tgt) with
+        | some innerTypeName => fieldTypeInScope innerTypeName fieldName
+        | none => pure none
+      | _ => pure none
+    match ty? with
+    | some (.UserDefined typRef) => pure (some typRef.text)
+    | _ => pure none
+
+private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) :=
+  targetTypeNameAux 100 target
 
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
@@ -269,13 +292,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     | none => pure none
   | .Field tgt fieldName =>
     match (← targetTypeName tgt) with
-    | some typeName =>
-      match s.typeScopes.get? typeName with
-      | some typeScope =>
-        match typeScope.get? fieldName.text with
-        | some (_, node) => pure (some node.getType.val)
-        | none => pure none
-      | none => pure none
+    | some typeName => fieldTypeInScope typeName fieldName
     | none => pure none
   | .Declare param => pure (some param.type.val)
 

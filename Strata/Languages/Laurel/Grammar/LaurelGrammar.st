@@ -39,8 +39,11 @@ op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" arg
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access.
+// prec(95) binds tighter than the postfix incr/decr ops (prec 90) so `c#n++`
+// parses paren-free as `(c#n)++`. leftassoc lets `a#b#c` left-recurse for
+// chained field access.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(95), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
