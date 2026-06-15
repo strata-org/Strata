@@ -1427,7 +1427,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
     (h_no_inv     : Stmt.loopHasNoInvariants s = true)
     (h_no_measure : Stmt.loopMeasureNone s = true)
     (h_no_exit    : Block.noExit [s] = true)
-    (h_exprs_shapefree : Block.exprsShapeFree (P := P) [s])
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix [s])
     (h_unique     : Block.uniqueInits [s])
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true)
     (h_names_fresh : Block.namesFreshInExprs A [s] = true)
@@ -1517,7 +1517,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       simpa only [Block.loopMeasureNone, Stmt.loopMeasureNone, Bool.and_true] using h_no_measure
     have h_noexit_bss : Block.noExit bss = true := by
       simpa only [Block.noExit, Stmt.noExit, Bool.and_true] using h_no_exit
-    have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) bss := by
+    have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix bss := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact h.1
@@ -1746,7 +1746,8 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       simp only [Block.noExit, Stmt.noExit, Bool.and_true,
         Bool.and_eq_true] at h_no_exit; exact h_no_exit
     have h_exprs_shapefree_branches :
-        Block.exprsShapeFree (P := P) tss ∧ Block.exprsShapeFree (P := P) ess := by
+        Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix tss ∧
+          Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ess := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact ⟨h.1.2.1, h.1.2.2⟩
@@ -2049,7 +2050,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
       have : Stmt.noExit (Stmt.loop (.det g') none [] body md) = true := by
         simpa only [Block.noExit, Bool.and_true] using h_no_exit
       rw [Stmt.noExit] at this; exact this
-    have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) body := by
+    have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix body := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
       exact h.1.2.2.2
@@ -2267,7 +2268,8 @@ private theorem Stmt.hoistLoopPrefixInits_preserves
         (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).1 e he_mem
       obtain ⟨str', h_eq', h_suf'⟩ :=
         LoopInitHoistLoopArmWF.Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
-          body₁ σ₁ h_wf_σ₁ hb
+          (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg)
+          body₁ σ₁ hb
       have h_b_eq' : b = HasIdent.ident str := he_eq.symm.trans h_b_eq
       have h_id : (HasIdent.ident str' : P.Ident) = HasIdent.ident str := h_eq'.symm.trans h_b_eq'
       have : str' = str := LawfulHasIdent.ident_inj h_id
@@ -2507,7 +2509,7 @@ private theorem Block.hoistLoopPrefixInits_preserves
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
     (h_no_exit    : Block.noExit ss = true)
-    (h_exprs_shapefree : Block.exprsShapeFree (P := P) ss)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_names_fresh : Block.namesFreshInExprs A ss = true)
@@ -2608,7 +2610,8 @@ private theorem Block.hoistLoopPrefixInits_preserves
       rw [Block.noExit, Bool.and_eq_true] at h_no_exit
       exact ⟨by simpa only [Block.noExit, Bool.and_true] using h_no_exit.1, h_no_exit.2⟩
     have h_exprs_shapefree_s :
-        Block.exprsShapeFree (P := P) [s] ∧ Block.exprsShapeFree (P := P) rest := by
+        Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix [s] ∧
+          Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix rest := by
       -- `Block.exprsShapeFree (s :: rest) = Stmt.exprsShapeFree s ∧ Block.exprsShapeFree rest`
       -- and `Block.exprsShapeFree [s] = Stmt.exprsShapeFree s ∧ True`.
       have h := h_exprs_shapefree
@@ -3169,7 +3172,7 @@ theorem hoistLoopPrefixInits_preserves
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
     (h_no_exit    : Block.noExit ss = true)
-    (h_exprs_shapefree : Block.exprsShapeFree (P := P) ss)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_src_initVars_shapefree :
