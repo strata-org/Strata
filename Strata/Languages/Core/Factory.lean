@@ -217,7 +217,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                decide)))
       else
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -231,7 +231,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                decide)))
 
 open Lean Elab Command in
 /-- Generate safe signed division/modulo operations with both div-by-zero
@@ -270,8 +270,8 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
               intro p hp
               simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
               cases hp with
-              | inl h => subst h; native_decide
-              | inr h => subst h; native_decide)))
+              | inl h => subst h; decide
+              | inr h => subst h; decide)))
 
 end -- public meta section
 
@@ -972,9 +972,121 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
   ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
 
+set_option maxRecDepth 2000 in
+set_option maxHeartbeats 500000 in
+theorem WFFactory_names:
+(List.map (fun x => x.func.name.name) WFFactoryArray.toList).Nodup := by
+  simp only[WFFactoryArray, Array.toList_appendList]
+  simp only[List.map_append, List.map]
+  simp only[HAppend.hAppend, Append.append]
+  simp only[List.append]
+  have h8: Nat.repr 8 = "8" := by native_decide
+  have h16: Nat.repr 16 = "16" := by native_decide
+  have h32: Nat.repr 32 = "32" := by native_decide
+  have h64: Nat.repr 64 = "64" := by native_decide
+  have h128: Nat.repr 128 = "128" := by native_decide
+  have h0: Nat.repr 0 = "0" := by native_decide
+  have h7: Nat.repr 7 = "7" := by native_decide
+  have h15: Nat.repr 15 = "15" := by native_decide
+  have h31 : Nat.repr 31 = "31" := by native_decide
+  have h1 : Nat.repr 1 = "1" := by native_decide
+  -- unfold names
+  simp only[intAddFunc, intSubFunc, intMulFunc, intDivFunc, intSafeDivFunc, intModFunc, intSafeModFunc, intDivTFunc, intSafeDivTFunc,
+  intModTFunc, intSafeModTFunc, intNegFunc, intLtFunc, intLeFunc,
+  intGtFunc, intGeFunc,
+  realAddFunc, realSubFunc, realMulFunc, realDivFunc, realNegFunc, realLtFunc, realLeFunc, realGtFunc, realGeFunc,
+  boolAndFunc, boolOrFunc, boolImpliesFunc, boolEquivFunc, boolNotFunc,
+  strLengthFunc, strConcatFunc, strSubstrFunc, strToRegexFunc, strInRegexFunc, strPrefixOfFunc, strSuffixOfFunc,
+  reAllFunc, reAllCharFunc, reRangeFunc, reConcatFunc, reStarFunc, rePlusFunc, reLoopFunc, reUnionFunc, reInterFunc, reCompFunc, reNoneFunc,
+  mapConstFunc, mapSelectFunc, mapUpdateFunc,
+  seqLengthFunc, seqEmptyFunc, seqAppendFunc, seqSelectFunc, seqBuildFunc, seqUpdateFunc, seqContainsFunc, seqTakeFunc, seqDropFunc,
+  emptyTriggersFunc, addTriggerGroupFunc, emptyTriggerGroupFunc, addTriggerFunc,
+  bv8ConcatFunc, bv16ConcatFunc, bv32ConcatFunc,
+  bv1ToUIntFunc, bv8ToUIntFunc, bv16ToUIntFunc, bv32ToUIntFunc, bv64ToUIntFunc, bv128ToUIntFunc,
+  bv1ToIntFunc, bv8ToIntFunc, bv16ToIntFunc, bv32ToIntFunc, bv64ToIntFunc, bv128ToIntFunc,
+  int1ToBvFunc, int8ToBvFunc, int16ToBvFunc, int32ToBvFunc, int64ToBvFunc, int128ToBvFunc,
+  bv8Extract_7_7_Func, bv16Extract_15_15_Func, bv16Extract_7_0_Func, bv32Extract_31_31_Func, bv32Extract_15_0_Func, bv32Extract_7_0_Func,
+  bv64Extract_31_0_Func, bv64Extract_15_0_Func, bv64Extract_7_0_Func,
+  bv1NegFunc, bv1AddFunc, bv1SubFunc, bv1MulFunc, bv1UDivFunc, bv1UModFunc, bv1SDivFunc, bv1SModFunc,
+  bv1NotFunc, bv1AndFunc, bv1OrFunc, bv1XorFunc, bv1ShlFunc, bv1UShrFunc, bv1SShrFunc, bv1ULtFunc,
+  bv1ULeFunc, bv1UGtFunc, bv1UGeFunc, bv1SLtFunc, bv1SLeFunc, bv1SGtFunc, bv1SGeFunc, bv1SNegOverflowFunc,
+  bv1SAddOverflowFunc, bv1SSubOverflowFunc, bv1SMulOverflowFunc, bv1SDivOverflowFunc, bv1UNegOverflowFunc,
+  bv1UAddOverflowFunc, bv1USubOverflowFunc, bv1UMulOverflowFunc,
+  bv8NegFunc, bv8AddFunc, bv8SubFunc, bv8MulFunc, bv8UDivFunc, bv8UModFunc, bv8SDivFunc, bv8SModFunc,
+  bv8NotFunc, bv8AndFunc, bv8OrFunc, bv8XorFunc, bv8ShlFunc, bv8UShrFunc, bv8SShrFunc, bv8ULtFunc,
+  bv8ULeFunc, bv8UGtFunc, bv8UGeFunc, bv8SLtFunc, bv8SLeFunc, bv8SGtFunc, bv8SGeFunc, bv8SNegOverflowFunc,
+  bv8SAddOverflowFunc, bv8SSubOverflowFunc, bv8SMulOverflowFunc, bv8SDivOverflowFunc, bv8UNegOverflowFunc,
+  bv8UAddOverflowFunc, bv8USubOverflowFunc, bv8UMulOverflowFunc,
+  bv16NegFunc, bv16AddFunc, bv16SubFunc, bv16MulFunc, bv16UDivFunc, bv16UModFunc, bv16SDivFunc, bv16SModFunc,
+  bv16NotFunc, bv16AndFunc, bv16OrFunc, bv16XorFunc, bv16ShlFunc, bv16UShrFunc, bv16SShrFunc, bv16ULtFunc,
+  bv16ULeFunc, bv16UGtFunc, bv16UGeFunc, bv16SLtFunc, bv16SLeFunc, bv16SGtFunc, bv16SGeFunc, bv16SNegOverflowFunc,
+  bv16SAddOverflowFunc, bv16SSubOverflowFunc, bv16SMulOverflowFunc, bv16SDivOverflowFunc, bv16UNegOverflowFunc,
+  bv16UAddOverflowFunc, bv16USubOverflowFunc, bv16UMulOverflowFunc,
+  bv32NegFunc, bv32AddFunc, bv32SubFunc, bv32MulFunc, bv32UDivFunc, bv32UModFunc, bv32SDivFunc, bv32SModFunc,
+  bv32NotFunc, bv32AndFunc, bv32OrFunc, bv32XorFunc, bv32ShlFunc, bv32UShrFunc, bv32SShrFunc, bv32ULtFunc,
+  bv32ULeFunc, bv32UGtFunc, bv32UGeFunc, bv32SLtFunc, bv32SLeFunc, bv32SGtFunc, bv32SGeFunc, bv32SNegOverflowFunc,
+  bv32SAddOverflowFunc, bv32SSubOverflowFunc, bv32SMulOverflowFunc, bv32SDivOverflowFunc, bv32UNegOverflowFunc,
+  bv32UAddOverflowFunc, bv32USubOverflowFunc, bv32UMulOverflowFunc,
+  bv64NegFunc, bv64AddFunc, bv64SubFunc, bv64MulFunc, bv64UDivFunc, bv64UModFunc, bv64SDivFunc, bv64SModFunc,
+  bv64NotFunc, bv64AndFunc, bv64OrFunc, bv64XorFunc, bv64ShlFunc, bv64UShrFunc, bv64SShrFunc, bv64ULtFunc,
+  bv64ULeFunc, bv64UGtFunc, bv64UGeFunc, bv64SLtFunc, bv64SLeFunc, bv64SGtFunc, bv64SGeFunc, bv64SNegOverflowFunc,
+  bv64SAddOverflowFunc, bv64SSubOverflowFunc, bv64SMulOverflowFunc, bv64SDivOverflowFunc, bv64UNegOverflowFunc,
+  bv64UAddOverflowFunc, bv64USubOverflowFunc, bv64UMulOverflowFunc,
+  bv1SafeAddFunc, bv1SafeSubFunc, bv1SafeMulFunc, bv1SafeNegFunc,
+  bv1SafeUAddFunc, bv1SafeUSubFunc, bv1SafeUMulFunc, bv1SafeUNegFunc,
+  bv8SafeAddFunc, bv8SafeSubFunc, bv8SafeMulFunc, bv8SafeNegFunc,
+  bv8SafeUAddFunc, bv8SafeUSubFunc, bv8SafeUMulFunc, bv8SafeUNegFunc,
+  bv16SafeAddFunc, bv16SafeSubFunc, bv16SafeMulFunc, bv16SafeNegFunc,
+  bv16SafeUAddFunc, bv16SafeUSubFunc, bv16SafeUMulFunc, bv16SafeUNegFunc,
+  bv32SafeAddFunc, bv32SafeSubFunc, bv32SafeMulFunc, bv32SafeNegFunc,
+  bv32SafeUAddFunc, bv32SafeUSubFunc, bv32SafeUMulFunc, bv32SafeUNegFunc,
+  bv64SafeAddFunc, bv64SafeSubFunc, bv64SafeMulFunc, bv64SafeNegFunc,
+  bv64SafeUAddFunc, bv64SafeUSubFunc, bv64SafeUMulFunc, bv64SafeUNegFunc,
+  bv1SafeSDivFunc, bv1SafeSModFunc, bv8SafeSDivFunc, bv8SafeSModFunc,
+  bv16SafeSDivFunc, bv16SafeSModFunc, bv32SafeSDivFunc, bv32SafeSModFunc,
+  bv64SafeSDivFunc, bv64SafeSModFunc,
+   binaryOp, unaryOp, binaryFuncUneval, polyUneval, unaryFuncUneval, nullaryUneval, bvConcatFunc, bvToUIntFunc, bvToIntFunc, bvExtractFunc,
+   intToBvFunc]
+  -- simplify nat constants and string append
+  simp only [toString, h8, h16, h32, h64, h128, h0, h7, h15, h31, h1]
+  have heq1 : "Bv" ++ "8" ++ ".Concat" = "Bv8.Concat" := by rfl
+  have heq2 : "Bv" ++ "16" ++ ".Concat" = "Bv16.Concat" := by rfl
+  have heq3 : "Bv" ++ "32" ++ ".Concat" = "Bv32.Concat" := by rfl
+  have heq4 : "Bv" ++ "1" ++ ".ToUInt" = "Bv1.ToUInt" := by rfl
+  have heq5 : "Bv" ++ "8" ++ ".ToUInt" = "Bv8.ToUInt" := by rfl
+  have heq6 : "Bv" ++ "16" ++ ".ToUInt" = "Bv16.ToUInt" := by rfl
+  have heq7 : "Bv" ++ "32" ++ ".ToUInt" = "Bv32.ToUInt" := by rfl
+  have heq8 : "Bv" ++ "64" ++ ".ToUInt" = "Bv64.ToUInt" := by rfl
+  have heq9 : "Bv" ++ "128" ++ ".ToUInt" = "Bv128.ToUInt" := by rfl
+  have heq10 : "Bv" ++ "1" ++ ".ToInt" = "Bv1.ToInt" := by rfl
+  have heq11 : "Bv" ++ "8" ++ ".ToInt" = "Bv8.ToInt" := by rfl
+  have heq12 : "Bv" ++ "16" ++ ".ToInt" = "Bv16.ToInt" := by rfl
+  have heq13 : "Bv" ++ "32" ++ ".ToInt" = "Bv32.ToInt" := by rfl
+  have heq14 : "Bv" ++ "64" ++ ".ToInt" = "Bv64.ToInt" := by rfl
+  have heq15 : "Bv" ++ "128" ++ ".ToInt" = "Bv128.ToInt" := by rfl
+  have heq16 : "Int.ToBv" ++ "1" = "Int.ToBv1" := by rfl
+  have heq17 : "Int.ToBv" ++ "8" = "Int.ToBv8" := by rfl
+  have heq18 : "Int.ToBv" ++ "16" = "Int.ToBv16" := by rfl
+  have heq19 : "Int.ToBv" ++ "32" = "Int.ToBv32" := by rfl
+  have heq20 : "Int.ToBv" ++ "64" = "Int.ToBv64" := by rfl
+  have heq21 : "Int.ToBv" ++ "128" = "Int.ToBv128" := by rfl
+  have heq22 : "Bv" ++ "8" ++ ".Extract_" ++ "7" ++ "_" ++ "7" = "Bv8.Extract_7_7" := by rfl
+  have heq23 : "Bv" ++ "16" ++ ".Extract_" ++ "15" ++ "_" ++ "15" = "Bv16.Extract_15_15" := by rfl
+  have heq24 : "Bv" ++ "16" ++ ".Extract_" ++ "7" ++ "_" ++ "0" = "Bv16.Extract_7_0" := by rfl
+  have heq25 : "Bv" ++ "32" ++ ".Extract_" ++ "31" ++ "_" ++ "31" = "Bv32.Extract_31_31" := by rfl
+  have heq26 : "Bv" ++ "32" ++ ".Extract_" ++ "15" ++ "_" ++ "0" = "Bv32.Extract_15_0" := by rfl
+  have heq27 : "Bv" ++ "32" ++ ".Extract_" ++ "7" ++ "_" ++ "0" = "Bv32.Extract_7_0" := by rfl
+  have heq28 : "Bv" ++ "64" ++ ".Extract_" ++ "31" ++ "_" ++ "0" = "Bv64.Extract_31_0" := by rfl
+  have heq29 : "Bv" ++ "64" ++ ".Extract_" ++ "15" ++ "_" ++ "0" = "Bv64.Extract_15_0" := by rfl
+  have heq30 : "Bv" ++ "64" ++ ".Extract_" ++ "7" ++ "_" ++ "0" = "Bv64.Extract_7_0" := by rfl
+  simp only [heq1, heq2, heq3, heq4, heq5, heq6, heq7, heq8, heq9, heq10,
+    heq11, heq12, heq13, heq14, heq15, heq16, heq17, heq18, heq19, heq20,
+    heq21, heq22, heq23, heq24, heq25, heq26, heq27, heq28, heq29, heq30]
+  decide
+
 @[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
-  WFLFactory.ofArray (name_nodup := by native_decide) WFFactoryArray
+  WFLFactory.ofArray (name_nodup := by exact WFFactory_names) WFFactoryArray
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
