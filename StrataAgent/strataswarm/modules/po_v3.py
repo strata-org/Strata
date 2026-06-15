@@ -486,29 +486,31 @@ async def _stage_assemble(state: ProverState, agent) -> Trans:
             shutil.copy2(child_stub, cwd / f)
             await agent._emit("message", f"[PO] Assembled: {lemma_path.name} ← child Stub.lean")
 
-    # ── Step 2: Merge all child Def.lean into top-level (bottom-up by depth) ──
+    # ── Step 2: Merge immediate children's Def.lean into THIS workspace's Def.lean ──
+    # Only merge one level up. Recursion ensures each child already merged its own children.
     if top_def.exists():
         top_def_content = top_def.read_text()
-        child_defs = sorted(
-            (cwd / state.workspace).rglob("Stub/Def.lean"),
-            key=lambda p: len(p.parts),
-            reverse=True,
-        )
-        for child_def in child_defs:
-            if child_def == top_def:
-                continue
-            child_content = child_def.read_text()
-            if child_content.strip() == top_def_content.strip():
-                continue
-            new_lines = [l for l in child_content.splitlines()
-                         if l.strip() and l not in top_def_content and not l.strip().startswith("import ")]
-            if new_lines:
-                top_def_content = top_def_content.rstrip() + "\n" + "\n".join(new_lines) + "\n"
-                top_def.write_text(top_def_content)
-                await agent._emit("message", f"[PO] Merged Def.lean from {child_def.relative_to(cwd)}")
+        decomposed_dir_path = cwd / state.workspace / "decomposed"
+        if decomposed_dir_path.exists():
+            for child_dir in decomposed_dir_path.iterdir():
+                if not child_dir.is_dir():
+                    continue
+                child_def = child_dir / "Stub" / "Def.lean"
+                if not child_def.exists():
+                    continue
+                child_content = child_def.read_text()
+                if child_content.strip() == top_def_content.strip():
+                    continue
+                new_lines = [l for l in child_content.splitlines()
+                             if l.strip() and l not in top_def_content and not l.strip().startswith("import ")]
+                if new_lines:
+                    top_def_content = top_def_content.rstrip() + "\n" + "\n".join(new_lines) + "\n"
+                    top_def.write_text(top_def_content)
+                    await agent._emit("message", f"[PO] Merged Def.lean from {child_def.relative_to(cwd)}")
 
-    # ── Step 3: Rewrite all Stub.Def imports to top-level ──
-    for lean_file in (cwd / state.workspace).rglob("*.lean"):
+    # ── Step 3: Rewrite child Stub.Def imports to THIS workspace's Stub.Def ──
+    # Each file in decomposed/ should import the parent's (this workspace's) Def.lean
+    for lean_file in (cwd / state.workspace / "decomposed").rglob("*.lean") if (cwd / state.workspace / "decomposed").exists() else []:
         if lean_file.name == "Def.lean":
             continue
         content = lean_file.read_text()
