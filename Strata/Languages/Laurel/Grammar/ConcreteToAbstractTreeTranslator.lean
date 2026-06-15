@@ -256,6 +256,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => TransM.error s!"assign target must be a variable or field access"
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
+    | q`Laurel.preIncr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "preIncr"
+      return mkStmtExprMd (.IncrDecr .Pre .Incr target) src
+    | q`Laurel.preDecr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "preDecr"
+      return mkStmtExprMd (.IncrDecr .Pre .Decr target) src
+    | q`Laurel.postIncr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "postIncr"
+      return mkStmtExprMd (.IncrDecr .Post .Incr target) src
+    | q`Laurel.postDecr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "postDecr"
+      return mkStmtExprMd (.IncrDecr .Post .Decr target) src
     | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>
       let targets ← match targetsSeq with
         | .seq _ .comma args => args.toList.mapM fun targ => do
@@ -390,6 +402,19 @@ partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
 
 partial def translateCommand (arg : Arg) : TransM StmtExprMd := do
   translateStmtExpr arg
+
+/--
+Translate the target of an increment/decrement operator. The target must be an
+lvalue: either a local variable reference (`Var (.Local _)`) or a field access
+(`Var (.Field _ _)`). Anything else is reported as a translation error.
+-/
+partial def translateIncrDecrTarget (arg : Arg) (opName : String) : TransM VariableMd := do
+  let inner ← translateStmtExpr arg
+  match inner.val with
+  | .Var v@(.Local _) => pure ⟨v, inner.source⟩
+  | .Var v@(.Field _ _) => pure ⟨v, inner.source⟩
+  | _ =>
+    TransM.error s!"{opName} target must be a local variable or field access"
 
 end
 
