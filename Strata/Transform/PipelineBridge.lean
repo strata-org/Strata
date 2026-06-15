@@ -9,6 +9,12 @@ public import Strata.Transform.NondetElimCorrect
 public import Strata.Transform.LoopInitHoistCorrect
 public import Strata.Transform.StructuredToUnstructuredCorrect
 
+-- `import all` to reach the (module-private) name-classification helpers from the
+-- loop-init-hoist WF family and the `Block.initVars`/`modVars` distribution
+-- lemmas they rely on; these discharge the Direction-B cross-pass leaves.
+import all Strata.Transform.NondetElim
+import all Strata.Transform.LoopInitHoistLoopArmWF
+
 public section
 
 namespace Imperative
@@ -536,5 +542,451 @@ theorem hoist_name_not_s2uKind (sg : StringGenState) :
       obtain ⟨t, ht⟩ := hpref
       simp only [String.toList, show (toString "block$") = "block$" from rfl] at ht
       exact absurd (List.cons.inj ht).1 (by decide)
+
+/-- A name minted by `nondetElim` (under `ndelimItePrefix`/`ndelimLoopPrefix`,
+both beginning `$__ndelim_`) is *not* an `s2uKind` label.  Eleven of the thirteen
+`s2uKind` prefixes disagree with `$` at character `0`; the two `$`-leading S2U
+prefixes (`$__nondet_ite$`, `$__nondet_loop$`) agree through `$__n` but diverge at
+character `4` (`o` vs. the ndelim `d`), so the prefix relation is still refuted by
+a (deeper) head clash.  This is the Direction-B foreignness fact for the *ndelim*
+names that survive into the hoist output's `initVars`/`modVars`: they are not
+`s2uKind`, so the S2U `NoGenSuffix` leaves are vacuous on them. -/
+theorem ndelim_name_not_s2uKind (sg : StringGenState) :
+    ¬ StructuredToUnstructuredCorrect.s2uKind (StringGenState.gen ndelimItePrefix sg).1
+  ∧ ¬ StructuredToUnstructuredCorrect.s2uKind (StringGenState.gen ndelimLoopPrefix sg).1 := by
+  refine ⟨?_, ?_⟩ <;>
+  · rw [StringGenState.gen_eq]
+    rintro (⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+            ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+            ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+            ⟨_, _, hpref, _⟩) <;>
+      simp only [String.HasGenPrefix, ndelimItePrefix, ndelimLoopPrefix,
+        String.toList_append] at hpref <;>
+      · rw [List.isPrefixOf_iff_prefix] at hpref
+        obtain ⟨t, ht⟩ := hpref
+        simp only [String.toList, show (toString "block$") = "block$" from rfl] at ht
+        -- character 0 clash for the eleven non-`$` prefixes; character 4 clash
+        -- (`o`/`n` vs. ndelim `d`) for the two `$`-leading nondet prefixes.
+        first
+          | exact absurd (List.cons.inj ht).1 (by decide)
+          | exact absurd
+              (List.cons.inj (List.cons.inj (List.cons.inj
+                (List.cons.inj (List.cons.inj ht).2).2).2).2).1 (by decide)
+
+---------------------------------------------------------------------
+/-! ## Section 8 — Direction A: `nondetElim` output name classification
+
+The hoist §F preconditions at `Q := hoistKind` (`exprsShapeFree`, the
+`*_shapefree` `initVars`/`modVars` leaves) reach into the *whole* `nondetElim`
+output, not just its source-inherited names.  Their leaves all have the shape
+`∀ str, Q str → ident str ∉ …`, and to make them vacuous on the `nondetElim`
+output we classify every name the pass can introduce:
+
+  * every `initVars` / `modVars` name of the output is either a *source* name
+    (inherited verbatim) or a freshly-minted `ndelimKind` guard ident, and
+  * every read-var the output mentions is either a source read-var or, in the
+    two `.nondet` arms, the freshly-minted guard `mkFvar (ndelim ident)` —
+    which is `ndelimKind`, foreign to `hoistKind`.
+
+The classification (`*_classified`) drives the `*_shapefree` leaves; the
+`exprsShapeFree` preservation (`*_exprsShapeFree`) drives the guard leaf.  Both
+are parametric in the downstream kind `Q` *and* a foreignness witness
+(`¬ Q ndelim-name`), so instantiating `Q := hoistKind` with
+`ndelim_name_not_hoistKind` discharges Direction A. -/
+
+variable [HasIdent P] [HasFvar P] [HasBool P]
+
+/-- `Block.initVars` distributes over list append. -/
+theorem Block.initVars_append (xs ys : List (Stmt P (Cmd P))) :
+    Block.initVars (xs ++ ys) = Block.initVars xs ++ Block.initVars ys := by
+  induction xs with
+  | nil => simp [Block.initVars]
+  | cons x rest ih =>
+      simp only [List.cons_append, Block.initVars_cons, ih, List.append_assoc]
+
+/-- `Block.modifiedVars` distributes over list append. -/
+theorem Block.modifiedVars_append (xs ys : List (Stmt P (Cmd P))) :
+    Block.modifiedVars (xs ++ ys) = Block.modifiedVars xs ++ Block.modifiedVars ys := by
+  induction xs with
+  | nil => simp [Block.modifiedVars]
+  | cons x rest ih =>
+      simp only [List.cons_append, Block.modifiedVars, ih, List.append_assoc]
+
+/-- An `init` command modifies nothing (it *defines*, not modifies). -/
+private theorem init_modVars (x : P.Ident) (ty : P.Ty) (e : ExprOrNondet P)
+    (md : MetaData P) :
+    HasVarsImp.modifiedVars (HasInit.init (CmdT := Cmd P) x ty e md) =
+      ([] : List P.Ident) := by
+  with_unfolding_all rfl
+
+/-- A `havoc x` command modifies exactly `[x]`. -/
+private theorem havoc_modVars (x : P.Ident) (md : MetaData P) :
+    HasVarsImp.modifiedVars (HasHavoc.havoc (CmdT := Cmd P) x md) = [x] := by
+  with_unfolding_all rfl
+
+mutual
+/-- Every `initVars` element of the `nondetElim` output of a statement is either
+an original source `initVars` element or a freshly-minted `ndelimKind` guard. -/
+theorem Stmt.nondetElimM_initVars_classified
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
+      x ∈ Stmt.initVars s ∨
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+  match s with
+  | .cmd c =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, List.append_nil] at hx
+      exact Or.inl hx
+  | .block lbl bss md =>
+      intro x hx
+      rw [Stmt.nondetElimM_block_out] at hx
+      simp only [Block.initVars_cons, Stmt.initVars_block, Block.initVars,
+        List.append_nil] at hx ⊢
+      exact Block.nondetElimM_initVars_classified bss σ x hx
+  | .ite (.det e) tss ess md =>
+      intro x hx
+      rw [Stmt.nondetElimM_ite_det_out] at hx
+      simp only [Block.initVars_cons, Stmt.initVars_ite, Block.initVars,
+        List.append_nil, List.mem_append] at hx ⊢
+      rcases hx with h | h
+      · rcases Block.nondetElimM_initVars_classified tss σ x h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_initVars_classified ess _ x h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | .ite .nondet tss ess md =>
+      intro x hx
+      rw [Stmt.nondetElimM_ite_nondet_out] at hx
+      rw [Block.initVars_cons] at hx
+      rw [show Stmt.initVars (P := P)
+            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1)
+              HasBool.boolTy ExprOrNondet.nondet md)) =
+            [HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1]
+          from by with_unfolding_all rfl] at hx
+      simp only [Stmt.initVars_ite, Block.initVars_cons, Block.initVars, List.append_nil,
+        List.singleton_append, List.mem_cons, List.mem_append] at hx ⊢
+      rcases hx with h_g | h_t | h_e
+      · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g, ndelimKind_gen.1 σ⟩
+      · rcases Block.nondetElimM_initVars_classified tss _ x h_t with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_initVars_classified ess _ x h_e with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | .loop (.det e) m inv body md =>
+      intro x hx
+      rw [Stmt.nondetElimM_loop_det_out] at hx
+      simp only [Block.initVars_cons, Stmt.initVars_loop, Block.initVars,
+        List.append_nil] at hx ⊢
+      exact Block.nondetElimM_initVars_classified body σ x hx
+  | .loop .nondet m inv body md =>
+      intro x hx
+      rw [Stmt.nondetElimM_loop_nondet_out] at hx
+      rw [Block.initVars_cons] at hx
+      rw [show Stmt.initVars (P := P)
+            (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)
+              HasBool.boolTy ExprOrNondet.nondet md)) =
+            [HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1]
+          from by with_unfolding_all rfl] at hx
+      have h_havoc : Block.initVars (P := P)
+          [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1) md)] = [] := by
+        with_unfolding_all rfl
+      simp only [Stmt.initVars_loop, Block.initVars_cons, Block.initVars, List.append_nil,
+        List.singleton_append, List.mem_cons] at hx ⊢
+      rcases hx with h_g | h_body
+      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, ndelimKind_gen.2 σ⟩
+      · rw [Block.initVars_append, h_havoc, List.append_nil] at h_body
+        rcases Block.nondetElimM_initVars_classified body _ x h_body with h' | h'
+        · exact Or.inl h'
+        · exact Or.inr h'
+  | .exit lbl md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
+        List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  | .funcDecl d md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
+        List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  | .typeDecl t md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.initVars_cons, Block.initVars, Stmt.initVars,
+        List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  termination_by sizeOf s
+
+/-- Block-level `initVars` classification of the `nondetElim` output. -/
+theorem Block.nondetElimM_initVars_classified
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
+      x ∈ Block.initVars ss ∨
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+  match ss with
+  | [] =>
+      intro x hx
+      simp only [Block.nondetElimM, Block.initVars] at hx
+      exact absurd hx List.not_mem_nil
+  | s :: rest =>
+      intro x hx
+      rw [Block.nondetElimM_cons_out, Block.initVars_append] at hx
+      simp only [List.mem_append] at hx
+      rw [Block.initVars_cons, List.mem_append]
+      rcases hx with h | h
+      · rcases Stmt.nondetElimM_initVars_classified s σ x h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_initVars_classified rest _ x h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Every `modifiedVars` element of the `nondetElim` output of a statement is
+either an original source `modifiedVars` element or a freshly-minted
+`ndelimKind` guard (the loop re-havoc target). -/
+theorem Stmt.nondetElimM_modVars_classified
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    ∀ x ∈ Block.modifiedVars (P := P) (Stmt.nondetElimM s σ).1,
+      x ∈ Stmt.modifiedVars s ∨
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+  match s with
+  | .cmd c =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.modifiedVars, List.append_nil] at hx
+      exact Or.inl hx
+  | .block lbl bss md =>
+      intro x hx
+      rw [Stmt.nondetElimM_block_out] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx ⊢
+      exact Block.nondetElimM_modVars_classified bss σ x hx
+  | .ite (.det e) tss ess md =>
+      intro x hx
+      rw [Stmt.nondetElimM_ite_det_out] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil, List.mem_append] at hx ⊢
+      rcases hx with h | h
+      · rcases Block.nondetElimM_modVars_classified tss σ x h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_modVars_classified ess _ x h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | .ite .nondet tss ess md =>
+      intro x hx
+      rw [Stmt.nondetElimM_ite_nondet_out] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, init_modVars, List.nil_append,
+        List.append_nil, List.mem_append] at hx ⊢
+      rcases hx with h | h
+      · rcases Block.nondetElimM_modVars_classified tss _ x h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_modVars_classified ess _ x h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  | .loop (.det e) m inv body md =>
+      intro x hx
+      rw [Stmt.nondetElimM_loop_det_out] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx ⊢
+      exact Block.nondetElimM_modVars_classified body σ x hx
+  | .loop .nondet m inv body md =>
+      intro x hx
+      rw [Stmt.nondetElimM_loop_nondet_out] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, init_modVars, List.nil_append,
+        List.append_nil] at hx ⊢
+      rw [Block.modifiedVars_append] at hx
+      simp only [Block.modifiedVars, Stmt.modifiedVars, havoc_modVars, List.append_nil,
+        List.mem_append, List.mem_singleton] at hx ⊢
+      rcases hx with h | h_g
+      · rcases Block.nondetElimM_modVars_classified body _ x h with h' | h'
+        · exact Or.inl h'
+        · exact Or.inr h'
+      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, ndelimKind_gen.2 σ⟩
+  | .exit lbl md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  | .funcDecl d md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  | .typeDecl t md =>
+      intro x hx
+      simp only [Stmt.nondetElimM, Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx
+      exact absurd hx List.not_mem_nil
+  termination_by sizeOf s
+
+/-- Block-level `modifiedVars` classification of the `nondetElim` output. -/
+theorem Block.nondetElimM_modVars_classified
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    ∀ x ∈ Block.modifiedVars (P := P) (Block.nondetElimM ss σ).1,
+      x ∈ Block.modifiedVars ss ∨
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+  match ss with
+  | [] =>
+      intro x hx
+      simp only [Block.nondetElimM, Block.modifiedVars] at hx
+      exact absurd hx List.not_mem_nil
+  | s :: rest =>
+      intro x hx
+      rw [Block.nondetElimM_cons_out, Block.modifiedVars_append] at hx
+      simp only [List.mem_append] at hx
+      simp only [Block.modifiedVars, List.mem_append]
+      rcases hx with h | h
+      · rcases Stmt.nondetElimM_modVars_classified s σ x h with h' | h'
+        · exact Or.inl (Or.inl h')
+        · exact Or.inr h'
+      · rcases Block.nondetElimM_modVars_classified rest _ x h with h' | h'
+        · exact Or.inl (Or.inr h')
+        · exact Or.inr h'
+  termination_by sizeOf ss
+end
+
+variable [HasVarsPure P P.Expr] [LawfulHasFvar P] [LawfulHasIdent P]
+
+/-- `Block.exprsShapeFree Q` distributes over list append. -/
+theorem Block.exprsShapeFree_append {Q : String → Prop}
+    (xs ys : List (Stmt P (Cmd P)))
+    (h : Block.exprsShapeFree (P := P) Q xs ∧ Block.exprsShapeFree (P := P) Q ys) :
+    Block.exprsShapeFree (P := P) Q (xs ++ ys) := by
+  induction xs with
+  | nil => simpa only [List.nil_append] using h.2
+  | cons x rest ih =>
+      rw [List.cons_append, Block.exprsShapeFree]
+      rw [Block.exprsShapeFree] at h
+      exact ⟨h.1.1, ih ⟨h.1.2, h.2⟩⟩
+
+/-- A `.cmd (init _ _ .nondet _)` reads nothing, so it is `exprsShapeFree`. -/
+private theorem init_nondet_sf {Q : String → Prop} (ident : P.Ident) (ty : P.Ty)
+    (md : MetaData P) :
+    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
+  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
+  simp only [Stmt.exprsShapeFree, ExprOrNondet.getVars]
+  exact fun str _ hmem => absurd hmem List.not_mem_nil
+
+/-- A `.cmd (havoc _)` reads nothing, so it is `exprsShapeFree`. -/
+private theorem havoc_sf {Q : String → Prop} (ident : P.Ident) (md : MetaData P) :
+    Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasHavoc.havoc ident md)) := by
+  show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
+  simp only [Stmt.exprsShapeFree, ExprOrNondet.getVars]
+  exact fun str _ hmem => absurd hmem List.not_mem_nil
+
+/-- The freshly minted ndelim guard ident is `∉ getVars` of any `Q`-foreign
+read-var slot: the only read is `mkFvar ident` whose vars ⊆ `[ident]` and `ident`
+carries the ndelim kind, foreign to `Q`. -/
+private theorem ndelim_guard_fresh {Q : String → Prop}
+    (pf : String) (σ : StringGenState)
+    (hforeign : ¬ Q (StringGenState.gen pf σ).1) :
+    ∀ str : String, Q str →
+      HasIdent.ident (P := P) str ∉
+        HasVarsPure.getVars (P := P)
+          (HasFvar.mkFvar (HasIdent.ident (P := P) (StringGenState.gen pf σ).1)) := by
+  intro str hQ hmem
+  have hin : HasIdent.ident (P := P) str ∈
+      [HasIdent.ident (P := P) (StringGenState.gen pf σ).1] :=
+    LawfulHasFvar.mkFvar_getVars (P := P) _ hmem
+  rw [List.mem_singleton] at hin
+  exact hforeign (LawfulHasIdent.ident_inj hin ▸ hQ)
+
+/-- Transport `exprsShapeFree` across a `.loop` whose guard/body are replaced but
+whose measure/invariants are unchanged: the measure/invariant freshness conjuncts
+carry over verbatim from the source loop. -/
+private theorem loop_sf_transport {Q : String → Prop} (g₀ g₁ : ExprOrNondet P)
+    (m : Option P.Expr) (inv : List (String × P.Expr))
+    (body₀ body₁ : List (Stmt P (Cmd P))) (md : MetaData P)
+    (h : Stmt.exprsShapeFree (P := P) Q (.loop g₀ m inv body₀ md))
+    (hg : ∀ str : String, Q str →
+      HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars (P := P) g₁)
+    (hb : Block.exprsShapeFree (P := P) Q body₁) :
+    Stmt.exprsShapeFree (P := P) Q (.loop g₁ m inv body₁ md) := by
+  rw [Stmt.exprsShapeFree.eq_def] at h ⊢
+  exact ⟨hg, h.2.1, h.2.2.1, hb⟩
+
+mutual
+/-- `nondetElim` preserves `exprsShapeFree Q`, provided the labels it mints (the
+two ndelim guard prefixes) are foreign to `Q`: source read-vars stay `Q`-free,
+and the only new read-var is the freshly-minted guard ident, which is `¬ Q` by
+foreignness. -/
+theorem Stmt.nondetElimM_exprsShapeFree {Q : String → Prop}
+    (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
+    (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
+    (s : Stmt P (Cmd P)) (σ : StringGenState)
+    (h : Stmt.exprsShapeFree (P := P) Q s) :
+    Block.exprsShapeFree (P := P) Q (Stmt.nondetElimM s σ).1 := by
+  match s with
+  | .cmd c =>
+      simp only [Stmt.nondetElimM, Block.exprsShapeFree]
+      exact ⟨h, trivial⟩
+  | .block lbl bss md =>
+      rw [Stmt.nondetElimM_block_out]
+      simp only [Stmt.exprsShapeFree] at h
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree, and_true]
+      exact Block.nondetElimM_exprsShapeFree hfi hfl bss σ h
+  | .ite (.det e) tss ess md =>
+      rw [Stmt.nondetElimM_ite_det_out]
+      simp only [Stmt.exprsShapeFree] at h
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree, and_true]
+      exact ⟨h.1, Block.nondetElimM_exprsShapeFree hfi hfl tss σ h.2.1,
+             Block.nondetElimM_exprsShapeFree hfi hfl ess _ h.2.2⟩
+  | .ite .nondet tss ess md =>
+      rw [Stmt.nondetElimM_ite_nondet_out]
+      simp only [Stmt.exprsShapeFree] at h
+      simp only [Block.exprsShapeFree, and_true]
+      refine ⟨init_nondet_sf _ _ _, ?_⟩
+      simp only [Stmt.exprsShapeFree]
+      refine ⟨ndelim_guard_fresh ndelimItePrefix σ (hfi σ),
+              Block.nondetElimM_exprsShapeFree hfi hfl tss _ h.2.1,
+              Block.nondetElimM_exprsShapeFree hfi hfl ess _ h.2.2⟩
+  | .loop (.det e) m inv body md =>
+      rw [Stmt.nondetElimM_loop_det_out]
+      have hg : ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars (P := P) (.det e) := by
+        rw [Stmt.exprsShapeFree.eq_def] at h; exact h.1
+      have hbody : Block.exprsShapeFree (P := P) Q body := by
+        rw [Stmt.exprsShapeFree.eq_def] at h; exact h.2.2.2
+      simp only [Block.exprsShapeFree, and_true]
+      exact loop_sf_transport (.det e) (.det e) m inv body _ md h hg
+        (Block.nondetElimM_exprsShapeFree hfi hfl body σ hbody)
+  | .loop .nondet m inv body md =>
+      rw [Stmt.nondetElimM_loop_nondet_out]
+      have hbody : Block.exprsShapeFree (P := P) Q body := by
+        rw [Stmt.exprsShapeFree.eq_def] at h; exact h.2.2.2
+      simp only [Block.exprsShapeFree, and_true]
+      refine ⟨init_nondet_sf _ _ _, ?_⟩
+      refine loop_sf_transport .nondet
+        (.det (HasFvar.mkFvar (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1)))
+        m inv body _ md h
+        (ndelim_guard_fresh ndelimLoopPrefix σ (hfl σ)) ?_
+      refine Block.exprsShapeFree_append _ _
+        ⟨Block.nondetElimM_exprsShapeFree hfi hfl body _ hbody, ?_⟩
+      simp only [Block.exprsShapeFree, and_true]
+      exact havoc_sf _ _
+  | .exit lbl md =>
+      simp only [Stmt.nondetElimM, Block.exprsShapeFree, Stmt.exprsShapeFree, and_true]
+  | .funcDecl d md =>
+      simp only [Stmt.nondetElimM, Block.exprsShapeFree, Stmt.exprsShapeFree, and_true]
+  | .typeDecl t md =>
+      simp only [Stmt.nondetElimM, Block.exprsShapeFree, Stmt.exprsShapeFree, and_true]
+  termination_by sizeOf s
+
+/-- Block-level `exprsShapeFree Q` preservation through `nondetElim`. -/
+theorem Block.nondetElimM_exprsShapeFree {Q : String → Prop}
+    (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
+    (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
+    (h : Block.exprsShapeFree (P := P) Q ss) :
+    Block.exprsShapeFree (P := P) Q (Block.nondetElimM ss σ).1 := by
+  match ss with
+  | [] =>
+      simp only [Block.nondetElimM, Block.exprsShapeFree]
+  | s :: rest =>
+      rw [Block.nondetElimM_cons_out]
+      simp only [Block.exprsShapeFree] at h
+      exact Block.exprsShapeFree_append _ _
+        ⟨Stmt.nondetElimM_exprsShapeFree hfi hfl s σ h.1,
+         Block.nondetElimM_exprsShapeFree hfi hfl rest _ h.2⟩
+  termination_by sizeOf ss
+end
 
 end Imperative
