@@ -1979,7 +1979,7 @@ variable {P : PureExpr} [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIde
 /-- The composed structured-to-unstructured pipeline. -/
 @[expose] def pipeline (ss : List (Stmt P (Cmd P))) :
     CFG String (DetBlock String (Cmd P) P) :=
-  stmtsToCFG (Block.hoistLoopPrefixInits (Block.nondetElim ss))
+  (stmtsToCFG ∘ Block.hoistLoopPrefixInits ∘ Block.nondetElim) ss
 
 /-- **Pipeline soundness.** Every terminating source run of `ss` from a clean
 initial store `ρ₀` is matched by a terminating run of the unstructured CFG
@@ -2005,7 +2005,6 @@ theorem pipeline_sound
     -- source shape restrictions (front-end well-formedness):
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
-    (h_simple : Block.simpleShape ss = true)
     (h_nml : Block.noMeasureLoops ss = true)
     (h_noexit : Block.noExit ss = true)
     (h_unique : Block.uniqueInits ss)
