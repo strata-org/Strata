@@ -239,11 +239,15 @@ disjoint from every rename TARGET the pass introduces — the precise condition
 that `namesFreshInExprs_applyRenames` consumes. -/
 
 mutual
-/-- Every entry target harvested from a statement is a generator-suffixed ident. -/
-theorem Stmt.entriesOf_target_suffix
+/-- Every entry target harvested from a statement is a `Q`-kind ident, given the
+mint witness `hQmint` that hoist's freshly minted names satisfy `Q`.
+Instantiating `Q := String.HasUnderscoreDigitSuffix` with the `gen`-suffix
+witness recovers the blanket "generator-suffixed" statement. -/
+theorem Stmt.entriesOf_target_suffix {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ e ∈ Stmt.entriesOf s σ,
-      ∃ str : String, e.2.1 = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str := by
+      ∃ str : String, e.2.1 = HasIdent.ident str ∧ Q str := by
   match s with
   | .cmd c =>
       cases c with
@@ -252,35 +256,35 @@ theorem Stmt.entriesOf_target_suffix
           rw [Stmt.entriesOf] at he
           simp only [List.mem_singleton] at he
           subst he
-          exact ⟨(StringGenState.gen hoistFreshPrefix σ).1, rfl,
-            StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix σ⟩
+          exact ⟨(StringGenState.gen hoistFreshPrefix σ).1, rfl, hQmint σ⟩
       | set x rhs md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
       | assert l ex md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
       | assume l ex md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
       | cover l ex md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
   | .block lbl bss md =>
-      rw [Stmt.entriesOf]; exact Block.entriesOf_target_suffix bss σ
+      rw [Stmt.entriesOf]; exact Block.entriesOf_target_suffix hQmint bss σ
   | .ite g tss ess md =>
       rw [Stmt.entriesOf, List.forall_mem_append]
-      exact ⟨Block.entriesOf_target_suffix tss σ,
-             Block.entriesOf_target_suffix ess (Block.liftInitsInLoopBodyM tss σ).2⟩
+      exact ⟨Block.entriesOf_target_suffix hQmint tss σ,
+             Block.entriesOf_target_suffix hQmint ess (Block.liftInitsInLoopBodyM tss σ).2⟩
   | .loop g m inv body md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
   | .exit lbl md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
   | .funcDecl d md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
   | .typeDecl t md => intro e he; simp only [Stmt.entriesOf, List.not_mem_nil] at he
   termination_by sizeOf s
 
-/-- Every entry target harvested from a block is a generator-suffixed ident. -/
-theorem Block.entriesOf_target_suffix
+/-- Every entry target harvested from a block is a `Q`-kind ident. -/
+theorem Block.entriesOf_target_suffix {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ e ∈ Block.entriesOf ss σ,
-      ∃ str : String, e.2.1 = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str := by
+      ∃ str : String, e.2.1 = HasIdent.ident str ∧ Q str := by
   match ss with
   | [] => intro e he; simp only [Block.entriesOf, List.not_mem_nil] at he
   | s :: rest =>
       rw [Block.entriesOf, List.forall_mem_append]
-      exact ⟨Stmt.entriesOf_target_suffix s σ,
-             Block.entriesOf_target_suffix rest (Stmt.liftInitsInLoopBodyM s σ).2⟩
+      exact ⟨Stmt.entriesOf_target_suffix hQmint s σ,
+             Block.entriesOf_target_suffix hQmint rest (Stmt.liftInitsInLoopBodyM s σ).2⟩
   termination_by sizeOf ss
 end
 
@@ -297,7 +301,8 @@ theorem Block.liftInitsInLoopBodyM_renames_target_suffix
   simp only [LoopInitHoistLoopDriver.substOf', List.mem_map] at hp
   obtain ⟨e, he_mem, he_eq⟩ := hp
   subst he_eq
-  exact Block.entriesOf_target_suffix ss σ e he_mem
+  exact Block.entriesOf_target_suffix
+    (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) ss σ e he_mem
 
 /-- The havoc prelude `havocStmts' E` is always fresh in any `names`: every
 havoc cmd is `init target ty .nondet md` whose rhs has empty read-set. -/
@@ -986,38 +991,36 @@ theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets
   exact Block.targetsOf'_entriesOf_genfresh (Block.hoistLoopPrefixInitsM body σ).1
     (Block.hoistLoopPrefixInitsM body σ).2 h_wf₁
 
-/-! ## The harvest targets carry the generator `_<digit>` suffix.
+/-! ## The harvest targets carry hoist's mint kind `Q`.
 
-Specialising `entriesOf_targetGen` with `StringGenState`'s
-`hasUnderscoreDigitSuffix_of_mem_generated` (every produced generator string is
-suffix-shaped) exposes that every member of `targetsOf' (Block.entriesOf ss σ)`
-is `HasIdent.ident str` for a suffix-shaped `str` — the structural fact that
-separates the harvest targets from program names (which never carry the
-suffix). -/
+Routing the harvest through `entriesOf_target_suffix` (which exposes that every
+harvested `.init` target is literally a `gen hoistFreshPrefix _` output) with the
+mint witness `hQmint` exposes that every member of `targetsOf' (Block.entriesOf
+ss σ)` is `HasIdent.ident str` for a `Q`-kind `str` — the structural fact that
+separates the harvest targets from program names (which never carry hoist's
+mint kind).  Instantiating `Q := String.HasUnderscoreDigitSuffix` recovers the
+blanket generator-suffix statement. -/
 
-/-- Every entry harvested from a block at a WF state has a target ident that is
-`HasIdent.ident str` for a generator string `str` with the `_<digit>` suffix. -/
-theorem Block.entriesOf_target_hasUnderscoreDigitSuffix
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+/-- Every entry harvested from a block has a target ident that is
+`HasIdent.ident str` for a `Q`-kind generator string `str` (given the mint
+witness `hQmint`). -/
+theorem Block.entriesOf_target_hasUnderscoreDigitSuffix {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     {e : Entry P} (he : e ∈ Block.entriesOf ss σ) :
-    ∃ str : String, e.2.1 = HasIdent.ident str
-      ∧ String.HasUnderscoreDigitSuffix str := by
-  obtain ⟨str, h_eq, h_in, _⟩ := (Block.entriesOf_targetGen ss σ h_wf).1 e he
-  refine ⟨str, h_eq, ?_⟩
-  have h_wf' : StringGenState.WF (Block.liftInitsInLoopBodyM ss σ).2 :=
-    (Block.liftInitsInLoopBodyM_genStep ss σ).wf_mono h_wf
-  exact StringGenState.hasUnderscoreDigitSuffix_of_mem_generated h_wf' h_in
+    ∃ str : String, e.2.1 = HasIdent.ident str ∧ Q str :=
+  Block.entriesOf_target_suffix hQmint ss σ e he
 
 /-- Every member of `targetsOf' (Block.entriesOf ss σ)` is `HasIdent.ident str`
-for a generator string `str` with the `_<digit>` suffix. -/
-theorem Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+for a `Q`-kind generator string `str`. -/
+theorem Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     {x : P.Ident} (hx : x ∈ targetsOf' (Block.entriesOf ss σ)) :
-    ∃ str : String, x = HasIdent.ident str
-      ∧ String.HasUnderscoreDigitSuffix str := by
+    ∃ str : String, x = HasIdent.ident str ∧ Q str := by
   obtain ⟨e, he_mem, he_eq⟩ := List.mem_map.mp hx
   obtain ⟨str, h_eq, h_suf⟩ :=
-    Block.entriesOf_target_hasUnderscoreDigitSuffix ss σ h_wf he_mem
+    Block.entriesOf_target_hasUnderscoreDigitSuffix hQmint ss σ he_mem
   exact ⟨str, by rw [← he_eq, h_eq], h_suf⟩
 
 /-! ## The `exprsShapeFree` ⇒ `h_B_fresh` bridge.
@@ -1034,32 +1037,34 @@ and a shape-free body never reads such a name, so the targets are fresh in
 `body`'s exprs. -/
 
 /-- The harvest targets are fresh in the SOURCE body's exprs, given the
-body is `exprsShapeFree`.  This is exactly the `h_tgt_body_fresh` premise of
+body is `exprsShapeFree Q`.  This is exactly the `h_tgt_body_fresh` premise of
 `hoistLoopPrefixInitsM_namesFreshInExprs_targets`. -/
-theorem Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree
+theorem Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body body₁ : List (Stmt P (Cmd P))) (σ₁ : StringGenState)
     (h_wf₁ : StringGenState.WF σ₁)
-    (h_sf : Block.exprsShapeFree (P := P) body) :
+    (h_sf : Block.exprsShapeFree (P := P) Q body) :
     Block.namesFreshInExprs (targetsOf' (Block.entriesOf body₁ σ₁)) body = true :=
   Block.namesFreshInExprs_of_exprsShapeFree'
-    (fun z hz => Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix body₁ σ₁ h_wf₁ hz)
+    (fun z hz => Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix hQmint body₁ σ₁ hz)
     body h_sf
 
 /-- The full producer-side `h_B_fresh` for the `.loop` arm: from
-`Block.exprsShapeFree body`, the harvest targets `targetsOf' (entriesOf body₁
+`Block.exprsShapeFree Q body`, the harvest targets `targetsOf' (entriesOf body₁
 σ₁)` (`body₁`/`σ₁` the post-order body / its gen state) are fresh in `body₁`'s
-exprs.  The targets carry the generator suffix; the source body is shape-free,
+exprs.  The targets carry hoist's mint kind; the source body is shape-free,
 so they are fresh in `body`; the reducer lifts that to `body₁`. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_wf₁ : StringGenState.WF (Block.hoistLoopPrefixInitsM body σ).2)
-    (h_sf : Block.exprsShapeFree (P := P) body) :
+    (h_sf : Block.exprsShapeFree (P := P) Q body) :
     Block.namesFreshInExprs
       (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1
         (Block.hoistLoopPrefixInitsM body σ).2))
       (Block.hoistLoopPrefixInitsM body σ).1 = true :=
   Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets body σ h_wf₁
-    (Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree body
+    (Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree hQmint body
       (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2 h_wf₁ h_sf)
 
 /-! ## Disjointness producer-preconditions at the entries carriers.
@@ -1087,29 +1092,31 @@ The sources `sourcesOf' E ⊆ Block.initVars body₁` (`Block.sourcesOf_entriesO
 so source-disjointness reduces to a disjointness hypothesis on `Block.initVars body₁`. -/
 
 /-- A target carrier is disjoint from any `vars` whose every member is *not* the
-ident of a suffix-shaped string.  This is the generic engine behind every
+ident of a `Q`-kind string.  This is the generic engine behind every
 "targets ∩ V = ∅" side-condition. -/
-theorem targetsOf'_entriesOf_disjoint_of_shapefree
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+theorem targetsOf'_entriesOf_disjoint_of_shapefree {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (vars : List P.Ident)
-    (h_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_shapefree : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ vars) :
     ∀ x ∈ vars, x ∉ targetsOf' (Block.entriesOf ss σ) := by
   intro x hx_vars hx_tgt
   obtain ⟨str, h_eq, h_suf⟩ :=
-    Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix ss σ h_wf hx_tgt
+    Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix hQmint ss σ hx_tgt
   exact h_shapefree str h_suf (h_eq ▸ hx_vars)
 
 /-- `h_mod_disjoint_B` at `B := targetsOf' E`: the post-order body's
 `modifiedVars` are disjoint from the harvest targets.  `modifiedVars` collect
-only `.set` targets — program names without the generator suffix — so the
+only `.set` targets — program names without hoist's mint kind — so the
 shape-free hypothesis on `Block.modifiedVars body₁` discharges it. -/
-theorem modifiedVars_disjoint_targetsOf'_entriesOf
-    (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
-    (h_mod_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+theorem modifiedVars_disjoint_targetsOf'_entriesOf {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
+    (h_mod_shapefree : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ Block.modifiedVars body₁) :
     ∀ x ∈ Block.modifiedVars body₁, x ∉ targetsOf' (Block.entriesOf body₁ σ) :=
-  targetsOf'_entriesOf_disjoint_of_shapefree body₁ σ h_wf
+  targetsOf'_entriesOf_disjoint_of_shapefree hQmint body₁ σ
     (Block.modifiedVars body₁) h_mod_shapefree
 
 /-- `h_mod_disjoint_A` at `A := sourcesOf' E`: the post-order body's
@@ -1135,39 +1142,42 @@ sources). -/
 /-- Harvest targets are disjoint from the ambient outer carrier `A`, via the
 arm's `h_src_shapefree` (whose `A`-component says no suffix-shaped ident is in
 `A`). -/
-theorem targetsOf'_entriesOf_disjoint_ambient_A
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+theorem targetsOf'_entriesOf_disjoint_ambient_A {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
-    (h_src_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_shapefree : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ A ∧
       HasIdent.ident (P := P) str ∉ B ∧
       HasIdent.ident (P := P) str ∉ Block.initVars [s]) :
     ∀ x ∈ A, x ∉ targetsOf' (Block.entriesOf ss σ) :=
-  targetsOf'_entriesOf_disjoint_of_shapefree ss σ h_wf A
+  targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ A
     (fun str h_suf => (h_src_shapefree str h_suf).1)
 
 /-- Harvest targets are disjoint from the ambient outer carrier `B`. -/
-theorem targetsOf'_entriesOf_disjoint_ambient_B
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+theorem targetsOf'_entriesOf_disjoint_ambient_B {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
-    (h_src_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_shapefree : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ A ∧
       HasIdent.ident (P := P) str ∉ B ∧
       HasIdent.ident (P := P) str ∉ Block.initVars [s]) :
     ∀ x ∈ B, x ∉ targetsOf' (Block.entriesOf ss σ) :=
-  targetsOf'_entriesOf_disjoint_of_shapefree ss σ h_wf B
+  targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ B
     (fun str h_suf => (h_src_shapefree str h_suf).2.1)
 
 /-- Harvest targets are disjoint from the loop statement's own inits. -/
-theorem targetsOf'_entriesOf_disjoint_initVars_stmt
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
+theorem targetsOf'_entriesOf_disjoint_initVars_stmt {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
-    (h_src_shapefree : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_shapefree : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ A ∧
       HasIdent.ident (P := P) str ∉ B ∧
       HasIdent.ident (P := P) str ∉ Block.initVars [s]) :
     ∀ x ∈ Block.initVars [s], x ∉ targetsOf' (Block.entriesOf ss σ) :=
-  targetsOf'_entriesOf_disjoint_of_shapefree ss σ h_wf (Block.initVars [s])
+  targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ (Block.initVars [s])
     (fun str h_suf => (h_src_shapefree str h_suf).2.2)
 
 /-- Harvest sources are disjoint from the ambient outer carrier `A`, via
@@ -2214,7 +2224,8 @@ theorem Block.sourcesOf'_disjoint_targetsOf'_self
   have h_a_eq_b : a = HasIdent.ident str_b := he_eq ▸ h_b_eq
   have h_str_b_suf : String.HasUnderscoreDigitSuffix str_b := by
     obtain ⟨str_b', h_eq', h_suf'⟩ :=
-      Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix _ _ h_wf₁ ha_tgt
+      Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
+        (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) _ _ ha_tgt
     have : (HasIdent.ident str_b' : P.Ident) = HasIdent.ident str_b := by
       rw [← h_eq', h_a_eq_b]
     rw [← LawfulHasIdent.ident_inj this]; exact h_suf'
@@ -2267,7 +2278,8 @@ theorem Block.modifiedVars_disjoint_targetsOf'_self
   have h_x_eq_b : x = HasIdent.ident str_b := he_eq ▸ h_b_eq
   have h_str_b_suf : String.HasUnderscoreDigitSuffix str_b := by
     obtain ⟨str_b', h_eq', h_suf'⟩ :=
-      Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix _ _ h_wf₁ hx_tgt
+      Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
+        (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) _ _ hx_tgt
     have : (HasIdent.ident str_b' : P.Ident) = HasIdent.ident str_b := by
       rw [← h_eq', h_x_eq_b]
     rw [← LawfulHasIdent.ident_inj this]; exact h_suf'
@@ -2348,7 +2360,7 @@ theorem Block.stepB_self_of_lift
     (h_measure : Block.loopMeasureNone body = true)
     (h_noexit : Block.noExit body = true)
     (h_unique : Block.uniqueInits body)
-    (h_sf : Block.exprsShapeFree (P := P) body)
+    (h_sf : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix body)
     (h_src_shapefree :
       ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ Block.initVars body)
@@ -2387,7 +2399,8 @@ theorem Block.stepB_self_of_lift
     (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
     ?_ h_entries ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h_wfvar h_wfcongr h_wfsubst h_wfdef
   · exact Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree body σ
-  · exact Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree body σ h_wf₁ h_sf
+  · exact Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree
+      (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) body σ h_wf₁ h_sf
   · exact h_mod_disjoint_B
   · intro a b hab
     obtain ⟨e, he, heq⟩ := List.mem_map.mp hab
@@ -2427,7 +2440,7 @@ theorem Block.stepB_noFuncDecl_h_of_lift
     (h_measure : Block.loopMeasureNone body = true)
     (h_noexit : Block.noExit body = true)
     (h_unique : Block.uniqueInits body)
-    (h_sf : Block.exprsShapeFree (P := P) body)
+    (h_sf : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix body)
     (h_src_shapefree :
       ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ Block.initVars body)
@@ -2460,7 +2473,8 @@ theorem Block.stepB_noFuncDecl_h_of_lift
       (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
       (Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree body σ)
       h_entries
-      (Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree body σ h_wf₁ h_sf)
+      (Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree
+        (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) body σ h_wf₁ h_sf)
       h_mod_disjoint_B
       ?_ ?_ ?_ ?_ ?_ ?_)
   · intro a b hab
@@ -2586,7 +2600,7 @@ theorem loop_arm_close
           h_pre_frame⟩ :=
     prelude_bridge_list_md_frame (A := A) entries ρ_hoist ρ_hoist rfl rfl rfl
       h_src_undef_h h_tgt_undef_h h_tgt_nodup h_wfvar
-  have composed : BodySimUSF (extendEval := extendEval) Vs Vs σ_sf
+  have composed : BodySimUSF (extendEval := extendEval) String.HasUnderscoreDigitSuffix Vs Vs σ_sf
       (A ++ sourcesOf' entries) (B ++ targetsOf' entries) (subst ++ substOf' entries)
       body body₃ :=
     compose_union_sf stepA stepB h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs
