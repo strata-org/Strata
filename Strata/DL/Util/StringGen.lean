@@ -482,4 +482,93 @@ theorem of_gen (pf : String) (σ : StringGenState) :
 
 end StringGenState.GenStep
 
+/-! ## Kind-contract: per-prefix membership witnesses
+
+The shape predicate `HasUnderscoreDigitSuffix` answers "could this label have
+come from *some* generator". For composing several generators that each mint
+under their own prefix, we need a finer, per-prefix contract: a label `s` was
+minted under prefix `pf` exactly when `pf ++ "_"` is a prefix of `s`. The
+`HasGenPrefix`/`AllGenPrefix` pair tracks, for a given predicate `P` on
+prefixes, that every produced label carries *some* `P`-prefix. This lets a
+client prove a foreign label (one whose only candidate prefixes fail `P`) is
+absent from the generated set. -/
+
+/-- `pf` is a *generator prefix* of `s`: the literal `pf ++ "_"` is a prefix of
+`s`. Every label produced by `gen pf σ` satisfies `HasGenPrefix pf`. -/
+@[expose]
+def String.HasGenPrefix (pf s : String) : Prop :=
+  (pf ++ "_").toList.isPrefixOf s.toList = true
+
+/-- The label produced by `gen pf σ` carries `pf` as a generator prefix. -/
+theorem StringGenState.gen_hasGenPrefix (pf : String) (σ : StringGenState) :
+    String.HasGenPrefix pf (StringGenState.gen pf σ).1 := by
+  unfold String.HasGenPrefix
+  rw [gen_eq, List.isPrefixOf_iff_prefix]
+  refine ⟨(toString σ.cs.counter).toList, ?_⟩
+  simp [String.toList_append, List.append_assoc]
+
+/-- `AllGenPrefix P σ`: every label produced so far carries *some* prefix
+satisfying `P`. -/
+@[expose]
+def StringGenState.AllGenPrefix (P : String → Prop) (σ : StringGenState) : Prop :=
+  ∀ s ∈ stringGens σ, ∃ pf, P pf ∧ String.HasGenPrefix pf s
+
+/-- The empty generator state vacuously satisfies any `AllGenPrefix`. -/
+theorem StringGenState.allGenPrefix_emp (P : String → Prop) :
+    StringGenState.AllGenPrefix P StringGenState.emp := by
+  intro s hs
+  rw [stringGens_emp] at hs
+  exact absurd hs (List.not_mem_nil)
+
+/-- `AllGenPrefix` is preserved by a `gen pf` step whose prefix `pf` satisfies
+`P`. -/
+theorem StringGenState.allGenPrefix_gen (P : String → Prop) (pf : String)
+    (σ : StringGenState) (h : StringGenState.AllGenPrefix P σ) (hpf : P pf) :
+    StringGenState.AllGenPrefix P (StringGenState.gen pf σ).2 := by
+  intro s hs
+  rw [stringGens_gen, List.mem_cons] at hs
+  rcases hs with hnew | hold
+  · subst hnew
+    exact ⟨pf, hpf, StringGenState.gen_hasGenPrefix pf σ⟩
+  · exact h s hold
+
+/-- `AllGenPrefix` is preserved across any advance whose newly produced labels
+each carry some `P`-prefix. -/
+theorem StringGenState.allGenPrefix_genStep (P : String → Prop)
+    {σ σ' : StringGenState} (h : StringGenState.AllGenPrefix P σ)
+    (hdelta : ∀ s ∈ stringGens σ', s ∉ stringGens σ →
+      ∃ pf, P pf ∧ String.HasGenPrefix pf s) :
+    StringGenState.AllGenPrefix P σ' := by
+  intro s hs
+  by_cases hmem : s ∈ stringGens σ
+  · exact h s hmem
+  · exact hdelta s hs hmem
+
+/-- THE BRIDGE: a label `s` whose every `P`-prefix fails to be a generator
+prefix of `s` cannot appear in a state satisfying `AllGenPrefix P`. -/
+theorem StringGenState.not_mem_stringGens_of_foreign {P : String → Prop}
+    {σ : StringGenState} {s : String}
+    (hall : StringGenState.AllGenPrefix P σ)
+    (hforeign : ∀ pf, P pf → ¬ String.HasGenPrefix pf s) :
+    s ∉ stringGens σ := by
+  intro h_in
+  obtain ⟨pf, hpf, hpref⟩ := hall s h_in
+  exact hforeign pf hpf hpref
+
+/-- A WF generator state satisfies `AllGenPrefix` for the trivial predicate:
+every produced label has the `_<digits>` suffix shape, hence carries a prefix
+ending just before the last `_<digits>` run.  The witnessing prefix is taken
+from the shape decomposition. -/
+theorem StringGenState.allGenPrefix_true_of_wf {σ : StringGenState}
+    (hwf : StringGenState.WF σ) :
+    StringGenState.AllGenPrefix (fun _ => True) σ := by
+  intro s hs
+  obtain ⟨pf, n, h_eq⟩ :=
+    StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf hs
+  refine ⟨pf, trivial, ?_⟩
+  unfold String.HasGenPrefix
+  rw [h_eq, List.isPrefixOf_iff_prefix]
+  refine ⟨(toString (n : Nat)).toList, ?_⟩
+  simp [String.toList_append, List.append_assoc]
+
 end
