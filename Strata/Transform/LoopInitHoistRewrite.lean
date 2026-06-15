@@ -197,70 +197,75 @@ init-vars. -/
 A front-end well-formedness assumption on a source program: every variable
 read by any expression occurring in the program — `init`/`set` rhs, `assert`
 /`assume`/`cover` conditions, loop guards/measures/invariants, `.ite` guards
-— is a "shape-free" name: it is never the identifier of a string carrying the
-generator's `_<digits>` suffix.  Equivalently, source programs only mention
-program names, which never collide with the generator's freshly-minted naming
-scheme.
+— is a "kind-free" name: it never satisfies the *kind predicate* `Q` on the
+underlying label string (the kind of name *this* pass mints).  Instantiating
+`Q := String.HasUnderscoreDigitSuffix` recovers the blanket "shape-free"
+condition: source programs only mention program names, which never collide
+with the generator's freshly-minted naming scheme.  A per-kind `Q` lets a
+composition argument restrict the obligation to just the labels this pass
+mints rather than every gen-suffix-shaped name.
 
 The predicate is `Prop`-valued (function-form recursion, like
 `DisjointModuloRewrite` above) because its leaf condition quantifies over the
-`Prop`-valued `String.HasUnderscoreDigitSuffix`.  It mirrors the recursion
-shape of `namesFreshInExprs`/`noExit`, descending into `.block`/`.ite`/`.loop`
-bodies, and is threaded through the hoisting-preservation proof exactly like
-the source-shape-freedom invariant carried for the carrier names.  The
-discharge consumer is the `.loop` arm, which needs that the freshly minted
-harvest targets (all suffix-shaped) cannot appear among `body`'s read-vars. -/
+`Prop`-valued kind predicate `Q`.  It mirrors the recursion shape of
+`namesFreshInExprs`/`noExit`, descending into `.block`/`.ite`/`.loop` bodies,
+and is threaded through the hoisting-preservation proof exactly like the
+source-shape-freedom invariant carried for the carrier names.  The discharge
+consumer is the `.loop` arm, which needs that the freshly minted harvest
+targets (all of kind `Q`) cannot appear among `body`'s read-vars. -/
 
 mutual
 
-/-- "Every read-var occurring in `s` is shape-free": no expression read by `s`
-is the identifier of a `_<digits>`-suffixed string. -/
+/-- "Every read-var occurring in `s` is kind-free": no expression read by `s`
+is the identifier of a `Q`-kind label string. -/
 @[expose] def Stmt.exprsShapeFree [HasIdent P] [HasVarsPure P P.Expr]
+    (Q : String → Prop)
     (s : Stmt P (Cmd P)) : Prop :=
   match s with
   | .cmd (.init _ _ rhs _) =>
-    ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars rhs
   | .cmd (.set _ rhs _) =>
-    ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars rhs
   | .cmd (.assert _ e _) =>
-    ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
   | .cmd (.assume _ e _) =>
-    ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
   | .cmd (.cover _ e _) =>
-    ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
-  | .block _ bss _ => Block.exprsShapeFree bss
+  | .block _ bss _ => Block.exprsShapeFree Q bss
   | .ite g tss ess _ =>
-    (∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars g) ∧
-    Block.exprsShapeFree tss ∧ Block.exprsShapeFree ess
+    Block.exprsShapeFree Q tss ∧ Block.exprsShapeFree Q ess
   | .loop g m inv body _ =>
-    (∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars g) ∧
     (match m with
      | none => True
-     | some me => ∀ str : String, String.HasUnderscoreDigitSuffix str →
+     | some me => ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ HasVarsPure.getVars me) ∧
-    (∀ p ∈ inv, ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (∀ p ∈ inv, ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ HasVarsPure.getVars p.snd) ∧
-    Block.exprsShapeFree body
+    Block.exprsShapeFree Q body
   | .exit _ _ => True
   | .funcDecl _ _ => True
   | .typeDecl _ _ => True
   termination_by sizeOf s
 
-/-- "Every read-var occurring in `ss` is shape-free": pointwise lift of
+/-- "Every read-var occurring in `ss` is kind-free": pointwise lift of
 `Stmt.exprsShapeFree` across the block. -/
 @[expose] def Block.exprsShapeFree [HasIdent P] [HasVarsPure P P.Expr]
+    (Q : String → Prop)
     (ss : List (Stmt P (Cmd P))) : Prop :=
   match ss with
   | [] => True
   | s :: rest =>
-    Stmt.exprsShapeFree s ∧ Block.exprsShapeFree rest
+    Stmt.exprsShapeFree Q s ∧ Block.exprsShapeFree Q rest
   termination_by sizeOf ss
 
 end
@@ -375,35 +380,36 @@ private theorem Block.namesFreshInExprs_subset
   termination_by sizeOf ss
 end
 
-/-! ### `exprsShapeFree` ⇒ `namesFreshInExprs` for suffix-shaped names
+/-! ### `exprsShapeFree` ⇒ `namesFreshInExprs` for kind-shaped names
 
-If every name in `names` is the identifier of a `_<digits>`-suffixed string,
-and `ss` is shape-free (its read-vars are never suffix-shaped idents), then
-`names` is fresh in `ss`'s expressions.  This is the generic core driving the
-`.loop` arm's `h_B_fresh` discharge: the harvest TARGETS are all suffix-shaped
-idents, the source body is shape-free, so the targets cannot appear among the
-body's read-vars. -/
+If every name in `names` is the identifier of a `Q`-kind label string, and
+`ss` is kind-free (its read-vars are never `Q`-kind idents), then `names` is
+fresh in `ss`'s expressions.  This is the generic core driving the `.loop`
+arm's `h_B_fresh` discharge: the harvest TARGETS are all of this pass's kind,
+the source body is kind-free, so the targets cannot appear among the body's
+read-vars. -/
 
-/-- Local helper: a single suffix-shaped name is fresh in a read-var set,
-given that set contains no suffix-shaped ident. -/
+/-- Local helper: a single `Q`-kind name is fresh in a read-var set, given
+that set contains no `Q`-kind ident. -/
 private theorem freshFromIdents_of_shapefree_leaf [HasIdent P]
+    {Q : String → Prop}
     {z : P.Ident} {vars : List P.Ident}
-    (h_z : ∃ str : String, z = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str)
-    (h_sf : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_z : ∃ str : String, z = HasIdent.ident str ∧ Q str)
+    (h_sf : ∀ str : String, Q str →
       HasIdent.ident (P := P) str ∉ vars) :
     freshFromIdents z vars = true := by
   obtain ⟨str, h_eq, h_suf⟩ := h_z
   exact freshFromIdents_of_not_mem (h_eq ▸ h_sf str h_suf)
 
 mutual
-/-- `exprsShapeFree s` plus "every `names` element is a suffix-shaped ident"
+/-- `exprsShapeFree s` plus "every `names` element is a `Q`-kind ident"
 implies `names` is fresh in `s`'s expressions. -/
 private theorem Stmt.namesFreshInExprs_of_exprsShapeFree
-    [HasIdent P] [HasVarsPure P P.Expr] {names : List P.Ident}
+    [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} {names : List P.Ident}
     (h_names_suffix : ∀ z ∈ names,
-      ∃ str : String, z = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str)
+      ∃ str : String, z = HasIdent.ident str ∧ Q str)
     (s : Stmt P (Cmd P))
-    (h : Stmt.exprsShapeFree (P := P) s) :
+    (h : Stmt.exprsShapeFree (P := P) Q s) :
     Stmt.namesFreshInExprs names s = true := by
   cases s with
   | cmd c =>
@@ -454,11 +460,11 @@ private theorem Stmt.namesFreshInExprs_of_exprsShapeFree
   termination_by sizeOf s
 
 private theorem Block.namesFreshInExprs_of_exprsShapeFree
-    [HasIdent P] [HasVarsPure P P.Expr] {names : List P.Ident}
+    [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} {names : List P.Ident}
     (h_names_suffix : ∀ z ∈ names,
-      ∃ str : String, z = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str)
+      ∃ str : String, z = HasIdent.ident str ∧ Q str)
     (ss : List (Stmt P (Cmd P)))
-    (h : Block.exprsShapeFree (P := P) ss) :
+    (h : Block.exprsShapeFree (P := P) Q ss) :
     Block.namesFreshInExprs names ss = true := by
   match ss with
   | [] => simp only [Block.namesFreshInExprs]
@@ -470,15 +476,15 @@ private theorem Block.namesFreshInExprs_of_exprsShapeFree
   termination_by sizeOf ss
 end
 
-/-- Public form: `exprsShapeFree ss` plus suffix-shaped `names` give
-freshness in exprs.  Re-exported (non-`private`) so the `.loop` arm's
-`h_B_fresh` discharge in the WF layer can consume it. -/
+/-- Public form: `exprsShapeFree ss` plus `Q`-kind `names` give freshness in
+exprs.  Re-exported (non-`private`) so the `.loop` arm's `h_B_fresh` discharge
+in the WF layer can consume it. -/
 theorem Block.namesFreshInExprs_of_exprsShapeFree'
-    [HasIdent P] [HasVarsPure P P.Expr] {names : List P.Ident}
+    [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} {names : List P.Ident}
     (h_names_suffix : ∀ z ∈ names,
-      ∃ str : String, z = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str)
+      ∃ str : String, z = HasIdent.ident str ∧ Q str)
     (ss : List (Stmt P (Cmd P)))
-    (h : Block.exprsShapeFree (P := P) ss) :
+    (h : Block.exprsShapeFree (P := P) Q ss) :
     Block.namesFreshInExprs names ss = true :=
   Block.namesFreshInExprs_of_exprsShapeFree h_names_suffix ss h
 
