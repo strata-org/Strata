@@ -8627,18 +8627,24 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
 
 /-! ### The structured-to-unstructured label *kind*
 
-`stmtsToCFG` mints block labels under nine distinct prefixes (one per syntactic
-construct it compiles): `"ite"`, `"$__nondet_ite$"`, `"ite$"`, `"loop_entry$"`,
-`"loop_measure$"`, `"measure_decrease$"`, `"inv$"`, `"$__nondet_loop$"`, and
-`"end$"`.  `s2uKind s` is the precise predicate "`s` is a label this pass could
-have minted under one of those prefixes": it carries the matching generator
-prefix and equals some `gen`-output.  This is the per-kind `Q` to instantiate
-the kind-generalized soundness at, replacing the blanket
+`stmtsToCFG` mints block labels under thirteen distinct prefixes.  Eight come
+from the direct `gen` calls — one per syntactic construct it compiles:
+`"ite"`, `"$__nondet_ite$"`, `"loop_entry$"`, `"loop_measure$"`,
+`"measure_decrease$"`, `"inv$"`, `"$__nondet_loop$"`, and `"end$"`.  Four more
+come from the auxiliary `flushCmds` helper that emits accumulated command
+blocks: `"l$"` (the statement-list tail), `"blk$"` (the `.block` arm), `"ite$"`
+(the `.ite` arm), and `"before_loop$"` (the `.loop` arm).  The thirteenth is
+parametric: the `.exit` arm flushes under `"block$⟨l⟩$"` where `l` is the user
+block label being exited.  `s2uKind s` is the precise predicate "`s` is a label
+this pass could have minted under one of those prefixes": it carries the
+matching generator prefix and equals some `gen`-output.  This is the per-kind
+`Q` to instantiate the kind-generalized soundness at, replacing the blanket
 `HasUnderscoreDigitSuffix` (which would overcommit a composition partner to
 keeping *every* gen-shaped name fresh). -/
 
-/-- A label that `stmtsToCFG` could have minted: it carries one of the nine
-construct prefixes and equals a corresponding `gen` output. -/
+/-- A label that `stmtsToCFG` could have minted: it carries one of the thirteen
+construct prefixes and equals a corresponding `gen` output.  Twelve prefixes are
+fixed; the last is parameterised by the user block label being exited. -/
 @[expose] def s2uKind (s : String) : Prop :=
   (∃ sg, String.HasGenPrefix "ite" s
       ∧ s = (StringGenState.gen "ite" sg).1)
@@ -8658,10 +8664,19 @@ construct prefixes and equals a corresponding `gen` output. -/
       ∧ s = (StringGenState.gen "$__nondet_loop$" sg).1)
   ∨ (∃ sg, String.HasGenPrefix "end$" s
       ∧ s = (StringGenState.gen "end$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "l$" s
+      ∧ s = (StringGenState.gen "l$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "blk$" s
+      ∧ s = (StringGenState.gen "blk$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "before_loop$" s
+      ∧ s = (StringGenState.gen "before_loop$" sg).1)
+  ∨ (∃ l : String, ∃ sg, String.HasGenPrefix (s!"block${l}$") s
+      ∧ s = (StringGenState.gen (s!"block${l}$") sg).1)
 
-/-- Each of the nine prefixes `stmtsToCFG` mints under lands inside `s2uKind`:
-this is exactly the nine-conjunct mint witness at `Q := s2uKind`, the analogue
-of `ndelimKind_gen` for the nine S2U construct prefixes. -/
+/-- Each of the thirteen prefixes `stmtsToCFG` mints under lands inside
+`s2uKind`: this is exactly the thirteen-conjunct mint witness at
+`Q := s2uKind`, the analogue of `ndelimKind_gen` for the S2U construct prefixes.
+The final conjunct is parametric in the user block label `l`. -/
 theorem s2uKind_gen :
     (∀ sg, s2uKind (StringGenState.gen "ite" sg).1)
   ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_ite$" sg).1)
@@ -8671,9 +8686,14 @@ theorem s2uKind_gen :
   ∧ (∀ sg, s2uKind (StringGenState.gen "measure_decrease$" sg).1)
   ∧ (∀ sg, s2uKind (StringGenState.gen "inv$" sg).1)
   ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_loop$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "end$" sg).1) := by
+  ∧ (∀ sg, s2uKind (StringGenState.gen "end$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "l$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "blk$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "before_loop$" sg).1)
+  ∧ (∀ (l : String) sg, s2uKind (StringGenState.gen (s!"block${l}$") sg).1) := by
   refine ⟨fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,
-          fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_⟩
+          fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,
+          fun sg => ?_, fun sg => ?_, fun l sg => ?_⟩
   · exact Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "ite" sg, rfl⟩
   · exact Or.inr (Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "$__nondet_ite$" sg, rfl⟩)
   · exact Or.inr (Or.inr (Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "ite$" sg, rfl⟩))
@@ -8687,8 +8707,16 @@ theorem s2uKind_gen :
       ⟨sg, StringGenState.gen_hasGenPrefix "inv$" sg, rfl⟩))))))
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
       ⟨sg, StringGenState.gen_hasGenPrefix "$__nondet_loop$" sg, rfl⟩)))))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-      ⟨sg, StringGenState.gen_hasGenPrefix "end$" sg, rfl⟩)))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "end$" sg, rfl⟩))))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "l$" sg, rfl⟩)))))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "blk$" sg, rfl⟩))))))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "before_loop$" sg, rfl⟩)))))))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+      ⟨l, sg, StringGenState.gen_hasGenPrefix (s!"block${l}$") sg, rfl⟩)))))))))))
 
 /-- Kind-generalized soundness of `stmtsToCFG`.  Identical to
 `structuredToUnstructured_sound` except the threaded input-freshness invariant
@@ -8724,7 +8752,11 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
       ∧ (∀ sg, Q (StringGenState.gen "measure_decrease$" sg).1)
       ∧ (∀ sg, Q (StringGenState.gen "inv$" sg).1)
       ∧ (∀ sg, Q (StringGenState.gen "$__nondet_loop$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "end$" sg).1))
+      ∧ (∀ sg, Q (StringGenState.gen "end$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "l$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "blk$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "before_loop$" sg).1)
+      ∧ (∀ (l : String) sg, Q (StringGenState.gen (s!"block${l}$") sg).1))
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P)
@@ -8754,13 +8786,13 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
       (.atBlock cfg.entry ρ₀.store false)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
-  -- `hQmint` is the nine-conjunct mint witness for the construct prefixes; it is
-  -- the kind-variant analogue of `ndelimKind_gen`/`hoistKind_gen` and records
-  -- that every prefix `stmtsToCFG` mints under satisfies `Q`.  It is unused by
-  -- the internal proof (which threads only `h_wf_foreign`), but is the obligation
-  -- a composition partner discharges (via `s2uKind_gen` at `Q := s2uKind`) to
-  -- instantiate this theorem; we keep it in the signature so the handle's shape
-  -- mirrors the structured-to-structured passes.
+  -- `hQmint` is the thirteen-conjunct mint witness for the construct prefixes;
+  -- it is the kind-variant analogue of `ndelimKind_gen`/`hoistKind_gen` and
+  -- records that every prefix `stmtsToCFG` mints under satisfies `Q`.  It is
+  -- unused by the internal proof (which threads only `h_wf_foreign`), but is the
+  -- obligation a composition partner discharges (via `s2uKind_gen` at
+  -- `Q := s2uKind`) to instantiate this theorem; we keep it in the signature so
+  -- the handle's shape mirrors the structured-to-structured passes.
   let _ := hQmint
   stmtsToCFG_terminal (Q := Q)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
