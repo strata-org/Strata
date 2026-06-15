@@ -1,0 +1,9 @@
+import Strata.Transform.LoopInitHoistOptEKeystoneScratch
+
+#print axioms Imperative.OptEKeystone.applyRenames_expr_eq_substFvarMany
+#print axioms Imperative.OptEKeystone.applyRenames_eq_map_stmtSubstMany
+#print axioms Imperative.OptEKeystone.stmtSubstMany_loop_det
+#print axioms Imperative.OptEKeystone.cmdSubstMany_assert
+#print axioms Imperative.OptEKeystone.exprOrNondet_substMany_det
+#print axioms Imperative.OptEKeystone.name_fold_eq_renameLookup
+#print axioms Imperative.OptEKeystone.cmdSubstMany_init_det

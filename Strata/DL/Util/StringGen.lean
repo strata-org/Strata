@@ -303,6 +303,16 @@ theorem StringGenState.wf_emp : StringGenState.WF StringGenState.emp := by
 def StringGenState.stringGens (σ : StringGenState) : List String :=
   σ.generated.unzip.2
 
+/-- The empty generator state has produced no labels. -/
+@[simp] theorem StringGenState.stringGens_emp :
+    StringGenState.stringGens StringGenState.emp = [] := by
+  simp [StringGenState.stringGens, StringGenState.emp]
+
+/-- No string is among the empty generator state's produced labels. -/
+theorem StringGenState.not_mem_stringGens_emp (s : String) :
+    s ∉ StringGenState.stringGens StringGenState.emp := by
+  rw [StringGenState.stringGens_emp]; exact List.not_mem_nil
+
 /-- After generating, the new state's labels list is the new label cons'd onto the old. -/
 theorem StringGenState.stringGens_gen
     (pf : String) (σ : StringGenState) :
