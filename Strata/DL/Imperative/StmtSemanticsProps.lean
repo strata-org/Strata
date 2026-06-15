@@ -280,6 +280,39 @@ theorem block_reaches_exiting
     | step_block_done | step_block_exit_match =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+/-- Strengthened block-exit inversion: a `.block l σ_parent inner` reaching
+`.exiting lbl ρ'` must have had its inner body exit with the *same* label `lbl`
+(the mismatch rule propagates the label unchanged), and that label does *not*
+match the block's own label `l` (otherwise it would have been caught,
+terminating the block).  The env is projected through the parent store. -/
+theorem block_reaches_exiting_strong
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) (.exiting lbl ρ')) :
+    ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+      l ≠ .some lbl ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } := by
+  suffices ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ inner lbl ρ', src = .block l σ_parent inner → tgt = .exiting lbl ρ' →
+      ∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
+        l ≠ .some lbl ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } from
+    this _ _ hstar _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      obtain ⟨ρ_inner, hexit, hne, heq⟩ := ih _ _ _ rfl htgt
+      exact ⟨ρ_inner, .step _ _ _ h hexit, hne, heq⟩
+    | step_block_exit_mismatch hne =>
+      subst htgt; cases hrest with
+      | refl => exact ⟨_, .refl _, hne, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_done | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
 /-! ## Trace construction helpers -/
 
 /-- Entering a block: a single step from `.stmt (.block l body md) ρ`
