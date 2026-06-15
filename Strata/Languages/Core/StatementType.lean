@@ -69,16 +69,19 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                              Types of {lhs} should have been known."
          | some (lhs_tys, Env) =>
            let _ ← Env.freeVarChecks args |>.mapError DiagnosticModel.fromFormat
-           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError DiagnosticModel.fromFormat
-           let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst ret_sig.values
+           -- Instantiate type parameters ONCE and reuse the substitution for
+           -- both inputs and outputs, ensuring a shared type parameter (like T
+           -- in `proc<T>(x:T, out y:T)`) gets the same fresh variable.
+           let (inp_sig, Env, tyArgSubst) ← LMonoTySignature.instantiateWithSubst C Env proc.header.typeArgs proc.header.inputs |>.mapError DiagnosticModel.fromFormat
+           let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
+           let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst
+             (proc.header.outputs.values.map (LMonoTy.subst tyArgSubst))
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
            let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError DiagnosticModel.fromFormat
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
-           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError DiagnosticModel.fromFormat
-           let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
