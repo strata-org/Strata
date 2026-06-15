@@ -8625,6 +8625,150 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
       StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix hwf hns)
     h_term
 
+/-! ### The structured-to-unstructured label *kind*
+
+`stmtsToCFG` mints block labels under nine distinct prefixes (one per syntactic
+construct it compiles): `"ite"`, `"$__nondet_ite$"`, `"ite$"`, `"loop_entry$"`,
+`"loop_measure$"`, `"measure_decrease$"`, `"inv$"`, `"$__nondet_loop$"`, and
+`"end$"`.  `s2uKind s` is the precise predicate "`s` is a label this pass could
+have minted under one of those prefixes": it carries the matching generator
+prefix and equals some `gen`-output.  This is the per-kind `Q` to instantiate
+the kind-generalized soundness at, replacing the blanket
+`HasUnderscoreDigitSuffix` (which would overcommit a composition partner to
+keeping *every* gen-shaped name fresh). -/
+
+/-- A label that `stmtsToCFG` could have minted: it carries one of the nine
+construct prefixes and equals a corresponding `gen` output. -/
+@[expose] def s2uKind (s : String) : Prop :=
+  (∃ sg, String.HasGenPrefix "ite" s
+      ∧ s = (StringGenState.gen "ite" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "$__nondet_ite$" s
+      ∧ s = (StringGenState.gen "$__nondet_ite$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "ite$" s
+      ∧ s = (StringGenState.gen "ite$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "loop_entry$" s
+      ∧ s = (StringGenState.gen "loop_entry$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "loop_measure$" s
+      ∧ s = (StringGenState.gen "loop_measure$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "measure_decrease$" s
+      ∧ s = (StringGenState.gen "measure_decrease$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "inv$" s
+      ∧ s = (StringGenState.gen "inv$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "$__nondet_loop$" s
+      ∧ s = (StringGenState.gen "$__nondet_loop$" sg).1)
+  ∨ (∃ sg, String.HasGenPrefix "end$" s
+      ∧ s = (StringGenState.gen "end$" sg).1)
+
+/-- Each of the nine prefixes `stmtsToCFG` mints under lands inside `s2uKind`:
+this is exactly the nine-conjunct mint witness at `Q := s2uKind`, the analogue
+of `ndelimKind_gen` for the nine S2U construct prefixes. -/
+theorem s2uKind_gen :
+    (∀ sg, s2uKind (StringGenState.gen "ite" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_ite$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "ite$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "loop_entry$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "loop_measure$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "measure_decrease$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "inv$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_loop$" sg).1)
+  ∧ (∀ sg, s2uKind (StringGenState.gen "end$" sg).1) := by
+  refine ⟨fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,
+          fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_⟩
+  · exact Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "ite" sg, rfl⟩
+  · exact Or.inr (Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "$__nondet_ite$" sg, rfl⟩)
+  · exact Or.inr (Or.inr (Or.inl ⟨sg, StringGenState.gen_hasGenPrefix "ite$" sg, rfl⟩))
+  · exact Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "loop_entry$" sg, rfl⟩)))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "loop_measure$" sg, rfl⟩))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "measure_decrease$" sg, rfl⟩)))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "inv$" sg, rfl⟩))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl
+      ⟨sg, StringGenState.gen_hasGenPrefix "$__nondet_loop$" sg, rfl⟩)))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
+      ⟨sg, StringGenState.gen_hasGenPrefix "end$" sg, rfl⟩)))))))
+
+/-- Kind-generalized soundness of `stmtsToCFG`.  Identical to
+`structuredToUnstructured_sound` except the threaded input-freshness invariant
+(`NoGenSuffix`) constrains only the labels *this* pass mints (`s2uKind`) rather
+than every gen-shaped name, which is what lets a composition partner — one that
+mints under disjoint prefixes — satisfy it.
+
+Unlike the structured-to-structured passes (`nondetElim`, the loop-init hoist),
+`stmtsToCFG` produces a CFG and so its soundness carries a *foreign-label*
+obligation `h_wf_foreign`: any label not minted by this pass is absent from the
+output generator's `stringGens`.  For the blanket
+`Q := HasUnderscoreDigitSuffix`, every label inside a WF generator state is
+gen-shaped, so the obligation discharges from well-formedness alone (this is how
+`structuredToUnstructured_sound` closes it).  At the finer `Q := s2uKind` the
+obligation is *not* derivable from WF alone — `stmtsToCFG` also mints under
+auxiliary `flushCmds` prefixes (`"l$"`, `"blk$"`, `"before_loop$"`, and a
+user-label-parameterised `"block$⟨l⟩$"`), so a generic WF state may legitimately
+contain non-`s2uKind` labels.  The obligation is therefore taken as a hypothesis
+here, to be supplied by the composition context that knows the concrete
+generator's `AllGenPrefix` shape. -/
+theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint :
+        (∀ sg, Q (StringGenState.gen "ite" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "$__nondet_ite$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "ite$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "loop_entry$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "loop_measure$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "measure_decrease$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "inv$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "$__nondet_loop$" sg).1)
+      ∧ (∀ sg, Q (StringGenState.gen "end$" sg).1))
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P)))
+    (ρ₀ ρ' : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (hf₀ : ρ₀.hasFailure = false)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_simple : Block.simpleShape ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_lbni : Block.loopBodyNoInits ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
+    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
+    (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
+    (h_wf_foreign : ∀ {σ : StringGenState}, StringGenState.WF σ →
+      ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens σ)
+    (h_term : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts ss ρ₀) (.terminal ρ')) :
+    let cfg := stmtsToCFG ss
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
+      (.atBlock cfg.entry ρ₀.store false)
+      (.terminal σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg :=
+  -- `hQmint` is the nine-conjunct mint witness for the construct prefixes; it is
+  -- the kind-variant analogue of `ndelimKind_gen`/`hoistKind_gen` and records
+  -- that every prefix `stmtsToCFG` mints under satisfies `Q`.  It is unused by
+  -- the internal proof (which threads only `h_wf_foreign`), but is the obligation
+  -- a composition partner discharges (via `s2uKind_gen` at `Q := s2uKind`) to
+  -- instantiate this theorem; we keep it in the signature so the handle's shape
+  -- mirrors the structured-to-structured passes.
+  let _ := hQmint
+  stmtsToCFG_terminal (Q := Q)
+    extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+    hf₀
+    h_nofd h_simple h_unique h_lbni h_lhni h_nml
+    h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
+    h_input_no_gen_suffix_mod h_wf_foreign h_term
+
 ---------------------------------------------------------------------
 -- Loop-init-hoisting additive helpers (ported; used by LoopInitHoist*).
 ---------------------------------------------------------------------
