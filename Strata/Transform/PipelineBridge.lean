@@ -1808,8 +1808,7 @@ theorem Stmt.nondetElimM_hoistedNamesFreshInGuards
             exact h_sf.2.2.1 p hp str hsuf hpv)
       -- assemble the loop leaf + recurse; `cases m` makes the measure-vars concrete.
       simp only [Block.hoistedNamesFreshInGuards, Stmt.hoistedNamesFreshInGuards.eq_def,
-        Stmt.hoistedNamesFreshInGuards, ExprOrNondet.getVars,
-        Bool.and_true, Bool.true_and, Bool.and_eq_true]
+        ExprOrNondet.getVars, Bool.and_true, Bool.true_and, Bool.and_eq_true]
       refine ⟨?_, h_rec⟩
       rw [Block.initVars_append, h_havoc_init, List.append_nil]
       refine loop_guard_leaf_of_forall_not_mem _ _ (fun y hy hmem => ?_)
