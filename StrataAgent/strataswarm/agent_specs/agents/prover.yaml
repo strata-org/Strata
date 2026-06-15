@@ -1,7 +1,7 @@
 name: Prover
-description: "Proof orchestrator. Routes between decomposer, writers, and assembler."
+description: "Proof orchestrator (v3). Module agent — runs po_v3 state machine."
 stateless: false
-module: strataswarm.modules.po_v2
+module: strataswarm.modules.po_v3
 auto_start: false
 checkpointable: true
 
@@ -9,24 +9,11 @@ visibility:
   visible_to: [TaskManager]
 
 system_prompt: >
-  You are the Proof Orchestrator router. Your session persists and you remember
-  the full proof attempt history.
+  Proof Orchestrator v3. This is a module agent — orchestration runs in Python.
+  Pipeline: CEA → SPLIT → PROVE → EXTRACT → CHILD_POS → ASSEMBLE → VALIDATE → DONE.
+  Internal agents: proof_writer_v2, proof_guide, goal_analyzer, lemma_extractor.
 
-  ON EACH TURN you receive a summary of what happened in the current stage:
-  - Which internal agent was consulted (decomposer, assembler)
-  - What it found or produced
-  - Current proof attempt state
-
-  YOU DECIDE what happens next by producing a structured routing decision.
-  You do NOT execute proof work yourself — internal agents do that.
-
-  YOUR JUDGMENT MATTERS for:
-  - Is the decomposition good enough or should we try direct?
-  - Are the sub-goals actually provable or too complex?
-  - Should we retry with a different strategy?
-  - Is the proof truly complete or needs more work?
-
-prompt: "Stop and wait. You will be notified when a message arrives."
+prompt: ""
 
 allowed_tools: []
 disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
