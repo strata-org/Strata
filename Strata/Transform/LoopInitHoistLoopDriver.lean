@@ -743,14 +743,17 @@ public theorem loopDet_lift_2g
 /-! ## The shapefree-carrying two-guard fuel core.
 
 Identical to `loopDet_lift_2g_undef_fuel` but threads, in addition to the two
-undef carriers `Vs`/`Vh`, a `σ_sf`-relative SOURCE store-shape-freedom
-invariant: every `_<digit>`-suffixed identifier whose generator string is `∉
-σ_sf` is undefined in the source store.  The invariant is re-established at each
-recursive iteration because `projectStore` resets every entry undefined at loop
-entry back to `none` (`projectStore_undef_at`), and a suffix name `∉ σ_sf` is
-undefined at entry by the invariant itself. -/
+undef carriers `Vs`/`Vh`, a `σ_sf`-relative SOURCE store-kind-freedom invariant:
+every `Q`-kind identifier whose generator string is `∉ σ_sf` is undefined in the
+source store.  Instantiating `Q := String.HasUnderscoreDigitSuffix` recovers the
+blanket gen-suffix-shaped invariant; a per-kind `Q` lets a composition argument
+restrict the obligation to just the labels this pass mints.  The invariant is
+re-established at each recursive iteration because `projectStore` resets every
+entry undefined at loop entry back to `none` (`projectStore_undef_at`), and a
+`Q`-kind name `∉ σ_sf` is undefined at entry by the invariant itself. -/
 public theorem loopDet_lift_sf_2g_undef_fuel
     {extendEval : ExtendEval P}
+    {Q : String → Prop}
     {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
@@ -768,7 +771,7 @@ public theorem loopDet_lift_sf_2g_undef_fuel
        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
        (∀ y ∈ B, ρ_h.store y ≠ none) →
        (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
        ∀ (ρ_s' : Env P),
          StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
@@ -785,7 +788,7 @@ public theorem loopDet_lift_sf_2g_undef_fuel
       ρ_src.eval = ρ_hoist.eval → ρ_src.hasFailure = ρ_hoist.hasFailure →
       (∀ y ∈ B, ρ_hoist.store y ≠ none) →
       (∀ y ∈ Vs, ρ_src.store y = none) → (∀ y ∈ Vh, ρ_hoist.store y = none) →
-      (∀ str : String, String.HasUnderscoreDigitSuffix str →
+      (∀ str : String, Q str →
          str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none) →
       (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
         (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.terminal ρ_post)) →
@@ -855,7 +858,7 @@ public theorem loopDet_lift_sf_2g_undef_fuel
         have h_bound_body : ∀ y ∈ B, ρ_h_body.store y ≠ none := h_bound
         have h_Vs_body : ∀ y ∈ Vs, ρ_src_body.store y = none := h_Vs
         have h_Vh_body : ∀ y ∈ Vh, ρ_h_body.store y = none := h_Vh
-        have h_src_sf_body : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        have h_src_sf_body : ∀ str : String, Q str →
             str ∉ StringGenState.stringGens σ_sf →
             ρ_src_body.store (HasIdent.ident (P := P) str) = none := h_src_sf
         obtain ⟨ρ_h_inner, h_body_h_run, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
@@ -913,7 +916,7 @@ public theorem loopDet_lift_sf_2g_undef_fuel
             ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y = none := by
           intro y hy; show projectStore ρ_hoist.store ρ_h_inner.store y = none
           exact projectStore_undef_at (h_Vh y hy)
-        have h_src_sf_block : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+        have h_src_sf_block : ∀ str : String, Q str →
             str ∉ StringGenState.stringGens σ_sf →
             ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).store
               (HasIdent.ident (P := P) str) = none := by
@@ -937,6 +940,7 @@ single-guard diagonal `g_s = g_h = g` (the shape the §E `.loop` arm produces:
 the loop guard is UNCHANGED by the hoist pass). -/
 public theorem loopDet_lift_sf_undef_recovers_single
     {extendEval : ExtendEval P}
+    {Q : String → Prop}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
@@ -954,7 +958,7 @@ public theorem loopDet_lift_sf_undef_recovers_single
        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
        (∀ y ∈ B, ρ_h.store y ≠ none) →
        (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
        ∀ (ρ_s' : Env P),
          StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
@@ -971,7 +975,7 @@ public theorem loopDet_lift_sf_undef_recovers_single
     (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
     (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
     (h_Vs : ∀ y ∈ Vs, ρ_src.store y = none) (h_Vh : ∀ y ∈ Vh, ρ_hoist.store y = none)
-    (h_src_sf : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_sf : ∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none)
     (h_run : StepStmtStar P (EvalCmd P) extendEval
         (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
@@ -1860,22 +1864,25 @@ public theorem bodySim_is_driver_slot {extendEval : ExtendEval P}
 
 /-! ## Shapefree-carrying body simulation.
 
-`BodySimUSF Vs Vh σ_sf A B subst bsrc bh` augments `BodySimU` with a
-`σ_sf`-relative SOURCE store-shape-freedom invariant: at each entry the body
-simulation may additionally assume that every `_<digit>`-suffixed identifier
-whose generator string is NOT yet present in `σ_sf` is undefined in the SOURCE
-store.  This is what the §E `.loop` arm's `stepA` needs to discharge the
-`Block.hoistLoopPrefixInits_preserves` IH's `h_src_store_shapefree` /
-`h_hoist_store_shapefree` preconditions per iteration: the SOURCE-side
-shape-freedom is assumed directly, and the HOIST-side shape-freedom at the
-mid env `ρ₁` is recovered from it through the guarded bridge (`ρ₁ = ρ_s` off the
-enclosing carriers, which the suffix names avoid).
+`BodySimUSF Q Vs Vh σ_sf A B subst bsrc bh` augments `BodySimU` with a
+`σ_sf`-relative SOURCE store-kind-freedom invariant: at each entry the body
+simulation may additionally assume that every `Q`-kind identifier whose
+generator string is NOT yet present in `σ_sf` is undefined in the SOURCE store.
+Instantiating `Q := String.HasUnderscoreDigitSuffix` recovers the blanket
+gen-suffix-shaped invariant; a per-kind `Q` lets a composition argument restrict
+the obligation to just the labels this pass mints.  This is what the §E `.loop`
+arm's `stepA` needs to discharge the `Block.hoistLoopPrefixInits_preserves` IH's
+`h_src_store_shapefree` / `h_hoist_store_shapefree` preconditions per iteration:
+the SOURCE-side kind-freedom is assumed directly, and the HOIST-side kind-freedom
+at the mid env `ρ₁` is recovered from it through the guarded bridge (`ρ₁ = ρ_s`
+off the enclosing carriers, which the `Q`-kind names avoid).
 
 The invariant is preserved across loop iterations because `projectStore` resets
 every store entry that is undefined at loop entry back to `none`
-(`projectStore_undef_at`); a suffix name `∉ σ_sf` is undefined at entry, hence
+(`projectStore_undef_at`); a `Q`-kind name `∉ σ_sf` is undefined at entry, hence
 stays undefined after projection. -/
 public def BodySimUSF {extendEval : ExtendEval P}
+    (Q : String → Prop)
     (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
     (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
@@ -1884,7 +1891,7 @@ public def BodySimUSF {extendEval : ExtendEval P}
     ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
     (∀ y ∈ B, ρ_h.store y ≠ none) →
     (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
-    (∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
     ∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
@@ -1896,17 +1903,18 @@ public def BodySimUSF {extendEval : ExtendEval P}
 
 
 /-- The shapefree-carrying union compose: `compose_union_undef2` augmented to
-carry the `σ_sf`-relative SOURCE store-shape-freedom invariant through to Step A.
+carry the `σ_sf`-relative SOURCE store-kind-freedom invariant through to Step A.
 Step A is given as the explicit ∀-shape that, at each iteration entry, may assume
-the `σ_sf`-relative store-shape-freedom on BOTH the source store `ρ_s` and its
+the `σ_sf`-relative store-kind-freedom on BOTH the source store `ρ_s` and its
 hoist mid env `ρ₁` (so it can discharge a nested-loop IH's `h_src_store_shapefree`
 / `h_hoist_store_shapefree`); Step B is UNDEF-FREE.  The composed body simulation
-(`BodySimUSF`) carries only the SOURCE-side shape-freedom (the driver can maintain
-it because the source program never defines a `_<digit>` name absent from `σ_sf`).
-The HOIST-side shape-freedom at the mid env `ρ₁` is supplied locally by
+(`BodySimUSF`) carries only the SOURCE-side kind-freedom (the driver can maintain
+it because the source program never defines a `Q`-kind name absent from `σ_sf`).
+The HOIST-side kind-freedom at the mid env `ρ₁` is supplied locally by
 `bridge_in`, which constructs `ρ₁` explicitly (`ρ₁ = ρ_s` off `Ao ∪ Bo`, which the
-suffix names avoid) and therefore certifies it from the source-side fact. -/
+`Q`-kind names avoid) and therefore certifies it from the source-side fact. -/
 public theorem compose_union_sf {extendEval : ExtendEval P}
+    {Q : String → Prop}
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     {Ao Bo As Bs : List P.Ident}
     {so ss : List (P.Ident × P.Ident)}
@@ -1916,9 +1924,9 @@ public theorem compose_union_sf {extendEval : ExtendEval P}
        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
        (∀ y ∈ Bo, ρ_h.store y ≠ none) →
        (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
        ∀ (ρ_s' : Env P),
          StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.terminal ρ_s') →
@@ -1937,19 +1945,19 @@ public theorem compose_union_sf {extendEval : ExtendEval P}
        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
        (∀ y ∈ Bo ++ Bs, ρ_h.store y ≠ none) →
        (∀ y ∈ Vh, ρ_s.store y = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
        ∃ ρ₁ : Env P,
          HoistInv (P := P) Ao Bo so ρ_s.store ρ₁.store ∧
          ρ_s.eval = ρ₁.eval ∧ ρ_s.hasFailure = ρ₁.hasFailure ∧
          (∀ y ∈ Bo, ρ₁.store y ≠ none) ∧
          (∀ y ∈ Vh, ρ₁.store y = none) ∧
-         (∀ str : String, String.HasUnderscoreDigitSuffix str →
+         (∀ str : String, Q str →
             str ∉ StringGenState.stringGens σ_sf → ρ₁.store (HasIdent.ident (P := P) str) = none) ∧
          HoistInv (P := P) As Bs ss ρ₁.store ρ_h.store ∧
          ρ₁.eval = ρ_h.eval ∧ ρ₁.hasFailure = ρ_h.hasFailure ∧
          (∀ y ∈ Bs, ρ_h.store y ≠ none)) :
-    BodySimUSF (extendEval := extendEval) Vs Vh σ_sf (Ao ++ As) (Bo ++ Bs) (so ++ ss) body body₃ := by
+    BodySimUSF (extendEval := extendEval) Q Vs Vh σ_sf (Ao ++ As) (Bo ++ Bs) (so ++ ss) body body₃ := by
   intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd h_Vs h_Vh h_src_sf ρ_s' h_run
   obtain ⟨ρ₁, h_hinv_A, h_eval_A, h_hf_A, h_bnd_A, h_Vh_A, h_sf_A,
           h_hinv_B, h_eval_B, h_hf_B, h_bnd_B⟩ :=
@@ -1970,34 +1978,35 @@ public theorem compose_union_sf {extendEval : ExtendEval P}
 
 
 /-- `bridge_in_guarded_undef` augmented with a `σ_sf`-relative HOIST-side
-store-shape-freedom conjunct on the mid env `ρ₁`.  Because `ρ₁ = ρ_s` off the
-enclosing carriers `Ao ∪ Bo`, and a suffix name `∉ σ_sf` avoids those carriers
+store-kind-freedom conjunct on the mid env `ρ₁`.  Because `ρ₁ = ρ_s` off the
+enclosing carriers `Ao ∪ Bo`, and a `Q`-kind name `∉ σ_sf` avoids those carriers
 (`h_sf_notAo` / `h_sf_notBo`), `ρ₁` agrees with `ρ_s` on every such name, so the
-SOURCE shape-freedom (`h_src_sf`) transports to `ρ₁`. -/
+SOURCE kind-freedom (`h_src_sf`) transports to `ρ₁`. -/
 public theorem bridge_in_guarded_undef_sf
+    {Q : String → Prop}
     {Vh : List P.Ident} {σ_sf : StringGenState}
     {Ao Bo As Bs : List P.Ident} {so ss : List (P.Ident × P.Ident)}
     (h_so_wf : ∀ a b, (a, b) ∈ so → a ∈ Ao ∧ b ∈ Bo)
     (h_ss_wf : ∀ a b, (a, b) ∈ ss → a ∈ As ∧ b ∈ Bs)
     (h_As_notAo : ∀ x ∈ As, x ∉ Ao) (h_As_notBo : ∀ x ∈ As, x ∉ Bo)
     (h_Vh_notAo : ∀ y ∈ Vh, y ∉ Ao) (h_Vh_notBo : ∀ y ∈ Vh, y ∉ Bo)
-    (h_sf_notAo : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_sf_notAo : ∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → HasIdent.ident (P := P) str ∉ Ao)
-    (h_sf_notBo : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_sf_notBo : ∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → HasIdent.ident (P := P) str ∉ Bo)
     (ρ_s ρ_h : Env P)
     (h_hinv : HoistInv (P := P) (Ao ++ As) (Bo ++ Bs) (so ++ ss) ρ_s.store ρ_h.store)
     (h_eval : ρ_s.eval = ρ_h.eval) (h_hf : ρ_s.hasFailure = ρ_h.hasFailure)
     (h_bnd : ∀ y ∈ Bo ++ Bs, ρ_h.store y ≠ none)
     (h_Vh_src : ∀ y ∈ Vh, ρ_s.store y = none)
-    (h_src_sf : ∀ str : String, String.HasUnderscoreDigitSuffix str →
+    (h_src_sf : ∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) :
     ∃ ρ₁ : Env P,
       HoistInv (P := P) Ao Bo so ρ_s.store ρ₁.store ∧
       ρ_s.eval = ρ₁.eval ∧ ρ_s.hasFailure = ρ₁.hasFailure ∧
       (∀ y ∈ Bo, ρ₁.store y ≠ none) ∧
       (∀ y ∈ Vh, ρ₁.store y = none) ∧
-      (∀ str : String, String.HasUnderscoreDigitSuffix str →
+      (∀ str : String, Q str →
          str ∉ StringGenState.stringGens σ_sf → ρ₁.store (HasIdent.ident (P := P) str) = none) ∧
       HoistInv (P := P) As Bs ss ρ₁.store ρ_h.store ∧
       ρ₁.eval = ρ_h.eval ∧ ρ₁.hasFailure = ρ_h.hasFailure ∧
@@ -2070,16 +2079,17 @@ public theorem bridge_in_guarded_undef_sf
 undef driver's `body_sim` parameter (`loopDet_lift_sf_undef_recovers_single`)
 expects. -/
 public theorem bodySimUSF_is_driver_slot {extendEval : ExtendEval P}
+    {Q : String → Prop}
     (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
     (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P)))
-    (h : BodySimUSF (extendEval := extendEval) Vs Vh σ_sf A B subst bsrc bh) :
+    (h : BodySimUSF (extendEval := extendEval) Q Vs Vh σ_sf A B subst bsrc bh) :
     ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
        (∀ y ∈ B, ρ_h.store y ≠ none) →
        (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
-       (∀ str : String, String.HasUnderscoreDigitSuffix str →
+       (∀ str : String, Q str →
           str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
        ∀ (ρ_s' : Env P),
          StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
