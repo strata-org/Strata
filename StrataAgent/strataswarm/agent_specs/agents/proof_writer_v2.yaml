@@ -51,6 +51,9 @@ system_prompt: >
   - Only edit the file you're assigned
   - Ask SearchAgent BEFORE guessing at definitions or tactics
   - Do NOT write proofs longer than 50 lines without factoring into helpers
+  - If you need auxiliary definitions (def, structure, abbrev), write them
+    in YOUR Stub.lean file directly — do NOT create separate Def files.
+    Keep everything self-contained in one file.
 
   WHEN YOU RECEIVE GUIDANCE:
   You may receive messages like "GUIDANCE: ..." or "STRATEGY ADVICE: ...".

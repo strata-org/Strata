@@ -477,56 +477,49 @@ async def _stage_assemble(state: ProverState, agent) -> Trans:
     top_module = state.workspace.replace("/", ".")
     top_def = cwd / state.workspace / "Stub" / "Def.lean"
 
-    # ── Step 1: Copy child Stub.lean → parent's lemma file (bottom-up) ──
-    for f in sorted(state.proved_files, key=lambda p: len(Path(p).parts), reverse=True):
-        lemma_path = Path(f)
-        child_workspace = lemma_path.parent / lemma_path.stem
-        child_stub = cwd / child_workspace / "Stub.lean"
-        if child_stub.exists():
-            shutil.copy2(child_stub, cwd / f)
-            await agent._emit("message", f"[PO] Assembled: {lemma_path.name} ← child Stub.lean")
+    # ── Step 1: Rewrite parent Stub.lean imports to point to child's Stub ──
+    # Change: import ...decomposed.lemma_helper_foo
+    # To:     import ...decomposed.lemma_helper_foo.Stub
+    # This way parent imports the child's PROVED Stub.lean directly (no copy needed)
+    stub_path = cwd / stub_rel
+    stub_content = stub_path.read_text()
+    decomposed_module_prefix = f"{top_module}.decomposed."
+    new_stub_lines = []
+    for line in stub_content.splitlines():
+        stripped = line.strip()
+        if (stripped.startswith("import ") and
+                decomposed_module_prefix in stripped and
+                not stripped.endswith(".Stub")):
+            # Append .Stub to import the child's proved file
+            new_stub_lines.append(f"{stripped}.Stub")
+        else:
+            new_stub_lines.append(line)
+    stub_path.write_text("\n".join(new_stub_lines) + "\n")
 
-    # ── Step 2: Merge immediate children's Def.lean into THIS workspace's Def.lean ──
-    # Only merge one level up. Recursion ensures each child already merged its own children.
-    if top_def.exists():
-        top_def_content = top_def.read_text()
-        decomposed_dir_path = cwd / state.workspace / "decomposed"
-        if decomposed_dir_path.exists():
-            for child_dir in decomposed_dir_path.iterdir():
-                if not child_dir.is_dir():
-                    continue
-                child_def = child_dir / "Stub" / "Def.lean"
-                if not child_def.exists():
-                    continue
-                child_content = child_def.read_text()
-                if child_content.strip() == top_def_content.strip():
-                    continue
-                new_lines = [l for l in child_content.splitlines()
-                             if l.strip() and l not in top_def_content and not l.strip().startswith("import ")]
-                if new_lines:
-                    top_def_content = top_def_content.rstrip() + "\n" + "\n".join(new_lines) + "\n"
-                    top_def.write_text(top_def_content)
-                    await agent._emit("message", f"[PO] Merged Def.lean from {child_def.relative_to(cwd)}")
-
-    # ── Step 3: Rewrite child Stub.Def imports to THIS workspace's Stub.Def ──
-    # Each file in decomposed/ should import the parent's (this workspace's) Def.lean
-    for lean_file in (cwd / state.workspace / "decomposed").rglob("*.lean") if (cwd / state.workspace / "decomposed").exists() else []:
-        if lean_file.name == "Def.lean":
-            continue
-        content = lean_file.read_text()
-        rewritten = False
-        new_lines = []
-        for line in content.splitlines():
-            stripped = line.strip()
-            if (stripped.startswith("import ") and
-                    "Stub.Def" in stripped and
-                    stripped != f"import {top_module}.Stub.Def"):
-                new_lines.append(f"import {top_module}.Stub.Def")
-                rewritten = True
-            else:
-                new_lines.append(line)
-        if rewritten:
-            lean_file.write_text("\n".join(new_lines) + "\n")
+    # ── Step 2: Rewrite each child's Stub.Def import to point to parent's Def ──
+    # Child imported its own copy: import ...decomposed.lemma_helper_foo.Stub.Def
+    # Change to: import <parent>.Stub.Def
+    decomposed_dir_path = cwd / state.workspace / "decomposed"
+    if decomposed_dir_path.exists():
+        for child_dir in decomposed_dir_path.iterdir():
+            if not child_dir.is_dir():
+                continue
+            child_stub = child_dir / "Stub.lean"
+            if not child_stub.exists():
+                continue
+            content = child_stub.read_text()
+            rewritten = False
+            new_lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("import ") and "Stub.Def" in stripped and stripped != f"import {top_module}.Stub.Def":
+                    new_lines.append(f"import {top_module}.Stub.Def")
+                    rewritten = True
+                else:
+                    new_lines.append(line)
+            if rewritten:
+                child_stub.write_text("\n".join(new_lines) + "\n")
+                await agent._emit("message", f"[PO] Rewrote Def import in {child_dir.name}/Stub.lean")
 
     # ── Step 4: Build all decomposed files ──
     decomposed_dir = cwd / state.workspace / "decomposed"
