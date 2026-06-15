@@ -184,13 +184,268 @@ pointwise across the block. -/
 
 end
 
+/-! ## RHS-only freshness predicate `namesFreshInRhsExprs`
+
+A relaxation of `namesFreshInExprs` that checks freshness only against
+command *right-hand-side* expressions (`init`/`set` rhs, assertion / assume /
+cover conditions) at every depth, but NOT against `.ite`/`.loop` *guard*,
+invariant, or measure expressions.  This is the freshness role that
+`hoistedNamesFreshInRhsAndGuards` actually consumes for its `initVars`
+component: the hoisting proof only ever reads back the RHS / body-recursion
+parts of that conjunct — the guard-read clauses are always discarded (the
+load-bearing guard freshness comes instead from `hoistedNamesFreshInGuards`
+and from the hoist-accumulated-name `namesFreshInExprs A`/`B` instances).
+
+Restricting to RHS positions makes the predicate satisfiable on a pass output
+that synthesises `.ite (.det (mkFvar g)) …` / `.loop (.det (mkFvar g)) …`
+guards reading a freshly-minted `g` that is simultaneously a top-level
+init-var: such an output reads `g` only in a *guard*, never in a command RHS,
+so it is RHS-fresh even though it is not guard-fresh.
+
+`namesFreshInExprs names s ⇒ namesFreshInRhsExprs names s` (it drops
+hypotheses), proven below as `*_of_namesFreshInExprs`. -/
+
+mutual
+
+/-- "names is fresh in every command RHS of `s`": every `z ∈ names` is absent
+from each `init`/`set` rhs and each `assert`/`assume`/`cover` condition at any
+depth in `s`, with `.ite`/`.loop` recursing into branches/body only (the
+guard/invariant/measure read positions are NOT checked). -/
+@[expose] def Stmt.namesFreshInRhsExprs [HasVarsPure P P.Expr]
+    (names : List P.Ident) (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ rhs _) =>
+    names.all (fun z => freshFromIdents z (ExprOrNondet.getVars rhs))
+  | .cmd (.set _ rhs _) =>
+    names.all (fun z => freshFromIdents z (ExprOrNondet.getVars rhs))
+  | .cmd (.assert _ e _) =>
+    names.all (fun z => freshFromIdents z (HasVarsPure.getVars e))
+  | .cmd (.assume _ e _) =>
+    names.all (fun z => freshFromIdents z (HasVarsPure.getVars e))
+  | .cmd (.cover _ e _) =>
+    names.all (fun z => freshFromIdents z (HasVarsPure.getVars e))
+  | .block _ bss _ => Block.namesFreshInRhsExprs names bss
+  | .ite _ tss ess _ =>
+    Block.namesFreshInRhsExprs names tss && Block.namesFreshInRhsExprs names ess
+  | .loop _ _ _ body _ =>
+    Block.namesFreshInRhsExprs names body
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by sizeOf s
+
+/-- Block-level RHS-only freshness, lifted pointwise across the block. -/
+@[expose] def Block.namesFreshInRhsExprs [HasVarsPure P P.Expr]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: rest =>
+    Stmt.namesFreshInRhsExprs names s && Block.namesFreshInRhsExprs names rest
+  termination_by sizeOf ss
+
+end
+
+mutual
+
+/-- The full `namesFreshInExprs` implies the RHS-only relaxation: dropping the
+guard/invariant/measure conjuncts only weakens the predicate. -/
+theorem Stmt.namesFreshInRhsExprs_of_namesFreshInExprs [HasVarsPure P P.Expr]
+    (names : List P.Ident) (s : Stmt P (Cmd P))
+    (h : Stmt.namesFreshInExprs names s = true) :
+    Stmt.namesFreshInRhsExprs names s = true := by
+  match s with
+  | .cmd (.init _ _ rhs _) => simpa only [Stmt.namesFreshInExprs, Stmt.namesFreshInRhsExprs] using h
+  | .cmd (.set _ rhs _) => simpa only [Stmt.namesFreshInExprs, Stmt.namesFreshInRhsExprs] using h
+  | .cmd (.assert _ e _) => simpa only [Stmt.namesFreshInExprs, Stmt.namesFreshInRhsExprs] using h
+  | .cmd (.assume _ e _) => simpa only [Stmt.namesFreshInExprs, Stmt.namesFreshInRhsExprs] using h
+  | .cmd (.cover _ e _) => simpa only [Stmt.namesFreshInExprs, Stmt.namesFreshInRhsExprs] using h
+  | .block _ bss _ =>
+      simp only [Stmt.namesFreshInExprs] at h
+      simp only [Stmt.namesFreshInRhsExprs]
+      exact Block.namesFreshInRhsExprs_of_namesFreshInExprs names bss h
+  | .ite g tss ess _ =>
+      simp only [Stmt.namesFreshInExprs, Bool.and_eq_true] at h
+      simp only [Stmt.namesFreshInRhsExprs, Bool.and_eq_true]
+      exact ⟨Block.namesFreshInRhsExprs_of_namesFreshInExprs names tss h.1.2,
+             Block.namesFreshInRhsExprs_of_namesFreshInExprs names ess h.2⟩
+  | .loop g m inv body _ =>
+      unfold Stmt.namesFreshInExprs at h
+      rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h
+      obtain ⟨⟨⟨_, _⟩, _⟩, h_body⟩ := h
+      simp only [Stmt.namesFreshInRhsExprs]
+      exact Block.namesFreshInRhsExprs_of_namesFreshInExprs names body h_body
+  | .exit _ _ => simp only [Stmt.namesFreshInRhsExprs]
+  | .funcDecl _ _ => simp only [Stmt.namesFreshInRhsExprs]
+  | .typeDecl _ _ => simp only [Stmt.namesFreshInRhsExprs]
+  termination_by sizeOf s
+
+theorem Block.namesFreshInRhsExprs_of_namesFreshInExprs [HasVarsPure P P.Expr]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P)))
+    (h : Block.namesFreshInExprs names ss = true) :
+    Block.namesFreshInRhsExprs names ss = true := by
+  match ss with
+  | [] => simp only [Block.namesFreshInRhsExprs]
+  | s :: rest =>
+      simp only [Block.namesFreshInExprs, Bool.and_eq_true] at h
+      simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true]
+      exact ⟨Stmt.namesFreshInRhsExprs_of_namesFreshInExprs names s h.1,
+             Block.namesFreshInRhsExprs_of_namesFreshInExprs names rest h.2⟩
+  termination_by sizeOf ss
+
+end
+
+mutual
+/-- `namesFreshInRhsExprs` is monotone in the `names` subset relation: a
+smaller name list is a weaker requirement. -/
+theorem Stmt.namesFreshInRhsExprs_subset
+    [HasVarsPure P P.Expr] {names₁ names₂ : List P.Ident}
+    (h_sub : names₁ ⊆ names₂)
+    (s : Stmt P (Cmd P))
+    (h : Stmt.namesFreshInRhsExprs names₂ s = true) :
+    Stmt.namesFreshInRhsExprs names₁ s = true := by
+  cases s with
+  | cmd c =>
+    cases c <;>
+      · simp only [Stmt.namesFreshInRhsExprs, List.all_eq_true] at h ⊢
+        intro z hz; exact h z (h_sub hz)
+  | block lbl bss md =>
+    simp only [Stmt.namesFreshInRhsExprs] at h ⊢
+    exact Block.namesFreshInRhsExprs_subset h_sub bss h
+  | ite g tss ess md =>
+    simp only [Stmt.namesFreshInRhsExprs, Bool.and_eq_true] at h ⊢
+    exact ⟨Block.namesFreshInRhsExprs_subset h_sub tss h.1,
+           Block.namesFreshInRhsExprs_subset h_sub ess h.2⟩
+  | loop g m inv body md =>
+    simp only [Stmt.namesFreshInRhsExprs] at h ⊢
+    exact Block.namesFreshInRhsExprs_subset h_sub body h
+  | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
+  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
+  | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
+  termination_by sizeOf s
+
+theorem Block.namesFreshInRhsExprs_subset
+    [HasVarsPure P P.Expr] {names₁ names₂ : List P.Ident}
+    (h_sub : names₁ ⊆ names₂)
+    (ss : List (Stmt P (Cmd P)))
+    (h : Block.namesFreshInRhsExprs names₂ ss = true) :
+    Block.namesFreshInRhsExprs names₁ ss = true := by
+  match ss with
+  | [] => simp only [Block.namesFreshInRhsExprs]
+  | s :: rest =>
+    simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true] at h ⊢
+    exact ⟨Stmt.namesFreshInRhsExprs_subset h_sub s h.1,
+           Block.namesFreshInRhsExprs_subset h_sub rest h.2⟩
+  termination_by sizeOf ss
+end
+
+/-- `Block.namesFreshInRhsExprs` distributes over `++`. -/
+theorem Block.namesFreshInRhsExprs_append
+    [HasVarsPure P P.Expr] {names : List P.Ident}
+    (xs ys : List (Stmt P (Cmd P)))
+    (hx : Block.namesFreshInRhsExprs names xs = true)
+    (hy : Block.namesFreshInRhsExprs names ys = true) :
+    Block.namesFreshInRhsExprs names (xs ++ ys) = true := by
+  induction xs with
+  | nil => simpa only [List.nil_append] using hy
+  | cons x rest ih =>
+    simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true] at hx
+    simp only [List.cons_append, Block.namesFreshInRhsExprs, Bool.and_eq_true]
+    exact ⟨hx.1, ih hx.2⟩
+
+mutual
+/-- The empty name list is RHS-fresh in every statement. -/
+theorem Stmt.namesFreshInRhsExprs_nil [HasVarsPure P P.Expr] (s : Stmt P (Cmd P)) :
+    Stmt.namesFreshInRhsExprs (P := P) [] s = true := by
+  cases s with
+  | cmd c => cases c <;> simp only [Stmt.namesFreshInRhsExprs, List.all_nil]
+  | block lbl bss md =>
+    simp only [Stmt.namesFreshInRhsExprs]; exact Block.namesFreshInRhsExprs_nil bss
+  | ite g tss ess md =>
+    simp only [Stmt.namesFreshInRhsExprs, Bool.and_eq_true]
+    exact ⟨Block.namesFreshInRhsExprs_nil tss, Block.namesFreshInRhsExprs_nil ess⟩
+  | loop g m inv body md =>
+    simp only [Stmt.namesFreshInRhsExprs]; exact Block.namesFreshInRhsExprs_nil body
+  | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
+  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
+  | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
+  termination_by sizeOf s
+
+theorem Block.namesFreshInRhsExprs_nil [HasVarsPure P P.Expr] (ss : List (Stmt P (Cmd P))) :
+    Block.namesFreshInRhsExprs (P := P) [] ss = true := by
+  match ss with
+  | [] => simp only [Block.namesFreshInRhsExprs]
+  | s :: rest =>
+    simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true]
+    exact ⟨Stmt.namesFreshInRhsExprs_nil s, Block.namesFreshInRhsExprs_nil rest⟩
+  termination_by sizeOf ss
+end
+
+mutual
+/-- `namesFreshInRhsExprs` over a `cons` name list splits as the head-singleton
+freshness and the tail freshness (the leaf is `names.all`, which splits as
+`f hd && tail.all f`). -/
+theorem Stmt.namesFreshInRhsExprs_cons_names
+    [HasVarsPure P P.Expr] (hd : P.Ident) (tl : List P.Ident) (s : Stmt P (Cmd P))
+    (h_hd : Stmt.namesFreshInRhsExprs (P := P) [hd] s = true)
+    (h_tl : Stmt.namesFreshInRhsExprs (P := P) tl s = true) :
+    Stmt.namesFreshInRhsExprs (P := P) (hd :: tl) s = true := by
+  cases s with
+  | cmd c =>
+    cases c <;>
+      · simp only [Stmt.namesFreshInRhsExprs, List.all_cons, List.all_nil,
+          Bool.and_true] at h_hd h_tl ⊢
+        exact Bool.and_eq_true _ _ ▸ ⟨h_hd, h_tl⟩
+  | block lbl bss md =>
+    simp only [Stmt.namesFreshInRhsExprs] at h_hd h_tl ⊢
+    exact Block.namesFreshInRhsExprs_cons_names hd tl bss h_hd h_tl
+  | ite g tss ess md =>
+    simp only [Stmt.namesFreshInRhsExprs, Bool.and_eq_true] at h_hd h_tl ⊢
+    exact ⟨Block.namesFreshInRhsExprs_cons_names hd tl tss h_hd.1 h_tl.1,
+           Block.namesFreshInRhsExprs_cons_names hd tl ess h_hd.2 h_tl.2⟩
+  | loop g m inv body md =>
+    simp only [Stmt.namesFreshInRhsExprs] at h_hd h_tl ⊢
+    exact Block.namesFreshInRhsExprs_cons_names hd tl body h_hd h_tl
+  | exit lbl md => simp only [Stmt.namesFreshInRhsExprs]
+  | funcDecl d md => simp only [Stmt.namesFreshInRhsExprs]
+  | typeDecl t md => simp only [Stmt.namesFreshInRhsExprs]
+  termination_by sizeOf s
+
+theorem Block.namesFreshInRhsExprs_cons_names
+    [HasVarsPure P P.Expr] (hd : P.Ident) (tl : List P.Ident) (ss : List (Stmt P (Cmd P)))
+    (h_hd : Block.namesFreshInRhsExprs (P := P) [hd] ss = true)
+    (h_tl : Block.namesFreshInRhsExprs (P := P) tl ss = true) :
+    Block.namesFreshInRhsExprs (P := P) (hd :: tl) ss = true := by
+  match ss with
+  | [] => simp only [Block.namesFreshInRhsExprs]
+  | s :: rest =>
+    simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true] at h_hd h_tl ⊢
+    exact ⟨Stmt.namesFreshInRhsExprs_cons_names hd tl s h_hd.1 h_tl.1,
+           Block.namesFreshInRhsExprs_cons_names hd tl rest h_hd.2 h_tl.2⟩
+  termination_by sizeOf ss
+end
+
+/-- Assemble `namesFreshInRhsExprs names ss` from per-name singleton facts. -/
+theorem Block.namesFreshInRhsExprs_of_forall_mem
+    [HasVarsPure P P.Expr] (names : List P.Ident) (ss : List (Stmt P (Cmd P)))
+    (h : ∀ z ∈ names, Block.namesFreshInRhsExprs (P := P) [z] ss = true) :
+    Block.namesFreshInRhsExprs (P := P) names ss = true := by
+  induction names with
+  | nil => exact Block.namesFreshInRhsExprs_nil ss
+  | cons hd tl ih =>
+    exact Block.namesFreshInRhsExprs_cons_names hd tl ss
+      (h hd (List.mem_cons_self ..)) (ih (fun z hz => h z (List.mem_cons_of_mem _ hz)))
+
 /-- The strengthened freshness predicate: existing
-`hoistedNamesFreshInGuards` PLUS `namesFreshInExprs` for the body's own
-init-vars. -/
+`hoistedNamesFreshInGuards` PLUS RHS-only freshness for the body's own
+init-vars.  The second conjunct uses `namesFreshInRhsExprs` (not the full
+`namesFreshInExprs`): the hoisting preservation proof reads back only the
+RHS / body-recursion parts of this conjunct, so the guard-read clauses would
+be dead weight — and dropping them lets a pass output that reads a fresh
+init-var only in a synthesised guard still satisfy the predicate. -/
 @[expose] def Block.hoistedNamesFreshInRhsAndGuards [HasVarsPure P P.Expr]
     (ss : List (Stmt P (Cmd P))) : Bool :=
   Block.hoistedNamesFreshInGuards ss &&
-  Block.namesFreshInExprs (Block.initVars ss) ss
+  Block.namesFreshInRhsExprs (Block.initVars ss) ss
 
 /-! ## Expression shape-freedom predicate `exprsShapeFree`
 
@@ -306,6 +561,14 @@ private theorem freshFromIdents_of_not_mem
   simp only [hfalse]
   decide
 
+/-- Public membership characterisation of `freshFromIdents` (both directions),
+re-exported (non-`private`) so cross-pass bridges can decode the
+`hoistedNamesFreshInGuards` enclosing-vars leaf. -/
+theorem freshFromIdents_iff_not_mem
+    {z : P.Ident} {vars : List P.Ident} :
+    freshFromIdents z vars = true ↔ z ∉ vars :=
+  ⟨freshFromIdents_not_mem, freshFromIdents_of_not_mem⟩
+
 /-! ### Helper: monotonicity in the names list -/
 
 mutual
@@ -377,6 +640,40 @@ private theorem Block.namesFreshInExprs_subset
     refine ⟨?_, ?_⟩
     · exact Stmt.namesFreshInExprs_subset h_sub s h.1
     · exact Block.namesFreshInExprs_subset h_sub rest h.2
+  termination_by sizeOf ss
+end
+
+mutual
+/-- The empty name list is fresh in every statement's expressions: each leaf is
+`[].all _`, which is `true`. -/
+theorem Stmt.namesFreshInExprs_nil [HasVarsPure P P.Expr] (s : Stmt P (Cmd P)) :
+    Stmt.namesFreshInExprs (P := P) [] s = true := by
+  cases s with
+  | cmd c => cases c <;> simp only [Stmt.namesFreshInExprs, List.all_nil]
+  | block lbl bss md =>
+    simp only [Stmt.namesFreshInExprs]; exact Block.namesFreshInExprs_nil bss
+  | ite g tss ess md =>
+    simp only [Stmt.namesFreshInExprs, List.all_nil, Bool.true_and, Bool.and_eq_true]
+    exact ⟨Block.namesFreshInExprs_nil tss, Block.namesFreshInExprs_nil ess⟩
+  | loop g m inv body md =>
+    unfold Stmt.namesFreshInExprs
+    rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true]
+    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, Block.namesFreshInExprs_nil body⟩
+    · simp only [List.all_nil]
+    · cases m <;> simp only [List.all_nil]
+    · rw [List.all_eq_true]; intro p _; simp only [List.all_nil]
+  | exit lbl md => simp only [Stmt.namesFreshInExprs]
+  | funcDecl d md => simp only [Stmt.namesFreshInExprs]
+  | typeDecl t md => simp only [Stmt.namesFreshInExprs]
+  termination_by sizeOf s
+
+theorem Block.namesFreshInExprs_nil [HasVarsPure P P.Expr] (ss : List (Stmt P (Cmd P))) :
+    Block.namesFreshInExprs (P := P) [] ss = true := by
+  match ss with
+  | [] => simp only [Block.namesFreshInExprs]
+  | s :: rest =>
+    simp only [Block.namesFreshInExprs, Bool.and_eq_true]
+    exact ⟨Stmt.namesFreshInExprs_nil s, Block.namesFreshInExprs_nil rest⟩
   termination_by sizeOf ss
 end
 

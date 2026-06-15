@@ -1536,11 +1536,11 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       refine ⟨?_, ?_⟩
       · simpa only [Block.hoistedNamesFreshInGuards, Stmt.hoistedNamesFreshInGuards,
           Bool.and_true] using h_guards
-      · -- `namesFreshInExprs (initVars [.block..]) [.block..] = namesFreshInExprs (initVars bss) bss`.
-        have : Block.namesFreshInExprs (Block.initVars [Stmt.block lbl bss md])
+      · -- `namesFreshInRhsExprs (initVars [.block..]) [.block..] = namesFreshInRhsExprs (initVars bss) bss`.
+        have : Block.namesFreshInRhsExprs (Block.initVars [Stmt.block lbl bss md])
             [Stmt.block lbl bss md] =
-            Block.namesFreshInExprs (Block.initVars bss) bss := by
-          simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true, h_iv_eq]
+            Block.namesFreshInRhsExprs (Block.initVars bss) bss := by
+          simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs, Bool.and_true, h_iv_eq]
         rwa [this] at h_nf
     have h_names_fresh_bss : Block.namesFreshInExprs A bss = true := by
       simpa only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true] using h_names_fresh
@@ -1772,22 +1772,23 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     obtain ⟨h_guards_tss, h_guards_ess⟩ := h_guards_full
     have h_guards_tss_block : Block.hoistedNamesFreshInGuards tss = true := h_guards_tss
     have h_guards_ess_block : Block.hoistedNamesFreshInGuards ess = true := h_guards_ess
-    -- namesFreshInExprs over initVars [.ite ..]: split via subset + the ite arm.
+    -- namesFreshInRhsExprs over initVars [.ite ..]: split via subset + the ite arm
+    -- (the `.ite` guard read position is no longer checked, so no guard conjunct).
     have h_sub_tss : (Block.initVars tss : List P.Ident) ⊆ Block.initVars [Stmt.ite g tss ess md] := by
       rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inl h)
     have h_sub_ess : (Block.initVars ess : List P.Ident) ⊆ Block.initVars [Stmt.ite g tss ess md] := by
       rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inr h)
-    simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
+    simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs, Bool.and_true,
       Bool.and_eq_true] at h_namesFresh_full
-    obtain ⟨⟨_, h_nf_tss_iv⟩, h_nf_ess_iv⟩ := h_namesFresh_full
+    obtain ⟨h_nf_tss_iv, h_nf_ess_iv⟩ := h_namesFresh_full
     have h_fresh_tss : Block.hoistedNamesFreshInRhsAndGuards (P := P) tss = true := by
       unfold Block.hoistedNamesFreshInRhsAndGuards
       rw [Bool.and_eq_true]
-      exact ⟨h_guards_tss_block, Block.namesFreshInExprs_subset h_sub_tss tss h_nf_tss_iv⟩
+      exact ⟨h_guards_tss_block, Block.namesFreshInRhsExprs_subset h_sub_tss tss h_nf_tss_iv⟩
     have h_fresh_ess : Block.hoistedNamesFreshInRhsAndGuards (P := P) ess = true := by
       unfold Block.hoistedNamesFreshInRhsAndGuards
       rw [Bool.and_eq_true]
-      exact ⟨h_guards_ess_block, Block.namesFreshInExprs_subset h_sub_ess ess h_nf_ess_iv⟩
+      exact ⟨h_guards_ess_block, Block.namesFreshInRhsExprs_subset h_sub_ess ess h_nf_ess_iv⟩
     -- namesFreshInExprs A / B split over the branches.
     have h_names_fresh_A_split :
         Block.namesFreshInExprs A tss = true ∧ Block.namesFreshInExprs A ess = true := by
@@ -2068,9 +2069,10 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       refine ⟨?_, ?_⟩
       · simp only [Block.hoistedNamesFreshInGuards, Stmt.hoistedNamesFreshInGuards,
           Bool.and_true, Bool.and_eq_true] at h_guards; exact h_guards.2
-      · simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
-          Bool.and_eq_true] at h_names
-        exact h_names.2
+      · -- the `.loop` arm of `namesFreshInRhsExprs` recurses into the body only.
+        simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs,
+          Bool.and_true] at h_names
+        exact h_names
     have h_names_fresh_A_body : Block.namesFreshInExprs A body = true := by
       simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
         Bool.and_eq_true] at h_names_fresh; exact h_names_fresh.2
@@ -2644,26 +2646,26 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
     have h_guards_s : Block.hoistedNamesFreshInGuards [s] = true := by
       simp only [Block.hoistedNamesFreshInGuards, Bool.and_true]; exact h_guards_s_stmt
     have h_nf_cons :
-        Block.namesFreshInExprs (Block.initVars (s :: rest)) (s :: rest) =
-          (Stmt.namesFreshInExprs (Block.initVars (s :: rest)) s &&
-            Block.namesFreshInExprs (Block.initVars (s :: rest)) rest) := by
-      rw [Block.namesFreshInExprs]
+        Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) (s :: rest) =
+          (Stmt.namesFreshInRhsExprs (Block.initVars (s :: rest)) s &&
+            Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) rest) := by
+      rw [Block.namesFreshInRhsExprs]
     rw [h_nf_cons, Bool.and_eq_true] at h_namesFresh_full
     obtain ⟨h_nf_s_full, h_nf_rest_full⟩ := h_namesFresh_full
     have h_sub_s : (Block.initVars [s] : List P.Ident) ⊆ Block.initVars (s :: rest) := by
       rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inl h)
     have h_sub_rest : (Block.initVars rest : List P.Ident) ⊆ Block.initVars (s :: rest) := by
       rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inr h)
-    have h_nf_s_block : Block.namesFreshInExprs (Block.initVars (s :: rest)) [s] = true := by
-      simp only [Block.namesFreshInExprs, Bool.and_true]; exact h_nf_s_full
+    have h_nf_s_block : Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) [s] = true := by
+      simp only [Block.namesFreshInRhsExprs, Bool.and_true]; exact h_nf_s_full
     have h_fresh_s : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true := by
       unfold Block.hoistedNamesFreshInRhsAndGuards
       rw [Bool.and_eq_true]
-      exact ⟨h_guards_s, Block.namesFreshInExprs_subset h_sub_s [s] h_nf_s_block⟩
+      exact ⟨h_guards_s, Block.namesFreshInRhsExprs_subset h_sub_s [s] h_nf_s_block⟩
     have h_fresh_rest : Block.hoistedNamesFreshInRhsAndGuards (P := P) rest = true := by
       unfold Block.hoistedNamesFreshInRhsAndGuards
       rw [Bool.and_eq_true]
-      exact ⟨h_guards_rest, Block.namesFreshInExprs_subset h_sub_rest rest h_nf_rest_full⟩
+      exact ⟨h_guards_rest, Block.namesFreshInRhsExprs_subset h_sub_rest rest h_nf_rest_full⟩
     have h_names_fresh_cons :
         Block.namesFreshInExprs A (s :: rest) =
           (Stmt.namesFreshInExprs A s && Block.namesFreshInExprs A rest) := by
@@ -3169,15 +3171,12 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
   -- `subst := []`, `σ := emp`, with `ρ_hoist := ρ_src` (no hoisting at the
   -- outermost call site).  The σ-relative obligations collapse at `emp` (its
   -- `stringGens` is empty) to the global front-end kind-freedom facts.
-  have h_names_fresh_initVars : Block.namesFreshInExprs (P := P)
-      (Block.initVars ss) ss = true := by
-    unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh
-    simp only [Bool.and_eq_true] at h_fresh
-    exact h_fresh.2
-  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true := by
-    have h_sub : ([] : List P.Ident) ⊆ Block.initVars (P := P) ss :=
-      fun _ h => absurd h List.not_mem_nil
-    exact Block.namesFreshInExprs_subset h_sub ss h_names_fresh_initVars
+  -- The §E Block sibling's separate `h_names_fresh A`/`h_names_fresh_B` slots take
+  -- the FULL `namesFreshInExprs` (where the guard clause is load-bearing) at the
+  -- hoist-accumulated names `A`/`B`; at the outermost call site `A = B = []`, so
+  -- they are vacuously true and need no input from `h_fresh`.
+  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true :=
+    Block.namesFreshInExprs_nil ss
   have h_lhs_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
     fun _ _ => List.not_mem_nil
   have h_mod_disjoint_nil : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) ss, x ∉ ([] : List P.Ident) :=

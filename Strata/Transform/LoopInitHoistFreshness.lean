@@ -172,6 +172,94 @@ private theorem Block.liftInitsInLoopBody_snd_namesFreshInExprs
 
 end
 
+/-! ## Helper 1b: `liftInitsInLoopBody.snd` preserves `namesFreshInRhsExprs`
+(no name-list change)
+
+Identical structural recursion to Helper 1: the only rewrite is
+`.cmd .init y ty rhs md → .cmd .set y rhs md` (rhs preserved), and `.ite`/
+`.loop` pass through / recurse with the guard read positions no longer
+checked, so the RHS-only freshness premise transfers verbatim. -/
+
+mutual
+
+private theorem Stmt.liftInitsInLoopBody_snd_namesFreshInRhsExprs
+    [HasIdent P] [HasVarsPure P P.Expr] (names : List P.Ident)
+    (s : Stmt P (Cmd P))
+    (h : Stmt.namesFreshInRhsExprs names s = true) :
+    Block.namesFreshInRhsExprs names (Stmt.liftInitsInLoopBody s).snd = true := by
+  cases s with
+  | cmd c =>
+    cases c with
+    | init x ty rhs md =>
+      simp only [Stmt.liftInitsInLoopBody_snd_cmd_init, Block.namesFreshInRhsExprs,
+                 Stmt.namesFreshInRhsExprs, Bool.and_true]
+      simp only [Stmt.namesFreshInRhsExprs] at h
+      exact h
+    | set _ _ _ | assert _ _ _ | assume _ _ _ | cover _ _ _ =>
+      simp only [Stmt.liftInitsInLoopBody_snd_cmd_set,
+                 Stmt.liftInitsInLoopBody_snd_cmd_assert,
+                 Stmt.liftInitsInLoopBody_snd_cmd_assume,
+                 Stmt.liftInitsInLoopBody_snd_cmd_cover, Block.namesFreshInRhsExprs,
+                 Stmt.namesFreshInRhsExprs, Bool.and_true]
+      simp only [Stmt.namesFreshInRhsExprs] at h
+      exact h
+  | block lbl bss md =>
+    simp only [Stmt.liftInitsInLoopBody_snd_block, Block.namesFreshInRhsExprs,
+               Stmt.namesFreshInRhsExprs, Bool.and_true]
+    have h_bss : Block.namesFreshInRhsExprs names bss = true := by
+      simp only [Stmt.namesFreshInRhsExprs] at h; exact h
+    exact Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs names bss h_bss
+  | ite g tss ess md =>
+    have h_parts :
+        Block.namesFreshInRhsExprs names tss = true ∧
+        Block.namesFreshInRhsExprs names ess = true := by
+      simp only [Stmt.namesFreshInRhsExprs, Bool.and_eq_true] at h
+      exact h
+    have ih_t :=
+      Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs names tss h_parts.1
+    have ih_e :=
+      Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs names ess h_parts.2
+    simp only [Stmt.liftInitsInLoopBody_snd_ite, Block.namesFreshInRhsExprs,
+               Stmt.namesFreshInRhsExprs, Bool.and_true]
+    rw [Bool.and_eq_true]
+    exact ⟨ih_t, ih_e⟩
+  | loop g m inv body md =>
+    simp only [Stmt.liftInitsInLoopBody_snd_loop, Block.namesFreshInRhsExprs,
+               Bool.and_true]
+    exact h
+  | exit lbl md =>
+    simp only [Stmt.liftInitsInLoopBody_snd_exit, Block.namesFreshInRhsExprs,
+               Stmt.namesFreshInRhsExprs, Bool.and_self]
+  | funcDecl d md =>
+    simp only [Stmt.liftInitsInLoopBody_snd_funcDecl, Block.namesFreshInRhsExprs,
+               Stmt.namesFreshInRhsExprs, Bool.and_self]
+  | typeDecl t md =>
+    simp only [Stmt.liftInitsInLoopBody_snd_typeDecl, Block.namesFreshInRhsExprs,
+               Stmt.namesFreshInRhsExprs, Bool.and_self]
+  termination_by sizeOf s
+
+private theorem Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs
+    [HasIdent P] [HasVarsPure P P.Expr] (names : List P.Ident)
+    (ss : List (Stmt P (Cmd P)))
+    (h : Block.namesFreshInRhsExprs names ss = true) :
+    Block.namesFreshInRhsExprs names (Block.liftInitsInLoopBody ss).snd = true := by
+  match ss with
+  | [] =>
+    simp only [Block.liftInitsInLoopBody_snd_nil, Block.namesFreshInRhsExprs]
+  | s :: rest =>
+    have h_s : Stmt.namesFreshInRhsExprs names s = true := by
+      simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true] at h; exact h.1
+    have h_rest : Block.namesFreshInRhsExprs names rest = true := by
+      simp only [Block.namesFreshInRhsExprs, Bool.and_eq_true] at h; exact h.2
+    have ih_s := Stmt.liftInitsInLoopBody_snd_namesFreshInRhsExprs names s h_s
+    have ih_rest :=
+      Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs names rest h_rest
+    simp only [Block.liftInitsInLoopBody_snd_cons]
+    exact Block.namesFreshInRhsExprs_append _ _ ih_s ih_rest
+  termination_by sizeOf ss
+
+end
+
 /-! ## Helper 2: `liftInitsInLoopBody.snd` preserves `hoistedNamesFreshInGuards`
 
 Loops are pass-through under `liftInitsInLoopBody`, so the per-loop check
@@ -354,20 +442,20 @@ theorem Block.liftInitsInLoopBody_snd_preserves_hoistedNamesFreshInRhsAndGuards
   refine ⟨?_, ?_⟩
   · -- hoistedNamesFreshInGuards preservation.
     exact Block.liftInitsInLoopBody_snd_hoistedNamesFreshInGuards body h_guards
-  · -- namesFreshInExprs (initVars body') body' preservation.
-    -- Step 1: namesFreshInExprs (initVars body) body' = true (preservation
+  · -- namesFreshInRhsExprs (initVars body') body' preservation.
+    -- Step 1: namesFreshInRhsExprs (initVars body) body' = true (preservation
     --         under same names list).
     have h_step1 :
-        Block.namesFreshInExprs (Block.initVars body)
+        Block.namesFreshInRhsExprs (Block.initVars body)
           (Block.liftInitsInLoopBody body).snd = true :=
-      Block.liftInitsInLoopBody_snd_namesFreshInExprs _ body h_fresh
-    -- Step 2: initVars body' ⊆ initVars body, so namesFreshInExprs is
+      Block.liftInitsInLoopBody_snd_namesFreshInRhsExprs _ body h_fresh
+    -- Step 2: initVars body' ⊆ initVars body, so namesFreshInRhsExprs is
     --         monotone (smaller name list → still fresh).
     have h_sub :
         Block.initVars (Block.liftInitsInLoopBody body).snd
           ⊆ Block.initVars body :=
       Block.liftInitsInLoopBody_snd_initVars_subset body
-    exact Block.namesFreshInExprs_subset h_sub
+    exact Block.namesFreshInRhsExprs_subset h_sub
       (Block.liftInitsInLoopBody body).snd h_step1
 
 end Imperative
