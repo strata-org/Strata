@@ -135,6 +135,43 @@ theorem Block.not_containsFuncDecl_of_noFuncDecl {P : PureExpr}
   termination_by sizeOf ss
 end
 
+mutual
+/-- `Stmt.containsFuncDecl s = false` implies `Stmt.noFuncDecl s = true`. -/
+theorem Stmt.noFuncDecl_of_not_containsFuncDecl {P : PureExpr}
+    (s : Stmt P (Cmd P)) (h : Stmt.containsFuncDecl s = false) :
+    Stmt.noFuncDecl s = true := by
+  match s with
+  | .cmd c => rw [Stmt.noFuncDecl]
+  | .block lbl bss md =>
+      rw [Stmt.noFuncDecl]; rw [Stmt.containsFuncDecl] at h
+      exact Block.noFuncDecl_of_not_containsFuncDecl bss h
+  | .ite g tss ess md =>
+      rw [Stmt.noFuncDecl, Bool.and_eq_true]
+      rw [Stmt.containsFuncDecl, Bool.or_eq_false_iff] at h
+      exact ⟨Block.noFuncDecl_of_not_containsFuncDecl tss h.1,
+             Block.noFuncDecl_of_not_containsFuncDecl ess h.2⟩
+  | .loop g m inv body md =>
+      rw [Stmt.noFuncDecl]; rw [Stmt.containsFuncDecl] at h
+      exact Block.noFuncDecl_of_not_containsFuncDecl body h
+  | .exit lbl md => rw [Stmt.noFuncDecl]
+  | .funcDecl d md => rw [Stmt.containsFuncDecl] at h; exact absurd h (by simp)
+  | .typeDecl t md => rw [Stmt.noFuncDecl]
+  termination_by sizeOf s
+
+/-- `Block.containsFuncDecl ss = false` implies `Block.noFuncDecl ss = true`. -/
+theorem Block.noFuncDecl_of_not_containsFuncDecl {P : PureExpr}
+    (ss : List (Stmt P (Cmd P))) (h : Block.containsFuncDecl ss = false) :
+    Block.noFuncDecl ss = true := by
+  match ss with
+  | [] => rw [Block.noFuncDecl]
+  | s :: rest =>
+      rw [Block.noFuncDecl, Bool.and_eq_true]
+      rw [Block.containsFuncDecl, Bool.or_eq_false_iff] at h
+      exact ⟨Stmt.noFuncDecl_of_not_containsFuncDecl s h.1,
+             Block.noFuncDecl_of_not_containsFuncDecl rest h.2⟩
+  termination_by sizeOf ss
+end
+
 ---------------------------------------------------------------------
 /-! ## Section 2 — `simpleShape` excludes nondeterministic loops
 
@@ -300,5 +337,58 @@ theorem nondetElim_loopMeasureNone {P : PureExpr} [HasIdent P] [HasFvar P] [HasB
     Block.loopMeasureNone (Block.nondetElim ss) = true := by
   rw [Block.loopMeasureNone_eq_noMeasureLoops] at h ⊢
   exact nondetElim_noMeasureLoops ss h
+
+---------------------------------------------------------------------
+/-! ## Section 4 — Direction B: structural simple-S2U preconditions on `hoist`
+
+The simple-S2U theorem `structuredToUnstructured_sound` takes the hoist output
+as its input program.  Its structural (shape-only) preconditions are discharged
+here from hoist's preservation/postcondition lemmas:
+
+  * `noFuncDecl = true`        — preserved (via `containsFuncDecl`),
+  * `simpleShape = true`       — preserved (net-new chain in `LoopInitHoist`),
+  * `loopBodyNoInits = true`   — established (hoist's raison d'être),
+  * `loopHasNoInvariants = true` — preserved,
+  * `noMeasureLoops = true`    — preserved (via `loopMeasureNone`).
+
+The remaining simple-S2U preconditions (`uniqueInits`, `fresh_inits`,
+`store_clean`, `NoGenSuffix`, `userLabelsDisjoint`) are NAME-level conditions
+on the hoist output's `initVars`/`modVars`; see Section 5 for the obstruction
+those raise for the composed pipeline. -/
+
+variable {P : PureExpr}
+
+/-- Direction B: hoist preserves `noFuncDecl` (via `containsFuncDecl`). -/
+theorem hoist_noFuncDecl [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+    (ss : List (Stmt P (Cmd P))) (h : Block.noFuncDecl ss = true) :
+    Block.noFuncDecl (Block.hoistLoopPrefixInits ss) = true :=
+  Block.noFuncDecl_of_not_containsFuncDecl _
+    (Block.hoistLoopPrefixInits_preserves_containsFuncDecl ss
+      (Block.not_containsFuncDecl_of_noFuncDecl ss h))
+
+/-- Direction B: hoist preserves `simpleShape`. -/
+theorem hoist_simpleShape [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+    (ss : List (Stmt P (Cmd P))) (h : Block.simpleShape ss = true) :
+    Block.simpleShape (Block.hoistLoopPrefixInits ss) = true :=
+  Block.hoistLoopPrefixInits_preserves_simpleShape ss h
+
+/-- Direction B: hoist establishes `loopBodyNoInits` (its raison d'être). -/
+theorem hoist_loopBodyNoInits [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+    (ss : List (Stmt P (Cmd P))) :
+    Block.loopBodyNoInits (Block.hoistLoopPrefixInits ss) = true :=
+  Block.hoistLoopPrefixInits_preserves_loopBodyNoInits ss
+
+/-- Direction B: hoist preserves `loopHasNoInvariants`. -/
+theorem hoist_loopHasNoInvariants [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+    (ss : List (Stmt P (Cmd P))) (h : Block.loopHasNoInvariants ss = true) :
+    Block.loopHasNoInvariants (Block.hoistLoopPrefixInits ss) = true :=
+  Block.hoistLoopPrefixInits_preserves_loopHasNoInvariants ss h
+
+/-- Direction B: hoist preserves `noMeasureLoops` (via `loopMeasureNone`). -/
+theorem hoist_noMeasureLoops [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+    (ss : List (Stmt P (Cmd P))) (h : Block.noMeasureLoops ss = true) :
+    Block.noMeasureLoops (Block.hoistLoopPrefixInits ss) = true := by
+  rw [← Block.loopMeasureNone_eq_noMeasureLoops] at h ⊢
+  exact Block.hoistLoopPrefixInits_preserves_loopMeasureNone ss h
 
 end Imperative

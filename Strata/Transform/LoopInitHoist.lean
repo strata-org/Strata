@@ -353,6 +353,25 @@ private theorem Block.loopMeasureNone_map_cmd {P : PureExpr}
   | cons c rest ih =>
     simp [List.map_cons, Block.loopMeasureNone, Stmt.loopMeasureNone, ih]
 
+/-- `Block.simpleShape` distributes over `++`. -/
+private theorem Block.simpleShape_append {P : PureExpr}
+    (xs ys : List (Stmt P (Cmd P))) :
+    Block.simpleShape (xs ++ ys) =
+      (Block.simpleShape xs && Block.simpleShape ys) := by
+  induction xs with
+  | nil => simp [Block.simpleShape]
+  | cons x rest ih =>
+    simp [Block.simpleShape, ih, Bool.and_assoc]
+
+/-- A list of `.cmd`s trivially has `simpleShape = true`. -/
+private theorem Block.simpleShape_map_cmd {P : PureExpr}
+    (cs : List (Cmd P)) :
+    Block.simpleShape (cs.map Stmt.cmd) = true := by
+  induction cs with
+  | nil => simp [Block.simpleShape]
+  | cons c rest ih =>
+    simp [List.map_cons, Block.simpleShape, Stmt.simpleShape, ih]
+
 /-- `Block.containsNondetLoop` distributes over `++`. -/
 private theorem Block.containsNondetLoop_append {P : PureExpr}
     (xs ys : List (Stmt P (Cmd P))) :
@@ -601,6 +620,63 @@ theorem Block.applyRenames_loopMeasureNone
   | cons p rest ih =>
       simp only [List.foldl_cons]
       rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_loopMeasureNone]
+
+/-! ### `substIdent` / `applyRenames` preserve `simpleShape`
+
+`simpleShape` is a shape-only walker: it only inspects whether a guard is
+`.det`/`.nondet`.  A rename maps a `.det e` guard to `.det (substFvar …)` —
+still `.det` — and recurses structurally, so the shape characteristic is
+unchanged.  These mirror the `loopMeasureNone` preservation chain above and
+feed the `simpleShape`-preservation of the whole hoisting pass. -/
+
+mutual
+/-- `Stmt.substIdent` preserves `simpleShape`. -/
+theorem Stmt.substIdent_simpleShape (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+    Stmt.simpleShape (Stmt.substIdent y y' s) = Stmt.simpleShape s := by
+  match s with
+  | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.simpleShape]
+  | .block lbl bss md =>
+      simp only [Stmt.substIdent_block, Stmt.simpleShape]
+      exact Block.substIdent_simpleShape y y' bss
+  | .ite (.det e) tss ess md =>
+      simp only [Stmt.substIdent_ite, ExprOrNondet.substIdent_det, Stmt.simpleShape]
+      rw [Block.substIdent_simpleShape y y' tss,
+          Block.substIdent_simpleShape y y' ess]
+  | .ite .nondet tss ess md =>
+      simp only [Stmt.substIdent_ite, ExprOrNondet.substIdent_nondet, Stmt.simpleShape]
+  | .loop (.det e) m inv bss md =>
+      simp only [Stmt.substIdent_loop, ExprOrNondet.substIdent_det, Stmt.simpleShape]
+      rw [Block.substIdent_simpleShape y y' bss]
+  | .loop .nondet m inv bss md =>
+      simp only [Stmt.substIdent_loop, ExprOrNondet.substIdent_nondet, Stmt.simpleShape]
+      rw [Block.substIdent_simpleShape y y' bss]
+  | .exit lbl md => simp [Stmt.simpleShape]
+  | .funcDecl d md => simp [Stmt.simpleShape]
+  | .typeDecl t md => simp [Stmt.simpleShape]
+  termination_by sizeOf s
+
+theorem Block.substIdent_simpleShape (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+    Block.simpleShape (Block.substIdent y y' ss) = Block.simpleShape ss := by
+  match ss with
+  | [] => simp [Block.simpleShape]
+  | s :: rest =>
+      simp only [Block.substIdent, Block.simpleShape]
+      rw [Stmt.substIdent_simpleShape y y' s,
+          Block.substIdent_simpleShape y y' rest]
+  termination_by sizeOf ss
+end
+
+/-- `Block.applyRenames` preserves `simpleShape`. -/
+theorem Block.applyRenames_simpleShape
+    (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
+    Block.simpleShape (Block.applyRenames renames ss)
+      = Block.simpleShape ss := by
+  unfold Block.applyRenames
+  induction renames generalizing ss with
+  | nil => simp
+  | cons p rest ih =>
+      simp only [List.foldl_cons]
+      rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_simpleShape]
 
 /-! ### `substIdent` / `applyRenames` preserve `containsNondetLoop`,
 `containsFuncDecl`, `loopHasNoInvariants`
@@ -1806,6 +1882,139 @@ theorem Block.hoistLoopPrefixInits_preserves_loopMeasureNone
     (h : Block.loopMeasureNone ss = true) :
     Block.loopMeasureNone (Block.hoistLoopPrefixInits ss) = true := by
   rw [Block.hoistLoopPrefixInits, Block.hoistLoopPrefixInitsM_loopMeasureNone]
+  exact h
+
+/-! ### `simpleShape` is preserved by the pass
+
+`simpleShape` is shape-only.  The lift leaves every `.loop` untouched (it does
+not recurse into loops) and emits `.cmd (.set …)` residuals for hoisted inits
+(`simpleShape = true`); `applyRenames` keeps a `.det e` guard `.det`
+(`Block.applyRenames_simpleShape`); the fresh havoc prelude is all `.cmd`s.
+Hence the whole pass preserves `simpleShape`.  Mirrors the `loopMeasureNone`
+chain above. -/
+
+mutual
+private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    Block.simpleShape (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
+      Stmt.simpleShape s := by
+  match s with
+  | .cmd c =>
+      cases c <;>
+        simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+  | .block lbl bss md =>
+      rw [Stmt.liftInitsInLoopBodyM_block_residual]
+      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
+      exact Block.liftInitsInLoopBodyM_snd_simpleShape bss σ
+  | .ite g tss ess md =>
+      rw [Stmt.liftInitsInLoopBodyM_ite_residual]
+      cases g with
+      | det e =>
+          simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true,
+                     Block.liftInitsInLoopBodyM_snd_simpleShape tss σ,
+                     Block.liftInitsInLoopBodyM_snd_simpleShape ess _]
+      | nondet =>
+          simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
+  | .loop g m inv body md =>
+      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+  | .exit lbl md =>
+      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+  | .funcDecl d md =>
+      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+  | .typeDecl t md =>
+      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+  termination_by sizeOf s
+
+private theorem Block.liftInitsInLoopBodyM_snd_simpleShape
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    Block.simpleShape (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
+      Block.simpleShape ss := by
+  match ss with
+  | [] => simp [Block.liftInitsInLoopBodyM, Block.simpleShape]
+  | s :: rest =>
+      rw [Block.liftInitsInLoopBodyM_cons_residual, Block.simpleShape_append,
+          Stmt.liftInitsInLoopBodyM_snd_simpleShape s σ,
+          Block.liftInitsInLoopBodyM_snd_simpleShape rest _, Block.simpleShape]
+  termination_by sizeOf ss
+end
+
+mutual
+private theorem Stmt.hoistLoopPrefixInitsM_simpleShape
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    Block.simpleShape (Stmt.hoistLoopPrefixInitsM s σ).1 =
+      Stmt.simpleShape s := by
+  match s with
+  | .cmd c =>
+      simp [Stmt.hoistLoopPrefixInitsM, Block.simpleShape, Stmt.simpleShape]
+  | .block lbl bss md =>
+      rw [Stmt.hoistLoopPrefixInitsM_block_out]
+      simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
+      exact Block.hoistLoopPrefixInitsM_simpleShape bss σ
+  | .ite g tss ess md =>
+      rw [Stmt.hoistLoopPrefixInitsM_ite_out]
+      cases g with
+      | det e =>
+          simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true,
+                     Block.hoistLoopPrefixInitsM_simpleShape tss σ,
+                     Block.hoistLoopPrefixInitsM_simpleShape ess _]
+      | nondet =>
+          simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
+  | .loop g m inv body md =>
+      rw [Stmt.hoistLoopPrefixInitsM_loop_out]
+      have h_body_ss :
+          Block.simpleShape (Block.hoistLoopPrefixInitsM body σ).1 =
+            Block.simpleShape body :=
+        Block.hoistLoopPrefixInitsM_simpleShape body σ
+      have h_lift_ss :
+          Block.simpleShape
+            (Block.liftInitsInLoopBodyM (Block.hoistLoopPrefixInitsM body σ).1
+              (Block.hoistLoopPrefixInitsM body σ).2).1.2.2 =
+            Block.simpleShape body := by
+        rw [Block.liftInitsInLoopBodyM_snd_simpleShape]; exact h_body_ss
+      have h_body₃_ss :
+          Block.simpleShape
+            (Block.applyRenames
+              (Block.liftInitsInLoopBodyM (Block.hoistLoopPrefixInitsM body σ).1
+                (Block.hoistLoopPrefixInitsM body σ).2).1.2.1
+              (Block.liftInitsInLoopBodyM (Block.hoistLoopPrefixInitsM body σ).1
+                (Block.hoistLoopPrefixInitsM body σ).2).1.2.2) =
+            Block.simpleShape body := by
+        rw [Block.applyRenames_simpleShape]; exact h_lift_ss
+      rw [Block.simpleShape_append]
+      cases g with
+      | det e =>
+          simp only [Block.simpleShape_map_cmd, Block.simpleShape,
+                     Stmt.simpleShape, Bool.true_and, Bool.and_true, h_body₃_ss]
+      | nondet =>
+          simp only [Block.simpleShape_map_cmd, Block.simpleShape,
+                     Stmt.simpleShape, Bool.true_and, Bool.and_true, h_body₃_ss]
+  | .exit lbl md =>
+      simp [Stmt.hoistLoopPrefixInitsM, Block.simpleShape, Stmt.simpleShape]
+  | .funcDecl d md =>
+      simp [Stmt.hoistLoopPrefixInitsM, Block.simpleShape, Stmt.simpleShape]
+  | .typeDecl t md =>
+      simp [Stmt.hoistLoopPrefixInitsM, Block.simpleShape, Stmt.simpleShape]
+  termination_by sizeOf s
+
+private theorem Block.hoistLoopPrefixInitsM_simpleShape
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    Block.simpleShape (Block.hoistLoopPrefixInitsM ss σ).1 =
+      Block.simpleShape ss := by
+  match ss with
+  | [] => simp [Block.hoistLoopPrefixInitsM, Block.simpleShape]
+  | s :: rest =>
+      rw [Block.hoistLoopPrefixInitsM_cons_out, Block.simpleShape_append,
+          Stmt.hoistLoopPrefixInitsM_simpleShape s σ,
+          Block.hoistLoopPrefixInitsM_simpleShape rest _, Block.simpleShape]
+  termination_by sizeOf ss
+end
+
+/-- Top-level: `Block.hoistLoopPrefixInits` preserves `Block.simpleShape`. -/
+theorem Block.hoistLoopPrefixInits_preserves_simpleShape
+    (ss : List (Stmt P (Cmd P)))
+    (h : Block.simpleShape ss = true) :
+    Block.simpleShape (Block.hoistLoopPrefixInits ss) = true := by
+  rw [Block.hoistLoopPrefixInits, Block.hoistLoopPrefixInitsM_simpleShape]
   exact h
 
 /-! ### `containsNondetLoop` / `containsFuncDecl` are preserved by the pass
