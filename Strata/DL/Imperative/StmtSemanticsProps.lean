@@ -311,6 +311,39 @@ theorem stmts_prefix_terminal_append
         exact ReflTrans_Transitive _ _ _ _
           (stmts_cons_step P EvalCmd extendEval s (rest ++ sfx) ρ ρ₁ h_s) (ih ρ₁ h_r)
 
+/-- If a prefix of a statement list exits, the full list exits at the
+    same label/env (the suffix is never reached). -/
+theorem stmts_prefix_exiting_append
+    (pfx sfx : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (h : StepStmtStar P EvalCmd extendEval (.stmts pfx ρ) (.exiting lbl ρ')) :
+    StepStmtStar P EvalCmd extendEval (.stmts (pfx ++ sfx) ρ) (.exiting lbl ρ') := by
+  induction pfx generalizing ρ with
+  | nil =>
+    -- `.stmts [] ρ` can only step to `.terminal ρ`, never to `.exiting`.
+    exfalso
+    cases h with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_nil => cases h_rest with
+        | step _ _ _ h_bad _ => cases h_bad
+  | cons s rest ih =>
+    cases h with
+    | step _ _ _ h_step h_rest => cases h_step with
+      | step_stmts_cons =>
+        match seq_reaches_exiting P EvalCmd extendEval h_rest with
+        | .inl h_inner_exit =>
+          -- Head `.stmt s ρ ⟶* .exiting lbl ρ'`; lift to `.stmts (s :: (rest ++ sfx)) ρ`.
+          refine ReflTrans.step _ _ _ StepStmt.step_stmts_cons ?_
+          have h_seq := seq_inner_star (P := P) EvalCmd extendEval _ _
+                          (rest ++ sfx) h_inner_exit
+          exact ReflTrans_Transitive _ _ _ _ h_seq
+            (.step _ _ _ StepStmt.step_seq_exit (.refl _))
+        | .inr ⟨ρ_mid, h_s_term, h_rest_exit⟩ =>
+          -- Head terminates; recurse on rest.
+          refine ReflTrans_Transitive _ _ _ _
+            (stmts_cons_step P EvalCmd extendEval s (rest ++ sfx) ρ ρ_mid h_s_term)
+            ?_
+          exact ih ρ_mid h_rest_exit
+
 /-- Decompose a terminating execution of `ss₁ ++ ss₂` into a terminating
     execution of `ss₁` followed by a terminating execution of `ss₂`. -/
 theorem stmts_append_terminates

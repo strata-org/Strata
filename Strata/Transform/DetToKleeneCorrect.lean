@@ -240,7 +240,7 @@ where
 /-! ## ReflTransT decomposition helpers -/
 
 omit [HasVal P] [HasBoolVal P] in
-private theorem seqT_reaches_terminal
+theorem seqT_reaches_terminal
     (extendEval : ExtendEval P)
     {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inner ss) (.terminal ρ')) :
@@ -257,7 +257,7 @@ private theorem seqT_reaches_terminal
     | .step _ _ _ h _ => exact nomatch h
 
 omit [HasVal P] [HasBoolVal P] in
-private theorem stmtsT_cons_terminal
+theorem stmtsT_cons_terminal
     (extendEval : ExtendEval P)
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
@@ -272,7 +272,7 @@ private theorem stmtsT_cons_terminal
 omit [HasVal P] [HasBoolVal P] in
 /-- Invert a block execution reaching terminal when the inner config cannot
     exit: the inner reaches terminal with a strictly shorter derivation. -/
-private theorem blockT_reaches_terminal_noExit
+theorem blockT_reaches_terminal_noExit
     (extendEval : ExtendEval P)
     {inner : Config P (Cmd P)} {l : Option String} {σ_parent : SemanticStore P} {ρ' : Env P}
     (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.block l σ_parent inner) (.terminal ρ'))

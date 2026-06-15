@@ -250,6 +250,57 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] :
     ----
     EvalCmd δ σ (.cover _ e _) σ false
 
+---------------------------------------------------------------------
+
+/-\! ### substFvar commutation (ported; used by LoopInitHoist*). -/
+
+/-- A semantic evaluator commutes with single-variable renaming.
+
+For every expression `e`, source variable `y`, fresh target `y'`, and stores
+`σ σ'` such that
+* `σ` and `σ'` agree away from `y` (`∀ x ≠ y, σ x = σ' x`), and
+* `σ' y'` carries `y`'s value in `σ` (`σ y = σ' y'`),
+
+evaluating `e` in `σ` equals evaluating the renamed expression
+`substFvar e y (mkFvar y')` in `σ'`.
+
+This is the abstract analogue of `Lambda.LExpr.substFvarCorrect`, stated for an
+arbitrary `PureExpr`.  It travels as a hypothesis exactly like
+`WellFormedSemanticEvalExprCongr`. -/
+@[expose] def WellFormedSemanticEvalSubstFvar {P : PureExpr}
+    [HasSubstFvar P] [HasFvar P] (δ : SemanticEval P) : Prop :=
+  ∀ (e : P.Expr) (y y' : P.Ident) (σ σ' : SemanticStore P),
+    (∀ x, x ≠ y → σ x = σ' x) →
+    σ y = σ' y' →
+    δ σ e = δ σ' (HasSubstFvar.substFvar e y (HasFvar.mkFvar y'))
+
+/-- A `LawfulHasSubstFvar` instance bundles, for a `PureExpr` whose `substFvar`
+descends naively under binders, the well-formedness witnesses needed by the
+fresh-name hoist soundness proof: the *structural* substitution-commutation
+fact for any *suitably* well-formed evaluator.
+
+Because the concrete commutation proof needs a structural (per-constructor)
+congruence on `δ` that is **not** generically expressible at the `PureExpr`
+level (it must mention `δ`'s expression constructors — quantifiers, application,
+etc.), this class does not attempt to *derive* commutation from the generic
+`WellFormed*` predicates (which is provably impossible — see the module note
+above).  Instead the soundness travels as the explicit predicate
+`WellFormedSemanticEvalSubstFvar` (just like `WellFormedSemanticEvalExprCongr`),
+established for the concrete evaluator by
+`Strata/Transform/CallElimCorrect.lean`. -/
+class LawfulHasSubstFvar (P : PureExpr) [HasSubstFvar P] [HasFvar P]
+    [HasVarsPure P P.Expr] where
+  /-- `substFvar` of a free variable by another free variable does not change
+  the *read set* except by the rename: every variable read by the renamed
+  expression is either read by the original or is the new name `y'`.  (This is
+  the structural fact `Lambda.LExpr` satisfies via `getVarsSubstCreateFvar`; it
+  is `δ`-independent and therefore *is* generically usable, e.g. to discharge
+  `WellFormedSemanticEvalDef` side-goals in the hoist proof.) -/
+  substFvar_getVars_subset : ∀ (e : P.Expr) (y y' : P.Ident) (v : P.Ident),
+    v ∈ HasVarsPure.getVars (HasSubstFvar.substFvar e y (HasFvar.mkFvar y')) →
+    v ∈ HasVarsPure.getVars e ∨ v = y'
+
+
 end section
 
 end -- public section

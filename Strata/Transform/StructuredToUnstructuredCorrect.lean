@@ -8575,6 +8575,32 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
     h_input_no_gen_suffix_mod h_term
 
+---------------------------------------------------------------------
+-- Loop-init-hoisting additive helpers (ported; used by LoopInitHoist*).
+---------------------------------------------------------------------
+
+/-- Extend a `SemanticStore` with a single `(ident, value)` binding.
+Returns a function that maps `ident` to `some value` and delegates other
+keys to the original store. -/
+@[expose] def extendStoreOne {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr) :
+    SemanticStore P :=
+  fun y => if y = ident then some val else σ y
+
+/-- `extendStoreOne` evaluated at the bound ident returns `some val`. -/
+theorem extendStoreOne_self {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr) :
+    extendStoreOne σ ident val ident = some val := by
+  simp [extendStoreOne]
+
+/-- `extendStoreOne` evaluated at any other ident equals the original
+store. -/
+theorem extendStoreOne_other {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (val : P.Expr)
+    (y : P.Ident) (h : y ≠ ident) :
+    extendStoreOne σ ident val y = σ y := by
+  simp [extendStoreOne, h]
+
 end StructuredToUnstructuredCorrect
 
 end -- public section
