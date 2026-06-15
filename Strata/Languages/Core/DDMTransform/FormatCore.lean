@@ -7,9 +7,10 @@ module
 
 public import Strata.Languages.Core.DDMTransform.Grammar
 public import Strata.Languages.Core.Procedure
-public import Strata.DDM.Util.DecimalRat
-public import Strata.DDM.Format
-public import Strata.Languages.Core.CoreOp
+public import StrataDDM.Util.DecimalRat
+public import StrataDDM.Format
+import Strata.Languages.Core.Factory
+open StrataDDM
 
 public section
 
@@ -269,7 +270,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
       let ty := CoreType.tvar default unknownTypeVar
       pure (.neg_expr default ty (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
-    match Strata.Decimal.fromRat r with
+    match StrataDDM.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
     | none => do
       ToCSTM.logError "lconstToExpr" "unsupported real" (toString r)
@@ -988,7 +989,12 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyCST ← blockToCST proc.body
+  let bodyStmts ← match proc.body with
+    | .structured ss => pure ss
+    | .cfg _ => do
+        ToCSTM.logError "procToCST" "CFG bodies not yet supported in CST conversion" proc.header.name.toPretty
+        pure []
+  let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs arguments spec body)

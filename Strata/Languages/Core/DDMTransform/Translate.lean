@@ -5,12 +5,8 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.Languages.Core.DDMTransform.Grammar
-public import Strata.Languages.Core.Core
-public import Strata.Languages.Core.CoreGen
-public import Strata.Languages.Core.CoreOp
-public import Strata.DDM.Util.DecimalRat
+public import Strata.Languages.Core.Env
+open StrataDDM
 
 
 ---------------------------------------------------------------------
@@ -54,10 +50,10 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   Imperative.MetaData.ofSourceRange (.file ictx.fileName) sr
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
-  return op.ann.toMetaData (← StateT.get).inputCtx
+  return SourceRange.toMetaData (← StateT.get).inputCtx op.ann
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
-  return arg.ann.toMetaData (← StateT.get).inputCtx
+  return SourceRange.toMetaData (← StateT.get).inputCtx arg.ann
 
 ---------------------------------------------------------------------
 
@@ -87,13 +83,13 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 ---------------------------------------------------------------------
 
-def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
+def translateCommaSep [Inhabited α] (f : Arg → TransM α) (arg : Arg) :
   TransM (Array α) := do
   let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
-def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : Arg) :
+def translateOption [Inhabited α] (f : Option Arg → TransM α) (arg : Arg) :
   TransM α := do
   let .option _ maybe_arg := arg
     | TransM.error s!"Expected Option: {repr arg}"
@@ -102,7 +98,7 @@ def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : 
 ---------------------------------------------------------------------
 
 def translateIdent (Identifier : Type) [Coe String Identifier] [Inhabited Identifier]
-  (arg : Strata.Arg) : TransM Identifier := do
+  (arg : Arg) : TransM Identifier := do
   let .ident _ name := arg
     | TransM.error s!"Expected ident: {repr arg}"
   pure name
@@ -158,6 +154,14 @@ structure TransBindings where
   freeVars  : Array Core.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
+def getGenCount (gen_kind : GenKind) (g : GenNum) : Nat :=
+  match gen_kind with
+  | .var_def => g.var_def
+  | .axiom_def => g.axiom_def
+  | .assume_def => g.assume_def
+  | .assert_def => g.assert_def
+  | .cover_def => g.cover_def
+
 def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
   let gen := b.gen
   let new_gen :=
@@ -168,6 +172,14 @@ def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
     | .assert_def => { gen with assert_def := gen.assert_def + 1 }
     | .cover_def => { gen with cover_def := gen.cover_def + 1 }
   { b with gen := new_gen }
+
+/-- Generate a default label and increment the counter for the given kind. -/
+def nextLabel (namePrefix : String) (kind : GenKind) (labelArg : Arg)
+    (bindings : TransBindings) : TransM (String × TransBindings) := do
+  let default_name := s!"{namePrefix}_{getGenCount kind bindings.gen}"
+  let bindings := incrNum kind bindings
+  let l ← translateOptionLabel default_name labelArg
+  return (l, bindings)
 
 instance : ToFormat TransBindings where
   format b := f!"BoundTypeVars: {b.boundTypeVars}\
@@ -294,11 +306,11 @@ partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   args.mapM (fun a => translateLMonoTy bindings a)
 end
 
-def translateTypeVar (op : Strata.Arg) : TransM TyIdentifier := do
+def translateTypeVar (op : Arg) : TransM TyIdentifier := do
   let args ← checkOpArg op q`Core.type_var 1
   translateIdent TyIdentifier args[0]!
 
-def translateTypeArgs (op : Strata.Arg) : TransM (Array TyIdentifier) := do
+def translateTypeArgs (op : Arg) : TransM (Array TyIdentifier) := do
   translateOption (fun x => do match x with
                   | none => return Array.empty
                   | some a =>
@@ -850,7 +862,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     return .strConst () x
   | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst () (Strata.Decimal.toRat x)
+    return .realConst () (StrataDDM.Decimal.toRat x)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
@@ -1202,7 +1214,7 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) :
     pure [(label, e)]
   | _ => pure []
 
-partial def translateInvariants (p : Strata.Program) (bindings : TransBindings) (arg : Arg) :
+partial def translateInvariants (p : StrataDDM.Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List (String × Core.Expression.Expr)) := do
   let .op op := arg
     | TransM.error s!"translateInvariants expects an op {repr arg}"
@@ -1336,6 +1348,18 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
+/-- Translate an assert/cover statement with optional reachability check. -/
+partial def translateLabeledCheck (p : Program) (bindings : TransBindings) (op : Operation)
+    (namePrefix : String) (kind : GenKind) (rca la ca : Arg)
+    (mk : String → Core.Expression.Expr → MetaData Core.Expression → Core.Statement) :
+    TransM (List Core.Statement × TransBindings) := do
+  let c ← translateExpr p bindings ca
+  let (l, bindings) ← nextLabel namePrefix kind la bindings
+  let hasRC ← translateOptionReachCheck rca
+  let md ← getOpMetaData op
+  let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
+  return ([mk l c md], bindings)
+
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM (List Core.Statement × TransBindings) := do
   let .op op := arg
@@ -1359,28 +1383,12 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
   | q`Core.assert, #[rca, la, ca] =>
-    let c ← translateExpr p bindings ca
-    let default_name := s!"assert_{bindings.gen.assert_def}"
-    let bindings := incrNum .assert_def bindings
-    let l ← translateOptionLabel default_name la
-    let hasRC ← translateOptionReachCheck rca
-    let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
-    return ([.assert l c md], bindings)
+    translateLabeledCheck p bindings op "assert" .assert_def rca la ca .assert
   | q`Core.cover, #[rca, la, ca] =>
-    let c ← translateExpr p bindings ca
-    let default_name := s!"cover_{bindings.gen.assert_def}"
-    let bindings := incrNum .cover_def bindings
-    let l ← translateOptionLabel default_name la
-    let hasRC ← translateOptionReachCheck rca
-    let md ← getOpMetaData op
-    let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
-    return ([.cover l c md], bindings)
+    translateLabeledCheck p bindings op "cover" .cover_def rca la ca .cover
   | q`Core.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
-    let default_name := s!"assume_{bindings.gen.assume_def}"
-    let bindings := incrNum .assume_def bindings
-    let l ← translateOptionLabel default_name la
+    let (l, bindings) ← nextLabel "assume" .assume_def la bindings
     let md ← getOpMetaData op
     return ([.assume l c md], bindings)
   | q`Core.if_statement, #[ca, ta, fa] =>
@@ -1439,7 +1447,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     -- The DDM parser's @[scope(b)] on the body adds only the parameters.
     -- The function name is NOT in scope inside the body (declareFn adds it
     -- for subsequent statements only). So body bindings = outer + parameters.
-    let funcType := Lambda.LMonoTy.mkArrow outputMono (inputs.values.reverse)
+    let funcType := Lambda.LMonoTy.mkArrow' outputMono inputs.values
     let funcBinding : LExpr Core.CoreLParams.mono := .op () name (some funcType)
     let in_bindings := (inputs.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
 
@@ -1672,7 +1680,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                               outputs := ret },
                   spec := { preconditions := requires,
                             postconditions := ensures },
-                  body := body
+                  body := .structured body
                 }
                 md,
           origBindings)
@@ -1691,10 +1699,134 @@ def translateBlockCommand (p : Program) (bindings : TransBindings) (op : Operati
                               outputs := [] },
                   spec := { preconditions := [],
                             postconditions := [] },
-                  body := body
+                  body := .structured body
                 }
                 md,
           bindings)
+
+---------------------------------------------------------------------
+
+/-- Translate a transfer command from the CFG syntax -/
+
+private instance : Inhabited TransBindings := ⟨{}⟩
+private instance : Inhabited (Imperative.DetTransferCmd String Core.Expression) := ⟨.finish .empty⟩
+private instance : Inhabited (Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) := ⟨⟨[], .finish .empty⟩⟩
+private instance : Inhabited (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) := ⟨⟨"", []⟩⟩
+
+partial def translateTransfer (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (List Core.Command × Imperative.DetTransferCmd String Core.Expression × TransBindings) := do
+  let .op op := arg
+    | TransM.error s!"translateTransfer expected op {repr arg}"
+  let md ← getOpMetaData op
+  match op.name with
+  | q`Core.transfer_goto =>
+    let label ← translateIdent String op.args[0]!
+    return ([], .condGoto (Lambda.LExpr.boolConst () Bool.true) label label md, bindings)
+  | q`Core.transfer_nondet_goto =>
+    let label1 ← translateIdent String op.args[0]!
+    let label2 ← translateIdent String op.args[1]!
+    -- Nondeterministic choice: use a fresh boolean variable as the branch
+    -- condition, declared by the `init` command below (prepended to the block in
+    -- `translateCFGBlock`) so the type checker can see it. The symbolic evaluator
+    -- leaves the fvar unchanged, so `evalCFGStep` forks into both paths; the
+    -- concrete interpreter (runCFG) errors on it, as expected.
+    let condName : Core.CoreIdent := ⟨s!"$__nondet_{bindings.gen.var_def}", ()⟩
+    let bindings := incrNum .var_def bindings
+    let boolMono := Lambda.LMonoTy.bool
+    let boolTy : Lambda.LTy := .forAll [] boolMono
+    let initCmd : Core.Command := .cmd (.init condName boolTy .nondet md)
+    let condExpr := Lambda.LExpr.fvar () condName (some boolMono)
+    return ([initCmd], .condGoto condExpr label1 label2 md, bindings)
+  | q`Core.transfer_cond_goto =>
+    let cond ← translateExpr p bindings op.args[0]!
+    let lt ← translateIdent String op.args[1]!
+    let lf ← translateIdent String op.args[2]!
+    return ([], .condGoto cond lt lf md, bindings)
+  | q`Core.transfer_return =>
+    return ([], .finish md, bindings)
+  | _ => TransM.error s!"translateTransfer: unknown transfer {repr op.name}"
+
+/-- Translate a single CFG block -/
+partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command × TransBindings) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBlock expected op {repr arg}"
+  let label ← translateIdent String op.args[0]!
+  -- Translate commands - handle both Seq and empty cases
+  let stmts : Array Arg := match op.args[1]! with
+    | .seq _ _ arr => arr
+    | other => #[other]  -- single statement or empty
+  let mut cmds : Array Core.Command := #[]
+  let mut bindings := bindings
+  for s in stmts do
+    -- Skip empty/null args
+    if let .op _ := s then
+      let (translated, bindings') ← translateStmt p bindings s
+      bindings := bindings'
+      for stmt in translated do
+        match stmt with
+        | .cmd c => cmds := cmds.push c
+        | _ => TransM.error s!"translateCFGBlock: only commands allowed in CFG blocks, got statement"
+  let (transferCmds, transfer, bindings') ← translateTransfer p bindings op.args[2]!
+  -- Append any commands the transfer needs declared in scope (e.g. the
+  -- `$__nondet_N` declaration for a nondeterministic goto).
+  return (label, ⟨cmds.toList ++ transferCmds, transfer⟩, bindings')
+
+/-- Translate a list of CFG blocks -/
+partial def translateCFGBlocks (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (List (String × Imperative.BasicBlock (Imperative.DetTransferCmd String Core.Expression) Core.Command) × TransBindings) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBlocks expected op {repr arg}"
+  match op.name with
+  | q`Core.cfg_blocks_one =>
+    let (label, blk, bindings) ← translateCFGBlock p bindings op.args[0]!
+    return ([(label, blk)], bindings)
+  | q`Core.cfg_blocks_cons =>
+    let (label, blk, bindings) ← translateCFGBlock p bindings op.args[0]!
+    let (rest, bindings) ← translateCFGBlocks p bindings op.args[1]!
+    return ((label, blk) :: rest, bindings)
+  | _ => TransM.error s!"translateCFGBlocks: unknown {repr op.name}"
+
+/-- Translate a CFG body -/
+partial def translateCFGBody (p : Program) (bindings : TransBindings) (arg : Arg) :
+  TransM (Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression) × TransBindings) := do
+  let .op op := arg
+    | TransM.error s!"translateCFGBody expected op {repr arg}"
+  let entry ← translateIdent String op.args[0]!
+  let (blocks, bindings) ← translateCFGBlocks p bindings op.args[1]!
+  return ({ entry := entry, blocks := blocks }, bindings)
+
+/-- Translate a procedure with CFG body -/
+def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 5
+  let pname ← translateIdent Core.CoreIdent op.args[0]!
+  let typeArgs ← translateTypeArgs op.args[1]!
+  let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
+  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
+  let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
+    (fun (v, ty) => (LExpr.fvar () v ty))
+  let out_bindings := out_bindings_only.toArray
+  let origBindings := bindings
+  let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
+  let bindings := { bindings with boundVars := bbindings }
+  let .option _ speca := op.args[3]!
+    | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[3]!}"
+  let (requires, ensures) ←
+    if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
+  let (cfg, bindings) ← translateCFGBody p bindings op.args[4]!
+  let origBindings := { origBindings with gen := bindings.gen }
+  let md ← getOpMetaData op
+  return (.proc { header := { name := pname,
+                              typeArgs := typeArgs.toList,
+                              inputs := sig,
+                              outputs := ret },
+                  spec := { preconditions := requires,
+                            postconditions := ensures },
+                  body := .cfg cfg
+                }
+                md,
+          origBindings)
 
 ---------------------------------------------------------------------
 
@@ -1718,9 +1850,7 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
 def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom 2
-  let default_name := s!"axiom_{bindings.gen.axiom_def}"
-  let bindings := incrNum .axiom_def bindings
-  let l ← translateOptionLabel default_name op.args[0]!
+  let (l, bindings) ← nextLabel "axiom" .axiom_def op.args[0]! bindings
   let e ← translateExpr p bindings op.args[1]!
   let md ← getOpMetaData op
   return (.ax (Core.Axiom.mk l e) md, bindings)
@@ -1728,9 +1858,7 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 2
-  let default_name := s!"axiom_distinct_{bindings.gen.axiom_def}"
-  let bindings := incrNum .axiom_def bindings
-  let l ← translateOptionLabel default_name op.args[0]!
+  let (l, bindings) ← nextLabel "axiom_distinct" .axiom_def op.args[0]! bindings
   let es ← translateCommaSep (translateExpr p bindings) op.args[1]!
   if !(es.all LExpr.isOp) then
     TransM.error s!"arguments to `distinct` must all be constant names: {es}"
@@ -2083,42 +2211,40 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
 partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   TransM Core.Decls := do
-  let (decls, _) ← go 0 p.commands.size bindings p.commands
-  return decls
-  where go (count max : Nat) bindings ops : TransM (Core.Decls × TransBindings) := do
-  match (max - count) with
-  | 0 => return ([], bindings)
-  | _ + 1 =>
-    let op := ops[count]!
-    let (newDecls, bindings) ← do
-        let (decl, bindings) ←
-          match op.name with
-          | q`Core.command_datatypes =>
-            translateDatatypes p bindings op
-          | q`Core.command_constdecl =>
-            translateConstant bindings op
-          | q`Core.command_typedecl =>
-            translateTypeDecl bindings op
-          | q`Core.command_typesynonym =>
-            translateTypeSynonym bindings op
-          | q`Core.command_axiom =>
-            translateAxiom p bindings op
-          | q`Core.command_distinct =>
-            translateDistinct p bindings op
-          | q`Core.command_procedure =>
-            translateProcedure p bindings op
-          | q`Core.command_fndef =>
-            translateFunction .Definition p bindings op
-          | q`Core.command_fndecl =>
-            translateFunction .Declaration p bindings op
-          | q`Core.command_recfndefs =>
-            translateRecFuncBlock p bindings op
-          | q`Core.command_block =>
-            translateBlockCommand p bindings op
-          | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
-        pure ([decl], bindings)
-    let (decls, bindings) ← go (count + 1) max bindings ops
-    return (newDecls ++ decls, bindings)
+  let mut acc : Array Core.Decl := #[]
+  let mut bindings := bindings
+  for i in [:p.commands.size] do
+    let op := p.commands[i]!
+    let (decl, bindings') ←
+      match op.name with
+      | q`Core.command_datatypes =>
+        translateDatatypes p bindings op
+      | q`Core.command_constdecl =>
+        translateConstant bindings op
+      | q`Core.command_typedecl =>
+        translateTypeDecl bindings op
+      | q`Core.command_typesynonym =>
+        translateTypeSynonym bindings op
+      | q`Core.command_axiom =>
+        translateAxiom p bindings op
+      | q`Core.command_distinct =>
+        translateDistinct p bindings op
+      | q`Core.command_procedure =>
+        translateProcedure p bindings op
+      | q`Core.command_fndef =>
+        translateFunction .Definition p bindings op
+      | q`Core.command_fndecl =>
+        translateFunction .Declaration p bindings op
+      | q`Core.command_recfndefs =>
+        translateRecFuncBlock p bindings op
+      | q`Core.command_block =>
+        translateBlockCommand p bindings op
+      | q`Core.command_cfg_procedure =>
+        translateCFGProcedure p bindings op
+      | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
+    acc := acc.push decl
+    bindings := bindings'
+  return acc.toList
 
 def translateProgram (p : Program) : TransM Core.Program := do
   fun s => ((), { s with globalContext := p.globalContext })

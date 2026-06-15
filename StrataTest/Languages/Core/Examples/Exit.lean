@@ -4,10 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
 import StrataTest.Languages.Core.Examples.Loops
+import StrataDDM.Integration.Lean.HashCommands
 
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -109,11 +110,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify exitPgm
+#eval Core.verify exitPgm
 
 
 /--
-info: Entry: l1
+info: Entry: block$l1$_2
 
 l1:
   condGoto true block$l1$_2 block$l1$_2
@@ -130,16 +131,16 @@ end$_0:
 #eval (Std.format (singleCFG exitPgm 0))
 
 /--
-info: Entry: l5
+info: Entry: ite$_5
 
 l5:
-  condGoto true l4 l4
+  condGoto true ite$_5 ite$_5
 l4:
-  condGoto true l4_before l4_before
+  condGoto true ite$_5 ite$_5
 l4_before:
-  condGoto true l3_before l3_before
+  condGoto true ite$_5 ite$_5
 l3_before:
-  condGoto true l1 l1
+  condGoto true ite$_5 ite$_5
 l1:
   condGoto true ite$_5 ite$_5
 ite$_5:

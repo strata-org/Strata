@@ -4,22 +4,18 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def inferTypeErrorProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure foo()
   opaque
 {
   <?>
 //^^^ error: could not infer type
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "InferTypeError" inferTypeErrorProgram 14 processLaurelFile
+#end

@@ -5,14 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.DDMTransform.Translate
-public import Strata.Languages.Core.DDMTransform.ASTtoCST
-public import Strata.Languages.Core.Options
-public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.SMTEncoder
-public import Strata.DL.Imperative.MetaData
-public import Strata.DL.Imperative.SMTUtils
-public import Strata.DDM.AST
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.SMT.IncrementalSolver
 import Strata.Transform.CallElim
@@ -23,6 +16,15 @@ import Strata.Transform.LoopElim
 import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
+public import Std.Tactic.BVDecide.Normalize.BitVec
+public import Strata.Languages.Core.DDMTransform.ASTtoCST -- shake: keep
+public import Strata.Languages.Core.DDMTransform.Translate -- shake: keep
+public import Strata.Languages.Core.Statistics -- shake: keep
+public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.ProgramEval
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Tactics
 import Strata.Pipeline.Context
 
 open Strata.Pipeline (PipelineContext)
@@ -90,18 +92,22 @@ decreasing_by
   all_goals simp_wf
   all_goals (try omega) <;> (have := List.sizeOf_lt_of_mem ‹_›; omega)
 
-private def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
+/-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
+    Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
+private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
+  let id := Strata.Name.findUnique baseName 1 ((← get).base.usedNames.union smtReservedKeywordsSet)
+  modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
+  return id
+
+def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).base.ufs.toList.map (·.2)
-  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -227,9 +233,9 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
   if let .some enc := (← get).base.ufs.get? uf then return enc
-  let id := ufId (← get).base.ufs.size
+  let id ← uniquify (ufId (← get).base.ufs.size)
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (termTypeToSort solver vt.ty)
@@ -237,7 +243,7 @@ private def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : T
   let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base := { state.base with ufs := state.base.ufs.insert uf id } })
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
 end AbstractEncoder
 
@@ -303,7 +309,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     if !ctx.seenDatatypes.contains s.name then
       let _ ← solver.declareSort s.name s.arity
   emitDatatypesAbstract solver ctx
-  let initState : AbstractEncoderState τ := { base := EncoderState.init }
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames := ctx.preDeclaredNames
+  let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -317,7 +325,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     else
       let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with base := { estate.base with ufs := estate.base.ufs.insert uf uf.id } }
+        { estate with base := { estate.base with
+          ufs := estate.base.ufs.insert uf uf.id
+          usedNames := estate.base.usedNames.insert uf.id } }
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
@@ -364,10 +374,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
 
+  -- Pre-populate usedNames with sort/datatype names already emitted to the solver
+  let preDeclaredNames := ctx.preDeclaredNames
+
   let estate ← phase "encodeUFs" do
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs
       else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
+    let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
   let estate ← phase "encodeFunctions" do
@@ -375,7 +388,9 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
       else
         let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
         managedUfs.foldl (init := estate) fun estate uf =>
-          { estate with ufs := estate.ufs.insert uf uf.id }
+          { estate with
+            ufs := estate.ufs.insert uf uf.id
+            usedNames := estate.usedNames.insert uf.id }
     let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
     pure estate
 
@@ -589,6 +604,189 @@ open Strata
 
 public section
 
+def typeCheck (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel Program := do
+  let T := Lambda.TEnv.default
+  let factory ← Core.Factory.addFactory moreFns
+  let C := { Lambda.LContext.default with
+                functions := factory,
+                knownTypes := Core.KnownTypes }
+  match Factory.typeCheck C T with
+  | .error k =>
+    -- TODO: DiagnosticModel for functions defined in Factory?
+    throw (DiagnosticModel.fromFormat k)
+  | .ok T =>
+    let (program, _T) ← Program.typeCheck C T program
+    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
+    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
+    return program
+
+def formatProofObligation (ob : Imperative.ProofObligation Expression) :
+    Std.Format :=
+  let flatEntries := ob.assumptions.flatten
+  let assumptionFmt := flatEntries.filterMap fun
+    | .assumption label expr => some f!"{label}: {Core.formatExprs [expr]}"
+    | _ => none
+  let assumptionLine := if assumptionFmt.isEmpty then f!""
+                        else f!"\nAssumptions:\n{Std.Format.joinSep assumptionFmt "\n"}"
+  f!"Label: {ob.label}\n\
+     Property: {ob.property}{assumptionLine}\n\
+     Obligation:\n{Core.formatExprs [ob.obligation]}\n"
+
+def formatProofObligations (obs : Array (Imperative.ProofObligation Expression)) :
+    Std.Format :=
+  Std.Format.joinSep (obs.toList.map formatProofObligation) "\n"
+
+/-- Build an evaluation environment from a program.
+    Loads the factory, datatypes, and processes all declarations.
+    When `registerCustomFunctions` is true, also loads function declarations,
+    distinct constraints, and local function declarations from procedure
+    bodies into the factory (needed for SMT encoding). -/
+def buildEnv (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (registerCustomFunctions : Bool := false) :
+    Except DiagnosticModel (Env × Statistics) := do
+  let factory ← Core.Factory.addFactory moreFns
+  let σ ← (Lambda.LState.init).addFactory factory
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with | .type (.data d) _ => some d | _ => none
+  let mut E : Env := { Env.init with exprEnv := σ, program := program, pathCap := options.pathCap }
+  E ← E.addDatatypes datatypes
+
+  if registerCustomFunctions then
+    for decl in program.decls do
+      match decl with
+      | .func func _ => E ← E.addFactoryFunc func
+      | .recFuncBlock funcs _ =>
+        validateCasesTypes funcs E.datatypes
+        for func in funcs do E ← E.addFactoryFunc func
+      | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
+      | .proc proc _ =>
+        let stmts := match proc.body with
+          | .structured ss => ss
+          -- CFG bodies cannot contain local function declarations;
+          -- funcDecl is a structured statement-level construct only.
+          | .cfg _ => []
+        for stmt in stmts.flatMap collectFuncDecls do
+          match E.exprEnv.addFactoryFunc stmt with
+          | .ok σ' => E := { E with exprEnv := σ' }
+          | .error _ => pure ()
+      | _ => pure ()
+
+  -- Collect declaration statistics
+  let stats := program.decls.foldl (fun s d =>
+    match d with
+    | .type _ _          => s.increment s!"{Evaluator.Stats.typeDecls}"
+    | .ax _ _            => s.increment s!"{Evaluator.Stats.axioms}"
+    | .distinct _ _ _    => s.increment s!"{Evaluator.Stats.distincts}"
+    | .proc _ _          => s.increment s!"{Evaluator.Stats.procedures}"
+    | .func _ _          => s.increment s!"{Evaluator.Stats.functions}"
+    | .recFuncBlock fs _ => s.increment s!"{Evaluator.Stats.recursiveFunctions}" fs.length)
+    ({} : Statistics)
+  let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
+  return (E, stats)
+where
+  collectFuncDecls : Statement → List (@Lambda.LFunc CoreLParams)
+    | .funcDecl decl _ => [{
+        name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
+        inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
+        output := Lambda.LTy.toMonoTypeUnsafe decl.output,
+        body := decl.body, attr := decl.attr,
+        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+    | .block _ ss _ => ss.flatMap collectFuncDecls
+    | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
+    | .loop _ _ _ body _ => body.flatMap collectFuncDecls
+    | _ => []
+
+/-- Proof obligation program construction: Program → Program.
+    Runs symbolic execution and converts obligations to a program
+    suitable for downstream phases (ANF encoding, SMT encoding). -/
+def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let (E, declStats) ← buildEnv options program moreFns
+  let (pEs, evalStats) ← Program.eval E
+  -- Note: all .program fields in pEs will have identical values, because
+  -- Program.eval does not modify the program. The Program field is
+  -- kept for convenience.
+  let stats := declStats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+
+  -- Convert the evaluation Env's deferred obligations into a procedure body.
+  -- Program.eval accumulates all procedures into a single Env, so pEs
+  -- is always a single-element list. We extract the single Env and build
+  -- one obligation procedure containing all deferred obligations.
+  -- Type/datatype declarations come from the original program.
+  let typeDecls := program.decls.filter fun d =>
+    match d with | .type _ _ => true | _ => false
+  let postEvalEnv ← match pEs with
+    | [e] => pure e
+    | _ => throw (DiagnosticModel.fromMessage s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
+  -- The procedure name is only used for the obligation procedure header;
+  -- downstream phases (ObligationExtraction) walk the body and ignore it.
+  -- We pick the first procedure name as a representative label.
+  let procName := program.decls.findSome? fun
+    | .proc p _ => some p.header.name | _ => none
+  let blocks := postEvalEnv.deferred.toList.map fun ob =>
+    let assumes := ob.assumptions.reverse.flatten.filterMap fun
+      | .assumption label e =>
+        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+      | _ => none
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
+      if ob.property == .cover
+      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
+      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    assumes ++ [assertStmt]
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let oblProcs := match procName with
+    | some name => [Decl.proc {
+        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
+        spec := { preconditions := [], postconditions := [] },
+        body := .structured body
+      } .empty]
+    | none => []
+
+  -- Include function declarations and distinct constraints from the
+  -- evaluation environment so the obligations program is self-contained
+  -- for downstream phases (ANF encoding, SMT encoding).
+  -- Get functions added during evaluation (not in the initial factory)
+  let initialFactorySize := E.exprEnv.config.factory.toArray.size
+  let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
+  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
+  let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
+    Decl.distinct s!"distinct_{i}" es .empty
+  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+
+  if options.verbose >= .normal then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    dbg_trace f!"{formatProofObligations postEvalEnv.deferred}"
+  return (oblProgram, stats)
+
+
+/-- Convenience: type check then build obligation program. -/
+def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel (Program × Statistics) := do
+  let program ← typeCheck options program moreFns
+  toCoreProofObligationProgram options program moreFns
+
+/-- Convenience: type check then symbolic eval. Returns the list of
+    evaluation environments and statistics. -/
+def typeCheckAndEval (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except DiagnosticModel ((List Env) × Statistics) := do
+  let program ← typeCheck options program moreFns
+  let (E, declStats) ← buildEnv options program moreFns
+  let (pEs, evalStats) ← Program.eval E
+  let stats := declStats.merge evalStats
+  let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
+  return (pEs, stats)
+
 /-- A solver log entry recording the SMT result after a specific pipeline phase. -/
 structure SolverPhaseLog where
   /-- Name of the pipeline phase that produced this entry. -/
@@ -639,7 +837,7 @@ Unreachable covers display as ❌ (error) instead of ⛔ (warning).
   ✅     always true and is reachable                   sat      unsat    yes        pass       pass        pass                 Property always true, reachable from declaration entry
   ❌     always false and is reachable                  unsat    sat      yes        error      error       error                Property always false, reachable from declaration entry
   🔶     can be both true and false and is reachable    sat      sat      yes        error      note        error                Reachable, solver found models for both the property and its negation
-  ⛔     unreachable                                    unsat    unsat    no         warning    error       error                Dead code, path unreachable
+  ⛔     unreachable in this context                    unsat    unsat    no         warning    error       error                Dead code, unreachable in this context
   ➕     can be true and is reachable                   sat      unknown  yes        error      note        note                 Property can be true and is reachable, unknown if always true
   ✖️     always false if reached                        unsat    unknown  unknown    error      error       error                Property always false if reached, unknown if reachable
   ➖     can be false and is reachable                  unknown  sat      yes        error      note        error                Property can be false and is reachable, unknown if always false
@@ -795,7 +993,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   -- Unreachable is detected when both checks ran (via fullCheck annotation or full level)
   if o.unreachable then
     unreachableMsg checkMode property.passWhenUnreachable
-      "pass (❗path unreachable)" "fail (❗path unreachable)"
+      "pass (❗unreachable in this context)" "fail (❗unreachable in this context)"
   -- Simplified labels for minimal check level
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
@@ -915,7 +1113,6 @@ def VCOutcome.merge (a b : VCOutcome) : VCOutcome :=
     validityProperty := a.validityProperty.merge b.validityProperty
     solverLog := a.solverLog ++ b.solverLog
     mergedFrom := aPaths ++ bPaths }
-
 
 /--
 A model with values lifted to LExpr for display purposes.
@@ -1675,32 +1872,11 @@ def verify (program : Program)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
   let phases := pipelinePhases.map (·.phase)
   let (oblProgram, pipelineStats) ← pctx.withPhase "programTransformations" do
-    if let some pfx := keepAllFilesPrefix then
-      if let some parent := (System.FilePath.mk pfx).parent then
-        IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-          (IO.FS.createDirAll parent)
-    let mut current := program
-    let mut state : Transform.CoreTransformState := { Transform.CoreTransformState.emp with factory := some factory }
-    let mut step := 0
-    have : Inhabited (Except Transform.Err Program × Transform.CoreTransformState) :=
-      ⟨(.error default, Transform.CoreTransformState.emp)⟩
-    for pp in pipelinePhases do
-      let (result, newState) ← pctx.withRepeatedPhasePure pp.phase.name fun () =>
-        Transform.runWith current (fun prog => do
-          let (_, next) ← pp.transform prog
-          return next) state
-      match result with
-      | .ok next =>
-        current := next
-        state := newState
-        step := step + 1
-        if let some pfx := keepAllFilesPrefix then
-          let path := s!"{pfx}.{step}.{pp.phase.name}.core.st"
-          IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
-            (IO.FS.writeFile path (toString current ++ "\n"))
-      | .error e =>
-        throw e
-    .ok (current, state.statistics)
+    let (prog, state) ← runTransforms program pipelinePhases
+      (initState := { Transform.CoreTransformState.emp with factory := some factory })
+      (pipelineCtx := some pctx)
+      (keepAllFilesPrefix := keepAllFilesPrefix)
+    pure (prog, state.statistics)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
@@ -1731,6 +1907,7 @@ namespace Strata
 
 open Lean.Parser
 open Strata (DiagnosticModel FileRange)
+open StrataDDM (Program)
 
 public section
 
@@ -1744,46 +1921,9 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
     .error <| DiagnosticModel.fromFormat s!"DDM Transform Error: {repr errors}"
 
 def Core.getProgram
-  (p : Strata.Program)
+  (p : StrataDDM.Program)
   (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
-
-/-- Front-end phase: any translation from a source language to Core may
-    introduce over-approximations. Until front-ends can validate models or
-    determine that an assertion is unaffected, all sat results are converted
-    to unknown. -/
-def frontEndPhase : Core.AbstractedPhase where
-  name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
-
-def verify
-    (env : Program)
-    (ictx : InputContext := Inhabited.default)
-    (proceduresToVerify : Option (List String) := none)
-    (options : Core.VerifyOptions := Core.VerifyOptions.default)
-    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
-    (externalPhases : List Core.AbstractedPhase := [])
-    (keepAllFilesPrefix : Option String := none)
-    (solver : Option Core.CoreSMTSolver := none)
-    (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
-    : IO Core.VCResults := do
-  let (program, errors) := Core.getProgram env ictx
-  if errors.isEmpty then
-    let runner tempDir :=
-      EIO.toIO (fun dm => IO.Error.userError (toString (dm.format (some ictx.fileMap))))
-                  (Core.verify program tempDir proceduresToVerify options moreFns
-                    (externalPhases := externalPhases)
-                    (keepAllFilesPrefix := keepAllFilesPrefix)
-                    (solver := solver)
-                    (mkDischarge := mkDischarge))
-    match options.vcDirectory with
-    | .none =>
-      IO.FS.withTempDir runner
-    | .some p =>
-      IO.FS.createDirAll ⟨p.toString⟩
-      runner ⟨p.toString⟩
-  else
-    panic! s!"DDM Transform Error: {repr errors}"
 
 def toDiagnosticModel (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option DiagnosticModel :=
@@ -1799,14 +1939,14 @@ def toDiagnosticModel (vcr : Core.VCResult)
       if vcr.obligation.property == .cover then
         let description := vcr.obligation.metadata.getPropertySummary.getD "cover property"
         if outcome.isSatisfiable || outcome.passReachabilityUnknown then none
-        else if outcome.unreachable then some s!"{description} is unreachable"
+        else if outcome.unreachable then some s!"{description} is unreachable in this context"
         else if outcome.isPass then none
         else some s!"{description} is not satisfiable"
       else
         let phaseDescription := phases.findSome? (·.getAssertDescription vcr.obligation.label)
         let description := vcr.obligation.metadata.getPropertySummary.getD
           (phaseDescription.getD "assertion")
-        if outcome.unreachable then some s!"{description} holds vacuously (path unreachable)"
+        if outcome.unreachable then some s!"{description} holds vacuously (unreachable in this context)"
         else if outcome.isPass || outcome.isSatisfiable || outcome.passReachabilityUnknown then none
         else if outcome.alwaysFalseAndReachable || outcome.canBeTrueOrFalseAndIsReachable || outcome.canBeFalseAndIsReachable then
           some s!"{description} does not hold"
@@ -1818,7 +1958,7 @@ structure Diagnostic where
   ending : Lean.Position
   message : String
   type : DiagnosticType
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToExpr
 
 def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
   let fileMap := (files.find? dm.fileRange.file).getD
@@ -1831,11 +1971,6 @@ def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: Diagn
     message := dm.message
     type := dm.type
   }
-
-def Core.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
-    (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr phases
-  modelOption.map (fun dm => dm.toDiagnostic files)
 
 end -- public section
 end Strata

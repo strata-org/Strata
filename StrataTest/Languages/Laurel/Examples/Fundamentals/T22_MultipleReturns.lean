@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure multipleReturns() returns (x: int, y: int, z: int)
   opaque
   ensures x == 1 && y == 2 && z == 3;
@@ -44,9 +43,4 @@ procedure repeatedAssignTarget()
   assign x, x, x := multipleReturns();
   assert x == 3
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "MultipleReturns" program 14 processLaurelFile
-
-end Strata.Laurel
+#end

@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure hasRequires(x: int) returns (r: int)
   requires x > 2
 // Call elimination reports precondition errors at the call site,
@@ -61,7 +60,7 @@ procedure multipleRequiresCaller()
 {
   var a: int := multipleRequires(1, 2);
   var b: int := multipleRequires(-1, 2)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 function funcMultipleRequires(x: int, y: int): int
@@ -78,7 +77,4 @@ procedure funcMultipleRequiresCaller()
   var b: int := funcMultipleRequires(1, -1)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "Preconditions" program 14 processLaurelFile
+#end

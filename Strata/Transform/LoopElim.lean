@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Imperative.Stmt
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.StatementSemantics
 
@@ -117,9 +116,11 @@ encoding.
 mutual
 
 def Stmt.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  {P : PureExpr} {C : Type}
+  [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
+  [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
   (s : Stmt P C) : StateM LoopElimState (Stmt P C) :=
   match s with
   | .loop guard measure invariants bss md => do
@@ -128,7 +129,7 @@ def Stmt.removeLoopsM
     -- Havoc only loop-carried variables. Variables declared inside the loop
     -- body are block-local and should not be treated as pre-existing state by
     -- the passive loop encoding.
-    let local_defs := Block.definedVars bss
+    let local_defs := Block.definedVars bss false
     let assigned_vars :=
       (Block.modifiedVars bss).filter (fun v => v ∉ local_defs)
     -- All of the replaced statements reuse the metadata md.
@@ -161,17 +162,17 @@ def Stmt.removeLoopsM
           | some m =>
             let m_old_ident    := HasIdent.ident s!"$__loop_measure_{loop_num}"
             let m_old_expr     := HasFvar.mkFvar m_old_ident
-            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasIntOrder.intTy .nondet md)
+            let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy .nondet md)
             let assume_m_old   := Stmt.cmd (HasPassiveCmds.assume
-              s!"assume_measure_{loop_num}" (HasIntOrder.eq m_old_expr m) md)
+              s!"assume_measure_{loop_num}" (HasIntOps.eq m_old_expr m) md)
             let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
               s!"measure_lb_{loop_num}"
-              (HasNot.not (HasIntOrder.lt m_old_expr HasIntOrder.zero)) md)
+              (HasBoolOps.not (HasIntOps.lt m_old_expr HasInt.zero)) md)
             let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-              s!"measure_decrease_{loop_num}" (HasIntOrder.lt m m_old_expr) md)
+              s!"measure_decrease_{loop_num}" (HasIntOps.lt m m_old_expr) md)
             pure ([init_m_old, assume_m_old, assert_lb], [assert_decrease])
         let (pre, post) := termination_stmts
-        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" (HasNot.not g) md)]
+        let not_guard := [Stmt.cmd (HasPassiveCmds.assume s!"not_guard_{loop_num}" (HasBoolOps.not g) md)]
         pure (assume_guard, pre, post, not_guard)
       | .nondet =>
         -- Nondet loop: no guard assume, no termination, no not_guard
@@ -214,9 +215,11 @@ def Stmt.removeLoopsM
   | .typeDecl _ _ => pure s  -- Type declarations pass through unchanged
 
 def Block.removeLoopsM
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  {P : PureExpr} {C : Type}
+  [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
+  [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
   (ss : List (Stmt P C)) : StateM LoopElimState (List (Stmt P C)) :=
   match ss with
   | [] => pure []
@@ -228,9 +231,11 @@ def Block.removeLoopsM
 end
 
 def Stmt.removeLoops
-  [HasNot P] [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
+  {P : PureExpr} {C : Type}
+  [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasVarsImp P C] [HasHavoc P C] [HasInit P C] [HasPassiveCmds P C]
   [DecidableEq P.Ident]
-  [HasIdent P] [HasFvar P] [HasIntOrder P]
+  [HasIdent P] [HasFvar P] [HasInt P] [HasIntOps P]
   (s : Stmt P C) : Stmt P C :=
   (StateT.run (removeLoopsM s) {}).fst
 
@@ -241,8 +246,13 @@ def loopElim (p : Program) : Program × Statistics :=
   let (decls, stats) := p.decls.foldl (fun (acc, stats) d =>
     match d with
     | .proc proc md =>
-      let (body, st) := StateT.run (Block.removeLoopsM proc.body) {}
-      ((.proc { proc with body := body } md) :: acc, stats.merge st.statistics)
+      match proc.body with
+      | .structured ss =>
+        let (body, st) := StateT.run (Block.removeLoopsM ss) {}
+        ((.proc { proc with body := .structured body } md) :: acc, stats.merge st.statistics)
+      -- CFG bodies have no structured loops; pass through unchanged. An
+      -- unstructured loop elimination process could be applied here later.
+      | .cfg _ => ((.proc proc md) :: acc, stats)
     | other => (other :: acc, stats)) ([], {})
   ({ decls := decls.reverse }, stats)
 

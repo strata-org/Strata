@@ -5,7 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Env
+public import Strata.DL.Imperative.EvalContext
+public import Strata.Languages.Core.Program
 /-! # Proof Obligation Extraction
 
 A Core-to-obligations pass that walks a post-PE program and extracts
@@ -99,7 +100,10 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (axiomPc ++ [.assumption a.name a.e], allObs)
     | .proc proc _md => do
       let globalPc : PathConditions Expression := [axiomPc]
-      let obs ← extractFromStatements globalPc proc.body
+      let obs ← match proc.body with
+        | .structured ss => extractFromStatements globalPc ss
+        -- CFG bodies are not supported on procedure-body branch.
+        | .cfg _ => .ok #[]
       .ok (axiomPc, allObs ++ obs)
     | _ => .ok (axiomPc, allObs)
   return allObs

@@ -8,15 +8,9 @@ module
 public import Strata.Backends.CBMC.Common
 public import Strata.Languages.Core.Procedure
 
-import Lean.Data.Json
-import Lean.Parser.Types
-import Strata.DDM.Integration.Lean.HashCommands
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.DDMTransform.Grammar
+public import StrataDDM.AST
+import StrataDDM.Integration.Lean.HashCommands -- shake: keep
 import Strata.Languages.Core.DDMTransform.Translate
-import Strata.DL.Util.Map
-import Strata.Languages.Core.Core
-import Strata.Util.Tactics
 
 public section
 
@@ -346,7 +340,8 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : Except String CB
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let stmtJsons ← (func.body.mapM (stmtToJson (I:=CoreLParams) · loc))
+  let bodyStmts ← func.body.getStructured
+  let stmtJsons ← (bodyStmts.mapM (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),

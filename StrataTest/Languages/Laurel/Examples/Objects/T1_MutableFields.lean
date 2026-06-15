@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r#"
+#eval testLaurel
+#strata
+program Laurel;
 composite Container {
   var intValue: int // var indicates mutable field
   var realValue: real
@@ -67,20 +66,21 @@ procedure updatesAndAliasing()
   assert dAlias#intValue == d#intValue
 };
 
-procedure subsequentHeapMutations(c: Container)
+procedure subsequentHeapMutations()
   opaque
-  modifies c
 {
+  var c: Container := new Container;
+
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
   var sum: int := ((c#intValue := 1) + c#intValue) + (c#intValue := 2);
   assert sum == 4
 };
 
-procedure implicitEquality(c: Container, d: Container)
+procedure implicitEquality()
   opaque
-  modifies c
-  modifies d
 {
+  var c: Container := new Container;
+  var d: Container := new Container;
   c#intValue := 1;
   d#intValue := 2;
   if c#intValue == d#intValue then {
@@ -101,11 +101,11 @@ composite SameFieldName {
   var intValue: bool
 }
 
-procedure sameFieldNameDifferentType(a: Container, b: SameFieldName)
+procedure sameFieldNameDifferentType()
   opaque
-  modifies a
-  modifies b
 {
+  var a: Container := new Container;
+  var b: SameFieldName := new SameFieldName;
   a#intValue := 1;
   b#intValue := true;
 
@@ -197,7 +197,4 @@ procedure fieldTargetInMultiAssign()
   assert y == 2;
   assert z == 3
 };
-"#
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "MutableFields" program 14 processLaurelFile
+#end

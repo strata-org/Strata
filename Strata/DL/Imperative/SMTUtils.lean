@@ -5,14 +5,14 @@
 -/
 module
 
-public import Strata.DL.SMT.SMT
-import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.DDMTransform.Translate
-import Strata.DDM.Elab
-import Strata.DDM.Format
+import StrataDDM.Elab
 public import Strata.Pipeline.Context
-public import Strata.DL.Imperative.PureExpr
 public import Strata.DL.Imperative.EvalContext
+public import Strata.DL.SMT.Encoder
+public import Strata.DL.SMT.IncrementalSolver
+public import Strata.DL.Util.Map
+public import Strata.Languages.Core.Options
 
 namespace Imperative
 open Std (ToFormat Format format)
@@ -104,7 +104,9 @@ def getSMTId {Ident Ty} [ToFormat Ident]
   | (var, some ty) => do
     let (var', ty') ← typedVarToSMTFn var ty
     let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
-    .ok (E.ufs[key]!)
+    match E.ufs[key]? with
+    | some id => .ok id
+    | none => .error f!"Variable {var} (SMT name: {var'}) not found in encoder state"
 
 def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
@@ -146,9 +148,9 @@ dialect. Returns `some .sat`, `some .unsat`, `some .unknown`, or `none`
 on parse/conversion failure.
 -/
 private def parseVerdict (line : String) : IO (Option (Result PUnit)) := do
-  let inputCtx := Strata.Parser.stringInputContext "solver" (line ++ "\n")
+  let inputCtx := StrataDDM.Parser.stringInputContext "solver" (line ++ "\n")
   let prg ←
-    try Strata.Elab.parseStrataProgramFromDialect
+    try StrataDDM.Elab.parseStrataProgramFromDialect
           Strata.SMTResponseDDM.smtResponseDialects "SMTResponse" inputCtx
     catch _ => return none
   if prg.commands.isEmpty then return none
@@ -168,9 +170,9 @@ directly, which avoids the ambiguity that arises when parsing at the
 Returns a list of (key-string, value-Term) pairs on success.
 -/
 def parseModelDDM (modelStr : String) : IO (List (String × Strata.SMT.Term)) := do
-  let inputCtx := Strata.Parser.stringInputContext "solver-model" modelStr
+  let inputCtx := StrataDDM.Parser.stringInputContext "solver-model" modelStr
   let op ←
-    try Strata.Elab.parseCategoryFromDialect
+    try StrataDDM.Elab.parseCategoryFromDialect
           Strata.SMTResponseDDM.smtResponseDialects q`SMTResponse.GetValueResponse inputCtx
     catch _ => return []
   match Strata.SMTResponseDDM.GetValueResponse.ofAst op with

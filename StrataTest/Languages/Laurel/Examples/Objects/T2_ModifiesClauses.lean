@@ -14,15 +14,14 @@ since otherwise all heap state is lost after calling them.
 
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Container {
   var value: int
 }
@@ -127,7 +126,7 @@ procedure modifiesWildcardBodilessCaller()
   var x: int := d#value;
   modifiesWildcardBodiless(c, d);
   assert x == d#value // this should fail because modifies * means anything can change
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure modifiesWildcardWithBody(c: Container, d: Container)
@@ -152,9 +151,6 @@ procedure modifiesWildcardAndSpecificCaller()
   var x: int := d#value;
   modifiesWildcardAndSpecific(c, d);
   assert x == d#value // fails because modifies * subsumes modifies c
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ModifiesClauses" program 24 processLaurelFile
+#end

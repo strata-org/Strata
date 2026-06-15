@@ -7,11 +7,7 @@ module
 
 public meta import Lean.Elab.Command
 
-public import Strata.Languages.Core.Identifiers
-public meta import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.Expressions
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.FactoryWF
 public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy
@@ -19,6 +15,7 @@ import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
+public meta import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Core
@@ -868,10 +865,7 @@ def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 @[expose]
-def WFFactory : Lambda.WFLFactory CoreLParams :=
-  -- (T := CoreLParams) annotations needed for IntBoolFactory
-  -- functions to resolve typeclass instances.
-  WFLFactory.ofArray (name_nodup := by native_decide) (#[
+def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   intAddFunc (T := CoreLParams),
   intSubFunc (T := CoreLParams),
   intMulFunc (T := CoreLParams),
@@ -976,10 +970,20 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
   ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64]))
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
+
+@[expose]
+def WFFactory : Lambda.WFLFactory CoreLParams :=
+  WFLFactory.ofArray (name_nodup := by native_decide) WFFactoryArray
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
+
+def FactoryFuncNames : List String :=
+  (WFFactoryArray.map (·.func.name.name)).toList
+
+/-- Decidable predicate: is `s` the name of a built-in factory function? -/
+def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 
 end -- public section
 

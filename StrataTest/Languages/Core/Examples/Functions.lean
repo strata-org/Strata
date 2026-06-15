@@ -4,9 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
 import Strata.Languages.Core.CallGraph
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.MetaVerifier
 
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -70,7 +73,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify funcPgm
+#eval Core.verify funcPgm
+
+theorem funcPgm_correct : smtVCsCorrect funcPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 ---------------------------------------------------------------------
 
@@ -109,7 +116,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify multiArgFuncPgm
+#eval Core.verify multiArgFuncPgm
 
 ---------------------------------------------------------------------
 
@@ -149,6 +156,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify quantBodyFuncPgm
+#eval Core.verify quantBodyFuncPgm
 
+theorem quantBodyFuncPgm_correct : smtVCsCorrect quantBodyFuncPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+
+end Strata
 ---------------------------------------------------------------------

@@ -25,10 +25,11 @@ def detCmdBlock [HasBool P] (c : CmdT) (k : Label) :
 
 open LabelGen
 
-/-- Flush the list of accumulated commands. If the list is empty, propagate the
-provided continuation. If the list is non-empty, create a block containing
-one command that jumps to the provided continuation and provide the new block's
-label as a new continuation.  -/
+/-- Flush the list of accumulated commands. If both the accumulator is empty
+and no explicit transfer is provided, propagate the continuation `k`.
+Otherwise emit a block: when `tr?` is `some tr`, use `tr` as the transfer
+(this is required for `condGoto` so the conditional is materialized even
+with empty accum); when `tr?` is `none`, use `.goto k`. -/
 def flushCmds
   [HasBool P]
   (pfx : String)
@@ -36,11 +37,17 @@ def flushCmds
   (tr? : Option (DetTransferCmd String P))
   (k : String) :
   StringGenM (String × DetBlocks String CmdT P) := do
-  if accum.isEmpty then
-    pure (k, [])
-  else
+  match tr? with
+  | none =>
+    if accum.isEmpty then
+      pure (k, [])
+    else
+      let l ← StringGenState.gen pfx
+      let b := (l, { cmds := accum.reverse, transfer := .goto k })
+      pure (l, [b])
+  | some tr =>
     let l ← StringGenState.gen pfx
-    let b := (l, { cmds := accum.reverse, transfer := tr?.getD (.goto k) })
+    let b := (l, { cmds := accum.reverse, transfer := tr })
     pure (l, [b])
 
 private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
@@ -49,7 +56,7 @@ private abbrev synthesizedMd {P : PureExpr} : MetaData P :=
 /-- Translate a list of statements to basic blocks, accumulating commands -/
 def stmtsToBlocks
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (k : String)
   (ss : List (Stmt P CmdT))
   (exitConts : List (Option String × String))
@@ -81,7 +88,7 @@ match ss with
     pure (accumEntry, accumBlocks ++ bbs ++ bsNext)
   else
     let b := (l, { cmds := [], transfer := .goto bl })
-    pure (l, accumBlocks ++ [b] ++ bbs ++ bsNext)
+    pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ bsNext)
 | .ite c tss fss _md :: rest => do
   -- Process rest first
   let (kNext, bsNext) ← stmtsToBlocks k rest exitConts []
@@ -114,13 +121,13 @@ match ss with
       let mLabel ← StringGenState.gen "loop_measure$"
       let mIdent := HasIdent.ident mLabel
       let mOldExpr := HasFvar.mkFvar mIdent
-      let initCmd  := HasInit.init mIdent HasIntOrder.intTy .nondet synthesizedMd
+      let initCmd  := HasInit.init mIdent HasInt.intTy .nondet synthesizedMd
       let assumeCmd := HasPassiveCmds.assume s!"assume_{mLabel}"
-                         (HasIntOrder.eq mOldExpr mExpr) synthesizedMd
+                         (HasIntOps.eq mOldExpr mExpr) synthesizedMd
       let lbCmd    := HasPassiveCmds.assert s!"measure_lb_{mLabel}"
-                         (HasNot.not (HasIntOrder.lt mOldExpr HasIntOrder.zero)) synthesizedMd
+                         (HasBoolOps.not (HasIntOps.lt mOldExpr HasInt.zero)) synthesizedMd
       let decCmd   := HasPassiveCmds.assert s!"measure_decrease_{mLabel}"
-                         (HasIntOrder.lt mExpr mOldExpr) synthesizedMd
+                         (HasIntOps.lt mExpr mOldExpr) synthesizedMd
       let ldec ← StringGenState.gen "measure_decrease$"
       let decBlock := (ldec, { cmds := [decCmd], transfer := .goto lentry })
       pure ([initCmd, assumeCmd, lbCmd], ldec, [decBlock])
@@ -164,7 +171,7 @@ match ss with
 
 def stmtsToCFGM
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end$"
@@ -174,7 +181,7 @@ def stmtsToCFGM
 
 def stmtsToCFG
   [HasBool P] [HasPassiveCmds P CmdT] [HasInit P CmdT]
-  [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+  [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
   (ss : List (Stmt P CmdT)) :
   CFG String (DetBlock String CmdT P) :=
   (stmtsToCFGM ss StringGenState.emp).fst

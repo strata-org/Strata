@@ -5,14 +5,13 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
 public import Strata.Languages.Core.ProgramType
 public import Strata.Languages.Core.WF
-public import Strata.Languages.Core.StatementWF
-public import Strata.Languages.Core.ProcedureWF
 import all Strata.Languages.Core.Program
 import all Strata.Languages.Core.ProgramType
 import all Strata.Languages.Core.StatementType
+import Std.Do.Triple.SpecLemmas
+import Std.Tactic.BVDecide.Normalize.Prop
 
 /-! ## Well-Formedness for Programs
   This file is the entry point of typechecker correctness proofs. Specifically,

@@ -7,13 +7,6 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Lambda.LExprWF
-public import Strata.DL.Lambda.LTy
-public import Strata.DDM.Util.Array
-public import Strata.DL.Util.Func
-public import Strata.DL.Util.List
-public import Strata.DL.Util.ListMap
 
 /-!
 ## Well-formedness of LFunc and Factory
@@ -67,7 +60,7 @@ structure WFLFunc (T : LExprParams) where
 def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
 
 /-- The operator expression for the underlying LFunc. -/
-def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
+@[expose] def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
   f.func.opExpr
 
 /-- An array of well-formed LFuncs with a proof that function
@@ -78,7 +71,7 @@ structure WFLFactory (T : LExprParams) where
 
 /-- Construct a `WFLFactory` from an array of `WFLFunc`s.
     The `name_nodup` proof defaults to `by decide`. -/
-def WFLFactory.ofArray {T} (funcs : Array (WFLFunc T))
+@[expose] def WFLFactory.ofArray {T} (funcs : Array (WFLFunc T))
     (name_nodup : List.Nodup (funcs.toList.map (·.func.name.name)) := by decide)
     : WFLFactory T :=
   let a := funcs.map (·.func)

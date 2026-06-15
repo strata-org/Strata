@@ -9,27 +9,18 @@ Tests for the generic `mapStmtExprM` traversal. Verifies that `mapStmtExpr id`
 is the identity: applying it to a parsed program produces identical output.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.Resolution
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseLaurel (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program => pure (resolve program).program
+private def parseAndResolve (program : StrataDDM.Program) : IO Program := do
+  let laurelProgram ← translateLaurel program
+  pure (resolve laurelProgram).program
 
 private def printProcs (program : Program) : IO String := do
   let mut out := ""
@@ -40,10 +31,10 @@ private def printProcs (program : Program) : IO String := do
 
 /-- Verify `mapStmtExpr id` is the identity by comparing printed output before
     and after the transformation. -/
-private def testMapStmtExprId (input : String) : IO Unit := do
-  let program ← parseLaurel input
-  let mapped := mapProgram (mapStmtExpr id) program
-  let before ← printProcs program
+private def testMapStmtExprId (program : StrataDDM.Program) : IO Unit := do
+  let parsed ← parseAndResolve program
+  let mapped := mapProgram (mapStmtExpr id) parsed
+  let before ← printProcs parsed
   let after ← printProcs mapped
   if before == after then
     IO.println "ok: mapStmtExpr id ≡ id"
@@ -52,7 +43,14 @@ private def testMapStmtExprId (input : String) : IO Unit := do
 
 -- Exercises: IfThenElse, Block, Var Declare, While, Return, Assign,
 -- PrimitiveOp, Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
-def testProgram : String := r"
+
+/--
+info: ok: mapStmtExpr id ≡ id
+-/
+#guard_msgs in
+#eval! testMapStmtExprId
+#strata
+program Laurel;
 procedure test(x: int, b: bool) returns (r: int)
   requires x > 0
   opaque
@@ -75,12 +73,6 @@ procedure test(x: int, b: bool) returns (r: int)
   var p: bool := exists(j: int) => j > 0;
   return y
 };
-"
-
-/--
-info: ok: mapStmtExpr id ≡ id
--/
-#guard_msgs in
-#eval! testMapStmtExprId testProgram
+#end
 
 end Strata.Laurel

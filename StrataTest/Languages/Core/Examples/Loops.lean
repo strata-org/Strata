@@ -4,10 +4,22 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Program
 import Strata.Languages.Core.Verifier
+import Strata.Languages.Core
 import Strata.Transform.StructuredToUnstructured
+import Lean.Parser.Types
+import Strata.Languages.Core.DDMTransform.Grammar
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.Options
+import StrataDDM.AST
+import Strata.DL.Imperative.BasicBlock
+import Strata.Languages.Core.Statement
+import Strata.Languages.Core.Expressions
+import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.StatementSemantics
+import Strata.MetaVerifier
 
+open StrataDDM (Program)
 namespace Strata
 
 def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
@@ -15,7 +27,9 @@ def singleCFG (p : Program) (n : Nat) : Imperative.CFG String
   let corePgm : Core.Program := TransM.run Inhabited.default (translateProgram p) |>.fst
   let proc := match corePgm.decls[n]? with
               | .some (.proc p _) => p | _ => Inhabited.default
-  Imperative.stmtsToCFG proc.body
+  match proc.body with
+  | .structured ss => Imperative.stmtsToCFG ss
+  | .cfg cfg => cfg
 
 ---------------------------------------------------------------------
 
@@ -96,7 +110,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify measureFailExamplePgm (options := .quiet)
+#eval Core.verify measureFailExamplePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -330,7 +344,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify gaussPgm
+#eval Core.verify gaussPgm
+
+theorem gaussPgm_correct : smtVCsCorrect gaussPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 ---------------------------------------------------------------------
 
@@ -476,7 +494,11 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify nestedPgm (options := .quiet)
+#eval Core.verify nestedPgm (options := .quiet)
+
+theorem nestedPgm_correct : smtVCsCorrect nestedPgm := by
+  gen_smt_vcs
+  all_goals (try grind)
 
 ---------------------------------------------------------------------
 
@@ -542,7 +564,27 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasurePgm (options := .quiet)
+#eval Core.verify precondElimInMeasurePgm (options := .quiet)
+
+/--
+This theorem requires a little bit of manual work to handle facts about
+division, though most goals are solved by `grind`.
+-/
+theorem precondElimInMeasurePgm_correct : smtVCsCorrect precondElimInMeasurePgm := by
+  gen_smt_vcs
+  all_goals (try grind)
+  -- measure_lb_0: the loop measure i / d is non-negative
+  case measure_lb_0 =>
+    intro _ d i _ _ dpos _ _ _ inonneg meas_def
+    subst meas_def
+    have p := Int.ediv_nonneg (a := i) (b := d)
+    grind
+  -- measure_decrease_0: the loop measure i / d strictly decreases
+  case measure_decrease_0 =>
+    intro _ d i _ _ dpos _ _ _ _ meas_def
+    subst meas_def
+    have p := Int.add_mul_ediv_left (a := i) (b := d) (c := -1)
+    grind
 
 -- Now, we show the precondition (d > 0) is necessary for the measure-related
 -- checks.
@@ -603,7 +645,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimInMeasureBadPgm (options := .quiet)
+#eval Core.verify precondElimInMeasureBadPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 
@@ -668,4 +710,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+#eval Core.verify precondElimMeasureBodyMutatesPgm (options := .quiet)
+
+end Strata

@@ -5,14 +5,12 @@
 -/
 module
 
-public import Strata.DL.SMT.DDMTransform.Translate
-public import Strata.DL.SMT.Factory
-public import Strata.DL.SMT.Op
-public import Strata.Util.Name
 public import Strata.DL.SMT.Solver
-public import Strata.DL.SMT.Term
-public import Strata.DL.SMT.TermType
-import Std.Data.HashMap
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.SMT.DDMTransform.Parse
+import Strata.DL.SMT.Factory
+import Strata.Util.Name
+import Strata.Util.Tactics
 
 /-!
 Based on Cedar's Term language.
@@ -32,7 +30,10 @@ The encoding pipeline has two layers:
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and translates
    `Term` values to SMT-LIB commands:
    - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
-     their abbreviated identifiers (e.g., `$__f.0`, `$__f.1`).
+     their abbreviated identifiers (e.g., `f.0`, `f.1`).
+   - **Unified name registry** (`usedNames`): Every emitted SMT-LIB identifier
+     is routed through `Strata.Name.findUnique` against this set, guaranteeing
+     global uniqueness without relying on naming conventions.
 
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
@@ -69,11 +70,22 @@ open Solver
 public section
 
 structure EncoderState where
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `$__f.0`, `$__f.1`). -/
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`). -/
   ufs   : Std.HashMap UF String
+  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
+      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
+      without relying on naming conventions. -/
+  usedNames : Std.HashSet String
 
 def EncoderState.init : EncoderState where
   ufs := {}
+  usedNames := {}
+
+/-- Create an encoder state pre-populated with names already emitted to the
+    solver (e.g. sort and datatype names declared before encoding begins). -/
+def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
+  ufs := {}
+  usedNames := names
 
 @[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
 
@@ -109,6 +121,10 @@ def smtReservedKeywords : List String :=
    -- Array theory symbols
    "select", "store"]
 
+/-- Pre-computed set of SMT reserved keywords for O(1) lookup. -/
+def smtReservedKeywordsSet : Std.HashSet String :=
+  Std.HashSet.ofList smtReservedKeywords
+
 /-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
     reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
     names with `$` to make them valid simple symbols. -/
@@ -118,18 +134,29 @@ def sanitizeSmtName (name : String) : String :=
     let first := name.front
     if first == '@' || first == '.' then "$" ++ name else name
 
-/-- The `$__` prefix is reserved for internal use and cannot appear in user
-    identifiers. The `.` after `t`/`f` prevents collision with
-    evaluation-generated names (which use `@N` suffixes). -/
-def termId (n : Nat)                    : String := s!"$__t.{n}"
-def ufId (n : Nat)                      : String := s!"$__f.{n}"
+/-- Base name for internally generated UF identifiers. Correctness is enforced
+    by the `usedNames` registry which disambiguates via `@N` suffixes on
+    collision. -/
+def ufId (n : Nat)                      : String := s!"f.{n}"
 
 def ufNum   : EncoderM Nat := do return (← get).ufs.size
 
-def declareType (id : String) (mks : List String) : EncoderM String := do
-  let constrs := mks.map fun name => SMTConstructor.mk name []
-  declareDatatype id [] constrs
+/-- Allocate a globally unique SMT-LIB identifier. Checks the `usedNames`
+    registry (and SMT reserved keywords) for collisions, disambiguates via
+    `@N` suffixes, registers the result, and returns it. -/
+def uniquify (baseName : String) : EncoderM String := do
+  let usedNames := (← get).usedNames.union smtReservedKeywordsSet
+  let id := Strata.Name.findUnique baseName 1 usedNames
+  modify fun s => { s with usedNames := s.usedNames.insert id }
   return id
+
+def declareType (id : String) (mks : List String) : EncoderM String := do
+  let uniqueId ← uniquify id
+  let constrs ← mks.mapM fun name => do
+    let uniqueName ← uniquify name
+    return SMTConstructor.mk uniqueName []
+  declareDatatype uniqueId [] constrs
+  return uniqueId
 
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
@@ -141,15 +168,13 @@ def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
 
 def encodeUF (uf : UF) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  -- Check for name clashes with already-encoded UFs and reserved keywords, disambiguate
   let baseName := sanitizeSmtName uf.id
-  let existingNames := (← get).ufs.toList.map (·.2)
-  let usedNames := Std.HashSet.ofList (existingNames ++ smtReservedKeywords)
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id ← uniquify baseName
   comment uf.id
   let argTys := uf.args.map (fun vt => vt.ty)
   Solver.declareFun id argTys uf.out
-  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
+  modifyGet λ state => (id, {state with
+    ufs := state.ufs.insert uf id})
 
 def defineApp (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
   match op with
@@ -266,12 +291,14 @@ decreasing_by
 
 def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).ufs.get? uf then return enc
-  let id := ufId (← ufNum)
+  let baseName := ufId (← ufNum)
+  let id ← uniquify baseName
   comment uf.id
   let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
   let bodyEnc ← encodeTerm body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
-  modifyGet λ state => (id, {state with ufs := state.ufs.insert uf id})
+  modifyGet λ state => (id, {state with
+    ufs := state.ufs.insert uf id})
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do
@@ -299,7 +326,8 @@ def encode (ts : List Term) : SolverM Unit := do
   Solver.setLogic "ALL"
   Solver.declareDatatype "Option" ["X"]
     [⟨"none", []⟩, ⟨"some", [("val", .constr "X" [])]⟩]
-  let (termEncs, _) ← ts.mapM encodeTerm |>.run EncoderState.init
+  let initState := EncoderState.initWithNames (Std.HashSet.ofList ["Option", "none", "some", "val"])
+  let (termEncs, _) ← ts.mapM encodeTerm |>.run initState
   for t in termEncs do
     Solver.assert t
 

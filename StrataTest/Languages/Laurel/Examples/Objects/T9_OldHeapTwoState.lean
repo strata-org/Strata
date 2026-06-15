@@ -33,7 +33,7 @@ equation that the body falsifies — the procedure would fail to verify.
 -/
 
 import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.LaurelDebugPipeline
 
 open StrataTest.Util
 

@@ -5,8 +5,10 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Util.Tactics
 
 /-!
 # Constrained Type Elimination
@@ -246,5 +248,14 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
                         ++ witnessProcedures
     types := program.types.filter fun | .Constrained _ => false | _ => true },
    funcDiags)
+
+/-- Pipeline pass: constrained type elimination. -/
+public def constrainedTypeElimPass : LaurelPass where
+  name := "ConstrainedTypeElim"
+  documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
+  needsResolves := true
+  run := fun p m =>
+    let (p', diags) := constrainedTypeElim m p
+    (p', diags, {})
 
 end Strata.Laurel

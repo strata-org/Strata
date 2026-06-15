@@ -10,46 +10,49 @@ Tests that the expression lifter correctly handles statement constructs
 by comparing the lifted Laurel against expected output.
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.Resolution
 
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
+open StrataTest.Util
 
 namespace Strata.Laurel
 
-def blockStmtLiftingProgram : String := r"
-procedure assertInBlockExpr()
+private def parseLaurelAndLift (program : StrataDDM.Program) : IO Program := do
+  let laurelProgram ← translateLaurel program
+  let result := resolve laurelProgram
+  pure (liftExpressionAssignments result.model result.program)
+
+private def printLifted (program : StrataDDM.Program) : IO Unit := do
+  let lifted ← parseLaurelAndLift program
+  for proc in lifted.staticProcedures do
+    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+
+/--
+info: procedure assertInBlockExpr()
+  opaque
 {
+  var x: int := 0;
+  assert x == 0;
+  var $x_0: int := x;
+  x := 1;
+  var y: int := {
+    x
+  };
+  assert y == 1
+};
+-/
+#guard_msgs in
+#eval! printLifted
+#strata
+program Laurel;
+procedure assertInBlockExpr()
+opaque {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
   assert y == 1
 };
-"
-
-def parseLaurelAndLift (input : String) : IO Program := do
-  let inputCtx := Strata.Parser.stringInputContext "test" input
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
-  let uri := Strata.Uri.file "test"
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments model program)
-
-/--
-info: procedure assertInBlockExpr()
-{ var x: int := 0; assert x == 0; var $x_0: int := x; x := 1; var y: int := { x }; assert y == 1 };
--/
-#guard_msgs in
-#eval! do
-  let program ← parseLaurelAndLift blockStmtLiftingProgram
-  for proc in program.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+#end
 
 end Laurel

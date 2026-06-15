@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def decimalsProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure testDecimalLiterals()
   opaque
 {
@@ -67,9 +66,4 @@ procedure testDecimalAssertFails()
     assert a == b
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "Decimals" decimalsProgram 14 processLaurelFile
-
-end Laurel
+#end

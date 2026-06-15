@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.ProcedureType
+meta import Strata.Languages.Core.ProcedureType
+import Strata.Languages.Core.Factory
+
+meta section
 
 namespace Core
 
@@ -36,7 +40,7 @@ info: ok: (procedure P (x : int, out y : int)
                                           outputs := [("y", mty[int])] },
                                spec := { preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                                          postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
-                               body := [
+                               body := .structured [
                                  Statement.set "y" eb[((~Int.Sub #0) x)] .empty
                                ]
                              }
@@ -47,3 +51,5 @@ info: ok: (procedure P (x : int, out y : int)
 ---------------------------------------------------------------------
 end Tests
 end Core
+
+end

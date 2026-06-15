@@ -5,17 +5,18 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.DDM.Format
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public import Strata.Languages.Laurel.Laurel
+public import StrataDDM.AST
+public import Strata.Languages.Laurel.LaurelAST
+import StrataDDM.Format
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
 
 namespace Strata
 namespace Laurel
 
 public section
 
-open Strata (SourceRange QualifiedIdent Arg Operation SepFormat)
+open Strata (SourceRange)
+open StrataDDM (QualifiedIdent Arg Operation SepFormat FormatContext FormatState)
 
 private def sr : SourceRange := .none
 
@@ -28,7 +29,7 @@ private def optionArg (a : Option Arg) : Arg := .option sr a
 
 private def commaSep (args : Array Arg) : Arg := .seq sr .comma args
 
-private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolon args
+private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolonNewline args
 
 private def seqArg (args : Array Arg) : Arg := .seq sr .none args
 
@@ -133,11 +134,11 @@ where
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp "call" #[calleeArg, commaSep argsArr]
-    | .PrimitiveOp op [a] =>
+    | .PrimitiveOp op [a] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a]
-    | .PrimitiveOp op [a, b] =>
+    | .PrimitiveOp op [a, b] _skipProof =>
       laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
-    | .PrimitiveOp op args =>
+    | .PrimitiveOp op args _skipProof =>
       -- Fallback for unusual arities
       let argsArr := args.map stmtExprToArg |>.toArray
       laurelOp (operationName op) argsArr
@@ -147,8 +148,8 @@ where
     | .While cond invs _decreases body =>
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
       laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
-    | .Return (some value) => laurelOp "return" #[stmtExprToArg value]
-    | .Return none => laurelOp "return" #[laurelOp "block" #[semicolonSep #[]]]
+    | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
+    | .Return none => laurelOp "return" #[optionArg none]
     | .Exit label => laurelOp "exit" #[ident label]
     | .Assert cond =>
       let errOpt := optionArg (cond.summary.map fun msg =>
@@ -216,7 +217,7 @@ private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
     else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
   wildcardArgs ++ specificArgs
 
-private def procedureToOp (proc : Procedure) : Strata.Operation :=
+private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let opName := if proc.isFunctional then "function" else "procedure"
   let params := proc.inputs.map parameterToArg |>.toArray
   let returnTypeArg : Arg :=
@@ -264,14 +265,14 @@ private def procedureToOp (proc : Procedure) : Strata.Operation :=
       bodyArg
     ] }
 
-private def compositeToOp (ct : CompositeType) : Strata.Operation :=
+private def compositeToOp (ct : CompositeType) : StrataDDM.Operation :=
   let extendsArg := if ct.extending.isEmpty then
     optionArg none
   else
     optionArg (some (laurelOp "extends" #[commaSep (ct.extending.map (fun e => ident e.text) |>.toArray)]))
   let fields := ct.fields.map fieldToArg |>.toArray
   let procs := ct.instanceProcedures.map (fun p => .op (procedureToOp p)) |>.toArray
-  let compositeOp : Strata.Operation :=
+  let compositeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "composite" }
       args := #[ident ct.name.text, extendsArg, seqArg fields, seqArg procs] }
@@ -289,10 +290,10 @@ private def datatypeConstructorToArg (c : DatatypeConstructor) : Arg :=
     let args := c.args.map datatypeConstructorArgToArg |>.toArray
     laurelOp "datatypeConstructor" #[ident c.name.text, commaSep args]
 
-private def datatypeToOp (dt : DatatypeDefinition) : Strata.Operation :=
+private def datatypeToOp (dt : DatatypeDefinition) : StrataDDM.Operation :=
   let ctors := dt.constructors.map datatypeConstructorToArg |>.toArray
   let ctorList := laurelOp "datatypeConstructorList" #[commaSep ctors]
-  let datatypeOp : Strata.Operation :=
+  let datatypeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "datatype" }
       args := #[ident dt.name.text, ctorList] }
@@ -300,8 +301,8 @@ private def datatypeToOp (dt : DatatypeDefinition) : Strata.Operation :=
     name := { dialect := "Laurel", name := "datatypeCommand" }
     args := #[.op datatypeOp] }
 
-private def constrainedTypeToOp (ct : ConstrainedType) : Strata.Operation :=
-  let ctOp : Strata.Operation :=
+private def constrainedTypeToOp (ct : ConstrainedType) : StrataDDM.Operation :=
+  let ctOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "constrainedType" }
       args := #[
@@ -315,27 +316,27 @@ private def constrainedTypeToOp (ct : ConstrainedType) : Strata.Operation :=
     name := { dialect := "Laurel", name := "constrainedTypeCommand" }
     args := #[.op ctOp] }
 
-private def typeDefinitionToOp : TypeDefinition → Strata.Operation
+private def typeDefinitionToOp : TypeDefinition → StrataDDM.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
   -- Placeholder: aliases are eliminated before CST serialization
   | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
 
-private def procedureCommandOp (proc : Procedure) : Strata.Operation :=
+private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
   { ann := sr
     name := { dialect := "Laurel", name := "procedureCommand" }
     args := #[.op (procedureToOp proc)] }
 
-/-- Convert a Laurel.Program to a Strata.Program (DDM concrete syntax tree).
-    The resulting program can be formatted using `Strata.Program.format` to
+/-- Convert a Laurel.Program to a StrataDDM.Program (DDM concrete syntax tree).
+    The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
     Note: `staticFields` and `constants` are not emitted because the Laurel
     grammar has no top-level commands for them. -/
-def programToStrata (prog : Laurel.Program) : Strata.Program :=
+def programToStrata (prog : Laurel.Program) : StrataDDM.Program :=
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray
-  Strata.Program.create Laurel_map "Laurel" (typeOps ++ procOps)
+  StrataDDM.Program.create Laurel_map "Laurel" (typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/
@@ -343,23 +344,23 @@ def formatProgram (prog : Laurel.Program) : Std.Format :=
   let sp := programToStrata prog
   let c := sp.formatContext {}
   let s := sp.formatState
-  let fmts := sp.commands.map fun cmd => (Strata.mformat cmd c s).format
+  let fmts := sp.commands.map fun cmd => (StrataDDM.mformat cmd c s).format
   Std.Format.joinSep fmts.toList "\n\n"
 
 open Std (Format format)
 open Std.Format
 
-private def laurelFmtCtx : Strata.FormatContext :=
-  Strata.FormatContext.ofDialects Laurel_map
+private def laurelFmtCtx : FormatContext :=
+  FormatContext.ofDialects Laurel_map
 
-private def laurelFmtState : Strata.FormatState where
+private def laurelFmtState : FormatState where
   openDialects := ({} : Std.HashSet String).insert "Laurel"
 
 private def formatArg (a : Arg) : Format :=
-  (Strata.mformat a laurelFmtCtx laurelFmtState).format
+  (StrataDDM.mformat a laurelFmtCtx laurelFmtState).format
 
-private def formatOp (o : Strata.Operation) : Format :=
-  (Strata.mformat o laurelFmtCtx laurelFmtState).format
+private def formatOp (o : StrataDDM.Operation) : Format :=
+  (StrataDDM.mformat o laurelFmtCtx laurelFmtState).format
 
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)

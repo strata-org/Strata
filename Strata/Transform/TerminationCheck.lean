@@ -5,10 +5,10 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
-public import Strata.DL.Lambda.AdtRankAxioms
-public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.AdtRankAxioms
+import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
 
 /-! # Termination Checking for Recursive Functions
 
@@ -292,7 +292,7 @@ private def mkTermCheckProc
                  (func.preconditions.mapIdx fun i p =>
                    (s!"{func.name.name}_requires_{i}", { expr := p.expr, attr := .Free })),
                postconditions := [] }
-    body := stmts
+    body := .structured stmts
   } md, obligations.length)
 
 /-- Add a termination-check procedure as a leaf node in the cached call graph. -/
@@ -335,9 +335,14 @@ where
   transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
       (emittedAdtRank : Std.HashSet String)
       : CoreTransformM (Bool × List Decl) := do
-    match decls with
-    | [] => return (false, [])
-    | d :: rest =>
+    let mut acc : Array Decl := #[]
+    let mut changed := false
+    let mut remaining := decls
+    let mut tf := tf
+    let mut emittedAdtRank := emittedAdtRank
+    while h : remaining ≠ [] do
+      let d := remaining.head h
+      let rest := remaining.tail
       match d with
       | .recFuncBlock funcs md => do
         let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
@@ -369,17 +374,17 @@ where
         let allAdtNames := allAdtNames.eraseDups
         let allAdtRank : AdtRankDecls :=
           let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
-            allAdtNames.foldl (init := ({}, [])) fun (seen, acc) adtName =>
-              if seen.contains adtName then (seen, acc)
+            allAdtNames.foldl (init := ({}, [])) fun (seen, acc') adtName =>
+              if seen.contains adtName then (seen, acc')
               else
                 let r := mkAdtRankDecls adtName tf md
-                (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc)
+                (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc')
           let results := revResults.reverse
           { namedDecls := results.flatMap (·.namedDecls)
             axioms := results.flatMap (·.axioms) }
         let newFuncDecls := allAdtRank.namedDecls.filterMap
-          fun (n, d) => if emittedAdtRank.contains n then none else some d
-        let emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
+          fun (n, d') => if emittedAdtRank.contains n then none else some d'
+        emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
         incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
         -- Step 3: Generate a $$term procedure per function with adtRank
         -- decrease assertions at each recursive call site.
@@ -398,19 +403,21 @@ where
               return some decl
             | .ok none => return none
         -- Step 4: Splice adtRank decls before the rec block, term procs after.
-        let (changed, rest') ← transformDecls rest tf emittedAdtRank
         if newFuncDecls.isEmpty && termDecls.isEmpty then
-          return (changed, d :: rest')
+          acc := acc.push d
         else
-          return (true, newFuncDecls ++ [d] ++ termDecls ++ rest')
+          changed := true
+          acc := acc ++ newFuncDecls.toArray
+          acc := acc.push d
+          acc := acc ++ termDecls.toArray
       | .type (.data block) _md => do
-        let tf' : @TypeFactory Unit := tf.push block
-        let (changed, rest') ← transformDecls rest tf' emittedAdtRank
-        return (changed, d :: rest')
+        tf := tf.push block
+        acc := acc.push d
       | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
-        let (changed, rest') ← transformDecls rest tf emittedAdtRank
-        return (changed, d :: rest')
+        acc := acc.push d
+      remaining := rest
+    return (changed, acc.toList)
 
 end TermCheck
 

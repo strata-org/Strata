@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.Resolution
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.SemanticModel
 
 public section
 
@@ -59,7 +56,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .StaticCall callee _ => getCallType source model callee
   | .InstanceCall _ callee _ => getCallType source model callee
   -- Operators
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       match args with
       | head :: tail =>
         match op with

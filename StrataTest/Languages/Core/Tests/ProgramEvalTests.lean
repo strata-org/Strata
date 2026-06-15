@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.ProcedureEval
+meta import Strata.Languages.Core.StatementEval
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Core
 
@@ -418,7 +423,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (E, _stats) := eval E
+         let (E, _stats) := Core.Procedure.eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],
@@ -426,7 +431,7 @@ Proof Obligation:
                 spec := {
                     preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
-                body := [
+                body := .structured [
                   Statement.set "y" eb[(~Int.Neg x)] .empty
                 ]
               }
@@ -445,11 +450,11 @@ section ConcreteInterpretation
 open Lambda Strata
 open Std (ToFormat Format format)
 
-private def parseAndTypeCheck (pgm : Strata.Program) : Except DiagnosticModel Core.Program := do
+private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
   Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
 
-private def runProc (pgm : Strata.Program) (procName : String)
+private def runProc (pgm : StrataDDM.Program) (procName : String)
     (args : List Expression.Expr := [])
     (fuel : Nat := 10000) : IO Unit := do
   match parseAndTypeCheck pgm with
@@ -473,7 +478,7 @@ private def runProc (pgm : Strata.Program) (procName : String)
     | .error diag => IO.println s!"error: {diag}"
 
 -- Simple assignment
-private def simplePgm : Strata.Program :=
+private def simplePgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -487,7 +492,7 @@ procedure Test(out y : int)
 #eval runProc simplePgm "Test"
 
 -- Arithmetic
-private def arithPgm : Strata.Program :=
+private def arithPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(x : int, out y : int)
@@ -501,7 +506,7 @@ procedure Test(x : int, out y : int)
 #eval runProc arithPgm "Test" [.intConst () 5]
 
 -- If-then-else
-private def itePgm : Strata.Program :=
+private def itePgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(x : int, out y : int)
@@ -523,7 +528,7 @@ procedure Test(x : int, out y : int)
 #eval runProc itePgm "Test" [.intConst () (-3)]
 
 -- Procedure call
-private def callPgm : Strata.Program :=
+private def callPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Double(n : int, out result : int)
@@ -541,7 +546,7 @@ procedure Test(x : int, out y : int)
 #eval runProc callPgm "Test" [.intConst () 10]
 
 -- Chained procedure calls (DoubleTwice)
-private def chainedCallPgm : Strata.Program :=
+private def chainedCallPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Double(n : int, out result : int)
@@ -560,7 +565,7 @@ procedure Test(x : int, out output : int)
 #eval runProc chainedCallPgm "Test" [.intConst () 5]
 
 -- Loop (sum of 0..n-1)
-private def loopPgm : Strata.Program :=
+private def loopPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(n : int, out sum : int)
@@ -581,7 +586,7 @@ procedure Test(n : int, out sum : int)
 #eval runProc loopPgm "Test" [.intConst () 5]
 
 -- Assertion success
-private def assertSuccessPgm : Strata.Program :=
+private def assertSuccessPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -596,7 +601,7 @@ procedure Test(out y : int)
 #eval runProc assertSuccessPgm "Test"
 
 -- Assertion failure
-private def assertFailPgm : Strata.Program :=
+private def assertFailPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -613,7 +618,7 @@ false
 #eval runProc assertFailPgm "Test"
 
 -- Nested blocks with scoping
-private def blockPgm : Strata.Program :=
+private def blockPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -636,3 +641,5 @@ end ConcreteInterpretation
 ---------------------------------------------------------------------
 
 end Core
+
+end

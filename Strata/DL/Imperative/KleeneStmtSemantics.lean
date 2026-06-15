@@ -56,7 +56,7 @@ inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
 
 section
 
-variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasNot P]
+variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /-- A single execution step for non-deterministic (Kleene) statements. -/
 inductive StepKleene
@@ -146,7 +146,7 @@ end
 
 /-- Multi-step execution for non-deterministic statements: the reflexive,
 transitive closure of `StepKleene`. -/
-abbrev StepKleeneStar (P : PureExpr) [HasBool P] [HasNot P]
+abbrev StepKleeneStar (P : PureExpr) [HasBool P] [HasBoolOps P]
     (EvalCmd : EvalCmdParam P CmdT) :
     KleeneConfig P CmdT → KleeneConfig P CmdT → Prop :=
   ReflTrans (StepKleene P EvalCmd)

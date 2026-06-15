@@ -5,9 +5,6 @@
 -/
 module
 
-public import Strata.Languages.Core.Procedure
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Identifiers
 public import Strata.Transform.CoreTransform
 
 public section
@@ -88,8 +85,12 @@ open Core Imperative Transform
   -- Convert preconditions to assumes
   let assumes := requiresToAssumes proc.spec.preconditions
 
+  -- ProcBodyVerify expects a structured body: the prefix (inits + assumes) and
+  -- suffix (postcondition asserts) are statement-level constructs that embed
+  -- around the body. Unstructured CFG bodies are not supported here.
+  let bodyStmts ← proc.body.getStructured.mapError Strata.DiagnosticModel.fromMessage
   -- Wrap body in labeled block
-  let bodyBlock := Stmt.block bodyLabel proc.body #[]
+  let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 
   -- Convert postconditions to asserts
   let asserts := ensuresToAsserts proc.spec.postconditions
