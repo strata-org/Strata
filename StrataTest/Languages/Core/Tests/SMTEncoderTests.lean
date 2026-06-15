@@ -227,7 +227,7 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -- Test that bound variable names are globally unique across multiple terms.
 -- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
 #guard
-  match toSMTTerms Env.init [
+  match toSMTTerms (default : EncodeEnv) [
     -- Term 1: ∀ x:Int. x = x
     (.quant () .all "" (.some .int) (LExpr.noTrigger ())
      (.eq () (.bvar () 0) (.bvar () 0))),
@@ -287,10 +287,10 @@ end ArrayTheory
 #eval do
   let ctx := SMT.Context.default
   -- toSMTType for a user-defined type "Foo" should register the sort
-  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
+  let (.ok (_, ctx)) := LMonoTy.toSMTType (default : EncodeEnv) (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
     | unreachable!
   -- Map with useArrayTheory converts to Array; should NOT register a sort
-  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
+  let (.ok (_, ctx)) := LMonoTy.toSMTType (default : EncodeEnv) (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 

@@ -51,7 +51,7 @@ def encode (e:LExpr CoreLParams.mono)
   let e_res := LExpr.eval init_state.config.fuel init_state e
   match e_res with
   | .const _ _ =>
-    let env := Core.Env.init
+    let env := Core.EncodeEnv.ofEnv Core.Env.init
     let (smt_term_lhs,ctx) ← Core.toSMTTerm env [] e SMT.Context.default
     let (smt_term_rhs,ctx) ← Core.toSMTTerm env [] e_res ctx
     let smt_term_eq := Strata.SMT.Factory.eq smt_term_lhs smt_term_rhs

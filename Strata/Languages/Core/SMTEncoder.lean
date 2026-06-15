@@ -22,6 +22,33 @@ open Lambda Strata.SMT Strata.SMT.Encoder
 
 public section
 
+/--
+The slice of an evaluation `Env` that the SMT encoder actually needs:
+the expression evaluation environment (for the factory and for evaluating
+recursive-axiom bodies) and the datatype factory. Decoupling the encoder
+from the full `Env` keeps it from depending on transient evaluation state
+(path conditions, deferred obligations, etc.); everything obligation-specific
+(assumptions, distinctness facts, the goal) travels inside `ProofObligation`.
+-/
+structure EncodeEnv where
+  exprEnv : Expression.EvalEnv
+  datatypes : @Lambda.TypeFactory Unit
+
+/-- Project the encoder's view out of a full evaluation `Env`. -/
+def EncodeEnv.ofEnv (E : Env) : EncodeEnv :=
+  { exprEnv := E.exprEnv, datatypes := E.datatypes }
+
+/-- The Core factory, as seen by the encoder. Mirrors `Env.factory`. -/
+def EncodeEnv.factory (E : EncodeEnv) : (@Lambda.Factory CoreLParams) :=
+  E.exprEnv.config.factory
+
+/-- Evaluate an expression, as seen by the encoder. Mirrors `Env.exprEval`. -/
+def EncodeEnv.exprEval (E : EncodeEnv) (e : Expression.Expr) : Expression.Expr :=
+  e.eval E.exprEnv.config.fuel E.exprEnv
+
+instance : Inhabited EncodeEnv where
+  default := EncodeEnv.ofEnv Env.init
+
 structure SMT.IF where
   uf : UF
   body : Term
@@ -210,7 +237,7 @@ we must also ensure we add the types of all arguments in the constructors
 to the context, recursively. This is very tricky to prove terminating, so
 we leave as `partial` for now.
 -/
-partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
+partial def SMT.Context.addType (E: EncodeEnv) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
   -- Always recurse into concrete args to register any type references
   let ctx := args.foldl (fun ctx arg =>
@@ -235,7 +262,7 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
     ctx.addSort { name := id, arity := args.length }
 
 mutual
-def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTy.toSMTType (E: EncodeEnv) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
   Except Format (TermType × SMT.Context) := do
   match ty with
   | .bitvec n => .ok (.bitvec n, ctx)
@@ -260,7 +287,7 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
                       .ok (termTy, ctx)
                     | _ => .error f!"Unimplemented encoding for type var {tyv}"
 
-def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTys.toSMTType (E: EncodeEnv) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
     Except Format ((List TermType) × SMT.Context) := do
   match args with
   | [] => .ok ([], ctx)
@@ -277,7 +304,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 mutual
 
 @[expose]
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
+partial def toSMTTerm (E : EncodeEnv) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
   (useArrayTheory : Bool := false)
   : Except Format (Term × SMT.Context) := do
   match e with
@@ -353,7 +380,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .app _ _ _ =>
     appToSMTTerm E bvs e [] ctx useArrayTheory
 
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
+partial def appToSMTTerm (E : EncodeEnv) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
   (useArrayTheory : Bool := false) :
   Except Format (Term × SMT.Context) := do
   match e with
@@ -404,7 +431,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono
 
   | _ => toSMTTerm E bvs e ctx useArrayTheory
 
-partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
+partial def toSMTOp (E : EncodeEnv) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
   (useArrayTheory : Bool := false) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in do
@@ -706,7 +733,7 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
 
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
+def toSMTTerms (E : EncodeEnv) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
   (useArrayTheory : Bool := false) :
   Except Format ((List Term) × SMT.Context) := do
   let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
@@ -744,26 +771,30 @@ Variable definitions (from `init name ty (.det e)`) are returned separately as
 Variable declarations (from `init name ty .nondet`) are returned separately as
 `VarDeclaration`s so the caller can emit them as `declare-fun`.
 -/
-def ProofObligation.toSMTTerms (E : Env)
+def ProofObligation.toSMTTerms (E : EncodeEnv)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false) :
   Except Format (List Term × List VarDefinition × List VarDeclaration × Term × SMT.Context × Statistics) := do
   let flatEntries := d.assumptions.flatten
-  -- Separate assumptions from variable definitions/declarations
+  -- Separate assumptions from variable definitions/declarations and
+  -- distinctness facts (all of which now live as path-condition entries).
   let mut assumptionExprsRev : List (LExpr CoreLParams.mono) := []
   let mut varDefsRev : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
   let mut varDeclsRev : List (CoreIdent × Expression.Ty) := []
+  let mut distinctGroupsRev : List (List (LExpr CoreLParams.mono)) := []
   for entry in flatEntries do
     match entry with
     | .assumption _ expr => assumptionExprsRev := expr :: assumptionExprsRev
     | .varDecl name ty (.det e) => varDefsRev := (name, ty, e) :: varDefsRev
     | .varDecl name ty .nondet => varDeclsRev := (name, ty) :: varDeclsRev
+    | .distinct _ exprs => distinctGroupsRev := exprs :: distinctGroupsRev
   let assumptionExprs := assumptionExprsRev.reverse
   let varDefs := varDefsRev.reverse
   let varDecls := varDeclsRev.reverse
-  let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
+  let distinctGroups := distinctGroupsRev.reverse
+  let (ctx, distinct_terms) ← distinctGroups.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
-  let distinct_assumptions := distinct_terms.map
+  let distinct_assumptions := distinct_terms.reverse.map
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptionExprs ctx useArrayTheory
   -- Encode variable definitions
@@ -793,7 +824,7 @@ def ProofObligation.toSMTTerms (E : Env)
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing.
     Outputs variable declarations followed by the assertion of the encoded term. -/
-def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono) (E : EncodeEnv := default) (ctx : SMT.Context := SMT.Context.default)
   (useArrayTheory : Bool := false)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx useArrayTheory

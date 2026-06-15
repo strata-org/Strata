@@ -155,7 +155,7 @@ private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression)
   (options : MetaVerifier.Options := {}) :
   Option SMT.SMTVC := do
-    let maybeTerms := Core.ProofObligation.toSMTTerms E ob (useArrayTheory := options.useArrayTheory)
+    let maybeTerms := Core.ProofObligation.toSMTTerms (Core.EncodeEnv.ofEnv E) ob (useArrayTheory := options.useArrayTheory)
     match maybeTerms with
     | .error _ => none
     | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>

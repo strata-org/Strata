@@ -90,22 +90,27 @@ def extractFromStatements
 end
 
 /-- Extract proof obligations from a program. Axioms become global assumptions
-    that are prepended to the path conditions of every obligation. -/
+    and `distinct` declarations become distinctness facts; both are prepended,
+    in declaration order, to the path conditions of every subsequent
+    procedure's obligations. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  -- Accumulate axioms and obligations as we walk declarations in order
-  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (axiomPc, allObs) decl =>
+  -- Accumulate global path-condition facts (axioms and distinct groups) and
+  -- obligations as we walk declarations in order.
+  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
     match decl with
     | .ax a _ =>
       -- Add axiom to path conditions for subsequent procedures
-      .ok (axiomPc ++ [.assumption a.name a.e], allObs)
+      .ok (globalPc ++ [.assumption a.name a.e], allObs)
+    | .distinct name es _ =>
+      -- Add distinctness fact to path conditions for subsequent procedures
+      .ok (globalPc ++ [.distinct (toString name) es], allObs)
     | .proc proc _md => do
-      let globalPc : PathConditions Expression := [axiomPc]
       let obs ← match proc.body with
-        | .structured ss => extractFromStatements globalPc ss
+        | .structured ss => extractFromStatements [globalPc] ss
         -- CFG bodies are not supported on procedure-body branch.
         | .cfg _ => .ok #[]
-      .ok (axiomPc, allObs ++ obs)
-    | _ => .ok (axiomPc, allObs)
+      .ok (globalPc, allObs ++ obs)
+    | _ => .ok (globalPc, allObs)
   return allObs
 
 @[simp] theorem extractFromStatements_eq (pc : PathConditions Expression) (ss : Statements) :

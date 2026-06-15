@@ -483,7 +483,7 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
-    let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    let (ty', _) ← LMonoTy.toSMTType (default : EncodeEnv) mty ctx
     return (id.name, ty')
 
 @[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
@@ -1385,7 +1385,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                     if axiomNames.contains label then []
                     else (Lambda.LExpr.getOps e).map CoreIdent.toPretty
                   | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map CoreIdent.toPretty
-                  | .varDecl _ _ .nondet => [])
+                  | .varDecl _ _ .nondet => []
+                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map CoreIdent.toPretty))
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
@@ -1748,7 +1749,7 @@ def verifySingleEnv (oblProgram : Program)
     let needValCheck := validityCheck && peValResult?.isNone
     let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
       let smtCtx := { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames }
-      pure (ProofObligation.toSMTTerms E obligation smtCtx options.useArrayTheory)
+      pure (ProofObligation.toSMTTerms (EncodeEnv.ofEnv E) obligation smtCtx options.useArrayTheory)
     match maybeTerms with
     | .error err =>
       let result := { obligation,

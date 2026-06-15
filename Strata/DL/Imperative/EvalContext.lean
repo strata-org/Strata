@@ -22,17 +22,22 @@ inductive PathConditionEntry (P : PureExpr) where
   | assumption (label : String) (expr : P.Expr)
   /-- A variable declaration with a name, type, and optional initializer. -/
   | varDecl (name : P.Ident) (ty : P.Ty) (value : ExprOrNondet P)
+  /-- A distinctness fact: the given expressions are pairwise distinct.
+      Carries a label for parity with `assumption`. -/
+  | distinct (label : String) (exprs : List P.Expr)
 
 /-- The label or name identifying a path condition entry. -/
 def PathConditionEntry.name {P : PureExpr} [ToFormat P.Ident] : PathConditionEntry P → String
   | .assumption label _ => label
   | .varDecl name _ _ => toString (f!"{name}")
+  | .distinct label _ => label
 
 instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] : BEq (PathConditionEntry P) where
   beq
     | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
     | .varDecl n1 t1 (.det e1), .varDecl n2 t2 (.det e2) => n1 == n2 && t1 == t2 && e1 == e2
     | .varDecl n1 t1 .nondet, .varDecl n2 t2 .nondet => n1 == n2 && t1 == t2
+    | .distinct l1 es1, .distinct l2 es2 => l1 == l2 && es1 == es2
     | _, _ => false
 
 @[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
@@ -42,6 +47,7 @@ def PathConditionEntry.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat 
   | .assumption label expr => f!"({label}, {expr})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs})"
 
 instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathConditionEntry P) where
   format := PathConditionEntry.format'

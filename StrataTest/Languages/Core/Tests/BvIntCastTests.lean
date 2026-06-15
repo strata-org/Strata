@@ -20,7 +20,7 @@ namespace Core
 open Lambda
 open Strata.SMT
 
-private def coreEnv : Env := {Env.init with exprEnv := {
+private def coreEnv : EncodeEnv := Core.EncodeEnv.ofEnv {Env.init with exprEnv := {
   Env.init.exprEnv with
     config := { Env.init.exprEnv.config with factory := Core.Factory }}}
 

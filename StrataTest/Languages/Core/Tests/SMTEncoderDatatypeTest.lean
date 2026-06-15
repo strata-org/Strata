@@ -80,7 +80,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
   | .ok env =>
     -- Set the TypeFactory for correct datatype emission ordering
     let ctx := SMT.Context.default.withTypeFactory env.datatypes
-    match toSMTTerm env [] e ctx useArrayTheory with
+    match toSMTTerm (Core.EncodeEnv.ofEnv env) [] e ctx useArrayTheory with
     | .error err => return err.pretty
     | .ok (smt, ctx) =>
       -- Emit the full SMT output including datatype declarations
@@ -476,7 +476,7 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
     | .error msg => return s!"Error adding function: {msg}"
     | .ok env =>
       let ctx := SMT.Context.default.withTypeFactory env.datatypes
-      match toSMTTerm env [] e ctx with
+      match toSMTTerm (Core.EncodeEnv.ofEnv env) [] e ctx with
       | .error err => return err.pretty
       | .ok (smt, ctx) =>
         let b ← IO.mkRef { : IO.FS.Stream.Buffer }

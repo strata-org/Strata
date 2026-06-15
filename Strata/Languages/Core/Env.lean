@@ -55,6 +55,7 @@ private def formatCoreEntry : PathConditionEntry Expression → Format
   | .assumption label expr => f!"({label}, {expr.eraseTypes})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e.eraseTypes})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs.map (·.eraseTypes)})"
 
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
@@ -73,6 +74,7 @@ private def entryExprs : PathConditionEntry Expression → List Expression.Expr
   | .assumption _ e => [e]
   | .varDecl _ _ (.det e) => [e]
   | .varDecl _ _ .nondet => []
+  | .distinct _ exprs => exprs
 
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
@@ -94,7 +96,8 @@ def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligatio
     assumptions := d.assumptions.map (fun m => m.map (fun
       | .assumption label expr => .assumption label expr.eraseTypes
       | .varDecl name ty (.det e) => .varDecl name ty (.det e.eraseTypes)
-      | .varDecl name ty .nondet => .varDecl name ty .nondet)),
+      | .varDecl name ty .nondet => .varDecl name ty .nondet
+      | .distinct label exprs => .distinct label (exprs.map (·.eraseTypes)))),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
     }
