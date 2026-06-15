@@ -51,7 +51,7 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exis
    (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
 
-/-- info: "Cannot encode expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
+/-- info: "Cannot encode .app expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
    (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
@@ -66,12 +66,7 @@ info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\
    (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
    (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
    (ctx := SMT.Context.default)
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+   (factory := Core.Factory)
 
 /--
 info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (forall ((m Int) (n Int)) (! (= (f n m) x) :pattern ((f n m)))))\n"
@@ -80,15 +75,9 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory :=
-          Env.init.exprEnv.config.factory.pushIfNew $
-          LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
-      }
-   }})
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (factory := Core.Factory.pushIfNew $
+          LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
 
 /--
@@ -98,15 +87,9 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false)
-   (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory :=
-          Env.init.exprEnv.config.factory.pushIfNew $
-          LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] []
-      }
-   }})
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (factory := Core.Factory.pushIfNew $
+          LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
 /-! ## Tests for Array Theory Support -/
 
@@ -121,13 +104,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(asse
   (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+  (ctx := { SMT.Context.default with useArrayTheory := true })
+  (factory := Core.Factory)
 
 -- Test map update with Array theory enabled
 /--
@@ -139,13 +117,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
     (.fvar () "m" (.some (mapTy .int .int))))
     (.fvar () "i" (.some .int)))
     (.fvar () "v" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+  (ctx := { SMT.Context.default with useArrayTheory := true })
+  (factory := Core.Factory)
 
 -- Test nested map operations with Array theory
 /--
@@ -159,13 +132,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
       (.fvar () "i" (.some .int)))
       (.fvar () "v" (.some .int))))
     (.fvar () "j" (.some .int)))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+  (ctx := { SMT.Context.default with useArrayTheory := true })
+  (factory := Core.Factory)
 
 -- Test that UF input types use Array when useArrayTheory=true (regression for Map/Array mismatch)
 /--
@@ -175,16 +143,10 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 #eval toSMTCommandsWithAssert
   (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
            (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
-  (useArrayTheory := true)
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory :=
-          Core.Factory.pushIfNew $
+  (ctx := { SMT.Context.default with useArrayTheory := true })
+  (factory := Core.Factory.pushIfNew $
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
-            [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] []
-      }
-   }})
+            [(⟨"m", ()⟩, mapTy .int .int)] .int .none #[] .none [] [])
 
 -- Test that all bound variables get globally unique generated names
 /-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
@@ -227,15 +189,15 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -- Test that bound variable names are globally unique across multiple terms.
 -- Two independent forall terms with empty names encoded via toSMTTerms should get distinct $__bv names.
 #guard
-  match toSMTTerms Env.init [
+  match toSMTTerms Lambda.Factory.default [
     -- Term 1: ∀ x:Int. x = x
     (.quant () .all "" (.some .int) (LExpr.noTrigger ())
      (.eq () (.bvar () 0) (.bvar () 0))),
     -- Term 2: ∀ y:Bool. y
     (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
      (.bvar () 0))
-  ] SMT.Context.default with
-  | .ok ([t1, t2], _) =>
+  ] SMT.Context.default [] with
+  | .ok ([t1, t2], _, _) =>
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
     | .ok s1, .ok s2 =>
       s1 == "(forall (($__bv0 Int)) true)" &&
@@ -268,12 +230,7 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
       (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
       (.fvar () "x" (.some .real)))
     (.fvar () "y" (.some .real)))
-  (E := {Env.init with exprEnv := {
-    Env.init.exprEnv with
-      config := { Env.init.exprEnv.config with
-        factory := Core.Factory
-      }
-   }})
+  (factory := Core.Factory)
 
 end ArrayTheory
 
@@ -287,10 +244,11 @@ end ArrayTheory
 #eval do
   let ctx := SMT.Context.default
   -- toSMTType for a user-defined type "Foo" should register the sort
-  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
+  let (.ok (_, ctx)) := LMonoTy.toSMTType (.tcons "Foo" [.tcons "int" [], .tcons "bool" []]) ctx
     | unreachable!
   -- Map with useArrayTheory converts to Array; should NOT register a sort
-  let (.ok (_, ctx)) := LMonoTy.toSMTType Env.init (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx (useArrayTheory := true)
+  let ctx := { ctx with useArrayTheory := true }
+  let (.ok (_, ctx)) := LMonoTy.toSMTType (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx
     | unreachable!
   return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 
@@ -483,6 +441,57 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
 #eval toSMTCommandsWithAssert
   (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
     (.fvar () "s2" (.some .string)))
+
+/-! ## `ProofObligation.toSMTTerms` preserves the input `typeFactory`
+
+`SMT.Context.typeFactory` is seeded by the caller from the env's datatype
+TypeFactory and is never modified during encoding (encoding a datatype marks it
+`seen` and registers its function maps, but never extends `typeFactory`). These
+checks pin that invariant: the output context's `typeFactory` equals the
+datatype factory the caller seeded it with. -/
+
+private def intListDatatypeRT : Lambda.LDatatype Unit :=
+  { name := "IntList", typeArgs := [],
+    constrs := [
+      { name := "Nil", args := [], testerName := "isNil" },
+      { name := "Cons", args := [("hd", .int), ("tl", .tcons "IntList" [])],
+        testerName := "isCons" }
+    ], constrs_ne := rfl }
+
+/-- A minimal assertion obligation for `obligation`. -/
+private def assertOb (obligation : LExpr CoreLParams.mono) :
+    Imperative.ProofObligation Expression :=
+  { label := "test", property := .assert, assumptions := [],
+    obligation := obligation, metadata := {} }
+
+/-- Build an env from the given datatype blocks, encode `ob` with its
+    `typeFactory` seeded from the env's datatypes, and return whether the output
+    context's `typeFactory` still equals that input datatype factory. -/
+private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
+    (ob : Imperative.ProofObligation Expression) : Except Std.Format Bool := do
+  let env ← (Env.init.addDatatypes blocks).mapError (f!"{·}")
+  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let (_, _, _, _, ctx', _) ← ProofObligation.toSMTTerms env.factory ob ctx
+  .ok (ctx'.typeFactory == env.datatypes)
+
+-- Obligation referencing the `IntList` datatype (via its `Nil` constructor).
+/-- info: ok: true -/
+#guard_msgs in
+#eval show Except Std.Format Bool from
+  let nil : LExpr CoreLParams.mono := .op () ⟨"Nil", ()⟩ (.some (.tcons "IntList" []))
+  typeFactoryPreserved [[intListDatatypeRT]] (assertOb (.eq () nil nil))
+
+-- Obligation that does not reference the datatype at all: unused datatypes are
+-- still retained in `typeFactory`.
+/-- info: ok: true -/
+#guard_msgs in
+#eval typeFactoryPreserved [[intListDatatypeRT]]
+  (assertOb (.eq () (.intConst () 0) (.intConst () 0)))
+
+-- Empty datatype factory: trivially preserved.
+/-- info: ok: true -/
+#guard_msgs in
+#eval typeFactoryPreserved [] (assertOb (.boolConst () true))
 
 end Core
 

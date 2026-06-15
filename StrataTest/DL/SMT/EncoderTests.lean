@@ -215,7 +215,7 @@ end Strata.SMT.Encoder
 /-! ## Tests for unified `usedNames` registry (issue #1230)
 
 Verifies that the encoder disambiguates when a user-defined UF name collides
-with the internal `f.N` naming scheme used by `encodeFunction`, and when
+with the internal `f.N` naming scheme used by `encodeFunctionDef`, and when
 UF names collide with pre-declared sort/datatype names. -/
 
 namespace Strata.SMT.Encoder.UsedNamesTests
@@ -237,7 +237,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let (((), estate), _) ← (act.run initState).run solver
   return estate
 
--- A user UF named `f.0` should not collide with the first `encodeFunction`
+-- A user UF named `f.0` should not collide with the first `encodeFunctionDef`
 -- output. The encoder must rename one of them.
 /-- info: ("f.0", "f.1") -/
 #guard_msgs in
@@ -247,8 +247,8 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let body : Term := .var ⟨"x", .int⟩
   let estate ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
-    let _ ← Encoder.encodeFunction functionUF body
-  return (estate.ufs[collidingUF]!, estate.ufs[functionUF]!)
+    let _ ← Encoder.encodeFunctionDef functionUF body
+  return (estate.functions[collidingUF]!, estate.functions[functionUF]!)
 
 -- A user UF named `f.1` should not collide when two functions are encoded.
 /-- info: ("f.1", "f.1@1", "f.2") -/
@@ -261,9 +261,9 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let body1 : Term := .var ⟨"y", .int⟩
   let estate ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
-    let _ ← Encoder.encodeFunction fn0 body0
-    let _ ← Encoder.encodeFunction fn1 body1
-  return (estate.ufs[collidingUF]!, estate.ufs[fn0]!, estate.ufs[fn1]!)
+    let _ ← Encoder.encodeFunctionDef fn0 body0
+    let _ ← Encoder.encodeFunctionDef fn1 body1
+  return (estate.functions[collidingUF]!, estate.functions[fn0]!, estate.functions[fn1]!)
 
 -- A UF named the same as a pre-declared datatype/sort should be disambiguated
 -- when the encoder state is initialized with those names.
@@ -274,7 +274,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let uf : UF := { id := "MyDatatype", args := [], out := .int }
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
     let _ ← Encoder.encodeUF uf
-  return estate.ufs[uf]!
+  return estate.functions[uf]!
 
 -- A function whose generated name collides with a pre-declared sort should
 -- also be disambiguated.
@@ -285,8 +285,8 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
   let body : Term := .var ⟨"x", .int⟩
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
-    let _ ← Encoder.encodeFunction fn body
-  return estate.ufs[fn]!
+    let _ ← Encoder.encodeFunctionDef fn body
+  return estate.functions[fn]!
 
 -- A UF named identically to a constructor declared via `declareType` should
 -- be disambiguated.
@@ -297,7 +297,7 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
   let estate ← runEncoder do
     let _ ← Encoder.declareType "MyType" ["MyConstr", "OtherConstr"]
     let _ ← Encoder.encodeUF uf
-  return (estate.ufs[uf]!, "MyConstr")
+  return (estate.functions[uf]!, "MyConstr")
 
 -- A UF named `Option` (or `none`/`some`/`val`) should be disambiguated against
 -- the built-in Option datatype names pre-populated in `encode`.
@@ -314,13 +314,13 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
     let _ ← Encoder.encodeUF ufNone
     let _ ← Encoder.encodeUF ufSome
     let _ ← Encoder.encodeUF ufVal
-  return (estate.ufs[ufOption]!, estate.ufs[ufNone]!, estate.ufs[ufSome]!, estate.ufs[ufVal]!)
+  return (estate.functions[ufOption]!, estate.functions[ufNone]!, estate.functions[ufSome]!, estate.functions[ufVal]!)
 
 end Strata.SMT.Encoder.UsedNamesTests
 
 /-! ## Tests for AbstractEncoder paths (issue #1230)
 
-Verifies that `AbstractEncoder.encodeUF` and `AbstractEncoder.encodeFunction`
+Verifies that `AbstractEncoder.encodeUF` and `AbstractEncoder.encodeFunctionDef`
 use the same `uniquify` logic as the batch encoder. -/
 
 namespace Strata.SMT.Encoder.AbstractEncoderTests
@@ -404,9 +404,9 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
   let uf : UF := { id := "f.0", args := [], out := .int }
   let estate := runAbstractEncoder preDeclaredNames do
     let _ ← AbstractEncoder.encodeUF mockSolver uf
-  return estate.ufs[uf]!
+  return estate.functions[uf]!
 
--- AbstractEncoder.encodeFunction disambiguates against pre-declared names
+-- AbstractEncoder.encodeFunctionDef disambiguates against pre-declared names
 /-- info: "f.0@1" -/
 #guard_msgs in
 #eval do
@@ -414,8 +414,8 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
   let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
   let body : Term := .var ⟨"x", .int⟩
   let estate := runAbstractEncoder preDeclaredNames do
-    let _ ← AbstractEncoder.encodeFunction mockSolver fn body
-  return estate.ufs[fn]!
+    let _ ← AbstractEncoder.encodeFunctionDef mockSolver fn body
+  return estate.functions[fn]!
 
 -- AbstractEncoder: UF-vs-function collision (same as batch path)
 /-- info: ("f.0", "f.1") -/
@@ -426,7 +426,7 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
   let body : Term := .var ⟨"x", .int⟩
   let estate := runAbstractEncoder {} do
     let _ ← AbstractEncoder.encodeUF mockSolver collidingUF
-    let _ ← AbstractEncoder.encodeFunction mockSolver functionUF body
-  return (estate.ufs[collidingUF]!, estate.ufs[functionUF]!)
+    let _ ← AbstractEncoder.encodeFunctionDef mockSolver functionUF body
+  return (estate.functions[collidingUF]!, estate.functions[functionUF]!)
 
 end Strata.SMT.Encoder.AbstractEncoderTests

@@ -155,7 +155,10 @@ private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression)
   (options : MetaVerifier.Options := {}) :
   Option SMT.SMTVC := do
-    let maybeTerms := Core.ProofObligation.toSMTTerms E ob (useArrayTheory := options.useArrayTheory)
+    -- Seed the encoding context with the env's datatypes and the array-theory flag.
+    let smtCtx := { Core.SMT.Context.default with
+      typeFactory := E.datatypes, useArrayTheory := options.useArrayTheory }
+    let maybeTerms := Core.ProofObligation.toSMTTerms E.factory ob smtCtx
     match maybeTerms with
     | .error _ => none
     | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
