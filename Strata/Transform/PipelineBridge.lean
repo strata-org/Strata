@@ -472,4 +472,69 @@ predicates threaded through all three large `_sound` proofs (the hoist §F
 not an additive preservation lemma.  It is recorded here rather than papered
 over with a false (vacuous-on-the-interesting-inputs) hypothesis. -/
 
+---------------------------------------------------------------------
+/-! ## Section 7 — Cross-pass foreignness of minted names
+
+The kind-generalized soundness theorems (`nondetElim_sound_kind`,
+`hoistLoopPrefixInits_preserves_kind`, `structuredToUnstructured_sound_kind`)
+replace the blanket `HasUnderscoreDigitSuffix` exclusion of Section 6 with
+per-kind reasoning, so the cross-pass name-shape preconditions become
+*vacuous on foreign names*: each leaf has the form `∀ str, Q str → …`, and an
+upstream-minted name `str` satisfies `¬ Q str` for the downstream kind `Q`,
+discharging the implication trivially.
+
+The two lemmas below supply that foreignness. Each refutes the downstream
+`Kind` predicate on an upstream mint by showing the generator prefixes disagree
+at character `0`: every disjunct of the downstream kind carries some literal
+`HasGenPrefix pfᵢ` clause, but the upstream mint begins with a different literal
+character, so `(pfᵢ ++ "_").toList.isPrefixOf _` is `false`. This mirrors the
+template `hoist_name_not_ndelimKind` (which establishes the *other* direction of
+this disjointness, hoist mint ∉ ndelimKind). -/
+
+/-- A name minted by `nondetElim` (under `ndelimItePrefix` or `ndelimLoopPrefix`,
+both beginning with `$`) is *not* a `hoistKind` label (`hoistFreshPrefix` begins
+with `_`). This is the Direction-A foreignness fact: every read-var / init-var /
+modified-var that `nondetElim` introduces is `ndelimKind`, hence `¬ hoistKind`,
+so the hoist pass's `exprsShapeFree`/`*_shapefree` leaves are vacuous on the
+`nondetElim` output. -/
+theorem ndelim_name_not_hoistKind (sg : StringGenState) :
+    ¬ hoistKind (StringGenState.gen ndelimItePrefix sg).1
+  ∧ ¬ hoistKind (StringGenState.gen ndelimLoopPrefix sg).1 := by
+  refine ⟨?_, ?_⟩ <;>
+    · rw [StringGenState.gen_eq]
+      rintro ⟨_, hpref, _⟩
+      simp only [String.HasGenPrefix, hoistFreshPrefix, ndelimItePrefix,
+        ndelimLoopPrefix, String.toList_append] at hpref
+      simp [List.isPrefixOf] at hpref
+
+/-- A name minted by `hoistLoopPrefixInits` (under `hoistFreshPrefix`, beginning
+with `_`) is *not* an `s2uKind` label. Each of the thirteen `s2uKind` disjuncts
+carries a literal generator prefix beginning with one of `i`, `$`, `l`, `m`,
+`e`, `b` — and the parametric `block${l}$` disjunct always begins with `b` for
+*every* `l` — none of which is `_`, so the hoist mint disagrees with each at
+character `0`. This is the Direction-B foreignness fact: every `initVars` /
+`transformBlockModVars` name the hoist pass freshly introduces is `hoistKind`,
+hence `¬ s2uKind`, so the S2U pass's `NoGenSuffix` leaves are vacuous on the
+hoist output's fresh names. -/
+theorem hoist_name_not_s2uKind (sg : StringGenState) :
+    ¬ StructuredToUnstructuredCorrect.s2uKind
+        (StringGenState.gen hoistFreshPrefix sg).1 := by
+  rw [StringGenState.gen_eq]
+  -- Each disjunct yields `hpref : HasGenPrefix pfᵢ (hoistFreshPrefix ++ "_" ++ …)`.
+  -- Unfold to a `List.isPrefixOf` over `toList`, then read off the prefix's head:
+  -- for the twelve fixed prefixes `pfᵢ.toList` reduces to a literal `c :: …`, and
+  -- for the parametric `block$⟨l⟩$` disjunct the head `toString "block$"` still
+  -- reduces to `'b' :: …` even though `l` blocks full reduction.  In every case
+  -- the head is `≠ '_'`, the head of the `hoistFreshPrefix` (`"_hoist"`) name, so
+  -- the prefix relation is refuted by a head clash.
+  rintro (⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+          ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+          ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ | ⟨_, hpref, _⟩ |
+          ⟨l, _, hpref, _⟩) <;>
+    simp only [String.HasGenPrefix, hoistFreshPrefix, String.toList_append] at hpref <;>
+    · rw [List.isPrefixOf_iff_prefix] at hpref
+      obtain ⟨t, ht⟩ := hpref
+      simp only [String.toList, show (toString "block$") = "block$" from rfl] at ht
+      exact absurd (List.cons.inj ht).1 (by decide)
+
 end Imperative
