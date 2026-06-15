@@ -1677,39 +1677,53 @@ private theorem stmtsToBlocks_genStep
 termination_by sizeOf ss
 decreasing_by all_goals (subst h_match; simp_wf; omega)
 
-/-! ### Pass-tracking: every label `stmtsToCFG` mints carries a kind prefix
+/-! ### Pass-tracking: every label `stmtsToCFG` mints satisfies the label *kind*
 
 `stmtsToCFG` mints block labels under exactly thirteen generator prefixes (the
 twelve fixed ones listed in `s2uKind` plus the user-label-parameterised
-`"block$⟨l⟩$"`).  `s2uKindPrefix pf` records "`pf` is one of those thirteen
-literal prefix strings".  The two lemmas below track `AllGenPrefix s2uKindPrefix`
-across `flushCmds` and `stmtsToBlocks`: starting from the empty generator state
-(which satisfies it vacuously), every label produced by the pass carries one of
-the thirteen prefixes as a generator prefix.  This is what lets a downstream
-discharge a foreign-label obligation (`not_mem_stringGens_of_foreign`) without
-assuming the consumer keeps *every* gen-shaped name fresh. -/
+`"block$⟨l⟩$"`).  The lemmas below track `AllMem R` across `flushCmds` and
+`stmtsToBlocks` for *any* label-kind predicate `R` that holds of every
+`gen`-output under those thirteen prefixes (the thirteen-conjunct mint witness
+`hmints`, the same shape as `s2uKind_gen`/`hQmint`).  Starting from the empty
+generator state (which satisfies `AllMem R` vacuously), every label this pass
+produces satisfies `R`.  Instantiated at `R := s2uKind`, this lets a downstream
+discharge a foreign-label obligation — any label that is *not* `s2uKind` is
+absent from the output generator — by plain contraposition
+(`not_mem_stringGens_of_not_allMem`), without assuming the consumer keeps *every*
+gen-shaped name fresh. -/
 
-/-- `pf` is one of the thirteen generator prefixes `stmtsToCFG` mints under:
-twelve fixed and one parameterised by the user block label being exited. -/
-@[expose] def s2uKindPrefix (pf : String) : Prop :=
-  pf = "ite" ∨ pf = "$__nondet_ite$" ∨ pf = "ite$" ∨ pf = "loop_entry$"
-  ∨ pf = "loop_measure$" ∨ pf = "measure_decrease$" ∨ pf = "inv$"
-  ∨ pf = "$__nondet_loop$" ∨ pf = "end$" ∨ pf = "l$" ∨ pf = "blk$"
-  ∨ pf = "before_loop$" ∨ (∃ l : String, pf = s!"block${l}$")
+/-- The thirteen-conjunct mint witness: `R` holds of every `gen`-output under each
+of the thirteen prefixes `stmtsToCFG` mints under (twelve fixed and one
+parameterised by the user block label being exited).  Identical in shape to
+`s2uKind_gen` and to the `hQmint` hypothesis of `structuredToUnstructured_sound_kind`. -/
+@[expose] def S2UMintWitness (R : String → Prop) : Prop :=
+    (∀ sg, R (StringGenState.gen "ite" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "$__nondet_ite$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "ite$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "loop_entry$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "loop_measure$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "measure_decrease$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "inv$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "$__nondet_loop$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "end$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "l$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "blk$" sg).1)
+  ∧ (∀ sg, R (StringGenState.gen "before_loop$" sg).1)
+  ∧ (∀ (l : String) sg, R (StringGenState.gen (s!"block${l}$") sg).1)
 
-/-- `flushCmds` advancing under a kind prefix preserves `AllGenPrefix
-s2uKindPrefix`: it either leaves the generator untouched (empty accumulator, no
-transfer) or mints a single label under `pfx`, which `allGenPrefix_gen`
-absorbs. -/
-private theorem flushCmds_allGenPrefix {P : PureExpr} [HasBool P]
+/-- `flushCmds` advancing under a mint prefix preserves `AllMem R`: it either
+leaves the generator untouched (empty accumulator, no transfer) or mints a single
+label `(gen pfx gen).1`, which `allMem_gen` absorbs via the per-prefix mint
+witness `h_mint`. -/
+private theorem flushCmds_allMem {P : PureExpr} [HasBool P] {R : String → Prop}
     (pfx : String) (accum : List (Cmd P))
     (tr? : Option (DetTransferCmd String P)) (k : String)
     (gen gen' : StringGenState)
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : flushCmds pfx accum tr? k gen = ((entry, blocks), gen'))
-    (h_pfx_kind : s2uKindPrefix pfx)
-    (h_in : StringGenState.AllGenPrefix s2uKindPrefix gen) :
-    StringGenState.AllGenPrefix s2uKindPrefix gen' := by
+    (h_mint : ∀ sg, R (StringGenState.gen pfx sg).1)
+    (h_in : StringGenState.AllMem R gen) :
+    StringGenState.AllMem R gen' := by
   unfold flushCmds at h_gen
   cases h_tr : tr? with
   | none =>
@@ -1724,28 +1738,28 @@ private theorem flushCmds_allGenPrefix {P : PureExpr} [HasBool P]
       simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
       have : gen' = (StringGenState.gen pfx gen).2 := (Prod.mk.inj h_gen).2.symm
       rw [this]
-      exact StringGenState.allGenPrefix_gen s2uKindPrefix pfx gen h_in h_pfx_kind
+      exact StringGenState.allMem_gen R pfx gen h_in (h_mint gen)
   | some tr =>
     rw [h_tr] at h_gen
     simp only [bind, StateT.bind, pure, StateT.pure, Id] at h_gen
     have : gen' = (StringGenState.gen pfx gen).2 := (Prod.mk.inj h_gen).2.symm
     rw [this]
-    exact StringGenState.allGenPrefix_gen s2uKindPrefix pfx gen h_in h_pfx_kind
+    exact StringGenState.allMem_gen R pfx gen h_in (h_mint gen)
 
-/-- A generic `mapM_allGenPrefix`: if each step of a `StringGenM` computation
-preserves `AllGenPrefix P`, the whole `mapM` does too. The analogue of
-`mapM_genStep` for the prefix-tracking invariant. -/
-private theorem mapM_allGenPrefix {α β : Type} (Pred : String → Prop)
+/-- A generic `mapM_allMem`: if each step of a `StringGenM` computation
+preserves `AllMem R`, the whole `mapM` does too. The analogue of
+`mapM_genStep` for the membership-tracking invariant. -/
+private theorem mapM_allMem {α β : Type} (Pred : String → Prop)
     (f : α → LabelGen.StringGenM β)
     (h_step : ∀ (a : α) (gen gen' : StringGenState) (b : β),
                 f a gen = (b, gen') →
-                StringGenState.AllGenPrefix Pred gen →
-                StringGenState.AllGenPrefix Pred gen')
+                StringGenState.AllMem Pred gen →
+                StringGenState.AllMem Pred gen')
     (xs : List α)
     (gen gen' : StringGenState) (ys : List β)
     (h_eq : xs.mapM f gen = (ys, gen'))
-    (h_in : StringGenState.AllGenPrefix Pred gen) :
-    StringGenState.AllGenPrefix Pred gen' := by
+    (h_in : StringGenState.AllMem Pred gen) :
+    StringGenState.AllMem Pred gen' := by
   induction xs generalizing gen gen' ys with
   | nil =>
     rw [List.mapM_nil] at h_eq
@@ -1762,13 +1776,15 @@ private theorem mapM_allGenPrefix {α β : Type} (Pred : String → Prop)
     obtain ⟨ys', gen_end⟩ := r2
     simp only at h_eq
     have h_gen' : gen_end = gen' := (Prod.mk.inj h_eq).2
-    have h_mid : StringGenState.AllGenPrefix Pred gen_mid :=
+    have h_mid : StringGenState.AllMem Pred gen_mid :=
       h_step hd gen gen_mid y h_f h_in
     exact h_gen' ▸ ih gen_mid gen_end ys' h_tail h_mid
 
 /-- The invariant-assert `mapM` only mints under `"inv$"` (for empty source
-labels) or not at all, so it preserves `AllGenPrefix s2uKindPrefix`. -/
-private theorem invMapM_allGenPrefix {P : PureExpr} [HasPassiveCmds P (Cmd P)]
+labels) or not at all, so it preserves `AllMem R` whenever `R` holds of every
+`"inv$"` `gen`-output. -/
+private theorem invMapM_allMem {P : PureExpr} [HasPassiveCmds P (Cmd P)]
+    {R : String → Prop}
     (is : List (String × P.Expr)) (gen_b gen_i : StringGenState) (invCmds : List (Cmd P))
     (h_inv_def :
       ((is.mapM (fun (srcLabel, i) => do
@@ -1777,56 +1793,56 @@ private theorem invMapM_allGenPrefix {P : PureExpr} [HasPassiveCmds P (Cmd P)]
             else pure srcLabel
           pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
        : LabelGen.StringGenM (List (Cmd P))) gen_b = (invCmds, gen_i))
-    (h_in : StringGenState.AllGenPrefix s2uKindPrefix gen_b) :
-    StringGenState.AllGenPrefix s2uKindPrefix gen_i := by
-  apply mapM_allGenPrefix s2uKindPrefix _ _ is gen_b gen_i invCmds h_inv_def h_in
+    (h_inv_mint : ∀ sg, R (StringGenState.gen "inv$" sg).1)
+    (h_in : StringGenState.AllMem R gen_b) :
+    StringGenState.AllMem R gen_i := by
+  apply mapM_allMem R _ _ is gen_b gen_i invCmds h_inv_def h_in
   intro a g g' b h_step h_g_in
   obtain ⟨srcLabel, i⟩ := a
   by_cases h_empty : srcLabel.isEmpty
   · simp only [h_empty, if_true, bind, StateT.bind, pure, StateT.pure] at h_step
     have h_g_eq : g' = (StringGenState.gen "inv$" g).2 := (Prod.mk.inj h_step).2.symm
     rw [h_g_eq]
-    exact StringGenState.allGenPrefix_gen s2uKindPrefix "inv$" g h_g_in
-      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))))
+    exact StringGenState.allMem_gen R "inv$" g h_g_in (h_inv_mint g)
   · simp only [h_empty, bind, pure] at h_step
     have h_g_eq : g' = g := (Prod.mk.inj h_step).2.symm
     rw [h_g_eq]; exact h_g_in
 
-/-- `stmtsToBlocks` preserves `AllGenPrefix s2uKindPrefix`: every label it mints
-lands under one of the thirteen kind prefixes.  Mirrors `stmtsToBlocks_genStep`
-arm-by-arm, discharging each `flushCmds`/`gen` mint with the matching kind
-prefix and composing recursive calls through the IH. -/
-private theorem stmtsToBlocks_allGenPrefix
+/-- `stmtsToBlocks` preserves `AllMem R`: every label it mints satisfies `R`,
+given that `R` holds of every `gen`-output under the thirteen mint prefixes
+(`hmints : S2UMintWitness R`).  Mirrors `stmtsToBlocks_genStep` arm-by-arm,
+discharging each `flushCmds`/`gen` mint with the matching component of `hmints`
+and composing recursive calls through the IH. -/
+private theorem stmtsToBlocks_allMem
     {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
+    {R : String → Prop} (hmints : S2UMintWitness R)
     (k : String) (ss : List (Stmt P (Cmd P)))
     (exitConts : List (Option String × String))
     (accum : List (Cmd P))
     (gen gen' : StringGenState)
     (entry : String) (blocks : DetBlocks String (Cmd P) P)
     (h_gen : stmtsToBlocks k ss exitConts accum gen = ((entry, blocks), gen'))
-    (h_in : StringGenState.AllGenPrefix s2uKindPrefix gen) :
-    StringGenState.AllGenPrefix s2uKindPrefix gen' := by
+    (h_in : StringGenState.AllMem R gen) :
+    StringGenState.AllMem R gen' := by
   match h_match : ss with
   | [] =>
     unfold stmtsToBlocks at h_gen
-    exact flushCmds_allGenPrefix "l$" accum .none k gen gen' entry blocks h_gen
-      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-        (Or.inl rfl)))))))))) h_in
+    exact flushCmds_allMem "l$" accum .none k gen gen' entry blocks h_gen
+      hmints.2.2.2.2.2.2.2.2.2.1 h_in
   | .cmd c :: rest =>
     unfold stmtsToBlocks at h_gen
-    exact stmtsToBlocks_allGenPrefix k rest exitConts (c :: accum) gen gen' entry blocks
+    exact stmtsToBlocks_allMem hmints k rest exitConts (c :: accum) gen gen' entry blocks
       h_gen h_in
   | .funcDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
-    exact stmtsToBlocks_allGenPrefix k rest exitConts accum gen gen' entry blocks h_gen h_in
+    exact stmtsToBlocks_allMem hmints k rest exitConts accum gen gen' entry blocks h_gen h_in
   | .typeDecl _ _ :: rest =>
     unfold stmtsToBlocks at h_gen
-    exact stmtsToBlocks_allGenPrefix k rest exitConts accum gen gen' entry blocks h_gen h_in
+    exact stmtsToBlocks_allMem hmints k rest exitConts accum gen gen' entry blocks h_gen h_in
   | .exit l? md :: _ =>
     unfold stmtsToBlocks at h_gen
-    exact flushCmds_allGenPrefix _ accum _ _ gen gen' entry blocks h_gen
-      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-        (Or.inr (Or.inr ⟨l?, rfl⟩)))))))))))) h_in
+    exact flushCmds_allMem _ accum _ _ gen gen' entry blocks h_gen
+      (hmints.2.2.2.2.2.2.2.2.2.2.2.2 l?) h_in
   | .block l bss md :: rest =>
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
@@ -1838,14 +1854,13 @@ private theorem stmtsToBlocks_allGenPrefix
     simp at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ "blk$" accum .none bl gen_b = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-    have h_in_rest := stmtsToBlocks_allGenPrefix k rest exitConts [] gen gen_r
+    have h_in_rest := stmtsToBlocks_allMem hmints k rest exitConts [] gen gen_r
       kNext bsNext h_rest_eq h_in
-    have h_in_body := stmtsToBlocks_allGenPrefix kNext bss _ [] gen_r gen_b
+    have h_in_body := stmtsToBlocks_allMem hmints kNext bss _ [] gen_r gen_b
       bl bbs h_body_eq h_in_rest
-    have h_in_flush := flushCmds_allGenPrefix "blk$" accum .none bl gen_b gen_f
+    have h_in_flush := flushCmds_allMem "blk$" accum .none bl gen_b gen_f
       accumEntry accumBlocks h_flush_eq
-      (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-        (Or.inl rfl))))))))))) h_in_body
+      hmints.2.2.2.2.2.2.2.2.2.2.1 h_in_body
     have h_gen_eq : gen_f = gen' := by
       simp only at h_gen
       by_cases h_eq : l = bl
@@ -1870,14 +1885,14 @@ private theorem stmtsToBlocks_allGenPrefix
     generalize h_else_eq : stmtsToBlocks kNext fss exitConts [] gen_t = r_else at h_gen
     obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
     simp only at h_gen
-    have h_in_rest := stmtsToBlocks_allGenPrefix k rest exitConts [] gen gen_r
+    have h_in_rest := stmtsToBlocks_allMem hmints k rest exitConts [] gen gen_r
       kNext bsNext h_rest_eq h_in
-    have h_in_ite : StringGenState.AllGenPrefix s2uKindPrefix gen_ite := by
+    have h_in_ite : StringGenState.AllMem R gen_ite := by
       rw [show gen_ite = (StringGenState.gen "ite" gen_r).2 from (by rw [h_ite_label])]
-      exact StringGenState.allGenPrefix_gen s2uKindPrefix "ite" gen_r h_in_rest (Or.inl rfl)
-    have h_in_then := stmtsToBlocks_allGenPrefix kNext tss exitConts [] gen_ite gen_t
+      exact StringGenState.allMem_gen R "ite" gen_r h_in_rest (hmints.1 gen_r)
+    have h_in_then := stmtsToBlocks_allMem hmints kNext tss exitConts [] gen_ite gen_t
       tl tbs h_then_eq h_in_ite
-    have h_in_else := stmtsToBlocks_allGenPrefix kNext fss exitConts [] gen_t gen_e
+    have h_in_else := stmtsToBlocks_allMem hmints kNext fss exitConts [] gen_t gen_e
       fl fbs h_else_eq h_in_then
     cases c with
     | det e =>
@@ -1885,9 +1900,9 @@ private theorem stmtsToBlocks_allGenPrefix
       generalize h_flush_eq : @flushCmds P (Cmd P) _ "ite$" accum
         (.some (DetTransferCmd.condGoto e tl fl md)) l_ite gen_e = r_flush at h_gen
       obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-      have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-        flushCmds_allGenPrefix "ite$" accum _ l_ite gen_e gen_f
-          accumEntry accumBlocks h_flush_eq (Or.inr (Or.inr (Or.inl rfl))) h_in_else
+      have h_in_flush : StringGenState.AllMem R gen_f :=
+        flushCmds_allMem "ite$" accum _ l_ite gen_e gen_f
+          accumEntry accumBlocks h_flush_eq hmints.2.2.1 h_in_else
       have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
       exact h_gen_eq ▸ h_in_flush
     | nondet =>
@@ -1902,14 +1917,14 @@ private theorem stmtsToBlocks_allGenPrefix
           (HasFvar.mkFvar (HasIdent.ident (P := P) freshName)) tl fl md)) l_ite gen_n =
         r_flush at h_gen
       obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-      have h_in_nondet : StringGenState.AllGenPrefix s2uKindPrefix gen_n := by
+      have h_in_nondet : StringGenState.AllMem R gen_n := by
         rw [show gen_n = (StringGenState.gen "$__nondet_ite$" gen_e).2 from
               (by rw [h_nondet_gen])]
-        exact StringGenState.allGenPrefix_gen s2uKindPrefix "$__nondet_ite$" gen_e h_in_else
-          (Or.inr (Or.inl rfl))
-      have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-        flushCmds_allGenPrefix "ite$" _ _ l_ite gen_n gen_f
-          accumEntry accumBlocks h_flush_eq (Or.inr (Or.inr (Or.inl rfl))) h_in_nondet
+        exact StringGenState.allMem_gen R "$__nondet_ite$" gen_e h_in_else
+          (hmints.2.1 gen_e)
+      have h_in_flush : StringGenState.AllMem R gen_f :=
+        flushCmds_allMem "ite$" _ _ l_ite gen_n gen_f
+          accumEntry accumBlocks h_flush_eq hmints.2.2.1 h_in_nondet
       have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
       exact h_gen_eq ▸ h_in_flush
   | .loop c m is bss md :: rest =>
@@ -1920,13 +1935,13 @@ private theorem stmtsToBlocks_allGenPrefix
     generalize h_lentry_def : StringGenState.gen "loop_entry$" gen_r = r_le at h_gen
     obtain ⟨lentry, gen_le⟩ := r_le
     simp only at h_gen
-    have h_in_rest := stmtsToBlocks_allGenPrefix k rest exitConts [] gen gen_r
+    have h_in_rest := stmtsToBlocks_allMem hmints k rest exitConts [] gen gen_r
       kNext bsNext h_rest_eq h_in
-    have h_in_le : StringGenState.AllGenPrefix s2uKindPrefix gen_le := by
+    have h_in_le : StringGenState.AllMem R gen_le := by
       rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from
             (by rw [h_lentry_def])]
-      exact StringGenState.allGenPrefix_gen s2uKindPrefix "loop_entry$" gen_r h_in_rest
-        (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
+      exact StringGenState.allMem_gen R "loop_entry$" gen_r h_in_rest
+        (hmints.2.2.2.1 gen_r)
     cases h_m_cases : m with
     | none =>
       rw [h_m_cases] at h_gen
@@ -1943,21 +1958,20 @@ private theorem stmtsToBlocks_allGenPrefix
             pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
          : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
       obtain ⟨invCmds, gen_i⟩ := r_inv
-      have h_in_body := stmtsToBlocks_allGenPrefix lentry bss _ [] gen_le gen_b bl bbs
+      have h_in_body := stmtsToBlocks_allMem hmints lentry bss _ [] gen_le gen_b bl bbs
         h_body_eq h_in_le
-      have h_in_inv : StringGenState.AllGenPrefix s2uKindPrefix gen_i :=
-        invMapM_allGenPrefix is gen_b gen_i invCmds h_inv_def h_in_body
+      have h_in_inv : StringGenState.AllMem R gen_i :=
+        invMapM_allMem is gen_b gen_i invCmds h_inv_def hmints.2.2.2.2.2.2.1 h_in_body
       cases c with
       | det e =>
         simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
         generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
           Option.none lentry gen_i = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-        have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-          flushCmds_allGenPrefix "before_loop$" accum _ lentry gen_i gen_f
+        have h_in_flush : StringGenState.AllMem R gen_f :=
+          flushCmds_allMem "before_loop$" accum _ lentry gen_i gen_f
             accumEntry accumBlocks h_flush_eq
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-              (Or.inr (Or.inl rfl)))))))))))) h_in_inv
+            hmints.2.2.2.2.2.2.2.2.2.2.2.1 h_in_inv
         have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
         exact h_gen_eq ▸ h_in_flush
       | nondet =>
@@ -1967,16 +1981,15 @@ private theorem stmtsToBlocks_allGenPrefix
         generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
           Option.none lentry gen_n = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-        have h_in_nondet : StringGenState.AllGenPrefix s2uKindPrefix gen_n := by
+        have h_in_nondet : StringGenState.AllMem R gen_n := by
           rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
                 (by rw [h_nondet_gen])]
-          exact StringGenState.allGenPrefix_gen s2uKindPrefix "$__nondet_loop$" gen_i h_in_inv
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))))
-        have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-          flushCmds_allGenPrefix "before_loop$" accum _ lentry gen_n gen_f
+          exact StringGenState.allMem_gen R "$__nondet_loop$" gen_i h_in_inv
+            (hmints.2.2.2.2.2.2.2.1 gen_i)
+        have h_in_flush : StringGenState.AllMem R gen_f :=
+          flushCmds_allMem "before_loop$" accum _ lentry gen_n gen_f
             accumEntry accumBlocks h_flush_eq
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-              (Or.inr (Or.inl rfl)))))))))))) h_in_nondet
+            hmints.2.2.2.2.2.2.2.2.2.2.2.1 h_in_nondet
         have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
         exact h_gen_eq ▸ h_in_flush
     | some mExpr =>
@@ -1988,16 +2001,16 @@ private theorem stmtsToBlocks_allGenPrefix
       generalize h_ldec_def : StringGenState.gen "measure_decrease$" gen_ml = r_ldec at h_gen
       obtain ⟨ldec, gen_ldec⟩ := r_ldec
       simp only at h_gen
-      have h_in_ml : StringGenState.AllGenPrefix s2uKindPrefix gen_ml := by
+      have h_in_ml : StringGenState.AllMem R gen_ml := by
         rw [show gen_ml = (StringGenState.gen "loop_measure$" gen_le).2 from
               (by rw [h_ml_def])]
-        exact StringGenState.allGenPrefix_gen s2uKindPrefix "loop_measure$" gen_le h_in_le
-          (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
-      have h_in_ldec : StringGenState.AllGenPrefix s2uKindPrefix gen_ldec := by
+        exact StringGenState.allMem_gen R "loop_measure$" gen_le h_in_le
+          (hmints.2.2.2.2.1 gen_le)
+      have h_in_ldec : StringGenState.AllMem R gen_ldec := by
         rw [show gen_ldec = (StringGenState.gen "measure_decrease$" gen_ml).2 from
               (by rw [h_ldec_def])]
-        exact StringGenState.allGenPrefix_gen s2uKindPrefix "measure_decrease$" gen_ml h_in_ml
-          (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
+        exact StringGenState.allMem_gen R "measure_decrease$" gen_ml h_in_ml
+          (hmints.2.2.2.2.2.1 gen_ml)
       generalize h_body_eq :
         stmtsToBlocks ldec bss ((none, kNext) :: exitConts) [] gen_ldec = r_body at h_gen
       obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
@@ -2010,21 +2023,20 @@ private theorem stmtsToBlocks_allGenPrefix
             pure (HasPassiveCmds.assert (P := P) (CmdT := Cmd P) assertLabel i synthesizedMd)))
          : LabelGen.StringGenM (List (Cmd P))) gen_b = r_inv at h_gen
       obtain ⟨invCmds, gen_i⟩ := r_inv
-      have h_in_body := stmtsToBlocks_allGenPrefix ldec bss _ [] gen_ldec gen_b bl bbs
+      have h_in_body := stmtsToBlocks_allMem hmints ldec bss _ [] gen_ldec gen_b bl bbs
         h_body_eq h_in_ldec
-      have h_in_inv : StringGenState.AllGenPrefix s2uKindPrefix gen_i :=
-        invMapM_allGenPrefix is gen_b gen_i invCmds h_inv_def h_in_body
+      have h_in_inv : StringGenState.AllMem R gen_i :=
+        invMapM_allMem is gen_b gen_i invCmds h_inv_def hmints.2.2.2.2.2.2.1 h_in_body
       cases c with
       | det e =>
         simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
         generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
           Option.none lentry gen_i = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-        have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-          flushCmds_allGenPrefix "before_loop$" accum _ lentry gen_i gen_f
+        have h_in_flush : StringGenState.AllMem R gen_f :=
+          flushCmds_allMem "before_loop$" accum _ lentry gen_i gen_f
             accumEntry accumBlocks h_flush_eq
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-              (Or.inr (Or.inl rfl)))))))))))) h_in_inv
+            hmints.2.2.2.2.2.2.2.2.2.2.2.1 h_in_inv
         have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
         exact h_gen_eq ▸ h_in_flush
       | nondet =>
@@ -2034,16 +2046,15 @@ private theorem stmtsToBlocks_allGenPrefix
         generalize h_flush_eq : @flushCmds P (Cmd P) _ "before_loop$" accum
           Option.none lentry gen_n = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
-        have h_in_nondet : StringGenState.AllGenPrefix s2uKindPrefix gen_n := by
+        have h_in_nondet : StringGenState.AllMem R gen_n := by
           rw [show gen_n = (StringGenState.gen "$__nondet_loop$" gen_i).2 from
                 (by rw [h_nondet_gen])]
-          exact StringGenState.allGenPrefix_gen s2uKindPrefix "$__nondet_loop$" gen_i h_in_inv
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))))
-        have h_in_flush : StringGenState.AllGenPrefix s2uKindPrefix gen_f :=
-          flushCmds_allGenPrefix "before_loop$" accum _ lentry gen_n gen_f
+          exact StringGenState.allMem_gen R "$__nondet_loop$" gen_i h_in_inv
+            (hmints.2.2.2.2.2.2.2.1 gen_i)
+        have h_in_flush : StringGenState.AllMem R gen_f :=
+          flushCmds_allMem "before_loop$" accum _ lentry gen_n gen_f
             accumEntry accumBlocks h_flush_eq
-            (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
-              (Or.inr (Or.inl rfl)))))))))))) h_in_nondet
+            hmints.2.2.2.2.2.2.2.2.2.2.2.1 h_in_nondet
         have h_gen_eq : gen_f = gen' := (Prod.mk.inj h_gen).2
         exact h_gen_eq ▸ h_in_flush
 termination_by sizeOf ss
@@ -8773,7 +8784,12 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
       (∀ b ∈ blocks, b ∈ (stmtsToCFG ss).blocks) ∧
       (stmtsToCFG ss).blocks.lookup lend =
         some ({ cmds := [], transfer := .finish synthesizedMd } : BasicBlock (DetTransferCmd String P) (Cmd P)) ∧
-      StringGenState.WF gen := by
+      StringGenState.WF gen ∧
+      -- `gen` is the generator state after the single `"end$"` mint that
+      -- `stmtsToCFGM` performs before invoking `stmtsToBlocks`.  Exposing this
+      -- lets the caller track `AllMem` from `StringGenState.emp` through to the
+      -- output `gen'`, which underpins the foreign-label self-discharge.
+      gen = (StringGenState.gen "end$" StringGenState.emp).2 := by
   let p_end := StringGenState.gen "end$" StringGenState.emp
   let lend := p_end.1
   let gen0 := p_end.2
@@ -8785,7 +8801,7 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
   -- WF of gen0 (after one gen call from emp)
   have hwf0 : StringGenState.WF gen0 :=
     StringGenState.WFMono StringGenState.wf_emp rfl
-  refine ⟨lend, gen0, r.2, r.1.1, r.1.2, rfl, ?_, ?_, ?_, hwf0⟩
+  refine ⟨lend, gen0, r.2, r.1.1, r.1.2, rfl, ?_, ?_, ?_, hwf0, rfl⟩
   · simp [h_cfg]
   · intro b hb; simp [h_cfg]; exact Or.inl hb
   · -- Show lookup of lend in (r.1.2 ++ [(lend, finish)]) is the finish block.
@@ -8862,7 +8878,16 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasNot P] [HasVar
 
     The CFG end-store agrees with the structured end-store on every defined
     variable (`StoreAgreement`); they may differ only on variables introduced
-    by inner scopes (e.g. `.block`'s local frames). -/
+    by inner scopes (e.g. `.block`'s local frames).
+
+    The label-kind predicate `Q` is constrained only by `hQmint`: the
+    thirteen-conjunct witness that `Q` holds of every `gen`-output under the
+    prefixes `stmtsToCFG` mints under.  From it the proof *derives* the
+    foreign-label obligation — any label that is not `Q` is absent from the
+    output generator — by tracking `AllMem Q` from the empty generator state
+    (through the single `"end$"` mint and `stmtsToBlocks`) and discharging by
+    contraposition, so no universal-over-all-WF-states freshness assumption is
+    needed. -/
 theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
@@ -8889,8 +8914,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
-    (h_wf_foreign : ∀ {σ : StringGenState}, StringGenState.WF σ →
-      ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens σ)
+    (hQmint : S2UMintWitness Q)
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
@@ -8899,7 +8923,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg := by
   intro cfg
-  have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend, h_wf_gen⟩ :=
+  have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend, h_wf_gen, h_gen0⟩ :=
     stmtsToCFG_stmtsToBlocks_spec ss h_disj
   rw [h_entry]
   have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
@@ -8929,12 +8953,20 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
       ∀ x : String, Q x →
         x ∉ StringGenState.stringGens gen' →
         ρ₀.store (HasIdent.ident (P := P) x) = none := fun x _ _ => h_store_clean _
-  -- `gen'` is reachable from the WF `gen`, hence WF; the supplied foreign
-  -- discharge `h_wf_foreign` then certifies any non-`Q` label is absent.
-  have h_wf_gen' : StringGenState.WF gen' :=
-    (stmtsToBlocks_genStep lend ss [] [] gen gen' entry blocks h_gen).wf_mono h_wf_gen
+  -- Self-discharge of the foreign-label obligation.  `gen` is the empty
+  -- generator state advanced by the single `"end$"` mint; every label `gen`
+  -- holds therefore satisfies `Q` (by `hQmint`'s `"end$"` witness).
+  -- `stmtsToBlocks_allMem` carries this to `gen'`: every label `gen'` holds
+  -- satisfies `Q`.  Hence any label that is *not* `Q` is absent — plain
+  -- contraposition, no universal-WF assumption needed.
+  have h_allmem_gen : StringGenState.AllMem Q gen := by
+    rw [h_gen0]
+    exact StringGenState.allMem_gen Q "end$" StringGenState.emp
+      (StringGenState.allMem_emp Q) (hQmint.2.2.2.2.2.2.2.2.1 StringGenState.emp)
+  have h_allmem_gen' : StringGenState.AllMem Q gen' :=
+    stmtsToBlocks_allMem hQmint lend ss [] [] gen gen' entry blocks h_gen h_allmem_gen
   have h_foreign : ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens gen' :=
-    h_wf_foreign h_wf_gen'
+    fun s hns => StringGenState.not_mem_stringGens_of_not_allMem h_allmem_gen' hns
   have ⟨σ_cfg, h_sim, h_agree, _h_preserve⟩ :=
     stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
       h_gen h_nofd h_simple h_unique h_lbni h_lhni h_nml
@@ -8993,8 +9025,21 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
     h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
     h_input_no_gen_suffix_mod
-    (fun hwf _ hns =>
-      StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix hwf hns)
+    -- Every `gen`-output has the `_<digits>` suffix shape, so the
+    -- thirteen-conjunct mint witness holds for the blanket predicate uniformly.
+    ⟨fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
+     fun _ sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg⟩
     h_term
 
 /-! ### The structured-to-unstructured label *kind*
@@ -9097,18 +9142,18 @@ than every gen-shaped name, which is what lets a composition partner — one tha
 mints under disjoint prefixes — satisfy it.
 
 Unlike the structured-to-structured passes (`nondetElim`, the loop-init hoist),
-`stmtsToCFG` produces a CFG and so its soundness carries a *foreign-label*
-obligation `h_wf_foreign`: any label not minted by this pass is absent from the
-output generator's `stringGens`.  For the blanket
-`Q := HasUnderscoreDigitSuffix`, every label inside a WF generator state is
-gen-shaped, so the obligation discharges from well-formedness alone (this is how
-`structuredToUnstructured_sound` closes it).  At the finer `Q := s2uKind` the
-obligation is *not* derivable from WF alone — `stmtsToCFG` also mints under
+`stmtsToCFG` produces a CFG and so its soundness must dispatch a *foreign-label*
+obligation: any label not minted by this pass is absent from the output
+generator's `stringGens`.  This obligation is *not* derivable from
+well-formedness alone at the finer `Q := s2uKind` — `stmtsToCFG` also mints under
 auxiliary `flushCmds` prefixes (`"l$"`, `"blk$"`, `"before_loop$"`, and a
 user-label-parameterised `"block$⟨l⟩$"`), so a generic WF state may legitimately
-contain non-`s2uKind` labels.  The obligation is therefore taken as a hypothesis
-here, to be supplied by the composition context that knows the concrete
-generator's `AllGenPrefix` shape. -/
+contain non-`s2uKind` labels.  It is instead discharged *internally* by
+`stmtsToCFG_terminal`: from the thirteen-conjunct mint witness `hQmint` it tracks
+`AllMem Q` from the empty generator state through the pass, so every label the
+pass produces satisfies `Q`, and any label that is not `Q` is absent by
+contraposition.  Phase 4 therefore supplies only `hQmint` (via `s2uKind_gen` at
+`Q := s2uKind`) — there is no separate foreign hypothesis to discharge. -/
 theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
     [HasVarsPure P P.Expr] [DecidableEq P.Ident]
@@ -9149,8 +9194,6 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
     (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
-    (h_wf_foreign : ∀ {σ : StringGenState}, StringGenState.WF σ →
-      ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens σ)
     (h_term : StepStmtStar P (EvalCmd P) extendEval
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
@@ -9158,20 +9201,17 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
       (.atBlock cfg.entry ρ₀.store false)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
-  -- `hQmint` is the thirteen-conjunct mint witness for the construct prefixes;
-  -- it is the kind-variant analogue of `ndelimKind_gen`/`hoistKind_gen` and
-  -- records that every prefix `stmtsToCFG` mints under satisfies `Q`.  It is
-  -- unused by the internal proof (which threads only `h_wf_foreign`), but is the
-  -- obligation a composition partner discharges (via `s2uKind_gen` at
-  -- `Q := s2uKind`) to instantiate this theorem; we keep it in the signature so
-  -- the handle's shape mirrors the structured-to-structured passes.
-  let _ := hQmint
+  -- `hQmint` is the thirteen-conjunct mint witness for the construct prefixes —
+  -- definitionally `S2UMintWitness Q`.  `stmtsToCFG_terminal` consumes it to
+  -- *derive* the foreign-label obligation internally (via `AllMem Q`), so this
+  -- handle needs no separate foreign hypothesis.  A composition partner supplies
+  -- `hQmint` via `s2uKind_gen` at `Q := s2uKind`.
   stmtsToCFG_terminal (Q := Q)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
     hf₀
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
     h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
-    h_input_no_gen_suffix_mod h_wf_foreign h_term
+    h_input_no_gen_suffix_mod hQmint h_term
 
 ---------------------------------------------------------------------
 -- Loop-init-hoisting additive helpers (ported; used by LoopInitHoist*).

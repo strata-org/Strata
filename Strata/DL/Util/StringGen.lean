@@ -571,4 +571,50 @@ theorem StringGenState.allGenPrefix_true_of_wf {σ : StringGenState}
   refine ⟨(toString (n : Nat)).toList, ?_⟩
   simp [String.toList_append, List.append_assoc]
 
+/-! ## Membership tracking: `AllMem`
+
+`AllGenPrefix` tracks only that each produced label carries *some* `P`-prefix; it
+deliberately forgets that the label is an *actual* generator output.  That makes
+it too weak to certify a *foreign-label* obligation against a predicate that — like
+the structured-to-unstructured label *kind* — pins the label to a concrete
+`gen`-output equality (a non-generated string sharing a prefix would slip past the
+prefix check).
+
+`AllMem R σ` is the stronger invariant: *every produced label satisfies `R`
+itself*.  At each `gen pf` step the newly produced label is literally
+`(gen pf σ).1`, so the step preserves `AllMem R` as soon as `R` holds of every
+`gen`-output under that prefix — exactly the per-prefix mint witnesses a pass
+already establishes.  The foreign discharge is then plain contraposition. -/
+
+/-- `AllMem R σ`: every label produced so far satisfies `R`. -/
+@[expose]
+def StringGenState.AllMem (R : String → Prop) (σ : StringGenState) : Prop :=
+  ∀ s ∈ stringGens σ, R s
+
+/-- The empty generator state vacuously satisfies any `AllMem`. -/
+theorem StringGenState.allMem_emp (R : String → Prop) :
+    StringGenState.AllMem R StringGenState.emp := by
+  intro s hs
+  rw [stringGens_emp] at hs
+  exact absurd hs (List.not_mem_nil)
+
+/-- `AllMem` is preserved by a `gen pf` step whose newly produced label satisfies
+`R`. -/
+theorem StringGenState.allMem_gen (R : String → Prop) (pf : String)
+    (σ : StringGenState) (h : StringGenState.AllMem R σ)
+    (hnew : R (StringGenState.gen pf σ).1) :
+    StringGenState.AllMem R (StringGenState.gen pf σ).2 := by
+  intro s hs
+  rw [stringGens_gen, List.mem_cons] at hs
+  rcases hs with hnew' | hold
+  · exact hnew' ▸ hnew
+  · exact h s hold
+
+/-- THE BRIDGE: a label `s` that fails `R` cannot appear in a state satisfying
+`AllMem R`.  Plain contraposition — no generator-shape reasoning needed. -/
+theorem StringGenState.not_mem_stringGens_of_not_allMem {R : String → Prop}
+    {σ : StringGenState} {s : String}
+    (hall : StringGenState.AllMem R σ) (hns : ¬ R s) :
+    s ∉ stringGens σ := fun h_in => hns (hall s h_in)
+
 end
