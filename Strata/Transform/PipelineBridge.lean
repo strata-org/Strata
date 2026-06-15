@@ -391,4 +391,85 @@ theorem hoist_noMeasureLoops [HasIdent P] [HasSubstFvar P] [HasFvar P] [Decidabl
   rw [← Block.loopMeasureNone_eq_noMeasureLoops] at h ⊢
   exact Block.hoistLoopPrefixInits_preserves_loopMeasureNone ss h
 
+---------------------------------------------------------------------
+/-! ## Section 5 — Store-condition bridges (from a clean initial store)
+
+The three passes all run from the SAME initial environment `ρ₀`.  When `ρ₀`'s
+store is everywhere `none` (the simple-S2U `store_clean` hypothesis), every
+store-shaped precondition of the downstream passes is discharged uniformly:
+
+  * nondetElim's `h_no_gen_suffix` (`ρ₀` undef on suffix-shaped names),
+  * hoist §F's `h_hoist_undef` (`ρ₀` undef on the input's `initVars`),
+  * hoist §F's `h_src_store_shapefree` (`ρ₀` undef on suffix-shaped names),
+  * simple-S2U's `fresh_inits` (`ρ₀` undef on the input's `initVars`).
+
+These are recorded as named helpers so the eventual end-to-end composition can
+discharge them by a single appeal to `store_clean`. -/
+
+/-- From a clean store, `ρ₀` is undefined on every suffix-shaped name — the
+nondetElim `h_no_gen_suffix` / hoist `h_src_store_shapefree` shape. -/
+theorem store_clean_no_gen_suffix [HasIdent P] {ρ₀ : Env P}
+    (h_clean : ∀ ident : P.Ident, ρ₀.store ident = none) :
+    ∀ s, String.HasUnderscoreDigitSuffix s →
+      ρ₀.store (HasIdent.ident (P := P) s) = none :=
+  fun _ _ => h_clean _
+
+/-- From a clean store, `ρ₀` is undefined on every name in any list — the hoist
+`h_hoist_undef` / simple-S2U `fresh_inits` shape. -/
+theorem store_clean_undef_on [HasIdent P] {ρ₀ : Env P}
+    (h_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    (xs : List P.Ident) :
+    ∀ y ∈ xs, ρ₀.store y = none :=
+  fun y _ => h_clean y
+
+---------------------------------------------------------------------
+/-! ## Section 6 — Composition obstruction: the shared `_<digits>` namespace
+
+The structural bridges above (Sections 1–4) discharge every SHAPE-only
+precondition of the chain.  The remaining preconditions are NAME-SHAPE
+conditions, and they expose a genuine architectural obstruction that prevents
+the three `_sound` theorems from composing as currently stated.
+
+**Root cause.** All three passes mint fresh names with `StringGenState.gen`,
+which produces strings of the form `pf ++ "_" ++ toString n` — every generated
+name satisfies `String.HasUnderscoreDigitSuffix` (`gen_hasUnderscoreDigitSuffix`).
+The passes use DISTINCT prefixes (`$__ndelim_ite$` / `$__ndelim_loop$` for
+nondetElim, `_hoist` for hoist, `$__nondet_ite$` / `loop_entry$` / … for the
+str2unstr translator), so the generated namespaces are PREFIX-disjoint.
+
+But each pass's correctness theorem certifies that its own fresh names cannot
+collide with the input by requiring the input to contain NO `_<digits>`-suffixed
+name AT ALL — a SUFFIX-shape exclusion, not a prefix-disjointness one:
+
+  * `nondetElim → hoist` (direction A) needs
+      `Block.exprsShapeFree (Block.nondetElim ss)` and
+      `Block.hoistedNamesFreshInRhsAndGuards (Block.nondetElim ss) = true`.
+    Both are FALSE: nondetElim emits `.ite (.det (fvar g))` / `.loop (.det
+    (fvar g))` guards whose read-var `g = $__ndelim_*$_n` is suffix-shaped, and
+    `g` is simultaneously a top-level `init`-var.  `exprsShapeFree`'s `.loop`/
+    `.ite` guard conjunct (`∀ suffix-shaped str, ident str ∉ getVars g`) and
+    `hoistedNamesFreshInRhsAndGuards`'s `namesFreshInExprs (initVars _) _`
+    conjunct each require `g ∉ getVars (fvar g) = [g]` for the suffix-shaped
+    `g` — a contradiction.  (The guard conjunct of `exprsShapeFree` is
+    load-bearing: the hoist §F `.loop` arm consumes it to prove the hoist
+    targets are fresh in the loop guard.)
+
+  * `hoist → str2unstr` (direction B) needs
+      `NoGenSuffix (Block.initVars (Block.hoistLoopPrefixInits …))` and
+      `NoGenSuffix (transformBlockModVars (Block.hoistLoopPrefixInits …))`.
+    Both are FALSE: hoist lifts loop-body inits to top level under FRESH
+    `_hoist_n` names, so the output's `initVars`/`modVars` contain
+    `_hoist`-prefixed names that ARE `_<digits>`-suffixed — exactly what
+    `NoGenSuffix` forbids.
+
+**Why this is not a bridge lemma.** Discharging these would require the
+downstream proof to certify collision-freedom via PREFIX-disjointness (its own
+prefix vs. the upstream pass's prefix) instead of via the blanket SUFFIX-shape
+exclusion currently baked into `exprsShapeFree` / `hoistedNamesFreshInRhsAndGuards`
+/ `NoGenSuffix`.  That is a cross-cutting relaxation of the precondition
+predicates threaded through all three large `_sound` proofs (the hoist §F
+`.loop` arm and the str2unstr core simulation), i.e. a precondition redesign,
+not an additive preservation lemma.  It is recorded here rather than papered
+over with a false (vacuous-on-the-interesting-inputs) hypothesis. -/
+
 end Imperative
