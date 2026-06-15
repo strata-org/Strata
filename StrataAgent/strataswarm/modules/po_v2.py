@@ -590,18 +590,16 @@ async def _stage_sketch(state: ProverState, agent) -> Trans:
 
 
 async def _stage_child_cea(state: ProverState, agent) -> Trans:
-    """Parallel CEA on all decomposed lemma files."""
+    """Parallel CEA on all decomposed lemma files (no semaphore — CEA is lightweight)."""
     await agent._emit("message", f"[PO] CEA on {len(state.decomposed_files)} lemmas...")
 
-    sem = asyncio.Semaphore(MAX_CONCURRENT_WRITERS)
     unsound = []
 
     async def _check(f: str):
-        async with sem:
-            v = await run_cea(agent, state.workspace, f, Path(f).stem)
-            if v and not v.sound and v.confidence == "high":
-                unsound.append(f)
-                await agent._emit("message", f"[PO] CEA: {Path(f).name} UNSOUND")
+        v = await run_cea(agent, state.workspace, f, Path(f).stem)
+        if v and not v.sound and v.confidence == "high":
+            unsound.append(f)
+            await agent._emit("message", f"[PO] CEA: {Path(f).name} UNSOUND")
 
     await asyncio.gather(*[_check(f) for f in state.decomposed_files])
 

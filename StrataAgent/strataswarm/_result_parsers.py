@@ -64,6 +64,21 @@ class JsonSchemaParser(ResultParser[T]):
                 return None
         return None
 
+    def get_field_hints(self) -> str:
+        """Return a human-readable hint of the expected fields."""
+        try:
+            if hasattr(self.output_type, '__dataclass_fields__'):
+                fields = self.output_type.__dataclass_fields__
+                parts = []
+                for name, f in fields.items():
+                    type_name = getattr(f.type, '__name__', str(f.type))
+                    default = f.default if f.default is not f.default_factory else f.default_factory()
+                    parts.append(f"{name}: {type_name} (default={default!r})")
+                return ", ".join(parts)
+            return str(self.output_type)
+        except Exception:
+            return str(self.output_type)
+
     def get_output_format(self) -> dict[str, Any]:
         adapter = TypeAdapter(self.output_type)
         schema = adapter.json_schema()

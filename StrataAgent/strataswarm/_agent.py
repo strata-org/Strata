@@ -28,7 +28,7 @@ logger = logging.getLogger("strataswarm.agent")
 
 EventCallback = Callable[[AgentEvent], Awaitable[None]]
 
-STALL_TIMEOUT = 600
+STALL_TIMEOUT = 300  # 5 minutes — if no message for this long, agent is likely dead
 
 
 def parse_checkpoint_state(checkpoint_md: str) -> dict | None:
@@ -199,6 +199,7 @@ class SwarmAgent:
     async def _consume_response_inner(self, result: AgentResult[T], start_time: float) -> bool:
         """Inner consume logic (called under lock)."""
         await self._emit("message", "[Waiting for backend response...]")
+        self._last_message_time = time.monotonic()  # watchdog timestamp
         msg_iter = self.backend.receive_messages().__aiter__()
 
         while True:
@@ -207,19 +208,27 @@ class SwarmAgent:
                 await self._emit_heartbeat_if_needed()
                 await self._emit("message", "[Waiting for backend response...]")
                 message = await asyncio.wait_for(msg_iter.__anext__(), timeout=stall_timeout)
+                self._last_message_time = time.monotonic()  # reset watchdog
             except StopAsyncIteration:
                 return True
             except asyncio.TimeoutError:
                 logger.warning(f"[STALL] {self.spec.name}: no message in {STALL_TIMEOUT}s")
+                await self._emit("message", f"[STALL DETECTED] No response for {STALL_TIMEOUT}s — reconnecting session")
                 await self._emit("stall", f"stalled_for_{STALL_TIMEOUT}s")
+                # Kill dead subprocess, then reconnect with same session_id
                 try:
-                    await self.backend.interrupt()
+                    await self.backend.disconnect()
                 except Exception:
                     pass
+                await asyncio.sleep(5)  # cooldown before reconnecting
                 try:
-                    await self.backend.reconnect()
+                    reconnected = await self.backend.reconnect()
+                    if reconnected:
+                        await self._emit("message", "[STALL] Reconnected successfully")
+                    else:
+                        await self._emit("message", "[STALL] Reconnect failed — session lost")
                 except Exception:
-                    pass
+                    await self._emit("message", "[STALL] Reconnect raised exception")
                 return True
             except (ConnectionError, OSError, RuntimeError) as e:
                 logger.warning(f"[DISCONNECT] {self.spec.name}: {e}")
@@ -266,6 +275,19 @@ class SwarmAgent:
                 result.cost_usd = message.cost_usd
                 result.num_turns = message.num_turns
                 await self._emit("cost_estimate", message.cost_usd)
+
+                # Budget warning: when <10% turns remain, nudge the agent to wrap up
+                if (self.spec.max_turns and message.num_turns
+                        and not getattr(self, '_budget_warning_sent', False)):
+                    remaining = self.spec.max_turns - message.num_turns
+                    threshold = max(1, int(self.spec.max_turns * 0.1))
+                    if remaining <= threshold and remaining > 0:
+                        self._budget_warning_sent = True
+                        await self.backend.send_query(
+                            f"⚠️ BUDGET WARNING: You have ~{remaining} turns remaining out of {self.spec.max_turns}. "
+                            f"Wrap up NOW. Produce your StructuredOutput with your best answer. "
+                            f"Do not start new explorations."
+                        )
                 continue
 
             # Halt predicate
@@ -293,11 +315,19 @@ class SwarmAgent:
                     result.structured_output = result.output
                     # If parse failed but we have raw text, ask the LLM to retry with proper schema
                     if result.output is None and message.raw_result:
+                        # Build a helpful retry message with schema details
+                        schema_hint = ""
+                        if isinstance(self.spec.result_parser, JsonSchemaParser):
+                            fields = self.spec.result_parser.get_field_hints()
+                            if fields:
+                                schema_hint = f"\n\nRequired fields: {fields}"
+                        raw_preview = message.raw_result[:200] if message.raw_result else ""
                         await self._emit("message", "[Parse error — requesting structured output retry]")
                         await self.backend.send_query(
-                            "Your response could not be parsed as the required structured output. "
-                            "Please call the StructuredOutput tool with the correct schema. "
-                            "Do NOT repeat your analysis — just produce the structured output now."
+                            f"Your response could not be parsed as structured output. "
+                            f"You MUST call the StructuredOutput tool (not just write text).{schema_hint}\n\n"
+                            f"What I received (not valid): {raw_preview!r}\n\n"
+                            f"Call StructuredOutput now with the correct fields."
                         )
                         continue  # loop back to consume the retry response
                 if self.spec.halt_when and self.spec.halt_when.should_halt_on_result(

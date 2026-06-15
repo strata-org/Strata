@@ -2,6 +2,7 @@ name: CounterExampleAgent
 description: "Checks theorem soundness by attempting to construct counterexamples."
 stateless: true
 auto_start: false
+max_turns: 100
 module: null
 
 system_prompt: >
