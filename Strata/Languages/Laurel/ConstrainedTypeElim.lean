@@ -209,17 +209,27 @@ def elimStmt (ptMap : ConstrainedTypeMap) (model : SemanticModel)
             fun c => ⟨.Assert { condition := c }, source⟩
           pure (acc ++ assert)
         | none => pure acc
-      | .Field _fieldTarget fieldName => do
+      | .Field fieldTarget fieldName => do
         -- Writing to a constrained-typed composite field: assert the
-        -- constraint holds for the value being stored. The field's declared
-        -- type comes from the semantic model. (When this pass ran after
+        -- constraint holds for the stored value. The field's declared type
+        -- comes from the semantic model. (When this pass ran after
         -- HeapParameterization, this check was produced via the `Declare`
         -- temporary that lowering introduced; running first, we must emit it
-        -- directly from the field write, asserting on the assigned value.)
+        -- directly from the field write.)
+        --
+        -- The constraint is asserted on a *read-back* of the field rather than
+        -- on `value`. `value` is the full RHS expression, already emitted as
+        -- the field-write statement above; re-using it here would emit it a
+        -- second time, so any side effect in the RHS would run twice (e.g.
+        -- `c#count := (x := x + 1) + 1` would increment `x` twice). Reading the
+        -- field back evaluates the RHS exactly once. This mirrors the
+        -- `constrainedTargetReadback` helper used for expression-position
+        -- assignments.
         match (model.get fieldName).getType.val with
         | .UserDefined name =>
           if ptMap.contains name.text then
-            let c : StmtExprMd := ⟨.StaticCall (mkId s!"{name.text}$constraint") [value], source⟩
+            let readback : StmtExprMd := ⟨.Var (.Field fieldTarget fieldName), source⟩
+            let c : StmtExprMd := ⟨.StaticCall (mkId s!"{name.text}$constraint") [readback], source⟩
             pure (acc ++ [⟨.Assert { condition := c }, source⟩])
           else pure acc
         | _ => pure acc

@@ -44,7 +44,7 @@ procedure setCountInvalid(c: Counter)
   modifies c
 {
   c#count := -1
-//^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 // KNOWN COMPLETENESS GAP (to be fixed in a follow-up PR):
@@ -60,6 +60,6 @@ procedure readCountCompletenessGap(c: Counter)
 {
   var x: int := c#count;
   assert x >= 0
-//^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end
