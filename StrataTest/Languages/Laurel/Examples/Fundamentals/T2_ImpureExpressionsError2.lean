@@ -5,27 +5,20 @@
 -/
 module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+#eval testLaurel <|
+#strata
+program Laurel;
 
-def program: String := r"
 procedure transparentWithWhile(x: int): int
 {
   while(false) {};
 //^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
   return 3
 };
-"
 
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "NestedImpureStatements" program 17 processLaurelFile
-
-
-end Laurel
+#end
