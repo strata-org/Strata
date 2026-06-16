@@ -1434,6 +1434,7 @@ backbone that lets the §E mutual re-establish its generator-state
 preconditions at the advanced state in the `cons`/`.ite`/`.loop` arms. -/
 
 open StringGenState (GenStep) in
+omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- The lift's final generator state is a `GenStep` from its input. -/
 theorem Stmt.liftInitsInLoopBodyM_genStep
@@ -1500,6 +1501,7 @@ generator-step threading of the σ-membership freshness invariant: a label the
 lift adds over `σ` is `Q`-kind, hence the kind-free source names avoid it. -/
 
 open StringGenState (GenStep) in
+omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Every label the statement lift adds over `σ` carries the mint kind `Q`. -/
 theorem Stmt.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
@@ -1765,6 +1767,7 @@ def SrcNamesFreshFromGen (A B ivs : List P.Ident) (σ : StringGenState) : Prop :
     HasIdent.ident (P := P) str ∉ B ∧
     HasIdent.ident (P := P) str ∉ ivs
 
+omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Kind-aware threading of the fresh-from-σ precondition across a `GenStep`.
 The caller supplies `h_delta` recording that every newly-added label carries a
 client kind `Q` (for the hoist pass, via `…_genStep_delta_Q` + the mint witness
@@ -2079,6 +2082,7 @@ not recurse into loops) and emits `.cmd (.set …)` residuals for hoisted inits
 Hence the whole pass preserves `simpleShape`.  Mirrors the `loopMeasureNone`
 chain above. -/
 
+omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
@@ -2102,7 +2106,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape
       | nondet =>
           simp only [Block.simpleShape, Stmt.simpleShape, Bool.and_true]
   | .loop g m inv body md =>
-      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
+      simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape]
   | .exit lbl md =>
       simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
   | .funcDecl d md =>
