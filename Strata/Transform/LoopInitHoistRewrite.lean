@@ -528,9 +528,8 @@ end
 /-! ## Shape-only freshness helpers
 
 Name-agnostic helpers over `namesFreshInExprs` retained after the Option E
-prune of the same-name rewrite engine. `Stmt/Block.namesFreshInExprs_subset`
-is consumed by the §F top-level theorem (to weaken the names argument to
-`[]`); `freshFromIdents_not_mem` is its membership lemma. -/
+prune of the same-name rewrite engine. `freshFromIdents_not_mem` is the
+membership lemma decoding the `hoistedNamesFreshInGuards` enclosing-vars leaf. -/
 
 /-! ### Helper: `freshFromIdents` membership characterisation -/
 
@@ -568,80 +567,6 @@ theorem freshFromIdents_iff_not_mem
     {z : P.Ident} {vars : List P.Ident} :
     freshFromIdents z vars = true ↔ z ∉ vars :=
   ⟨freshFromIdents_not_mem, freshFromIdents_of_not_mem⟩
-
-/-! ### Helper: monotonicity in the names list -/
-
-mutual
-/-- If `names₁ ⊆ names₂` and `names₂ is fresh in s`, then `names₁ is fresh
-in s`. (Smaller names list = weaker constraint = easier to satisfy.) -/
-private theorem Stmt.namesFreshInExprs_subset
-    [HasVarsPure P P.Expr] {names₁ names₂ : List P.Ident}
-    (h_sub : names₁ ⊆ names₂)
-    (s : Stmt P (Cmd P))
-    (h : Stmt.namesFreshInExprs names₂ s = true) :
-    Stmt.namesFreshInExprs names₁ s = true := by
-  cases s with
-  | cmd c =>
-    cases c <;>
-      · simp only [Stmt.namesFreshInExprs, List.all_eq_true] at h ⊢
-        intro z hz; exact h z (h_sub hz)
-  | block lbl bss md =>
-    simp only [Stmt.namesFreshInExprs] at h ⊢
-    exact Block.namesFreshInExprs_subset h_sub bss h
-  | ite g tss ess md =>
-    simp only [Stmt.namesFreshInExprs, Bool.and_eq_true, List.all_eq_true] at h ⊢
-    refine ⟨⟨?_, ?_⟩, ?_⟩
-    · intro z hz; exact h.1.1 z (h_sub hz)
-    · exact Block.namesFreshInExprs_subset h_sub tss h.1.2
-    · exact Block.namesFreshInExprs_subset h_sub ess h.2
-  | loop g m inv body md =>
-    -- Carefully unfold both sides preserving structure
-    unfold Stmt.namesFreshInExprs at h ⊢
-    rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h ⊢
-    obtain ⟨⟨⟨h_g, h_m⟩, h_inv⟩, h_body⟩ := h
-    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
-    · -- guard
-      rw [List.all_eq_true] at h_g ⊢
-      intro z hz; exact h_g z (h_sub hz)
-    · -- measure
-      cases m with
-      | none => exact h_m
-      | some me =>
-        simp only at h_m ⊢
-        rw [List.all_eq_true] at h_m ⊢
-        intro z hz; exact h_m z (h_sub hz)
-    · -- inv
-      rw [List.all_eq_true] at h_inv ⊢
-      intro p hp
-      have h_p := h_inv p hp
-      rw [List.all_eq_true] at h_p ⊢
-      intro z hz; exact h_p z (h_sub hz)
-    · -- body
-      exact Block.namesFreshInExprs_subset h_sub body h_body
-  | exit lbl md =>
-    simp only [Stmt.namesFreshInExprs]
-  | funcDecl d md =>
-    simp only [Stmt.namesFreshInExprs]
-  | typeDecl t md =>
-    simp only [Stmt.namesFreshInExprs]
-  termination_by sizeOf s
-
-private theorem Block.namesFreshInExprs_subset
-    [HasVarsPure P P.Expr] {names₁ names₂ : List P.Ident}
-    (h_sub : names₁ ⊆ names₂)
-    (ss : List (Stmt P (Cmd P)))
-    (h : Block.namesFreshInExprs names₂ ss = true) :
-    Block.namesFreshInExprs names₁ ss = true := by
-  match ss with
-  | [] =>
-    simp only [Block.namesFreshInExprs]
-  | s :: rest =>
-    simp only [Block.namesFreshInExprs, Bool.and_eq_true] at h ⊢
-    refine ⟨?_, ?_⟩
-    · exact Stmt.namesFreshInExprs_subset h_sub s h.1
-    · exact Block.namesFreshInExprs_subset h_sub rest h.2
-  termination_by sizeOf ss
-end
 
 mutual
 /-- The empty name list is fresh in every statement's expressions: each leaf is
@@ -784,31 +709,5 @@ theorem Block.namesFreshInExprs_of_exprsShapeFree'
     (h : Block.exprsShapeFree (P := P) Q ss) :
     Block.namesFreshInExprs names ss = true :=
   Block.namesFreshInExprs_of_exprsShapeFree h_names_suffix ss h
-
-/-! ### `liftInitsInLoopBody` is identity when `initVars = []` -/
-
-/-- Under `Stmt.initVars s = []`, `Stmt.liftInitsInLoopBody s` returns
-`([], [s])` (s unchanged).
-
-**Option E port.** This shape-only identity (no `init` anywhere ⇒ nothing
-harvested, residual = input) is now proven canonically against the monadic
-pass in `LoopInitHoist.lean` as `Stmt.liftInitsInLoopBody_no_inits_eq`: the
-fresh-name generator never fires under the no-inits precondition, so the
-output is name-independent. This lemma is a thin re-export under the
-pure-wrapper API, requiring `[HasIdent P]` (which the wrapper itself needs). -/
-private theorem Stmt.liftInitsInLoopBody_no_inits [HasIdent P]
-    (s : Stmt P (Cmd P))
-    (h_iv : Stmt.initVars s = []) :
-    Stmt.liftInitsInLoopBody s = ([], [s]) :=
-  Stmt.liftInitsInLoopBody_no_inits_eq s h_iv
-
-/-- Under `Block.initVars ss = []`, `Block.liftInitsInLoopBody ss` returns
-`([], ss)` (block unchanged). Thin re-export of the canonical monadic-pass
-identity `Block.liftInitsInLoopBody_no_inits_eq`. -/
-private theorem Block.liftInitsInLoopBody_no_inits [HasIdent P]
-    (ss : List (Stmt P (Cmd P)))
-    (h_iv : Block.initVars ss = []) :
-    Block.liftInitsInLoopBody ss = ([], ss) :=
-  Block.liftInitsInLoopBody_no_inits_eq ss h_iv
 
 end Imperative

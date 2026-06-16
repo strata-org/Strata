@@ -40,9 +40,7 @@ The proof structure: a sequence of mutual structural inductions that mirror
 the pass residual's recursion arms, factoring out three reusable helpers:
 1. `namesFreshInExprs names` is preserved (without name-list change),
 2. `hoistedNamesFreshInGuards` is preserved (per-loop check is local),
-3. `Block.initVars (output)` is a subset of `Block.initVars (input)`,
-   used together with `Block.namesFreshInExprs_subset` (already proven in
-   `LoopInitHoistRewrite.lean`).
+3. `Block.initVars (output)` is a subset of `Block.initVars (input)`.
 -/
 
 /-! ## List-append distributivity helpers (used inside mutual blocks below). -/
