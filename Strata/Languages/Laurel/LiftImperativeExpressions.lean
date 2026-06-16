@@ -112,10 +112,6 @@ private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (Li
       match s.val with
       | .Var (.Declare ..) | .Assign ([⟨.Declare .., _⟩]) _ => do
           pure [s]
-      -- | .Assert _ => do
-      --     pure [s]
-      -- | .Assume _ => do
-      --     pure [s]
 
       /-
       Any other impure StmtExpr, like .Assign, .Exit or .Return,
@@ -279,7 +275,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
     else
       let startingPrepend ← takePrepends
       let seqArgs ← args.reverse.mapM transformExpr
-      let argsPepends ← takePrepends
+      let argsPrepends ← takePrepends
       let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       -- Imperative call in expression position: lift to an assignment.
       -- Only valid for single-output procedures (or unresolved ones where we
@@ -298,7 +294,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
         ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
       ]
-      modify fun s => { s with prependedStmts := argsPepends ++ liftedCall ++ startingPrepend}
+      modify fun s => { s with prependedStmts := argsPrepends ++ liftedCall ++ startingPrepend}
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -404,16 +400,16 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Assume cond =>
       let prepends ← takePrepends
-      let seqCond ← transformExpr cond
+      _ ← transformExpr cond
       let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [⟨.Assume seqCond, source⟩] ++ prepends }
+      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
       default
 
   | .Assert cond =>
       let prepends ← takePrepends
-      let seqCond ← transformExpr cond.condition
+      _ ← transformExpr cond.condition
       let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩] ++ prepends }
+      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
       default
 
   | .Return (some retExpr) =>

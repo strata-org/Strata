@@ -34,7 +34,7 @@ info: procedure assertInBlockExpr()
   opaque
 {
   var x: int := 0;
-  assert $x_0 == 0;
+  assert x == 0;
   var $x_0: int := x;
   x := 1;
   var y: int := {

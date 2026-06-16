@@ -193,7 +193,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
   -- but that would need more consideration.
-  if ! passDiags.isEmpty then
+  if passDiags.any (·.type != .Warning) then
     return (none, passDiags, program, stats)
 
   let unorderedCore := (transparencyPass.run program model options).1
