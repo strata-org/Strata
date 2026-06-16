@@ -29,12 +29,8 @@ open LoopInitHoistLoopDriver (Entry havocStmts' substOf' targetsOf' sourcesOf'
 open LoopInitHoistStepCProducer (Block.transportShape Block.transportShape_of_arm_preconds)
 open _root_.StringGenState (GenStep)
 
-variable {P : PureExpr} [HasIdent P] [LawfulHasIdent P]
-  [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr]
-  [LawfulHasSubstFvar P]
-  [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P]
+variable {P : PureExpr}
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `targetsOf'` distributes over list append (companion to the `substOf'`/
 `sourcesOf'`/`havocStmts'` append lemmas). -/
 theorem targetsOf'_append (xs ys : List (Entry P)) :
@@ -52,9 +48,8 @@ renamed expression's read-set is the original's plus possibly `y'`) every
 PROVIDED the new name `y'` is not itself in `names` (otherwise the rename could
 introduce `y'` where `y` appeared). -/
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `freshFromIdents z vars = true` iff `z ∉ vars`. -/
-private theorem freshFromIdents_eq_true_iff
+private theorem freshFromIdents_eq_true_iff [DecidableEq P.Ident]
     {z : P.Ident} {vars : List P.Ident} :
     freshFromIdents z vars = true ↔ z ∉ vars := by
   constructor
@@ -72,10 +67,9 @@ private theorem freshFromIdents_eq_true_iff
     simp only [decide_eq_true_eq]
     intro h_eq; subst h_eq; exact h hmem
 
-omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The read-set transfer law as a `freshFromIdents` fact: if `z ≠ y'` is fresh
 in `e`'s read-set, it stays fresh after substituting `y → y'`. -/
-private theorem freshFromIdents_substFvar
+private theorem freshFromIdents_substFvar [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     {z y y' : P.Ident} (e : P.Expr)
     (h_ne : z ≠ y')
     (h : freshFromIdents z (HasVarsPure.getVars e) = true) :
@@ -87,10 +81,9 @@ private theorem freshFromIdents_substFvar
   · exact h h_orig
   · exact h_ne h_y'
 
-omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Same transfer law over `ExprOrNondet` (the `.nondet` case has empty
 read-set, trivially preserved). -/
-private theorem freshFromIdents_exprOrNondet_substIdent
+private theorem freshFromIdents_exprOrNondet_substIdent [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     {z y y' : P.Ident} (e : ExprOrNondet P)
     (h_ne : z ≠ y')
     (h : freshFromIdents z (ExprOrNondet.getVars e) = true) :
@@ -99,11 +92,10 @@ private theorem freshFromIdents_exprOrNondet_substIdent
   | det e => exact freshFromIdents_substFvar e h_ne h
   | nondet => simp only [ExprOrNondet.substIdent_nondet]; exact h
 
-omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.substIdent y y'` preserves `Stmt.namesFreshInExprs names` whenever
 `y' ∉ names`. -/
-theorem Stmt.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
+theorem Stmt.namesFreshInExprs_substIdent [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (y y' : P.Ident) (s : Stmt P (Cmd P))
     (h_y'_not : y' ∉ names)
     (h : Stmt.namesFreshInExprs names s = true) :
@@ -184,7 +176,7 @@ theorem Stmt.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
 
 /-- `Block.substIdent y y'` preserves `Block.namesFreshInExprs names` whenever
 `y' ∉ names`. -/
-theorem Block.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
+theorem Block.namesFreshInExprs_substIdent [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (y y' : P.Ident) (ss : List (Stmt P (Cmd P)))
     (h_y'_not : y' ∉ names)
     (h : Block.namesFreshInExprs names ss = true) :
@@ -198,12 +190,11 @@ theorem Block.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
   termination_by sizeOf ss
 end
 
-omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.applyRenames` preserves `Block.namesFreshInExprs names` whenever
 every rename TARGET (`renames.map Prod.snd`) is disjoint from `names`. The
 sources may be in `names`; only the targets matter, because substitution can
 only INTRODUCE the target (`y'`) into the value positions. -/
-theorem Block.namesFreshInExprs_applyRenames
+theorem Block.namesFreshInExprs_applyRenames [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (renames : List (P.Ident × P.Ident))
     (ss : List (Stmt P (Cmd P)))
     (h_tgt_not : ∀ p ∈ renames, p.2 ∉ names)
@@ -222,13 +213,12 @@ theorem Block.namesFreshInExprs_applyRenames
     rw [Block.applyRenames] at this
     exact this
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The MONADIC lift residual preserves `Block.namesFreshInExprs names` (no
 name-list change).  The residual only ever rewrites `init`→`set` (rhs
 unchanged) and recurses structurally; freshness transfers verbatim.  Bridged
 from the pure-wrapper preservation via the state-independence of the residual
 (`Block.liftInitsInLoopBody_snd_eq`). -/
-theorem Block.liftInitsInLoopBodyM_snd_namesFreshInExprs
+theorem Block.liftInitsInLoopBodyM_snd_namesFreshInExprs [HasIdent P] [HasVarsPure P P.Expr]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.namesFreshInExprs names ss = true) :
     Block.namesFreshInExprs names (Block.liftInitsInLoopBodyM ss σ).1.2.2 = true := by
@@ -244,13 +234,12 @@ lets us conclude that any name whose underlying string lacks that suffix is
 disjoint from every rename TARGET the pass introduces — the precise condition
 that `namesFreshInExprs_applyRenames` consumes. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- Every entry target harvested from a statement is a `Q`-kind ident, given the
 mint witness `hQmint` that hoist's freshly minted names satisfy `Q`.
 Instantiating `Q := String.HasUnderscoreDigitSuffix` with the `gen`-suffix
 witness recovers the blanket "generator-suffixed" statement. -/
-theorem Stmt.entriesOf_target_suffix {Q : String → Prop}
+theorem Stmt.entriesOf_target_suffix [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ e ∈ Stmt.entriesOf s σ,
@@ -281,7 +270,7 @@ theorem Stmt.entriesOf_target_suffix {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Every entry target harvested from a block is a `Q`-kind ident. -/
-theorem Block.entriesOf_target_suffix {Q : String → Prop}
+theorem Block.entriesOf_target_suffix [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ e ∈ Block.entriesOf ss σ,
@@ -295,12 +284,10 @@ theorem Block.entriesOf_target_suffix {Q : String → Prop}
   termination_by sizeOf ss
 end
 
-omit [LawfulHasIdent P] [LawfulHasSubstFvar P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Every rename pair produced by the monadic lift has a generator-suffixed
 target.  (The renames are `substOf' (entriesOf …)`; their `.2` projection is the
 entries' target idents.) -/
-theorem Block.liftInitsInLoopBodyM_renames_target_suffix
+theorem Block.liftInitsInLoopBodyM_renames_target_suffix [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ p ∈ (Block.liftInitsInLoopBodyM ss σ).1.2.1,
       ∃ str : String, p.2 = HasIdent.ident str ∧ String.HasUnderscoreDigitSuffix str := by
@@ -313,11 +300,9 @@ theorem Block.liftInitsInLoopBodyM_renames_target_suffix
   exact Block.entriesOf_target_suffix
     (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg) ss σ e he_mem
 
-omit [LawfulHasIdent P] [LawfulHasSubstFvar P] in
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The havoc prelude `havocStmts' E` is always fresh in any `names`: every
 havoc cmd is `init target ty .nondet md` whose rhs has empty read-set. -/
-theorem namesFreshInExprs_havocStmts'
+theorem namesFreshInExprs_havocStmts' [HasVarsPure P P.Expr]
     (names : List P.Ident) (entries : List (Entry P)) :
     Block.namesFreshInExprs names (havocStmts' entries) = true := by
   induction entries with
@@ -348,12 +333,10 @@ This handles the SOURCES carrier (`sourcesOf' E`), whose elements lie in
 `initVars body₁` and hence — by the `h_src_shapefree` invariant — never carry
 the generator suffix. -/
 
-omit [LawfulHasIdent P] in
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that avoid the generator's `_<digit>` naming scheme. -/
-theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs [LawfulHasSubstFvar P]
+theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_no_gen : ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ names)
@@ -440,7 +423,7 @@ theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs [LawfulHasSubstFvar P]
 
 /-- `Block.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that avoid the generator's `_<digit>` naming scheme. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs [LawfulHasSubstFvar P]
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_no_gen : ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ names)
@@ -498,7 +481,6 @@ lift `Block.liftInitsInLoopBodyM`; these equalities expose the lift's final
 state under `.block`/`.ite`/cons so the `entriesOf_targetGen` recursion can name
 the intermediate states. -/
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 theorem Stmt.liftInitsInLoopBodyM_block_residual_state [HasIdent P]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
@@ -508,7 +490,6 @@ theorem Stmt.liftInitsInLoopBodyM_block_residual_state [HasIdent P]
   rcases h : Block.liftInitsInLoopBodyM bss σ with ⟨⟨hs, rn, bss'⟩, σ'⟩
   simp only [h]
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 theorem Stmt.liftInitsInLoopBodyM_ite_residual_state [HasIdent P]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
@@ -519,7 +500,6 @@ theorem Stmt.liftInitsInLoopBodyM_ite_residual_state [HasIdent P]
   rcases h₂ : Block.liftInitsInLoopBodyM ess σ₁ with ⟨⟨ehs, ern, ess'⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 theorem Block.liftInitsInLoopBodyM_cons_residual_state [HasIdent P]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBodyM (s :: rest) σ).2
@@ -539,14 +519,11 @@ pairwise distinctness of the harvest's target strings, hence `Nodup`. -/
 
 /-- Per-entry target fact: the target is `HasIdent.ident s` for a generator
 string `s` fresh from the input state and captured in the lift's final state. -/
-def TargetGen (σ σ' : StringGenState) (e : Entry P) : Prop :=
+def TargetGen [HasIdent P] (σ σ' : StringGenState) (e : Entry P) : Prop :=
   ∃ s : String, e.2.1 = HasIdent.ident s
     ∧ s ∈ StringGenState.stringGens σ'
     ∧ s ∉ StringGenState.stringGens σ
 
-omit [HasIdent P] [LawfulHasIdent P] in
-omit [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Every entry harvested from a single statement carries a `TargetGen` fact
 between the input state and the lift's final state; and the targets are
@@ -668,10 +645,9 @@ lift's *output* `stringGens`.  (No freshness/Nodup needed — just that each fre
 name is captured.)  This is the half consumed by the gen-state freshness route
 for the TARGETS carrier. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The renames component of `Stmt.liftInitsInLoopBodyM (.block ..) σ` equals the
 sub-block's renames. -/
-private theorem Stmt.liftInitsInLoopBodyM_block_renames
+private theorem Stmt.liftInitsInLoopBodyM_block_renames [HasIdent P]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.block lbl bss md) σ).1.2.1
       = (Block.liftInitsInLoopBodyM bss σ).1.2.1 := by
@@ -679,10 +655,9 @@ private theorem Stmt.liftInitsInLoopBodyM_block_renames
   rcases h : Block.liftInitsInLoopBodyM bss σ with ⟨⟨hs, rn, bss'⟩, σ'⟩
   simp only [h]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The renames component of `Stmt.liftInitsInLoopBodyM (.ite ..) σ` is the
 concatenation of the two branches' renames. -/
-private theorem Stmt.liftInitsInLoopBodyM_ite_renames
+private theorem Stmt.liftInitsInLoopBodyM_ite_renames [HasIdent P]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.ite g tss ess md) σ).1.2.1
@@ -693,10 +668,9 @@ private theorem Stmt.liftInitsInLoopBodyM_ite_renames
   rcases h₂ : Block.liftInitsInLoopBodyM ess σ₁ with ⟨⟨ehs, ern, ess'⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The renames component of `Block.liftInitsInLoopBodyM (s :: rest) σ` is the
 head's renames concatenated with the tail's. -/
-private theorem Block.liftInitsInLoopBodyM_cons_renames
+private theorem Block.liftInitsInLoopBodyM_cons_renames [HasIdent P]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBodyM (s :: rest) σ).1.2.1
       = (Stmt.liftInitsInLoopBodyM s σ).1.2.1 ++
@@ -706,12 +680,10 @@ private theorem Block.liftInitsInLoopBodyM_cons_renames
   rcases h₂ : Block.liftInitsInLoopBodyM rest σ₁ with ⟨⟨hs_r, rn_r, ss_r⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Every rename target produced by `Stmt.liftInitsInLoopBodyM s σ` is captured
 in the lift's output state's `stringGens`. -/
-theorem Stmt.liftInitsInLoopBodyM_renames_captured
+theorem Stmt.liftInitsInLoopBodyM_renames_captured [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ p ∈ (Stmt.liftInitsInLoopBodyM s σ).1.2.1,
       ∃ str : String, p.2 = HasIdent.ident str ∧
@@ -750,7 +722,7 @@ theorem Stmt.liftInitsInLoopBodyM_renames_captured
 
 /-- Every rename target produced by `Block.liftInitsInLoopBodyM ss σ` is captured
 in the lift's output state's `stringGens`. -/
-theorem Block.liftInitsInLoopBodyM_renames_captured
+theorem Block.liftInitsInLoopBodyM_renames_captured [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ p ∈ (Block.liftInitsInLoopBodyM ss σ).1.2.1,
       ∃ str : String, p.2 = HasIdent.ident str ∧
@@ -775,8 +747,7 @@ These expose `(Block/Stmt.hoistLoopPrefixInitsM _ σ).2` in terms of the
 sub-structure's output states, the analogue of the `_out` list peels.  They let
 the gen-state freshness route name the per-subtree output `stringGens`. -/
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.hoistLoopPrefixInitsM_block_state
+theorem Stmt.hoistLoopPrefixInitsM_block_state [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
     (Stmt.hoistLoopPrefixInitsM (.block lbl bss md) σ).2
       = (Block.hoistLoopPrefixInitsM bss σ).2 := by
@@ -784,8 +755,7 @@ theorem Stmt.hoistLoopPrefixInitsM_block_state
   rcases h : Block.hoistLoopPrefixInitsM bss σ with ⟨bss', σ'⟩
   simp only [h]
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.hoistLoopPrefixInitsM_ite_state
+theorem Stmt.hoistLoopPrefixInitsM_ite_state [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.hoistLoopPrefixInitsM (.ite g tss ess md) σ).2
@@ -795,8 +765,7 @@ theorem Stmt.hoistLoopPrefixInitsM_ite_state
   rcases h₂ : Block.hoistLoopPrefixInitsM ess σ₁ with ⟨ess', σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.hoistLoopPrefixInitsM_loop_state
+theorem Stmt.hoistLoopPrefixInitsM_loop_state [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (g : ExprOrNondet P) (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
     (Stmt.hoistLoopPrefixInitsM (.loop g m inv body md) σ).2
@@ -807,8 +776,7 @@ theorem Stmt.hoistLoopPrefixInitsM_loop_state
   rcases h₂ : Block.liftInitsInLoopBodyM body₁ σ₁ with ⟨⟨havocs, renames, body₂⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.hoistLoopPrefixInitsM_cons_state
+theorem Block.hoistLoopPrefixInitsM_cons_state [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.hoistLoopPrefixInitsM (s :: rest) σ).2
       = (Block.hoistLoopPrefixInitsM rest (Stmt.hoistLoopPrefixInitsM s σ).2).2 := by
@@ -827,13 +795,11 @@ introduces is captured in that output state (`..._renames_captured`), so the
 the TARGETS carrier (`targetsOf' E`, fresh from the pass output by `TargetGen`)
 satisfies. -/
 
-omit [LawfulHasIdent P] in
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that are fresh from the pass output state's `stringGens` (and fresh in the
 source statement's exprs). -/
-theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [LawfulHasSubstFvar P]
+theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_genfresh : ∀ str : String,
         HasIdent.ident (P := P) str ∈ names →
@@ -940,7 +906,7 @@ theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [LawfulHasSubstFva
 
 /-- `Block.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that are fresh from the pass output state's `stringGens`. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [LawfulHasSubstFvar P]
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_genfresh : ∀ str : String,
         HasIdent.ident (P := P) str ∈ names →
@@ -978,12 +944,10 @@ from `body₁` at `σ₁`.  By `Block.entriesOf_targetGen` (under `WF σ₁`), e
 target is `HasIdent.ident s` with `s ∉ stringGens σ₁`.  Hence the targets satisfy
 the `genfresh` premise at `σ₁`. -/
 
-omit [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Every `targetsOf'`-element of `Block.entriesOf body₁ σ₁` is `HasIdent.ident
 str` for a `str ∉ stringGens σ₁` (given `WF σ₁`).  This is exactly the `genfresh`
 premise of `..._namesFreshInExprs_genfresh` at the harvest input state. -/
-theorem Block.targetsOf'_entriesOf_genfresh
+theorem Block.targetsOf'_entriesOf_genfresh [HasIdent P] [LawfulHasIdent P]
     (body₁ : List (Stmt P (Cmd P))) (σ₁ : StringGenState) (h_wf : StringGenState.WF σ₁) :
     ∀ str : String,
       HasIdent.ident (P := P) str ∈ targetsOf' (Block.entriesOf body₁ σ₁) →
@@ -998,7 +962,6 @@ theorem Block.targetsOf'_entriesOf_genfresh
   have : str = s := LawfulHasIdent.ident_inj h_id
   exact hs_not (this ▸ hin)
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Producer `h_B_fresh` for the TARGETS carrier: the harvest targets
 `targetsOf' (Block.entriesOf body₁ σ₁)` (with `body₁ = (hoistLoopPrefixInitsM
 body σ).1`, `σ₁ = (hoistLoopPrefixInitsM body σ).2`) are fresh in `body₁` PROVIDED
@@ -1009,7 +972,7 @@ discharged internally from `WF σ₁` via `targetsOf'_entriesOf_genfresh`.
 wiring: the targets are generator-suffixed names minted strictly after `σ`, so
 they are fresh in the original (pre-pass) source body, which only mentions
 program names. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_wf₁ : StringGenState.WF (Block.hoistLoopPrefixInitsM body σ).2)
     (h_tgt_body_fresh :
@@ -1034,21 +997,19 @@ separates the harvest targets from program names (which never carry hoist's
 mint kind).  Instantiating `Q := String.HasUnderscoreDigitSuffix` recovers the
 blanket generator-suffix statement. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Every entry harvested from a block has a target ident that is
 `HasIdent.ident str` for a `Q`-kind generator string `str` (given the mint
 witness `hQmint`). -/
-theorem Block.entriesOf_target_hasUnderscoreDigitSuffix {Q : String → Prop}
+theorem Block.entriesOf_target_hasUnderscoreDigitSuffix [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     {e : Entry P} (he : e ∈ Block.entriesOf ss σ) :
     ∃ str : String, e.2.1 = HasIdent.ident str ∧ Q str :=
   Block.entriesOf_target_suffix hQmint ss σ e he
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Every member of `targetsOf' (Block.entriesOf ss σ)` is `HasIdent.ident str`
 for a `Q`-kind generator string `str`. -/
-theorem Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix {Q : String → Prop}
+theorem Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     {x : P.Ident} (hx : x ∈ targetsOf' (Block.entriesOf ss σ)) :
@@ -1071,11 +1032,10 @@ is a `_<digits>`-suffixed ident (`mem_targetsOf'_entriesOf_hasUnderscoreDigitSuf
 and a shape-free body never reads such a name, so the targets are fresh in
 `body`'s exprs. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The harvest targets are fresh in the SOURCE body's exprs, given the
 body is `exprsShapeFree Q`.  This is exactly the `h_tgt_body_fresh` premise of
 `hoistLoopPrefixInitsM_namesFreshInExprs_targets`. -/
-theorem Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree {Q : String → Prop}
+theorem Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body body₁ : List (Stmt P (Cmd P))) (σ₁ : StringGenState)
     (_h_wf₁ : StringGenState.WF σ₁)
@@ -1085,13 +1045,12 @@ theorem Block.targetsOf'_entriesOf_namesFreshInExprs_of_exprsShapeFree {Q : Stri
     (fun _z hz => Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix hQmint body₁ σ₁ hz)
     body h_sf
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The full producer-side `h_B_fresh` for the `.loop` arm: from
 `Block.exprsShapeFree Q body`, the harvest targets `targetsOf' (entriesOf body₁
 σ₁)` (`body₁`/`σ₁` the post-order body / its gen state) are fresh in `body₁`'s
 exprs.  The targets carry hoist's mint kind; the source body is shape-free,
 so they are fresh in `body`; the reducer lifts that to `body₁`. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_wf₁ : StringGenState.WF (Block.hoistLoopPrefixInitsM body σ).2)
@@ -1128,11 +1087,10 @@ suffix — supplied as a hypothesis by the caller.
 The sources `sourcesOf' E ⊆ Block.initVars body₁` (`Block.sourcesOf_entriesOf_subset`),
 so source-disjointness reduces to a disjointness hypothesis on `Block.initVars body₁`. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- A target carrier is disjoint from any `vars` whose every member is *not* the
 ident of a `Q`-kind string.  This is the generic engine behind every
 "targets ∩ V = ∅" side-condition. -/
-theorem targetsOf'_entriesOf_disjoint_of_shapefree {Q : String → Prop}
+theorem targetsOf'_entriesOf_disjoint_of_shapefree [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (vars : List P.Ident)
@@ -1144,12 +1102,11 @@ theorem targetsOf'_entriesOf_disjoint_of_shapefree {Q : String → Prop}
     Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix hQmint ss σ hx_tgt
   exact h_shapefree str h_suf (h_eq ▸ hx_vars)
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `h_mod_disjoint_B` at `B := targetsOf' E`: the post-order body's
 `modifiedVars` are disjoint from the harvest targets.  `modifiedVars` collect
 only `.set` targets — program names without hoist's mint kind — so the
 shape-free hypothesis on `Block.modifiedVars body₁` discharges it. -/
-theorem modifiedVars_disjoint_targetsOf'_entriesOf {Q : String → Prop}
+theorem modifiedVars_disjoint_targetsOf'_entriesOf [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_mod_shapefree : ∀ str : String, Q str →
@@ -1158,13 +1115,11 @@ theorem modifiedVars_disjoint_targetsOf'_entriesOf {Q : String → Prop}
   targetsOf'_entriesOf_disjoint_of_shapefree hQmint body₁ σ
     (Block.modifiedVars body₁) h_mod_shapefree
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- `h_mod_disjoint_A` at `A := sourcesOf' E`: the post-order body's
 `modifiedVars` are disjoint from the harvest sources.  Sources are body inits
 (`Block.sourcesOf_entriesOf_subset`), so the caller's disjointness of
 `modifiedVars body₁` from `initVars body₁` discharges it. -/
-theorem modifiedVars_disjoint_sourcesOf'_entriesOf
+theorem modifiedVars_disjoint_sourcesOf'_entriesOf [HasIdent P]
     [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_mod_init_disjoint : ∀ x ∈ Block.modifiedVars body₁, x ∉ Block.initVars body₁) :
@@ -1180,11 +1135,10 @@ loop statement's own inits).  Each fact below is a direct instance of the
 generic shape-free engine (for targets) or of the source ⊆ init subset (for
 sources). -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Harvest targets are disjoint from the ambient outer carrier `A`, via the
 arm's `h_src_shapefree` (whose `A`-component says no suffix-shaped ident is in
 `A`). -/
-theorem targetsOf'_entriesOf_disjoint_ambient_A {Q : String → Prop}
+theorem targetsOf'_entriesOf_disjoint_ambient_A [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
@@ -1196,9 +1150,8 @@ theorem targetsOf'_entriesOf_disjoint_ambient_A {Q : String → Prop}
   targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ A
     (fun str h_suf => (h_src_shapefree str h_suf).1)
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Harvest targets are disjoint from the ambient outer carrier `B`. -/
-theorem targetsOf'_entriesOf_disjoint_ambient_B {Q : String → Prop}
+theorem targetsOf'_entriesOf_disjoint_ambient_B [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
@@ -1210,9 +1163,8 @@ theorem targetsOf'_entriesOf_disjoint_ambient_B {Q : String → Prop}
   targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ B
     (fun str h_suf => (h_src_shapefree str h_suf).2.1)
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Harvest targets are disjoint from the loop statement's own inits. -/
-theorem targetsOf'_entriesOf_disjoint_initVars_stmt {Q : String → Prop}
+theorem targetsOf'_entriesOf_disjoint_initVars_stmt [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (s : Stmt P (Cmd P))
@@ -1224,14 +1176,12 @@ theorem targetsOf'_entriesOf_disjoint_initVars_stmt {Q : String → Prop}
   targetsOf'_entriesOf_disjoint_of_shapefree hQmint ss σ (Block.initVars [s])
     (fun str h_suf => (h_src_shapefree str h_suf).2.2)
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Harvest sources are disjoint from the ambient outer carrier `A`, via
 `Block.sourcesOf_entriesOf_subset` (sources ⊆ body inits) and a disjointness
 hypothesis on the body inits (the §E arm supplies `h_lhs_disjoint` for
 `Block.initVars [s]`; the caller threads the initVars relationship
 `Block.initVars body₁ ⊆ Block.initVars [s]`). -/
-theorem sourcesOf'_entriesOf_disjoint_ambient
+theorem sourcesOf'_entriesOf_disjoint_ambient [HasIdent P]
     [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (V : List P.Ident)
@@ -1254,10 +1204,9 @@ inits hoisted separately) while `initVars` descends into the loop body.  Hence
 the harvest sources are a SUBLIST (`[] <+ Block.initVars body` at the `.loop`
 arm; refl/append elsewhere), not necessarily equal. -/
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- `sourcesOf' (Stmt.entriesOf s σ)` is a `List.Sublist` of `Stmt.initVars s`. -/
-theorem Stmt.sourcesOf_entriesOf_sublist
+theorem Stmt.sourcesOf_entriesOf_sublist [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     (sourcesOf' (Stmt.entriesOf s σ)).Sublist (Stmt.initVars s) := by
   match s with
@@ -1290,7 +1239,7 @@ theorem Stmt.sourcesOf_entriesOf_sublist
   termination_by sizeOf s
 
 /-- `sourcesOf' (Block.entriesOf ss σ)` is a `List.Sublist` of `Block.initVars ss`. -/
-theorem Block.sourcesOf_entriesOf_sublist
+theorem Block.sourcesOf_entriesOf_sublist [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (sourcesOf' (Block.entriesOf ss σ)).Sublist (Block.initVars ss) := by
   match ss with
@@ -1305,19 +1254,17 @@ theorem Block.sourcesOf_entriesOf_sublist
   termination_by sizeOf ss
 end
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- **Producer precondition (GAP 1).** From `(Block.initVars body₁).Nodup`, the
 harvest sources `sourcesOf' (Block.entriesOf body₁ σ)` are `Nodup`.  This is the
 shape `Block.bodyTransport_of_lift` consumes as `h_src_nodup` (recall
 `(substOf' E).map Prod.fst = sourcesOf' E`).  `Nodup` transfers along the sublist
 of the previous lemma. -/
-theorem Block.entriesOf_sourcesOf_nodup_of_initVars
+theorem Block.entriesOf_sourcesOf_nodup_of_initVars [HasIdent P]
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_nd : (Block.initVars body₁).Nodup) :
     (sourcesOf' (Block.entriesOf body₁ σ)).Nodup :=
   (Block.sourcesOf_entriesOf_sublist body₁ σ).nodup h_nd
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The producer's `h_src_nodup` reads `(subst.map Prod.fst).Nodup` over
 `subst := substOf' E`; this records the projection identity
 `(substOf' E).map Prod.fst = sourcesOf' E` so the previous lemma lands directly
@@ -1326,12 +1273,11 @@ theorem substOf'_map_fst (entries : List (Entry P)) :
     (substOf' entries).map Prod.fst = sourcesOf' entries := by
   simp only [substOf', sourcesOf', List.map_map, Function.comp_def]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- **Producer precondition, in the producer's own `h_src_nodup` shape.** From
 `(Block.initVars body₁).Nodup`, the substitution `substOf' (Block.entriesOf body₁ σ)`
 has `Nodup` sources — exactly the `h_src_nodup` argument of
 `Block.bodyTransport_of_lift` at `subst := substOf' (Block.entriesOf body₁ σ)`. -/
-theorem Block.entriesOf_substOf_src_nodup_of_initVars
+theorem Block.entriesOf_substOf_src_nodup_of_initVars [HasIdent P]
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_nd : (Block.initVars body₁).Nodup) :
     ((substOf' (Block.entriesOf body₁ σ)).map Prod.fst).Nodup := by
@@ -1346,8 +1292,7 @@ each of the structural Bool walkers (`containsNondetLoop`, `containsFuncDecl`,
 `loopHasNoInvariants`, `loopMeasureNone`, `noExit`) in value, so the body's §E
 arm preconditions transport to `body₁`, and `transportShape_of_arm_preconds`
 assembles them. -/
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.transportShape_hoistLoopPrefixInitsM
+theorem Block.transportShape_hoistLoopPrefixInitsM [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasVarsPure P P.Expr]
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_nd : Block.containsNondetLoop body = false)
@@ -1388,11 +1333,10 @@ and `applyRenames` preserves init-emptiness — so the loop arm's `initVars` is
 exactly the havoc targets `targetsOf' (entriesOf body₁' σ₁')`, which are
 generator names, `Nodup` by `entriesOf_targetGen`. -/
 
-omit [HasIdent P] [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.applyRenames` preserves whether `Block.initVars` is empty: each
 `substIdent` rename maps one init binder to one new binder, never adding or
 removing init binders, so emptiness is invariant under the whole fold. -/
-theorem Block.applyRenames_initVars_isEmpty
+theorem Block.applyRenames_initVars_isEmpty [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     (Block.initVars (Block.applyRenames renames ss)).isEmpty
       = (Block.initVars ss).isEmpty := by
@@ -1405,12 +1349,11 @@ theorem Block.applyRenames_initVars_isEmpty
     rw [hstep, ih (Block.substIdent p.1 p.2 ss),
         Block.substIdent_initVars_isEmpty p.1 p.2 ss]
 
-omit [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The rewritten loop body `body₃ = applyRenames renames body₂` produced by the
 `.loop` arm is init-free.  `body₁ = (hoistLoopPrefixInitsM body σ).1` is
 `allLoopBodiesInitFree`, so the lift residual `body₂` has no inits anywhere, and
 `applyRenames` preserves init-emptiness. -/
-theorem Block.applyRenames_liftResidual_initVars_nil
+theorem Block.applyRenames_liftResidual_initVars_nil [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (body : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.initVars
       (Block.applyRenames
@@ -1441,7 +1384,6 @@ theorem Block.applyRenames_liftResidual_initVars_nil
   simp only [List.isEmpty_nil] at h_isEmpty
   exact List.isEmpty_iff.mp h_isEmpty
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.initVars` distributes over `++`. -/
 theorem Block.initVars_append'
     (xs ys : List (Stmt P (Cmd P))) :
@@ -1451,8 +1393,6 @@ theorem Block.initVars_append'
   | cons x rest ih =>
     simp only [List.cons_append, Block.initVars_cons, ih, List.append_assoc]
 
-omit [LawfulHasIdent P] [LawfulHasSubstFvar P] in
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The havoc prelude's `initVars` are exactly the harvest targets: every havoc
 is `init e.2.1 ty .nondet md`, contributing its target ident `e.2.1`. -/
 theorem Block.initVars_havocStmts' (entries : List (Entry P)) :
@@ -1474,19 +1414,18 @@ fresh disjunct additionally records that `str` carries the hoist pass's mint
 kind `Q` (`Q str`), which the freshly minted carrier names satisfy by the mint
 witness `hQmint`.  Instantiating `Q := String.HasUnderscoreDigitSuffix` recovers
 the blanket generator-suffix statement. -/
-def HoistInitClass (Q : String → Prop) (src : List P.Ident) (σ σ' : StringGenState) (x : P.Ident) : Prop :=
+def HoistInitClass [HasIdent P] (Q : String → Prop) (src : List P.Ident) (σ σ' : StringGenState) (x : P.Ident) : Prop :=
   (x ∈ src) ∨
   (∃ str : String, x = HasIdent.ident str
     ∧ str ∈ StringGenState.stringGens σ'
     ∧ str ∉ StringGenState.stringGens σ
     ∧ Q str)
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Two classified `initVars` carriers from consecutive sub-passes are disjoint:
 originals are disjoint by `uniqueInits` and suffix-free by `h_src_shapefree`;
 fresh names are suffix-shaped and captured in disjoint state windows.  All four
 cross-class collisions are impossible. -/
-theorem hoistInitClass_disjoint {Q : String → Prop}
+theorem hoistInitClass_disjoint [HasIdent P] [LawfulHasIdent P] {Q : String → Prop}
     (src₁ src₂ : List P.Ident) (σ σmid σ' : StringGenState)
     (_h_wf : StringGenState.WF σ)
     (_h_step₁ : GenStep σ σmid) (_h_step₂ : GenStep σmid σ')
@@ -1515,12 +1454,10 @@ theorem hoistInitClass_disjoint {Q : String → Prop}
       have : str₁ = str₂ := LawfulHasIdent.ident_inj h_id
       exact hstr₂_not (this ▸ hstr₁_in)
 
-omit [LawfulHasSubstFvar P] in
-omit [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- Mutual `Stmt` step: the post-order pass output's `initVars` is `Nodup`, and
 each member is `HoistInitClass`-classified between the input and output states. -/
-theorem Stmt.hoistLoopPrefixInitsM_initVars_classified {Q : String → Prop}
+theorem Stmt.hoistLoopPrefixInitsM_initVars_classified [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Stmt.initVars s).Nodup)
@@ -1681,7 +1618,7 @@ theorem Stmt.hoistLoopPrefixInitsM_initVars_classified {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Mutual `Block` step. -/
-theorem Block.hoistLoopPrefixInitsM_initVars_classified {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_initVars_classified [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars ss).Nodup)
@@ -1743,14 +1680,12 @@ theorem Block.hoistLoopPrefixInitsM_initVars_classified {Q : String → Prop}
   termination_by sizeOf ss
 end
 
-omit [LawfulHasSubstFvar P] in
-omit [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- **GAP 1 part (b).** The post-order body `body₁ = (hoistLoopPrefixInitsM body
 σ).1` has `Nodup` `initVars`, given `WF σ`, the source body's `uniqueInits`, and
 the arm's `h_src_shapefree` (originals avoid the generator `_<digit>` suffix).
 Combined with part (a) (`entriesOf_sourcesOf_nodup_of_initVars`) this discharges
 the producer's `h_src_nodup` for the §E `.loop` arm. -/
-theorem Block.hoistLoopPrefixInitsM_initVars_nodup {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_initVars_nodup [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars body).Nodup)
@@ -1771,13 +1706,11 @@ targets `∉ σ₁`.  The lemmas below build that classification bottom-up from 
 structural action of `substIdent`/`applyRenames`/`liftInitsInLoopBodyM` on
 `modifiedVars`. -/
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.modifiedVars` cons split. -/
 private theorem Block.modVars_cons (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) :
     Block.modifiedVars (s :: rest) = Stmt.modifiedVars s ++ Block.modifiedVars rest := by
   simp only [Block.modifiedVars]
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.modifiedVars` distributes over `++`. -/
 private theorem Block.modVars_append (xs ys : List (Stmt P (Cmd P))) :
     Block.modifiedVars (xs ++ ys) = Block.modifiedVars xs ++ Block.modifiedVars ys := by
@@ -1785,11 +1718,10 @@ private theorem Block.modVars_append (xs ys : List (Stmt P (Cmd P))) :
   | nil => simp [Block.modifiedVars]
   | cons x rest ih => simp only [List.cons_append, Block.modVars_cons, ih, List.append_assoc]
 
-omit [HasIdent P] [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- A `substIdent y y'` rename sends each modified var of a statement either to
 an unchanged original (`≠ y`) or to the new name `y'`. -/
-theorem Stmt.substIdent_modVars_mem (y y' : P.Ident) (s : Stmt P (Cmd P))
+theorem Stmt.substIdent_modVars_mem [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P))
     (x : P.Ident) (hx : x ∈ Stmt.modifiedVars (Stmt.substIdent y y' s)) :
     (x ∈ Stmt.modifiedVars s ∧ x ≠ y) ∨ x = y' := by
   match s with
@@ -1848,7 +1780,7 @@ theorem Stmt.substIdent_modVars_mem (y y' : P.Ident) (s : Stmt P (Cmd P))
   termination_by sizeOf s
 
 /-- Block-level `substIdent` modified-var classification. -/
-theorem Block.substIdent_modVars_mem (y y' : P.Ident) (ss : List (Stmt P (Cmd P)))
+theorem Block.substIdent_modVars_mem [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P)))
     (x : P.Ident) (hx : x ∈ Block.modifiedVars (Block.substIdent y y' ss)) :
     (x ∈ Block.modifiedVars ss ∧ x ≠ y) ∨ x = y' := by
   match ss with
@@ -1867,10 +1799,9 @@ theorem Block.substIdent_modVars_mem (y y' : P.Ident) (ss : List (Stmt P (Cmd P)
   termination_by sizeOf ss
 end
 
-omit [HasIdent P] [LawfulHasIdent P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `applyRenames` modified-var classification: each modified var of the renamed
 block is either an original modified var or one of the rename TARGETS. -/
-theorem Block.applyRenames_modVars_mem (renames : List (P.Ident × P.Ident))
+theorem Block.applyRenames_modVars_mem [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (renames : List (P.Ident × P.Ident))
     (ss : List (Stmt P (Cmd P))) (x : P.Ident)
     (hx : x ∈ Block.modifiedVars (Block.applyRenames renames ss)) :
     x ∈ Block.modifiedVars ss ∨ x ∈ renames.map Prod.snd := by
@@ -1889,12 +1820,11 @@ theorem Block.applyRenames_modVars_mem (renames : List (P.Ident × P.Ident))
         · refine Or.inr ?_; simp only [List.map_cons, List.mem_cons]; exact Or.inl he
       · refine Or.inr ?_; simp only [List.map_cons, List.mem_cons]; exact Or.inr h
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- The lift residual's `modifiedVars` are contained in the input block's
 `modifiedVars` plus the rename SOURCES (each lifted `.init y` adds a `.set y`
 residual whose target `y` is the rename source). -/
-theorem Stmt.liftResidual_modVars_mem (s : Stmt P (Cmd P)) (σ : StringGenState)
+theorem Stmt.liftResidual_modVars_mem [HasIdent P] (s : Stmt P (Cmd P)) (σ : StringGenState)
     (x : P.Ident) (hx : x ∈ Block.modifiedVars (Stmt.liftInitsInLoopBodyM s σ).1.2.2) :
     x ∈ Stmt.modifiedVars s ∨ x ∈ (Stmt.liftInitsInLoopBodyM s σ).1.2.1.map Prod.fst := by
   match s with
@@ -1972,7 +1902,7 @@ theorem Stmt.liftResidual_modVars_mem (s : Stmt P (Cmd P)) (σ : StringGenState)
   termination_by sizeOf s
 
 /-- Block-level lift residual modified-var containment. -/
-theorem Block.liftResidual_modVars_mem (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
+theorem Block.liftResidual_modVars_mem [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (x : P.Ident) (hx : x ∈ Block.modifiedVars (Block.liftInitsInLoopBodyM ss σ).1.2.2) :
     x ∈ Block.modifiedVars ss ∨ x ∈ (Block.liftInitsInLoopBodyM ss σ).1.2.1.map Prod.fst := by
   match ss with
@@ -2003,8 +1933,6 @@ theorem Block.liftResidual_modVars_mem (ss : List (Stmt P (Cmd P))) (σ : String
   termination_by sizeOf ss
 end
 
-omit [LawfulHasIdent P] [LawfulHasSubstFvar P] in
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The havoc prelude `havocStmts' entries` (all `.init`) modifies nothing. -/
 private theorem Block.modifiedVars_havocStmts' (entries : List (Entry P)) :
     Block.modifiedVars (havocStmts' entries) = [] := by
@@ -2015,7 +1943,6 @@ private theorem Block.modifiedVars_havocStmts' (entries : List (Entry P)) :
       rw [LoopInitHoistLoopDriver.havocStmts'_cons, Block.modVars_cons, ih]
       simp only [Stmt.modifiedVars, HasVarsImp.modifiedVars, Cmd.modifiedVars, List.append_nil]
 
-omit [LawfulHasSubstFvar P] [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- Mutual `Stmt` step of the `modifiedVars` classification: every modified var
 of the post-order pass output is either an ORIGINAL source modified-or-init var,
@@ -2023,7 +1950,7 @@ or a FRESH generator name captured between the input and output states.  (The
 source carrier is `modifiedVars ++ initVars`: a lifted nested-loop init turns a
 `.init y` into a `.set y` residual whose name `y` may survive un-renamed, so the
 ORIGINAL branch must admit source inits as well as source set-targets.) -/
-theorem Stmt.hoistLoopPrefixInitsM_modVars_classified [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
+theorem Stmt.hoistLoopPrefixInitsM_modVars_classified [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Stmt.initVars s).Nodup)
@@ -2207,7 +2134,7 @@ theorem Stmt.hoistLoopPrefixInitsM_modVars_classified [LawfulHasIdent P] [HasVar
   termination_by sizeOf s
 
 /-- Mutual `Block` step of the `modifiedVars` classification. -/
-theorem Block.hoistLoopPrefixInitsM_modVars_classified [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_modVars_classified [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars ss).Nodup)
@@ -2278,9 +2205,7 @@ pass's output state `σ₁`.  Each target is a generator string of the SUBSEQUEN
 lift pass, suffix-shaped and ABSENT from `σ₁`.  Both classes are therefore
 disjoint from the targets: a suffix-free original can't equal a suffix-shaped
 target, and a fresh source's string is in `σ₁` while a target's is not. -/
-omit [LawfulHasSubstFvar P] in
-omit [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.sourcesOf'_disjoint_targetsOf'_self {Q : String → Prop}
+theorem Block.sourcesOf'_disjoint_targetsOf'_self [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars body).Nodup)
@@ -2338,8 +2263,7 @@ generator string of the SUBSEQUENT lift pass, suffix-shaped and ABSENT from
 `σ₁`.  Both classes are therefore disjoint from the targets: a suffix-free
 original can't equal a suffix-shaped target, and a fresh source's string is in
 `σ₁` while a target's is not. -/
-omit [LawfulHasSubstFvar P] in
-theorem Block.modifiedVars_disjoint_targetsOf'_self {Q : String → Prop}
+theorem Block.modifiedVars_disjoint_targetsOf'_self [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars body).Nodup)
@@ -2399,7 +2323,6 @@ open LoopInitHoistLoopDriver (BodySim BodySimUSF bodySim_is_driver_slot
   loopDet_lift_sf_undef_recovers_single loopDet_no_exit
   prelude_bridge_list_md_frame)
 
-omit [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Loop-entry union `HoistInv` builder (guarded frame). -/
 theorem union_entry_hinv
     {A B As Bs : List P.Ident} {subst ss : List (P.Ident × P.Ident)}
@@ -2437,7 +2360,7 @@ applyRenames (substOf' E) (lift residual)`.  Every producer precondition of
 facts: the self-`EntriesIn` is `List.mem_map`, the target freshness/nodup/shape
 facts come from the harvest-target generator lemmas, and the source∩target
 disjointness from `sourcesOf'_disjoint_targetsOf'_self`. -/
-theorem Block.stepB_self_of_lift {Q : String → Prop}
+theorem Block.stepB_self_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     {extendEval : ExtendEval P}
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
@@ -2519,7 +2442,7 @@ relation that `body₁` ↝ `body₃` inhabits (`bodyTransport_of_lift`, at the 
 harvest carriers `stepB_self_of_lift` uses) has a `noFuncDecl` hoist side
 (`BodyTransport.noFuncDecl_h`).  The producer preconditions are discharged from
 the source body's §E arm-shape facts exactly as in `stepB_self_of_lift`. -/
-theorem Block.stepB_noFuncDecl_h_of_lift {Q : String → Prop}
+theorem Block.stepB_noFuncDecl_h_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_wf_σ : StringGenState.WF σ)
@@ -2583,14 +2506,12 @@ theorem Block.stepB_noFuncDecl_h_of_lift {Q : String → Prop}
     exact Block.sourcesOf'_disjoint_targetsOf'_self hQmint body σ h_wf_σ h_unique h_src_shapefree
   · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure h_noexit
 
-omit [LawfulHasIdent P] [LawfulHasSubstFvar P] in
-omit [HasSubstFvar P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The full §E `.loop` arm reconciliation: given Step A (`BodySim A B subst body
 body₁`) and Step B (`BodySim (sources)(targets)(substOf'E) body₁ body₃`) plus the
 arm's disjointness / freshness / run facts, produce the §E sum-typed terminal
 conclusion for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`.
 Guard `g` is UNCHANGED (the renames live inside `body₃`). -/
-theorem loop_arm_close
+theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P]
     {Q : String → Prop}
     {extendEval : ExtendEval P}
     {g : P.Expr}
