@@ -99,11 +99,11 @@ private theorem freshFromIdents_exprOrNondet_substIdent
   | det e => exact freshFromIdents_substFvar e h_ne h
   | nondet => simp only [ExprOrNondet.substIdent_nondet]; exact h
 
-omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
+omit [HasIdent P] [LawfulHasIdent P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.substIdent y y'` preserves `Stmt.namesFreshInExprs names` whenever
 `y' ∉ names`. -/
-theorem Stmt.namesFreshInExprs_substIdent
+theorem Stmt.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
     (names : List P.Ident) (y y' : P.Ident) (s : Stmt P (Cmd P))
     (h_y'_not : y' ∉ names)
     (h : Stmt.namesFreshInExprs names s = true) :
@@ -184,7 +184,7 @@ theorem Stmt.namesFreshInExprs_substIdent
 
 /-- `Block.substIdent y y'` preserves `Block.namesFreshInExprs names` whenever
 `y' ∉ names`. -/
-theorem Block.namesFreshInExprs_substIdent
+theorem Block.namesFreshInExprs_substIdent [LawfulHasSubstFvar P]
     (names : List P.Ident) (y y' : P.Ident) (ss : List (Stmt P (Cmd P)))
     (h_y'_not : y' ∉ names)
     (h : Block.namesFreshInExprs names ss = true) :
@@ -349,11 +349,11 @@ This handles the SOURCES carrier (`sourcesOf' E`), whose elements lie in
 the generator suffix. -/
 
 omit [LawfulHasIdent P] in
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that avoid the generator's `_<digit>` naming scheme. -/
-theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs
+theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs [LawfulHasSubstFvar P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_no_gen : ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ names)
@@ -440,7 +440,7 @@ theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs
 
 /-- `Block.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that avoid the generator's `_<digit>` naming scheme. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs [LawfulHasSubstFvar P]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_no_gen : ∀ str : String, String.HasUnderscoreDigitSuffix str →
         HasIdent.ident (P := P) str ∉ names)
@@ -828,12 +828,12 @@ the TARGETS carrier (`targetsOf' E`, fresh from the pass output by `TargetGen`)
 satisfies. -/
 
 omit [LawfulHasIdent P] in
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasSubstFvar P] in
 mutual
 /-- `Stmt.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that are fresh from the pass output state's `stringGens` (and fresh in the
 source statement's exprs). -/
-theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh
+theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [LawfulHasSubstFvar P]
     (names : List P.Ident) (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_genfresh : ∀ str : String,
         HasIdent.ident (P := P) str ∈ names →
@@ -940,7 +940,7 @@ theorem Stmt.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh
 
 /-- `Block.hoistLoopPrefixInitsM` preserves `Block.namesFreshInExprs names` for
 names that are fresh from the pass output state's `stringGens`. -/
-theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh
+theorem Block.hoistLoopPrefixInitsM_namesFreshInExprs_genfresh [LawfulHasSubstFvar P]
     (names : List P.Ident) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_genfresh : ∀ str : String,
         HasIdent.ident (P := P) str ∈ names →
@@ -2015,7 +2015,7 @@ private theorem Block.modifiedVars_havocStmts' (entries : List (Entry P)) :
       rw [LoopInitHoistLoopDriver.havocStmts'_cons, Block.modVars_cons, ih]
       simp only [Stmt.modifiedVars, HasVarsImp.modifiedVars, Cmd.modifiedVars, List.append_nil]
 
-omit [LawfulHasSubstFvar P] in
+omit [LawfulHasSubstFvar P] [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- Mutual `Stmt` step of the `modifiedVars` classification: every modified var
 of the post-order pass output is either an ORIGINAL source modified-or-init var,
@@ -2023,7 +2023,7 @@ or a FRESH generator name captured between the input and output states.  (The
 source carrier is `modifiedVars ++ initVars`: a lifted nested-loop init turns a
 `.init y` into a `.set y` residual whose name `y` may survive un-renamed, so the
 ORIGINAL branch must admit source inits as well as source set-targets.) -/
-theorem Stmt.hoistLoopPrefixInitsM_modVars_classified {Q : String → Prop}
+theorem Stmt.hoistLoopPrefixInitsM_modVars_classified [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Stmt.initVars s).Nodup)
@@ -2207,7 +2207,7 @@ theorem Stmt.hoistLoopPrefixInitsM_modVars_classified {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Mutual `Block` step of the `modifiedVars` classification. -/
-theorem Block.hoistLoopPrefixInitsM_modVars_classified {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_modVars_classified [LawfulHasIdent P] [HasVarsPure P P.Expr] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars ss).Nodup)

@@ -888,12 +888,13 @@ private theorem loop_sf_transport {Q : String → Prop} (g₀ g₁ : ExprOrNonde
   rw [Stmt.exprsShapeFree.eq_def] at h ⊢
   exact ⟨hg, h.2.1, h.2.2.1, hb⟩
 
+omit [LawfulHasFvar P] [LawfulHasIdent P] in
 mutual
 /-- `nondetElim` preserves `exprsShapeFree Q`, provided the labels it mints (the
 two ndelim guard prefixes) are foreign to `Q`: source read-vars stay `Q`-free,
 and the only new read-var is the freshly-minted guard ident, which is `¬ Q` by
 foreignness. -/
-theorem Stmt.nondetElimM_exprsShapeFree {Q : String → Prop}
+theorem Stmt.nondetElimM_exprsShapeFree [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState)
@@ -956,7 +957,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Block-level `exprsShapeFree Q` preservation through `nondetElim`. -/
-theorem Block.nondetElimM_exprsShapeFree {Q : String → Prop}
+theorem Block.nondetElimM_exprsShapeFree [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
@@ -1623,14 +1624,14 @@ private theorem nondetElim_body_inits_fresh_in_encl
   · exact h_encl_src y h_src
   · exact h_eq ▸ h_encl_sf str h_kind
 
-omit [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
+omit [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasIdent P] [LawfulHasFvar P] in
 mutual
 /-- `nondetElim` preserves `hoistedNamesFreshInGuards`: each loop-body-init name
 of the output is fresh in its loop guard / invariants / measure.  Source loops
 keep their guards (body inits stay fresh by source freshness + kind-freedom);
 the synthesised `.nondet`→`.det (mkFvar g)` loop guard reads only the fresh `g`,
 which is not a body init. -/
-theorem Stmt.nondetElimM_hoistedNamesFreshInGuards
+theorem Stmt.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHasFvar P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_g : Stmt.hoistedNamesFreshInGuards s = true)
     (h_sf : Stmt.exprsShapeFree (P := P) ndelimKind s)
@@ -1825,7 +1826,7 @@ theorem Stmt.nondetElimM_hoistedNamesFreshInGuards
         Stmt.hoistedNamesFreshInGuards, Bool.and_true]
   termination_by sizeOf s
 
-theorem Block.nondetElimM_hoistedNamesFreshInGuards
+theorem Block.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHasFvar P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_g : Block.hoistedNamesFreshInGuards ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss)

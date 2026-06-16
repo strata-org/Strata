@@ -1447,6 +1447,7 @@ omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar
     bindingsOf' (e :: rest)
       = (e.2.1, HasFvar.mkFvar e.2.1) :: bindingsOf' rest := rfl
 
+omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- `targetsOf' entries = (substOf' entries).map Prod.snd`. -/
 theorem targetsOf'_eq_substOf'_snd (entries : List (Entry P)) :
     targetsOf' entries = (substOf' entries).map Prod.snd := by
