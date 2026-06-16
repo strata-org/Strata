@@ -56,19 +56,6 @@ def StringGenState.WF (σ : StringGenState)
     ∀ c s, (c,s) ∈ σ.generated →
       String.IsSuffix ("_" ++ toString c) s
 
-theorem String.append_eq_suffix (as bs bs' : String):
-  (as ++ bs = as ++ bs') → bs = bs' := by
-  intros Heq
-  by_cases bs = bs' <;> simp_all
-
-theorem String.append_eq_prefix (as as' bs : String):
-  (as ++ bs = as' ++ bs) → as = as' := by
-  intros Heq
-  by_cases as = as' <;> simp_all
-
-theorem List.reverse_injective :
-  List.reverse l₁ = List.reverse l₂ → l₁ = l₂ := List.reverse_inj.mp
-
 theorem StringGenState.contains :
   StringGenState.gen pf σ = (s, σ') →
   s ∈ σ'.generated.unzip.2 := by
@@ -405,26 +392,6 @@ theorem StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix
   intro h_in
   exact h (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf h_in)
 
-/-- A user label whose character list does not contain `_` cannot have the
-generator suffix shape (because every generated label contains `_`). -/
-theorem String.not_hasUnderscoreDigitSuffix_of_no_underscore
-    {s : String} (h : '_' ∉ s.toList) :
-    ¬ String.HasUnderscoreDigitSuffix s := by
-  rintro ⟨pf, n, h_eq⟩
-  have h_mem : '_' ∈ s.toList := by
-    rw [h_eq]
-    simp [String.toList_append, under_toList]
-  exact h h_mem
-
-/-- Combined convenience: a string with no `_` is never produced by `gen`,
-and never appears in any WF `StringGenState`'s `stringGens`. -/
-theorem StringGenState.not_mem_stringGens_of_no_underscore
-    {σ : StringGenState} (hwf : StringGenState.WF σ)
-    {s : String} (h : '_' ∉ s.toList) :
-    s ∉ σ.stringGens :=
-  StringGenState.not_mem_stringGens_of_not_hasUnderscoreDigitSuffix hwf
-    (String.not_hasUnderscoreDigitSuffix_of_no_underscore h)
-
 /-- Two `gen` calls with different prefixes produce different labels, given
 WF: the suffix `_<counter>` matches but the prefix preceding the *last* `_`
 must coincide; together with `WF` ensuring no `_` appears in the digit suffix,
@@ -487,11 +454,8 @@ end StringGenState.GenStep
 The shape predicate `HasUnderscoreDigitSuffix` answers "could this label have
 come from *some* generator". For composing several generators that each mint
 under their own prefix, we need a finer, per-prefix contract: a label `s` was
-minted under prefix `pf` exactly when `pf ++ "_"` is a prefix of `s`. The
-`HasGenPrefix`/`AllGenPrefix` pair tracks, for a given predicate `P` on
-prefixes, that every produced label carries *some* `P`-prefix. This lets a
-client prove a foreign label (one whose only candidate prefixes fail `P`) is
-absent from the generated set. -/
+minted under prefix `pf` exactly when `pf ++ "_"` is a prefix of `s`, which
+`HasGenPrefix` captures. -/
 
 /-- `pf` is a *generator prefix* of `s`: the literal `pf ++ "_"` is a prefix of
 `s`. Every label produced by `gen pf σ` satisfies `HasGenPrefix pf`. -/
@@ -507,78 +471,12 @@ theorem StringGenState.gen_hasGenPrefix (pf : String) (σ : StringGenState) :
   refine ⟨(toString σ.cs.counter).toList, ?_⟩
   simp [String.toList_append, List.append_assoc]
 
-/-- `AllGenPrefix P σ`: every label produced so far carries *some* prefix
-satisfying `P`. -/
-@[expose]
-def StringGenState.AllGenPrefix (P : String → Prop) (σ : StringGenState) : Prop :=
-  ∀ s ∈ stringGens σ, ∃ pf, P pf ∧ String.HasGenPrefix pf s
-
-/-- The empty generator state vacuously satisfies any `AllGenPrefix`. -/
-theorem StringGenState.allGenPrefix_emp (P : String → Prop) :
-    StringGenState.AllGenPrefix P StringGenState.emp := by
-  intro s hs
-  rw [stringGens_emp] at hs
-  exact absurd hs (List.not_mem_nil)
-
-/-- `AllGenPrefix` is preserved by a `gen pf` step whose prefix `pf` satisfies
-`P`. -/
-theorem StringGenState.allGenPrefix_gen (P : String → Prop) (pf : String)
-    (σ : StringGenState) (h : StringGenState.AllGenPrefix P σ) (hpf : P pf) :
-    StringGenState.AllGenPrefix P (StringGenState.gen pf σ).2 := by
-  intro s hs
-  rw [stringGens_gen, List.mem_cons] at hs
-  rcases hs with hnew | hold
-  · subst hnew
-    exact ⟨pf, hpf, StringGenState.gen_hasGenPrefix pf σ⟩
-  · exact h s hold
-
-/-- `AllGenPrefix` is preserved across any advance whose newly produced labels
-each carry some `P`-prefix. -/
-theorem StringGenState.allGenPrefix_genStep (P : String → Prop)
-    {σ σ' : StringGenState} (h : StringGenState.AllGenPrefix P σ)
-    (hdelta : ∀ s ∈ stringGens σ', s ∉ stringGens σ →
-      ∃ pf, P pf ∧ String.HasGenPrefix pf s) :
-    StringGenState.AllGenPrefix P σ' := by
-  intro s hs
-  by_cases hmem : s ∈ stringGens σ
-  · exact h s hmem
-  · exact hdelta s hs hmem
-
-/-- THE BRIDGE: a label `s` whose every `P`-prefix fails to be a generator
-prefix of `s` cannot appear in a state satisfying `AllGenPrefix P`. -/
-theorem StringGenState.not_mem_stringGens_of_foreign {P : String → Prop}
-    {σ : StringGenState} {s : String}
-    (hall : StringGenState.AllGenPrefix P σ)
-    (hforeign : ∀ pf, P pf → ¬ String.HasGenPrefix pf s) :
-    s ∉ stringGens σ := by
-  intro h_in
-  obtain ⟨pf, hpf, hpref⟩ := hall s h_in
-  exact hforeign pf hpf hpref
-
-/-- A WF generator state satisfies `AllGenPrefix` for the trivial predicate:
-every produced label has the `_<digits>` suffix shape, hence carries a prefix
-ending just before the last `_<digits>` run.  The witnessing prefix is taken
-from the shape decomposition. -/
-theorem StringGenState.allGenPrefix_true_of_wf {σ : StringGenState}
-    (hwf : StringGenState.WF σ) :
-    StringGenState.AllGenPrefix (fun _ => True) σ := by
-  intro s hs
-  obtain ⟨pf, n, h_eq⟩ :=
-    StringGenState.hasUnderscoreDigitSuffix_of_mem_generated hwf hs
-  refine ⟨pf, trivial, ?_⟩
-  unfold String.HasGenPrefix
-  rw [h_eq, List.isPrefixOf_iff_prefix]
-  refine ⟨(toString (n : Nat)).toList, ?_⟩
-  simp [String.toList_append, List.append_assoc]
-
 /-! ## Membership tracking: `AllMem`
 
-`AllGenPrefix` tracks only that each produced label carries *some* `P`-prefix; it
-deliberately forgets that the label is an *actual* generator output.  That makes
-it too weak to certify a *foreign-label* obligation against a predicate that — like
-the structured-to-unstructured label *kind* — pins the label to a concrete
-`gen`-output equality (a non-generated string sharing a prefix would slip past the
-prefix check).
+A prefix-only contract is too weak to certify a *foreign-label* obligation
+against a predicate that — like the structured-to-unstructured label *kind* —
+pins the label to a concrete `gen`-output equality (a non-generated string
+sharing a prefix would slip past a prefix check).
 
 `AllMem R σ` is the stronger invariant: *every produced label satisfies `R`
 itself*.  At each `gen pf` step the newly produced label is literally
