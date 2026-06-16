@@ -504,6 +504,25 @@ private def underlyingBaseType (s : ResolveState) (fuel : Nat) (ty : HighType) :
       | _ => ty
     | _ => ty
 
+/-- A short display name for a primitive/base `HighType`, for compound-assignment
+    diagnostics. Shared by the target check and the RHS check so their wording
+    cannot drift. -/
+private def highTypeDisplayName : HighType → String
+  | .TInt => "int" | .TReal => "real" | .TFloat64 => "float64"
+  | .TString => "string" | .TBool => "bool" | .TBv n => s!"bv{n}"
+  | .UserDefined r => r.text | _ => "<unknown>"
+
+/-- Whether the (already base-peeled) element type `baseTy` is an acceptable target
+    for compound-assignment operator `op`. Used by the resolution-time target check
+    (`checkCompoundAssignTargetType`), driven by what the Laurel→Core lowering of
+    `target op rhs` supports: `+= -= *= /=` accept `int`/`real`; `%=` is `int`-only
+    (`.Mod` has no real lowering); `^=` is `string`-only. -/
+private def compoundAssignAccepts (op : Operation) (baseTy : HighType) : Bool :=
+  match op with
+  | .StrConcat => match baseTy with | .TString => true | _ => false
+  | .Mod       => match baseTy with | .TInt => true | _ => false
+  | _          => match baseTy with | .TInt | .TReal => true | _ => false
+
 /-- Look up the declared type of an `IncrDecr` target during resolution.
     Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
     `none` when the type cannot be determined (e.g. an unresolved name). -/
@@ -555,6 +574,30 @@ private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
         s!"The {opName} operator is only supported on 'int' and int-based \
            constrained types (e.g. 'nat'), but the operand has type '{tyName}'. \
            Use an explicit assignment instead, e.g. 'x := x + 1'."
+      modify fun s => { s with errors := s.errors.push diag }
+
+/-- Emit a diagnostic if a compound-assignment operator is applied to an unsupported
+    target element type, per `compoundAssignAccepts`. Checks only the *target*; the RHS
+    is type-checked by the `Check.resolveStmtExpr` call in `Synth.compoundAssign`. -/
+private def checkCompoundAssignTargetType (op : Operation) (target : VariableMd)
+    (source : Option FileRange) : ResolveM Unit := do
+  match (← incrDecrTargetType target) with
+  | none => pure ()
+  | some ty =>
+    let s ← get
+    let baseTy := underlyingBaseType s 100 ty
+    let opTok := match op with
+      | .Add => "+=" | .Sub => "-=" | .Mul => "*=" | .Div => "/="
+      | .Mod => "%=" | .StrConcat => "^=" | _ => "(compound assignment)"
+    if !(compoundAssignAccepts op baseTy) then
+      let allowed := match op with
+        | .StrConcat => "'string'"
+        | .Mod => "'int' and int-based constrained types (e.g. 'nat')"
+        | _ => "'int', int-based constrained types (e.g. 'nat'), and 'real'"
+      let tyName := highTypeDisplayName baseTy
+      let diag := diagnosticFromSource source
+        s!"The '{opTok}' operator is only supported on {allowed}, but the operand has \
+           type '{tyName}'. Use an explicit assignment instead, e.g. 'x := x {opTok.dropEnd 1} e'."
       modify fun s => { s with errors := s.errors.push diag }
 
 /-! ## Typing rules
@@ -665,6 +708,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Local ref) => Synth.varLocal ref source
   | .IncrDecr mode op target =>
     Synth.incrDecr exprMd mode op target source (by rw [h_node])
+  | .CompoundAssign op target rhs =>
+    Synth.compoundAssign exprMd op target rhs source (by rw [h_node])
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
   | .Assign targets value =>
@@ -1610,6 +1655,62 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     rw [h_tgt] at hsz2
     simp only [Variable.Field.sizeOf_spec] at hsz2
     omega
+
+/-- (CompoundAssign)
+    ```
+    Γ ⊢ target ⇒ T    T accepts op    Γ ⊢ rhs ⇐ T
+    ─────────────────────────────────────────────
+    Γ ⊢ CompoundAssign op target rhs ⇒ T
+    ```
+    `x op= e` reads and writes its target, so it synthesizes the target's own type
+    `T` and checks the RHS against it. Reviewable by analogy to two existing rules:
+    target resolution is identical to `Synth.incrDecr` (including the conservative
+    `.Declare` arm — unlike `Synth.assign`, the target is never *introduced*, so no
+    `defineNameCheckDup`); the RHS is then checked against the single target type with
+    `Check.resolveStmtExpr`, as `Synth.assign` does for its (here always single) target.
+    The element type is checked by `checkCompoundAssignTargetType`. Used in expression
+    position (`var y := (x += 2)`); in statement position the value is discarded by
+    `Check.statement`. -/
+def Synth.compoundAssign (exprMd : StmtExprMd)
+    (op : Operation) (target : VariableMd) (rhs : StmtExprMd)
+    (source : Option FileRange)
+    (h : exprMd.val = .CompoundAssign op target rhs) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let target' ← match h_tgt : target.val with
+    | .Local ref =>
+      let ref' ← resolveRef ref source
+      pure (⟨.Local ref', target.source⟩ : VariableMd)
+    | .Field tgt fieldName =>
+      let (tgt', _) ← Synth.resolveStmtExpr tgt
+      let fieldName' ← resolveFieldRef tgt' fieldName source
+      pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
+    | .Declare param =>
+      -- Should not occur — the translator rejects a declaration target.
+      let ty' ← resolveHighType param.type
+      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+  checkCompoundAssignTargetType op target' source
+  let resultTy ← match target'.val with
+    | .Local ref => getVarType ref
+    | .Declare param => pure param.type
+    | .Field _ fieldName => getVarType fieldName
+  let rhs' ← Check.resolveStmtExpr rhs resultTy
+  pure (.CompoundAssign op target' rhs', resultTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    -- Two recursive calls, two obligations, both discharged by this block:
+    -- `Check rhs` (rhs is a direct subterm) needs only the CompoundAssign step;
+    -- `Synth tgt` (Field arm, tgt nested in the target) also needs the `target`
+    -- step — hence the `try`. This is `Synth.incrDecr`'s proof generalised with
+    -- `all_goals` to also cover the rhs obligation.
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.CompoundAssign.sizeOf_spec] at hsz
+      try (have hsz2 := target.sizeOf_val_lt
+           rw [h_tgt] at hsz2
+           simp only [Variable.Field.sizeOf_spec] at hsz2)
+      omega
 
 -- ### Calls
 
@@ -2840,6 +2941,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     collectStmtExpr map value
   | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
+  | .CompoundAssign _ ⟨.Field tgt _, _⟩ rhs => collectStmtExpr (collectStmtExpr map tgt) rhs
+  | .CompoundAssign _ _ rhs => collectStmtExpr map rhs
   | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
@@ -3038,6 +3141,14 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
       let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
       innerErrors ++ fieldError
     | .Local _ | .Declare _ => []
+  | .CompoundAssign _ target rhs =>
+    let rhsErrors := validateDiamondFieldAccessesForStmtExpr model rhs
+    let targetErrors := match _htgt : target.val with
+      | .Field tgt fieldName =>
+        validateDiamondFieldAccessesForStmtExpr model tgt
+          ++ checkDiamondFieldAccess model tgt fieldName target.source
+      | .Local _ | .Declare _ => []
+    targetErrors ++ rhsErrors
   | _ => []
   termination_by sizeOf expr
   decreasing_by

@@ -156,6 +156,7 @@ def containsAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .IncrDecr .. => true
+  | .CompoundAssign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsAssignment x.val)
   | .PrimitiveOp _ args _ => args.attach.any (fun x => containsAssignment x.val)
   | .Block stmts _ => stmts.attach.any (fun x => containsAssignment x.val)
@@ -175,6 +176,7 @@ def containsBareAssignment (expr : StmtExprMd) : Bool :=
   match val with
   | .Assign .. => true
   | .IncrDecr .. => true
+  | .CompoundAssign .. => true
   | .StaticCall _ args => args.attach.any (fun x => containsBareAssignment x.val)
   | .PrimitiveOp _ args _ => args.attach.any (fun x => containsBareAssignment x.val)
   | .Block _ _ => false

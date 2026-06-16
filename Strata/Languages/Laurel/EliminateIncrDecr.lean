@@ -46,13 +46,29 @@ namespace Strata.Laurel
 
 public section
 
-/-- Reconstruct the read-side `StmtExprMd` for a `Variable`. -/
+/-- Reconstruct the read-side `StmtExprMd` for a `Variable`.
+
+    A `.Field` target duplicates the object subtree into the read operand (the lowering
+    emits `target op rhs`). This is sound — and term-size cost only, not a correctness
+    risk — because a field read lowers to the pure, obligation-free `readField` lookup,
+    so both copies read the same `$heap` at the same point. (Revisit if field reads ever
+    gain a precondition.) -/
 private def targetAsRead (target : VariableMd) : StmtExprMd :=
   let source := target.source
   match target.val with
   | .Local name => ⟨.Var (.Local name), source⟩
   | .Field tgt fieldName => ⟨.Var (.Field tgt fieldName), source⟩
   | .Declare param => ⟨.Var (.Local param.name), source⟩
+
+/-- Build `.Assign [target] (target ⊕ rhs)` where `⊕` is `primOp`, yielding the new
+    value. Shared by the `IncrDecr` lowering (`rhs = 1`) and `CompoundAssign` (user's
+    RHS). The `.PrimitiveOp` keeps the default `skipProof := false`, so `/=`/`%=` carry
+    the same division-by-zero obligation as a hand-written `x := x / e`. -/
+private def lowerOpAssign (primOp : Operation) (target : VariableMd)
+    (rhs : StmtExprMd) (source : Option FileRange) : StmtExprMd :=
+  let read := targetAsRead target
+  let updated : StmtExprMd := ⟨.PrimitiveOp primOp [read, rhs], source⟩
+  ⟨.Assign [target] updated, source⟩
 
 /-- Build `.Assign [target] (target ⊕ 1)` where `⊕` is `Add` for `Incr` and
     `Sub` for `Decr`. The resulting assignment expression yields the new value. -/
@@ -61,10 +77,7 @@ private def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
   let primOp : Operation := match op with
     | .Incr => .Add
     | .Decr => .Sub
-  let one : StmtExprMd := ⟨.LiteralInt 1, source⟩
-  let read := targetAsRead target
-  let updated : StmtExprMd := ⟨.PrimitiveOp primOp [read, one], source⟩
-  ⟨.Assign [target] updated, source⟩
+  lowerOpAssign primOp target ⟨.LiteralInt 1, source⟩ source
 
 /-- Lower a single `.IncrDecr` node to the expression form that yields the
     correct value for the given `mode` (Pre or Post). -/
@@ -86,6 +99,9 @@ private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
 private def rewriteNode (node : StmtExprMd) : StmtExprMd :=
   match node.val with
   | .IncrDecr mode op target => lowerIncrDecr mode op target node.source
+  | .CompoundAssign op target rhs =>
+    -- `x op= e ⇝ x := x op e` — always new-valued, so no Pre/Post wrapper.
+    lowerOpAssign op target rhs node.source
   | _ => node
 
 /-- Apply the rewrite to a procedure (body, preconditions, decreases, invokeOn). -/

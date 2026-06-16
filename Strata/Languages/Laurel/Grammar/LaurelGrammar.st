@@ -50,6 +50,16 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
 
+// Compound assignment (`x op= e`). Same precedence as `assign`; rightassoc so
+// `a += b += c` groups as `a += (b += c)`. Lvalue-ness of `target` is enforced in
+// the concrete-to-abstract translator, not the grammar.
+op addAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " += " value;
+op subAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " -= " value;
+op mulAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " *= " value;
+op divAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " /= " value;
+op modAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " %= " value;
+op strConcatAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " ^= " value;
+
 // Multi-target assignment: assign var x: int, y, var z: int := call()
 // Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
 category AssignTarget;

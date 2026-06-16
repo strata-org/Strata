@@ -89,6 +89,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .Local id => (model.get id).getType
     | .Field _ fieldName => (model.get fieldName).getType
     | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
+  | .CompoundAssign _ target _ =>
+    -- Yields the new value, whose type is the target variable's type.
+    match target.val with
+    | .Local id => (model.get id).getType
+    | .Field _ fieldName => (model.get fieldName).getType
+    | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related

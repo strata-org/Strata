@@ -141,6 +141,20 @@ where
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
       laurelOp opName #[targetArg]
+    | .CompoundAssign op target rhs =>
+      -- `op` is invariably Add/Sub/Mul/Div/Mod/StrConcat (the C2A translator only
+      -- builds those); the fallback emits a non-reparsing sentinel so a future
+      -- miswiring fails the round-trip instead of silently masquerading as `+=`.
+      let opName := match op with
+        | .Add => "addAssign" | .Sub => "subAssign" | .Mul => "mulAssign"
+        | .Div => "divAssign" | .Mod => "modAssign" | .StrConcat => "strConcatAssign"
+        | _ => "invalidCompoundAssign"
+      let targetArg := match target.val with
+        | .Field obj fieldName =>
+          laurelOp "fieldAccess" #[stmtExprToArg obj, ident fieldName.text]
+        | .Local name => laurelOp "identifier" #[ident name.text]
+        | .Declare param => laurelOp "identifier" #[ident param.name.text]
+      laurelOp opName #[targetArg, stmtExprToArg rhs]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
