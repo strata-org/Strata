@@ -516,24 +516,6 @@ partial def toCoreExpr (e : Boole.Expr) : TranslateM Core.Expression.Expr := do
       return tys.foldr (fun ty acc => .abs () "" (some ty) acc) body'
   -- Function application: `(f)(x)`  →  Core .app
   | .apply_expr _ _ _ f x => return .app () (← toCoreExpr f) (← toCoreExpr x)
-  | .cast_to_int m ty e =>
-    if let some n := bvWidth? ty then
-      return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToUInt") none) [← toCoreExpr e]
-    else match ty with
-    | .int _ => toCoreExpr e
-    | _ => throwAt m s!"'as int' requires a bitvector source type, got: {repr ty}"
-  | .cast_to_sint m ty e =>
-    if let some n := bvWidth? ty then
-      return mkCoreApp (.op () (mkIdent s!"Bv{n}.ToInt") none) [← toCoreExpr e]
-    else match ty with
-    | .int _ => toCoreExpr e  -- int is already signed; treat as no-op, consistent with as_int
-    | _ => throwAt m s!"'as sint' requires a bitvector source type, got: {repr ty}"
-  | .cast_to_bv1   _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv1")   none) [← toCoreExpr e]
-  | .cast_to_bv8   _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv8")   none) [← toCoreExpr e]
-  | .cast_to_bv16  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv16")  none) [← toCoreExpr e]
-  | .cast_to_bv32  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv32")  none) [← toCoreExpr e]
-  | .cast_to_bv64  _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv64")  none) [← toCoreExpr e]
-  | .cast_to_bv128 _ e => return mkCoreApp (.op () (mkIdent "Int.ToBv128") none) [← toCoreExpr e]
   -- Core built-in function syntax: as_uint(e), as_sint(e), as_bv{n}(e)
   | .as_uint m ty e =>
     if let some n := bvWidth? ty then

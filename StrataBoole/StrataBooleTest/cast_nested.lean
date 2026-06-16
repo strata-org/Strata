@@ -11,7 +11,7 @@ open Strata
 /-
 Near-upstream anchor: dalek-lite `bytes_seq_as_nat` / `seq_as_nat_52` (B2).
 
-Exercises `e as_int` in contexts beyond the flat `x as_int` covered by
+Exercises `as_uint(e)` in contexts beyond the flat `as_uint(x)` covered by
 `cast_expr.lean`:
 
 - Cast inside a ∀-quantifier body over a sequence
@@ -30,57 +30,57 @@ program Boole;
 procedure cast_in_forall(s: Sequence bv8, n: int) returns ()
 spec {
   requires 0 <= n && n <= Sequence.length(s);
-  ensures ∀ i: int . 0 <= i && i < n ==> (Sequence.select(s, i) as_int) < 256;
+  ensures ∀ i: int . 0 <= i && i < n ==> as_uint(Sequence.select(s, i)) < 256;
 }
 {
-  assert ∀ i: int . 0 <= i && i < n ==> (Sequence.select(s, i) as_int) < 256;
+  assert ∀ i: int . 0 <= i && i < n ==> as_uint(Sequence.select(s, i)) < 256;
 };
 
 procedure cast_compound_bv(a: bv8, b: bv8) returns ()
 spec {
-  ensures 0 <= ((a & b) as_int);
-  ensures ((a & b) as_int) < 256;
+  ensures 0 <= as_uint(a & b);
+  ensures as_uint(a & b) < 256;
 }
 {
-  assert 0 <= ((a & b) as_int);
-  assert ((a & b) as_int) < 256;
+  assert 0 <= as_uint(a & b);
+  assert as_uint(a & b) < 256;
 };
 
 procedure cast_sum_bound(a: bv8, b: bv8) returns ()
 spec {
-  ensures (a as_int) + (b as_int) < 512;
+  ensures as_uint(a) + as_uint(b) < 512;
 }
 {
-  assert (a as_int) + (b as_int) < 512;
+  assert as_uint(a) + as_uint(b) < 512;
 };
 
 procedure cast_in_let(x: bv8) returns ()
 spec {
-  ensures let n : int := (x as_int) in n >= 0 && n < 256;
+  ensures let n : int := as_uint(x) in n >= 0 && n < 256;
 }
 {
-  assert let n : int := (x as_int) in n >= 0 && n < 256;
+  assert let n : int := as_uint(x) in n >= 0 && n < 256;
 };
 
 procedure cast_in_exists(x: bv64) returns ()
 spec {
-  ensures ∃ n: int . n == (x as_int) && n >= 0;
+  ensures ∃ n: int . n == as_uint(x) && n >= 0;
 }
 {
-  assert ∃ n: int . n == (x as_int) && n >= 0;
+  assert ∃ n: int . n == as_uint(x) && n >= 0;
 };
 
 rec function bytes_to_nat(s: Sequence bv8) : int
   decreases Sequence.length(s)
 {
   if Sequence.length(s) == 0 then 0
-  else (Sequence.select(s, 0) as_int) + 256 * bytes_to_nat(Sequence.skip(s, 1))
+  else as_uint(Sequence.select(s, 0)) + 256 * bytes_to_nat(Sequence.skip(s, 1))
 }
 ;
 
 axiom bytes_to_nat(Sequence.empty_bv8) == 0;
 axiom (∀ h: bv8 . ∀ t: Sequence bv8 .
-  bytes_to_nat(Sequence.build(t, h)) == (h as_int) + 256 * bytes_to_nat(t));
+  bytes_to_nat(Sequence.build(t, h)) == as_uint(h) + 256 * bytes_to_nat(t));
 
 procedure test_rec_empty() returns ()
 spec {
@@ -89,13 +89,13 @@ spec {
 
 procedure test_rec_single_byte(x: bv8) returns ()
 spec {
-  ensures bytes_to_nat(Sequence.build(Sequence.empty_bv8, x)) == (x as_int);
+  ensures bytes_to_nat(Sequence.build(Sequence.empty_bv8, x)) == as_uint(x);
 } { exit test_rec_single_byte; };
 
 // Cast inside a `decreases` clause.
-// `decreases (n as_int)` uses a cast expression as the termination measure.
+// `decreases as_uint(n)` uses a cast expression as the termination measure.
 rec function countdown_bv(n: bv8) : int
-  decreases (n as_int)
+  decreases as_uint(n)
 {
   if n == bv{8}(0) then 0
   else 1 + countdown_bv(n - bv{8}(1))
@@ -104,15 +104,15 @@ rec function countdown_bv(n: bv8) : int
 
 // Cast in a function precondition.
 function decode_low_byte(b: bv8) : int
-  requires (b as_int) < 128;
+  requires as_uint(b) < 128;
 {
-  (b as_int)
+  as_uint(b)
 }
 
 procedure call_decode_byte(x: bv8) returns (r: int)
 spec {
-  requires (x as_int) < 128;
-  ensures r == (x as_int);
+  requires as_uint(x) < 128;
+  ensures r == as_uint(x);
 }
 {
   r := decode_low_byte(x);
@@ -120,19 +120,19 @@ spec {
 #end
 
 /-- info:
-Obligation: cast_in_forall_post_cast_in_forall_ensures_1_837_calls_Sequence.select_0
+Obligation: cast_in_forall_post_cast_in_forall_ensures_1_841_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_assert_2_923_calls_Sequence.select_0
+Obligation: assert_assert_2_927_calls_Sequence.select_0
 Property: out-of-bounds access check
 Result: ✅ pass
 
-Obligation: assert_2_923
+Obligation: assert_2_927
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_forall_ensures_1_837
+Obligation: cast_in_forall_ensures_1_841
 Property: assert
 Result: ✅ pass
 
@@ -140,39 +140,39 @@ Obligation: assert_5_1140
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_6_1172
+Obligation: assert_6_1170
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_compound_bv_ensures_3_1069
+Obligation: cast_compound_bv_ensures_3_1073
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_compound_bv_ensures_4_1102
+Obligation: cast_compound_bv_ensures_4_1104
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_8_1313
+Obligation: assert_8_1309
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_sum_bound_ensures_7_1268
+Obligation: cast_sum_bound_ensures_7_1264
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_10_1467
+Obligation: assert_10_1463
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_let_ensures_9_1405
+Obligation: cast_in_let_ensures_9_1401
 Property: assert
 Result: ✅ pass
 
-Obligation: assert_12_1635
+Obligation: assert_12_1631
 Property: assert
 Result: ✅ pass
 
-Obligation: cast_in_exists_ensures_11_1580
+Obligation: cast_in_exists_ensures_11_1576
 Property: assert
 Result: ✅ pass
 
@@ -192,11 +192,11 @@ Obligation: bytes_to_nat_terminates_1
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_empty_ensures_15_2104
+Obligation: test_rec_empty_ensures_15_2100
 Property: assert
 Result: ✅ pass
 
-Obligation: test_rec_single_byte_ensures_16_2239
+Obligation: test_rec_single_byte_ensures_16_2235
 Property: assert
 Result: ✅ pass
 
@@ -212,7 +212,7 @@ Obligation: set_r_calls_decode_low_byte_0
 Property: assert
 Result: ✅ pass
 
-Obligation: call_decode_byte_ensures_19_2809
+Obligation: call_decode_byte_ensures_19_2805
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
