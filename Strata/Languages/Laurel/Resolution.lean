@@ -1020,19 +1020,19 @@ def Check.return (exprMd : StmtExprMd)
       rw [Option.mem_def.mp ‹_ ∈ val›, Option.some.sizeOf_spec] at hsz
       omega
 
-/-- (Skip)
+/-- (Empty-Block)
     ```
     ─────────────────────────────────
     Γ ⊢ Block [] label ⇒ TVoid
     ```
-    The empty block has a fixed type `TVoid` — written `skip : TVoid`
-    in the source-language presentation. This is the only block-level
-    rule that synthesizes: non-empty blocks are typed structurally by
-    `Resolution.Check.block` (last statement carries the value, non-last
-    positions `⇐ TVoid` or Discard-Call) and never recurse into an empty
-    tail, so they never bottom out here. When an empty block appears in
-    check position, `Resolution.Check.resolveStmtExpr`'s wildcard arm
-    synth-then-subsumes via the standard \[⇐\] Sub fallback. -/
+    The empty block has a fixed type `TVoid`. This is the only
+    block-level rule that synthesizes unconditionally: non-empty blocks
+    are typed structurally by `Resolution.Check.block` (last statement
+    carries the value, non-last positions `⇐ TVoid` or Discard-Call),
+    which always splits off a last statement and so never reaches an
+    empty list. When an empty block appears in check position,
+    `Resolution.Check.resolveStmtExpr`'s wildcard arm synth-then-subsumes
+    via the standard \[⇐\] Sub fallback. -/
 def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
@@ -1074,8 +1074,8 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
 
     A block's value is the value of its **last** statement; every
     earlier statement is run only for its effect. The rule splits the
-    statement list into `init` (all but the last) and `last` and is one
-    recursion over that structure:
+    statement list into `[s₁; … ; sₙ]` (all but the last) and `last`,
+    handling each part as follows:
 
     * **non-last — `Γ ⊢ s ⇐ TVoid`.** A non-last statement is a pure
       effect, so it is checked at `TVoid`. This admits every statement
@@ -1097,12 +1097,11 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
       position discards its result, so `{ …; foo() }` type-checks as a
       statement even when `foo` returns a value).
 
-    There is deliberately no synthesis rule for non-empty blocks: a
-    block is statement-shaped and always occurs in check position
-    (procedure bodies, branches, loop bodies, assignment RHS, call
-    arguments all supply an expected type). A block in a synth-only
-    operand position has no contextual type and is reported by the
-    `Synth.resolveStmtExpr` wildcard.
+    A block most often occurs in check position (procedure bodies,
+    branches, loop bodies, assignment RHS, and call arguments all supply
+    an expected type). When one appears in synth-only operand position
+    with no contextual type, `Resolution.Synth.block` handles it with the
+    same structure, synthesizing the last statement instead.
 
     The block opens a fresh nested scope (declarations made inside
     don't leak), and emits a "dead code after `exit`/`return`"
@@ -1194,10 +1193,10 @@ def Check.block (exprMd : StmtExprMd)
     propagates through nested `Block` / `IfThenElse` / `Hole` /
     `Quantifier` constructs that have their own check rules.
 
-    Without an `else`, the implicit branch is `skip : TVoid`, so the
-    rule degenerates to require `TVoid <: T` — the standard \[⇐\] Sub
-    boundary check that `Resolution.Synth.emptyBlock` composes with
-    for an empty block. -/
+    Without an `else`, the implicit branch is an empty block of type
+    `TVoid`, so the rule degenerates to require `TVoid <: T` — the
+    standard \[⇐\] Sub boundary check that `Resolution.Synth.emptyBlock`
+    composes with for an empty block. -/
 def Check.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
@@ -1281,9 +1280,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
 
 /-- (Block-Synth)
     ```
-    Γ ⊢ s ⋄ (for each non-last s)   Γ ⊢ last ⇒ T   (Block-Synth)
+    Γ ⊢ sᵢ ⋄ (1 ≤ i ≤ n)   Γ ⊢ last ⇒ T          (Block-Synth)
     ──────────────────────────────────────────────────────────────
-    Γ ⊢ Block (init ++ [last]) label ⇒ T
+    Γ ⊢ Block [s₁; … ; sₙ; last] label ⇒ T
     ```
     Synth-mode rule for a non-empty block used where no expected type is
     available (e.g. `{ x := 1; x } == y`). Mirrors `Check.block`'s
@@ -1293,7 +1292,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     *synthesizes* the last statement instead of checking it against an
     expected type, and returns that synthesized type as the block's value
     type. The empty block is handled by `Synth.emptyBlock` at the
-    dispatch site; this rule only runs on `head :: tail`. -/
+    dispatch site; this rule only runs on a non-empty block. -/
 def Synth.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (source : Option FileRange)

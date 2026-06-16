@@ -77,6 +77,71 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
   `(Verso.Doc.Block.concat #[$blocks,*])
 
+-- A set-apart *example* box. Renders its contents inside a tinted, bordered
+-- panel with an "Example" header, so concrete examples stand out from the
+-- surrounding explanatory prose. Authored via the `:::example` directive below.
+block_extension Block.«example» (title : Option String) where
+  data := Lean.toJson (title : Option String)
+  traverse _ _ _ := pure none
+  toHtml := some fun _goI goB _id data contents => open Verso.Output.Html in do
+    let title : Option String :=
+      match Lean.fromJson? (α := Option String) data with
+      | .ok t => t
+      | .error _ => none
+    let label := title.getD "Example"
+    pure {{
+      <div class="laurel-example">
+        <div class="laurel-example-header">{{ label }}</div>
+        <div class="laurel-example-body">{{← contents.mapM goB}}</div>
+      </div>
+    }}
+  extraCss := [
+r#"
+.laurel-example {
+  border: 1px solid #98B2C0;
+  border-left: 4px solid #4A90E2;
+  border-radius: 0.4rem;
+  background: #F5F9FF;
+  margin-top: var(--verso--box-vertical-margin);
+  margin-bottom: var(--verso--box-vertical-margin);
+  overflow: hidden;
+}
+.laurel-example-header {
+  font-family: var(--verso-structure-font-family);
+  font-style: italic;
+  font-size: 0.875rem;
+  font-weight: bold;
+  color: #2A5680;
+  background: #E4EEF8;
+  padding: 0.3rem var(--verso--box-padding);
+}
+.laurel-example-body {
+  padding: 0.2rem var(--verso--box-padding);
+}
+"#
+  ]
+  toTeX := some fun _goI goB _id _data contents => open Verso.Output.TeX in open Verso.Doc.TeX in do
+    pure <| .seq <| ← contents.mapM fun b => do
+      pure <| .seq #[← goB b, .raw "\n"]
+
+/-- Configuration for the `:::example` directive: an optional title shown in the
+    box header (defaults to "Example"). -/
+structure LaurelExampleConfig where
+  title : Option String := none
+
+open Verso.ArgParse in
+instance : Verso.ArgParse.FromArgs LaurelExampleConfig Verso.Doc.Elab.DocElabM where
+  fromArgs := LaurelExampleConfig.mk <$>
+    ((positional' `title <&> some) <|> pure none)
+
+/-- Sets its contents apart in a styled *example* box (see `Block.example`).
+    Optionally takes a title: `:::example "Arithmetic join"` … `:::`. -/
+@[directive]
+def «example» : Verso.Doc.Elab.DirectiveExpanderOf LaurelExampleConfig
+  | {title}, stxs => do
+    let args ← stxs.mapM Verso.Doc.Elab.elabBlock
+    ``(Verso.Doc.Block.other (Block.«example» $(Lean.quote title)) #[ $[ $args ],* ])
+
 #doc (Manual) "The Laurel Language" =>
 %%%
 shortTitle := "Laurel"
@@ -91,16 +156,16 @@ Laurel tries to include any features that are common to those three languages.
 
 This manual follows the language from the ground up: it first describes Laurel's
 types, then its unified expression/statement model, then procedures and whole
-programs. It then turns to type checking — a per-construct reference for the
-bidirectional rules — and finally to the translation pipeline that lowers a
-checked Laurel program to Strata Core.
+programs. It then turns to type checking, done in a bidirectional way, and finally to the translation
+pipeline that lowers a checked Laurel program to Strata Core.
 
 ## Features
 
 In the feature lists below, items marked *(WIP)* are designed or planned but not
 yet fully implemented; everything else is available today.
 
-Laurel enables doing various forms of verification:
+Laurel enables doing various forms of analyses :
+- Type checking
 - Testing
 - (WIP) Property-based testing
 - (WIP) Bounded symbolic execution
@@ -269,12 +334,6 @@ and {name Strata.Laurel.isConsistentSubtype}`isConsistentSubtype`:
 
 {docstring Strata.Laurel.isConsistentSubtype}
 
-The type of a block is the type of its last statement; non-last
-statements can be of any type. The block rule
-({ref "rules-control-flow"}[Block]) is what supplies the value type
-for a block: it routes the surrounding $`T` to the last statement
-and ignores the value of every non-last statement.
-
 ## Typing rules
 
 Each construct is given as a derivation. `Γ` is the current lexical scope (see
@@ -306,8 +365,9 @@ The following notation recurs throughout the rules:
   $`\mathsf{TBv}_w` (a bitvector of any width $`w`), with $`\mathsf{Unknown}`
   admitted as the gradual escape hatch.
 - $`\dashv \Gamma'` — a rule's *output scope*: the judgment threads $`\Gamma` in
-  and produces $`\Gamma'` out. Only \[⇐\] Var-Declare and \[⇐\] Block-Cons use
-  this to extend the scope.
+  and produces $`\Gamma'` out. Only \[⇐\] Var-Declare extends the scope; the
+  block rules thread it statement-to-statement (the $`\Gamma_{i-1} \to
+  \Gamma_i` chain in \[⇐\] Block / \[⇒\] Block-Synth).
 - $`\rightsquigarrow \text{error: …}` — the rule emits an error and aborts; no
   type is produced.
 - $`[\text{emits …}]` — the rule produces its type but also emits a diagnostic.
@@ -322,8 +382,8 @@ The Index below links to each construct's subsection.
 - {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇐\] Var-Declare
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse,
   \[⇒\] If-Synth, \[⇒\] If-Synth-NoElse;
-  \[⇐\] Block-Singleton, \[⇐\] Block-Cons,
-  \[⇐\] Discard-Call-Cons, \[⇐\] Discard-Call-Last, \[⇒\] Skip, \[⇒\] Block-Synth; \[⇐\] Exit;
+  \[⇐\] Block, \[⇒\] Block-Synth, \[⋄\] Stmt, \[⋄\] Discard-Call,
+  \[⇒\] Empty-Block; \[⇐\] Exit;
   \[⇐\] Return-None-Void, \[⇐\] Return-None-Single, \[⇐\] Return-None-Multi,
   \[⇐\] Return-Some, \[⇐\] Return-Void-Error,
   \[⇐\] Return-Multi-Error; \[⇐\] While
@@ -421,92 +481,98 @@ concrete type, and the synthesized type is independent of branch order.
 Without an `else`, the missing branch cannot produce a value, so the `if`
 synthesizes $`\mathsf{TVoid}`.
 
+:::example "`if` in operand position"
+- `(if c then 1 else 2) == y` — both branches $`\mathsf{TInt}`, so the `if` synthesizes $`\mathsf{TInt}`
+- `if c then 1 else <?>` — the hole branch promotes; synthesizes $`\mathsf{TInt}`
+- `if c then 1 else "x"` — incompatible branches: *'if' branches have incompatible types 'int' and 'string'*, synthesizes $`\mathsf{Unknown}`
+- `if c then 1` (no `else`) — synthesizes $`\mathsf{TVoid}`
+:::
+
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow T_t \quad \Gamma \vdash \mathit{elseBr} \Rightarrow T_e \quad T_t \sim T_e}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;(\mathsf{some}\;\mathit{elseBr}) \Rightarrow T_t \sqcup T_e} \quad \text{([⇒] If-Synth)}`
 
 $$`\frac{\Gamma \vdash \mathit{cond} \Leftarrow \mathsf{TBool} \quad \Gamma \vdash \mathit{thenBr} \Rightarrow \_}{\Gamma \vdash \mathsf{IfThenElse}\;\mathit{cond}\;\mathit{thenBr}\;\mathsf{none} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] If-Synth-NoElse)}`
 
 {docstring Strata.Laurel.Resolution.Synth.ifThenElse}
 
-A non-empty block is typed by structural recursion on the statement
-list: the last statement inherits the surrounding expected type, and
-each non-last statement is checked at $`\mathsf{TVoid}`, *except*
-calls — which are synthesized and have their result type dropped. The
-same Discard-Call carve-out also fires for the *last* statement when
-the block itself is in statement position (i.e. $`T = \mathsf{TVoid}`),
-so $`\{\ldots;\,\mathit{foo}()\}` is accepted as a statement even when
-`foo` returns a non-void type. The Discard-Call carve-outs are the only
-block-level rules that aren't already consequences of the rules for
-individual statements.
+A non-empty block is typed by splitting its statement list into the
+*last* statement and the statements before it. The last statement
+carries the block's value and inherits the surrounding expected type;
+each earlier statement runs only for its effect — written
+$`\Gamma \vdash s\;\diamond` (*effect position*: the statement's value
+is discarded). The check and synth rules share this shape, differing
+only in how the last statement is treated:
 
-$$`\frac{\Gamma \vdash s \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Singleton)}`
+$$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \;\diamond \;\dashv\; \Gamma_i \;\;(1 \le i \le n) \quad \Gamma_n \vdash \mathit{last} \Leftarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n; \mathit{last}]\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block)}`
 
-$$`\frac{\Gamma \vdash s \Leftarrow \mathsf{TVoid} \quad \dashv \quad \Gamma' \quad \Gamma' \vdash \mathsf{Block}\;\mathit{rest}\;\mathit{label} \Leftarrow T \quad \mathit{rest} \ne []}{\Gamma \vdash \mathsf{Block}\;(s :: \mathit{rest})\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Block-Cons)}`
+$$`\frac{\Gamma_0 = \Gamma \quad \Gamma_{i-1} \vdash s_i \;\diamond \;\dashv\; \Gamma_i \;\;(1 \le i \le n) \quad \Gamma_n \vdash \mathit{last} \Rightarrow T}{\Gamma \vdash \mathsf{Block}\;[s_1; \ldots; s_n; \mathit{last}]\;\mathit{label} \Rightarrow T} \quad \text{([⇒] Block-Synth)}`
 
-$$`\frac{s = \mathsf{StaticCall}\;\ldots \lor s = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash s \Rightarrow \_ \quad \Gamma \vdash \mathsf{Block}\;\mathit{rest}\;\mathit{label} \Leftarrow T \quad \mathit{rest} \ne []}{\Gamma \vdash \mathsf{Block}\;(s :: \mathit{rest})\;\mathit{label} \Leftarrow T} \quad \text{([⇐] Discard-Call-Cons)}`
+\[⇐\] Block fires whenever an expected type $`T` is supplied (procedure
+bodies, branches, loop bodies, assignment RHS, call arguments);
+\[⇒\] Block-Synth fires in operand position, where no expected type is
+available (e.g. $`\{\,x := 1;\; x\,\} == y`), synthesizing the last
+statement's type as the block's value type.
 
-$$`\frac{s = \mathsf{StaticCall}\;\ldots \lor s = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash s \Rightarrow \_}{\Gamma \vdash \mathsf{Block}\;[s]\;\mathit{label} \Leftarrow \mathsf{TVoid}} \quad \text{([⇐] Discard-Call-Last)}`
+When the block itself sits in statement position ($`T = \mathsf{TVoid}`)
+the last statement is in effect position too: its premise becomes
+$`\mathit{last}\;\diamond` rather than $`\mathit{last} \Leftarrow
+\mathsf{TVoid}`, so a trailing call discards its result and
+$`\{\ldots;\,\mathit{foo}()\}` type-checks as a statement even when
+`foo` returns a non-void type.
 
-\[⇐\] Block-Cons resolves $`s` under the incoming $`\Gamma` and
-recurses on the tail under the possibly-extended scope $`\Gamma'`. In
-practice only `Var (.Declare …)` actually extends the scope; every
-other construct leaves it unchanged. The block opens a fresh nested
-scope, so declarations made inside don't leak out — once the block
-ends, the surrounding $`\Gamma` is restored. The block also emits a
-`"dead code after '<terminator>'"` diagnostic when an `Exit` or
-`Return` is followed by additional statements in the same block.
+The effect-position judgment $`\Gamma \vdash s\;\diamond` admits a
+statement in one of two ways:
 
-Statement forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
-`While`, `Exit`, `Return`, `IfThenElse`) all check against
-$`\mathsf{TVoid}`. They fit there for one of two reasons: most yield
-no value (so the unit type $`\mathsf{TVoid}` is exactly right), and
-the terminators `Exit`/`Return` accept *any* expected type (their
+$$`\frac{\Gamma \vdash s \Leftarrow \mathsf{TVoid} \;\dashv\; \Gamma'}{\Gamma \vdash s \;\diamond \;\dashv\; \Gamma'} \quad \text{([⋄] Stmt)}`
+
+$$`\frac{s = \mathsf{StaticCall}\;\ldots \lor s = \mathsf{InstanceCall}\;\ldots \quad \Gamma \vdash s \Rightarrow \_}{\Gamma \vdash s \;\diamond \;\dashv\; \Gamma} \quad \text{([⋄] Discard-Call)}`
+
+\[⋄\] Stmt admits every statement form (`Var-Declare`, `Assign`,
+`Assert`, `Assume`, `While`, `Exit`, `Return`, `IfThenElse`): each
+either yields no value — so $`\mathsf{TVoid}` is exactly right — or, for
+the terminators `Exit`/`Return`, accepts *any* expected type (their
 rules leave the value type free — see \[⇐\] Exit and the Return rules
-below — because control leaves before any value is needed). Bare
-expressions like `5;` fail via \[⇐\] Sub: the synthesized type is not
-consistent with $`\mathsf{TVoid}`. The two Discard-Call rules are what
-allow the standard `f(x);` idiom for a non-void-returning `f` —
-without them, $`s \Leftarrow \mathsf{TVoid}` would force every call to
-have a $`\mathsf{TVoid}`-compatible result type.
+below — because control leaves before any value is needed). A stranded
+value such as `5;` fails it, since $`\mathsf{TInt}` is not consistent
+with $`\mathsf{TVoid}`. \[⋄\] Discard-Call is the one carve-out for a
+value-producing form: a call is synthesized and its result dropped, so
+the standard `f(x);` idiom is allowed even when `f` returns a value.
+These two are the only block-level cases that aren't already
+consequences of the rules for the individual statement forms.
 
-Pushing $`T` into the last statement (rather than synthesizing the
-whole block and applying \[⇐\] Sub at the boundary) means a type
-mismatch is reported at the offending subexpression's source
-location, and the expectation continues to propagate through nested
-`Block` / `IfThenElse` / `Hole` / `Quantifier` constructs that have
-their own check rules.
+Only `Var (.Declare …)` actually extends the scope $`\Gamma_i`; every
+other statement leaves it unchanged. The block opens a fresh nested
+scope, so declarations made inside don't leak out — once the block ends,
+the surrounding $`\Gamma` is restored. It also emits a
+`"dead code after '<terminator>'"` diagnostic when an `Exit` or
+`Return` is followed by further statements in the same block.
 
-$$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Skip)}`
+Pushing $`T` into the last statement (rather than synthesizing the whole
+block and applying \[⇐\] Sub at the boundary) means a type mismatch is
+reported at the offending subexpression's source location, and the
+expectation keeps propagating through nested `Block` / `IfThenElse` /
+`Hole` / `Quantifier` constructs that have their own check rules.
+
+$$`\frac{}{\Gamma \vdash \mathsf{Block}\;[]\;\mathit{label} \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Empty-Block)}`
 
 The empty block has a fixed type and is the only block-level rule that
-synthesizes — written $`\mathsf{skip} : \mathsf{TVoid}` in the
-source-language presentation. The recursive Block-Cons / Block-Singleton
-rules above never bottom out into an empty tail, so the empty case is
-reached only when the block is empty at the dispatch site. When an
-empty block appears in check position with `expected ≠ TVoid`, the
-standard \[⇐\] Sub rule fires at the boundary
+synthesizes unconditionally. \[⇐\] Block and \[⇒\] Block-Synth always
+split off a *last* statement, so they never reach an empty list; the
+empty case is hit only when the block is literally empty at the dispatch
+site. When an empty block appears in check position with
+`expected ≠ TVoid`, the standard \[⇐\] Sub rule fires at the boundary
 (`Check.resolveStmtExpr`'s subsumption-fallback wildcard arm, requiring
 $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Synth.emptyBlock}
 
-A *non-empty* block also synthesizes when used in operand position
-(e.g. $`\{\,x := 1;\; x\,\} == y`). It mirrors \[⇐\] Block-Cons /
-\[⇐\] Block-Singleton — fresh scope, optional label, non-last
-statements checked in effect position ($`\diamond`), dead-code
-diagnostics — but *synthesizes* the last statement instead of checking
-it, and returns that type as the block's value type.
-
-$$`\frac{\Gamma \vdash s \;\diamond \;(\text{for each non-last } s) \quad \Gamma \vdash \mathit{last} \Rightarrow T}{\Gamma \vdash \mathsf{Block}\;(\mathit{init} \mathbin{+\!+} [\mathit{last}])\;\mathit{label} \Rightarrow T} \quad \text{([⇒] Block-Synth)}`
-
 {docstring Strata.Laurel.Resolution.Synth.block}
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
-The Discard-Call carve-outs and the "checks against $`\mathsf{TVoid}`"
-behaviour for non-last (and discarded-last) statements are factored out
-into {name Strata.Laurel.Resolution.Check.statement}`Check.statement`,
-the single definition of what counts as a statement in effect position
-($`\Gamma \vdash s\;\diamond`):
+The $`\Gamma \vdash s\;\diamond` judgment — the \[⋄\] Stmt / \[⋄\]
+Discard-Call carve-out above — is the single definition of what counts
+as a statement in effect position, factored out into
+{name Strata.Laurel.Resolution.Check.statement}`Check.statement`:
 
 {docstring Strata.Laurel.Resolution.Check.statement}
 
@@ -688,13 +754,16 @@ result type is the *consistency join* $`\bigsqcup_i U_i` — a fold of
 the operand types under
 {name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
 $`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
-combination is rejected. So `1 + 2` synthesizes $`\mathsf{TInt}`,
-`1.5 + 2.5` synthesizes $`\mathsf{TReal}`, `<?> + 1` synthesizes
-$`\mathsf{TInt}` (the $`\mathsf{Unknown}` operand promotes to its
-neighbour), `<?> + <?>` synthesizes $`\mathsf{Unknown}`, and
-`1 + 2.0` is rejected with a "cannot apply '+' to operands of types
-'int', 'real'" diagnostic. The fold runs via `join`, a
-pure function, so the search has no diagnostic side-effects.
+combination is rejected. The fold runs via `join`, a pure function, so
+the search has no diagnostic side-effects.
+
+:::example "Arithmetic operand join"
+- `1 + 2` synthesizes $`\mathsf{TInt}`
+- `1.5 + 2.5` synthesizes $`\mathsf{TReal}`
+- `<?> + 1` synthesizes $`\mathsf{TInt}` — the $`\mathsf{Unknown}` operand promotes to its neighbour
+- `<?> + <?>` synthesizes $`\mathsf{Unknown}`
+- `1 + 2.0` is rejected: *cannot apply '+' to operands of types 'int', 'real'*
+:::
 
 $$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
 
