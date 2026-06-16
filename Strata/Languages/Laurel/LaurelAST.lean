@@ -177,6 +177,23 @@ inductive QuantifierMode where
   | Exists
   deriving Repr, BEq, Inhabited
 
+/-- Whether an increment/decrement operator is in prefix or postfix form.
+    Prefix form yields the new value; postfix form yields the old value. -/
+inductive IncrDecrMode where
+  /-- Prefix form: `++x` or `--x`. Yields the new value. -/
+  | Pre
+  /-- Postfix form: `x++` or `x--`. Yields the old value. -/
+  | Post
+  deriving Repr, BEq, Inhabited
+
+/-- Whether an increment/decrement operator increments by 1 or decrements by 1. -/
+inductive IncrDecrOp where
+  /-- `++` — adds 1 to the target. -/
+  | Incr
+  /-- `--` — subtracts 1 from the target. -/
+  | Decr
+  deriving Repr, BEq, Inhabited
+
 mutual
 
 /--
@@ -288,12 +305,20 @@ inductive StmtExpr : Type where
   | LiteralString (value : String)
   /-- A decimal literal. -/
   | LiteralDecimal (value : Decimal)
+  /-- A bitvector literal with value and width. -/
+  | LiteralBv (value : Nat) (width : Nat)
   /-- A variable reference or declaration. When `var` is `Variable.Local`, this is a reference
       that evaluates to the variable's value. When `var` is `Variable.Declare`, this is a
       declaration without an initializer (used as a standalone statement in a block). -/
   | Var (var : Variable)
   /-- Assignment to one or more targets. Multiple targets are only supported with identifier targets and a call as the RHS. -/
   | Assign (targets : List (AstNode Variable)) (value : AstNode StmtExpr)
+  /-- Java-style increment/decrement operator. The target must be a `Local` or `Field`
+      `Variable`. As an expression, prefix form yields the new value (after the update)
+      and postfix form yields the old value (before the update). As a statement the
+      yielded value is discarded.
+      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+  | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
@@ -393,11 +418,15 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
+/-- Build a provenance from an optional source location. -/
+def fileRangeToProvenance (source : Option FileRange) : Provenance :=
+  match source with
+  | some fr => Provenance.ofSourceRange fr.file fr.range
+  | none => .synthesized .laurel
+
 /-- Build Core metadata from an optional source location. -/
 def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => Imperative.MetaData.ofSourceRange fr.file fr.range
-  | none => Imperative.MetaData.ofProvenance (.synthesized .laurel)
+  Imperative.MetaData.ofProvenance (fileRangeToProvenance source)
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
@@ -475,6 +504,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .LiteralBool .. => "LiteralBool"
   | .LiteralString .. => "LiteralString"
   | .LiteralDecimal .. => "LiteralDecimal"
+  | .LiteralBv .. => "LiteralBv"
   | .Var .. => "Var"
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
@@ -497,6 +527,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Abstract => "Abstract"
   | .All => "All"
   | .Hole .. => "Hole"
+  | .IncrDecr .. => "IncrDecr"
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
