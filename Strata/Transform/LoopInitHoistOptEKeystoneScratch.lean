@@ -42,9 +42,6 @@ namespace OptEKeystone
 open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendStoreOne_other)
 
 variable {P : PureExpr}
-  [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
-  [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr]
-  [DecidableEq P.Ident]
 
 /-! ## Layer 1 — the EXPRESSION-level core.
 
@@ -65,11 +62,10 @@ fold — the "simultaneous" semantics live entirely inside the EVAL-level lemmas
 non-interference reasoning is discharged.  So the syntactic keystone needs NO
 freshness preconditions at all. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- The expression-level keystone, exactly as posed in the gate (LHS = the fold
 `applyRenames` applies to each expression position; RHS = `substFvarMany`).
 Holds by `rfl` — no freshness, nodup, or disjointness preconditions needed. -/
-public theorem applyRenames_expr_eq_substFvarMany
+public theorem applyRenames_expr_eq_substFvarMany [HasFvar P] [HasSubstFvar P]
     (subst : List (P.Ident × P.Ident)) (e : P.Expr) :
     (subst.foldl (fun acc p => HasSubstFvar.substFvar acc p.1 (HasFvar.mkFvar p.2)) e)
       = substFvarMany e subst := rfl
@@ -94,23 +90,20 @@ the bridge between the one-pair-at-a-time `applyRenames` and the per-leaf
 SYNTACTIC descent either; the foldl simply commutes with the structural recursion.
 -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` on `[]` is the identity. -/
-@[simp] public theorem applyRenames_nil (ss : List (Stmt P (Cmd P))) :
+@[simp] public theorem applyRenames_nil [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident] (ss : List (Stmt P (Cmd P))) :
     Block.applyRenames ([] : List (P.Ident × P.Ident)) ss = ss := rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` head-peel: apply the head pair via `Block.substIdent`, then
 the tail via `applyRenames`. -/
-public theorem applyRenames_cons
+public theorem applyRenames_cons [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (a b : P.Ident) (rest : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.applyRenames ((a, b) :: rest) ss
       = Block.applyRenames rest (Block.substIdent a b ss) := rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` of any rename list on the empty block is the empty block
 (folding `Block.substIdent` over `[]` keeps `[]` at every step). -/
-@[simp] public theorem applyRenames_empty_block
+@[simp] public theorem applyRenames_empty_block [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) :
     Block.applyRenames subst ([] : List (Stmt P (Cmd P))) = [] := by
   induction subst with
@@ -120,10 +113,9 @@ omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder 
     rw [applyRenames_cons, Block.substIdent_nil]
     exact ih
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` distributes over `cons` of statements: the per-statement
 single-var renames compose to a per-statement `applyRenames`. -/
-public theorem applyRenames_stmt_cons
+public theorem applyRenames_stmt_cons [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) :
     Block.applyRenames subst (s :: rest)
       = (subst.foldl (fun acc p => Stmt.substIdent p.1 p.2 acc) s)
@@ -139,26 +131,23 @@ public theorem applyRenames_stmt_cons
 /-- The per-statement iterated single-var fold (head-first) — the analogue of
 `substFvarMany` at the `Stmt` level.  This is what `applyRenames` applies to each
 statement of the body (by `applyRenames_stmt_cons`). -/
-@[expose] def stmtSubstMany (s : Stmt P (Cmd P)) (subst : List (P.Ident × P.Ident)) :
+@[expose] def stmtSubstMany [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident] (s : Stmt P (Cmd P)) (subst : List (P.Ident × P.Ident)) :
     Stmt P (Cmd P) :=
   subst.foldl (fun acc p => Stmt.substIdent p.1 p.2 acc) s
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-@[simp] public theorem stmtSubstMany_nil (s : Stmt P (Cmd P)) :
+@[simp] public theorem stmtSubstMany_nil [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident] (s : Stmt P (Cmd P)) :
     stmtSubstMany s ([] : List (P.Ident × P.Ident)) = s := rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-@[simp] public theorem stmtSubstMany_cons
+@[simp] public theorem stmtSubstMany_cons [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (a b : P.Ident) (rest : List (P.Ident × P.Ident)) :
     stmtSubstMany s ((a, b) :: rest)
       = stmtSubstMany (Stmt.substIdent a b s) rest := rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` on a body = map `stmtSubstMany` over the statements.  This is
 the clean characterisation the cons-sequencer (`bodySimE_cons`) consumes: the
 hoist body `applyRenames subst body` is the per-statement `stmtSubstMany`-image,
 so `bodySimE_cons` can be driven head-statement at a time. -/
-public theorem applyRenames_eq_map_stmtSubstMany
+public theorem applyRenames_eq_map_stmtSubstMany [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.applyRenames subst ss = ss.map (fun s => stmtSubstMany s subst) := by
   induction ss with
@@ -174,11 +163,10 @@ For the loop-driver's guard slot the relevant fact is that the iterated fold on 
 descents that show `stmtSubstMany` produces EXACTLY the `substFvarMany` /
 `renameLookup` shapes the driver and the per-statement sims speak. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- A `.det` guard `ExprOrNondet` folds to the `substFvarMany` of its expression.
 This is the guard the `loopDet_lift_renamedGuard` driver expects:
 `.det (substFvarMany g subst)`. -/
-public theorem exprOrNondet_substMany_det
+public theorem exprOrNondet_substMany_det [HasFvar P] [HasSubstFvar P]
     (g : P.Expr) (subst : List (P.Ident × P.Ident)) :
     (subst.foldl (fun acc p => ExprOrNondet.substIdent p.1 p.2 acc) (ExprOrNondet.det g))
       = ExprOrNondet.det (substFvarMany g subst) := by
@@ -190,9 +178,8 @@ public theorem exprOrNondet_substMany_det
     rw [ih]
     rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- `.nondet` is fixed by the fold. -/
-public theorem exprOrNondet_substMany_nondet
+public theorem exprOrNondet_substMany_nondet [HasFvar P] [HasSubstFvar P]
     (subst : List (P.Ident × P.Ident)) :
     (subst.foldl (fun acc p => ExprOrNondet.substIdent p.1 p.2 acc)
         (ExprOrNondet.nondet (P := P)))
@@ -204,12 +191,11 @@ public theorem exprOrNondet_substMany_nondet
     simp only [List.foldl_cons, ExprOrNondet.substIdent_nondet]
     exact ih
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A nested-loop statement folds to a loop whose `.det` guard is
 `substFvarMany g subst` and whose body is `applyRenames subst body` — exactly the
 shape `nestedLoop_stmtSimE` / `loopDet_lift_renamedGuard` consume.  (Measure-free,
 invariant-free loops, as the lifted form produces.) -/
-public theorem stmtSubstMany_loop_det
+public theorem stmtSubstMany_loop_det [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (Stmt.loop (.det g) none [] body md) subst
@@ -228,9 +214,8 @@ public theorem stmtSubstMany_loop_det
     rw [applyRenames_cons]
     rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- An `assert` command folds to `substFvarMany` of its predicate. -/
-public theorem cmdSubstMany_assert
+public theorem cmdSubstMany_assert [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     (subst.foldl (fun acc p => Cmd.substIdent p.1 p.2 acc) (Cmd.assert lbl e md))
       = Cmd.assert lbl (substFvarMany e subst) md := by
@@ -242,13 +227,12 @@ public theorem cmdSubstMany_assert
     rw [ih]
     rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- An `init` command folds to: name renamed by `renameLookup`, rhs by the
 per-`ExprOrNondet` fold.  This shows the NAME-position iterated rename is exactly
 `renameLookup` — the same resolver `substFvarMany_eval_tweak` uses — under target
 freshness/distinctness.  We state the SYNTACTIC fold here; the `renameLookup`
 identification is the freshness-bearing fact, proved next. -/
-public theorem cmdSubstMany_init_name_fold
+public theorem cmdSubstMany_init_name_fold [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (ty : P.Ty) (e : ExprOrNondet P) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     (subst.foldl (fun acc p => Cmd.substIdent p.1 p.2 acc) (Cmd.init name ty e md))
@@ -279,10 +263,9 @@ disjoint from targets) — exactly what the pass guarantees and what the driver
 already threads.  Source-nodup is NOT needed for the name-fold collapse (only for
 `renameLookup_mem`, which the eval lemmas use separately). -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The iterated name-fold from a value `v` that is NOT a source of any pair is
 the identity (no `if v = aᵢ` guard ever fires). -/
-public theorem name_fold_notin_id
+public theorem name_fold_notin_id [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (v : P.Ident)
     (h : v ∉ subst.map Prod.fst) :
     (subst.foldl (fun acc p => if acc = p.1 then p.2 else acc) v) = v := by
@@ -295,8 +278,7 @@ public theorem name_fold_notin_id
     rw [if_neg hva']
     exact ih v (fun hmem => h (by simp only [List.map_cons, List.mem_cons]; exact Or.inr hmem))
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-public theorem name_fold_eq_renameLookup
+public theorem name_fold_eq_renameLookup [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (name : P.Ident)
     (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd) :
     (subst.foldl (fun acc p => if acc = p.1 then p.2 else acc) name)
@@ -321,10 +303,9 @@ public theorem name_fold_eq_renameLookup
       intro a' ha' hb'
       exact h_disjoint a' (by simp [ha']) (by simp [hb'])
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- Full `init` leaf reconciliation: under disjointness the fold lands exactly on
 `renameLookup`-renamed name + (for a `.det` rhs) `substFvarMany`-renamed rhs. -/
-public theorem cmdSubstMany_init_det
+public theorem cmdSubstMany_init_det [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (ty : P.Ty) (rhs : P.Expr) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd) :
