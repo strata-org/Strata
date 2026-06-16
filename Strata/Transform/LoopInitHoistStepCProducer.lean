@@ -1033,7 +1033,7 @@ theorem Block.bodyTransport_of_lift [HasFvar P] [HasIdent P] [HasSubstFvar P] [H
 `BodySimE`; `OptEStepBProvider.bodySimE_to_bodySim` forgets the eval conjunct to
 land in the driver's `BodySim` slot.  This packages Step B for the §E `.loop`
 arm at the harvest carriers `A B subst`. -/
-theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasIdent P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
