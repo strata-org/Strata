@@ -332,18 +332,6 @@ theorem nondetElim_noExit {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
     Block.noExit (Block.nondetElim ss) = true :=
   Block.nondetElimM_noExit ss StringGenState.emp h
 
-/-! ### `loopMeasureNone` preservation through the pass
-
-The §F precond speaks of `loopMeasureNone`.  `nondetElim` already proves
-`noMeasureLoops` preservation; we translate via Section 0's equality. -/
-
-/-- Top-level: `nondetElim` preserves `loopMeasureNone` (via `noMeasureLoops`). -/
-theorem nondetElim_loopMeasureNone {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (h : Block.loopMeasureNone ss = true) :
-    Block.loopMeasureNone (Block.nondetElim ss) = true := by
-  rw [Block.loopMeasureNone_eq_noMeasureLoops] at h ⊢
-  exact nondetElim_noMeasureLoops ss h
-
 ---------------------------------------------------------------------
 /-! ## Section 4 — Direction B: structural simple-S2U preconditions on `hoist`
 
@@ -359,8 +347,8 @@ here from hoist's preservation/postcondition lemmas:
 
 The remaining simple-S2U preconditions (`uniqueInits`, `fresh_inits`,
 `store_clean`, `NoGenSuffix`, `userLabelsDisjoint`) are NAME-level conditions
-on the hoist output's `initVars`/`modVars`; see Section 5 for the obstruction
-those raise for the composed pipeline. -/
+on the hoist output's `initVars`/`modVars`, discharged by the composition in
+the sections that follow. -/
 
 variable {P : PureExpr}
 
@@ -396,37 +384,6 @@ theorem hoist_noMeasureLoops [HasIdent P] [HasSubstFvar P] [HasFvar P] [Decidabl
     Block.noMeasureLoops (Block.hoistLoopPrefixInits ss) = true := by
   rw [← Block.loopMeasureNone_eq_noMeasureLoops] at h ⊢
   exact Block.hoistLoopPrefixInits_preserves_loopMeasureNone ss h
-
----------------------------------------------------------------------
-/-! ## Section 5 — Store-condition bridges (from a clean initial store)
-
-The three passes all run from the SAME initial environment `ρ₀`.  When `ρ₀`'s
-store is everywhere `none` (the simple-S2U `store_clean` hypothesis), every
-store-shaped precondition of the downstream passes is discharged uniformly:
-
-  * nondetElim's `h_no_gen_suffix` (`ρ₀` undef on suffix-shaped names),
-  * hoist §F's `h_hoist_undef` (`ρ₀` undef on the input's `initVars`),
-  * hoist §F's `h_src_store_shapefree` (`ρ₀` undef on suffix-shaped names),
-  * simple-S2U's `fresh_inits` (`ρ₀` undef on the input's `initVars`).
-
-These are recorded as named helpers so the eventual end-to-end composition can
-discharge them by a single appeal to `store_clean`. -/
-
-/-- From a clean store, `ρ₀` is undefined on every suffix-shaped name — the
-nondetElim `h_no_gen_suffix` / hoist `h_src_store_shapefree` shape. -/
-theorem store_clean_no_gen_suffix [HasIdent P] {ρ₀ : Env P}
-    (h_clean : ∀ ident : P.Ident, ρ₀.store ident = none) :
-    ∀ s, String.HasUnderscoreDigitSuffix s →
-      ρ₀.store (HasIdent.ident (P := P) s) = none :=
-  fun _ _ => h_clean _
-
-/-- From a clean store, `ρ₀` is undefined on every name in any list — the hoist
-`h_hoist_undef` / simple-S2U `fresh_inits` shape. -/
-theorem store_clean_undef_on [HasIdent P] {ρ₀ : Env P}
-    (h_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
-    (xs : List P.Ident) :
-    ∀ y ∈ xs, ρ₀.store y = none :=
-  fun y _ => h_clean y
 
 ---------------------------------------------------------------------
 /-! ## Section 6 — Composition: from blanket suffix-shape to per-kind reasoning
