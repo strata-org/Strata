@@ -391,16 +391,16 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Assume cond =>
       let prepends ← takePrepends
-      let seqCond ← transformExpr cond
+      _ ← transformExpr cond
       let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [⟨.Assume seqCond, source⟩] ++ prepends }
+      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
       default
 
   | .Assert cond =>
       let prepends ← takePrepends
-      let seqCond ← transformExpr cond.condition
+      _ ← transformExpr cond.condition
       let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩] ++ prepends }
+      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
       default
 
   | .Return (some retExpr) =>
