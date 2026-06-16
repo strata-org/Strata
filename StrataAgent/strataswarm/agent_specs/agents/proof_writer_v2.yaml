@@ -3,6 +3,11 @@ description: "Persistent proof writer. Receives guidance and writes proofs."
 stateless: false
 auto_start: false
 module: null
+tool_error_reminder: >
+  That tool is not available to you. Your tools: Read, Write, Edit, lean_verify,
+  lean_goal, lean_multi_attempt, lean_diagnostic_messages, lean_local_search,
+  lean_declaration_file, show_file_state, get_sorries_by_theorem, get_sorry_positions.
+  For definitions/lemmas, ask SearchAgent: send_message(to="SearchAgent", message="...").
 
 visibility:
   can_see: [SearchAgent]

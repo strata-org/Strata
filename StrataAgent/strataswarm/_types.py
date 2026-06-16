@@ -76,6 +76,7 @@ class AgentSpec(Generic[T]):
     checkpoint_prompt: str | None = None  # Domain-specific handoff instructions (appended when checkpointable)
     auto_start: bool = True  # If False, agent is not started by the swarm — must be launched manually
     hooks: str | None = None  # dotted path to a hook factory in modules/hooks.py (e.g. "search_agent_hooks")
+    tool_error_reminder: str | None = None  # Message injected when a tool call fails (permission/workspace errors)
     _base_system_prompt: str | None = None  # Original system prompt before workspace composition
 
 

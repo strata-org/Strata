@@ -271,6 +271,16 @@ class SwarmAgent:
                 await self._emit("tool_use", message.content)
             elif message.type == "tool_result" and message.content:
                 await self._emit("message", f"[tool_result] {message.content}")
+                # On tool errors, inject a reminder about available alternatives
+                content_str = str(message.content)
+                is_error = (content_str.startswith("Error:")
+                            or "permission" in content_str.lower()
+                            or "outside your workspace" in content_str.lower()
+                            or "haven't granted" in content_str.lower())
+                if is_error:
+                    reminder = getattr(self.spec, 'tool_error_reminder', None)
+                    if reminder:
+                        await self.backend.send_query(f"[SYSTEM REMINDER]: {reminder}")
             elif message.type == "usage":
                 result.cost_usd = message.cost_usd
                 result.num_turns = message.num_turns

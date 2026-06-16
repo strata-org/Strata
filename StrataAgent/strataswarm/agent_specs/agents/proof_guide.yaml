@@ -4,6 +4,10 @@ stateless: false
 reply_only: false
 auto_start: false
 module: null
+tool_error_reminder: >
+  That tool is not available to you. Use your available tools instead:
+  show_file_state, get_sorries_by_theorem, lean_goal, lean_hover_info, Read, or
+  ask SearchAgent for definitions/lemmas via send_message(to="SearchAgent", message="...").
 
 visibility:
   can_see: [SearchAgent]
