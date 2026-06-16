@@ -9094,20 +9094,7 @@ fixed; the last is parameterised by the user block label being exited. -/
 `s2uKind`: this is exactly the thirteen-conjunct mint witness at
 `Q := s2uKind`, the analogue of `ndelimKind_gen` for the S2U construct prefixes.
 The final conjunct is parametric in the user block label `l`. -/
-theorem s2uKind_gen :
-    (∀ sg, s2uKind (StringGenState.gen "ite" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_ite$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "ite$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "loop_entry$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "loop_measure$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "measure_decrease$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "inv$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "$__nondet_loop$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "end$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "l$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "blk$" sg).1)
-  ∧ (∀ sg, s2uKind (StringGenState.gen "before_loop$" sg).1)
-  ∧ (∀ (l : String) sg, s2uKind (StringGenState.gen (s!"block${l}$") sg).1) := by
+theorem s2uKind_gen : S2UMintWitness s2uKind := by
   refine ⟨fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,
           fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,
           fun sg => ?_, fun sg => ?_, fun l sg => ?_⟩
@@ -9160,20 +9147,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
     [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
     [LawfulHasIntOrder P] [LawfulHasNot P]
     {Q : String → Prop}
-    (hQmint :
-        (∀ sg, Q (StringGenState.gen "ite" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "$__nondet_ite$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "ite$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "loop_entry$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "loop_measure$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "measure_decrease$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "inv$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "$__nondet_loop$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "end$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "l$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "blk$" sg).1)
-      ∧ (∀ sg, Q (StringGenState.gen "before_loop$" sg).1)
-      ∧ (∀ (l : String) sg, Q (StringGenState.gen (s!"block${l}$") sg).1))
+    (hQmint : S2UMintWitness Q)
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P)))
     (ρ₀ ρ' : Env P)
