@@ -70,9 +70,6 @@ open OptEKeystone (applyRenames_eq_map_stmtSubstMany applyRenames_cons applyRena
   exprOrNondet_substMany_nondet name_fold_eq_renameLookup)
 
 variable {P : PureExpr}
-  [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
-  [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr]
-  [DecidableEq P.Ident]
 
 /-! ## Ported leaf helpers from the Step-C scratch.
 
@@ -80,9 +77,8 @@ These align ONE lifted-init site of `body₂` with the `BodyTransport.init_set`
 hoist shape under the GLOBAL `subst`.  They are syntactic (no eval), proved from
 the keystone fold lemmas; reproduced here so the producer is self-contained. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A `.cmd` folds to `.cmd` of the per-`Cmd` fold. -/
-theorem stmtSubstMany_cmd (c : Cmd P) (subst : List (P.Ident × P.Ident)) :
+theorem stmtSubstMany_cmd [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident] (c : Cmd P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd c) subst
       = .cmd (subst.foldl (fun acc p => Cmd.substIdent p.1 p.2 acc) c) := by
   induction subst generalizing c with
@@ -92,9 +88,8 @@ theorem stmtSubstMany_cmd (c : Cmd P) (subst : List (P.Ident × P.Ident)) :
     rw [stmtSubstMany_cons, Stmt.substIdent_cmd]
     exact ih _
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The `set` name-fold (no freshness needed). -/
-theorem cmdSubstMany_set_name_fold
+theorem cmdSubstMany_set_name_fold [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (e : ExprOrNondet P) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     (subst.foldl (fun acc p => Cmd.substIdent p.1 p.2 acc) (Cmd.set name e md))
@@ -109,9 +104,8 @@ theorem cmdSubstMany_set_name_fold
     simp only [List.foldl_cons, Cmd.substIdent_set]
     exact ih _ _
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A `set` command folds: name renamed by `renameLookup`, rhs by `substFvarMany`. -/
-theorem cmdSubstMany_set_det
+theorem cmdSubstMany_set_det [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (rhs : P.Expr) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd) :
@@ -120,11 +114,10 @@ theorem cmdSubstMany_set_det
   rw [stmtSubstMany_cmd, cmdSubstMany_set_name_fold,
       name_fold_eq_renameLookup subst name h_disjoint, exprOrNondet_substMany_det]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The cmd-only init site of `body₂` becomes, after `applyRenames`
 (= `stmtSubstMany` global subst), exactly the `BodyTransport.init_set` hoist
 shape. -/
-theorem init_site_applyRenames
+theorem init_site_applyRenames [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (a b : P.Ident) (rhs : P.Expr) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_pair : (a, b) ∈ subst)
@@ -135,10 +128,9 @@ theorem init_site_applyRenames
   rw [cmdSubstMany_set_det a rhs md subst h_disjoint,
       renameLookup_mem subst h_src_nodup h_pair]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A nondet-rhs `set` command folds: name renamed by `renameLookup`, `.nondet`
 rhs fixed. -/
-theorem cmdSubstMany_set_nondet
+theorem cmdSubstMany_set_nondet [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd) :
@@ -147,10 +139,9 @@ theorem cmdSubstMany_set_nondet
   rw [stmtSubstMany_cmd, cmdSubstMany_set_name_fold,
       name_fold_eq_renameLookup subst name h_disjoint, exprOrNondet_substMany_nondet]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The nondet-init site of `body₂` (lifted to `set a .nondet`) becomes, after
 `applyRenames`, the `BodyTransport.init_nondet` hoist shape `set b .nondet`. -/
-theorem init_nondet_site_applyRenames
+theorem init_nondet_site_applyRenames [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (a b : P.Ident) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_pair : (a, b) ∈ subst)
@@ -161,10 +152,9 @@ theorem init_nondet_site_applyRenames
   rw [cmdSubstMany_set_nondet a md subst h_disjoint,
       renameLookup_mem subst h_src_nodup h_pair]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A genuine (non-lifted) `.set name (.det rhs)`'s name is UNCHANGED by the
 rename (its `name ∉ subst sources`), and its rhs is `substFvarMany`-renamed. -/
-theorem set_site_applyRenames
+theorem set_site_applyRenames [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (rhs : P.Expr) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_name_notin_src : name ∉ subst.map Prod.fst)
@@ -174,9 +164,8 @@ theorem set_site_applyRenames
   rw [cmdSubstMany_set_det name rhs md subst h_disjoint,
       renameLookup_notin subst name h_name_notin_src]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A genuine (non-lifted) `.set name .nondet`'s name is UNCHANGED by the rename. -/
-theorem set_nondet_site_applyRenames
+theorem set_nondet_site_applyRenames [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (name : P.Ident) (md : MetaData P)
     (subst : List (P.Ident × P.Ident))
     (h_name_notin_src : name ∉ subst.map Prod.fst)
@@ -188,15 +177,13 @@ theorem set_nondet_site_applyRenames
 
 /-! ## `assert`/`assume`/`cover` fold to renamed predicates. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_cmd_assert
+theorem stmtSubstMany_cmd_assert [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.assert lbl e md)) subst
       = .cmd (.assert lbl (substFvarMany e subst) md) := by
   rw [stmtSubstMany_cmd, cmdSubstMany_assert]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_cmd_assume
+theorem stmtSubstMany_cmd_assume [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.assume lbl e md)) subst
       = .cmd (.assume lbl (substFvarMany e subst) md) := by
@@ -209,8 +196,7 @@ theorem stmtSubstMany_cmd_assume
     simp only [List.foldl_cons, Cmd.substIdent_assume]
     rw [ih]; rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_cmd_cover
+theorem stmtSubstMany_cmd_cover [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.cover lbl e md)) subst
       = .cmd (.cover lbl (substFvarMany e subst) md) := by
@@ -225,8 +211,7 @@ theorem stmtSubstMany_cmd_cover
 
 /-! ## `.block` / `.ite` fold to renamed sub-blocks. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_block
+theorem stmtSubstMany_block [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.block lbl bss md) subst
@@ -237,8 +222,7 @@ theorem stmtSubstMany_block
     rcases hd with ⟨x, y⟩
     rw [stmtSubstMany_cons, Stmt.substIdent_block, ih, applyRenames_cons]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_ite
+theorem stmtSubstMany_ite [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (g : P.Expr) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.ite (.det g) tss ess md) subst
@@ -253,8 +237,7 @@ theorem stmtSubstMany_ite
     rw [ih, applyRenames_cons, applyRenames_cons]
     rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_ite_nondet
+theorem stmtSubstMany_ite_nondet [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.ite .nondet tss ess md) subst
@@ -268,8 +251,7 @@ theorem stmtSubstMany_ite_nondet
     simp only [ExprOrNondet.substIdent_nondet]
     rw [ih, applyRenames_cons, applyRenames_cons]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem stmtSubstMany_typeDecl
+theorem stmtSubstMany_typeDecl [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (tc : TypeConstructor) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.typeDecl tc md) subst = (.typeDecl tc md : Stmt P (Cmd P)) := by
   induction subst with
@@ -284,12 +266,11 @@ theorem stmtSubstMany_typeDecl
 target ident in `B`, and its `(source, target)` pair in `subst`.  This is the
 positional connection between each `init`/expr in `body₁` and its entry, kept at
 the GLOBAL carriers; monotone across the sub-block recursion. -/
-def EntriesIn (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
+def EntriesIn [HasIdent P] (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState) : Prop :=
   ∀ e ∈ Block.entriesOf body₁ σ, e.1 ∈ A ∧ e.2.1 ∈ B ∧ (e.1, e.2.1) ∈ subst
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem EntriesIn.cons_head
+theorem EntriesIn.cons_head [HasIdent P]
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {σ : StringGenState}
     (h : EntriesIn A B subst (s :: rest) σ) :
@@ -299,8 +280,7 @@ theorem EntriesIn.cons_head
   rw [Block.entriesOf_cons]
   exact List.mem_append.mpr (Or.inl he)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem EntriesIn.cons_tail
+theorem EntriesIn.cons_tail [HasIdent P]
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {σ : StringGenState}
     (h : EntriesIn A B subst (s :: rest) σ) :
@@ -310,8 +290,7 @@ theorem EntriesIn.cons_tail
   rw [Block.entriesOf_cons]
   exact List.mem_append.mpr (Or.inr he)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem EntriesIn.block
+theorem EntriesIn.block [HasIdent P]
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {lbl : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {σ : StringGenState}
@@ -322,8 +301,7 @@ theorem EntriesIn.block
   rw [Stmt.entriesOf_block]
   exact he
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem EntriesIn.ite_then
+theorem EntriesIn.ite_then [HasIdent P]
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {σ : StringGenState}
@@ -334,8 +312,7 @@ theorem EntriesIn.ite_then
   rw [Stmt.entriesOf_ite]
   exact List.mem_append.mpr (Or.inl he)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem EntriesIn.ite_else
+theorem EntriesIn.ite_else [HasIdent P]
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {σ : StringGenState}
@@ -346,9 +323,8 @@ theorem EntriesIn.ite_else
   rw [Stmt.entriesOf_ite]
   exact List.mem_append.mpr (Or.inr he)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- The head init's entry pair, at the head of the entries list. -/
-theorem entriesOf_init_head_mem
+theorem entriesOf_init_head_mem [HasIdent P]
     (a : P.Ident) (τ : P.Ty) (rhs : ExprOrNondet P) (md : MetaData P)
     (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ((a, HasIdent.ident (P := P) (StringGenState.gen hoistFreshPrefix σ).1, τ, md) : Entry P)
@@ -358,8 +334,7 @@ theorem entriesOf_init_head_mem
 
 /-! ## Per-statement freshness extraction from `namesFreshInExprs`. -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_cmd_init
+theorem namesFresh_cmd_init [HasVarsPure P P.Expr]
     {names : List P.Ident} {a : P.Ident} {τ : P.Ty} {rhs : P.Expr} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.cmd (.init a τ (.det rhs) md) :: rest) = true) :
@@ -371,8 +346,7 @@ theorem namesFresh_cmd_init
   have := (List.all_eq_true.mp h.1) x hx
   exact freshFromIdents_not_mem (by simpa [ExprOrNondet.getVars] using this)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_cmd_set_det
+theorem namesFresh_cmd_set_det [HasVarsPure P P.Expr]
     {names : List P.Ident} {name : P.Ident} {rhs : P.Expr} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.cmd (.set name (.det rhs) md) :: rest) = true) :
@@ -384,8 +358,7 @@ theorem namesFresh_cmd_set_det
   have := (List.all_eq_true.mp h.1) x hx
   exact freshFromIdents_not_mem (by simpa [ExprOrNondet.getVars] using this)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_cmd_assert
+theorem namesFresh_cmd_assert [HasVarsPure P P.Expr]
     {names : List P.Ident} {lbl : String} {e : P.Expr} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.cmd (.assert lbl e md) :: rest) = true) :
@@ -396,8 +369,7 @@ theorem namesFresh_cmd_assert
   intro x hx
   exact freshFromIdents_not_mem ((List.all_eq_true.mp h.1) x hx)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_cmd_assume
+theorem namesFresh_cmd_assume [HasVarsPure P P.Expr]
     {names : List P.Ident} {lbl : String} {e : P.Expr} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.cmd (.assume lbl e md) :: rest) = true) :
@@ -408,8 +380,7 @@ theorem namesFresh_cmd_assume
   intro x hx
   exact freshFromIdents_not_mem ((List.all_eq_true.mp h.1) x hx)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_block
+theorem namesFresh_block [HasVarsPure P P.Expr]
     {names : List P.Ident} {lbl : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.block lbl bss md :: rest) = true) :
@@ -418,8 +389,7 @@ theorem namesFresh_block
   simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_eq_true] at h
   exact h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_ite
+theorem namesFresh_ite [HasVarsPure P P.Expr]
     {names : List P.Ident} {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.ite (.det g) tss ess md :: rest) = true) :
@@ -433,8 +403,7 @@ theorem namesFresh_ite
   intro x hx
   exact freshFromIdents_not_mem (by simpa [ExprOrNondet.getVars] using ((List.all_eq_true.mp h_g) x hx))
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_ite_nondet
+theorem namesFresh_ite_nondet [HasVarsPure P P.Expr]
     {names : List P.Ident} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.ite .nondet tss ess md :: rest) = true) :
@@ -444,8 +413,7 @@ theorem namesFresh_ite_nondet
   obtain ⟨⟨⟨_, h_tss⟩, h_ess⟩, _⟩ := h
   exact ⟨h_tss, h_ess⟩
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-theorem namesFresh_loop
+theorem namesFresh_loop [HasVarsPure P P.Expr]
     {names : List P.Ident} {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))}
     (h : Block.namesFreshInExprs names (.loop (.det g) none [] body md :: rest) = true) :
@@ -461,7 +429,6 @@ theorem namesFresh_loop
 
 /-! ## `modifiedVars` peel helpers (for the `.set` name-disjointness side-conditions). -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- The head `.set name`'s name is in the body's `modifiedVars`. -/
 theorem set_name_mem_modifiedVars
     (name : P.Ident) (rhs : ExprOrNondet P) (md : MetaData P)
@@ -469,7 +436,6 @@ theorem set_name_mem_modifiedVars
     name ∈ Block.modifiedVars (.cmd (.set name rhs md) :: rest) := by
   simp [Block.modifiedVars, Stmt.modifiedVars, HasVarsImp.modifiedVars, Cmd.modifiedVars]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem modifiedVars_cons_tail
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {x : P.Ident}
     (hx : x ∈ Block.modifiedVars rest) :
@@ -477,7 +443,6 @@ theorem modifiedVars_cons_tail
   simp only [Block.modifiedVars, List.mem_append]
   exact Or.inr hx
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem modifiedVars_block_subset
     {lbl : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {x : P.Ident}
@@ -486,7 +451,6 @@ theorem modifiedVars_block_subset
   simp only [Block.modifiedVars, Stmt.modifiedVars, List.mem_append]
   exact Or.inl hx
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem modifiedVars_ite_then_subset
     {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {x : P.Ident}
@@ -495,7 +459,6 @@ theorem modifiedVars_ite_then_subset
   simp only [Block.modifiedVars, Stmt.modifiedVars, List.mem_append]
   exact Or.inl (Or.inl hx)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem modifiedVars_ite_else_subset
     {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     {rest : List (Stmt P (Cmd P))} {x : P.Ident}
@@ -504,7 +467,6 @@ theorem modifiedVars_ite_else_subset
   simp only [Block.modifiedVars, Stmt.modifiedVars, List.mem_append]
   exact Or.inl (Or.inr hx)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem modifiedVars_loop_subset
     {g : ExprOrNondet P} {m : Option P.Expr} {inv : List (String × P.Expr)}
     {lbody : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -516,7 +478,6 @@ theorem modifiedVars_loop_subset
 
 /-! ## `allLoopBodiesInitFree` peel helpers. -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem initfree_cons
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))}
     (h : Block.allLoopBodiesInitFree (s :: rest) = true) :
@@ -524,14 +485,12 @@ theorem initfree_cons
   simp only [Block.allLoopBodiesInitFree, Bool.and_eq_true] at h
   exact h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem initfree_block
     {lbl : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
     (h : Stmt.allLoopBodiesInitFree (.block lbl bss md) = true) :
     Block.allLoopBodiesInitFree bss = true := by
   simpa [Stmt.allLoopBodiesInitFree] using h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem initfree_ite
     {g : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
     (h : Stmt.allLoopBodiesInitFree (.ite g tss ess md) = true) :
@@ -539,7 +498,6 @@ theorem initfree_ite
   simp only [Stmt.allLoopBodiesInitFree, Bool.and_eq_true] at h
   exact h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem initfree_loop_noinits
     {g : ExprOrNondet P} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (h : Stmt.allLoopBodiesInitFree (.loop g none [] body md) = true) :
@@ -547,11 +505,10 @@ theorem initfree_loop_noinits
   simp only [Stmt.allLoopBodiesInitFree, Bool.and_eq_true] at h
   exact h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 mutual
 /-- A `noInitsAnywhere` statement has empty `Stmt.entriesOf` (no `.init` to
 harvest, and loops are passed through). -/
-theorem Stmt.entriesOf_noInits
+theorem Stmt.entriesOf_noInits [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.noInitsAnywhere s = true) :
     Stmt.entriesOf s σ = [] := by
@@ -576,7 +533,7 @@ theorem Stmt.entriesOf_noInits
 
 /-- A `noInitsAnywhere` body has empty `entriesOf` (no `.init` to harvest, and
 loops are passed through). -/
-theorem Block.entriesOf_noInits
+theorem Block.entriesOf_noInits [HasIdent P]
     (body : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.noInitsAnywhere body = true) :
     Block.entriesOf body σ = [] := by
@@ -592,25 +549,22 @@ end
 
 /-! ## `applyRenames` distributes over `++`. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem applyRenames_append
+theorem applyRenames_append [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (xs ys : List (Stmt P (Cmd P))) :
     Block.applyRenames subst (xs ++ ys)
       = Block.applyRenames subst xs ++ Block.applyRenames subst ys := by
   rw [applyRenames_eq_map_stmtSubstMany, applyRenames_eq_map_stmtSubstMany,
       applyRenames_eq_map_stmtSubstMany, List.map_append]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` of a singleton statement is the singleton `stmtSubstMany`. -/
-theorem applyRenames_singleton
+theorem applyRenames_singleton [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (s : Stmt P (Cmd P)) :
     Block.applyRenames subst [s] = [stmtSubstMany s subst] := by
   rw [applyRenames_eq_map_stmtSubstMany, List.map_cons, List.map_nil]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The per-pair source-functional uniqueness the `init_set` constructor wants:
 distinct sources, so a source resolves to a unique target. -/
-theorem unique_of_src_nodup
+theorem unique_of_src_nodup [DecidableEq P.Ident]
     {subst : List (P.Ident × P.Ident)} {a b : P.Ident}
     (h_src_nodup : (subst.map Prod.fst).Nodup) (h_pair : (a, b) ∈ subst) :
     ∀ a' b', (a', b') ∈ subst → a' = a → b' = b := by
@@ -620,7 +574,6 @@ theorem unique_of_src_nodup
   have e2 : renameLookup subst a' = b := renameLookup_mem subst h_src_nodup h_pair
   rw [e1] at e2; exact e2
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- Target-side analog: distinct targets, so a target resolves to a unique
 source.  Proved by induction on `subst` mirroring `renameLookup`. -/
 theorem unique_of_tgt_nodup
@@ -715,7 +668,6 @@ by mutual structural induction; each statement constructor reduces to its
 sub-blocks under the corresponding Bool-walker reductions.  The consumer (the §E
 `.loop` arm) discharges `transportShape` by supplying these preconditions and
 `noExit`. -/
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 mutual
 theorem Stmt.transportShape_of_arm_preconds
     (s : Stmt P (Cmd P))
@@ -807,8 +759,7 @@ is `stmtSubstMany · subst`; the recursion threads the `EntriesIn` membership
 invariant (monotone across sub-blocks) and the monotone `namesFreshInExprs`
 freshness facts over `A` and `B`. -/
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.bodyTransport_of_lift
+theorem Block.bodyTransport_of_lift [HasFvar P] [HasIdent P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (h_initfree : Block.allLoopBodiesInitFree body₁ = true)
@@ -1082,8 +1033,7 @@ theorem Block.bodyTransport_of_lift
 `BodySimE`; `OptEStepBProvider.bodySimE_to_bodySim` forgets the eval conjunct to
 land in the driver's `BodySim` slot.  This packages Step B for the §E `.loop`
 arm at the harvest carriers `A B subst`. -/
-omit [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.stepB_bodySim_of_lift
+theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasIdent P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
