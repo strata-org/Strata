@@ -140,6 +140,7 @@ preserved (in the strong, predicate-equality sense). -/
 section ExitsCovered
 variable [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
 
+omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 private theorem Block.exitsCoveredByBlocks_of_map_cmd
     (labels : List String) (cs : List (Cmd P)) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -155,6 +156,7 @@ never touch block labels or exit statements, so `exitsCoveredByBlocks` is
 invariant under them. (Prop-valued analogue of the Bool walkers'
 `SubstIdentPreserves` in `LoopInitHoist.lean`.) -/
 
+omit [HasIdent P] in
 mutual
 private theorem Stmt.substIdent_exitsCoveredByBlocks
     (y y' : P.Ident) (labels : List String) (s : Stmt P (Cmd P))
@@ -195,6 +197,7 @@ private theorem Block.substIdent_exitsCoveredByBlocks
   termination_by sizeOf ss
 end
 
+omit [HasIdent P] in
 private theorem Block.applyRenames_exitsCoveredByBlocks
     (renames : List (P.Ident × P.Ident)) (labels : List String)
     (ss : List (Stmt P (Cmd P)))
@@ -216,6 +219,7 @@ The `.snd` residual of the monadic lift is unfolded via the `@[simp]`
 equations (LoopInitHoist.lean) — the old `simp [Stmt.liftInitsInLoopBody]`
 unfold no longer fires under the monadic wrapper. -/
 
+omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- `Stmt.liftInitsInLoopBody`'s residual block preserves
 `Stmt.exitsCoveredByBlocks`. -/
@@ -448,7 +452,7 @@ private theorem Stmt.definedVars_eq_initVars_of_no_fd
   | .cmd c =>
       cases c <;>
         simp only [Stmt.definedVars, Stmt.initVars, Cmd.definedVars,
-                   HasVarsImp.definedVars, instHasVarsImpCmd]
+                   HasVarsImp.definedVars]
   | .block lbl bss md =>
       rw [Stmt.definedVars, Stmt.initVars, Stmt.containsFuncDecl] at *
       exact Block.definedVars_eq_initVars_of_no_fd bss h
@@ -1095,7 +1099,7 @@ private theorem cmd_arm
                     (∃ lbl ρ_src', cfg_src = .exiting lbl ρ_src'))
     (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
     (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
-    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (_h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
     ∃ ρ_h', ∃ cfg_hoist : Config P (Cmd P),
       StepStmtStar P (EvalCmd P) extendEval
@@ -1633,7 +1637,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
             have h_parent_some : (ρ_hoist.store y).isSome := by
               cases h : ρ_hoist.store y with
               | none => exact absurd h (h_hoist_bound y hy)
-              | some _ => simp [h]
+              | some _ => simp
             rw [h_parent_some]; exact h_bound_inner y hy
         · -- inner exits with the matching label `lbl`: block catches it, terminates.
           obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
@@ -1674,7 +1678,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
             have h_parent_some : (ρ_hoist.store y).isSome := by
               cases h : ρ_hoist.store y with
               | none => exact absurd h (h_hoist_bound y hy)
-              | some _ => simp [h]
+              | some _ => simp
             rw [h_parent_some]; exact h_bound_inner y hy
       · -- EXITING: inner exits with a NON-matching label, which propagates.
         subst h_e
@@ -1719,7 +1723,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
           have h_parent_some : (ρ_hoist.store y).isSome := by
             cases h : ρ_hoist.store y with
             | none => exact absurd h (h_hoist_bound y hy)
-            | some _ => simp [h]
+            | some _ => simp
           rw [h_parent_some]; exact h_bound_inner y hy
   | .ite g tss ess md =>
     subst h_match
@@ -1733,16 +1737,16 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil]
     -- Bool preconds.
     have h_nd_branches : Block.containsNondetLoop tss = false ∧ Block.containsNondetLoop ess = false := by
-      simp only [Block.containsNondetLoop, Stmt.containsNondetLoop, Bool.or_false,
+      simp only [Stmt.containsNondetLoop,
         Bool.or_eq_false_iff] at h_no_nd; exact h_no_nd
     have h_fd_branches : Block.containsFuncDecl tss = false ∧ Block.containsFuncDecl ess = false := by
-      simp only [Block.containsFuncDecl, Stmt.containsFuncDecl, Bool.or_false,
+      simp only [Stmt.containsFuncDecl,
         Bool.or_eq_false_iff] at h_no_fd; exact h_no_fd
     have h_inv_branches : Block.loopHasNoInvariants tss = true ∧ Block.loopHasNoInvariants ess = true := by
-      simp only [Block.loopHasNoInvariants, Stmt.loopHasNoInvariants, Bool.and_true,
+      simp only [Stmt.loopHasNoInvariants,
         Bool.and_eq_true] at h_no_inv; exact h_no_inv
     have h_measure_branches : Block.loopMeasureNone tss = true ∧ Block.loopMeasureNone ess = true := by
-      simp only [Block.loopMeasureNone, Stmt.loopMeasureNone, Bool.and_true,
+      simp only [Stmt.loopMeasureNone,
         Bool.and_eq_true] at h_no_measure; exact h_no_measure
     have h_noexit_branches : Block.noExit tss = true ∧ Block.noExit ess = true := by
       simp only [Block.noExit, Stmt.noExit, Bool.and_true,
