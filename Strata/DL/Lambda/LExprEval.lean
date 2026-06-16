@@ -319,6 +319,64 @@ instance : Traceable EvalProvenance Unit where
 
 /-! ## Expression Evaluation -/
 
+/--
+Recursively expand calls to `inline` factory functions everywhere in `e`,
+including under quantifier and lambda binders.
+
+Background: the main `eval` does not descend into binder bodies — closed
+`.abs`/`.quant` terms are canonical values and the small-step `Step`
+relation has no congruence rule that reduces under them. As a result, an
+`inline` factory call inside `forall x, f(x)` is left untouched.
+
+This helper walks the term structurally and at each `.app` that is a
+fully-applied call to an inline function with a body, replaces it with the
+substituted body. Binders are traversed; bvar lifting during substitution
+is handled by `substFvarsLifting`, so the bvars belonging to outer binders
+are preserved correctly.
+
+Use this as a pre-pass before `eval` when you want inline expansion to
+happen inside quantifiers and lambdas.
+
+`fuel` bounds the number of expansion+recursion steps to ensure
+termination on (mutually) recursive inline functions.
+-/
+def expandInlineCalls (F : @Factory TBase) (fuel : Nat) (e : LExpr TBase.mono)
+    : LExpr TBase.mono :=
+  match fuel with
+  | 0 => e
+  | fuel' + 1 =>
+    match e with
+    | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => e
+    | .abs m name ty body =>
+      .abs m name ty (expandInlineCalls F fuel' body)
+    | .quant m qk name ty tr body =>
+      .quant m qk name ty
+        (expandInlineCalls F fuel' tr)
+        (expandInlineCalls F fuel' body)
+    | .ite m c t f =>
+      .ite m (expandInlineCalls F fuel' c)
+             (expandInlineCalls F fuel' t)
+             (expandInlineCalls F fuel' f)
+    | .eq m e1 e2 =>
+      .eq m (expandInlineCalls F fuel' e1) (expandInlineCalls F fuel' e2)
+    | .app m e1 e2 =>
+      let e1' := expandInlineCalls F fuel' e1
+      let e2' := expandInlineCalls F fuel' e2
+      let e' : LExpr TBase.mono := .app m e1' e2'
+      match F.callOfLFunc e' with
+      | some (op_expr, args, lfunc) =>
+        if h : lfunc.body.isSome
+            && (lfunc.attr.contains FuncAttr.inline) then
+          let body := lfunc.body.get (Bool.and_eq_true_iff.mp h).1
+          match LFunc.computeTypeSubst lfunc op_expr args with
+          | some tySubst =>
+            let body' := body.applySubst tySubst
+            let new_e := substFvarsLifting body' (lfunc.inputs.keys.zip args)
+            expandInlineCalls F fuel' new_e
+          | none => e'
+        else e'
+      | none => e'
+
 /-- Walk a post-eval expression looking for a stuck redex: a fully-applied
 non-constructor factory function whose arguments are all canonical values.
 Such a call *should* have reduced during `eval` but didn't (e.g. missing `body`
