@@ -75,6 +75,7 @@ variable {P : PureExpr}
 The general inversion/forward step lemmas live `private` in the infra modules; we
 re-derive the few we need against `EvalCmd` so they are usable in this module. -/
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Invert `.stmt (.cmd c) ρ ⟶* .terminal ρ'` into the `EvalCmd` evidence. -/
 private theorem stmt_cmd_terminal_inv'
     {extendEval : ExtendEval P}
@@ -90,6 +91,7 @@ private theorem stmt_cmd_terminal_inv'
       | refl => exact ⟨_, _, h_eval, rfl⟩
       | step _ _ _ hd _ => exact nomatch hd
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a single command whose `EvalCmd` holds steps to `.terminal`. -/
 private theorem stmt_cmd_step_forward'
     {extendEval : ExtendEval P}
@@ -100,6 +102,7 @@ private theorem stmt_cmd_step_forward'
       (.terminal { ρ with store := σ', hasFailure := ρ.hasFailure || hf }) :=
   .step _ _ _ (.step_cmd h) (.refl _)
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: enter a labeled block, run its inner body to terminal, exit
 projecting through the parent store. -/
 private theorem block_step_forward'
@@ -115,6 +118,7 @@ private theorem block_step_forward'
   refine ReflTrans_Transitive _ _ _ _ h_lift ?_
   exact .step _ _ _ .step_block_done (.refl _)
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Invert a det-`.ite` run to terminal: the guard selects a branch, which then
 runs to terminal in the same store frame. -/
 private theorem ite_terminal_inv'
@@ -131,6 +135,7 @@ private theorem ite_terminal_inv'
     | step_ite_true h_g h_wfb => exact .inl ⟨h_g, h_wfb, hr1⟩
     | step_ite_false h_g h_wfb => exact .inr ⟨h_g, h_wfb, hr1⟩
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a det-`.ite` whose guard is tt steps to its then-branch run. -/
 private theorem ite_step_then_forward'
     {extendEval : ExtendEval P}
@@ -142,6 +147,7 @@ private theorem ite_step_then_forward'
       (.stmt (.ite (.det g) tss ess md) ρ) (.terminal ρ') :=
   .step _ _ _ (.step_ite_true h_g h_wfb) h_branch
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a det-`.ite` whose guard is ff steps to its else-branch run. -/
 private theorem ite_step_else_forward'
     {extendEval : ExtendEval P}
@@ -153,6 +159,7 @@ private theorem ite_step_else_forward'
       (.stmt (.ite (.det g) tss ess md) ρ) (.terminal ρ') :=
   .step _ _ _ (.step_ite_false h_g h_wfb) h_branch
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Invert a nondet-`.ite` run to terminal: the run selected the then- or else-
 branch (no guard evaluation), which then runs to terminal in the same frame. -/
 private theorem ite_nondet_terminal_inv'
@@ -167,6 +174,7 @@ private theorem ite_nondet_terminal_inv'
     | step_ite_nondet_true => exact .inl hr1
     | step_ite_nondet_false => exact .inr hr1
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a nondet-`.ite` steps to its then-branch run. -/
 private theorem ite_nondet_step_then_forward'
     {extendEval : ExtendEval P}
@@ -176,6 +184,7 @@ private theorem ite_nondet_step_then_forward'
       (.stmt (.ite .nondet tss ess md) ρ) (.terminal ρ') :=
   .step _ _ _ .step_ite_nondet_true h_branch
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a nondet-`.ite` steps to its else-branch run. -/
 private theorem ite_nondet_step_else_forward'
     {extendEval : ExtendEval P}
@@ -185,6 +194,7 @@ private theorem ite_nondet_step_else_forward'
       (.stmt (.ite .nondet tss ess md) ρ) (.terminal ρ') :=
   .step _ _ _ .step_ite_nondet_false h_branch
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Invert a `.typeDecl` run to terminal: it is a runtime no-op (env unchanged). -/
 private theorem typeDecl_terminal_inv'
     {extendEval : ExtendEval P}
@@ -198,6 +208,7 @@ private theorem typeDecl_terminal_inv'
     | refl => rfl
     | step _ _ _ hd _ => exact nomatch hd
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forward: a `.typeDecl` steps to `.terminal` with the env unchanged. -/
 private theorem typeDecl_step_forward'
     {extendEval : ExtendEval P}
@@ -205,6 +216,7 @@ private theorem typeDecl_step_forward'
     StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) (.terminal ρ) :=
   .step _ _ _ .step_typeDecl (.refl _)
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Split a source block run into its inner terminal run (given no exit). -/
 private theorem block_terminal_inv'
     {extendEval : ExtendEval P}
@@ -224,6 +236,7 @@ private theorem block_terminal_inv'
     · exact ⟨ρ_inner, hterm, heq⟩
     · exact absurd hexit (h_no_exit l ρ_inner)
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
 /-- Condition transport across the multi-pair `HoistInv`, re-derived from the
 public `substFvarMany_eval_tweak`. -/
 private theorem cond_transport'
@@ -421,6 +434,7 @@ inductive BodyTransport
 `BodyTransport`-related bodies are `noFuncDecl` (no `.funcDecl` constructor) and
 never reach a labeled `.exiting` (no top-level `.exit` constructor). -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- A `BodyTransport` source body contains no `.funcDecl`. -/
 theorem BodyTransport.noFuncDecl_src
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -448,6 +462,7 @@ theorem BodyTransport.noFuncDecl_src
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
     exact ⟨by simpa [Block.noFuncDecl] using ih_lbody, ih_rest⟩
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- A `BodyTransport` hoist body contains no `.funcDecl`. -/
 theorem BodyTransport.noFuncDecl_h
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -475,6 +490,7 @@ theorem BodyTransport.noFuncDecl_h
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
     exact ⟨by simpa [Block.noFuncDecl] using ih_lbody, ih_rest⟩
 
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- A `BodyTransport` source body never reaches a labeled `.exiting`. -/
 theorem BodyTransport.src_no_exit
     {extendEval : ExtendEval P}
