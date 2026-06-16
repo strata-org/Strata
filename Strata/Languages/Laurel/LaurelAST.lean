@@ -421,11 +421,15 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
+/-- Build a provenance from an optional source location. -/
+def fileRangeToProvenance (source : Option FileRange) : Provenance :=
+  match source with
+  | some fr => Provenance.ofSourceRange fr.file fr.range
+  | none => .synthesized .laurel
+
 /-- Build Core metadata from an optional source location. -/
 def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => Imperative.MetaData.ofSourceRange fr.file fr.range
-  | none => Imperative.MetaData.ofProvenance (.synthesized .laurel)
+  Imperative.MetaData.ofProvenance (fileRangeToProvenance source)
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
