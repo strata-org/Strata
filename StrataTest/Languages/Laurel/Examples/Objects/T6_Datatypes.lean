@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def datatypeProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 datatype IntList {
   Nil(),
   Cons(head: int, tail: IntList)
@@ -97,9 +93,4 @@ procedure testMutualConstruction() opaque {
 
 datatype RootBeforeLeaf { RootBeforeLeafC(leaf: LeafAfterRoot) }
 datatype LeafAfterRoot { LeafAfterRootC }
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "Datatypes" datatypeProgram 14 processLaurelFile
-
-end Laurel
+#end

@@ -3,20 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r#"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure testStringKO()
   returns (result: string)
   opaque
@@ -41,14 +37,14 @@ returns (result: string)
 procedure testStringLiteralConcatOK()
   opaque
 {
-  var result: string := "a" ++ "b";
+  var result: string := "a" ^ "b";
   assert(result == "ab")
 };
 
 procedure testStringLiteralConcatKO()
   opaque
 {
-  var result: string := "a" ++ "b";
+  var result: string := "a" ^ "b";
   assert(result == "cd")
 //^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
@@ -57,7 +53,7 @@ procedure testStringVarConcatOK()
   opaque
 {
   var x: string := "Hello";
-  var result: string := x ++ " World";
+  var result: string := x ^ " World";
   assert(result == "Hello World")
 };
 
@@ -65,11 +61,8 @@ procedure testStringVarConcatKO()
   opaque
 {
   var x: string := "Hello";
-  var result: string := x ++ " World";
+  var result: string := x ^ " World";
   assert(result == "Goodbye")
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
-"#
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "String" program 14 processLaurelFile
+#end

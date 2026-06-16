@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 
@@ -13,9 +14,7 @@ import Strata.Util.Tactics
 # Eliminate Values In Returns
 
 Rewrites `return expr` into `outParam := expr; return` for imperative
-(non-functional) procedures that have an output parameter. This decouples
-the return-value assignment from the `LaurelToCoreTranslator`, which no
-longer needs to know about output parameters when translating returns.
+(non-functional) procedures that have an output parameter.
 
 The pass is a Laurel-to-Laurel rewrite that runs before Core translation.
 -/
@@ -91,7 +90,7 @@ def eliminateValuesInReturnsInProc (proc : Procedure) : Procedure × Array Diagn
 public section
 
 /-- Transform a program by eliminating value returns in all imperative procedures. -/
-def eliminateValuesInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
+def eliminateValueInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (proc', procDiags) := eliminateValuesInReturnsInProc proc
     (proc' :: ps, ds ++ procDiags)
@@ -99,5 +98,13 @@ def eliminateValuesInReturnsTransform (program : Program) : Program × Array Dia
   ({ program with staticProcedures := procs.reverse }, diags)
 
 end -- public section
+
+/-- Pipeline pass: eliminate value returns. -/
+public def eliminateValueInReturnsPass : LoweringPass where
+  name := "EliminateValueInReturns"
+  documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
+  run := fun p _m _ =>
+    let (p', diags) := eliminateValueInReturnsTransform p
+    (p', diags.toList, {})
 
 end Laurel

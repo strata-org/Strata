@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Eliminate Return Statements
@@ -33,19 +34,16 @@ private def eliminateReturnStmts (proc : Procedure) : Procedure :=
     let impl' := replaceReturn proc.outputs impl
     let wrapped := match impl'.val with
       | .Block stmts none => ⟨.Block stmts (some returnLabel), impl'.source⟩
-      | _ => mkMd (.Block [impl'] (some returnLabel))
+      | _ => ⟨ .Block [impl'] (some returnLabel), proc.name.source ⟩
     { proc with body := .Opaque postconds (some wrapped) mods }
   | .Transparent body =>
     let body' := replaceReturn proc.outputs body
     let wrapped := match body'.val with
       | .Block stmts none => ⟨.Block stmts (some returnLabel), body'.source⟩
-      | _ => mkMd (.Block [body'] (some returnLabel))
+      | _ => ⟨ .Block [body'] (some returnLabel), proc.name.source ⟩
     { proc with body := .Transparent wrapped }
   | _ => proc
 where
-
-  mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := proc.name.source }
-  mkVarMd (v : Variable) : VariableMd := { val := v, source := proc.name.source }
 
   /-- Replace `Return val` with `output := val; exit "$return"` (or just `exit`
     for valueless returns). Uses `mapStmtExpr` for bottom-up traversal. -/
@@ -53,18 +51,30 @@ where
     mapStmtExpr (fun e =>
       match e.val with
       | .Return (some val) =>
+        /- Handling valued return is required because the heap param pass introduces valued return in
+        Strata/Languages/Laurel/HeapParameterizationConstants.lean
+        We should change that so we can remove this case.
+        -/
         match outputs with
         | [out] =>
-          let assign := mkMd (.Assign [mkVarMd (.Local out.name)] val)
-          let exit := mkMd (.Exit returnLabel)
+          let assign := ⟨ .Assign [⟨ .Local out.name, expr.source ⟩] val, expr.source ⟩
+          let exit := ⟨ .Exit returnLabel, expr.source ⟩
           ⟨.Block [assign, exit] none, e.source⟩
-        | _ => mkMd (.Exit returnLabel)
-      | .Return none => mkMd (.Exit returnLabel)
+        | _ => ⟨ .Exit returnLabel, expr.source ⟩
+      | .Return none => ⟨ .Exit returnLabel, expr.source ⟩
       | _ => e) expr
 
 /-- Transform a program by eliminating return statements in all procedure bodies. -/
 def eliminateReturnStatements (program : Program) : Program :=
   { program with staticProcedures := program.staticProcedures.map eliminateReturnStmts }
+
+public def eliminateReturnStatementsPass : LoweringPass where
+  name := "EliminateReturnStatements"
+  documentation := "Lower return statements to exit statements. Wrap each procedure body with a 'return' block"
+  run := fun p _m _ =>
+    let p' := eliminateReturnStatements p
+    (p', [], {})
+  -- comesBefore := [contractPass]
 
 end -- public section
 

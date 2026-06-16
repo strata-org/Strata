@@ -6,9 +6,11 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.SemanticModel
+public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
@@ -60,128 +62,11 @@ definition each reference resolves to.
 
 namespace Strata.Laurel
 
-public section
 
 /-! ## ResolvedNode — the target of a resolved reference -/
 
-/-- The kind (constructor tag) of a `ResolvedNode`, used to assert that a reference
-    resolves to the expected sort of definition. -/
-inductive ResolvedNodeKind where
-  | var
-  | parameter
-  | staticProcedure
-  | instanceProcedure
-  | field
-  | compositeType
-  | constrainedType
-  | datatypeDefinition
-  | datatypeConstructor
-  | datatypeDestructor
-  | typeAlias
-  | constant
-  | quantifierVar
-  | unresolved
-  deriving Repr, BEq
-
-def ResolvedNodeKind.name : ResolvedNodeKind → String
-  | .var               => "variable"
-  | .parameter         => "parameter"
-  | .staticProcedure   => "static procedure"
-  | .instanceProcedure => "instance procedure"
-  | .field             => "field"
-  | .compositeType     => "composite type"
-  | .constrainedType   => "constrained type"
-  | .datatypeDefinition => "datatype definition"
-  | .datatypeConstructor => "datatype constructor"
-  | .datatypeDestructor => "datatype destructor"
-  | .typeAlias         => "type alias"
-  | .constant          => "constant"
-  | .quantifierVar     => "quantifier variable"
-  | .unresolved        => "unresolved"
-
-/-- A definition-site AST node that a reference can resolve to. -/
-inductive ResolvedNode where
-  /-- A local variable declaration. -/
-  | var (name : Identifier) (type : HighTypeMd)
-  /-- A procedure parameter. -/
-  | parameter (param : Parameter)
-  /-- A static procedure. -/
-  | staticProcedure (proc : Procedure)
-  /-- An instance procedure (method) on a composite type. -/
-  | instanceProcedure (typeName : Identifier) (proc : Procedure)
-  /-- A field on a composite type. -/
-  | field (typeName : Identifier) (fld : Field)
-  /-- A composite type definition. -/
-  | compositeType (ty : CompositeType)
-  /-- A constrained type definition. -/
-  | constrainedType (ty : ConstrainedType)
-  /-- A datatype definition. -/
-  | datatypeDefinition (ty : DatatypeDefinition)
-  /-- A datatype constructor. -/
-  | datatypeConstructor (typeName : Identifier) (ctor : DatatypeConstructor)
-  /-- An auto-generated destructor (or unsafe `!`-destructor) for a datatype field.
-      `typeName` is the resolved Identifier of the parent datatype (with its
-      `uniqueId`), and `field` is the underlying constructor parameter. -/
-  | datatypeDestructor (typeName : Identifier) (field : Parameter)
-  /-- A type alias. -/
-  | typeAlias (ty : TypeAlias)
-  /-- A constant. -/
-  | constant (c : Constant)
-  /-- A quantifier-bound variable. -/
-  | quantifierVar (name : Identifier) (type : HighTypeMd)
-  | unresolved (referenceSource: Option FileRange)
-  deriving Repr
-
-instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved none
-
-/-- Return the constructor tag of a `ResolvedNode`. -/
-def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
-  | .var ..               => .var
-  | .parameter ..         => .parameter
-  | .staticProcedure ..   => .staticProcedure
-  | .instanceProcedure .. => .instanceProcedure
-  | .field ..             => .field
-  | .compositeType ..     => .compositeType
-  | .constrainedType ..   => .constrainedType
-  | .datatypeDefinition .. => .datatypeDefinition
-  | .datatypeConstructor .. => .datatypeConstructor
-  | .datatypeDestructor .. => .datatypeDestructor
-  | .typeAlias ..         => .typeAlias
-  | .constant ..          => .constant
-  | .quantifierVar ..     => .quantifierVar
-  | .unresolved _          => .unresolved
-
-def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
- | .var _ type => type
- | .parameter p => p.type
- | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
- | .datatypeDestructor _ fld => fld.type
- | .constant c => c.type
- | .quantifierVar _ type => type
- | .unresolved source => ⟨ .Unknown, source ⟩
- | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
- | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
-
-/-! ## Resolution result -/
-
-structure SemanticModel where
-  nextId: Nat
-  compositeCount: Nat
-  private refToDef: Std.HashMap Nat ResolvedNode
-  deriving Repr
-
-/-- Look up the resolved node for an identifier, returning `none` if the identifier
-    has no `uniqueId` or is not in the model. -/
-def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option ResolvedNode :=
-  iden.uniqueId.bind model.refToDef.get?
-
-def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
-  (model.get? iden).getD default
-
 /-- The output of the resolution pass. -/
-structure ResolutionResult where
+public structure ResolutionResult where
   /-- The program with unique IDs on all definition and reference nodes. -/
   program : Program
   /-- Map from reference node ID to the definition it resolves to. -/
@@ -192,13 +77,13 @@ structure ResolutionResult where
 /-! ## Phase 1: ID assignment and reference resolution -/
 
 /-- A scope entry stores the definition-site ID and the ResolvedNode for type lookups. -/
-@[expose] abbrev ScopeEntry := Nat × ResolvedNode
+abbrev ScopeEntry := Nat × ResolvedNode
 
 /-- Scope maps a name to its definition-site ID and optional ResolvedNode. -/
-@[expose] abbrev Scope := Std.HashMap String ScopeEntry
+abbrev Scope := Std.HashMap String ScopeEntry
 
 /-- Per-composite-type scope mapping field names to their scope entries. -/
-@[expose] abbrev TypeScopes := Std.HashMap String Scope
+abbrev TypeScopes := Std.HashMap String Scope
 
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
@@ -220,7 +105,7 @@ structure ResolveState where
       in value context, not in statement position or direct assignment RHS. -/
   inValueContext : Bool := false
 
-@[expose] abbrev ResolveM := StateM ResolveState
+abbrev ResolveM := StateM ResolveState
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : ResolveM Nat := do
@@ -358,6 +243,73 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return { val := val', source := ty.source }
 
+/-- Unfold any constrained types down to their underlying base type
+    (e.g. `nat` ⇒ `int`). `fuel` keeps the function total; chains longer than
+    `fuel` simply stop unfolding (the conservative, no-false-positive direction). -/
+private def underlyingBaseType (s : ResolveState) (fuel : Nat) (ty : HighType) : HighType :=
+  match fuel with
+  | 0 => ty
+  | fuel + 1 =>
+    match ty with
+    | .UserDefined typRef =>
+      match s.scope.get? typRef.text with
+      | some (_, .constrainedType ct) => underlyingBaseType s fuel ct.base.val
+      | _ => ty
+    | _ => ty
+
+/-- Look up the declared type of an `IncrDecr` target during resolution.
+    Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
+    `none` when the type cannot be determined (e.g. an unresolved name). -/
+private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType) := do
+  let s ← get
+  match target.val with
+  | .Local ref =>
+    match s.scope.get? ref.text with
+    | some (_, node) => pure (some node.getType.val)
+    | none => pure none
+  | .Field tgt fieldName =>
+    match (← targetTypeName tgt) with
+    | some typeName =>
+      match s.typeScopes.get? typeName with
+      | some typeScope =>
+        match typeScope.get? fieldName.text with
+        | some (_, node) => pure (some node.getType.val)
+        | none => pure none
+      | none => pure none
+    | none => pure none
+  | .Declare param => pure (some param.type.val)
+
+/-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
+    Only `int` and int-based constrained types (e.g. `nat`) are supported by the
+    `EliminateIncrDecr` lowering; `bv`, `real`, and `float64` are rejected here
+    with a clear Laurel diagnostic (and a source range) rather than leaking a raw
+    Core unification error from a later pass. Unknown/unresolved types are left
+    alone so that resolution errors are not duplicated as spurious incr/decr
+    errors. -/
+private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
+    (source : Option FileRange) : ResolveM Unit := do
+  match (← incrDecrTargetType target) with
+  | none => pure ()
+  | some ty =>
+    let s ← get
+    let baseTy := underlyingBaseType s 100 ty
+    let unsupported? : Option String := match baseTy with
+      | .TReal => some "real"
+      | .TFloat64 => some "float64"
+      | .TBv n => some s!"bv{n}"
+      | _ => none
+    match unsupported? with
+    | none => pure ()
+    | some tyName =>
+      let opName := match op with
+        | .Incr => "increment ('++')"
+        | .Decr => "decrement ('--')"
+      let diag := diagnosticFromSource source
+        s!"The {opName} operator is only supported on 'int' and int-based \
+           constrained types (e.g. 'nat'), but the operand has type '{tyName}'. \
+           Use an explicit assignment instead, e.g. 'x := x + 1'."
+      modify fun s => { s with errors := s.errors.push diag }
+
 def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   match _: exprMd with
   | AstNode.mk expr source =>
@@ -391,6 +343,7 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
   | .LiteralBool v => pure (.LiteralBool v)
   | .LiteralString v => pure (.LiteralString v)
   | .LiteralDecimal v => pure (.LiteralDecimal v)
+  | .LiteralBv value width => pure (.LiteralBv value width)
   | .Var (.Local ref) =>
     let ref' ← resolveRef ref source
     pure (.Var (.Local ref'))
@@ -439,6 +392,19 @@ def resolveStmtExpr (exprMd : StmtExprMd) : ResolveM StmtExprMd := do
         s!"Assignment target count mismatch: {targets'.length} targets but right-hand side produces {expectedOutputCount} values"
       modify fun s => { s with errors := s.errors.push diag }
     pure (.Assign targets' value')
+  | .IncrDecr mode op ⟨.Local ref, vs⟩ =>
+    let ref' ← resolveRef ref source
+    checkIncrDecrTargetType op ⟨.Local ref', vs⟩ source
+    pure (.IncrDecr mode op ⟨.Local ref', vs⟩)
+  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
+    let tgt' ← resolveStmtExpr tgt
+    let fieldName' ← resolveFieldRef tgt' fieldName source
+    checkIncrDecrTargetType op ⟨.Field tgt' fieldName', vs⟩ source
+    pure (.IncrDecr mode op ⟨.Field tgt' fieldName', vs⟩)
+  | .IncrDecr mode op ⟨.Declare param, vs⟩ =>
+    -- Should not occur — translator rejects; treat conservatively.
+    let ty' ← resolveHighType param.type
+    pure (.IncrDecr mode op ⟨.Declare ⟨param.name, ty'⟩, vs⟩)
   | .Var (.Field target fieldName) =>
     let target' ← resolveStmtExpr target
     let fieldName' ← resolveFieldRef target' fieldName source
@@ -763,6 +729,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
         collectHighType map param.type
       | _ => map) map
     collectStmtExpr map value
+  | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
   | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
@@ -795,7 +763,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Abstract | .All | .Hole _ _ => map
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
@@ -876,7 +844,128 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
   let map := program.staticFields.foldl (collectField · "$static" ·) map
   program.staticProcedures.foldl (collectProcedure · · .staticProcedure) map
 
+/-! Additional checks-/
+
+/--
+Check if a field can be reached through a given type (directly declared or inherited).
+Returns true if the type or any of its ancestors declares the field.
+-/
+def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+  match model.get fieldName with
+  | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
+  | _ => false -- recover from a resolution error
+
+/--
+Check if a field is inherited through multiple parent paths (diamond inheritance).
+Returns true if more than one direct parent of the given type can reach the field.
+-/
+def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+  match model.get typeName with
+  | .compositeType ct =>
+    -- If the field is directly declared on this type, it's not a diamond
+    if ct.fields.any (·.name == fieldName) then false
+    else
+      -- Count how many direct parents can reach this field
+      let parentsWithField := ct.extending.filter (canReachField model · fieldName)
+      parentsWithField.length > 1
+  | _ => false
+
+/--
+Check whether accessing `fieldName` on `target` is a diamond-inherited field access,
+and if so return a diagnostic error using the given `source` range.
+-/
+private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
+    (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
+  match (computeExprType model target).val with
+  | .UserDefined typeName =>
+    if isDiamondInheritedField model typeName fieldName then
+      match source with
+      | some fileRange =>
+        [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
+      | none =>
+        [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
+    else []
+  | _ => []
+
+/--
+Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
+-/
+def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
+    (expr : StmtExprMd) : List DiagnosticModel :=
+  match _h : expr.val with
+  | .Var (.Field target fieldName) =>
+    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
+    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
+    targetErrors ++ fieldError
+  | .Block stmts _ =>
+    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
+  | .Assign targets value =>
+    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
+      match _hv : t.val with
+      | .Field target fieldName =>
+        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
+        let fieldError := checkDiamondFieldAccess model target fieldName t.source
+        acc ++ innerErrors ++ fieldError
+      | .Local _ | .Declare _ => acc) []
+    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
+  | .IfThenElse c t e =>
+    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
+                validateDiamondFieldAccessesForStmtExpr model t
+    match e with
+    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
+    | none => errs
+  | .While c invs _ b =>
+    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
+                validateDiamondFieldAccessesForStmtExpr model b
+    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
+  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
+  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
+  | .PrimitiveOp _ args _ =>
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
+  | .StaticCall _ args =>
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
+  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
+  | .IncrDecr _ _ target =>
+    match _htgt : target.val with
+    | .Field tgt fieldName =>
+      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
+      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
+      innerErrors ++ fieldError
+    | .Local _ | .Declare _ => []
+  | _ => []
+  termination_by sizeOf expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt expr)
+    all_goals (try have := AstNode.sizeOf_val_lt t)
+    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+    all_goals (try term_by_mem)
+    all_goals (try omega)
+    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
+    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
+
+/--
+Validate a Laurel program for diamond-inherited field accesses.
+Returns an array of DiagnosticModel errors.
+-/
+def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
+  let errors := program.staticProcedures.foldl (fun acc proc =>
+    let bodyErrors := match proc.body with
+      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
+      | .Opaque postconds impl _ =>
+        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
+        let implErrors := match impl with
+          | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
+          | none => []
+        postErrors ++ implErrors
+      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
+      | .External => []
+    acc ++ bodyErrors) []
+  errors
+
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
+
 
 
 /-- A default ResolvedNode used as a placeholder during pre-registration.
@@ -927,8 +1016,7 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 /-! ## Entry point -/
 
 /-- Run the full resolution pass on a Laurel program. -/
-def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
-
+public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
 
@@ -951,13 +1039,15 @@ def resolve (program : Program) (existingModel: Option SemanticModel := none) : 
   let (program', finalState) := phase1.run { nextId := nextId }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
+  let semanticModel := {
+    compositeCount := program.types.length,
+    refToDef := refToDef,
+    nextId := finalState.nextId
+  }
+  let diamondErrors := validateDiamondFieldAccesses semanticModel program'
   { program := program',
-    model := {
-      compositeCount := program.types.length,
-      refToDef := refToDef,
-      nextId := finalState.nextId
-    },
-    errors := finalState.errors
+    model := semanticModel,
+    errors := finalState.errors ++ diamondErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
@@ -972,7 +1062,7 @@ are not part of the `UnorderedCoreWithLaurelTypes` but are needed for resolving
 `UserDefined` type references. These additional types should not be necessary
 but they are because certain type references have incorrectly not been updated.
 -/
-def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
+public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
@@ -1078,4 +1168,4 @@ def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   }
   (uc', model, finalState.errors)
 
-end
+end Strata.Laurel

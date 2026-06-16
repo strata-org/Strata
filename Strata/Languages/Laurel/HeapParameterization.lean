@@ -6,11 +6,14 @@
 module
 
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
+import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.EliminateValueInReturns
 
 /-
 Heap Parameterization Pass
@@ -183,6 +186,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
+  | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
@@ -199,6 +203,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
+  | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
@@ -215,6 +220,8 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
+  | .TBv n =>
+        some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
@@ -235,7 +242,7 @@ def readsHeap (name : Identifier) : TransformM Bool := do
 def writesHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapWriters.contains name
 
-def freshVarName : TransformM Identifier := do
+private def freshVarName : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
   return s!"$tmp{s.freshCounter}"
@@ -577,6 +584,16 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }
+
+/-- Pipeline pass: heap parameterization. -/
+public def heapParameterizationPass : LoweringPass where
+  name := "HeapParameterization"
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  needsResolves := true
+  run := fun p m _ =>
+    (heapParameterization m p, [], {})
+  comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
+  comesBefore := [⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
 
 end Strata.Laurel
 

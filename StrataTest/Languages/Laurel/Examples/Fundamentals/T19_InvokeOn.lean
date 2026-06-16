@@ -3,19 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r#"
+#eval testLaurel
+    (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
+#strata
+program Laurel;
 procedure P(x: int): bool;
 procedure Q(x: int): bool;
 
@@ -75,11 +72,4 @@ procedure badPostcondition(x: int)
 //        ^^^^ error: postcondition could not be proved
 {
 };
-
-"#
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "InvokeOn" program 14
-  (Strata.Laurel.processLaurelFileWithOptions { verifyOptions := { Core.VerifyOptions.default with solver := "z3" } })
-
-end Strata.Laurel
+#end

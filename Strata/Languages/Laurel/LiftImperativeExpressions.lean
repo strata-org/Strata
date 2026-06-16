@@ -6,8 +6,10 @@
 module
 
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.TransparencyPass
 
 namespace Strata
 namespace Laurel
@@ -153,6 +155,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
   | AstNode.mk val _ =>
   match val with
   | .Assign .. => true
+  | .IncrDecr .. => true
   | .StaticCall name args1 =>
     imperativeCallees.contains name.text ||
       args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
@@ -320,10 +323,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let condVar ← freshCondVar
         -- Save outer state
         let savedSubst := (← get).subst
-        let savedPrepends := (← get).prependedStmts
+        let savedPrepends ← takePrepends
 
         let seqCond ← transformExpr cond
-        let condPrepends := (← get).prependedStmts
+        let condPrepends ← takePrepends
         -- Process then-branch from scratch
         modify fun s => { s with prependedStmts := [], subst := [] }
         let seqThen ← transformExpr thenBranch
@@ -350,7 +353,8 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           return ⟨.Var (.Local condVar), source⟩
         else
           modify fun s => { s with prependedStmts := condPrepends ++ s.prependedStmts }
-          return default
+          -- Unused value
+          return ⟨ .Hole, expr.source ⟩
       else
         -- No liftable statements in branches — recurse normally.
         let seqCond ← transformExpr cond
@@ -575,6 +579,22 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
 
+  | .PrimitiveOp _ _ =>
+      -- A `PrimitiveOp` in statement position. If it carries any side effects
+      -- (an embedded assignment or imperative call — typically the result of
+      -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
+      -- discard the unused pure result. Otherwise leave the expression
+      -- statement intact so the Core translator can preserve it via
+      -- `exprAsUnusedInit`.
+      let imperativeCallees := (← get).imperativeCallees
+      if containsAssignmentOrImperativeCall imperativeCallees stmt then
+        let _ ← transformExpr stmt
+        let prepends ← takePrepends
+        modify fun s => { s with subst := [] }
+        return prepends
+      else
+        return [stmt]
+
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
       let prepends ← takePrepends
@@ -627,4 +647,30 @@ def liftExpressionAssignments (program : Program)
   { program with staticProcedures := seqProcedures }
 
 end -- public section
+
+/--
+Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
+`UnorderedCoreWithLaurelTypes`. Only procedures whose names appear in the core
+procedure list are transformed; functions are left unchanged.
+-/
+def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
+    (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
+  let imperativeCallees := uc.coreProcedures.map (·.name.text)
+  let liftedProgram := liftExpressionAssignments
+    { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
+    model imperativeCallees
+  let liftedProcs := liftedProgram.staticProcedures
+  { uc with
+    functions := uc.functions
+    coreProcedures := liftedProcs
+  }
+
+public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
+  name := "LiftImperativeExpressionsPass"
+  documentation := "Lifts assignments and other imperative expressions that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
+  comesAfter := [⟨ transparencyPass.meta, "The imperative expression lifting is only done in procedures, so it comes after the transparency pass"⟩]
+  needsResolves := true
+  run := fun p m _ =>
+    (liftImperativeExpressionsInCore p m, [], {})
+
 end Laurel

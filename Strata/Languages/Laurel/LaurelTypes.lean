@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.SemanticModel
 
 public section
 
@@ -45,6 +45,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, source ⟩
   | .LiteralString _ => ⟨ .TString, source ⟩
   | .LiteralDecimal _ => ⟨ .TReal, source ⟩
+  | .LiteralBv _ width => ⟨ .TBv width, source ⟩
   -- Variables
   | .Var (.Local id) => (model.get id).getType
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
@@ -81,6 +82,12 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
+  | .IncrDecr _ _ target =>
+    -- The expression's type is the type of the target variable.
+    match target.val with
+    | .Local id => (model.get id).getType
+    | .Field _ fieldName => (model.get fieldName).getType
+    | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
@@ -120,6 +127,7 @@ of composite), i.e. the kind of type that appears in modifies clauses and
 triggers heap parameterization. -/
 def isHeapRelevantType (ty : HighType) : Bool :=
   (classifyModifiesHighType ty).isSome
+
 
 end Strata.Laurel
 

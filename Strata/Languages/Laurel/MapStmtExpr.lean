@@ -71,6 +71,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
+  | .IncrDecr mode op target => match target with
+    | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
+    | ⟨.Local _, _⟩
+    | ⟨.Declare _, _⟩ => pure expr
+
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
   | .StaticCall callee args =>
@@ -103,7 +108,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprPrePostM pre post func), source⟩
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  -- Leaves: no StmtExprMd children.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
+  -- it must get its own arm above; otherwise all passes will silently
+  -- skip recursion into those children.
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
   post rebuilt
 termination_by sizeOf expr
@@ -171,6 +180,10 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
       pure ⟨.Assign targets' (← go value), source⟩
     | .Var (.Field target fieldName) =>
       pure ⟨.Var (.Field (← go target) fieldName), source⟩
+    | .IncrDecr mode op target => match target with
+      | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← go tgt) fieldName, vs⟩, source⟩
+      | ⟨.Local _, _⟩
+      | ⟨.Declare _, _⟩ => pure expr
     | .PureFieldUpdate target fieldName newValue =>
       pure ⟨.PureFieldUpdate (← go target) fieldName (← go newValue), source⟩
     | .StaticCall callee args =>
@@ -198,7 +211,7 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
     | .ProveBy value proof =>
       pure ⟨.ProveBy (← go value) (← go proof), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (← go func), source⟩
-    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure e
     let results ← post rebuilt
     return collapse results source

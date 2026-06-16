@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def transparentBodyProgram := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure transparentBodyMultipleOuts() returns (q: int, r: int)
 {
   assert true;
@@ -38,9 +34,4 @@ procedure transparentProcedureCaller() opaque {
 
   transparentBodyNoOuts()
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "TransparentBody" transparentBodyProgram 14 processLaurelFile
-
-end Laurel
+#end

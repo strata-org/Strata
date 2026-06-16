@@ -3,19 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
+/-! ## Failing asserts -/
 
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure foo()
   opaque
 {
@@ -25,14 +23,17 @@ procedure foo()
     assert false
 //  ^^^^^^^^^^^^ error: assertion does not hold
 };
+#end
 
+/-! ## Assume false makes assert false trivially provable -/
+
+#eval testLaurel
+#strata
+program Laurel;
 procedure bar()
   opaque
 {
     assume false;
     assert false
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "AssertFalse" program 17 processLaurelFile
+#end

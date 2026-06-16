@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
@@ -114,5 +115,12 @@ public def typeAliasElim (_model : SemanticModel) (program : Program) : Program 
     constants := program.constants.map fun c => { c with
       type := resolveAliasType amap c.type
       initializer := c.initializer.map (mapStmtExpr (resolveAliasExprNode amap)) } }
+
+/-- Pipeline pass: type alias elimination. -/
+public def typeAliasElimPass : LoweringPass where
+  name := "TypeAliasElim"
+  documentation := "Eliminates type aliases by replacing all UserDefined references to alias names with their resolved target types. Chained aliases are resolved transitively. Alias entries are removed from the type list."
+  needsResolves := true
+  run := fun p m _ => (typeAliasElim m p, [], {})
 
 end Strata.Laurel

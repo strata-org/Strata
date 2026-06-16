@@ -132,7 +132,7 @@ error: ❌ Type checking error.
 This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
-[arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, errorVoid, regex]
+[arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
 #eval Core.verify typeDeclPgm4

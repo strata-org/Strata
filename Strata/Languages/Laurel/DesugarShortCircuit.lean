@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.Resolution
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -49,8 +50,19 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
 
 /-- Desugar short-circuit operators in a program. -/
 def desugarShortCircuit (program : Program) : Program :=
-  let imperativeCallees := program.staticProcedures.map (fun p => p.name.text)
+  let imperativeCallees := program.staticProcedures.map (·.name.text)
+  -- TODO shouldn't imperativeCallees always be empty here?
   mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section
+
+/-- Pipeline pass: desugar short-circuit operators. -/
+public def desugarShortCircuitPass : LoweringPass where
+  name := "DesugarShortCircuit"
+  documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
+  run := fun p _ _ =>
+    (desugarShortCircuit p, [], {})
+  comesBefore := [
+      ⟨ liftImperativeExpressionsPass.meta, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]
+
 end Strata.Laurel

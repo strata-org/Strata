@@ -108,9 +108,15 @@ instance : HasInit P (Cmd P) where
 ---------------------------------------------------------------------
 
 /-- Get all variables accessed by an `ExprOrNondet`. -/
-def ExprOrNondet.getVars [HasVarsPure P P.Expr] (e : ExprOrNondet P) : List P.Ident :=
+def ExprOrNondet.getVars [HasFvars P] (e : ExprOrNondet P) : List P.Ident :=
   match e with
-  | .det e => HasVarsPure.getVars e
+  | .det e => HasFvars.getFvars e
+  | .nondet => []
+
+/-- Get all operator/function names referenced by an `ExprOrNondet`. -/
+def ExprOrNondet.getOps [HasOps P] (e : ExprOrNondet P) : List P.Ident :=
+  match e with
+  | .det e => HasOps.getOps e
   | .nondet => []
 
 /-- Map a function over the expression in an `ExprOrNondet`. -/
@@ -120,26 +126,26 @@ def ExprOrNondet.map {P Q : PureExpr} (f : P.Expr â†’ Q.Expr) : ExprOrNondet P â
 
 mutual
 /-- Get all variables accessed by `c`. -/
-def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
+def Cmd.getVars [HasFvars P] (c : Cmd P) : List P.Ident :=
   match c with
   | .init _ _ e _ => e.getVars
   | .set _ e _ => e.getVars
-  | .assert _ e _ => HasVarsPure.getVars e
-  | .assume _ e _ => HasVarsPure.getVars e
-  | .cover _ e _ => HasVarsPure.getVars e
+  | .assert _ e _ => HasFvars.getFvars e
+  | .assume _ e _ => HasFvars.getFvars e
+  | .cover _ e _ => HasFvars.getFvars e
 
-def Cmds.getVars [HasVarsPure P P.Expr] (cs : Cmds P) : List P.Ident :=
+def Cmds.getVars [HasFvars P] (cs : Cmds P) : List P.Ident :=
   match cs with
   | [] => []
   | c :: crest => Cmd.getVars c ++ Cmds.getVars crest
   termination_by (sizeOf cs)
 end
 
-instance (P : PureExpr) [HasVarsPure P P.Expr]
+instance (P : PureExpr) [HasFvars P]
   : HasVarsPure P (Cmd P) where
   getVars := Cmd.getVars
 
-instance (P : PureExpr) [HasVarsPure P P.Expr]
+instance (P : PureExpr) [HasFvars P]
   : HasVarsPure P (Cmds P) where
   getVars := Cmds.getVars
 
@@ -174,14 +180,38 @@ def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
   termination_by (sizeOf cs)
 
 instance (P : PureExpr) : HasVarsImp P (Cmd P) where
-  definedVars := Cmd.definedVars
+  definedVars c _ := Cmd.definedVars c
   modifiedVars := Cmd.modifiedVars
 
 instance (P : PureExpr) : HasVarsImp P (Cmds P) where
-  definedVars := Cmds.definedVars
+  definedVars c _ := Cmds.definedVars c
   modifiedVars := Cmds.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  modifiedOrDefinedVars := List.flatMap HasVarsImp.modifiedOrDefinedVars
+
+mutual
+/-- Get all operator/function names referenced by `c`. -/
+def Cmd.getOps [HasOps P] (c : Cmd P) : List P.Ident :=
+  match c with
+  | .init _ _ (.det e) _ => HasOps.getOps e
+  | .init _ _ .nondet _ => []
+  | .set _ (.det e) _ => HasOps.getOps e
+  | .set _ .nondet _ => []
+  | .assert _ e _ => HasOps.getOps e
+  | .assume _ e _ => HasOps.getOps e
+  | .cover _ e _ => HasOps.getOps e
+
+def Cmds.getOps [HasOps P] (cs : Cmds P) : List P.Ident :=
+  match cs with
+  | [] => []
+  | c :: crest => Cmd.getOps c ++ Cmds.getOps crest
+  termination_by (sizeOf cs)
+end
+
+instance (P : PureExpr) [HasOps P] : HasOpsImp P (Cmd P) where
+  getOps := Cmd.getOps
+
+instance (P : PureExpr) [HasOps P] : HasOpsImp P (Cmds P) where
+  getOps := Cmds.getOps
 
 ---------------------------------------------------------------------
 

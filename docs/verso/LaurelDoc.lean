@@ -8,7 +8,7 @@ import VersoManual
 
 import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.LaurelTypes
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
@@ -24,6 +24,83 @@ open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
+/-- Markdown documentation for all Laurel passes, including their
+    `comesBefore`/`comesAfter` ordering rationales. Note: pass
+    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
+    `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
+    converter); use backticks for inline code instead. -/
+def laurelPipelineDocsMarkdown : String :=
+  let entries := allPasses.map fun pass =>
+    let base := s!"- **{pass.name}**: {pass.documentation}"
+    let beforeDeps := pass.comesBefore.map fun cb =>
+      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
+    let afterDeps := pass.comesAfter.map fun ca =>
+      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
+    let deps := beforeDeps ++ afterDeps
+    if deps.isEmpty then base
+    else base ++ "\n" ++ "\n".intercalate deps
+  "\n".intercalate entries.toList
+
+/-- Markdown dependency graph for the Laurel passes, derived from the
+    `comesBefore`/`comesAfter` properties. -/
+def laurelPipelineDependencyGraphMarkdown : String := Id.run do
+  -- Collect all edges: (source, target, reason) where source comesBefore target
+  let mut edges : List (String × String × String) := []
+  for pass in allPasses do
+    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
+    for cb in pass.comesBefore do
+      edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
+    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
+    for ca in pass.comesAfter do
+      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
+
+  -- Deduplicate edges with the same (source, target), keeping the first reason.
+  edges := edges.foldl (init := []) fun acc e =>
+    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
+
+  -- Build the graph as a markdown list showing dependencies
+  let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
+  if edges.isEmpty then
+    md := md ++ "*No ordering constraints declared.*\n"
+  else
+    for (src, tgt, reason) in edges do
+      md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
+
+  -- Add a textual rendering of the pipeline order with dependency annotations
+  md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
+  md := md ++ "```\n"
+  let mut idx := 1
+  for pass in allPasses do
+    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
+    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
+    let deps := beforeDeps ++ afterDeps
+    let depStr := if deps.isEmpty then "" else String.join deps
+    md := md ++ s!"{idx}. {pass.name}{depStr}\n"
+    idx := idx + 1
+  md := md ++ "```\n"
+  return md
+
+/-- Block command that generates documentation for all Laurel pipeline passes.
+    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
+@[block_command]
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDocsMarkdown
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command that generates a dependency graph for the Laurel pipeline passes
+    based on the `comesBefore` and `comesAfter` properties.
+    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
+@[block_command]
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDependencyGraphMarkdown
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
 #doc (Manual) "The Laurel Language" =>
 %%%
 shortTitle := "Laurel"
@@ -33,13 +110,17 @@ shortTitle := "Laurel"
 
 Laurel is an intermediate verification language designed to serve as a target for popular
 garbage-collected languages that include imperative features, such as Java, Python, and
-JavaScript. Laurel tries to include any features that are common to those three languages.
+JavaScript, where those languages have been extended to include verification specific constructs.
+Laurel tries to include any features that are common to those three languages.
 
 Laurel enables doing various forms of verification:
-- Deductive verification
-- (WIP) Model checking
-- (WIP) Property based testing
+- Testing
+- (WIP) Property-based testing
+- (WIP) Bounded symbolic execution
+- Unbounded symbolic execution
 - (WIP) Data-flow analysis
+
+## Shared language features
 
 Here are some Laurel language features that are shared between the source languages:
 - Statements such as loops and return statements
@@ -48,9 +129,14 @@ Here are some Laurel language features that are shared between the source langua
 - Object oriented concepts such as inheritance, type checking, up and down casting and
   dynamic dispatch
 - (WIP) Error handling via exceptions
-- (WIP) Higher-order procedures and procedure types
+- (WIP) Procedures types and procedures as values
 - (WIP) Parametric polymorphism
 
+Laurel does not distinguish between statements and expressions.
+Expression-like or statement-like constructs can occur in the same positions.
+Each statement-expression has a type, which for statement-like constructs might be void.
+
+## Verification features
 On top of the above features, Laurel adds features that are useful specifically for verification:
 - Assert and assume statements
 - Loop invariants
@@ -65,6 +151,7 @@ On top of the above features, Laurel adds features that are useful specifically 
 - Unbounded integer and real types
 - To be designed constructs for supporting proof writing
 
+## Verification design choices
 A peculiar choice of Laurel is that it does not require imperative code to be encapsulated
 using a functional specification. A reason for this is that sometimes the imperative code is
 as readable as the functional specification. For example:
@@ -77,12 +164,9 @@ procedure increment(counter: Counter)
 };
 ```
 
-## Implementation Choices
-
-A design choice that impacts the implementation of Laurel is that statements and expressions
-share a single implementation type, the StmtExpr. This reduces duplication for constructs
-like conditionals and variable declarations. Each StmtExpr has a user facing type, which for
-statement-like constructs could be void.
+## Internal constructors and properties
+Some constructors and properties in the Laurel AST are marked for internal usage and should not be needed by Laurel users.
+Having these internal properties and constructors allows us to define an incremental translation to Core which improves maintainability.
 
 # Types
 
@@ -146,38 +230,65 @@ A Laurel program consists of procedures, global variables, type definitions, and
 
 {docstring Strata.Laurel.Program}
 
-# Translation Pipeline
+# Implementation
 
-Laurel programs are verified by translating them to Strata Core and then invoking the Core
-verification pipeline. The translation involves several passes, each transforming the Laurel
-program before the final conversion to Core.
+The static semantics of Laurel are defined by `Resolution.lean`. This is where Laurel references are resolved and where type checking, when implemented, will be done. Calling `resolve` will produce diagnostics and a `SemanticModel` that can be used to navigate between definitions and references.
+If new references or definitions are created during compilation, `resolve` must be called again to get a complete model.
 
-## Heap Parameterization
+## Translation Pipeline
 
-The heap parameterization pass transforms procedures that interact with the heap by adding
-explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`, where
-`Box` is a tagged union with constructors for each primitive type.
+The Laurel to Core translation pipeline uses these IRs:
+- Laurel
+- UnorderedCoreWithLaurelTypes
+- CoreWithLaurelTypes
+- Core
 
-Procedures that write the heap receive both an input and output heap parameter. Procedures
-that only read the heap receive an input heap parameter. Field reads and writes are rewritten
-to use `readField` and `updateField` functions.
+Most of the passes are in the Laurel IR.
+The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
+The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
+And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
-## Modifies Clauses
+## Passes
 
-The modifies clause transformation translates modifies clauses into additional ensures
-clauses. The modifies clause of a procedure is translated into a quantified assertion that
-states that objects not mentioned in the modifies clause have their field values preserved
-between the input and output heap.
+The following passes making up the compilation of Laurel to Core:
 
-## Lifting Expression Assignments
+{laurelPipelineDocs}
 
-The expression assignment lifting pass transforms assignments that appear in expression
-contexts into preceding statements. This is necessary because Strata Core does not support
-assignments within expressions.
+## Pass Dependency Graph
 
-## Translation to Core
+The following graph shows the ordering constraints between passes.
 
-The final translation converts Laurel types, expressions, statements, and procedures into
-their Strata Core equivalents. Procedures with bodies that only have constructs supported by
-Core expressions are translated to a Core function, while other procedures become Core
-procedures.
+{laurelPipelineDependencyGraph}
+
+# Differences between Laurel and Core
+
+## Language design
+
+### Parameter lists
+Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+
+At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
+`assign x, y := multiOutCall(a, b)`
+Core uses the argument list to assign the output parameters, like this:
+`multiOutCall(a, b, out x, out y)`
+
+In Laurel, an inout parameter only influences the callee's code, since it means there is a single variable that is used as input and output. On the calling side however, there is no concept of inout parameters. This is different from Core, where inout variables affect the calling side. Example of an inout being called in Core, `hasInout(inout x)`.
+
+### Assignments to fresh and existing declarations
+In Laurel, assignments can have multiple targets. Each target can be either an existing variable or a local declaration. Example:
+```
+var x: int;
+var z: int;
+assign x, var y: int, z := hasThreeOutputs()
+```
+In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to an existing local variable. Example:
+```
+var x: int;
+var y: int;
+var z: int;
+hasThreeOutputs(out x, out y, out z);
+```
+
+## Implementation
+
+In Laurel, all verification concepts, such as assume statements, pre and postconditions, and transparency of procedures, are part of the language. In Core however, there is the concept of metadata. Concepts that relate to only one or a few analyses might not be considered concepts of the Core language, and will then be represented using metadata instead of being given a typed representation in the AST.

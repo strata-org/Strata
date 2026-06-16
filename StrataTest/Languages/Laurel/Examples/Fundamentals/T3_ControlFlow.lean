@@ -3,19 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+#eval testLaurel <|
+#strata
+program Laurel;
 
-def program := r"
 procedure assertAndAssumeInTransparent(a: int) returns (r: int)
 {
   assert 2 == 3;
@@ -24,8 +21,7 @@ procedure assertAndAssumeInTransparent(a: int) returns (r: int)
   return a
 };
 
-procedure returnAtEnd(x: int) returns (r: int)
-{
+procedure returnAtEnd(x: int) returns (r: int) {
   if x > 0 then {
     if x == 1 then {
       return 1
@@ -42,6 +38,18 @@ procedure elseWithCall(): int
   return if true then 3 else returnAtEnd(3)
 };
 
+procedure testFunctions()
+  opaque
+{
+  assert returnAtEnd(1) == 1;
+  assert returnAtEnd(1) == 2;
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+
+  assert guardInFunction(1) == 1;
+  assert guardInFunction(1) == 2
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
 procedure guardInFunction(x: int) returns (r: int)
 {
   if x > 0 then {
@@ -53,18 +61,6 @@ procedure guardInFunction(x: int) returns (r: int)
   };
 
   return 3
-};
-
-procedure testFunctions()
-  opaque
-{
-  assert returnAtEnd(1) == 1;
-  assert returnAtEnd(1) == 2;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
-
-  assert guardInFunction(1) == 1;
-  assert guardInFunction(1) == 2
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure guards(a: int) returns (r: int)
@@ -123,7 +119,4 @@ procedure valuelessEarlyReturn(b: bool)
   };
   assert true
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval! testInputWithOffset "ControlFlow" program 17 processLaurelFile
+#end

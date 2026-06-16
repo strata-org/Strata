@@ -177,6 +177,23 @@ inductive QuantifierMode where
   | Exists
   deriving Repr, BEq, Inhabited
 
+/-- Whether an increment/decrement operator is in prefix or postfix form.
+    Prefix form yields the new value; postfix form yields the old value. -/
+inductive IncrDecrMode where
+  /-- Prefix form: `++x` or `--x`. Yields the new value. -/
+  | Pre
+  /-- Postfix form: `x++` or `x--`. Yields the old value. -/
+  | Post
+  deriving Repr, BEq, Inhabited
+
+/-- Whether an increment/decrement operator increments by 1 or decrements by 1. -/
+inductive IncrDecrOp where
+  /-- `++` — adds 1 to the target. -/
+  | Incr
+  /-- `--` — subtracts 1 from the target. -/
+  | Decr
+  deriving Repr, BEq, Inhabited
+
 mutual
 
 /--
@@ -193,7 +210,6 @@ structure Procedure : Type where
   outputs : List Parameter
   /-- The preconditions that callers must satisfy. -/
   preconditions : List Condition
-  -- TODO: add back determinism together with an implementation
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
   /-- The procedure body: transparent, opaque, or abstract. -/
@@ -243,6 +259,8 @@ inductive Body where
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       (modifies : List (AstNode StmtExpr))
+      -- TODO: add back non-determinism together with an implementation
+      -- deterministic : Bool
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
   | Abstract (postconditions : List Condition)
   /-- An external body for procedures that are not translated to Core (e.g., built-in primitives). -/
@@ -288,12 +306,20 @@ inductive StmtExpr : Type where
   | LiteralString (value : String)
   /-- A decimal literal. -/
   | LiteralDecimal (value : Decimal)
+  /-- A bitvector literal with value and width. -/
+  | LiteralBv (value : Nat) (width : Nat)
   /-- A variable reference or declaration. When `var` is `Variable.Local`, this is a reference
       that evaluates to the variable's value. When `var` is `Variable.Declare`, this is a
       declaration without an initializer (used as a standalone statement in a block). -/
   | Var (var : Variable)
   /-- Assignment to one or more targets. Multiple targets are only supported with identifier targets and a call as the RHS. -/
   | Assign (targets : List (AstNode Variable)) (value : AstNode StmtExpr)
+  /-- Java-style increment/decrement operator. The target must be a `Local` or `Field`
+      `Variable`. As an expression, prefix form yields the new value (after the update)
+      and postfix form yields the old value (before the update). As a statement the
+      yielded value is discarded.
+      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+  | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
@@ -335,12 +361,17 @@ inductive StmtExpr : Type where
   | Abstract
   /-- Refers to all objects in the heap. Used in reads or modifies clauses. -/
   | All
-  /-- A hole representing an unknown expression.
+  /-- A hole represents an unknown expression.
+      This can be used to represent programs that are still under development, for example the program `3 + `
+      The defining property of a hole is that interaction with it and other code should not produce any errors.
+      Besides representing partial user programs,
+      holes can also be used to handle under development parts of compilers that target Laurel.
       - `deterministic`: if true, the hole represents a deterministic unknown
         (translated as an uninterpreted function); if false, a nondeterministic
         unknown (translated as a havoced variable). Nondeterministic holes are
         not allowed in functions.
-      - `type`: inferred by the hole type inference pass; `none` means not yet inferred. -/
+      - `type`: this property is used internally by Laurel and can be left to its default value.
+        Internal usage: inferred by the hole type inference pass; `none` means not yet inferred. -/
   | Hole (deterministic : Bool := true) (type : Option (AstNode HighType) := none)
 
 inductive ContractType where
@@ -470,6 +501,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .LiteralBool .. => "LiteralBool"
   | .LiteralString .. => "LiteralString"
   | .LiteralDecimal .. => "LiteralDecimal"
+  | .LiteralBv .. => "LiteralBv"
   | .Var .. => "Var"
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
@@ -492,6 +524,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Abstract => "Abstract"
   | .All => "All"
   | .Hole .. => "Hole"
+  | .IncrDecr .. => "IncrDecr"
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
