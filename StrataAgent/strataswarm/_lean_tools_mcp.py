@@ -289,10 +289,33 @@ def create_lean_tools_server(workspace: str | None = None):
         )
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
+    @tool(
+        name="collect_progress",
+        description=(
+            "Recursively collect all progress.md files under the workspace. "
+            "Returns a summary of all PO activity across the entire proof tree, "
+            "plus the most recently modified .lean file to detect active work."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "workspace": {
+                    "type": "string",
+                    "description": "Workspace path (e.g. 'StrataAgent/Sandbox')",
+                },
+            },
+            "required": ["workspace"],
+        },
+    )
+    async def collect_progress_tool(input: dict[str, Any]) -> dict[str, Any]:
+        from .modules.po_util import collect_progress
+        result = collect_progress(input["workspace"])
+        return {"content": [{"type": "text", "text": result}]}
+
     return create_sdk_mcp_server(
         name="lean_tools",
         version="1.0.0",
         tools=[write_decomposed_lemma, count_sorries, list_theorems,
                check_imports, show_file_state, write_helper_lemma_tool,
-               get_sorry_positions, get_sorries_by_theorem],
+               get_sorry_positions, get_sorries_by_theorem, collect_progress_tool],
     )

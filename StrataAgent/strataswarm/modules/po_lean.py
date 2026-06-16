@@ -358,15 +358,41 @@ class SwarmLeanTools:
         """Complete summary of a Lean file's proof state.
 
         Returns a dict with:
-        - theorems: [{name, status, start_line, end_line, has_sorry}]
+        - theorems: [{name, status, start_line, end_line, has_sorry, sorry_positions}]
         - sorry_count: total sorries
         - compiles: bool
+        - has_error: bool
+        - errors: all error diagnostic lines
         - main_theorem: name of last theorem (assumed to be the main one)
         - main_theorem_sorry_free: bool
         """
+        import subprocess
         split = self.split_theorems(file_path)
         sorry_info = self.count_sorries(file_path)
-        compile_result = self.check_compiles(file_path)
+
+        # Get full compile output for diagnostics
+        errors = []
+        try:
+            result = subprocess.run(
+                ["lake", "env", "lean", file_path],
+                cwd=str(self._root),
+                capture_output=True, text=True, timeout=120,
+            )
+            output = result.stdout + "\n" + result.stderr
+            has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
+            for line in output.splitlines():
+                if ": error:" in line:
+                    errors.append(line.strip())
+            has_error = len(errors) > 0
+            if result.returncode != 0 and not has_error:
+                has_error = result.returncode != 0 and not has_sorry
+            success = not has_error
+        except Exception as e:
+            success, has_error, has_sorry = False, True, False
+            errors = [str(e)]
+
+        # Get sorry positions grouped by theorem
+        sorry_by_thm = self.get_sorries_by_theorem(file_path)
 
         theorems = []
         for b in (split.blocks if not split.error else []):
@@ -376,6 +402,7 @@ class SwarmLeanTools:
                 "start_line": b.start,
                 "end_line": b.end,
                 "has_sorry": b.has_sorry,
+                "sorry_positions": sorry_by_thm.get(b.name, []),
             })
 
         main_thm = theorems[-1] if theorems else None
@@ -383,8 +410,9 @@ class SwarmLeanTools:
         return {
             "theorems": theorems,
             "sorry_count": sorry_info.total,
-            "compiles": compile_result.success,
-            "has_error": compile_result.has_error,
+            "compiles": success,
+            "has_error": has_error,
+            "errors": errors,
             "main_theorem": main_thm["name"] if main_thm else None,
             "main_theorem_sorry_free": (not main_thm["has_sorry"]) if main_thm else False,
         }
@@ -470,7 +498,7 @@ class SwarmLeanTools:
 
     # ─── Refactoring: extract sorry theorems into separate files ─────────
 
-    def extract_sorry_theorems(self, file_path: str, output_dir: str | None = None) -> ExtractResult:
+    def extract_sorry_theorems(self, file_path: str, output_dir: str | None = None, exclude: set[str] | None = None) -> ExtractResult:
         """Extract sorry theorems from a file into individual files for child POs.
 
         The original file is LEFT UNCHANGED — it already compiles (with sorry
@@ -495,16 +523,18 @@ class SwarmLeanTools:
         if split.error:
             return ExtractResult(error=split.error)
 
-        sorry_blocks = [b for b in split.blocks if b.has_sorry]
+        sorry_blocks = [b for b in split.blocks if b.has_sorry and (not exclude or b.name not in exclude)]
         if not sorry_blocks:
             return ExtractResult(skipped=True, reason="no sorry theorems")
 
         content = source.read_text()
         lines = content.splitlines()
 
-        # Header = everything before first theorem (imports, opens, variables)
+        # Header = everything before first theorem (imports, opens, variables), no comments
         first_thm_line = min(b.start for b in split.blocks) if split.blocks else 0
-        header = "\n".join(lines[:first_thm_line])
+        header_lines = [l for l in lines[:first_thm_line]
+                        if not l.strip().startswith("/-") and not l.strip().startswith("--")]
+        header = "\n".join(header_lines)
 
         # Output directory
         if output_dir:
@@ -519,6 +549,7 @@ class SwarmLeanTools:
 
         for block in sorry_blocks:
             block_text = "\n".join(lines[block.start:block.end + 1])
+
             safe_name = _ascii_escape(block.name)
             new_filename = f"lemma_helper_{safe_name}.lean"
             new_path = out_path / new_filename
@@ -545,8 +576,10 @@ class SwarmLeanTools:
                 src_file = root / f
                 if src_file.exists():
                     shutil.move(str(src_file), str(failed_dir / src_file.name))
-            created_files = [f for f in created_files if f not in failed_files]
-            extracted_names = [n for n, f in zip(extracted_names, created_files)]
+            failed_set = set(failed_files)
+            surviving = [(f, n) for f, n in zip(created_files, extracted_names) if f not in failed_set]
+            created_files = [f for f, _ in surviving]
+            extracted_names = [n for _, n in surviving]
 
         if not created_files:
             return ExtractResult(error="All extracted files failed to compile")

@@ -232,10 +232,18 @@ private def handleSplitTheorems (filePath : String) : IO String := do
       let line := lines[i]!
       let trimmed := line.trimAsciiStart.toString
       if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " then
-        -- Save previous theorem
+        -- Save previous theorem — trim end to exclude trailing comments/blanks
         if currentThm != "" then
           let hasSorry := strContains currentBlock "sorry"
-          blocks := blocks.push (currentThm, currentStart, i - 1, hasSorry)
+          let mut endLine := i - 1
+          -- Scan backward past blank lines and comments
+          while endLine > currentStart do
+            let prevLine := lines[endLine]!.trimAsciiStart.toString
+            if prevLine.isEmpty || prevLine.startsWith "/-" || prevLine.startsWith "--" then
+              endLine := endLine - 1
+            else
+              break
+          blocks := blocks.push (currentThm, currentStart, endLine, hasSorry)
         -- Start new theorem
         let parts := trimmed.splitOn " "
         let idx := if trimmed.startsWith "private" then 2 else 1
@@ -247,10 +255,17 @@ private def handleSplitTheorems (filePath : String) : IO String := do
       else if currentThm != "" then
         currentBlock := currentBlock ++ line ++ "\n"
 
-    -- Save last theorem
+    -- Save last theorem — trim trailing blanks/comments
     if currentThm != "" then
       let hasSorry := strContains currentBlock "sorry"
-      blocks := blocks.push (currentThm, currentStart, lines.length - 1, hasSorry)
+      let mut endLine := lines.length - 1
+      while endLine > currentStart do
+        let prevLine := lines[endLine]!.trimAsciiStart.toString
+        if prevLine.isEmpty || prevLine.startsWith "/-" || prevLine.startsWith "--" then
+          endLine := endLine - 1
+        else
+          break
+      blocks := blocks.push (currentThm, currentStart, endLine, hasSorry)
 
     let items := String.intercalate "," (blocks.toList.map fun (n, s, e, hs) =>
       s!"\{\"name\":\"{jsonEscape n}\",\"start\":{s},\"end\":{e},\"has_sorry\":{hs}}")

@@ -31,6 +31,13 @@ system_prompt: >
   - Clarifier needs more info from user → user_message with the question, transition "respond"
   - Still gathering info / conversational → transition "respond"
 
+  STALL DETECTION:
+  - Do NOT declare "prover_done" based on top-level progress.md alone.
+  - The monitor reports "Latest Activity" showing the most recent .lean file edit.
+  - If ANY .lean file was edited in the last 15 minutes, the prover IS working (child POs).
+  - Only transition "prover_done" if the monitor reports NO file edits for 30+ minutes
+    AND no progress at any depth level.
+
   REMEMBER: You are NOT executing work. You are deciding what happens next.
   The state machine handles file operations, soundness checks, and prover dispatch.
 

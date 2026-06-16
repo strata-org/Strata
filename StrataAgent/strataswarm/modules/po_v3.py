@@ -10,7 +10,7 @@ those sorries into standalone helpers. Recurse on each helper.
 Key agents (all internal to the PO, spawned dynamically):
 - proof_writer_v2: persistent, writes proofs, receives guidance
 - proof_guide: persistent, tracks strategy, advises on approach
-- goal_analyzer: stateless, diagnoses stuck goals
+- proof_guide: persistent, diagnoses stuck goals + provides strategy
 - lemma_extractor: stateless, replaces sorries with helper refs
 """
 
@@ -31,14 +31,14 @@ from .po_lean import get_lean_tools
 from .po_util import write_checkpoint, write_progress, setup_child_workspace
 from .verifiers.proof_writer_verifier import make_proof_writer_verifier
 from .verifiers.lemma_extractor_verifier import make_extractor_verifier
-from .verifiers.goal_analyzer_verifier import GoalAssessment
 from .._helpers import swarm_agent
 
 T = TypeVar("T")
 
 MAX_RETRIES = 3
 MAX_RECURSION_DEPTH = 3
-WRITER_TURNS_PER_ATTEMPT = [50, 20, 10]  # decreasing budget per attempt
+WRITER_TURNS_PER_ATTEMPT = [75, 30, 15]  # decreasing budget per attempt
+GRACE_TURNS_PER_ATTEMPT = 20  # turns per grace attempt (sorry wrap-up phase)
 WRITER_CLEANUP_TURNS = 10
 EXTRACTOR_MAX_TURNS = 50
 MAX_PROOF_ATTEMPTS = 3
@@ -173,6 +173,12 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if not (originals_dir / "Stub.lean").exists():
         shutil.copy2(stub_file, originals_dir / "Stub.lean")
 
+    # Copy cheat sheet into workspace so all agents (guide, writer) can read it
+    cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
+    cheat_dst = workspace_abs / "StrataProofCheatSheet.md"
+    if cheat_src.exists() and not cheat_dst.exists():
+        shutil.copy2(cheat_src, cheat_dst)
+
     # Resume or fresh start
     restored = getattr(agent, '_restored_state', None)
     if restored and isinstance(restored, dict):
@@ -187,9 +193,16 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             parent_agent=parent_agent, depth=depth,
         )
 
+    # Clean up theorem_name (TM sometimes passes "Theorems: ['name']" format)
+    if state.theorem_name and "'" in state.theorem_name:
+        import re
+        match = re.search(r"'([^']+)'", state.theorem_name)
+        if match:
+            state.theorem_name = match.group(1)
+
     state.agent_name = agent.spec.name
     agent._workflow_state = state
-    await agent._emit("message", f"[PO] Starting: {theorem_name} in {workspace_rel} (depth={depth})")
+    await agent._emit("message", f"[PO] Starting: {state.theorem_name} in {workspace_rel} (depth={depth})")
 
     while not agent.cancellation.is_cancelled:
         if state.stage in (Stage.DONE, Stage.FAILED):
@@ -271,19 +284,29 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
     # Build verifier (pure deterministic checks)
     verify_fn = make_proof_writer_verifier(stub_rel, original_content, state.workspace, state.theorem_name)
 
-    action = _build_initial_action(state)
+    # Get initial strategy from guide BEFORE first attempt
+    await agent._emit("message", "[PO] Consulting proof guide for initial strategy...")
+    initial_advice = await guide.run_ai(
+        inp=(
+            f"A proof_writer is about to prove theorem '{state.theorem_name}' in {stub_rel}.\n"
+            f"Read the cheat sheet and then advise on the best approach.\n"
+            f"Consider: what proof technique fits this theorem's structure? "
+            f"What common pitfalls should the writer avoid?"
+        ),
+    )
+    guide_preamble = initial_advice.raw_result or ""
 
+    action = _build_initial_action(state)
+    if guide_preamble:
+        action = f"STRATEGY ADVICE from your proof guide:\n{guide_preamble}\n\n{action}"
+
+    # ── Phase 1: Initial attempts (prove directly) ──
     for attempt in range(MAX_PROOF_ATTEMPTS):
         turns = WRITER_TURNS_PER_ATTEMPT[min(attempt, len(WRITER_TURNS_PER_ATTEMPT) - 1)]
         await agent._emit("message", f"[PO] Prove attempt {attempt + 1}/{MAX_PROOF_ATTEMPTS} ({turns} turns)")
 
-        # Inject turn budget into the action message
-        if attempt == 0:
-            action_with_budget = f"{action}\n\nYou have {turns} turns for this attempt. Be efficient."
-        else:
-            action_with_budget = f"{action}\n\nYou have {turns} turns remaining. Focus on the most impactful changes."
+        action_with_budget = f"{action}\n\nYou have {turns} turns."
 
-        # Run writer with verified_loop
         outcome = await verified_loop(
             agent_ctx=writer,
             initial_input=action_with_budget,
@@ -293,63 +316,139 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
             use_run_ai=True,
         )
 
-        # Check: sorry-free?
-        if not tools.has_sorry(stub_rel):
+        # Check results and update progress
+        result = _check_attempt_result(tools, stub_rel, cwd, original_content)
+        write_progress(cwd, state)
+
+        if result["sorry_free"]:
             await agent._emit("message", "[PO] Proof complete ✅")
             return Trans.PROVED
-
-        # Check: file unchanged? (no progress at all)
-        current_content = (cwd / stub_rel).read_text()
-        if current_content.strip() == original_content.strip():
+        if result["unchanged"]:
             await agent._emit("message", "[PO] No progress — file unchanged")
             state.last_failure_details = "Writer made no changes"
             return Trans.NO_PROGRESS
-
-        # Check: compiles?
-        cr = tools.check_compiles(stub_rel)
-        if not cr.success:
-            # Try cleanup round
+        if result["broken"]:
             await agent._emit("message", "[PO] File doesn't compile — cleanup round")
             await writer.run_ai(
                 inp="Your file does not compile. Fix compilation errors ONLY. Do not add new proof content. Just make it compile (sorry is fine).",
                 max_turns=WRITER_CLEANUP_TURNS,
             )
-            cr = tools.check_compiles(stub_rel)
-            if not cr.success:
-                # Revert to original
+            if not tools.check_compiles(stub_rel).success:
                 (cwd / stub_rel).write_text(original_content)
                 state.last_failure_details = "Writer broke compilation, could not fix"
                 return Trans.NO_PROGRESS
 
-        # Has sorry but made progress — last attempt? Then go to EXTRACT
+        # Last initial attempt → move to grace phase
         if attempt >= MAX_PROOF_ATTEMPTS - 1:
             break
 
-        # Not the last attempt — consult guide + analyzer for next round
+        # Consult guide (which now also diagnoses goals) for next round
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
-        await agent._emit("message", f"[PO] Still has sorry: {sorry_info}. Consulting guide...")
+        await agent._emit("message", f"[PO] Still has {result['sorry_count']} sorry. Consulting guide...")
 
-        # Ask goal_analyzer (stateless) about stuck goals
-        diagnosis = await _run_goal_analyzer(agent, state, stub_rel, sorry_info)
+        # Build sorry position details for guide
+        first_thm = next(iter(sorry_info), None)
+        sorry_detail = ""
+        if first_thm and sorry_info[first_thm]:
+            pos = sorry_info[first_thm][0]
+            sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see the stuck goal."
 
-        if diagnosis and diagnosis.assessment == "contradictory":
-            await agent._emit("message", f"[PO] Goal diagnosed as contradictory: {diagnosis.reasoning}")
-            state.last_failure_details = f"Contradictory goal: {diagnosis.reasoning}"
-            return Trans.NO_PROGRESS
-
-        # Ask proof_guide for strategy
-        diagnosis_text = f"Assessment: {diagnosis.assessment}. {diagnosis.reasoning}" if diagnosis else "No diagnosis available."
         advice_result = await guide.run_ai(
-            inp=f"Writer is stuck after attempt {attempt + 1}.\nGoals with sorry: {sorry_info}\nDiagnosis: {diagnosis_text}\nWhat should it try next?",
+            inp=(
+                f"Writer is stuck after attempt {attempt + 1}.\n"
+                f"File: {stub_rel}\n"
+                f"Goals with sorry: {sorry_info}\n"
+                f"{sorry_detail}\n"
+                f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
+                f"If a goal looks contradictory or needs strengthening, say so clearly."
+            ),
         )
         advice = advice_result.raw_result or "Try a different approach."
 
-        # Build next round's action with guidance
+        if "contradictory" in advice.lower() and "not provable" in advice.lower():
+            await agent._emit("message", f"[PO] Guide says goal is contradictory")
+            state.last_failure_details = f"Guide diagnosed contradictory goal"
+            return Trans.NO_PROGRESS
+
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
         await agent._emit("message", f"[PO] Feeding guidance to writer...")
 
-    # Writer made progress but has sorry remaining → go to EXTRACT
-    await agent._emit("message", "[PO] Proof has sorry remaining → extracting helpers")
+    # ── Phase 2: Grace attempts (wrap up — reduce sorry in main theorem) ──
+    # Track sorry in the MAIN theorem — factoring into helpers reduces this count
+    sorry_info = tools.get_sorries_by_theorem(stub_rel)
+    main_sorry_count = len(sorry_info.get(state.theorem_name, []))
+    max_grace = main_sorry_count  # at most one grace attempt per sorry in main
+
+    if main_sorry_count == 0:
+        # Main theorem already sorry-free (helpers have sorry) → go to extract
+        await agent._emit("message", "[PO] Main theorem sorry-free → extracting helpers")
+        return Trans.HAS_SORRY
+
+    await agent._emit("message", f"[PO] Phase 2: wrap-up ({main_sorry_count} sorry in main theorem, up to {max_grace} grace attempts)")
+    prev_main_sorry = main_sorry_count
+
+    for grace in range(max_grace):
+        grace_turns = GRACE_TURNS_PER_ATTEMPT
+        await agent._emit("message", f"[PO] Grace attempt {grace + 1}/{max_grace} ({grace_turns} turns)")
+
+        sorry_info = tools.get_sorries_by_theorem(stub_rel)
+        action_with_budget = (
+            f"WRAP UP — grace attempt {grace + 1}. You have {grace_turns} turns.\n\n"
+            f"Remaining sorry in main theorem '{state.theorem_name}': {sorry_info.get(state.theorem_name, [])}\n\n"
+            f"For each sorry you cannot close directly, factor it into a helper theorem:\n"
+            f"  theorem helper_<name> (<params>) : <goal_type> := by sorry\n"
+            f"Then use `exact helper_<name> ...` in the main proof.\n\n"
+            f"The MAIN theorem '{state.theorem_name}' must be sorry-free when you're done.\n"
+            f"Helpers CAN have sorry. Keep everything in one file. Make it compile."
+        )
+
+        outcome = await verified_loop(
+            agent_ctx=writer,
+            initial_input=action_with_budget,
+            verify=verify_fn,
+            max_rounds=2,
+            max_turns=grace_turns,
+            use_run_ai=True,
+        )
+
+        if not tools.has_sorry(stub_rel):
+            await agent._emit("message", "[PO] Proof complete ✅")
+            return Trans.PROVED
+
+        cr = tools.check_compiles(stub_rel)
+        if not cr.success:
+            await writer.run_ai(
+                inp="Your file does not compile. Fix compilation errors ONLY. Just make it compile (sorry is fine).",
+                max_turns=WRITER_CLEANUP_TURNS,
+            )
+            if not tools.check_compiles(stub_rel).success:
+                (cwd / stub_rel).write_text(original_content)
+                state.last_failure_details = "Writer broke compilation during wrap-up"
+                return Trans.NO_PROGRESS
+
+        # Did we reduce sorry in the MAIN theorem?
+        sorry_info = tools.get_sorries_by_theorem(stub_rel)
+        current_main_sorry = len(sorry_info.get(state.theorem_name, []))
+        write_progress(cwd, state)
+
+        if current_main_sorry >= prev_main_sorry:
+            await agent._emit("message", f"[PO] No reduction in main theorem sorry ({current_main_sorry} remaining) — stopping")
+            break
+
+        await agent._emit("message", f"[PO] Main theorem sorry: {prev_main_sorry} → {current_main_sorry}")
+        prev_main_sorry = current_main_sorry
+
+        if current_main_sorry == 0:
+            await agent._emit("message", "[PO] Main theorem sorry-free → extracting helpers")
+            return Trans.HAS_SORRY
+
+    # Whatever state we're in, go to extract (lemma_extractor handles remaining main sorry)
+    sorry_info = tools.get_sorries_by_theorem(stub_rel)
+    main_sorries = len(sorry_info.get(state.theorem_name, []))
+    if main_sorries == 0:
+        await agent._emit("message", "[PO] Main theorem sorry-free → extracting helpers")
+    else:
+        await agent._emit("message", f"[PO] Main theorem still has {main_sorries} sorry → lemma_extractor needed")
     return Trans.HAS_SORRY
 
 
@@ -361,17 +460,31 @@ async def _stage_extract(state: ProverState, agent) -> Trans:
     stub_rel = f"{state.workspace}/Stub.lean"
     tools = get_lean_tools()
 
-    # Check: does the main theorem already have no sorry? (writer may have finished)
-    split = tools.split_theorems(stub_rel)
-    if not split.error and split.blocks:
-        main_block = split.blocks[-1]
-        if not main_block.has_sorry:
-            # Main theorem is sorry-free, but helpers above it may have sorry
-            # That's fine — go to CHILD_POS to prove them
-            state.decomposed_files = _collect_decomposed(cwd, state.workspace)
-            if state.decomposed_files:
-                return Trans.EXTRACTED
-            return Trans.EXTRACTED  # no decomposed but main is clean → assembly
+    # Check: is the file completely sorry-free? (nothing to extract)
+    if not tools.has_sorry(stub_rel):
+        state.decomposed_files = []
+        return Trans.EXTRACTED  # nothing to extract → go to assembly
+
+    # The file has sorry. The main theorem may be clean (using inline helpers with sorry)
+    # or the main theorem itself may have sorry. Either way, we need to extract
+    # sorry theorems into decomposed/ for child POs.
+    # Use our extract_sorry_theorems tool (extracts all sorry theorems to files)
+    decomposed_dir = cwd / state.workspace / "decomposed"
+    decomposed_dir.mkdir(parents=True, exist_ok=True)
+
+    extract_result = tools.extract_sorry_theorems(stub_rel,
+        output_dir=f"{state.workspace}/decomposed",
+        exclude={state.theorem_name})
+
+    if extract_result.created_files:
+        state.decomposed_files = extract_result.created_files
+        # Rewrite Stub.lean: remove inline sorry helpers, add imports to decomposed files
+        _rewrite_stub_after_extraction(cwd, stub_rel, extract_result, tools, state)
+        await agent._emit("message", f"[PO] Extracted {len(extract_result.created_files)} sorry theorems to decomposed/")
+        return Trans.EXTRACTED
+
+    # Fallback: try with lemma_extractor agent if mechanical extraction didn't work
+    # (e.g., main theorem itself still has sorry that needs factoring)
 
     # Run lemma_extractor with verifier
     verify_fn = make_extractor_verifier(stub_rel, state.theorem_name, state.workspace)
@@ -625,16 +738,10 @@ async def _get_writer(agent, state: ProverState):
     """Get or create the persistent proof_writer_v2."""
     attr = "_po_writer"
     if getattr(agent, attr, None) is None:
-        # Need guide's name for template
-        guide = await _get_guide(agent, state)
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
             workspace=state.workspace,
-            template_vars={
-                "proof_guide": guide.spec.name,
-                "goal_analyzer": "goal_analyzer",
-            },
-            can_see=["SearchAgent", guide.spec.name],
+            can_see=["SearchAgent"],
         )
         internal = await ctx.__aenter__()
         setattr(agent, f"{attr}_ctx", ctx)
@@ -647,9 +754,11 @@ async def _get_guide(agent, state: ProverState):
     """Get or create the persistent proof_guide."""
     attr = "_po_guide"
     if getattr(agent, attr, None) is None:
+        cheat_rel = f"{state.workspace}/StrataProofCheatSheet.md"
         ctx = swarm_agent(
             "proof_guide", swarm=agent.swarm, cwd=agent._cwd,
             workspace=state.workspace,
+            template_vars={"cheat_sheet_path": cheat_rel},
             can_see=["SearchAgent"],
         )
         internal = await ctx.__aenter__()
@@ -658,35 +767,6 @@ async def _get_guide(agent, state: ProverState):
         state.internal_agents["guide"] = internal.spec.name
     return getattr(agent, attr)
 
-
-async def _run_goal_analyzer(agent, state: ProverState, stub_rel: str, sorry_info: dict) -> GoalAssessment | None:
-    """Run goal_analyzer (stateless) on stuck goals."""
-    # Pick the first stuck goal for analysis
-    first_thm = next(iter(sorry_info), None)
-    if not first_thm:
-        return None
-    first_sorry = sorry_info[first_thm][0] if sorry_info[first_thm] else None
-    if not first_sorry:
-        return None
-
-    async with swarm_agent("goal_analyzer", swarm=agent.swarm, cwd=agent._cwd,
-                           workspace=state.workspace,
-                           can_see=["SearchAgent"]) as analyzer:
-        result = await analyzer.run(
-            inp={
-                "file_path": stub_rel,
-                "theorem_name": first_thm,
-                "sorry_line": first_sorry["line"],
-                "sorry_col": first_sorry["col"],
-                "action": (
-                    f"Analyze the sorry goal in theorem '{first_thm}' at line {first_sorry['line']}. "
-                    f"Use lean_goal to see the exact goal type and context. "
-                    f"Determine: is it provable, needs strengthening, contradictory, or a bad goal?"
-                ),
-            },
-            result_type=GoalAssessment,
-        )
-    return result.output
 
 
 async def _cleanup_all(agent):
@@ -707,18 +787,104 @@ def _resolve(agent) -> Path:
     return Path(agent._cwd) if agent._cwd else Path.cwd()
 
 
+def _check_attempt_result(tools, stub_rel: str, cwd: Path, original_content: str) -> dict:
+    """Check the state after a writer attempt. Returns a summary dict."""
+    sorry_free = not tools.has_sorry(stub_rel)
+    current_content = (cwd / stub_rel).read_text()
+    unchanged = current_content.strip() == original_content.strip()
+    cr = tools.check_compiles(stub_rel)
+    sorry_count = tools.count_sorries(stub_rel).total if not sorry_free else 0
+    return {
+        "sorry_free": sorry_free,
+        "unchanged": unchanged,
+        "broken": not cr.success,
+        "sorry_count": sorry_count,
+    }
+
+
+def _rewrite_stub_after_extraction(cwd: Path, stub_rel: str, extract_result, tools, state):
+    """After extracting sorry helpers to decomposed/, rewrite Stub.lean:
+    - Remove inline sorry theorem definitions (they now live in decomposed/)
+    - Add imports to the decomposed files
+    - The main theorem uses the helpers via imports instead of inline defs
+    """
+    stub_path = cwd / stub_rel
+    content = stub_path.read_text()
+    lines = content.splitlines()
+
+    # Get block boundaries for the extracted theorems
+    split = tools.split_theorems(stub_rel)
+    if split.error:
+        return
+
+    extracted_set = set(extract_result.extracted_names)
+    # Find line ranges to remove (the sorry theorem blocks)
+    remove_ranges = []
+    for block in split.blocks:
+        if block.name in extracted_set:
+            # Expand upward to include the preceding doc-comment for THIS theorem
+            actual_start = block.start
+            while actual_start > 0:
+                prev = lines[actual_start - 1].strip()
+                if prev == "" or prev.startswith("/--") or prev.startswith("--"):
+                    actual_start -= 1
+                else:
+                    break
+            # Trim end: don't include trailing doc-comments/section-markers (belong to next block)
+            actual_end = block.end
+            while actual_end >= actual_start:
+                line = lines[actual_end].strip()
+                if line == "" or line.startswith("/-") or line.startswith("--"):
+                    actual_end -= 1
+                else:
+                    break
+            remove_ranges.append((actual_start, actual_end))
+
+    # Build import lines for decomposed files
+    top_module = state.workspace.replace("/", ".")
+    import_lines = []
+    for f in extract_result.created_files:
+        module = f.replace("/", ".").removesuffix(".lean")
+        import_lines.append(f"import {module}")
+
+    # Mark lines for removal (use a set to handle overlaps)
+    remove_set = set()
+    for start, end in remove_ranges:
+        for i in range(start, end + 1):
+            remove_set.add(i)
+
+    # Build new content: keep non-removed lines
+    new_lines = [line for i, line in enumerate(lines) if i not in remove_set]
+
+    # Add imports after the existing import block
+    insert_pos = 0
+    for i, line in enumerate(new_lines):
+        if line.strip().startswith("import "):
+            insert_pos = i + 1
+    for i, imp in enumerate(import_lines):
+        new_lines.insert(insert_pos + i, imp)
+
+    stub_path.write_text("\n".join(new_lines) + "\n")
+
+
 def _build_initial_action(state: ProverState) -> str:
     """Build the first action message for proof_writer."""
     stub_rel = f"{state.workspace}/Stub.lean"
     msg = (
         f"Prove the theorem in {stub_rel}.\n"
         f"Theorem name: {state.theorem_name}\n\n"
-        f"APPROACH:\n"
-        f"1. Read the file and understand the theorem\n"
-        f"2. Use lean_goal at the sorry to see what needs proving\n"
-        f"3. Ask SearchAgent about the types and available lemmas\n"
-        f"4. Write the proof — factor hard sub-goals into helper theorems with sorry\n"
-        f"5. The main theorem's proof body must be sorry-free (helpers can have sorry)\n"
+        f"MANDATORY FIRST STEPS (do ALL of these IN ORDER before writing any tactic):\n\n"
+        f"Step 1. Read {stub_rel} to see the theorem statement\n\n"
+        f"Step 2. Use lean_goal at the sorry to see the exact goal and context\n\n"
+        f"Step 3. Ask SearchAgent about the types in the goal:\n"
+        f"   send_message(to=\"SearchAgent\", message=\"What is the definition of <TYPE>? What lemmas exist about it?\")\n"
+        f"   check_messages(timeout=60)\n\n"
+        f"Step 4. Read Stub/Def.lean for available definitions\n\n"
+        f"DO NOT write any proof tactics until you have completed steps 1-4.\n\n"
+        f"THEN write the proof:\n"
+        f"5. Factor hard sub-goals into helper theorems with sorry above the main theorem\n"
+        f"6. The main theorem's proof body must be sorry-free (helpers can have sorry)\n"
+        f"7. Verify with lean_verify after every change\n"
     )
     if state.attempt > 0:
         msg += (

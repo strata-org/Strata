@@ -130,6 +130,51 @@ def write_progress(cwd: Path, state: Any):
     progress.write_text(content)
 
 
+def collect_progress(workspace: str, cwd: Path | None = None) -> str:
+    """Recursively collect all progress.md files under a workspace.
+
+    Returns a single string summarizing all PO activity — suitable for
+    the TM monitor to check whether the system is still making progress.
+    Also reports the most recently modified .lean file to detect silent work.
+    """
+    import time
+    cwd = cwd or Path.cwd()
+    root = cwd / workspace
+    if not root.exists():
+        return f"Workspace {workspace} not found."
+
+    lines = [f"# Progress Report ({workspace})\n"]
+
+    # Collect all progress.md files
+    progress_files = sorted(root.rglob("progress.md"))
+    if not progress_files:
+        lines.append("No progress.md files found.\n")
+    else:
+        for pf in progress_files:
+            rel = pf.relative_to(cwd)
+            mtime = pf.stat().st_mtime
+            age_min = (time.time() - mtime) / 60
+            lines.append(f"## {rel} (updated {age_min:.0f}min ago)")
+            lines.append(pf.read_text().strip())
+            lines.append("")
+
+    # Find most recently modified .lean file (indicates active work)
+    lean_files = list(root.rglob("*.lean"))
+    if lean_files:
+        latest = max(lean_files, key=lambda f: f.stat().st_mtime)
+        age_min = (time.time() - latest.stat().st_mtime) / 60
+        lines.append(f"\n## Latest Activity")
+        lines.append(f"Most recent .lean edit: `{latest.relative_to(cwd)}` ({age_min:.0f}min ago)")
+        if age_min < 5:
+            lines.append("**System is actively working.**")
+        elif age_min < 15:
+            lines.append("System was recently active.")
+        else:
+            lines.append(f"**No file edits for {age_min:.0f} minutes.**")
+
+    return "\n".join(lines)
+
+
 # ─── Child workspace setup ───────────────────────────────────────────────────
 
 def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> str:
