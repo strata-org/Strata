@@ -36,7 +36,9 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         else
           let (xty, τ) ← TC.preprocess ctx τ xty
           let (expr, ety, τ) ← TC.inferType ctx τ c expr
-          let τ ← TC.unifyTypes τ [(xty, ety)]
+          let τ ← (TC.unifyTypes τ [(xty, ety)]).mapError fun e =>
+            md.toDiagnosticF f!"Variable {x} expected type {xty} but \
+              initialization expression has inferred type {ety}: {TC.typeErrorFmt e}"
           let (xty, τ) ← TC.postprocess ctx τ xty
           let τ := TC.update τ x xty
           let c := Cmd.init x xty (.det expr) md
@@ -57,7 +59,8 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
       match e with
       | .det expr =>
         let (expr, ety, τ) ← TC.inferType ctx τ c expr
-        let τ ← TC.unifyTypes τ [(xty, ety)]
+        let τ ← (TC.unifyTypes τ [(xty, ety)]).mapError fun e =>
+          md.toDiagnosticF f!"Variable {x} expected type {xty} but expression has type {ety}: {TC.typeErrorFmt e}"
         let c := Cmd.set x (.det expr) md
         .ok (c, τ)
       | .nondet =>
