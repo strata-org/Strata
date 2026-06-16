@@ -76,9 +76,6 @@ namespace LoopInitHoistLoopDriver
 open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendStoreOne_other)
 
 variable {P : PureExpr}
-  [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
-  [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr]
-  [DecidableEq P.Ident]
 
 /-! ## Iteration peel / build helpers.
 
@@ -89,8 +86,7 @@ proof) so this driver library sits strictly upstream of that proof.  Both are
 self-contained against the iteration machinery in `DetToKleeneCorrect` and the
 store/relation helpers; they are internal to this file. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-private theorem peelIterationDet
+private theorem peelIterationDet [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -129,8 +125,7 @@ private theorem peelIterationDet
   subst hρ_x_eq
   exact ⟨ρ_inner, reflTransT_to_prop h_body_term_T, h_loop_T, by omega⟩
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-private theorem buildLoopIterationDet
+private theorem buildLoopIterationDet [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     {ρ_pre ρ_body : Env P}
@@ -176,9 +171,8 @@ decompositions and the fuel-bounded `loopDet_no_exit*` family are restated here
 strictly upstream of that proof.  They are self-contained against the iteration
 machinery in `DetToKleeneCorrect` and the store/relation helpers. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- T-version of `seq_reaches_exiting` (private in SUC; re-derived here). -/
-public theorem seqT_reaches_exiting'
+public theorem seqT_reaches_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))}
     {label : String} {ρ' : Env P}
@@ -203,9 +197,8 @@ public theorem seqT_reaches_exiting'
     | .refl _ => exact .inl ⟨.refl _, by show 0 < 1; omega⟩
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- T-version: `.block .none σ inner` reaching `.exiting label`. -/
-public theorem blockT_none_reaches_exiting'
+public theorem blockT_none_reaches_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {inner : Config P (Cmd P)} {σ_parent : SemanticStore P}
     {label : String} {ρ' : Env P}
@@ -228,9 +221,8 @@ public theorem blockT_none_reaches_exiting'
     | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- T-version of `stmtsT_cons` for the exiting case. -/
-public theorem stmtsT_cons_exiting'
+public theorem stmtsT_cons_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))}
     {ρ₀ : Env P} {label : String} {ρ' : Env P}
@@ -251,9 +243,8 @@ public theorem stmtsT_cons_exiting'
     | .inl ⟨hexit, hlen⟩ => exact .inl ⟨hexit, by simp [ReflTransT.len]; omega⟩
     | .inr ⟨ρ₁, h1, h2, hlen⟩ => exact .inr ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Fuel-bounded recursion core for `loopDet_no_exit_T`. -/
-public theorem loopDet_no_exit_fuel
+public theorem loopDet_no_exit_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -291,9 +282,8 @@ public theorem loopDet_no_exit_fuel
         match hrest with
         | .step _ _ _ hd _ => exact nomatch hd
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- A hoist-eligible det loop never reaches `.exiting` (Type-level). -/
-public theorem loopDet_no_exit_T
+public theorem loopDet_no_exit_T [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -307,10 +297,9 @@ public theorem loopDet_no_exit_T
     False :=
   loopDet_no_exit_fuel h_body_no_exit hT.len hT (Nat.le_refl _)
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- A hoist-eligible det loop never reaches `.exiting` (Prop-level corollary).
 Discharges the `.exiting` disjunct of the §E `.loop` arm's `cfg_src`. -/
-public theorem loopDet_no_exit
+public theorem loopDet_no_exit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P (Cmd P))} {md : MetaData P}
@@ -335,10 +324,9 @@ inner `.exiting` outward, so an outer `.exiting` always traces back to a body
 `.exit` — contradicting `noExit`.  Proved by a mutual fuel recursion over all
 statement shapes. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- General block T-inversion (any label): a block reaching `.exiting` means its
 inner body reached `.exiting` (with a strictly shorter trace). -/
-public theorem blockT_reaches_exiting_any
+public theorem blockT_reaches_exiting_any [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {inner : Config P (Cmd P)} {lab : Option String} {σ_parent : SemanticStore P}
     {label : String} {ρ' : Env P}
@@ -362,9 +350,8 @@ public theorem blockT_reaches_exiting_any
     | .refl _ => exact ⟨_, _, .refl _, by simp [ReflTransT.len]⟩
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 mutual
-public theorem stmt_noExit_no_exiting_fuel
+public theorem stmt_noExit_no_exiting_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     (n : Nat) {s : Stmt P (Cmd P)} {ρ ρe : Env P} {lbl : String}
     (hT : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ) (.exiting lbl ρe))
@@ -437,7 +424,7 @@ public theorem stmt_noExit_no_exiting_fuel
       match hrest with
       | .step _ _ _ hd _ => exact nomatch hd
 
-public theorem block_noExit_no_exiting_fuel
+public theorem block_noExit_no_exiting_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     (n : Nat) {ss : List (Stmt P (Cmd P))} {ρ ρe : Env P} {lbl : String}
     (hT : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ) (.exiting lbl ρe))
@@ -454,9 +441,8 @@ public theorem block_noExit_no_exiting_fuel
     · exact block_noExit_no_exiting_fuel n h_tail_exit h_noexit.2 (by omega)
 end
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Prop-level corollary: a `Block.noExit` body never reaches `.exiting`. -/
-public theorem block_noExit_no_exiting
+public theorem block_noExit_no_exiting [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {ss : List (Stmt P (Cmd P))} {ρ ρe : Env P} {lbl : String}
     (h_noexit : Block.noExit ss = true)
@@ -470,8 +456,7 @@ The guard-transport hypotheses relate the SOURCE guard `g_s` evaluated on the
 source store to the HOIST guard `g_h` evaluated on the hoist store.  Every
 source-side use of the guard reads `g_s`; every hoist-side use reads `g_h`. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] in
-public theorem loopDet_lift_2g_fuel
+public theorem loopDet_lift_2g_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -637,8 +622,7 @@ arm's down-reconciliation (Step J) needs: the fresh hoist sources/targets are
 undefined at the loop-body entry (they are body inits / generator names absent
 from the source store), hence they are undefined in the source loop post-store,
 so the guarded ambient frame imposes no obligation on them. -/
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
-public theorem loopDet_preserves_none_fuel
+public theorem loopDet_preserves_none_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (h_body_no_exit : ∀ (ρ : Env P) (lbl : String) (ρe : Env P),
@@ -692,9 +676,8 @@ public theorem loopDet_preserves_none_fuel
           exact projectStore_undef_at h_none
         exact ih h_none_inner h_loop_T (by simp only [ReflTransT.len] at hlen; omega)
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Prop-level corollary of `loopDet_preserves_none_fuel`. -/
-public theorem loopDet_preserves_none
+public theorem loopDet_preserves_none [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
     {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
     (h_body_no_exit : ∀ (ρ : Env P) (lbl : String) (ρe : Env P),
@@ -709,8 +692,7 @@ public theorem loopDet_preserves_none
 
 /-! ## The two-guard Prop-level driver. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] in
-public theorem loopDet_lift_2g
+public theorem loopDet_lift_2g [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -766,8 +748,7 @@ restrict the obligation to just the labels this pass mints.  The invariant is
 re-established at each recursive iteration because `projectStore` resets every
 entry undefined at loop entry back to `none` (`projectStore_undef_at`), and a
 `Q`-kind name `∉ σ_sf` is undefined at entry by the invariant itself. -/
-omit [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] in
-public theorem loopDet_lift_sf_2g_undef_fuel
+public theorem loopDet_lift_sf_2g_undef_fuel [HasFvar P] [HasBool P] [HasNot P] [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {Q : String → Prop}
     {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
@@ -951,11 +932,10 @@ public theorem loopDet_lift_sf_2g_undef_fuel
         exact ReflTrans.step _ _ _ .step_seq_done
           (ReflTrans.step _ _ _ .step_stmts_nil (.refl _))
 
-omit [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] in
 /-- Prop-level wrapper of `loopDet_lift_sf_2g_undef_fuel` specialised to the
 single-guard diagonal `g_s = g_h = g` (the shape the §E `.loop` arm produces:
 the loop guard is UNCHANGED by the hoist pass). -/
-public theorem loopDet_lift_sf_undef_recovers_single
+public theorem loopDet_lift_sf_undef_recovers_single [HasFvar P] [HasBool P] [HasNot P] [HasIdent P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {Q : String → Prop}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
@@ -1014,8 +994,7 @@ Instantiating `g_s := g`, `g_h := g` recovers the single-guard hypotheses
 verbatim, confirming the two-guard driver genuinely generalises the single-guard
 iteration lift. -/
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] in
-public theorem loopDet_lift_2g_recovers_single
+public theorem loopDet_lift_2g_recovers_single [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -1065,8 +1044,7 @@ Under `HoistInv` and guard-freshness, the source guard `g` on the source store
 evaluates exactly as its renamed image `substFvarMany g subst` on the hoist
 store (both via the SAME evaluator `δ`).  Every read var of `g` lies outside the
 rename sources/targets, so the frame component of `HoistInv` closes it. -/
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
-public theorem renamed_guard_eval_same_delta
+public theorem renamed_guard_eval_same_delta [HasFvar P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {δ : SemanticEval P}
     {g : P.Expr} {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {σ_s σ_h : SemanticStore P}
@@ -1113,8 +1091,7 @@ simulation, the no-exit / no-funcDecl side facts, and the standard
 freshness/well-formedness data — exactly what the `.loop` arm carries.  This is
 the driver the `.loop` arm invokes for a loop whose body was renamed by
 `applyRenames`. -/
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
-public theorem loopDet_lift_renamedGuard
+public theorem loopDet_lift_renamedGuard [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -1199,45 +1176,33 @@ carrying the original init's `md` (and `ty`), so each entry stores its own
 @[expose] def sourcesOf' (entries : List (Entry P)) : List P.Ident :=
   entries.map (fun e => e.1)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem havocStmts'_nil : havocStmts' ([] : List (Entry P)) = [] := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem havocStmts'_cons (e : Entry P) (rest : List (Entry P)) :
     havocStmts' (e :: rest)
       = Stmt.cmd (.init e.2.1 e.2.2.1 ExprOrNondet.nondet e.2.2.2)
           :: havocStmts' rest := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem substOf'_nil : substOf' ([] : List (Entry P)) = [] := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem substOf'_cons (e : Entry P) (rest : List (Entry P)) :
     substOf' (e :: rest) = (e.1, e.2.1) :: substOf' rest := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem targetsOf'_nil : targetsOf' ([] : List (Entry P)) = [] := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem targetsOf'_cons (e : Entry P) (rest : List (Entry P)) :
     targetsOf' (e :: rest) = e.2.1 :: targetsOf' rest := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem sourcesOf'_nil : sourcesOf' ([] : List (Entry P)) = [] := rfl
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 @[simp] theorem sourcesOf'_cons (e : Entry P) (rest : List (Entry P)) :
     sourcesOf' (e :: rest) = e.1 :: sourcesOf' rest := rfl
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem havocStmts'_append (xs ys : List (Entry P)) :
     havocStmts' (xs ++ ys) = havocStmts' xs ++ havocStmts' ys := by
   simp [havocStmts', List.map_append]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem substOf'_append (xs ys : List (Entry P)) :
     substOf' (xs ++ ys) = substOf' xs ++ substOf' ys := by
   simp [substOf', List.map_append]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem sourcesOf'_append (xs ys : List (Entry P)) :
     sourcesOf' (xs ++ ys) = sourcesOf' xs ++ sourcesOf' ys := by
   simp [sourcesOf', List.map_append]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 theorem sourcesOf'_mem {entries : List (Entry P)} {e : Entry P} (he : e ∈ entries) :
     e.1 ∈ sourcesOf' entries :=
   List.mem_map.mpr ⟨e, he, rfl⟩
@@ -1246,7 +1211,7 @@ theorem sourcesOf'_mem {entries : List (Entry P)} {e : Entry P} (he : e ∈ entr
 
 mutual
 /-- The entries harvested from a single statement's lift, threaded at `σ`. -/
-@[expose] def Stmt.entriesOf (s : Stmt P (Cmd P)) (σ : StringGenState) :
+@[expose] def Stmt.entriesOf [HasIdent P] (s : Stmt P (Cmd P)) (σ : StringGenState) :
     List (Entry P) :=
   match s with
   | .cmd (.init y ty _ md) =>
@@ -1264,7 +1229,7 @@ mutual
   termination_by sizeOf s
 
 /-- The entries harvested from a block's lift, threaded at `σ`. -/
-@[expose] def Block.entriesOf (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+@[expose] def Block.entriesOf [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     List (Entry P) :=
   match ss with
   | [] => []
@@ -1274,22 +1239,19 @@ mutual
   termination_by sizeOf ss
 end
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem Stmt.entriesOf_block (lbl : String) (bss : List (Stmt P (Cmd P)))
+theorem Stmt.entriesOf_block [HasIdent P] (lbl : String) (bss : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     Stmt.entriesOf (.block lbl bss md) σ = Block.entriesOf bss σ := by
   rw [Stmt.entriesOf]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem Stmt.entriesOf_ite (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P)))
+theorem Stmt.entriesOf_ite [HasIdent P] (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     Stmt.entriesOf (.ite g tss ess md) σ =
       Block.entriesOf tss σ ++
         Block.entriesOf ess (Block.liftInitsInLoopBodyM tss σ).2 := by
   rw [Stmt.entriesOf]
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-theorem Block.entriesOf_cons (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
+theorem Block.entriesOf_cons [HasIdent P] (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
     (σ : StringGenState) :
     Block.entriesOf (s :: rest) σ =
       Stmt.entriesOf s σ ++
@@ -1298,9 +1260,8 @@ theorem Block.entriesOf_cons (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
 
 /-! ### Correspondence: harvest + renames = `havocStmts'` + `substOf'`. -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 mutual
-theorem Stmt.lift_harvest_subst (s : Stmt P (Cmd P)) (σ : StringGenState) :
+theorem Stmt.lift_harvest_subst [HasIdent P] (s : Stmt P (Cmd P)) (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM s σ).1.1.map Stmt.cmd = havocStmts' (Stmt.entriesOf s σ)
     ∧ (Stmt.liftInitsInLoopBodyM s σ).1.2.1 = substOf' (Stmt.entriesOf s σ) := by
   match s with
@@ -1335,7 +1296,7 @@ theorem Stmt.lift_harvest_subst (s : Stmt P (Cmd P)) (σ : StringGenState) :
   | .typeDecl t md => rw [Stmt.liftInitsInLoopBodyM, Stmt.entriesOf]; exact ⟨rfl, rfl⟩
   termination_by sizeOf s
 
-theorem Block.lift_harvest_subst (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+theorem Block.lift_harvest_subst [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBodyM ss σ).1.1.map Stmt.cmd = havocStmts' (Block.entriesOf ss σ)
     ∧ (Block.liftInitsInLoopBodyM ss σ).1.2.1 = substOf' (Block.entriesOf ss σ) := by
   match ss with
@@ -1365,9 +1326,8 @@ whereas `Block.initVars` also descends into `.loop` bodies.  Since `entriesOf`
 skips loops and loops only add to `initVars`, the harvest sources are a subset of
 `initVars` unconditionally. -/
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 mutual
-theorem Stmt.sourcesOf_entriesOf_subset (s : Stmt P (Cmd P)) (σ : StringGenState) :
+theorem Stmt.sourcesOf_entriesOf_subset [HasIdent P] (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ sourcesOf' (Stmt.entriesOf s σ), x ∈ Stmt.initVars s := by
   match s with
   | .cmd c =>
@@ -1392,7 +1352,7 @@ theorem Stmt.sourcesOf_entriesOf_subset (s : Stmt P (Cmd P)) (σ : StringGenStat
   | .typeDecl t md => simp [Stmt.entriesOf, sourcesOf']
   termination_by sizeOf s
 
-theorem Block.sourcesOf_entriesOf_subset (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+theorem Block.sourcesOf_entriesOf_subset [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ sourcesOf' (Block.entriesOf ss σ), x ∈ Block.initVars ss := by
   match ss with
   | [] => simp [Block.entriesOf, sourcesOf']
@@ -1406,19 +1366,17 @@ theorem Block.sourcesOf_entriesOf_subset (ss : List (Stmt P (Cmd P))) (σ : Stri
   termination_by sizeOf ss
 end
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- Membership form: every entry's source ident is in the block's `initVars`. -/
-theorem Block.entry_source_mem_initVars (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
+theorem Block.entry_source_mem_initVars [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     {e : Entry P} (he : e ∈ Block.entriesOf ss σ) :
     e.1 ∈ Block.initVars ss :=
   Block.sourcesOf_entriesOf_subset ss σ e.1 (sourcesOf'_mem he)
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- The top-level entries-from-lift bridge (block-level): from a body `ss` lifted
 at `σ`, exhibit `entries` such that the lift's havocs (mapped to `.cmd`) equal
 `havocStmts' entries`, the lift's renames equal `substOf' entries`, and every
 entry's source ident is a body init. -/
-public theorem entries_from_lift (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+public theorem entries_from_lift [HasIdent P] (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∃ entries : List (Entry P),
       let r := Block.liftInitsInLoopBodyM ss σ
       r.1.1.map Stmt.cmd = havocStmts' entries
@@ -1434,20 +1392,17 @@ public theorem entries_from_lift (ss : List (Stmt P (Cmd P))) (σ : StringGenSta
 `havocStmts'`/`substOf'`/`targetsOf'` read only `e.1`/`e.2.1`.  We add the
 `extendStoreMany` bindings the run lands at — `(y', mkFvar y')` per entry. -/
 
-@[expose] def bindingsOf' (entries : List (Entry P)) :
+@[expose] def bindingsOf' [HasFvar P] (entries : List (Entry P)) :
     List (P.Ident × P.Expr) :=
   entries.map (fun e => (e.2.1, HasFvar.mkFvar e.2.1))
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-@[simp] theorem bindingsOf'_nil :
+@[simp] theorem bindingsOf'_nil [HasFvar P] :
     bindingsOf' ([] : List (Entry P)) = [] := rfl
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
-@[simp] theorem bindingsOf'_cons (e : Entry P) (rest : List (Entry P)) :
+@[simp] theorem bindingsOf'_cons [HasFvar P] (e : Entry P) (rest : List (Entry P)) :
     bindingsOf' (e :: rest)
       = (e.2.1, HasFvar.mkFvar e.2.1) :: bindingsOf' rest := rfl
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- `targetsOf' entries = (substOf' entries).map Prod.snd`. -/
 theorem targetsOf'_eq_substOf'_snd (entries : List (Entry P)) :
     targetsOf' entries = (substOf' entries).map Prod.snd := by
@@ -1455,9 +1410,8 @@ theorem targetsOf'_eq_substOf'_snd (entries : List (Entry P)) :
   | nil => rfl
   | cons e rest ih => simp [ih]
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- Outside the targets, `extendStoreMany σ (bindingsOf' entries)` agrees with `σ`. -/
-theorem extendStoreMany_bindingsOf'_outside
+theorem extendStoreMany_bindingsOf'_outside [HasFvar P] [DecidableEq P.Ident]
     (σ : SemanticStore P) (entries : List (Entry P))
     {x : P.Ident} (hx : x ∉ targetsOf' entries) :
     extendStoreMany σ (bindingsOf' entries) x = σ x := by
@@ -1468,10 +1422,9 @@ theorem extendStoreMany_bindingsOf'_outside
     rw [bindingsOf'_cons, extendStoreMany_cons, ih _ hx.2]
     exact extendStoreOne_other σ e.2.1 (HasFvar.mkFvar e.2.1) x hx.1
 
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- At a target (with `Nodup` targets), `extendStoreMany σ (bindingsOf' entries)`
 is defined. -/
-theorem extendStoreMany_bindingsOf'_bound
+theorem extendStoreMany_bindingsOf'_bound [HasFvar P] [DecidableEq P.Ident]
     (σ : SemanticStore P) (entries : List (Entry P))
     (h_nodup : (targetsOf' entries).Nodup)
     {b : P.Ident} (hb : b ∈ targetsOf' entries) :
@@ -1489,13 +1442,12 @@ theorem extendStoreMany_bindingsOf'_bound
       exact Option.some_ne_none _
     · exact ih _ h_nodup.2 h
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] in
 /-- The prelude run reaches the `extendStoreMany` post-store.  Each head
 `.init e.2.1 e.2.2.1 .nondet e.2.2.2` steps by
 `StepStmt.step_cmd (EvalCmd.eval_init_unconstrained (InitState.init ...))`,
 choosing witness `mkFvar e.2.1`, which is exactly
 `extendStoreOne σ e.2.1 (mkFvar e.2.1)`. -/
-theorem prelude_run_list_md
+theorem prelude_run_list_md [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     (entries : List (Entry P))
     (ρ_hoist : Env P)
@@ -1568,7 +1520,6 @@ theorem prelude_run_list_md
       rw [h_eq]; exact h_run_tl
     exact h_run_tl'
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] in
 /-- Frame-exposing prelude bridge.  Runs `havocStmts' entries` from a
 store-equal env and establishes `HoistInv A (targetsOf' entries) (substOf'
 entries)` together with the evaluator / failure agreement and
@@ -1577,7 +1528,7 @@ target-boundedness, and ALSO returns the unguarded off-targets agreement
 `HoistInv` builder needs this agreement (it lives outside the guarded
 `HoistInv` frame, holding even on `A`), so the prelude's structural havoc-frame
 is surfaced explicitly. -/
-public theorem prelude_bridge_list_md_frame
+public theorem prelude_bridge_list_md_frame [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     (A : List P.Ident)
     (entries : List (Entry P))
@@ -1647,7 +1598,7 @@ public theorem prelude_bridge_list_md_frame
 `BodySim` is the per-iteration body-simulation predicate the two-guard driver's
 `body_sim` slot expects. -/
 
-public def BodySim {extendEval : ExtendEval P}
+public def BodySim [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -1661,11 +1612,10 @@ public def BodySim {extendEval : ExtendEval P}
         HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
         ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Introduction form for `BodySim` from the explicit ∀-shape.  Lets clients in
 other modules build a `BodySim` (whose body is not exposed across the import
 boundary) from a same-shaped simulation proven against a sibling definition. -/
-public theorem mk_bodySim {extendEval : ExtendEval P}
+public theorem mk_bodySim [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P)))
     (h : ∀ (ρ_s ρ_h : Env P),
@@ -1680,7 +1630,6 @@ public theorem mk_bodySim {extendEval : ExtendEval P}
           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)) :
     BodySim (extendEval := extendEval) A B subst bsrc bh := h
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- List-generalised HoistInv union bridge: Step A at the enclosing carriers
 `Ao Bo so` composed with Step B at the new carriers `As Bs ss` yields `HoistInv`
 at the union carriers, from disjointness facts. -/
@@ -1720,7 +1669,6 @@ public theorem bridge_out_union_list
       obtain ⟨h_b_ne, h_eq⟩ := hB.2 a b h_ss h_ne₁
       exact ⟨h_b_ne, by rw [h_ya]; exact h_eq⟩
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 /-- The composed body simulation must re-establish `Bo`-boundedness at `ρ_h'`.
 Step A gives it at the mid env `ρ₁'`; Step B's frame transports it to `ρ_h'`
 since `Bo` is disjoint from the new carriers. -/
@@ -1736,12 +1684,11 @@ public theorem bound_Bo_through_stepB
     hB.1 y (h_Bo_notAs y hy) (h_Bo_notBs y hy) (h_bnd₁_Bo y hy)
   exact h_move ▸ h_bnd₁_Bo y hy
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- The BodySim-level union compose: Step A at `Ao Bo so` composed with Step B at
 `As Bs ss` gives a `BodySim` at the union carriers, with the union bridge_out and
 boundedness re-assembly discharged from the list-carrier core + disjointness; the
 caller supplies the bridge_in that manufactures the arm's intermediate store. -/
-public theorem compose_union {extendEval : ExtendEval P}
+public theorem compose_union [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     {Ao Bo As Bs : List P.Ident}
     {so ss : List (P.Ident × P.Ident)}
     {body body₁ body₃ : List (Stmt P (Cmd P))}
@@ -1780,10 +1727,9 @@ public theorem compose_union {extendEval : ExtendEval P}
     · exact bound_Bo_through_stepB h_hinv₃ h_bnd₁ h_Bo_notAs h_Bo_notBs y hyBo
     · exact h_bnd₃ y hyBs
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- `BodySim` unfolds definitionally to the ∀-shape the two-guard / renamed-guard
 driver's `body_sim` parameter expects. -/
-public theorem bodySim_is_driver_slot {extendEval : ExtendEval P}
+public theorem bodySim_is_driver_slot [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P)))
     (h : BodySim (extendEval := extendEval) A B subst bsrc bh) :
@@ -1820,7 +1766,7 @@ The invariant is preserved across loop iterations because `projectStore` resets
 every store entry that is undefined at loop entry back to `none`
 (`projectStore_undef_at`); a `Q`-kind name `∉ σ_sf` is undefined at entry, hence
 stays undefined after projection. -/
-public def BodySimUSF {extendEval : ExtendEval P}
+public def BodySimUSF [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     (Q : String → Prop)
     (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
     (subst : List (P.Ident × P.Ident))
@@ -1841,7 +1787,6 @@ public def BodySimUSF {extendEval : ExtendEval P}
 
 
 
-omit [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- The shapefree-carrying union compose: `compose_union_undef2` augmented to
 carry the `σ_sf`-relative SOURCE store-kind-freedom invariant through to Step A.
 Step A is given as the explicit ∀-shape that, at each iteration entry, may assume
@@ -1853,7 +1798,7 @@ it because the source program never defines a `Q`-kind name absent from `σ_sf`)
 The HOIST-side kind-freedom at the mid env `ρ₁` is supplied locally by
 `bridge_in`, which constructs `ρ₁` explicitly (`ρ₁ = ρ_s` off `Ao ∪ Bo`, which the
 `Q`-kind names avoid) and therefore certifies it from the source-side fact. -/
-public theorem compose_union_sf {extendEval : ExtendEval P}
+public theorem compose_union_sf [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     {Q : String → Prop}
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     {Ao Bo As Bs : List P.Ident}
@@ -1917,13 +1862,12 @@ public theorem compose_union_sf {extendEval : ExtendEval P}
     · exact h_bnd₃ y hyBs
 
 
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `bridge_in_guarded_undef` augmented with a `σ_sf`-relative HOIST-side
 store-kind-freedom conjunct on the mid env `ρ₁`.  Because `ρ₁ = ρ_s` off the
 enclosing carriers `Ao ∪ Bo`, and a `Q`-kind name `∉ σ_sf` avoids those carriers
 (`h_sf_notAo` / `h_sf_notBo`), `ρ₁` agrees with `ρ_s` on every such name, so the
 SOURCE kind-freedom (`h_src_sf`) transports to `ρ₁`. -/
-public theorem bridge_in_guarded_undef_sf
+public theorem bridge_in_guarded_undef_sf [HasIdent P] [DecidableEq P.Ident]
     {Q : String → Prop}
     {Vh : List P.Ident} {σ_sf : StringGenState}
     {Ao Bo As Bs : List P.Ident} {so ss : List (P.Ident × P.Ident)}
@@ -2016,11 +1960,10 @@ public theorem bridge_in_guarded_undef_sf
   · intro y hy; exact h_bnd y (List.mem_append.mpr (Or.inr hy))
 
 
-omit [HasVal P] [HasBoolVal P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- `BodySimUSF` unfolds definitionally to the ∀-shape the shapefree-carrying
 undef driver's `body_sim` parameter (`loopDet_lift_sf_undef_recovers_single`)
 expects. -/
-public theorem bodySimUSF_is_driver_slot {extendEval : ExtendEval P}
+public theorem bodySimUSF_is_driver_slot [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     {Q : String → Prop}
     (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
     (subst : List (P.Ident × P.Ident))
@@ -2054,8 +1997,7 @@ none` since `ρ₁ = ρ_s` off `Ao∪Bo` and `a ∉ Ao∪Bo`), so NO per-iterati
 source-undefinedness of the fresh sources is needed.  Likewise the Step-B frame
 is guarded, so its goal only fires when `ρ₁.store x ≠ none`, which transports to
 the union frame. -/
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-public theorem bridge_in_guarded
+public theorem bridge_in_guarded [DecidableEq P.Ident]
     {Ao Bo As Bs : List P.Ident} {so ss : List (P.Ident × P.Ident)}
     (h_so_wf : ∀ a b, (a, b) ∈ so → a ∈ Ao ∧ b ∈ Bo)
     (h_ss_wf : ∀ a b, (a, b) ∈ ss → a ∈ As ∧ b ∈ Bs)
@@ -2135,7 +2077,6 @@ inits / generator names absent from the source store — see
 `loopDet_preserves_none`), so the guarded ambient frame, whose obligation only
 fires at `ρ_post x ≠ none`, never applies to them and the union frame covers
 every remaining variable.  The pairing restricts directly (`subst ⊆ subst++ss`). -/
-omit [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] in
 public theorem stepJ_restrict
     {A B As Bs : List P.Ident} {subst ss : List (P.Ident × P.Ident)}
     {ρ_post ρ_post_h : Env P}
