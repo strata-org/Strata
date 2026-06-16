@@ -63,9 +63,9 @@ example : ∀ useArrayTheory,
     gen_smt_vcs_boole
     all_goals
       intro Map inst n select v hn i hi
-      exact Int.ofNat_nonneg _
+      exact Int.natCast_nonneg _
   case true =>
     gen_smt_vcs_boole
     all_goals
       intro n v hn i hi
-      exact Int.ofNat_nonneg _
+      exact Int.natCast_nonneg _
