@@ -1756,18 +1756,6 @@ the generator added. This is the building block that discharges the §E
 mutual's "the new fresh names are disjoint from the source names" obligation
 from generator monotonicity alone. -/
 
-/-- Under WF and a `GenStep`, every label of the advanced state was either
-already present in the original state, or has the generator suffix shape. -/
-theorem StringGenState.genStep_label_mem_or_suffix
-    {σ σ' : StringGenState} (h_wf : StringGenState.WF σ)
-    (h_step : StringGenState.GenStep σ σ')
-    {w : String} (h_mem : w ∈ StringGenState.stringGens σ') :
-    w ∈ StringGenState.stringGens σ ∨ String.HasUnderscoreDigitSuffix w := by
-  by_cases h : w ∈ StringGenState.stringGens σ
-  · exact Or.inl h
-  · exact Or.inr (StringGenState.hasUnderscoreDigitSuffix_of_mem_generated
-      (h_step.wf_mono h_wf) h_mem)
-
 /-- The §E fresh-from-σ precondition shape: every label already produced by
 `σ`, injected into `P.Ident`, is disjoint from the source frame names `A`,
 extra names `B`, and `.init` LHS names `ivs`. -/
@@ -1777,32 +1765,8 @@ def SrcNamesFreshFromGen (A B ivs : List P.Ident) (σ : StringGenState) : Prop :
     HasIdent.ident (P := P) str ∉ B ∧
     HasIdent.ident (P := P) str ∉ ivs
 
-/-- The fresh-from-σ precondition threads through a `GenStep`: the only labels
-`σ'` adds over `σ` are suffix-shaped, and no source identifier — which is
-shape-free, recorded by `h_src_shapefree` — coincides with `HasIdent.ident` of
-such a label. This is the §E mutual's `srcNamesFresh_threads`: after a
-sub-statement advances the state, re-establish the fresh-from-σ precondition at
-the advanced state for the remaining statements. -/
-theorem SrcNamesFreshFromGen.genStep
-    {A B ivs : List P.Ident} {σ σ' : StringGenState}
-    (h_wf : StringGenState.WF σ)
-    (h_step : StringGenState.GenStep σ σ')
-    (h_src_shapefree :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
-        HasIdent.ident (P := P) str ∉ A ∧
-        HasIdent.ident (P := P) str ∉ B ∧
-        HasIdent.ident (P := P) str ∉ ivs)
-    (h_fresh : SrcNamesFreshFromGen (P := P) A B ivs σ) :
-    SrcNamesFreshFromGen (P := P) A B ivs σ' := by
-  intro str h_mem
-  rcases StringGenState.genStep_label_mem_or_suffix h_wf h_step h_mem with h_in_σ | h_suffix
-  · exact h_fresh str h_in_σ
-  · exact h_src_shapefree str h_suffix
-
 /-- Kind-aware threading of the fresh-from-σ precondition across a `GenStep`.
-Where `SrcNamesFreshFromGen.genStep` re-derives the genStep-fresh names' shape
-from generator monotonicity (`HasUnderscoreDigitSuffix`), this variant takes a
-caller-supplied `h_delta` recording that every newly-added label carries a
+The caller supplies `h_delta` recording that every newly-added label carries a
 client kind `Q` (for the hoist pass, via `…_genStep_delta_Q` + the mint witness
 `hQmint`).  It then needs only the `Q`-restricted source kind-freedom
 `h_src_shapefree`, so a composition partner is never forced to keep *every*

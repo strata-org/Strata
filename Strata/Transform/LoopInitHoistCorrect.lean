@@ -1858,7 +1858,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       Block.hoistLoopPrefixInitsM_genStep tss σ
     have h_wf_σ1 : StringGenState.WF (Block.hoistLoopPrefixInitsM tss σ).2 :=
       h_genStep_tss.wf_mono h_wf_σ
-    -- σ-freshness for ESS at σ1: thread via SrcNamesFreshFromGen.genStep.
+    -- σ-freshness for ESS at σ1: thread via SrcNamesFreshFromGen.genStep_of_delta.
     have h_src_fresh_ess_σ1 :
         ∀ str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2,
           HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
