@@ -18,7 +18,7 @@ import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
-
+import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
@@ -96,6 +96,7 @@ def laurelPipeline : Array LaurelPass := #[
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
   eliminateValueInReturnsPass,
+  liftInstanceProceduresPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -183,6 +184,15 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
     let (program, model, passDiags, stats) ← runLaurelPasses pctx program
+    -- Sanity check: `LiftInstanceProcedures` should have cleared every
+    -- composite's `instanceProcedures` list.
+    let mut passDiags := passDiags
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          passDiags := passDiags ++ [diagnosticFromSource proc.name.source
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
+            DiagnosticType.StrataBug]
     let unorderedCore := transparencyPass program
     emit "transparencyPass" "core.st" unorderedCore
 

@@ -34,13 +34,14 @@ op initializer(value: StmtExpr): Initializer => " := " value:0;
 op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
   => @[prec(0)] "var " name varType assignment;
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
+  @[prec(95)] callee:89 "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access. `leftassoc` so chained access (`a#b#c`) parses as `(a#b)#c`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;

@@ -61,10 +61,8 @@ procedure foo(x: int, x: bool) opaque { };
 program Laurel;
 composite Foo {
   procedure bar() opaque { };
-//          ^^^ not-yet-implemented: Instance procedure 'bar' on composite type 'Foo' is not yet supported
   procedure bar() opaque { };
-//          ^^^ not-yet-implemented: Instance procedure 'bar' on composite type 'Foo' is not yet supported
-//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
+//          ^^^ error: Duplicate definition 'Foo$bar' is already defined in this scope
 }
 #end
 
