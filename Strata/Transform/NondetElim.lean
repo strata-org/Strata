@@ -20,8 +20,7 @@ open LabelGen (StringGenM)
 Replaces every nondeterministic `.ite`/`.loop` guard with a deterministic read
 of a freshly-generated boolean variable that is havoc'd at the construct's site.
 After the pass, no `.ite`/`.loop` carries a `.nondet` guard; nondeterminism
-survives only as havoc commands. See
-`docs/superpowers/specs/2026-06-11-nondet-elim-pass-design.md`.
+survives only as havoc commands.
 
 The fresh-name prefixes are distinct from the str2unstr translator's
 `$__nondet_*` prefixes so the two passes' generated names are unmistakable in

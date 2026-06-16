@@ -451,7 +451,7 @@ suffix-shape exclusion rather than a prefix-disjointness one:
     `NoGenSuffix (transformBlockModVars (hoist …))`, both FALSE because hoist
     lifts loop-body inits under fresh `_hoist_n` names, which are suffix-shaped.
 
-**Resolution (this branch).**  The obstruction is dissolved on two axes, and the
+**Resolution.**  The obstruction is dissolved on two axes, and the
 chain is closed in `pipeline_sound` (Section 11):
 
   1. *Per-kind generalization.*  The three `_sound_kind` theorems replace the
