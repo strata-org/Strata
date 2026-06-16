@@ -740,6 +740,38 @@ rec function bad (xs : IntList) : int
 #guard_msgs in
 #eval Core.verify noCasesNoDecreasesPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 13: error — decreases on non-ADT parameter (temporary)
+---------------------------------------------------------------------
+
+def decreasesNonADTPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList, n : int) : int
+  decreases n
+{
+  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), n - 1)
+};
+#end
+
+/-- info:
+Obligation: bad_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: bad_terminates_0
+Property: assert
+Result: ❌ fail
+
+Obligation: bad_terminates_1
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify decreasesNonADTPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 14: mutual recursion over different mutual datatypes
