@@ -269,7 +269,7 @@ info: function $hole_0()
   opaque;
 procedure test()
 {
-  var s: string := "hello" ++ $hole_0()
+  var s: string := "hello" ^ $hole_0()
 };
 -/
 #guard_msgs in
@@ -277,7 +277,7 @@ procedure test()
 #strata
 program Laurel;
 procedure test()
-{ var s: string := "hello" ++ <?> };
+{ var s: string := "hello" ^ <?> };
 #end
 
 /-! ## Multiple holes -/

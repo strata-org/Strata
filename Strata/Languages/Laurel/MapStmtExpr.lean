@@ -71,6 +71,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
+  | .IncrDecr mode op target => match target with
+    | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
+    | ⟨.Local _, _⟩
+    | ⟨.Declare _, _⟩ => pure expr
+
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
   | .StaticCall callee args =>
@@ -175,6 +180,10 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
       pure ⟨.Assign targets' (← go value), source⟩
     | .Var (.Field target fieldName) =>
       pure ⟨.Var (.Field (← go target) fieldName), source⟩
+    | .IncrDecr mode op target => match target with
+      | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← go tgt) fieldName, vs⟩, source⟩
+      | ⟨.Local _, _⟩
+      | ⟨.Declare _, _⟩ => pure expr
     | .PureFieldUpdate target fieldName newValue =>
       pure ⟨.PureFieldUpdate (← go target) fieldName (← go newValue), source⟩
     | .StaticCall callee args =>

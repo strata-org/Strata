@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnStatements
+import Strata.Languages.Laurel.EliminateIncrDecr
 import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
 import Strata.Languages.Laurel.ModifiesClauses
@@ -94,6 +95,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
+  eliminateIncrDecrPass,
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,

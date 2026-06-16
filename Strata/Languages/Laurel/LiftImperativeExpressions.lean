@@ -150,6 +150,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
   | AstNode.mk val _ =>
   match val with
   | .Assign .. => true
+  | .IncrDecr .. => true
   | .StaticCall name args1 =>
     imperativeCallees.contains name.text ||
       args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val)
@@ -568,6 +569,22 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let seqArgs ← args.mapM transformExpr
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
+
+  | .PrimitiveOp _ _ =>
+      -- A `PrimitiveOp` in statement position. If it carries any side effects
+      -- (an embedded assignment or imperative call — typically the result of
+      -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
+      -- discard the unused pure result. Otherwise leave the expression
+      -- statement intact so the Core translator can preserve it via
+      -- `exprAsUnusedInit`.
+      let imperativeCallees := (← get).imperativeCallees
+      if containsAssignmentOrImperativeCall imperativeCallees stmt then
+        let _ ← transformExpr stmt
+        let prepends ← takePrepends
+        modify fun s => { s with subst := [] }
+        return prepends
+      else
+        return [stmt]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
