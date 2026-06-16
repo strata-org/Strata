@@ -439,12 +439,12 @@ one walker that *does* track names: a rename preserves its LENGTH (each
 `(Block.initVars _).isEmpty` test used inside `loopBodyNoInits`. -/
 
 section SubstIdentPreserves
-variable {P : PureExpr} [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+variable {P : PureExpr}
 
 mutual
 /-- `Stmt.substIdent` preserves the LENGTH of `initVars` (a rename maps each
 `.init` lhs to exactly one new name). -/
-theorem Stmt.substIdent_initVars_length (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_initVars_length [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     (Stmt.initVars (Stmt.substIdent y y' s)).length = (Stmt.initVars s).length := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.initVars]
@@ -463,7 +463,7 @@ theorem Stmt.substIdent_initVars_length (y y' : P.Ident) (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.initVars]
   termination_by sizeOf s
 
-theorem Block.substIdent_initVars_length (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_initVars_length [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     (Block.initVars (Block.substIdent y y' ss)).length = (Block.initVars ss).length := by
   match ss with
   | [] => simp [Block.initVars]
@@ -475,7 +475,7 @@ theorem Block.substIdent_initVars_length (y y' : P.Ident) (ss : List (Stmt P (Cm
 end
 
 /-- `isEmpty` of `initVars` is invariant under a rename (via length). -/
-theorem Block.substIdent_initVars_isEmpty (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_initVars_isEmpty [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     (Block.initVars (Block.substIdent y y' ss)).isEmpty
       = (Block.initVars ss).isEmpty := by
   have hlen := Block.substIdent_initVars_length y y' ss
@@ -485,7 +485,7 @@ theorem Block.substIdent_initVars_isEmpty (y y' : P.Ident) (ss : List (Stmt P (C
 
 mutual
 /-- `Stmt.substIdent` preserves `noInitsAnywhere`. -/
-theorem Stmt.substIdent_noInitsAnywhere (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_noInitsAnywhere [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.noInitsAnywhere (Stmt.substIdent y y' s) = Stmt.noInitsAnywhere s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.noInitsAnywhere]
@@ -504,7 +504,7 @@ theorem Stmt.substIdent_noInitsAnywhere (y y' : P.Ident) (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.noInitsAnywhere]
   termination_by sizeOf s
 
-theorem Block.substIdent_noInitsAnywhere (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_noInitsAnywhere [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.noInitsAnywhere (Block.substIdent y y' ss) = Block.noInitsAnywhere ss := by
   match ss with
   | [] => simp [Block.noInitsAnywhere]
@@ -517,7 +517,7 @@ end
 
 mutual
 /-- `Stmt.substIdent` preserves `allLoopBodiesInitFree`. -/
-theorem Stmt.substIdent_allLoopBodiesInitFree (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_allLoopBodiesInitFree [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.allLoopBodiesInitFree (Stmt.substIdent y y' s)
       = Stmt.allLoopBodiesInitFree s := by
   match s with
@@ -538,7 +538,7 @@ theorem Stmt.substIdent_allLoopBodiesInitFree (y y' : P.Ident) (s : Stmt P (Cmd 
   | .typeDecl t md => simp [Stmt.allLoopBodiesInitFree]
   termination_by sizeOf s
 
-theorem Block.substIdent_allLoopBodiesInitFree (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_allLoopBodiesInitFree [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.allLoopBodiesInitFree (Block.substIdent y y' ss)
       = Block.allLoopBodiesInitFree ss := by
   match ss with
@@ -553,7 +553,7 @@ end
 mutual
 /-- `Stmt.substIdent` preserves `loopMeasureNone` (a rename maps `m` via
 `Option.map`, so `m.isNone` is unchanged). -/
-theorem Stmt.substIdent_loopMeasureNone (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_loopMeasureNone [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.loopMeasureNone (Stmt.substIdent y y' s) = Stmt.loopMeasureNone s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.loopMeasureNone]
@@ -572,7 +572,7 @@ theorem Stmt.substIdent_loopMeasureNone (y y' : P.Ident) (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.loopMeasureNone]
   termination_by sizeOf s
 
-theorem Block.substIdent_loopMeasureNone (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_loopMeasureNone [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.loopMeasureNone (Block.substIdent y y' ss) = Block.loopMeasureNone ss := by
   match ss with
   | [] => simp [Block.loopMeasureNone]
@@ -586,7 +586,7 @@ end
 /-! ### Lift `substIdent`-invariance through `applyRenames` (a fold of renames) -/
 
 /-- `Block.applyRenames` preserves `noInitsAnywhere`. -/
-theorem Block.applyRenames_noInitsAnywhere
+theorem Block.applyRenames_noInitsAnywhere [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.noInitsAnywhere (Block.applyRenames renames ss)
       = Block.noInitsAnywhere ss := by
@@ -598,7 +598,7 @@ theorem Block.applyRenames_noInitsAnywhere
       rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_noInitsAnywhere]
 
 /-- `Block.applyRenames` preserves `allLoopBodiesInitFree`. -/
-theorem Block.applyRenames_allLoopBodiesInitFree
+theorem Block.applyRenames_allLoopBodiesInitFree [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.allLoopBodiesInitFree (Block.applyRenames renames ss)
       = Block.allLoopBodiesInitFree ss := by
@@ -610,7 +610,7 @@ theorem Block.applyRenames_allLoopBodiesInitFree
       rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_allLoopBodiesInitFree]
 
 /-- `Block.applyRenames` preserves `loopMeasureNone`. -/
-theorem Block.applyRenames_loopMeasureNone
+theorem Block.applyRenames_loopMeasureNone [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.loopMeasureNone (Block.applyRenames renames ss)
       = Block.loopMeasureNone ss := by
@@ -631,7 +631,7 @@ feed the `simpleShape`-preservation of the whole hoisting pass. -/
 
 mutual
 /-- `Stmt.substIdent` preserves `simpleShape`. -/
-theorem Stmt.substIdent_simpleShape (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_simpleShape [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.simpleShape (Stmt.substIdent y y' s) = Stmt.simpleShape s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.simpleShape]
@@ -655,7 +655,7 @@ theorem Stmt.substIdent_simpleShape (y y' : P.Ident) (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.simpleShape]
   termination_by sizeOf s
 
-theorem Block.substIdent_simpleShape (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_simpleShape [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.simpleShape (Block.substIdent y y' ss) = Block.simpleShape ss := by
   match ss with
   | [] => simp [Block.simpleShape]
@@ -667,7 +667,7 @@ theorem Block.substIdent_simpleShape (y y' : P.Ident) (ss : List (Stmt P (Cmd P)
 end
 
 /-- `Block.applyRenames` preserves `simpleShape`. -/
-theorem Block.applyRenames_simpleShape
+theorem Block.applyRenames_simpleShape [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.simpleShape (Block.applyRenames renames ss)
       = Block.simpleShape ss := by
@@ -687,7 +687,7 @@ All three are shape-only walkers. A rename keeps a `.loop` guard's `.det`/
 its length and hence `inv.isEmpty` (`loopHasNoInvariants`). -/
 
 mutual
-theorem Stmt.substIdent_containsNondetLoop (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_containsNondetLoop [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.containsNondetLoop (Stmt.substIdent y y' s) = Stmt.containsNondetLoop s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.containsNondetLoop]
@@ -707,7 +707,7 @@ theorem Stmt.substIdent_containsNondetLoop (y y' : P.Ident) (s : Stmt P (Cmd P))
   | .typeDecl t md => simp [Stmt.containsNondetLoop]
   termination_by sizeOf s
 
-theorem Block.substIdent_containsNondetLoop (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_containsNondetLoop [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.containsNondetLoop (Block.substIdent y y' ss) = Block.containsNondetLoop ss := by
   match ss with
   | [] => simp [Block.containsNondetLoop]
@@ -719,7 +719,7 @@ theorem Block.substIdent_containsNondetLoop (y y' : P.Ident) (ss : List (Stmt P 
 end
 
 mutual
-theorem Stmt.substIdent_containsFuncDecl (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_containsFuncDecl [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.containsFuncDecl (Stmt.substIdent y y' s) = Stmt.containsFuncDecl s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.containsFuncDecl]
@@ -738,7 +738,7 @@ theorem Stmt.substIdent_containsFuncDecl (y y' : P.Ident) (s : Stmt P (Cmd P)) :
   | .typeDecl t md => simp [Stmt.containsFuncDecl]
   termination_by sizeOf s
 
-theorem Block.substIdent_containsFuncDecl (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_containsFuncDecl [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.containsFuncDecl (Block.substIdent y y' ss) = Block.containsFuncDecl ss := by
   match ss with
   | [] => simp [Block.containsFuncDecl]
@@ -750,7 +750,7 @@ theorem Block.substIdent_containsFuncDecl (y y' : P.Ident) (ss : List (Stmt P (C
 end
 
 mutual
-theorem Stmt.substIdent_loopHasNoInvariants (y y' : P.Ident) (s : Stmt P (Cmd P)) :
+theorem Stmt.substIdent_loopHasNoInvariants [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (s : Stmt P (Cmd P)) :
     Stmt.loopHasNoInvariants (Stmt.substIdent y y' s) = Stmt.loopHasNoInvariants s := by
   match s with
   | .cmd c => cases c <;> simp [Cmd.substIdent, Stmt.loopHasNoInvariants]
@@ -769,7 +769,7 @@ theorem Stmt.substIdent_loopHasNoInvariants (y y' : P.Ident) (s : Stmt P (Cmd P)
   | .typeDecl t md => simp [Stmt.loopHasNoInvariants]
   termination_by sizeOf s
 
-theorem Block.substIdent_loopHasNoInvariants (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
+theorem Block.substIdent_loopHasNoInvariants [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] (y y' : P.Ident) (ss : List (Stmt P (Cmd P))) :
     Block.loopHasNoInvariants (Block.substIdent y y' ss) = Block.loopHasNoInvariants ss := by
   match ss with
   | [] => simp [Block.loopHasNoInvariants]
@@ -781,7 +781,7 @@ theorem Block.substIdent_loopHasNoInvariants (y y' : P.Ident) (ss : List (Stmt P
 end
 
 /-- `Block.applyRenames` preserves `containsNondetLoop`. -/
-theorem Block.applyRenames_containsNondetLoop
+theorem Block.applyRenames_containsNondetLoop [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.containsNondetLoop (Block.applyRenames renames ss)
       = Block.containsNondetLoop ss := by
@@ -793,7 +793,7 @@ theorem Block.applyRenames_containsNondetLoop
       rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_containsNondetLoop]
 
 /-- `Block.applyRenames` preserves `containsFuncDecl`. -/
-theorem Block.applyRenames_containsFuncDecl
+theorem Block.applyRenames_containsFuncDecl [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.containsFuncDecl (Block.applyRenames renames ss)
       = Block.containsFuncDecl ss := by
@@ -805,7 +805,7 @@ theorem Block.applyRenames_containsFuncDecl
       rw [ih (Block.substIdent p.1 p.2 ss), Block.substIdent_containsFuncDecl]
 
 /-- `Block.applyRenames` preserves `loopHasNoInvariants`. -/
-theorem Block.applyRenames_loopHasNoInvariants
+theorem Block.applyRenames_loopHasNoInvariants [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.loopHasNoInvariants (Block.applyRenames renames ss)
       = Block.loopHasNoInvariants ss := by
@@ -832,7 +832,7 @@ Because none of these walkers inspect identifier *names* (only the tree
 shape), every lemma generalises over the threaded `StringGenState σ`. -/
 
 section MonadicPostconds
-variable {P : PureExpr} [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
+variable {P : PureExpr}
 
 /-! ### Residual-projection (`.1.2.2`) equations for the lift
 
@@ -841,8 +841,7 @@ The monadic `liftInitsInLoopBodyM` arms destructure the recursive call with a
 residual `.1.2.2` per-constructor so the structural proofs can `rw` against
 the recursive residual without unfolding the whole `let`. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Stmt.liftInitsInLoopBodyM_block_residual
+private theorem Stmt.liftInitsInLoopBodyM_block_residual [HasIdent P]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.block lbl bss md) σ).1.2.2 =
@@ -851,8 +850,7 @@ private theorem Stmt.liftInitsInLoopBodyM_block_residual
   rcases h : Block.liftInitsInLoopBodyM bss σ with ⟨⟨hs, rn, bss'⟩, σ'⟩
   simp only [h]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Stmt.liftInitsInLoopBodyM_ite_residual
+private theorem Stmt.liftInitsInLoopBodyM_ite_residual [HasIdent P]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.ite g tss ess md) σ).1.2.2 =
@@ -864,8 +862,7 @@ private theorem Stmt.liftInitsInLoopBodyM_ite_residual
   rcases h₂ : Block.liftInitsInLoopBodyM ess σ₁ with ⟨⟨ehs, ern, ess'⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Block.liftInitsInLoopBodyM_cons_residual
+private theorem Block.liftInitsInLoopBodyM_cons_residual [HasIdent P]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBodyM (s :: rest) σ).1.2.2 =
       (Stmt.liftInitsInLoopBodyM s σ).1.2.2 ++
@@ -885,10 +882,9 @@ from `StringGenState.emp` — i.e. `(liftInitsInLoopBody _).snd`. This is the
 bridge that lets every shape-only postcondition the pass proves over
 `(... σ).1.2.2` port to the pure wrapper. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- The residual of `Stmt.liftInitsInLoopBodyM s σ` is independent of `σ`. -/
-private theorem Stmt.liftInitsInLoopBodyM_snd_state_indep
+private theorem Stmt.liftInitsInLoopBodyM_snd_state_indep [HasIdent P]
     (s : Stmt P (Cmd P)) (σ σ' : StringGenState) :
     (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       (Stmt.liftInitsInLoopBodyM s σ').1.2.2 := by
@@ -915,7 +911,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_state_indep
   termination_by sizeOf s
 
 /-- The residual of `Block.liftInitsInLoopBodyM ss σ` is independent of `σ`. -/
-private theorem Block.liftInitsInLoopBodyM_snd_state_indep
+private theorem Block.liftInitsInLoopBodyM_snd_state_indep [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ σ' : StringGenState) :
     (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       (Block.liftInitsInLoopBodyM ss σ').1.2.2 := by
@@ -929,17 +925,15 @@ private theorem Block.liftInitsInLoopBodyM_snd_state_indep
   termination_by sizeOf ss
 end
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- The pure wrapper's residual equals the monadic residual at any state. -/
-theorem Stmt.liftInitsInLoopBody_snd_eq
+theorem Stmt.liftInitsInLoopBody_snd_eq [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     (Stmt.liftInitsInLoopBody s).snd = (Stmt.liftInitsInLoopBodyM s σ).1.2.2 := by
   rw [Stmt.liftInitsInLoopBody]
   exact Stmt.liftInitsInLoopBodyM_snd_state_indep s StringGenState.emp σ
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- The pure wrapper's residual equals the monadic residual at any state. -/
-theorem Block.liftInitsInLoopBody_snd_eq
+theorem Block.liftInitsInLoopBody_snd_eq [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBody ss).snd = (Block.liftInitsInLoopBodyM ss σ).1.2.2 := by
   rw [Block.liftInitsInLoopBody]
@@ -961,8 +955,7 @@ Companion to the residual (`.1.2.2`) equations above: these extract the
 harvested havoc prelude `.1.1` per-constructor so the `_no_inits` `.1.1 = []`
 proofs can `rw` against the recursive sub-harvests without unfolding the `let`. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Stmt.liftInitsInLoopBodyM_block_harvest
+private theorem Stmt.liftInitsInLoopBodyM_block_harvest [HasIdent P]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.block lbl bss md) σ).1.1 =
@@ -971,8 +964,7 @@ private theorem Stmt.liftInitsInLoopBodyM_block_harvest
   rcases h : Block.liftInitsInLoopBodyM bss σ with ⟨⟨hs, rn, bss'⟩, σ'⟩
   simp only [h]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Stmt.liftInitsInLoopBodyM_ite_harvest
+private theorem Stmt.liftInitsInLoopBodyM_ite_harvest [HasIdent P]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.liftInitsInLoopBodyM (.ite g tss ess md) σ).1.1 =
@@ -984,8 +976,7 @@ private theorem Stmt.liftInitsInLoopBodyM_ite_harvest
   rcases h₂ : Block.liftInitsInLoopBodyM ess σ₁ with ⟨⟨ehs, ern, ess'⟩, σ₂⟩
   simp only [h₁, h₂]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-private theorem Block.liftInitsInLoopBodyM_cons_harvest
+private theorem Block.liftInitsInLoopBodyM_cons_harvest [HasIdent P]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.liftInitsInLoopBodyM (s :: rest) σ).1.1 =
       (Stmt.liftInitsInLoopBodyM s σ).1.1 ++
@@ -1001,10 +992,9 @@ Under `initVars = []` the harvest (`.1.1`) is empty and the residual
 (`.1.2.2`) is the input verbatim. Both facts are shape-only (no name is read),
 so they hold at any `σ` and port to the pure wrapper. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Under `Stmt.initVars s = []`, the harvested havoc prelude is empty. -/
-private theorem Stmt.liftInitsInLoopBodyM_fst_no_inits
+private theorem Stmt.liftInitsInLoopBodyM_fst_no_inits [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_iv : Stmt.initVars s = []) :
     (Stmt.liftInitsInLoopBodyM s σ).1.1 = [] := by
@@ -1036,7 +1026,7 @@ private theorem Stmt.liftInitsInLoopBodyM_fst_no_inits
   termination_by sizeOf s
 
 /-- Under `Block.initVars ss = []`, the harvested havoc prelude is empty. -/
-private theorem Block.liftInitsInLoopBodyM_fst_no_inits
+private theorem Block.liftInitsInLoopBodyM_fst_no_inits [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_iv : Block.initVars ss = []) :
     (Block.liftInitsInLoopBodyM ss σ).1.1 = [] := by
@@ -1054,10 +1044,9 @@ private theorem Block.liftInitsInLoopBodyM_fst_no_inits
   termination_by sizeOf ss
 end
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Under `Stmt.initVars s = []`, the residual is `s` unchanged. -/
-private theorem Stmt.liftInitsInLoopBodyM_snd_no_inits
+private theorem Stmt.liftInitsInLoopBodyM_snd_no_inits [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h_iv : Stmt.initVars s = []) :
     (Stmt.liftInitsInLoopBodyM s σ).1.2.2 = [s] := by
@@ -1088,7 +1077,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_no_inits
   termination_by sizeOf s
 
 /-- Under `Block.initVars ss = []`, the residual is `ss` unchanged. -/
-private theorem Block.liftInitsInLoopBodyM_snd_no_inits
+private theorem Block.liftInitsInLoopBodyM_snd_no_inits [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h_iv : Block.initVars ss = []) :
     (Block.liftInitsInLoopBodyM ss σ).1.2.2 = ss := by
@@ -1106,18 +1095,16 @@ private theorem Block.liftInitsInLoopBodyM_snd_no_inits
   termination_by sizeOf ss
 end
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Pure-wrapper identity of `Stmt.liftInitsInLoopBody` when `initVars = []`. -/
-theorem Stmt.liftInitsInLoopBody_no_inits_eq
+theorem Stmt.liftInitsInLoopBody_no_inits_eq [HasIdent P]
     (s : Stmt P (Cmd P)) (h_iv : Stmt.initVars s = []) :
     Stmt.liftInitsInLoopBody s = ([], [s]) := by
   rw [Stmt.liftInitsInLoopBody]
   rw [Stmt.liftInitsInLoopBodyM_fst_no_inits s StringGenState.emp h_iv,
       Stmt.liftInitsInLoopBodyM_snd_no_inits s StringGenState.emp h_iv]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Pure-wrapper identity of `Block.liftInitsInLoopBody` when `initVars = []`. -/
-theorem Block.liftInitsInLoopBody_no_inits_eq
+theorem Block.liftInitsInLoopBody_no_inits_eq [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (h_iv : Block.initVars ss = []) :
     Block.liftInitsInLoopBody ss = ([], ss) := by
   rw [Block.liftInitsInLoopBody]
@@ -1137,48 +1124,42 @@ of the old definitional unfold. The init→set conversion is name-preserving
 (original `x` retained in the residual), which is why these are independent of
 the fresh names harvested into `.fst`. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_init
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_init [HasIdent P]
     (x : P.Ident) (ty : P.Ty) (rhs : ExprOrNondet P) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.cmd (.init x ty rhs md))).snd =
       [.cmd (.set x rhs md)] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_set
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_set [HasIdent P]
     (x : P.Ident) (rhs : ExprOrNondet P) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.cmd (.set x rhs md))).snd =
       [.cmd (.set x rhs md)] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_assert
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_assert [HasIdent P]
     (l : String) (e : P.Expr) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.cmd (.assert l e md))).snd =
       [.cmd (.assert l e md)] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_assume
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_assume [HasIdent P]
     (l : String) (e : P.Expr) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.cmd (.assume l e md))).snd =
       [.cmd (.assume l e md)] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_cover
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_cmd_cover [HasIdent P]
     (l : String) (e : P.Expr) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.cmd (.cover l e md))).snd =
       [.cmd (.cover l e md)] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_block
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_block [HasIdent P]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.block lbl bss md)).snd =
       [.block lbl (Block.liftInitsInLoopBody bss).snd md] := by
@@ -1186,8 +1167,7 @@ omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
       Stmt.liftInitsInLoopBodyM_block_residual,
       ← Block.liftInitsInLoopBody_snd_eq bss StringGenState.emp]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_ite
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_ite [HasIdent P]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.ite g tss ess md)).snd =
       [.ite g (Block.liftInitsInLoopBody tss).snd
@@ -1198,8 +1178,7 @@ omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
       ← Block.liftInitsInLoopBody_snd_eq ess
         (Block.liftInitsInLoopBodyM tss StringGenState.emp).2]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_loop
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_loop [HasIdent P]
     (g : ExprOrNondet P) (m : Option P.Expr)
     (inv : List (String × P.Expr)) (body : List (Stmt P (Cmd P)))
     (md : MetaData P) :
@@ -1208,35 +1187,30 @@ omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_exit
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_exit [HasIdent P]
     (lbl : String) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.exit lbl md)).snd = [.exit lbl md] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_funcDecl
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_funcDecl [HasIdent P]
     (d : PureFunc P) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.funcDecl d md)).snd = [.funcDecl d md] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Stmt.liftInitsInLoopBody_snd_typeDecl
+@[simp] theorem Stmt.liftInitsInLoopBody_snd_typeDecl [HasIdent P]
     (t : TypeConstructor) (md : MetaData P) :
     (Stmt.liftInitsInLoopBody (.typeDecl t md)).snd = [.typeDecl t md] := by
   rw [Stmt.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Stmt.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Block.liftInitsInLoopBody_snd_nil :
+@[simp] theorem Block.liftInitsInLoopBody_snd_nil [HasIdent P] :
     (Block.liftInitsInLoopBody ([] : List (Stmt P (Cmd P)))).snd = [] := by
   rw [Block.liftInitsInLoopBody_snd_eq _ StringGenState.emp]
   simp [Block.liftInitsInLoopBodyM]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
-@[simp] theorem Block.liftInitsInLoopBody_snd_cons
+@[simp] theorem Block.liftInitsInLoopBody_snd_cons [HasIdent P]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) :
     (Block.liftInitsInLoopBody (s :: rest)).snd =
       (Stmt.liftInitsInLoopBody s).snd ++ (Block.liftInitsInLoopBody rest).snd := by
@@ -1248,12 +1222,11 @@ omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 
 /-! ### `allLoopBodiesInitFree` is preserved by the lift residual -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- The residual of `Stmt.liftInitsInLoopBodyM s` has the same
 `allLoopBodiesInitFree` as `s` (the lift never touches loop bodies, and turns
 inits into sets which carry no loop). -/
-private theorem Stmt.liftInitsInLoopBodyM_snd_allLoopBodiesInitFree
+private theorem Stmt.liftInitsInLoopBodyM_snd_allLoopBodiesInitFree [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.allLoopBodiesInitFree (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.allLoopBodiesInitFree s := by
@@ -1285,7 +1258,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_allLoopBodiesInitFree
             Stmt.allLoopBodiesInitFree]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_allLoopBodiesInitFree
+private theorem Block.liftInitsInLoopBodyM_snd_allLoopBodiesInitFree [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.allLoopBodiesInitFree (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.allLoopBodiesInitFree ss := by
@@ -1302,13 +1275,12 @@ end
 
 /-! ### `noInitsAnywhere` of the lift residual (under the input precondition) -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Under `Stmt.allLoopBodiesInitFree s`, the residual of
 `Stmt.liftInitsInLoopBodyM s` has no inits anywhere: every init was lifted to
 a fresh prelude havoc (harvested in `.1.1`), and the precondition guarantees
 nested loops were already init-free. -/
-private theorem Stmt.liftInitsInLoopBodyM_snd_noInitsAnywhere
+private theorem Stmt.liftInitsInLoopBodyM_snd_noInitsAnywhere [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.allLoopBodiesInitFree s = true) :
     Block.noInitsAnywhere (Stmt.liftInitsInLoopBodyM s σ).1.2.2 = true := by
@@ -1344,7 +1316,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_noInitsAnywhere
       simp [Stmt.liftInitsInLoopBodyM, Block.noInitsAnywhere, Stmt.noInitsAnywhere]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_noInitsAnywhere
+private theorem Block.liftInitsInLoopBodyM_snd_noInitsAnywhere [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.allLoopBodiesInitFree ss = true) :
     Block.noInitsAnywhere (Block.liftInitsInLoopBodyM ss σ).1.2.2 = true := by
@@ -1368,7 +1340,7 @@ sub-outputs. The `.loop` arm is the interesting one: the output is the fresh
 havoc prelude (mapped to `.cmd`) followed by the rewritten loop, where the
 body has been renamed by `Block.applyRenames`. -/
 
-private theorem Stmt.hoistLoopPrefixInitsM_block_out
+private theorem Stmt.hoistLoopPrefixInitsM_block_out [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.hoistLoopPrefixInitsM (.block lbl bss md) σ).1 =
@@ -1377,7 +1349,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_block_out
   rcases h : Block.hoistLoopPrefixInitsM bss σ with ⟨bss', σ'⟩
   simp only [h]
 
-private theorem Stmt.hoistLoopPrefixInitsM_ite_out
+private theorem Stmt.hoistLoopPrefixInitsM_ite_out [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (g : ExprOrNondet P) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (σ : StringGenState) :
     (Stmt.hoistLoopPrefixInitsM (.ite g tss ess md) σ).1 =
@@ -1393,7 +1365,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_ite_out
 body is the lift residual after `applyRenames`. Here `body₁` is the
 post-order-processed body, `σ₁` the state after, and `lifted` the lift of
 `body₁` from `σ₁`. -/
-private theorem Stmt.hoistLoopPrefixInitsM_loop_out
+private theorem Stmt.hoistLoopPrefixInitsM_loop_out [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (g : ExprOrNondet P) (m : Option P.Expr)
     (inv : List (String × P.Expr)) (body : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
@@ -1411,7 +1383,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_loop_out
   rcases h₂ : Block.liftInitsInLoopBodyM body₁ σ₁ with ⟨⟨havocs, renames, body₂⟩, σ₂⟩
   simp only [h₁, h₂]
 
-private theorem Block.hoistLoopPrefixInitsM_cons_out
+private theorem Block.hoistLoopPrefixInitsM_cons_out [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (σ : StringGenState) :
     (Block.hoistLoopPrefixInitsM (s :: rest) σ).1 =
       (Stmt.hoistLoopPrefixInitsM s σ).1 ++
@@ -1434,10 +1406,9 @@ backbone that lets the §E mutual re-establish its generator-state
 preconditions at the advanced state in the `cons`/`.ite`/`.loop` arms. -/
 
 open StringGenState (GenStep) in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- The lift's final generator state is a `GenStep` from its input. -/
-theorem Stmt.liftInitsInLoopBodyM_genStep
+theorem Stmt.liftInitsInLoopBodyM_genStep [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     GenStep σ (Stmt.liftInitsInLoopBodyM s σ).2 := by
   match s with
@@ -1473,7 +1444,7 @@ theorem Stmt.liftInitsInLoopBodyM_genStep
   termination_by sizeOf s
 
 /-- The block-level lift's final generator state is a `GenStep` from its input. -/
-theorem Block.liftInitsInLoopBodyM_genStep
+theorem Block.liftInitsInLoopBodyM_genStep [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     GenStep σ (Block.liftInitsInLoopBodyM ss σ).2 := by
   match ss with
@@ -1501,10 +1472,9 @@ generator-step threading of the σ-membership freshness invariant: a label the
 lift adds over `σ` is `Q`-kind, hence the kind-free source names avoid it. -/
 
 open StringGenState (GenStep) in
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- Every label the statement lift adds over `σ` carries the mint kind `Q`. -/
-theorem Stmt.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
+theorem Stmt.liftInitsInLoopBodyM_genStep_delta_Q [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ str ∈ StringGenState.stringGens (Stmt.liftInitsInLoopBodyM s σ).2,
@@ -1568,7 +1538,7 @@ theorem Stmt.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Every label the block lift adds over `σ` carries the mint kind `Q`. -/
-theorem Block.liftInitsInLoopBodyM_genStep_delta_Q {Q : String → Prop}
+theorem Block.liftInitsInLoopBodyM_genStep_delta_Q [HasIdent P] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ str ∈ StringGenState.stringGens (Block.liftInitsInLoopBodyM ss σ).2,
@@ -1596,7 +1566,7 @@ end
 open StringGenState (GenStep) in
 mutual
 /-- The pass's final generator state is a `GenStep` from its input. -/
-theorem Stmt.hoistLoopPrefixInitsM_genStep
+theorem Stmt.hoistLoopPrefixInitsM_genStep [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     GenStep σ (Stmt.hoistLoopPrefixInitsM s σ).2 := by
   match s with
@@ -1634,7 +1604,7 @@ theorem Stmt.hoistLoopPrefixInitsM_genStep
 
 /-- The block-level pass's final generator state is a `GenStep` from its
 input. -/
-theorem Block.hoistLoopPrefixInitsM_genStep
+theorem Block.hoistLoopPrefixInitsM_genStep [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     GenStep σ (Block.hoistLoopPrefixInitsM ss σ).2 := by
   match ss with
@@ -1665,7 +1635,7 @@ kind-freedom hypothesis discharge the generator-step threading of the
 open StringGenState (GenStep) in
 mutual
 /-- Every label the statement pass adds over `σ` carries the mint kind `Q`. -/
-theorem Stmt.hoistLoopPrefixInitsM_genStep_delta_Q {Q : String → Prop}
+theorem Stmt.hoistLoopPrefixInitsM_genStep_delta_Q [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ str ∈ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2,
@@ -1724,7 +1694,7 @@ theorem Stmt.hoistLoopPrefixInitsM_genStep_delta_Q {Q : String → Prop}
   termination_by sizeOf s
 
 /-- Every label the block pass adds over `σ` carries the mint kind `Q`. -/
-theorem Block.hoistLoopPrefixInitsM_genStep_delta_Q {Q : String → Prop}
+theorem Block.hoistLoopPrefixInitsM_genStep_delta_Q [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM ss σ).2,
@@ -1761,20 +1731,19 @@ from generator monotonicity alone. -/
 /-- The §E fresh-from-σ precondition shape: every label already produced by
 `σ`, injected into `P.Ident`, is disjoint from the source frame names `A`,
 extra names `B`, and `.init` LHS names `ivs`. -/
-def SrcNamesFreshFromGen (A B ivs : List P.Ident) (σ : StringGenState) : Prop :=
+def SrcNamesFreshFromGen [HasIdent P] (A B ivs : List P.Ident) (σ : StringGenState) : Prop :=
   ∀ str ∈ StringGenState.stringGens σ,
     HasIdent.ident (P := P) str ∉ A ∧
     HasIdent.ident (P := P) str ∉ B ∧
     HasIdent.ident (P := P) str ∉ ivs
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 /-- Kind-aware threading of the fresh-from-σ precondition across a `GenStep`.
 The caller supplies `h_delta` recording that every newly-added label carries a
 client kind `Q` (for the hoist pass, via `…_genStep_delta_Q` + the mint witness
 `hQmint`).  It then needs only the `Q`-restricted source kind-freedom
 `h_src_shapefree`, so a composition partner is never forced to keep *every*
 generator-shaped name fresh — only labels of its own kind. -/
-theorem SrcNamesFreshFromGen.genStep_of_delta {Q : String → Prop}
+theorem SrcNamesFreshFromGen.genStep_of_delta [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] {Q : String → Prop}
     {A B ivs : List P.Ident} {σ σ' : StringGenState}
     (h_delta : ∀ str ∈ StringGenState.stringGens σ',
       str ∉ StringGenState.stringGens σ → Q str)
@@ -1795,7 +1764,7 @@ theorem SrcNamesFreshFromGen.genStep_of_delta {Q : String → Prop}
 mutual
 /-- The output of `Stmt.hoistLoopPrefixInitsM s σ` satisfies
 `allLoopBodiesInitFree`. -/
-private theorem Stmt.hoistLoopPrefixInitsM_allLoopBodiesInitFree
+private theorem Stmt.hoistLoopPrefixInitsM_allLoopBodiesInitFree [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.allLoopBodiesInitFree (Stmt.hoistLoopPrefixInitsM s σ).1 = true := by
   match s with
@@ -1843,7 +1812,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_allLoopBodiesInitFree
             Stmt.allLoopBodiesInitFree]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree
+private theorem Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.allLoopBodiesInitFree (Block.hoistLoopPrefixInitsM ss σ).1 = true := by
   match ss with
@@ -1858,7 +1827,7 @@ end
 /-- Top-level Phase 8 §E5 (Option A) structural postcondition (monadic
 fresh-name pass): `Block.hoistLoopPrefixInits` produces a block where every
 `.loop` body contains no `.init` commands at any nesting depth. -/
-theorem Block.hoistLoopPrefixInits_allLoopBodiesInitFree
+theorem Block.hoistLoopPrefixInits_allLoopBodiesInitFree [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) :
     Block.allLoopBodiesInitFree (Block.hoistLoopPrefixInits ss) = true :=
   Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree ss StringGenState.emp
@@ -1872,7 +1841,6 @@ This lets us derive the original `loopBodyNoInits` postcondition from the
 already-proven `allLoopBodiesInitFree` one. The bridges do not depend on the
 pass at all (pure facts about the structural predicates). -/
 
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- No inits anywhere ⇒ the deep `initVars` list is empty (`= []`). -/
 private theorem Stmt.initVars_eq_nil_of_noInitsAnywhere
@@ -1912,7 +1880,6 @@ private theorem Block.initVars_eq_nil_of_noInitsAnywhere
   termination_by sizeOf ss
 end
 
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 private theorem Stmt.loopBodyNoInits_of_allLoopBodiesInitFree
     (s : Stmt P (Cmd P)) (h : Stmt.allLoopBodiesInitFree s = true) :
@@ -1955,7 +1922,7 @@ end
 /-- The original Phase 8 §E structural postcondition: the output of the
 hoisting pass has `loopBodyNoInits = true` (every `.loop` body is init-free at
 the top level). Derived from the stronger `allLoopBodiesInitFree`. -/
-theorem hoistLoopPrefixInits_satisfies_loopBodyNoInits
+theorem hoistLoopPrefixInits_satisfies_loopBodyNoInits [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) :
     Block.loopBodyNoInits (Block.hoistLoopPrefixInits ss) = true :=
   Block.loopBodyNoInits_of_allLoopBodiesInitFree _
@@ -1968,9 +1935,8 @@ loops); `applyRenames` maps measures by `Option.map` so `m.isNone` is
 unchanged (`Block.applyRenames_loopMeasureNone`); the fresh havoc prelude is
 all `.cmd`s. Hence the whole pass preserves `loopMeasureNone`. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
-private theorem Stmt.liftInitsInLoopBodyM_snd_loopMeasureNone
+private theorem Stmt.liftInitsInLoopBodyM_snd_loopMeasureNone [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.loopMeasureNone (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.loopMeasureNone s := by
@@ -1997,7 +1963,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_loopMeasureNone
       simp [Stmt.liftInitsInLoopBodyM, Block.loopMeasureNone, Stmt.loopMeasureNone]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_loopMeasureNone
+private theorem Block.liftInitsInLoopBodyM_snd_loopMeasureNone [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.loopMeasureNone (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.loopMeasureNone ss := by
@@ -2011,7 +1977,7 @@ private theorem Block.liftInitsInLoopBodyM_snd_loopMeasureNone
 end
 
 mutual
-private theorem Stmt.hoistLoopPrefixInitsM_loopMeasureNone
+private theorem Stmt.hoistLoopPrefixInitsM_loopMeasureNone [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.loopMeasureNone (Stmt.hoistLoopPrefixInitsM s σ).1 =
       Stmt.loopMeasureNone s := by
@@ -2051,7 +2017,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_loopMeasureNone
       simp [Stmt.hoistLoopPrefixInitsM, Block.loopMeasureNone, Stmt.loopMeasureNone]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_loopMeasureNone
+private theorem Block.hoistLoopPrefixInitsM_loopMeasureNone [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.loopMeasureNone (Block.hoistLoopPrefixInitsM ss σ).1 =
       Block.loopMeasureNone ss := by
@@ -2066,7 +2032,7 @@ end
 
 /-- Top-level Phase 8 §B preservation (monadic fresh-name pass):
 `Block.hoistLoopPrefixInits` preserves `Block.loopMeasureNone`. -/
-theorem Block.hoistLoopPrefixInits_preserves_loopMeasureNone
+theorem Block.hoistLoopPrefixInits_preserves_loopMeasureNone [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P)))
     (h : Block.loopMeasureNone ss = true) :
     Block.loopMeasureNone (Block.hoistLoopPrefixInits ss) = true := by
@@ -2082,9 +2048,8 @@ not recurse into loops) and emits `.cmd (.set …)` residuals for hoisted inits
 Hence the whole pass preserves `simpleShape`.  Mirrors the `loopMeasureNone`
 chain above. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
-private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape
+private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.simpleShape (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.simpleShape s := by
@@ -2115,7 +2080,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_simpleShape
       simp [Stmt.liftInitsInLoopBodyM, Block.simpleShape, Stmt.simpleShape]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_simpleShape
+private theorem Block.liftInitsInLoopBodyM_snd_simpleShape [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.simpleShape (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.simpleShape ss := by
@@ -2129,7 +2094,7 @@ private theorem Block.liftInitsInLoopBodyM_snd_simpleShape
 end
 
 mutual
-private theorem Stmt.hoistLoopPrefixInitsM_simpleShape
+private theorem Stmt.hoistLoopPrefixInitsM_simpleShape [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.simpleShape (Stmt.hoistLoopPrefixInitsM s σ).1 =
       Stmt.simpleShape s := by
@@ -2186,7 +2151,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_simpleShape
       simp [Stmt.hoistLoopPrefixInitsM, Block.simpleShape, Stmt.simpleShape]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_simpleShape
+private theorem Block.hoistLoopPrefixInitsM_simpleShape [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.simpleShape (Block.hoistLoopPrefixInitsM ss σ).1 =
       Block.simpleShape ss := by
@@ -2200,7 +2165,7 @@ private theorem Block.hoistLoopPrefixInitsM_simpleShape
 end
 
 /-- Top-level: `Block.hoistLoopPrefixInits` preserves `Block.simpleShape`. -/
-theorem Block.hoistLoopPrefixInits_preserves_simpleShape
+theorem Block.hoistLoopPrefixInits_preserves_simpleShape [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P)))
     (h : Block.simpleShape ss = true) :
     Block.simpleShape (Block.hoistLoopPrefixInits ss) = true := by
@@ -2213,9 +2178,8 @@ Both are shape-only walkers; the lift never recurses into loops and emits only
 `.cmd .init` havocs (no nondet loop, no funcDecl); `applyRenames` preserves
 both walkers. So the whole pass preserves them in value. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
-private theorem Stmt.liftInitsInLoopBodyM_snd_containsNondetLoop
+private theorem Stmt.liftInitsInLoopBodyM_snd_containsNondetLoop [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.containsNondetLoop (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.containsNondetLoop s := by
@@ -2243,7 +2207,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_containsNondetLoop
       simp [Stmt.liftInitsInLoopBodyM, Block.containsNondetLoop, Stmt.containsNondetLoop]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_containsNondetLoop
+private theorem Block.liftInitsInLoopBodyM_snd_containsNondetLoop [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.containsNondetLoop (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.containsNondetLoop ss := by
@@ -2257,7 +2221,7 @@ private theorem Block.liftInitsInLoopBodyM_snd_containsNondetLoop
 end
 
 mutual
-private theorem Stmt.hoistLoopPrefixInitsM_containsNondetLoop
+private theorem Stmt.hoistLoopPrefixInitsM_containsNondetLoop [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.containsNondetLoop (Stmt.hoistLoopPrefixInitsM s σ).1 =
       Stmt.containsNondetLoop s := by
@@ -2298,7 +2262,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_containsNondetLoop
       simp [Stmt.hoistLoopPrefixInitsM, Block.containsNondetLoop, Stmt.containsNondetLoop]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_containsNondetLoop
+private theorem Block.hoistLoopPrefixInitsM_containsNondetLoop [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.containsNondetLoop (Block.hoistLoopPrefixInitsM ss σ).1 =
       Block.containsNondetLoop ss := by
@@ -2312,15 +2276,14 @@ private theorem Block.hoistLoopPrefixInitsM_containsNondetLoop
 end
 
 /-- The pass preserves `containsNondetLoop` in value. -/
-theorem Block.hoistLoopPrefixInits_containsNondetLoop_eq
+theorem Block.hoistLoopPrefixInits_containsNondetLoop_eq [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) :
     Block.containsNondetLoop (Block.hoistLoopPrefixInits ss) =
       Block.containsNondetLoop ss := by
   rw [Block.hoistLoopPrefixInits, Block.hoistLoopPrefixInitsM_containsNondetLoop]
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
-private theorem Stmt.liftInitsInLoopBodyM_snd_containsFuncDecl
+private theorem Stmt.liftInitsInLoopBodyM_snd_containsFuncDecl [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.containsFuncDecl (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.containsFuncDecl s := by
@@ -2347,7 +2310,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_containsFuncDecl
       simp [Stmt.liftInitsInLoopBodyM, Block.containsFuncDecl, Stmt.containsFuncDecl]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_containsFuncDecl
+private theorem Block.liftInitsInLoopBodyM_snd_containsFuncDecl [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.containsFuncDecl (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.containsFuncDecl ss := by
@@ -2361,7 +2324,7 @@ private theorem Block.liftInitsInLoopBodyM_snd_containsFuncDecl
 end
 
 mutual
-private theorem Stmt.hoistLoopPrefixInitsM_containsFuncDecl
+private theorem Stmt.hoistLoopPrefixInitsM_containsFuncDecl [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.containsFuncDecl (Stmt.hoistLoopPrefixInitsM s σ).1 =
       Stmt.containsFuncDecl s := by
@@ -2401,7 +2364,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_containsFuncDecl
       simp [Stmt.hoistLoopPrefixInitsM, Block.containsFuncDecl, Stmt.containsFuncDecl]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_containsFuncDecl
+private theorem Block.hoistLoopPrefixInitsM_containsFuncDecl [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.containsFuncDecl (Block.hoistLoopPrefixInitsM ss σ).1 =
       Block.containsFuncDecl ss := by
@@ -2415,7 +2378,7 @@ private theorem Block.hoistLoopPrefixInitsM_containsFuncDecl
 end
 
 /-- The pass preserves `containsFuncDecl` in value. -/
-theorem Block.hoistLoopPrefixInits_containsFuncDecl_eq
+theorem Block.hoistLoopPrefixInits_containsFuncDecl_eq [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) :
     Block.containsFuncDecl (Block.hoistLoopPrefixInits ss) =
       Block.containsFuncDecl ss := by
@@ -2423,9 +2386,8 @@ theorem Block.hoistLoopPrefixInits_containsFuncDecl_eq
 
 /-! ### `loopHasNoInvariants` is preserved by the pass -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
-private theorem Stmt.liftInitsInLoopBodyM_snd_loopHasNoInvariants
+private theorem Stmt.liftInitsInLoopBodyM_snd_loopHasNoInvariants [HasIdent P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.loopHasNoInvariants (Stmt.liftInitsInLoopBodyM s σ).1.2.2 =
       Stmt.loopHasNoInvariants s := by
@@ -2452,7 +2414,7 @@ private theorem Stmt.liftInitsInLoopBodyM_snd_loopHasNoInvariants
       simp [Stmt.liftInitsInLoopBodyM, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants]
   termination_by sizeOf s
 
-private theorem Block.liftInitsInLoopBodyM_snd_loopHasNoInvariants
+private theorem Block.liftInitsInLoopBodyM_snd_loopHasNoInvariants [HasIdent P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.loopHasNoInvariants (Block.liftInitsInLoopBodyM ss σ).1.2.2 =
       Block.loopHasNoInvariants ss := by
@@ -2466,7 +2428,7 @@ private theorem Block.liftInitsInLoopBodyM_snd_loopHasNoInvariants
 end
 
 mutual
-private theorem Stmt.hoistLoopPrefixInitsM_loopHasNoInvariants
+private theorem Stmt.hoistLoopPrefixInitsM_loopHasNoInvariants [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     Block.loopHasNoInvariants (Stmt.hoistLoopPrefixInitsM s σ).1 =
       Stmt.loopHasNoInvariants s := by
@@ -2506,7 +2468,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_loopHasNoInvariants
       simp [Stmt.hoistLoopPrefixInitsM, Block.loopHasNoInvariants, Stmt.loopHasNoInvariants]
   termination_by sizeOf s
 
-private theorem Block.hoistLoopPrefixInitsM_loopHasNoInvariants
+private theorem Block.hoistLoopPrefixInitsM_loopHasNoInvariants [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     Block.loopHasNoInvariants (Block.hoistLoopPrefixInitsM ss σ).1 =
       Block.loopHasNoInvariants ss := by
@@ -2520,7 +2482,7 @@ private theorem Block.hoistLoopPrefixInitsM_loopHasNoInvariants
 end
 
 /-- The pass preserves `loopHasNoInvariants` in value. -/
-theorem Block.hoistLoopPrefixInits_loopHasNoInvariants_eq
+theorem Block.hoistLoopPrefixInits_loopHasNoInvariants_eq [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (ss : List (Stmt P (Cmd P))) :
     Block.loopHasNoInvariants (Block.hoistLoopPrefixInits ss) =
       Block.loopHasNoInvariants ss := by
