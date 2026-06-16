@@ -138,9 +138,7 @@ exit-bearing tree (init/set commands have no exits). So the predicate is
 preserved (in the strong, predicate-equality sense). -/
 
 section ExitsCovered
-variable [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
 
-omit [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 private theorem Block.exitsCoveredByBlocks_of_map_cmd
     (labels : List String) (cs : List (Cmd P)) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -156,9 +154,8 @@ never touch block labels or exit statements, so `exitsCoveredByBlocks` is
 invariant under them. (Prop-valued analogue of the Bool walkers'
 `SubstIdentPreserves` in `LoopInitHoist.lean`.) -/
 
-omit [HasIdent P] in
 mutual
-private theorem Stmt.substIdent_exitsCoveredByBlocks
+private theorem Stmt.substIdent_exitsCoveredByBlocks [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (y y' : P.Ident) (labels : List String) (s : Stmt P (Cmd P))
     (h : Stmt.exitsCoveredByBlocks labels s) :
     Stmt.exitsCoveredByBlocks labels (Stmt.substIdent y y' s) := by
@@ -183,7 +180,7 @@ private theorem Stmt.substIdent_exitsCoveredByBlocks
   | typeDecl t md => simp only [Stmt.substIdent_typeDecl, Stmt.exitsCoveredByBlocks]
   termination_by sizeOf s
 
-private theorem Block.substIdent_exitsCoveredByBlocks
+private theorem Block.substIdent_exitsCoveredByBlocks [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (y y' : P.Ident) (labels : List String) (ss : List (Stmt P (Cmd P)))
     (h : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -197,8 +194,7 @@ private theorem Block.substIdent_exitsCoveredByBlocks
   termination_by sizeOf ss
 end
 
-omit [HasIdent P] in
-private theorem Block.applyRenames_exitsCoveredByBlocks
+private theorem Block.applyRenames_exitsCoveredByBlocks [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (renames : List (P.Ident × P.Ident)) (labels : List String)
     (ss : List (Stmt P (Cmd P)))
     (h : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) :
@@ -219,11 +215,10 @@ The `.snd` residual of the monadic lift is unfolded via the `@[simp]`
 equations (LoopInitHoist.lean) — the old `simp [Stmt.liftInitsInLoopBody]`
 unfold no longer fires under the monadic wrapper. -/
 
-omit [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] in
 mutual
 /-- `Stmt.liftInitsInLoopBody`'s residual block preserves
 `Stmt.exitsCoveredByBlocks`. -/
-private theorem Stmt.liftInitsInLoopBody_snd_exitsCoveredByBlocks
+private theorem Stmt.liftInitsInLoopBody_snd_exitsCoveredByBlocks [HasIdent P]
     (labels : List String) (s : Stmt P (Cmd P))
     (h : Stmt.exitsCoveredByBlocks labels s) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -278,7 +273,7 @@ private theorem Stmt.liftInitsInLoopBody_snd_exitsCoveredByBlocks
 
 /-- `Block.liftInitsInLoopBody`'s residual block preserves
 `Block.exitsCoveredByBlocks`. -/
-private theorem Block.liftInitsInLoopBody_snd_exitsCoveredByBlocks
+private theorem Block.liftInitsInLoopBody_snd_exitsCoveredByBlocks [HasIdent P]
     (labels : List String) (ss : List (Stmt P (Cmd P)))
     (h : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -304,7 +299,7 @@ by `Block.applyRenames_exitsCoveredByBlocks`. -/
 
 mutual
 /-- `Stmt.hoistLoopPrefixInitsM`'s output preserves `Stmt.exitsCoveredByBlocks`. -/
-private theorem Stmt.hoistLoopPrefixInitsM_exitsCoveredByBlocks
+private theorem Stmt.hoistLoopPrefixInitsM_exitsCoveredByBlocks [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (labels : List String) (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.exitsCoveredByBlocks labels s) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -371,7 +366,7 @@ private theorem Stmt.hoistLoopPrefixInitsM_exitsCoveredByBlocks
   termination_by sizeOf s
 
 /-- `Block.hoistLoopPrefixInitsM`'s output preserves `Block.exitsCoveredByBlocks`. -/
-private theorem Block.hoistLoopPrefixInitsM_exitsCoveredByBlocks
+private theorem Block.hoistLoopPrefixInitsM_exitsCoveredByBlocks [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (labels : List String) (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
@@ -389,7 +384,7 @@ private theorem Block.hoistLoopPrefixInitsM_exitsCoveredByBlocks
 end
 
 /-- S4 public preservation entry-point (pure-wrapper bridge). -/
-theorem Block.hoistLoopPrefixInits_preserves_exitsCoveredByBlocks
+theorem Block.hoistLoopPrefixInits_preserves_exitsCoveredByBlocks [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
     (labels : List String) (ss : List (Stmt P (Cmd P)))
     (h : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss) :
     Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels
