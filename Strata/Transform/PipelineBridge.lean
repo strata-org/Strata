@@ -570,9 +570,6 @@ are parametric in the downstream kind `Q` *and* a foreignness witness
 (`¬ Q ndelim-name`), so instantiating `Q := hoistKind` with
 `ndelim_name_not_hoistKind` discharges Direction A. -/
 
-variable [HasIdent P] [HasFvar P] [HasBool P]
-
-omit [HasIdent P] [HasFvar P] [HasBool P] in
 /-- `Block.initVars` distributes over list append. -/
 theorem Block.initVars_append (xs ys : List (Stmt P (Cmd P))) :
     Block.initVars (xs ++ ys) = Block.initVars xs ++ Block.initVars ys := by
@@ -581,7 +578,6 @@ theorem Block.initVars_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih =>
       simp only [List.cons_append, Block.initVars_cons, ih, List.append_assoc]
 
-omit [HasIdent P] [HasFvar P] [HasBool P] in
 /-- `Block.modifiedVars` distributes over list append. -/
 theorem Block.modifiedVars_append (xs ys : List (Stmt P (Cmd P))) :
     Block.modifiedVars (xs ++ ys) = Block.modifiedVars xs ++ Block.modifiedVars ys := by
@@ -590,7 +586,6 @@ theorem Block.modifiedVars_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih =>
       simp only [List.cons_append, Block.modifiedVars, ih, List.append_assoc]
 
-omit [HasIdent P] [HasFvar P] [HasBool P] in
 /-- An `init` command modifies nothing (it *defines*, not modifies). -/
 private theorem init_modVars (x : P.Ident) (ty : P.Ty) (e : ExprOrNondet P)
     (md : MetaData P) :
@@ -598,7 +593,6 @@ private theorem init_modVars (x : P.Ident) (ty : P.Ty) (e : ExprOrNondet P)
       ([] : List P.Ident) := by
   with_unfolding_all rfl
 
-omit [HasIdent P] [HasFvar P] [HasBool P] in
 /-- A `havoc x` command modifies exactly `[x]`. -/
 private theorem havoc_modVars (x : P.Ident) (md : MetaData P) :
     HasVarsImp.modifiedVars (HasHavoc.havoc (CmdT := Cmd P) x md) = [x] := by
@@ -607,7 +601,7 @@ private theorem havoc_modVars (x : P.Ident) (md : MetaData P) :
 mutual
 /-- Every `initVars` element of the `nondetElim` output of a statement is either
 an original source `initVars` element or a freshly-minted `ndelimKind` guard. -/
-theorem Stmt.nondetElimM_initVars_classified
+theorem Stmt.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.initVars s ∨
@@ -698,7 +692,7 @@ theorem Stmt.nondetElimM_initVars_classified
   termination_by sizeOf s
 
 /-- Block-level `initVars` classification of the `nondetElim` output. -/
-theorem Block.nondetElimM_initVars_classified
+theorem Block.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.initVars ss ∨
@@ -727,7 +721,7 @@ mutual
 /-- Every `modifiedVars` element of the `nondetElim` output of a statement is
 either an original source `modifiedVars` element or a freshly-minted
 `ndelimKind` guard (the loop re-havoc target). -/
-theorem Stmt.nondetElimM_modVars_classified
+theorem Stmt.nondetElimM_modVars_classified [HasIdent P] [HasFvar P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.modifiedVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.modifiedVars s ∨
@@ -798,7 +792,7 @@ theorem Stmt.nondetElimM_modVars_classified
   termination_by sizeOf s
 
 /-- Block-level `modifiedVars` classification of the `nondetElim` output. -/
-theorem Block.nondetElimM_modVars_classified
+theorem Block.nondetElimM_modVars_classified [HasIdent P] [HasFvar P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.modifiedVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.modifiedVars ss ∨
@@ -823,11 +817,8 @@ theorem Block.nondetElimM_modVars_classified
   termination_by sizeOf ss
 end
 
-variable [HasVarsPure P P.Expr] [LawfulHasFvar P] [LawfulHasIdent P]
-
-omit [HasFvar P] [HasBool P] [LawfulHasFvar P] [LawfulHasIdent P] in
 /-- `Block.exprsShapeFree Q` distributes over list append. -/
-theorem Block.exprsShapeFree_append {Q : String → Prop}
+theorem Block.exprsShapeFree_append [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop}
     (xs ys : List (Stmt P (Cmd P)))
     (h : Block.exprsShapeFree (P := P) Q xs ∧ Block.exprsShapeFree (P := P) Q ys) :
     Block.exprsShapeFree (P := P) Q (xs ++ ys) := by
@@ -838,28 +829,26 @@ theorem Block.exprsShapeFree_append {Q : String → Prop}
       rw [Block.exprsShapeFree] at h
       exact ⟨h.1.1, ih ⟨h.1.2, h.2⟩⟩
 
-omit [HasFvar P] [HasBool P] [LawfulHasFvar P] [LawfulHasIdent P] in
 /-- A `.cmd (init _ _ .nondet _)` reads nothing, so it is `exprsShapeFree`. -/
-private theorem init_nondet_sf {Q : String → Prop} (ident : P.Ident) (ty : P.Ty)
+private theorem init_nondet_sf [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} (ident : P.Ident) (ty : P.Ty)
     (md : MetaData P) :
     Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) := by
   show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.init ident ty ExprOrNondet.nondet md))
   simp only [Stmt.exprsShapeFree, ExprOrNondet.getVars]
   exact fun str _ hmem => absurd hmem List.not_mem_nil
 
-omit [HasFvar P] [HasBool P] [LawfulHasFvar P] [LawfulHasIdent P] in
 /-- A `.cmd (havoc _)` reads nothing, so it is `exprsShapeFree`. -/
-private theorem havoc_sf {Q : String → Prop} (ident : P.Ident) (md : MetaData P) :
+private theorem havoc_sf [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} (ident : P.Ident) (md : MetaData P) :
     Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (HasHavoc.havoc ident md)) := by
   show Stmt.exprsShapeFree (P := P) Q (Stmt.cmd (Cmd.set ident ExprOrNondet.nondet md))
   simp only [Stmt.exprsShapeFree, ExprOrNondet.getVars]
   exact fun str _ hmem => absurd hmem List.not_mem_nil
 
-omit [HasBool P] in
 /-- The freshly minted ndelim guard ident is `∉ getVars` of any `Q`-foreign
 read-var slot: the only read is `mkFvar ident` whose vars ⊆ `[ident]` and `ident`
 carries the ndelim kind, foreign to `Q`. -/
-private theorem ndelim_guard_fresh {Q : String → Prop}
+private theorem ndelim_guard_fresh [HasIdent P] [HasFvar P] [HasVarsPure P P.Expr]
+    [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
     (pf : String) (σ : StringGenState)
     (hforeign : ¬ Q (StringGenState.gen pf σ).1) :
     ∀ str : String, Q str →
@@ -873,11 +862,10 @@ private theorem ndelim_guard_fresh {Q : String → Prop}
   rw [List.mem_singleton] at hin
   exact hforeign (LawfulHasIdent.ident_inj hin ▸ hQ)
 
-omit [HasFvar P] [HasBool P] [LawfulHasFvar P] [LawfulHasIdent P] in
 /-- Transport `exprsShapeFree` across a `.loop` whose guard/body are replaced but
 whose measure/invariants are unchanged: the measure/invariant freshness conjuncts
 carry over verbatim from the source loop. -/
-private theorem loop_sf_transport {Q : String → Prop} (g₀ g₁ : ExprOrNondet P)
+private theorem loop_sf_transport [HasIdent P] [HasVarsPure P P.Expr] {Q : String → Prop} (g₀ g₁ : ExprOrNondet P)
     (m : Option P.Expr) (inv : List (String × P.Expr))
     (body₀ body₁ : List (Stmt P (Cmd P))) (md : MetaData P)
     (h : Stmt.exprsShapeFree (P := P) Q (.loop g₀ m inv body₀ md))
@@ -888,13 +876,13 @@ private theorem loop_sf_transport {Q : String → Prop} (g₀ g₁ : ExprOrNonde
   rw [Stmt.exprsShapeFree.eq_def] at h ⊢
   exact ⟨hg, h.2.1, h.2.2.1, hb⟩
 
-omit [LawfulHasFvar P] [LawfulHasIdent P] in
 mutual
 /-- `nondetElim` preserves `exprsShapeFree Q`, provided the labels it mints (the
 two ndelim guard prefixes) are foreign to `Q`: source read-vars stay `Q`-free,
 and the only new read-var is the freshly-minted guard ident, which is `¬ Q` by
 foreignness. -/
-theorem Stmt.nondetElimM_exprsShapeFree [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
+theorem Stmt.nondetElimM_exprsShapeFree [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr]
+    [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState)
@@ -957,7 +945,8 @@ theorem Stmt.nondetElimM_exprsShapeFree [LawfulHasFvar P] [LawfulHasIdent P] {Q 
   termination_by sizeOf s
 
 /-- Block-level `exprsShapeFree Q` preservation through `nondetElim`. -/
-theorem Block.nondetElimM_exprsShapeFree [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
+theorem Block.nondetElimM_exprsShapeFree [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr]
+    [LawfulHasFvar P] [LawfulHasIdent P] {Q : String → Prop}
     (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
     (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
@@ -990,22 +979,18 @@ and the carrier), reused here at `Q := ndelimKind`.  The source-side
 top level from a kind-free front-end source. -/
 
 section NondetElimUniqueInits
-variable {P : PureExpr} [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
-  [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
-  [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P]
+variable {P : PureExpr}
 
 local notation "HoistInitClass" => LoopInitHoistLoopArmWF.HoistInitClass
 local notation "hoistInitClass_disjoint" => @LoopInitHoistLoopArmWF.hoistInitClass_disjoint
 local notation "GenStep" => StringGenState.GenStep
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.nondetElimM_block_state (lbl : String) (bss : List (Stmt P (Cmd P)))
+theorem Stmt.nondetElimM_block_state [HasIdent P] [HasFvar P] [HasBool P] (lbl : String) (bss : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     (Stmt.nondetElimM (.block lbl bss md) σ).2 = (Block.nondetElimM bss σ).2 := by
   rw [Stmt.nondetElimM]; rcases h : Block.nondetElimM bss σ with ⟨bss', σ'⟩; simp only [h]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.nondetElimM_ite_det_state (e : P.Expr) (tss ess : List (Stmt P (Cmd P)))
+theorem Stmt.nondetElimM_ite_det_state [HasIdent P] [HasFvar P] [HasBool P] (e : P.Expr) (tss ess : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     (Stmt.nondetElimM (.ite (.det e) tss ess md) σ).2 =
       (Block.nondetElimM ess (Block.nondetElimM tss σ).2).2 := by
@@ -1014,8 +999,7 @@ theorem Stmt.nondetElimM_ite_det_state (e : P.Expr) (tss ess : List (Stmt P (Cmd
   rcases h₂ : Block.nondetElimM ess σ₁ with ⟨ess', σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.nondetElimM_ite_nondet_state (tss ess : List (Stmt P (Cmd P)))
+theorem Stmt.nondetElimM_ite_nondet_state [HasIdent P] [HasFvar P] [HasBool P] (tss ess : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2 =
       (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2).2 := by
@@ -1025,15 +1009,13 @@ theorem Stmt.nondetElimM_ite_nondet_state (tss ess : List (Stmt P (Cmd P)))
   rcases h₂ : Block.nondetElimM ess σ₂ with ⟨ess', σ₃⟩
   simp only [hg, h₁, h₂]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.nondetElimM_loop_det_state (e : P.Expr) (m : Option P.Expr)
+theorem Stmt.nondetElimM_loop_det_state [HasIdent P] [HasFvar P] [HasBool P] (e : P.Expr) (m : Option P.Expr)
     (inv : List (String × P.Expr)) (body : List (Stmt P (Cmd P)))
     (md : MetaData P) (σ : StringGenState) :
     (Stmt.nondetElimM (.loop (.det e) m inv body md) σ).2 = (Block.nondetElimM body σ).2 := by
   rw [Stmt.nondetElimM]; rcases h : Block.nondetElimM body σ with ⟨body', σ'⟩; simp only [h]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Stmt.nondetElimM_loop_nondet_state (m : Option P.Expr) (inv : List (String × P.Expr))
+theorem Stmt.nondetElimM_loop_nondet_state [HasIdent P] [HasFvar P] [HasBool P] (m : Option P.Expr) (inv : List (String × P.Expr))
     (body : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
     (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 =
       (Block.nondetElimM body (StringGenState.gen ndelimLoopPrefix σ).2).2 := by
@@ -1042,8 +1024,7 @@ theorem Stmt.nondetElimM_loop_nondet_state (m : Option P.Expr) (inv : List (Stri
   rcases h : Block.nondetElimM body σ₁ with ⟨body', σ₂⟩
   simp only [hg, h]
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
-theorem Block.nondetElimM_cons_state (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
+theorem Block.nondetElimM_cons_state [HasIdent P] [HasFvar P] [HasBool P] (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
     (σ : StringGenState) :
     (Block.nondetElimM (s :: rest) σ).2 = (Block.nondetElimM rest (Stmt.nondetElimM s σ).2).2 := by
   rw [Block.nondetElimM]
@@ -1051,10 +1032,9 @@ theorem Block.nondetElimM_cons_state (s : Stmt P (Cmd P)) (rest : List (Stmt P (
   rcases h₂ : Block.nondetElimM rest σ₁ with ⟨ss_r, σ₂⟩
   simp only [h₁, h₂]
 
-omit [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The freshly minted ndelim guard satisfies the `HoistInitClass` fresh
 disjunct at `ndelimKind` over a one-`gen`-step window. -/
-private theorem ndelim_fresh_class (pf : String) (σ : StringGenState)
+private theorem ndelim_fresh_class [HasIdent P] (pf : String) (σ : StringGenState)
     (h_wf : StringGenState.WF σ)
     (hpf : ndelimKind (StringGenState.gen pf σ).1) :
     ∃ str : String, HasIdent.ident (P := P) (StringGenState.gen pf σ).1 = HasIdent.ident str
@@ -1065,12 +1045,11 @@ private theorem ndelim_fresh_class (pf : String) (σ : StringGenState)
     by rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl),
     StringGenState.stringGens_gen_not_in pf σ h_wf, hpf⟩
 
-omit [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 mutual
 /-- Strengthened nondetElim `initVars` classification: window-tracked
 `HoistInitClass` at `ndelimKind`, plus `Nodup`.  Mirrors the hoist
 `_initVars_classified`. -/
-theorem Stmt.nondetElimM_initVars_nodup
+theorem Stmt.nondetElimM_initVars_nodup [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Stmt.initVars s).Nodup)
     (h_sf : ∀ str : String, ndelimKind str → HasIdent.ident (P := P) str ∉ Stmt.initVars s) :
@@ -1300,7 +1279,7 @@ theorem Stmt.nondetElimM_initVars_nodup
           List.append_nil]; exact List.nodup_nil
   termination_by sizeOf s
 
-theorem Block.nondetElimM_initVars_nodup
+theorem Block.nondetElimM_initVars_nodup [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars ss).Nodup)
     (h_sf : ∀ str : String, ndelimKind str → HasIdent.ident (P := P) str ∉ Block.initVars ss) :
@@ -1380,13 +1359,11 @@ the last cross-pass obligation.  Its two conjuncts are established separately:
 Together they discharge `hoistedNamesFreshInRhsAndGuards (nondetElim ss)`. -/
 
 section NondetElimFresh
-variable {P : PureExpr} [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
-  [HasVarsPure P P.Expr]
+variable {P : PureExpr}
 
-omit [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] in
 /-- A `.cmd (init _ _ .nondet _)` has an empty-vars RHS, so any names list is
 RHS-fresh in it. -/
-private theorem init_nondet_rhsfree (names : List P.Ident) (ident : P.Ident)
+private theorem init_nondet_rhsfree [HasVarsPure P P.Expr] (names : List P.Ident) (ident : P.Ident)
     (ty : P.Ty) (md : MetaData P) :
     Stmt.namesFreshInRhsExprs (P := P) names
       (Stmt.cmd (HasInit.init ident ty ExprOrNondet.nondet md)) = true := by
@@ -1395,10 +1372,9 @@ private theorem init_nondet_rhsfree (names : List P.Ident) (ident : P.Ident)
   simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
   rw [List.all_eq_true]; intro z _; rfl
 
-omit [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] in
 /-- A `.cmd (havoc _)` has an empty-vars RHS, so any names list is RHS-fresh in
 it. -/
-private theorem havoc_rhsfree (names : List P.Ident) (ident : P.Ident)
+private theorem havoc_rhsfree [HasVarsPure P P.Expr] (names : List P.Ident) (ident : P.Ident)
     (md : MetaData P) :
     Stmt.namesFreshInRhsExprs (P := P) names
       (Stmt.cmd (HasHavoc.havoc ident md)) = true := by
@@ -1407,12 +1383,11 @@ private theorem havoc_rhsfree (names : List P.Ident) (ident : P.Ident)
   simp only [Stmt.namesFreshInRhsExprs, ExprOrNondet.getVars]
   rw [List.all_eq_true]; intro z _; rfl
 
-omit [LawfulHasIdent P] in
 mutual
 /-- `nondetElim` preserves `namesFreshInRhsExprs names` for a fixed name list:
 all introduced command RHS positions read nothing, and source RHS positions are
 unchanged. -/
-theorem Stmt.nondetElimM_namesFreshInRhsExprs (names : List P.Ident)
+theorem Stmt.nondetElimM_namesFreshInRhsExprs [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] (names : List P.Ident)
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.namesFreshInRhsExprs (P := P) names s = true) :
     Block.namesFreshInRhsExprs (P := P) names (Stmt.nondetElimM s σ).1 = true := by
@@ -1468,7 +1443,7 @@ theorem Stmt.nondetElimM_namesFreshInRhsExprs (names : List P.Ident)
         Bool.and_true]
   termination_by sizeOf s
 
-theorem Block.nondetElimM_namesFreshInRhsExprs (names : List P.Ident)
+theorem Block.nondetElimM_namesFreshInRhsExprs [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] (names : List P.Ident)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.namesFreshInRhsExprs (P := P) names ss = true) :
     Block.namesFreshInRhsExprs (P := P) names (Block.nondetElimM ss σ).1 = true := by
@@ -1483,11 +1458,10 @@ theorem Block.nondetElimM_namesFreshInRhsExprs (names : List P.Ident)
   termination_by sizeOf ss
 end
 
-omit [LawfulHasIdent P] [HasFvar P] [HasBool P] in
 /-- An `ndelimKind` guard ident is RHS-fresh in the kind-free source: it is the
 identifier of an `ndelimKind` label, and the source reads no `ndelimKind` ident
 in any expression (`exprsShapeFree ndelimKind`), so a fortiori not in any RHS. -/
-private theorem ndelim_guard_namesFreshInRhsExprs_src
+private theorem ndelim_guard_namesFreshInRhsExprs_src [HasIdent P] [HasVarsPure P P.Expr]
     {str : String} (h_kind : ndelimKind str) (ss : List (Stmt P (Cmd P)))
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
     Block.namesFreshInRhsExprs (P := P) [HasIdent.ident (P := P) str] ss = true :=
@@ -1497,11 +1471,10 @@ private theorem ndelim_guard_namesFreshInRhsExprs_src
         rw [List.mem_singleton] at hz; exact ⟨str, hz, h_kind⟩)
       ss h_sf)
 
-omit [LawfulHasIdent P] in
 /-- Every name in `initVars (nondetElim ss)` is RHS-fresh in the source `ss`:
 source inits inherit the source RHS-freshness; freshly minted `ndelimKind`
 guards are RHS-fresh by source kind-freedom. -/
-theorem nondetElim_initVars_namesFreshInRhsExprs_src
+theorem nondetElim_initVars_namesFreshInRhsExprs_src [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
@@ -1514,12 +1487,11 @@ theorem nondetElim_initVars_namesFreshInRhsExprs_src
       (fun w hw => by rw [List.mem_singleton] at hw; exact hw ▸ h_src) ss h_src_rhs
   · exact h_eq ▸ ndelim_guard_namesFreshInRhsExprs_src h_kind ss h_sf
 
-omit [LawfulHasIdent P] in
 /-- The `namesFreshInRhsExprs (initVars …) …` conjunct of
 `hoistedNamesFreshInRhsAndGuards` holds on the `nondetElim` output: the source
 fact (every output init RHS-fresh in the source) is transported through the pass
 (which only adds variable-free command RHS positions). -/
-theorem nondetElim_namesFreshInRhsExprs
+theorem nondetElim_namesFreshInRhsExprs [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
@@ -1541,15 +1513,12 @@ minted strictly before the body is processed, hence outside the body's
 `gen`-window, and source inits are never `ndelimKind`). -/
 
 section NondetElimGuards
-variable {P : PureExpr} [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
-  [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
-  [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P]
+variable {P : PureExpr}
 
 local notation "GenStep" => StringGenState.GenStep
 
-omit [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- `Block.hoistedNamesFreshInGuards` distributes over `++`. -/
-private theorem hoistedNamesFreshInGuards_append
+private theorem hoistedNamesFreshInGuards_append [HasVarsPure P P.Expr]
     (xs ys : List (Stmt P (Cmd P)))
     (hx : Block.hoistedNamesFreshInGuards (P := P) xs = true)
     (hy : Block.hoistedNamesFreshInGuards (P := P) ys = true) :
@@ -1561,14 +1530,12 @@ private theorem hoistedNamesFreshInGuards_append
       simp only [List.cons_append, Block.hoistedNamesFreshInGuards, Bool.and_eq_true]
       exact ⟨hx.1, ih hx.2⟩
 
-omit [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Decode the `freshFromIdents`-style "fresh in enclosing vars" leaf of
 `hoistedNamesFreshInGuards` as a membership-negation. -/
 private theorem fresh_leaf_iff (y : P.Ident) (vars : List P.Ident) :
     (vars.all (fun v => ¬ (P.EqIdent y v).decide)) = true ↔ y ∉ vars :=
   freshFromIdents_iff_not_mem (z := y) (vars := vars)
 
-omit [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Reassemble a `.loop` `hoistedNamesFreshInGuards` leaf (`bodyInits` fresh in
 `guardVars ++ invVars ++ measureVars`) from a per-`bodyInit` membership-negation. -/
 private theorem loop_guard_leaf_of_forall_not_mem
@@ -1579,13 +1546,11 @@ private theorem loop_guard_leaf_of_forall_not_mem
   intro y hy
   exact (fresh_leaf_iff y enclosing).mpr (h y hy)
 
-omit [LawfulHasFvar P] in
-omit [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- The freshly minted `.nondet`-loop guard `g` is not among the body inits of
 the `nondetElim`'d body: `g` is minted strictly before the body is processed
 (so it is outside the body's `gen`-window), and source body inits are never
 `ndelimKind`. -/
-private theorem nondet_loop_guard_not_in_body_inits
+private theorem nondet_loop_guard_not_in_body_inits [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
     (body : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_uniq : Block.uniqueInits body)
     (h_init_not_nd : ∀ str : String, ndelimKind str →
@@ -1607,13 +1572,12 @@ private theorem nondet_loop_guard_not_in_body_inits
       intro h_eq_str; exact hnot (h_eq_str ▸ h_g_in)
     exact h_str_ne (LawfulHasIdent.ident_inj h_eq.symm)
 
-omit [LawfulHasIdent P] [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Every body-init name of the `nondetElim`'d block is fresh w.r.t. a source
 read-expression's variable set, provided the source is `ndelimKind`-free there
 (`h_encl_sf`) and the source's own inits are fresh there (`h_encl_src`): source
 inits inherit `h_encl_src`; freshly minted `ndelimKind` guards are absent by
 `h_encl_sf`. -/
-private theorem nondetElim_body_inits_fresh_in_encl
+private theorem nondetElim_body_inits_fresh_in_encl [HasIdent P] [HasFvar P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (enclosing : List P.Ident)
     (h_encl_src : ∀ y ∈ Block.initVars ss, y ∉ enclosing)
     (h_encl_sf : ∀ str : String, ndelimKind str →
@@ -1624,14 +1588,13 @@ private theorem nondetElim_body_inits_fresh_in_encl
   · exact h_encl_src y h_src
   · exact h_eq ▸ h_encl_sf str h_kind
 
-omit [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] [LawfulHasIdent P] [LawfulHasFvar P] in
 mutual
 /-- `nondetElim` preserves `hoistedNamesFreshInGuards`: each loop-body-init name
 of the output is fresh in its loop guard / invariants / measure.  Source loops
 keep their guards (body inits stay fresh by source freshness + kind-freedom);
 the synthesised `.nondet`→`.det (mkFvar g)` loop guard reads only the fresh `g`,
 which is not a body init. -/
-theorem Stmt.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHasFvar P]
+theorem Stmt.nondetElimM_hoistedNamesFreshInGuards [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] [LawfulHasIdent P] [LawfulHasFvar P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_g : Stmt.hoistedNamesFreshInGuards s = true)
     (h_sf : Stmt.exprsShapeFree (P := P) ndelimKind s)
@@ -1826,7 +1789,7 @@ theorem Stmt.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHas
         Stmt.hoistedNamesFreshInGuards, Bool.and_true]
   termination_by sizeOf s
 
-theorem Block.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHasFvar P]
+theorem Block.nondetElimM_hoistedNamesFreshInGuards [HasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] [LawfulHasIdent P] [LawfulHasFvar P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_g : Block.hoistedNamesFreshInGuards ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss)
@@ -1856,11 +1819,10 @@ theorem Block.nondetElimM_hoistedNamesFreshInGuards [LawfulHasIdent P] [LawfulHa
   termination_by sizeOf ss
 end
 
-omit [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Top-level: `nondetElim` establishes `hoistedNamesFreshInGuards` on its output,
 from the source guard-freshness, source `ndelimKind`-freedom, source init
 uniqueness, and the fact that source inits are never `ndelimKind`. -/
-theorem nondetElim_hoistedNamesFreshInGuards
+theorem nondetElim_hoistedNamesFreshInGuards [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] [LawfulHasFvar P]
     (ss : List (Stmt P (Cmd P)))
     (h_g : Block.hoistedNamesFreshInGuards ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss)
@@ -1874,18 +1836,15 @@ theorem nondetElim_hoistedNamesFreshInGuards
 end NondetElimGuards
 
 section NondetElimFreshAssembly
-variable {P : PureExpr} [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P]
-  [HasSubstFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
-  [LawfulHasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P]
+variable {P : PureExpr}
 
-omit [HasSubstFvar P] [DecidableEq P.Ident] [LawfulHasSubstFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 /-- Top-level Direction-A bridge: `nondetElim` establishes the full
 `hoistedNamesFreshInRhsAndGuards` postcondition on its output, given the
 front-end source facts (its own `hoistedNamesFreshInRhsAndGuards`, its
 `ndelimKind`-freedom, its init uniqueness, and that no source init is an
 `ndelimKind` label). This discharges the hoist §F `h_fresh` precondition at the
 `nondetElim` output. -/
-theorem nondetElim_hoistedNamesFreshInRhsAndGuards
+theorem nondetElim_hoistedNamesFreshInRhsAndGuards [HasIdent P] [LawfulHasIdent P] [HasFvar P] [HasBool P] [HasVarsPure P P.Expr] [LawfulHasFvar P]
     (ss : List (Stmt P (Cmd P)))
     (h_fresh_src : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss)
@@ -1960,13 +1919,12 @@ simple shape, no exits) and *kind-free* — it mentions none of the
 store is everywhere `none` (`h_store_clean`). -/
 
 section PipelineSound
-variable {P : PureExpr} [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P]
-  [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P]
-  [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P] [LawfulHasNot P]
-  [HasSubstFvar P] [LawfulHasSubstFvar P]
+variable {P : PureExpr}
 
 /-- The composed structured-to-unstructured pipeline. -/
-@[expose] def pipeline (ss : List (Stmt P (Cmd P))) :
+@[expose] def pipeline [HasIdent P] [HasFvar P] [HasBool P] [HasSubstFvar P] [DecidableEq P.Ident]
+    [HasNot P] [HasIntOrder P]
+    (ss : List (Stmt P (Cmd P))) :
     CFG String (DetBlock String (Cmd P) P) :=
   (stmtsToCFG ∘ Block.hoistLoopPrefixInits ∘ Block.nondetElim) ss
 
@@ -1977,7 +1935,10 @@ initial store `ρ₀` is matched by a terminating run of the unstructured CFG
 A real composition of the three `_sound_kind` theorems via `StoreAgreement.trans`:
 no hypothesis is vacuous or false — each precondition is satisfiable by a clean
 initial store and a shape-restricted, kind-free user program. -/
-theorem pipeline_sound
+theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P]
+    [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P] [LawfulHasNot P]
+    [HasSubstFvar P] [LawfulHasSubstFvar P]
     (extendEval : ExtendEval P)
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
