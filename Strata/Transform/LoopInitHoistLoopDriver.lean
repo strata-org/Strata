@@ -1523,79 +1523,14 @@ theorem prelude_run_list_md
       rw [h_eq]; exact h_run_tl
     exact h_run_tl'
 
-/-- Per-entry-metadata prelude bridge.  Runs `havocStmts' entries` from a
+/-- Frame-exposing prelude bridge.  Runs `havocStmts' entries` from a
 store-equal env and establishes `HoistInv A (targetsOf' entries) (substOf'
 entries)` together with the evaluator / failure agreement and
-target-boundedness. -/
-public theorem prelude_bridge_list_md
-    {extendEval : ExtendEval P}
-    (A : List P.Ident)
-    (entries : List (Entry P))
-    (ρ_src ρ_hoist : Env P)
-    (h_store_eq : ρ_hoist.store = ρ_src.store)
-    (h_eval_eq  : ρ_hoist.eval = ρ_src.eval)
-    (h_hf_eq    : ρ_hoist.hasFailure = ρ_src.hasFailure)
-    (h_src_undef : ∀ e ∈ entries, ρ_src.store e.1 = none)
-    (h_tgt_undef : ∀ e ∈ entries, ρ_src.store e.2.1 = none)
-    (h_tgt_nodup : (targetsOf' entries).Nodup)
-    (h_wfvar : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval) :
-    ∃ ρ_pre : Env P,
-      StepStmtStar P (EvalCmd P) extendEval
-        (.stmts (havocStmts' entries) ρ_hoist)
-        (.terminal ρ_pre)
-      ∧ HoistInv (P := P) A (targetsOf' entries) (substOf' entries)
-          ρ_src.store ρ_pre.store
-      ∧ ρ_src.eval = ρ_pre.eval
-      ∧ ρ_src.hasFailure = ρ_pre.hasFailure
-      ∧ (∀ b ∈ targetsOf' entries, ρ_pre.store b ≠ none) := by
-  have h_tgt_undef_h : ∀ e ∈ entries, ρ_hoist.store e.2.1 = none := by
-    intro e he; rw [h_store_eq]; exact h_tgt_undef e he
-  have h_run := prelude_run_list_md (extendEval := extendEval)
-    entries ρ_hoist h_tgt_undef_h h_tgt_nodup h_wfvar
-  let ρ_pre : Env P :=
-    { ρ_hoist with
-      store := extendStoreMany ρ_hoist.store (bindingsOf' entries)
-      hasFailure := ρ_hoist.hasFailure }
-  refine ⟨ρ_pre, h_run, ?_, ?_, ?_, ?_⟩
-  · have h_seed : HoistInv (P := P) A [] [] ρ_src.store ρ_hoist.store := by
-      refine ⟨?_, ?_⟩
-      · intro x _ _ _; rw [h_store_eq]
-      · intro a b h_pair _; simp at h_pair
-    have h_new_src_undef :
-        ∀ a ∈ (substOf' entries).map Prod.fst, ρ_src.store a = none := by
-      intro a ha
-      rcases List.mem_map.mp ha with ⟨p, hp_mem, hp_eq⟩
-      rcases List.mem_map.mp hp_mem with ⟨e, he, he_eq⟩
-      subst he_eq
-      subst hp_eq
-      exact h_src_undef e he
-    have h_extend : ∀ x, x ∉ targetsOf' entries → ρ_pre.store x = ρ_hoist.store x := by
-      intro x hx
-      show extendStoreMany ρ_hoist.store (bindingsOf' entries) x = ρ_hoist.store x
-      exact extendStoreMany_bindingsOf'_outside ρ_hoist.store entries hx
-    have h_inv :=
-      HoistInv.add_vacuous_pairs (P := P) (A := A) (B := []) (B_new := targetsOf' entries)
-        (subst := []) (subst_new := substOf' entries)
-        (σ_src := ρ_src.store) (σ_h := ρ_hoist.store) (σ_h' := ρ_pre.store)
-        h_new_src_undef
-        (by intro b hb; simp at hb)
-        h_extend
-        (by intro b hb; simp at hb)
-        h_seed
-    simpa using h_inv
-  · show ρ_src.eval = ρ_hoist.eval
-    exact h_eval_eq.symm
-  · show ρ_src.hasFailure = ρ_hoist.hasFailure
-    exact h_hf_eq.symm
-  · intro b hb
-    show extendStoreMany ρ_hoist.store (bindingsOf' entries) b ≠ none
-    exact extendStoreMany_bindingsOf'_bound ρ_hoist.store entries h_tgt_nodup hb
-
-/-- Frame-exposing prelude bridge: same as `prelude_bridge_list_md` but ALSO
-returns the unguarded off-targets agreement `ρ_pre = ρ_run off targetsOf'
-entries`.  The §E `.loop` arm's union-entry `HoistInv` builder needs this
-agreement (it lives outside the guarded `HoistInv` frame, holding even on `A`),
-so the prelude's structural havoc-frame is surfaced explicitly. -/
+target-boundedness, and ALSO returns the unguarded off-targets agreement
+`ρ_pre = ρ_run off targetsOf' entries`.  The §E `.loop` arm's union-entry
+`HoistInv` builder needs this agreement (it lives outside the guarded
+`HoistInv` frame, holding even on `A`), so the prelude's structural havoc-frame
+is surfaced explicitly. -/
 public theorem prelude_bridge_list_md_frame
     {extendEval : ExtendEval P}
     (A : List P.Ident)
@@ -1660,53 +1595,6 @@ public theorem prelude_bridge_list_md_frame
   · intro x hx
     show extendStoreMany ρ_run.store (bindingsOf' entries) x = ρ_run.store x
     exact extendStoreMany_bindingsOf'_outside ρ_run.store entries hx
-
-/-! ## Nested-loop HoistInv bridge (single inner pair).
-
-For a nested loop with non-empty outer carriers, the correct conclusion is at
-the union carriers `(Ao ++ [y]) (Bo ++ [y']) (so ++ [(y, y')])`, so that the
-enclosing pair is carried by `so` and the inner pair by the new tail.  At the
-union carriers the bridge closes from `hA`, `hB`, and pure disjointness facts. -/
-
-/-- Union-carrier bridge for the bare inner pair `[y] [y'] [(y,y')]`.  Composes
-Step A at the enclosing carriers `Ao Bo so` with Step B at the inner pair into a
-single `HoistInv` at the union carriers, using only disjointness facts. -/
-theorem bridge_out_nested_union
-    {y y' : P.Ident} {Ao Bo : List P.Ident} {so : List (P.Ident × P.Ident)}
-    {ρ_s' ρ₁' ρ_h' : Env P}
-    (hA : HoistInv (P := P) Ao Bo so ρ_s'.store ρ₁'.store)
-    (hB : HoistInv (P := P) [y] [y'] [(y, y')] ρ₁'.store ρ_h'.store)
-    (h_y_notAo : y ∉ Ao) (h_y_notBo : y ∉ Bo)
-    (h_subst_wf : ∀ a b, (a, b) ∈ so → a ∈ Ao ∧ b ∈ Bo)
-    (h_Bo_noty  : ∀ b ∈ Bo, b ≠ y)
-    (h_Bo_noty' : ∀ b ∈ Bo, b ≠ y') :
-    HoistInv (P := P) (Ao ++ [y]) (Bo ++ [y']) (so ++ [(y, y')])
-      ρ_s'.store ρ_h'.store := by
-  refine ⟨?_, ?_⟩
-  · intro x hxA hxB h_x_ne
-    have hxAo : x ∉ Ao := fun h => hxA (List.mem_append.mpr (Or.inl h))
-    have hxy  : x ∉ ([y]  : List P.Ident) := fun h => hxA (List.mem_append.mpr (Or.inr h))
-    have hxBo : x ∉ Bo := fun h => hxB (List.mem_append.mpr (Or.inl h))
-    have hxy' : x ∉ ([y'] : List P.Ident) := fun h => hxB (List.mem_append.mpr (Or.inr h))
-    have e1 : ρ_s'.store x = ρ₁'.store x := hA.1 x hxAo hxBo h_x_ne
-    have e2 : ρ₁'.store x = ρ_h'.store x := hB.1 x hxy hxy' (e1 ▸ h_x_ne)
-    rw [e1, e2]
-  · intro a b h_pair h_ne
-    rcases List.mem_append.mp h_pair with h_so | h_tail
-    · obtain ⟨h_b_ne₁, h_eq₁⟩ := hA.2 a b h_so h_ne
-      have h_b_in_Bo : b ∈ Bo := (h_subst_wf a b h_so).2
-      have h_b_noty  : b ∉ ([y]  : List P.Ident) := by
-        simp only [List.mem_singleton]; exact h_Bo_noty b h_b_in_Bo
-      have h_b_noty' : b ∉ ([y'] : List P.Ident) := by
-        simp only [List.mem_singleton]; exact h_Bo_noty' b h_b_in_Bo
-      have h_b_move : ρ₁'.store b = ρ_h'.store b := hB.1 b h_b_noty h_b_noty' h_b_ne₁
-      exact ⟨h_b_move ▸ h_b_ne₁, by rw [h_eq₁, h_b_move]⟩
-    · simp only [List.mem_singleton, Prod.mk.injEq] at h_tail
-      obtain ⟨rfl, rfl⟩ := h_tail
-      have h_ya : ρ_s'.store a = ρ₁'.store a := hA.1 a h_y_notAo h_y_notBo h_ne
-      have h_ne₁ : ρ₁'.store a ≠ none := h_ya ▸ h_ne
-      obtain ⟨h_b_ne, h_eq⟩ := hB.2 a b (by simp) h_ne₁
-      exact ⟨h_b_ne, by rw [h_ya]; exact h_eq⟩
 
 /-! ## Union-carrier body-simulation compose.
 
