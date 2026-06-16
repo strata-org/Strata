@@ -2512,6 +2512,7 @@ arm's disjointness / freshness / run facts, produce the §E sum-typed terminal
 conclusion for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`.
 Guard `g` is UNCHANGED (the renames live inside `body₃`). -/
 theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasSubstFvar P]
     {Q : String → Prop}
     {extendEval : ExtendEval P}
     {g : P.Expr}
