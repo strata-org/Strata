@@ -593,6 +593,7 @@ By induction on the `BodyTransport` derivation.  Each arm fires the per-statemen
 hoist replay (renamed set/predicate, recursive block/ite, renamed nested loop) and
 sequences via the cons-shaped tail IH.  The nested-loop arm feeds the inner-body
 IH into the renamed-guard loop driver (via `nestedLoop_stmtSimE`). -/
+omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
 theorem Block.bodyTransport
     {extendEval : ExtendEval P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}

@@ -80,6 +80,7 @@ These align ONE lifted-init site of `body₂` with the `BodyTransport.init_set`
 hoist shape under the GLOBAL `subst`.  They are syntactic (no eval), proved from
 the keystone fold lemmas; reproduced here so the producer is self-contained. -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A `.cmd` folds to `.cmd` of the per-`Cmd` fold. -/
 theorem stmtSubstMany_cmd (c : Cmd P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd c) subst
@@ -108,6 +109,7 @@ theorem cmdSubstMany_set_name_fold
     simp only [List.foldl_cons, Cmd.substIdent_set]
     exact ih _ _
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A `set` command folds: name renamed by `renameLookup`, rhs by `substFvarMany`. -/
 theorem cmdSubstMany_set_det
     (name : P.Ident) (rhs : P.Expr) (md : MetaData P)
@@ -118,6 +120,7 @@ theorem cmdSubstMany_set_det
   rw [stmtSubstMany_cmd, cmdSubstMany_set_name_fold,
       name_fold_eq_renameLookup subst name h_disjoint, exprOrNondet_substMany_det]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The cmd-only init site of `body₂` becomes, after `applyRenames`
 (= `stmtSubstMany` global subst), exactly the `BodyTransport.init_set` hoist
 shape. -/
@@ -132,6 +135,7 @@ theorem init_site_applyRenames
   rw [cmdSubstMany_set_det a rhs md subst h_disjoint,
       renameLookup_mem subst h_src_nodup h_pair]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A nondet-rhs `set` command folds: name renamed by `renameLookup`, `.nondet`
 rhs fixed. -/
 theorem cmdSubstMany_set_nondet
@@ -143,6 +147,7 @@ theorem cmdSubstMany_set_nondet
   rw [stmtSubstMany_cmd, cmdSubstMany_set_name_fold,
       name_fold_eq_renameLookup subst name h_disjoint, exprOrNondet_substMany_nondet]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- The nondet-init site of `body₂` (lifted to `set a .nondet`) becomes, after
 `applyRenames`, the `BodyTransport.init_nondet` hoist shape `set b .nondet`. -/
 theorem init_nondet_site_applyRenames
@@ -156,6 +161,7 @@ theorem init_nondet_site_applyRenames
   rw [cmdSubstMany_set_nondet a md subst h_disjoint,
       renameLookup_mem subst h_src_nodup h_pair]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A genuine (non-lifted) `.set name (.det rhs)`'s name is UNCHANGED by the
 rename (its `name ∉ subst sources`), and its rhs is `substFvarMany`-renamed. -/
 theorem set_site_applyRenames
@@ -168,6 +174,7 @@ theorem set_site_applyRenames
   rw [cmdSubstMany_set_det name rhs md subst h_disjoint,
       renameLookup_notin subst name h_name_notin_src]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- A genuine (non-lifted) `.set name .nondet`'s name is UNCHANGED by the rename. -/
 theorem set_nondet_site_applyRenames
     (name : P.Ident) (md : MetaData P)
@@ -181,12 +188,14 @@ theorem set_nondet_site_applyRenames
 
 /-! ## `assert`/`assume`/`cover` fold to renamed predicates. -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_cmd_assert
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.assert lbl e md)) subst
       = .cmd (.assert lbl (substFvarMany e subst) md) := by
   rw [stmtSubstMany_cmd, cmdSubstMany_assert]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_cmd_assume
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.assume lbl e md)) subst
@@ -200,6 +209,7 @@ theorem stmtSubstMany_cmd_assume
     simp only [List.foldl_cons, Cmd.substIdent_assume]
     rw [ih]; rfl
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_cmd_cover
     (lbl : String) (e : P.Expr) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.cmd (.cover lbl e md)) subst
@@ -215,6 +225,7 @@ theorem stmtSubstMany_cmd_cover
 
 /-! ## `.block` / `.ite` fold to renamed sub-blocks. -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_block
     (lbl : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
@@ -226,6 +237,7 @@ theorem stmtSubstMany_block
     rcases hd with ⟨x, y⟩
     rw [stmtSubstMany_cons, Stmt.substIdent_block, ih, applyRenames_cons]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_ite
     (g : P.Expr) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
@@ -241,6 +253,7 @@ theorem stmtSubstMany_ite
     rw [ih, applyRenames_cons, applyRenames_cons]
     rfl
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_ite_nondet
     (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
@@ -255,6 +268,7 @@ theorem stmtSubstMany_ite_nondet
     simp only [ExprOrNondet.substIdent_nondet]
     rw [ih, applyRenames_cons, applyRenames_cons]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem stmtSubstMany_typeDecl
     (tc : TypeConstructor) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
     stmtSubstMany (.typeDecl tc md) subst = (.typeDecl tc md : Stmt P (Cmd P)) := by
@@ -578,6 +592,7 @@ end
 
 /-! ## `applyRenames` distributes over `++`. -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 theorem applyRenames_append
     (subst : List (P.Ident × P.Ident)) (xs ys : List (Stmt P (Cmd P))) :
     Block.applyRenames subst (xs ++ ys)
@@ -585,6 +600,7 @@ theorem applyRenames_append
   rw [applyRenames_eq_map_stmtSubstMany, applyRenames_eq_map_stmtSubstMany,
       applyRenames_eq_map_stmtSubstMany, List.map_append]
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
 /-- `applyRenames` of a singleton statement is the singleton `stmtSubstMany`. -/
 theorem applyRenames_singleton
     (subst : List (P.Ident × P.Ident)) (s : Stmt P (Cmd P)) :
@@ -791,6 +807,7 @@ is `stmtSubstMany · subst`; the recursion threads the `EntriesIn` membership
 invariant (monotone across sub-blocks) and the monotone `namesFreshInExprs`
 freshness facts over `A` and `B`. -/
 
+omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 theorem Block.bodyTransport_of_lift
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
@@ -1065,6 +1082,7 @@ theorem Block.bodyTransport_of_lift
 `BodySimE`; `OptEStepBProvider.bodySimE_to_bodySim` forgets the eval conjunct to
 land in the driver's `BodySim` slot.  This packages Step B for the §E `.loop`
 arm at the harvest carriers `A B subst`. -/
+omit [HasVal P] [HasBoolVal P] [HasIntOrder P] in
 theorem Block.stepB_bodySim_of_lift
     {extendEval : ExtendEval P}
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
