@@ -4435,7 +4435,7 @@ private theorem typeDecl_arm_combined_lemmas {P : PureExpr}
       ∧ (NoGenSuffix (P := P) Q (Cmds.modifiedVars accum.reverse ++ transformBlockModVars rest)) := by
   have h_d : Cmds.definedVars accum.reverse ++ Block.initVars rest =
       Cmds.definedVars accum.reverse ++ Block.initVars (.typeDecl tc md :: rest) := by
-    simp [Block.initVars, Stmt.initVars]
+    simp [Stmt.initVars]
   have h_m : Cmds.modifiedVars accum.reverse ++ transformBlockModVars rest =
       Cmds.modifiedVars accum.reverse ++ transformBlockModVars (.typeDecl tc md :: rest) := by
     rw [transformBlockModVars_cons, transformStmtModVars_typeDecl, List.nil_append]
@@ -5324,7 +5324,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
           simp [Cmd.definedVars] at h
           subst h
           apply h_x_not_inits
-          simp [Block.initVars, Stmt.initVars]
+          simp [Stmt.initVars]
         | _ => simp [Cmd.definedVars] at h
     have h_x_not_rest_inits : x ∉ Block.initVars rest := by
       intro h
@@ -5464,7 +5464,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         Block.initVars (Stmt.ite (ExprOrNondet.det e) thenBranch elseBranch md :: rest) =
         (Block.initVars thenBranch ++ Block.initVars elseBranch) ++ Block.initVars rest := by
       rw [Block.initVars]
-      simp [Stmt.initVars]
+      simp
     have h_unique_outer_inits :
         (Cmds.definedVars accum.reverse ++
           ((Block.initVars thenBranch ++ Block.initVars elseBranch) ++ Block.initVars rest)).Nodup := by
@@ -6229,7 +6229,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
         Block.initVars (Stmt.block label body md :: rest) =
         Block.initVars body ++ Block.initVars rest := by
       rw [Block.initVars]
-      simp [Stmt.initVars]
+      simp
     -- Sub-block and rest combined-no-gen-suffix discharges (used for both
     -- `label = bl` and `label ≠ bl` sub-cases).
     have h_body_no_gen_suffix :
@@ -6852,7 +6852,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Block.initVars, Stmt.initVars]; exact hx
+      simp [Stmt.initVars]; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest
 termination_by sizeOf ss
 decreasing_by
@@ -7029,7 +7029,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
           simp [Cmd.definedVars] at h
           subst h
           apply h_x_not_inits
-          simp [Block.initVars, Stmt.initVars]
+          simp [Stmt.initVars]
         | _ => simp [Cmd.definedVars] at h
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro h
@@ -7101,7 +7101,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Block.initVars, Stmt.initVars]; exact hx
+      simp [Stmt.initVars]; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest h_outer_guard
   | .exit l' md :: _ =>
     -- The structured side: `.exit l'` produces `.exiting l'`.  For the trace
@@ -7254,7 +7254,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         Block.initVars (Stmt.block label' body md :: rest) =
         Block.initVars body ++ Block.initVars rest := by
       rw [Block.initVars]
-      simp [Stmt.initVars]
+      simp
     -- Sub-block and rest combined-no-gen-suffix discharges.
     have h_body_no_gen_suffix :
         NoGenSuffix (P := P) Q (Cmds.definedVars [].reverse ++ Block.initVars body) := fun x hx s heq =>
@@ -7971,7 +7971,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
         Block.initVars (Stmt.ite (ExprOrNondet.det e) thenBranch elseBranch md :: rest) =
         (Block.initVars thenBranch ++ Block.initVars elseBranch) ++ Block.initVars rest := by
       rw [Block.initVars]
-      simp [Stmt.initVars]
+      simp
     have h_unique_outer_inits :
         (Cmds.definedVars accum.reverse ++
           ((Block.initVars thenBranch ++ Block.initVars elseBranch) ++ Block.initVars rest)).Nodup := by
