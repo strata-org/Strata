@@ -46,99 +46,17 @@ mutual
   termination_by sizeOf ss
 end
 
-/-! # Phase 7.5 redesign Step 7: `containsNondetLoop` / `containsFuncDecl` preservation
+/-! # `containsFuncDecl` preservation through the hoisting pass
 
-The hoisting pass `Block.hoistLoopPrefixInits` (and its inner helper
-`Block.liftInitsInLoopBody`, now the pure surface wrapper over the monadic
-`Block.liftInitsInLoopBodyM`) thread two structural invariants through their
-recursion: "no nondet loop anywhere" and "no funcDecl anywhere". These
-invariants gate the eventual `loop_preserves_struct` theorem in the merged
-correctness proof — Phase 7.5-redesign Step 7 / Risk R6.
-
-**Option E note.** Both predicates are SHAPE-ONLY (they inspect the statement
-tree, not variable names), so the fresh-name substitution introduced by the
-Option-E monadic pass leaves them invariant. The monadic-pass versions of
-these postconditions are already proven in `LoopInitHoist.lean`
-(`liftInitsInLoopBodyM_snd_containsNondetLoop`, …,
-`hoistLoopPrefixInits_containsNondetLoop_eq`, …). This file re-exposes them on
-the pure surface wrapper `liftInitsInLoopBody` via the residual-equality
-bridge `Block.liftInitsInLoopBody_snd_eq`, and packages the `= false`
-preservation corollaries consumed downstream.
+The hoisting pass `Block.hoistLoopPrefixInits` threads the "no funcDecl
+anywhere" structural invariant through its recursion, gating the merged
+correctness proof's `loop_preserves_struct`.  The predicate is SHAPE-ONLY (it
+inspects the statement tree, not variable names), so the fresh-name
+substitution introduced by the monadic pass leaves it invariant.  The
+monadic-pass postcondition is proven in `LoopInitHoist.lean`
+(`hoistLoopPrefixInits_containsFuncDecl_eq`); here we package the `= false`
+preservation corollary consumed downstream.
 -/
-
-/-! ## `liftInitsInLoopBody.snd` preserves `containsNondetLoop` (wrapper view) -/
-
-/-- The snd component of `Stmt.liftInitsInLoopBody` has the same
-`Stmt.containsNondetLoop` characteristic as `s`, viewed as a singleton
-block. Ported to the monadic pass via the residual-equality bridge. -/
-private theorem Stmt.liftInitsInLoopBody_snd_containsNondetLoop_eq
-    [HasIdent P] (s : Stmt P (Cmd P)) :
-    Block.containsNondetLoop (Stmt.liftInitsInLoopBody s).snd =
-      Stmt.containsNondetLoop s := by
-  rw [Stmt.liftInitsInLoopBody_snd_eq s StringGenState.emp,
-      Stmt.liftInitsInLoopBodyM_snd_containsNondetLoop]
-
-/-- The snd component of `Block.liftInitsInLoopBody` has the same
-`Block.containsNondetLoop` characteristic as the input. -/
-private theorem Block.liftInitsInLoopBody_snd_containsNondetLoop_eq
-    [HasIdent P] (ss : List (Stmt P (Cmd P))) :
-    Block.containsNondetLoop (Block.liftInitsInLoopBody ss).snd =
-      Block.containsNondetLoop ss := by
-  rw [Block.liftInitsInLoopBody_snd_eq ss StringGenState.emp,
-      Block.liftInitsInLoopBodyM_snd_containsNondetLoop]
-
-/-! ## `liftInitsInLoopBody.snd` preserves `containsFuncDecl` (wrapper view) -/
-
-/-- The snd component of `Stmt.liftInitsInLoopBody` has the same
-`Stmt.containsFuncDecl` characteristic as `s`, viewed as a singleton block. -/
-private theorem Stmt.liftInitsInLoopBody_snd_containsFuncDecl_eq
-    [HasIdent P] (s : Stmt P (Cmd P)) :
-    Block.containsFuncDecl (Stmt.liftInitsInLoopBody s).snd =
-      Stmt.containsFuncDecl s := by
-  rw [Stmt.liftInitsInLoopBody_snd_eq s StringGenState.emp,
-      Stmt.liftInitsInLoopBodyM_snd_containsFuncDecl]
-
-/-- The snd component of `Block.liftInitsInLoopBody` has the same
-`Block.containsFuncDecl` characteristic as the input. -/
-private theorem Block.liftInitsInLoopBody_snd_containsFuncDecl_eq
-    [HasIdent P] (ss : List (Stmt P (Cmd P))) :
-    Block.containsFuncDecl (Block.liftInitsInLoopBody ss).snd =
-      Block.containsFuncDecl ss := by
-  rw [Block.liftInitsInLoopBody_snd_eq ss StringGenState.emp,
-      Block.liftInitsInLoopBodyM_snd_containsFuncDecl]
-
-/-! ## Public preservation lemmas for `liftInitsInLoopBody` (Step 7b) -/
-
-/-- `(Block.liftInitsInLoopBody body).snd` preserves the "no nondet loop
-anywhere" invariant. -/
-theorem Block.liftInitsInLoopBody_snd_preserves_containsNondetLoop
-    [HasIdent P] (body : List (Stmt P (Cmd P)))
-    (h : Block.containsNondetLoop body = false) :
-    Block.containsNondetLoop (Block.liftInitsInLoopBody body).snd = false := by
-  rw [Block.liftInitsInLoopBody_snd_containsNondetLoop_eq]; exact h
-
-/-- `(Block.liftInitsInLoopBody body).snd` preserves the "no funcDecl
-anywhere" invariant. -/
-theorem Block.liftInitsInLoopBody_snd_preserves_containsFuncDecl
-    [HasIdent P] (body : List (Stmt P (Cmd P)))
-    (h : Block.containsFuncDecl body = false) :
-    Block.containsFuncDecl (Block.liftInitsInLoopBody body).snd = false := by
-  rw [Block.liftInitsInLoopBody_snd_containsFuncDecl_eq]; exact h
-
-/-! ## Public preservation lemmas for `hoistLoopPrefixInits` (Step 7a)
-
-The whole-pass `_eq` postconditions are already proven against the monadic
-pass in `LoopInitHoist.lean`; here we package the `= false` preservation
-corollaries. -/
-
-/-- `Block.hoistLoopPrefixInits` preserves the "no nondet loop anywhere"
-invariant. -/
-theorem Block.hoistLoopPrefixInits_preserves_containsNondetLoop
-    [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
-    (body : List (Stmt P (Cmd P)))
-    (h : Block.containsNondetLoop body = false) :
-    Block.containsNondetLoop (Block.hoistLoopPrefixInits body) = false := by
-  rw [Block.hoistLoopPrefixInits_containsNondetLoop_eq]; exact h
 
 /-- `Block.hoistLoopPrefixInits` preserves the "no funcDecl anywhere"
 invariant. -/
@@ -331,24 +249,5 @@ private theorem Block.hoistLoopPrefixInitsM_noExit
           Block.hoistLoopPrefixInitsM_noExit rest _, Block.noExit]
   termination_by sizeOf ss
 end
-
-/-- The hoisting pass (monadic form, at an arbitrary generator state) adds no
-`.exit` constructor: `Block.noExit` is preserved in value.  This is the form
-the §E `.loop` arm consumes on the post-order-processed body
-`body₁ = (Block.hoistLoopPrefixInitsM body σ).1`. -/
-theorem Block.hoistLoopPrefixInitsM_preserves_noExit
-    [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
-    (body : List (Stmt P (Cmd P))) (σ : StringGenState)
-    (h : Block.noExit body = true) :
-    Block.noExit (Block.hoistLoopPrefixInitsM body σ).1 = true := by
-  rw [Block.hoistLoopPrefixInitsM_noExit]; exact h
-
-/-- The whole pass (pure surface wrapper, `σ = emp`) preserves `noExit`. -/
-theorem Block.hoistLoopPrefixInits_preserves_noExit
-    [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
-    (body : List (Stmt P (Cmd P)))
-    (h : Block.noExit body = true) :
-    Block.noExit (Block.hoistLoopPrefixInits body) = true := by
-  rw [Block.hoistLoopPrefixInits, Block.hoistLoopPrefixInitsM_noExit]; exact h
 
 end Imperative
