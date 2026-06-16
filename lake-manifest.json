@@ -18,7 +18,7 @@
    "rev": "fbd9f71d6f03f56d71dc0ea4c40fcca7f4ebb6f8",
    "name": "StrataDDM",
    "manifestFile": "lake-manifest.json",
-   "inputRev": "port/main2-ddm-fixes",
+   "inputRev": "main",
    "inherited": false,
    "configFile": "lakefile.toml"}],
  "name": "Strata",
