@@ -138,10 +138,7 @@ class SwarmAgent:
         has_file_tools = any(
             t.startswith("Read") or t.startswith("Write") or t.startswith("Edit") for t in allowed_tools
         )
-        has_write_tools = any(
-            t.startswith("Edit") or t.startswith("Write") for t in allowed_tools
-        )
-        permission_mode = "acceptEdits" if has_write_tools else self.spec.permission_mode
+        permission_mode = "bypassPermissions"
 
         # Inject path guidance for agents with file tools
         if has_file_tools and system_prompt:
@@ -271,33 +268,14 @@ class SwarmAgent:
                 await self._emit("tool_use", message.content)
             elif message.type == "tool_result" and message.content:
                 await self._emit("message", f"[tool_result] {message.content}")
-                # On tool errors, inject a reminder about available alternatives
-                content_str = str(message.content)
-                is_error = (content_str.startswith("Error:")
-                            or "permission" in content_str.lower()
-                            or "outside your workspace" in content_str.lower()
-                            or "haven't granted" in content_str.lower())
-                if is_error:
-                    reminder = getattr(self.spec, 'tool_error_reminder', None)
-                    if reminder:
-                        await self.backend.send_query(f"[SYSTEM REMINDER]: {reminder}")
             elif message.type == "usage":
                 result.cost_usd = message.cost_usd
                 result.num_turns = message.num_turns
                 await self._emit("cost_estimate", message.cost_usd)
 
-                # Budget warning: when <10% turns remain, nudge the agent to wrap up
-                if (self.spec.max_turns and message.num_turns
-                        and not getattr(self, '_budget_warning_sent', False)):
-                    remaining = self.spec.max_turns - message.num_turns
-                    threshold = max(1, int(self.spec.max_turns * 0.1))
-                    if remaining <= threshold and remaining > 0:
-                        self._budget_warning_sent = True
-                        await self.backend.send_query(
-                            f"⚠️ BUDGET WARNING: You have ~{remaining} turns remaining out of {self.spec.max_turns}. "
-                            f"Wrap up NOW. Produce your StructuredOutput with your best answer. "
-                            f"Do not start new explorations."
-                        )
+                # Track turn count for budget hook
+                if self.spec.max_turns and message.num_turns:
+                    self._current_turns = message.num_turns
                 continue
 
             # Halt predicate

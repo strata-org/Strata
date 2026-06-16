@@ -15,6 +15,78 @@ from claude_agent_sdk.types import HookMatcher
 from .._workspace_hooks import matches_any, deny, allow, make_hook
 
 
+# ─── Tool error reminder: fires on PostToolUseFailure ────────────────────────
+
+def tool_error_reminder_hooks(reminder: str) -> dict:
+    """Inject a helpful reminder when any tool call fails.
+
+    The reminder is added as `additionalContext` which the model sees
+    alongside the error — guaranteed delivery, no timing issues.
+    """
+
+    async def _on_failure(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PostToolUseFailure":
+            return {}
+
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUseFailure",
+                "additionalContext": reminder,
+            }
+        }
+
+    return {
+        "PostToolUseFailure": [HookMatcher(matcher=".*", hooks=[_on_failure])]
+    }
+
+
+# ─── Budget warning: fires on PreToolUse when turns running low ──────────────
+
+def budget_warning_hooks(agent_ref) -> dict:
+    """Warn the agent when it's running low on turns.
+
+    Uses PreToolUse to inject additionalContext before the next tool call
+    when <10% turns remain. agent_ref is a reference to the SwarmAgent
+    so we can read _current_turns and max_turns.
+    """
+    warned = {"sent": False}
+
+    async def _check_budget(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PreToolUse":
+            return {}
+        if warned["sent"]:
+            return {}
+
+        max_turns = agent_ref.spec.max_turns
+        current = getattr(agent_ref, '_current_turns', 0)
+        if not max_turns or not current:
+            return {}
+
+        remaining = max_turns - current
+        threshold = max(1, int(max_turns * 0.1))
+        if remaining <= threshold and remaining > 0:
+            warned["sent"] = True
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "additionalContext": (
+                        f"⚠️ BUDGET WARNING: You have ~{remaining} turns remaining "
+                        f"out of {max_turns}. Wrap up NOW. Do not start new explorations."
+                    ),
+                }
+            }
+
+        return {}
+
+    return {
+        "PreToolUse": [HookMatcher(matcher=".*", hooks=[_check_budget])]
+    }
+
+
 # ─── SearchAgent: source-only, no Sandbox ────────────────────────────────────
 
 SEARCH_AGENT_DENIED = ["StrataAgent/"]

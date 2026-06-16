@@ -196,14 +196,13 @@ class swarm_agent:
         )
         self._agent.swarm = self._swarm
 
-        # Combine workspace hooks + spec-level hooks
+        # Combine workspace hooks + spec-level hooks + tool_error_reminder hooks
         combined_hooks = workspace_hooks
         if spec.hooks:
             from ._swarm import _resolve_hooks
             spec_hooks = _resolve_hooks(spec.hooks)
             if spec_hooks:
                 if combined_hooks:
-                    # Merge: append matchers for each event
                     for event, matchers in spec_hooks.items():
                         if event in combined_hooks:
                             combined_hooks[event].extend(matchers)
@@ -211,6 +210,33 @@ class swarm_agent:
                             combined_hooks[event] = matchers
                 else:
                     combined_hooks = spec_hooks
+
+        # Add tool_error_reminder as a PostToolUseFailure hook
+        if spec.tool_error_reminder:
+            from .modules.hooks import tool_error_reminder_hooks
+            reminder_hooks = tool_error_reminder_hooks(spec.tool_error_reminder)
+            if combined_hooks:
+                for event, matchers in reminder_hooks.items():
+                    if event in combined_hooks:
+                        combined_hooks[event].extend(matchers)
+                    else:
+                        combined_hooks[event] = matchers
+            else:
+                combined_hooks = reminder_hooks
+
+        # Add budget warning as a PreToolUse hook (fires when turns running low)
+        if spec.max_turns:
+            from .modules.hooks import budget_warning_hooks
+            budget_hooks = budget_warning_hooks(self._agent)
+            if combined_hooks:
+                for event, matchers in budget_hooks.items():
+                    if event in combined_hooks:
+                        combined_hooks[event].extend(matchers)
+                    else:
+                        combined_hooks[event] = matchers
+            else:
+                combined_hooks = budget_hooks
+
         self._agent._hooks = combined_hooks
 
         # Register in swarm

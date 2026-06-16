@@ -471,6 +471,26 @@ class SwarmLeanTools:
 
         return result
 
+    def thm_depends_on(self, file_path: str, theorem_name: str) -> list[str]:
+        """Get which other theorems in the same file are referenced by this theorem's proof."""
+        result = self._send("thm_depends_on_", f"{file_path}:{theorem_name}")
+        if "error" in result:
+            return []
+        return result.get("uses", [])
+
+    def get_reachable_theorems(self, file_path: str, root_name: str) -> set[str]:
+        """Get all theorems transitively reachable from root_name's proof body."""
+        reachable = set()
+        queue = [root_name]
+        while queue:
+            current = queue.pop()
+            if current in reachable:
+                continue
+            reachable.add(current)
+            deps = self.thm_depends_on(file_path, current)
+            queue.extend(d for d in deps if d not in reachable)
+        return reachable
+
     def has_sorry(self, file_path: str) -> bool:
         """Quick check: does the file have any sorry?"""
         info = self.count_sorries(file_path)
@@ -498,7 +518,7 @@ class SwarmLeanTools:
 
     # ─── Refactoring: extract sorry theorems into separate files ─────────
 
-    def extract_sorry_theorems(self, file_path: str, output_dir: str | None = None, exclude: set[str] | None = None) -> ExtractResult:
+    def extract_sorry_theorems(self, file_path: str, output_dir: str | None = None, exclude: set[str] | None = None, extract_all: bool = False) -> ExtractResult:
         """Extract sorry theorems from a file into individual files for child POs.
 
         The original file is LEFT UNCHANGED — it already compiles (with sorry
@@ -523,17 +543,33 @@ class SwarmLeanTools:
         if split.error:
             return ExtractResult(error=split.error)
 
-        sorry_blocks = [b for b in split.blocks if b.has_sorry and (not exclude or b.name not in exclude)]
-        if not sorry_blocks:
-            return ExtractResult(skipped=True, reason="no sorry theorems")
+        if extract_all:
+            # Extract every theorem except excluded ones
+            target_blocks = [b for b in split.blocks if (not exclude or b.name not in exclude)]
+        else:
+            # Extract only sorry theorems
+            target_blocks = [b for b in split.blocks if b.has_sorry and (not exclude or b.name not in exclude)]
+
+        if not target_blocks:
+            return ExtractResult(skipped=True, reason="no theorems to extract")
+
+        # Filter to reachable from main theorem (avoid extracting dead helpers)
+        if exclude:
+            main_name = next(iter(exclude))
+            reachable = self.get_reachable_theorems(file_path, main_name)
+            target_blocks = [b for b in target_blocks if b.name in reachable]
+            if not target_blocks:
+                return ExtractResult(skipped=True, reason="no reachable theorems to extract")
 
         content = source.read_text()
         lines = content.splitlines()
 
-        # Header = everything before first theorem (imports, opens, variables), no comments
+        # Header = everything before first theorem (imports, opens, variables)
+        # Strip comments and structural keywords (mutual/end) that don't make sense standalone
         first_thm_line = min(b.start for b in split.blocks) if split.blocks else 0
         header_lines = [l for l in lines[:first_thm_line]
-                        if not l.strip().startswith("/-") and not l.strip().startswith("--")]
+                        if not l.strip().startswith("/-") and not l.strip().startswith("--")
+                        and l.strip() not in ("mutual", "end")]
         header = "\n".join(header_lines)
 
         # Output directory
@@ -543,12 +579,16 @@ class SwarmLeanTools:
             out_path = source.parent
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Extract each sorry theorem into its own file
+        # Extract each theorem into its own file
         created_files: list[str] = []
         extracted_names: list[str] = []
 
-        for block in sorry_blocks:
-            block_text = "\n".join(lines[block.start:block.end + 1])
+        for block in target_blocks:
+            block_lines = lines[block.start:block.end + 1]
+            # Strip 'private' — extracted theorems must be importable
+            if block_lines and block_lines[0].strip().startswith("private "):
+                block_lines[0] = block_lines[0].replace("private ", "", 1)
+            block_text = "\n".join(block_lines)
 
             safe_name = _ascii_escape(block.name)
             new_filename = f"lemma_helper_{safe_name}.lean"

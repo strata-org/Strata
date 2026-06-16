@@ -30,7 +30,6 @@ from .po_verify import verify_file_exists, verify_no_sorry, verify_split_complet
 from .po_lean import get_lean_tools
 from .po_util import write_checkpoint, write_progress, setup_child_workspace
 from .verifiers.proof_writer_verifier import make_proof_writer_verifier
-from .verifiers.lemma_extractor_verifier import make_extractor_verifier
 from .._helpers import swarm_agent
 
 T = TypeVar("T")
@@ -442,91 +441,104 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
             await agent._emit("message", "[PO] Main theorem sorry-free → extracting helpers")
             return Trans.HAS_SORRY
 
-    # Whatever state we're in, go to extract (lemma_extractor handles remaining main sorry)
+    # Ensure file compiles before going to extract
+    cr = tools.check_compiles(stub_rel)
+    if not cr.success:
+        await agent._emit("message", "[PO] File doesn't compile — final cleanup")
+        await writer.run_ai(
+            inp="Your file does not compile. Fix ALL compilation errors. Do not add new proof content. Replace any references to undefined lemmas with sorry. The file MUST compile.",
+            max_turns=WRITER_CLEANUP_TURNS,
+        )
+        if not tools.check_compiles(stub_rel).success:
+            (cwd / stub_rel).write_text(original_content)
+            state.last_failure_details = "File doesn't compile after all attempts"
+            return Trans.NO_PROGRESS
+
     sorry_info = tools.get_sorries_by_theorem(stub_rel)
     main_sorries = len(sorry_info.get(state.theorem_name, []))
     if main_sorries == 0:
         await agent._emit("message", "[PO] Main theorem sorry-free → extracting helpers")
     else:
-        await agent._emit("message", f"[PO] Main theorem still has {main_sorries} sorry → lemma_extractor needed")
+        await agent._emit("message", f"[PO] Main theorem still has {main_sorries} sorry → will extract what we can")
     return Trans.HAS_SORRY
 
 
 # ─── Stage: extract ──────────────────────────────────────────────────────────
 
 async def _stage_extract(state: ProverState, agent) -> Trans:
-    """lemma_extractor replaces sorries in main theorem with helper lemma refs."""
+    """Mechanical extraction: split sorry theorems into decomposed/ files."""
     cwd = _resolve(agent)
     stub_rel = f"{state.workspace}/Stub.lean"
     tools = get_lean_tools()
 
-    # Check: is the file completely sorry-free? (nothing to extract)
-    if not tools.has_sorry(stub_rel):
-        state.decomposed_files = []
-        return Trans.EXTRACTED  # nothing to extract → go to assembly
+    # Precondition: file must compile
+    if not tools.check_compiles(stub_rel).success:
+        state.last_failure_details = "File doesn't compile — cannot extract"
+        return Trans.EXTRACT_FAILED
 
-    # The file has sorry. The main theorem may be clean (using inline helpers with sorry)
-    # or the main theorem itself may have sorry. Either way, we need to extract
-    # sorry theorems into decomposed/ for child POs.
-    # Use our extract_sorry_theorems tool (extracts all sorry theorems to files)
+    # Nothing to extract? (only main theorem remains, no helpers)
+    split = tools.split_theorems(stub_rel)
+    helper_blocks = [b for b in split.blocks if b.name != state.theorem_name]
+    if not helper_blocks:
+        state.decomposed_files = []
+        return Trans.EXTRACTED
+
+    # Mechanical extraction — one file per theorem (sorry or not)
     decomposed_dir = cwd / state.workspace / "decomposed"
     decomposed_dir.mkdir(parents=True, exist_ok=True)
 
     extract_result = tools.extract_sorry_theorems(stub_rel,
         output_dir=f"{state.workspace}/decomposed",
-        exclude={state.theorem_name})
+        exclude={state.theorem_name},
+        extract_all=True)
 
-    if extract_result.created_files:
-        state.decomposed_files = extract_result.created_files
-        # Rewrite Stub.lean: remove inline sorry helpers, add imports to decomposed files
-        _rewrite_stub_after_extraction(cwd, stub_rel, extract_result, tools, state)
-        await agent._emit("message", f"[PO] Extracted {len(extract_result.created_files)} sorry theorems to decomposed/")
-        return Trans.EXTRACTED
+    if not extract_result.created_files:
+        state.last_failure_details = extract_result.error or "No sorry theorems to extract"
+        return Trans.EXTRACT_FAILED
 
-    # Fallback: try with lemma_extractor agent if mechanical extraction didn't work
-    # (e.g., main theorem itself still has sorry that needs factoring)
+    # Check all extracted files compile
+    failed_dir = cwd / state.workspace / "decomposed" / "extraction_failed"
+    if failed_dir.exists() and list(failed_dir.glob("*.lean")):
+        # Some failed — this means mechanical extraction has issues
+        # Clean up and retry the whole prove stage
+        state.last_failure_details = f"Extraction produced non-compilable files"
+        shutil.rmtree(decomposed_dir)
+        decomposed_dir.mkdir(parents=True, exist_ok=True)
+        return Trans.EXTRACT_FAILED
 
-    # Run lemma_extractor with verifier
-    verify_fn = make_extractor_verifier(stub_rel, state.theorem_name, state.workspace)
+    # Rewrite Stub.lean: remove extracted helpers, add imports
+    _rewrite_stub_after_extraction(cwd, stub_rel, extract_result, tools, state)
 
-    async with swarm_agent("lemma_extractor", swarm=agent.swarm, cwd=agent._cwd,
-                           workspace=state.workspace,
-                           can_see=["SearchAgent"]) as extractor:
-        outcome = await verified_loop(
-            agent_ctx=extractor,
-            initial_input={
-                "file": stub_rel,
-                "main_theorem": state.theorem_name,
-                "target_folder": f"{state.workspace}/decomposed",
-                "action": (
-                    f"Extract all sorries from the main theorem '{state.theorem_name}' into helper lemma files. "
-                    f"Use get_sorries_by_theorem to find them, lean_goal to see each goal, "
-                    f"and write_helper_lemma to create each helper and wire it in."
-                ),
-            },
-            verify=verify_fn,
-            max_rounds=3,
-            max_turns=EXTRACTOR_MAX_TURNS,
-            use_run_ai=False,
-        )
+    # Verify Stub.lean still compiles after rewrite
+    if not tools.check_compiles(stub_rel).success:
+        # Rewrite broke it — revert and fail
+        (cwd / stub_rel).write_text((cwd / state.workspace / "_originals" / "Stub.lean").read_text())
+        shutil.rmtree(decomposed_dir)
+        decomposed_dir.mkdir(parents=True, exist_ok=True)
+        state.last_failure_details = "Stub.lean doesn't compile after extraction rewrite"
+        return Trans.EXTRACT_FAILED
 
-    if outcome.success:
-        state.decomposed_files = _collect_decomposed(cwd, state.workspace)
-        await agent._emit("message", f"[PO] Extracted {len(state.decomposed_files)} helpers")
-        return Trans.EXTRACTED
-
-    state.last_failure_details = f"Extraction failed: {outcome.last_error}"
-    return Trans.EXTRACT_FAILED
+    state.decomposed_files = extract_result.created_files
+    await agent._emit("message", f"[PO] Extracted {len(state.decomposed_files)} theorems to decomposed/")
+    return Trans.EXTRACTED
 
 
 # ─── Stage: child_pos ────────────────────────────────────────────────────────
 
 async def _stage_child_pos(state: ProverState, agent) -> Trans:
-    """Sequential child POs for each helper in decomposed/."""
+    """Sequential child POs for decomposed files that have sorry."""
     cwd = _resolve(agent)
     import json as _json
+    tools = get_lean_tools()
 
-    remaining = [f for f in state.decomposed_files if f not in state.proved_files]
+    # Only attempt child POs for files that actually have sorry
+    remaining = [f for f in state.decomposed_files
+                 if f not in state.proved_files and tools.has_sorry(f)]
+    # Mark sorry-free files as already proved
+    for f in state.decomposed_files:
+        if f not in state.proved_files and not tools.has_sorry(f):
+            state.proved_files.append(f)
+
     if not remaining:
         return Trans.ALL_PROVED
 
@@ -769,6 +781,57 @@ async def _get_guide(agent, state: ProverState):
 
 
 
+async def _repair_failed_extractions(agent, state, failed_dir: Path, tools) -> list[str]:
+    """Try to fix extracted files that failed to compile using a stateless fixer agent."""
+    cwd = _resolve(agent)
+    repaired = []
+
+    failed_files = list(failed_dir.glob("*.lean"))
+    if not failed_files:
+        return repaired
+
+    await agent._emit("message", f"[PO] Attempting to repair {len(failed_files)} failed extractions...")
+
+    for failed_file in failed_files:
+        rel_path = str(failed_file.relative_to(cwd))
+        content = failed_file.read_text()
+
+        # Get the compile error
+        cr = tools.check_compiles(rel_path)
+        if cr.success:
+            # Already compiles (maybe fixed by header changes) — move back
+            dest = failed_dir.parent / failed_file.name
+            shutil.move(str(failed_file), str(dest))
+            repaired.append(str(dest.relative_to(cwd)))
+            continue
+
+        # Run a stateless fixer agent
+        async with swarm_agent("proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
+                               workspace=state.workspace,
+                               can_see=["SearchAgent"]) as fixer:
+            fix_result = await fixer.run_ai(
+                inp=(
+                    f"This file has compilation errors. Fix them so it compiles (sorry is OK).\n"
+                    f"File: {rel_path}\n"
+                    f"The file should contain exactly ONE theorem with `sorry`.\n"
+                    f"Do NOT change the theorem signature — only fix compilation errors "
+                    f"(missing imports, wrong syntax, etc). Make it compile."
+                ),
+                max_turns=10,
+            )
+
+        # Check if it compiles now
+        if tools.check_compiles(rel_path).success:
+            dest = failed_dir.parent / failed_file.name
+            shutil.move(str(failed_file), str(dest))
+            repaired.append(str(dest.relative_to(cwd)))
+            await agent._emit("message", f"[PO] Repaired: {failed_file.name}")
+        else:
+            await agent._emit("message", f"[PO] Could not repair: {failed_file.name}")
+
+    return repaired
+
+
 async def _cleanup_all(agent):
     """Cleanup all internal agents."""
     for attr in ("_po_writer", "_po_guide"):
@@ -818,10 +881,19 @@ def _rewrite_stub_after_extraction(cwd: Path, stub_rel: str, extract_result, too
         return
 
     extracted_set = set(extract_result.extracted_names)
-    # Find line ranges to remove (the sorry theorem blocks)
+    # Also remove unreachable dead helpers (sorry theorems not used by main theorem)
+    reachable = tools.get_reachable_theorems(stub_rel, state.theorem_name)
+    dead_helpers = set()
+    for block in split.blocks:
+        if block.has_sorry and block.name not in extracted_set and block.name != state.theorem_name:
+            if block.name not in reachable:
+                dead_helpers.add(block.name)
+
+    # Find line ranges to remove (extracted + dead helper blocks)
+    remove_set_names = extracted_set | dead_helpers
     remove_ranges = []
     for block in split.blocks:
-        if block.name in extracted_set:
+        if block.name in remove_set_names:
             # Expand upward to include the preceding doc-comment for THIS theorem
             actual_start = block.start
             while actual_start > 0:
