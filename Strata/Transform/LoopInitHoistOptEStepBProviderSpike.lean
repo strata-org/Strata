@@ -47,9 +47,6 @@ open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendS
 open LoopInitHoistLoopDriver (loopDet_lift_2g loopDet_lift_renamedGuard renamed_guard_eval_same_delta)
 
 variable {P : PureExpr}
-  [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
-  [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr]
-  [DecidableEq P.Ident]
 
 /-- The `body_sim`-shaped per-iteration body simulation (exactly the slot the
     2-guard driver consumes), for a fixed `body_src`/`body_h`/`A B subst`.
@@ -62,7 +59,7 @@ variable {P : PureExpr}
     leave `eval` fixed, cf. `smallStep_noFuncDecl_preserves_eval_block`).  We
     DERIVE `BodySim` from `BodySimE` by forgetting the eval conjunct, so the final
     term still drops straight into the driver's `body_sim` slot. -/
-def BodySim {extendEval : ExtendEval P}
+def BodySim [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -77,7 +74,7 @@ def BodySim {extendEval : ExtendEval P}
         ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)
 
 /-- Eval-carrying body sim (output also records `ρ_s'.eval = ρ_h'.eval`). -/
-@[expose] def BodySimE {extendEval : ExtendEval P}
+@[expose] def BodySimE [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -92,9 +89,8 @@ def BodySim {extendEval : ExtendEval P}
         ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) ∧
         ρ_s'.eval = ρ_h'.eval
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- Forget the eval conjunct: `BodySimE → BodySim` (drops into the driver slot). -/
-theorem bodySimE_to_bodySim {extendEval : ExtendEval P}
+theorem bodySimE_to_bodySim [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {bsrc bh : List (Stmt P (Cmd P))}
     (h : BodySimE (extendEval := extendEval) A B subst bsrc bh) :
@@ -112,8 +108,7 @@ Confirm by reduction that the outer rename DESCENDS into the nested loop:
         = [ .cmd (.init (if x=x then x' else x) τ (.det (substFvar rhs x x')) md),
             .loop (g2.substIdent x x') none []
                   [.cmd (.assert lbl (substFvar e x x') md)] md2 ] -/
-omit [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] in
-theorem body₃_concrete
+theorem body₃_concrete [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (x x' : P.Ident) (τ : P.Ty) (rhs e : P.Expr) (g2 : ExprOrNondet P)
     (lbl : String) (md md2 : MetaData P) :
     Block.applyRenames [(x, x')]
@@ -137,7 +132,7 @@ for the init, the `.loop` arm produces a `StmtSimE` for the nested loop (via the
 loop driver).  The cons sequencer stitches a head `StmtSimE` with a tail
 `BodySimE` into a `BodySimE` for the whole body, replaying the proven
 `stmts_cons_step` / `stmts_cons_terminal_inv` sequencing. -/
-@[expose] def StmtSimE {extendEval : ExtendEval P}
+@[expose] def StmtSimE [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (s s' : Stmt P (Cmd P)) : Prop :=
   ∀ (ρ_s ρ_h : Env P),
@@ -152,9 +147,8 @@ loop driver).  The cons sequencer stitches a head `StmtSimE` with a tail
         ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) ∧
         ρ_s'.eval = ρ_h'.eval
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- The empty body is a `BodySimE` (terminal stays terminal, store/eval unchanged). -/
-theorem bodySimE_nil {extendEval : ExtendEval P}
+theorem bodySimE_nil [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident)) :
     BodySimE (extendEval := extendEval) A B subst [] [] := by
   intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
@@ -169,7 +163,6 @@ theorem bodySimE_nil {extendEval : ExtendEval P}
   refine ⟨ρ_h, ?_, h_hinv, h_hf, h_bnd, h_eval⟩
   exact ReflTrans.step _ _ _ StepStmt.step_stmts_nil (ReflTrans.refl _)
 
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [DecidableEq P.Ident] in
 /-- THE CONS-SEQUENCER: a head `StmtSimE` and a tail `BodySimE` compose into a
 `BodySimE` for the cons body.  This is the structural glue the §E cons recursion
 performs; here it is proved ONCE, generically, at arbitrary carriers `A B subst`.
@@ -177,7 +170,7 @@ The proof: invert the source cons-run into head + tail (`stmts_cons_terminal_inv
 fire the head `StmtSimE` to get the hoist head-run, MID `HoistInv`, and MID eval-eq,
 fire the tail `BodySimE` from the mid env, and reassemble the hoist cons-run via
 `stmts_cons_step`. -/
-theorem bodySimE_cons {extendEval : ExtendEval P}
+theorem bodySimE_cons [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
     (hhead : StmtSimE (extendEval := extendEval) A B subst s s')
@@ -216,8 +209,7 @@ conjunct from the source and hoist runs via `smallStep_noFuncDecl_preserves_eval
     `loopDet_lift_renamedGuard` recursively, and
   • it produces a `StmtSimE` at the OUTER carriers `A B subst` (= `[x] [x'] [(x,x')]`)
     that drops into the cons sequencer's head slot. -/
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
-theorem nestedLoop_stmtSimE
+theorem nestedLoop_stmtSimE [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
@@ -271,8 +263,7 @@ Assemble the outer `BodySimE [x] [x'] [(x,x')] body body₃` by sequencing:
     `inner_sim` is the §E `.cmd` arm output for the inner assert), and
   • the empty tail (`bodySimE_nil`).
 Then forget eval (`bodySimE_to_bodySim`) to land in the driver's `body_sim` slot. -/
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
-theorem outer_bodySim_concrete
+theorem outer_bodySim_concrete [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {x x' : P.Ident} {τ : P.Ty} {rhs e g2 : P.Expr} {lbl : String}
     {md md2_s md2_h : MetaData P}
@@ -351,8 +342,7 @@ being the assembled `outer_bodySim_concrete`.  Source/hoist outer-loop runs are
 related by `HoistInv [x] [x'] [(x,x')]`, eval/hf/bound, exactly as the §E `.loop`
 arm holds after the prelude `prelude_bridge_list` re-establishes the entry
 invariant. -/
-omit [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P] in
-theorem outer_loop_simulation_concrete
+theorem outer_loop_simulation_concrete [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {g x x' g2idx : P.Ident} {τ : P.Ty} {rhs e : P.Expr} {lbl : String}
     {md md2_s md2_h md_loop_s md_loop_h : MetaData P}
