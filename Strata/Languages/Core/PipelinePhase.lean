@@ -49,6 +49,28 @@ def obligationHasLabelPrefix (obligation : ProofObligation Expression)
   obligation.assumptions.any fun pc =>
     pc.any fun entry => entry.name.startsWith pfx
 
+/-- Registry of obligation-label families whose VCs are universally
+    quantified over a spec-pinned domain. A sat counterexample to such
+    an obligation is genuine regardless of havoc/inlining/translation,
+    so the abstracting phases need not validate the model. -/
+def universalVCRegistry : List ((String → Bool) × String) :=
+  [ (fun lbl => lbl.startsWith "arbitrary_iter_maintain_invariant",
+      "loop-invariant maintenance — LoopElim havoc-and-assert(I)")
+  , (fun lbl => lbl.startsWith "entry_invariant",
+      "loop-invariant entry — LoopElim assert(I) at loop top")
+  , (fun lbl => lbl.startsWith "measure_lb",
+      "termination measure ≥ 0 — LoopElim")
+  , (fun lbl => lbl.startsWith "measure_decrease",
+      "termination measure decreases — LoopElim, C_Simp")
+  , (fun lbl => (lbl.splitOn ":postcondition").length > 1,
+      "callee postcondition — LaurelToCoreTranslator")
+  , (fun lbl => lbl.startsWith "callElimAssert_",
+      "call-site precondition — CallElim asserts callee.requires")
+  ]
+
+def obligationLabelIsUniversal (obligation : ProofObligation Expression) : Bool :=
+  universalVCRegistry.any fun (m, _) => m obligation.label
+
 /-- A verification pipeline phase that pairs a program transformation with
     its model validation. This coupling ensures that adding a new transform
     also requires specifying its soundness annotation, and vice versa. -/

@@ -150,7 +150,8 @@ def callElimPipelinePhase : PipelinePhase where
   transform := CallElim.callElim'
   phase.name := "CallElim"
   phase.getValidation obligation :=
-    if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
+    if obligationLabelIsUniversal obligation then .modelPreserving
+    else if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)
     else .modelPreserving
   phase.getAssertDescription label :=
