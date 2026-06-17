@@ -3,40 +3,71 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.Factory
-import Strata.SimpleAPI
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
 /-!
-End-to-end verification tests for the three Bv↔Int cast operators,
-exercised all the way through the SMT pipeline via `Strata.Core.verifyProgram`.
+End-to-end verification tests for the three Bv↔Int cast built-in functions,
+exercised all the way through the SMT pipeline via `Core.verify`.
 
-Factory ops (`Bv{n}.ToUInt`, `Bv{n}.ToInt`, `Int.ToBv{n}`) cannot be called
-from `#strata program Core;` text, so programs are constructed programmatically
-using the Lean API.
-
-- `Bv{n}.ToUInt` ≙ SMT-LIB 2.7 `ubv_to_int`  — unsigned bv → Int
-- `Bv{n}.ToInt`  ≙ SMT-LIB 2.7 `sbv_to_int`  — signed bv → Int
-- `Int.ToBv{n}`  ≙ SMT-LIB 2.7 `(_ int_to_bv n)` — Int → bv
+- `as_uint(e)` ≙ SMT-LIB 2.7 `ubv_to_int`  — unsigned bv → Int
+- `as_sint(e)` ≙ SMT-LIB 2.7 `sbv_to_int`  — signed bv → Int
+- `as_bv8(e)`  ≙ SMT-LIB 2.7 `(_ int_to_bv 8)` — Int → bv8
 -/
 
-namespace Core.BvIntCastVerify
+meta section
+open Strata
+open StrataDDM (Program)
 
-open Lambda Core
+private def bvIntCastProgram : Program :=
+#strata
+program Core;
 
-private def xBv8   : Expression.Expr := .fvar () ⟨"x", ()⟩ (.some (.bitvec 8))
-private def bv8255 : Expression.Expr := .bitvecConst () 8 (255 : BitVec 8)
+procedure test_ubv_nonneg(x : bv8)
+spec {
+  ensures as_uint(x) >= 0;
+}
+{
+  assume true;
+};
 
-private def zero   : Expression.Expr := .intConst () 0
-private def i255   : Expression.Expr := .intConst () 255
-private def i256   : Expression.Expr := .intConst () 256
-private def negOne : Expression.Expr := .intConst () (-1)
+procedure test_ubv_concrete()
+spec {
+  ensures as_uint(bv{8}(255)) == 255;
+}
+{
+  assume true;
+};
 
-private def applyGe (l r : Expression.Expr) : Expression.Expr :=
-  .app () (.app () intGeOp l) r
+procedure test_ubv_roundtrip(x : bv8)
+spec {
+  ensures as_bv8(as_uint(x)) == x;
+}
+{
+  assume true;
+};
 
-private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
+procedure test_sbv_concrete()
+spec {
+  ensures as_sint(bv{8}(255)) == -1;
+}
+{
+  assume true;
+};
+
+procedure test_ubv_impossible(x : bv8)
+spec {
+  ensures as_uint(x) >= 256;
+}
+{
+  assume true;
+};
+
+#end
+
+private def mkProc (name : String) (postcond : Core.Expression.Expr) : Core.Decl :=
   .proc {
     header := {
       name     := ⟨name, ()⟩
@@ -50,25 +81,6 @@ private def mkProc (name : String) (postcond : Expression.Expr) : Decl :=
     }
     body := .structured [.assume "body" (.true ()) #[]]
   } #[]
-
-private def castVerifyProg : Core.Program :=
-  { decls := [
-      -- Provable: Bv8.ToUInt is always nonneg
-      mkProc "test_ubv_nonneg"
-        (applyGe (.app () bv8ToUIntFunc.opExpr xBv8) zero),
-      -- Provable: concrete value bv{8}(255) as unsigned == 255
-      mkProc "test_ubv_concrete"
-        (.eq () (.app () bv8ToUIntFunc.opExpr bv8255) i255),
-      -- Provable: unsigned round-trip Int.ToBv8(Bv8.ToUInt(x)) == x
-      mkProc "test_ubv_roundtrip"
-        (.eq () (.app () int8ToBvFunc.opExpr (.app () bv8ToUIntFunc.opExpr xBv8)) xBv8),
-      -- Provable: signed semantics bv{8}(255) as signed == -1
-      mkProc "test_sbv_concrete"
-        (.eq () (.app () bv8ToIntFunc.opExpr bv8255) negOne),
-      -- Failing: Bv8.ToUInt(x) >= 256 is impossible for 8-bit
-      mkProc "test_ubv_impossible"
-        (applyGe (.app () bv8ToUIntFunc.opExpr xBv8) i256),
-    ] }
 
 /--
 info:
@@ -93,9 +105,4 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval show IO Unit from do
-  let results ← EIO.toIO (fun e => IO.Error.userError e)
-    (Strata.Core.verifyProgram castVerifyProg Core.VerifyOptions.quiet)
-  IO.println (toString results)
-
-end Core.BvIntCastVerify
+#eval Strata.Core.verify bvIntCastProgram (options := .quiet)

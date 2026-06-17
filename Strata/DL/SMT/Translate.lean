@@ -534,11 +534,13 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
   | .app .ubv_to_int [x] _ =>
-    let (_, x) ← translateTerm x
-    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
+    let (α, x) ← translateTerm x
+    let w ← getBitVecWidth α
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp2 (.const ``BitVec.toNat []) (toExpr w) x))
   | .app .sbv_to_int [x] _ =>
-    let (_, x) ← translateTerm x
-    return (mkInt, mkApp (.const ``BitVec.toInt []) x)
+    let (α, x) ← translateTerm x
+    let w ← getBitVecWidth α
+    return (mkInt, mkApp2 (.const ``BitVec.toInt []) (toExpr w) x)
   | .app (.int_to_bv n) [x] _ =>
     let (_, x) ← translateTerm x
     return (mkBitVec n, mkApp2 (.const ``BitVec.ofInt []) (toExpr n) x)
