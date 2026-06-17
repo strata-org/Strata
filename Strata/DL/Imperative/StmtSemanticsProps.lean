@@ -847,6 +847,25 @@ theorem smallStep_noFuncDecl_preserves_eval_block_exiting
     have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
     rw [ih hnofd_mid, heq]
 
+/-- When a statement has no function declarations, small-step execution
+    preserves the evaluator (variant for `.exiting` target). -/
+theorem smallStep_noFuncDecl_preserves_eval_exiting
+    (s : Stmt P CmdT) (ρ ρ' : Env P) (lbl : String)
+    (hnofd : Stmt.noFuncDecl s = true)
+    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.exiting lbl ρ')) :
+    ρ'.eval = ρ.eval := by
+  suffices ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      c₂.getEnv.eval = c₁.getEnv.eval by
+    exact this _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
+    rw [ih hnofd_mid, heq]
+
 /-! ### hasFailure monotonicity and irrelevance
 
 `hasFailure` is never consulted by any `StepStmt` premise,

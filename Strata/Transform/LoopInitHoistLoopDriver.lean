@@ -1043,6 +1043,204 @@ public theorem loopDet_lift_2g_E [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [
   loopDet_lift_2g_E_fuel h_guard_transport h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
     (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound (reflTrans_to_T h_run) (Nat.le_refl _)
 
+/-- **The sum-typed two-guard TERMINAL-target fuel recursion.**
+
+The TERMINAL analogue of `loopDet_lift_2g_E_fuel`: like `loopDet_lift_2g_fuel`
+but DROPS `h_src_body_no_exit` and consumes a sum-typed `body_sim` (`BodySimSum`).
+A source loop run reaching `.terminal ρ_post` means NO iteration's body broke (a
+body `.exit` would propagate the loop to `.exiting`, not `.terminal`); so each
+peeled iteration's `.block .none` reaches `.terminal` via `blockT_none_reaches_terminal`
+(which recovers the body's TERMINAL run WITHOUT a no-exit hypothesis — an inner
+`.exiting` always mismatches `.none` and propagates, so a `.none`-block reaching
+`.terminal` forces an inner `.terminal`).  The body's TERMINAL clause then drives
+one hoist iteration, and the recursion (`ih`) handles the residual loop. -/
+public theorem loopDet_lift_2g_TE_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.ff → ρ_h.eval ρ_h.store g_h = .some HasBool.ff)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true) :
+    ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P},
+      HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store →
+      ρ_src.eval = ρ_hoist.eval → ρ_src.hasFailure = ρ_hoist.hasFailure →
+      (∀ y ∈ B, ρ_hoist.store y ≠ none) →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.terminal ρ_post)) →
+      h_run.len ≤ n →
+      ∃ ρ_post_h : Env P,
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
+        HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+        ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+        (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ_src ρ_hoist ρ_post _ _ _ _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ_src ρ_hoist ρ_post h_hinv h_eval h_hf h_bound h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        have h_ρ_post_eq : ρ_post = { ρ_src with hasFailure := ρ_src.hasFailure || hasInvFailure } := by
+          match hrest with
+          | .refl _ => rfl
+          | .step _ _ _ hd _ => exact nomatch hd
+        subst h_ρ_post_eq
+        subst h_hif_false
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.ff :=
+          h_guard_transport_ff ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        refine ⟨{ ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }, ?_, ?_, ?_, ?_⟩
+        · exact .step _ _ _
+            (.step_loop_exit h_guard_h (by intro le hle; simp at hle) (by simp) h_wfb_h)
+            (.refl _)
+        · simpa using h_hinv
+        · show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        · intro y hy; show ρ_hoist.store y ≠ none; exact h_bound y hy
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        -- Peel one iteration WITHOUT a no-exit hypothesis: the seq decomposes to a
+        -- `.block .none` reaching `.terminal`, which forces an inner `.terminal`.
+        obtain ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
+          seqT_reaches_terminal extendEval hrest
+        obtain ⟨ρ_inner, h_body_src_T, h_ρ_block_eq, hlen_block⟩ :=
+          blockT_none_reaches_terminal h_block_term
+        subst h_ρ_block_eq
+        obtain ⟨ρ_x, h_loop_T, h_nil, hlen_cons⟩ :=
+          stmtsT_cons_terminal extendEval h_loop_stmts
+        have hρ_x_eq : ρ_x = ρ_post := by
+          match h_nil with
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h _ => exact nomatch h
+        subst hρ_x_eq
+        let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
+        let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
+        have h_hinv_body : HoistInv (P := P) A B subst ρ_src_body.store ρ_h_body.store := by
+          show HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store; exact h_hinv
+        have h_eval_body : ρ_src_body.eval = ρ_h_body.eval := h_eval
+        have h_hf_body : ρ_src_body.hasFailure = ρ_h_body.hasFailure := by
+          show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        have h_bound_body : ∀ y ∈ B, ρ_h_body.store y ≠ none := h_bound
+        obtain ⟨ρ_h_inner, h_body_h_run, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+          (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body).1
+            ρ_inner (reflTransT_to_prop h_body_src_T)
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        have h_hoist_iter : StepStmtStar P (EvalCmd P) extendEval
+            (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist)
+            (.stmts [.loop (.det g_h) none [] body_h md_h]
+              { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
+          have hb : StepStmtStar P (EvalCmd P) extendEval
+              (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
+          have := buildLoopIterationDet (g := g_h) (body := body_h) (md := md_h)
+            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
+          · simpa [ρ_h_body] using this
+          · show ρ_h_body.eval ρ_h_body.store g_h = .some HasBool.tt
+            show ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt; exact h_guard_h
+          · show WellFormedSemanticEvalBool ρ_h_body.eval
+            show WellFormedSemanticEvalBool ρ_hoist.eval; exact h_wfb_h
+        have h_hinv_block : HoistInv (P := P) A B subst
+            (projectStore ρ_src.store ρ_inner.store)
+            (projectStore ρ_hoist.store ρ_h_inner.store) :=
+          HoistInv.project_both h_hinv h_hinv_inner
+        have h_eval_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).eval
+            = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).eval := by
+          show ρ_inner.eval = ρ_h_inner.eval
+          have e1 : ρ_inner.eval = ρ_src_body.eval :=
+            smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+              body_src ρ_src_body ρ_inner h_src_body_nofd (reflTransT_to_prop h_body_src_T)
+          have e2 : ρ_h_inner.eval = ρ_h_body.eval :=
+            smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+              body_h ρ_h_body ρ_h_inner h_h_body_nofd h_body_h_run
+          rw [e1, e2]; exact h_eval_body
+        have h_hf_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).hasFailure
+            = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).hasFailure := by
+          show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+        have h_bound_block : ∀ y ∈ B,
+            ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y ≠ none := by
+          intro y hy
+          show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+          unfold projectStore
+          have h_parent_some : (ρ_hoist.store y).isSome = true := by
+            cases h : ρ_hoist.store y with
+            | none => exact absurd h (h_bound y hy)
+            | some _ => rfl
+          rw [h_parent_some]; simp; exact h_bound_inner y hy
+        obtain ⟨ρ_post_h, h_post_h_run, h_hinv_post, h_hf_post, h_bound_post⟩ :=
+          ih h_hinv_block h_eval_block h_hf_block h_bound_block h_loop_T
+            (by simp only [ReflTransT.len] at hlen; omega)
+        refine ⟨ρ_post_h, ?_, h_hinv_post, h_hf_post, h_bound_post⟩
+        refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
+        refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+        refine ReflTrans_Transitive _ _ _ _
+          (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_post_h_run) ?_
+        exact ReflTrans.step _ _ _ .step_seq_done
+          (ReflTrans.step _ _ _ .step_stmts_nil (.refl _))
+
+/-- Prop-level wrapper of `loopDet_lift_2g_TE_fuel`: the sum-typed two-guard
+TERMINAL-target driver (consumes a `BodySimSum` body sim, concludes `.terminal`,
+no `h_src_body_no_exit`). -/
+public theorem loopDet_lift_2g_TE [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.ff → ρ_h.eval ρ_h.store g_h = .some HasBool.ff)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) :=
+  loopDet_lift_2g_TE_fuel h_guard_transport h_guard_transport_ff h_wfb_transport
+    body_sim h_src_body_nofd h_h_body_nofd
+    (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound (reflTrans_to_T h_run) (Nat.le_refl _)
+
 
 /-! ## The shapefree-carrying two-guard fuel core.
 
@@ -1440,6 +1638,100 @@ public theorem loopDet_lift_renamedGuard [HasFvar P] [HasBool P] [HasNot P] [Has
       (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
   refine loopDet_lift_2g (g_s := g) (g_h := substFvarMany g subst)
     ?_ ?_ ?_ body_sim h_src_body_no_exit h_src_body_nofd h_h_body_nofd
+    h_hinv h_eval h_hf h_bound h_run
+  · intro ρ_s ρ_h hi he ht
+    have h := renamed_guard_eval_same_delta (δ := ρ_h.eval) (g := g)
+      h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_g_B_fresh
+      hi (read_vars_def_of_eval (h_wfdef ρ_h) (he ▸ ht)) (h_wfcongr ρ_h) (h_wfsubst ρ_h)
+    rw [← h, ← he]; exact ht
+  · intro ρ_s ρ_h hi he hf
+    have h := renamed_guard_eval_same_delta (δ := ρ_h.eval) (g := g)
+      h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_g_B_fresh
+      hi (read_vars_def_of_eval (h_wfdef ρ_h) (he ▸ hf)) (h_wfcongr ρ_h) (h_wfsubst ρ_h)
+    rw [← h, ← he]; exact hf
+  · intro ρ_s ρ_h he hwfb; exact he ▸ hwfb
+
+/-- The SUM-TYPED (exiting-target) renamed-guard driver: the exiting analogue of
+`loopDet_lift_renamedGuard`, a thin wrapper over the sum-typed exiting driver
+`loopDet_lift_2g_E` (the renamed-guard discharge of the guard-tt transport is
+identical; the exit path never takes the false-guard branch, so no ff-transport is
+needed).  Consumes a sum-typed `BodySimSum` (the inner loop body may break) and a
+source loop run reaching `.exiting label ρ_post`, producing the matching hoist
+(renamed-guard) loop run reaching `.exiting label ρ_post_h`. -/
+public theorem loopDet_lift_renamedGuard_E [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g)
+    (_h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P} {label : String}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det (substFvarMany g subst)) none [] body_h md_h) ρ_hoist)
+        (.exiting label ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  refine loopDet_lift_2g_E (g_s := g) (g_h := substFvarMany g subst)
+    ?_ ?_ body_sim h_src_body_nofd h_h_body_nofd
+    h_hinv h_eval h_hf h_bound h_run
+  · intro ρ_s ρ_h hi he ht
+    have h := renamed_guard_eval_same_delta (δ := ρ_h.eval) (g := g)
+      h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_g_B_fresh
+      hi (read_vars_def_of_eval (h_wfdef ρ_h) (he ▸ ht)) (h_wfcongr ρ_h) (h_wfsubst ρ_h)
+    rw [← h, ← he]; exact ht
+  · intro ρ_s ρ_h he hwfb; exact he ▸ hwfb
+
+/-- The renamed-guard TERMINAL-target sum-typed driver: a thin wrapper over
+`loopDet_lift_2g_TE` discharging the renamed-guard transport (the terminal companion
+of `loopDet_lift_renamedGuard_E`).  Consumes a sum-typed `BodySimSum` (the inner
+loop body may break) but a source loop run reaching `.terminal`. -/
+public theorem loopDet_lift_renamedGuard_TE [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g)
+    (_h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det (substFvarMany g subst)) none [] body_h md_h) ρ_hoist)
+        (.terminal ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  refine loopDet_lift_2g_TE (g_s := g) (g_h := substFvarMany g subst)
+    ?_ ?_ ?_ body_sim h_src_body_nofd h_h_body_nofd
     h_hinv h_eval h_hf h_bound h_run
   · intro ρ_s ρ_h hi he ht
     have h := renamed_guard_eval_same_delta (δ := ρ_h.eval) (g := g)
