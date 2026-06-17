@@ -466,7 +466,10 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
 # ─── Stage: extract ──────────────────────────────────────────────────────────
 
 async def _stage_extract(state: ProverState, agent) -> Trans:
-    """Mechanical extraction: split sorry theorems into decomposed/ files."""
+    """LLM-driven extraction: decl_extractor agent moves declarations to files."""
+    from ._lean_tools_mcp import create_extractor_mcp_server
+    from .modules.po_lean import MoveSession
+
     cwd = _resolve(agent)
     stub_rel = f"{state.workspace}/Stub.lean"
     tools = get_lean_tools()
@@ -483,44 +486,53 @@ async def _stage_extract(state: ProverState, agent) -> Trans:
         state.decomposed_files = []
         return Trans.EXTRACTED
 
-    # Mechanical extraction — one file per theorem (sorry or not)
-    decomposed_dir = cwd / state.workspace / "decomposed"
-    decomposed_dir.mkdir(parents=True, exist_ok=True)
+    # Create session and extractor MCP server
+    session = MoveSession(tools, stub_rel, state.theorem_name, state.workspace)
+    extractor_mcp = create_extractor_mcp_server(session)
 
-    extract_result = tools.extract_sorry_theorems(stub_rel,
-        output_dir=f"{state.workspace}/decomposed",
-        exclude={state.theorem_name},
-        extract_all=True)
+    await agent._emit("message", f"[PO] Running decl_extractor ({len(helper_blocks)} declarations to move)")
 
-    if not extract_result.created_files:
-        state.last_failure_details = extract_result.error or "No sorry theorems to extract"
-        return Trans.EXTRACT_FAILED
+    # Run decl_extractor in a verified loop
+    async with swarm_agent("decl_extractor", swarm=agent.swarm, cwd=agent._cwd,
+                           workspace=state.workspace,
+                           extra_mcp_servers={"extractor_tools": extractor_mcp}) as extractor:
+        outcome = await verified_loop(
+            agent_ctx=extractor,
+            initial_input=(
+                f"Extract all helper declarations from {stub_rel} into separate files.\n"
+                f"Main theorem: '{state.theorem_name}' (do NOT move this).\n"
+                f"Call get_declarations first, then move_decl for each helper, then commit."
+            ),
+            verify=lambda: _verify_extraction(tools, stub_rel, state),
+            max_rounds=3,
+            max_turns=30,
+            use_run_ai=False,
+        )
 
-    # Check all extracted files compile
-    failed_dir = cwd / state.workspace / "decomposed" / "extraction_failed"
-    if failed_dir.exists() and list(failed_dir.glob("*.lean")):
-        # Some failed — this means mechanical extraction has issues
-        # Clean up and retry the whole prove stage
-        state.last_failure_details = f"Extraction produced non-compilable files"
-        shutil.rmtree(decomposed_dir)
-        decomposed_dir.mkdir(parents=True, exist_ok=True)
-        return Trans.EXTRACT_FAILED
+    if outcome.success:
+        session.finalize()
+        # Collect created files
+        decomposed_dir = cwd / state.workspace / "decomposed"
+        state.decomposed_files = [
+            str(f.relative_to(cwd)) for f in decomposed_dir.glob("lemma_helper_*.lean")
+        ] if decomposed_dir.exists() else []
+        await agent._emit("message", f"[PO] Extracted {len(state.decomposed_files)} files")
+        return Trans.EXTRACTED
 
-    # Rewrite Stub.lean: remove extracted helpers, add imports
-    _rewrite_stub_after_extraction(cwd, stub_rel, extract_result, tools, state)
+    # Failed after all retries
+    session.revert()
+    state.last_failure_details = f"Extraction failed: {outcome.last_error}"
+    return Trans.EXTRACT_FAILED
 
-    # Verify Stub.lean still compiles after rewrite
-    if not tools.check_compiles(stub_rel).success:
-        # Rewrite broke it — revert and fail
-        (cwd / stub_rel).write_text((cwd / state.workspace / "_originals" / "Stub.lean").read_text())
-        shutil.rmtree(decomposed_dir)
-        decomposed_dir.mkdir(parents=True, exist_ok=True)
-        state.last_failure_details = "Stub.lean doesn't compile after extraction rewrite"
-        return Trans.EXTRACT_FAILED
 
-    state.decomposed_files = extract_result.created_files
-    await agent._emit("message", f"[PO] Extracted {len(state.decomposed_files)} theorems to decomposed/")
-    return Trans.EXTRACTED
+def _verify_extraction(tools, stub_rel: str, state) -> str | None:
+    """Verify extraction succeeded: Stub.lean compiles sorry-free."""
+    cr = tools.check_compiles(stub_rel)
+    if not cr.success:
+        return "Stub.lean doesn't compile after extraction"
+    if tools.has_sorry(stub_rel):
+        return "Stub.lean still has sorry"
+    return None
 
 
 # ─── Stage: child_pos ────────────────────────────────────────────────────────

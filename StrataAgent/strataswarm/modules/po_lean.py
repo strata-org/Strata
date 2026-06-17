@@ -142,6 +142,275 @@ class ExtractResult:
 
 
 @dataclass
+class MoveIntent:
+    """A registered intent to move a declaration to its own file."""
+    decl_name: str
+    additional_imports: list[str] = field(default_factory=list)  # names of other decls this depends on
+
+
+class MoveSession:
+    """Accumulates move_decl intents, commits them, supports revert/finalize.
+
+    Lifecycle:
+        session = MoveSession(tools, file_path, main_theorem, workspace)
+        session.get_declarations()  # LLM sees what's available
+        session.move_decl("helper_a", additional_imports=["helper_b"])
+        session.move_decl("helper_b", additional_imports=[])
+        result = session.commit()   # writes files, rewrites Stub.lean, builds
+        if result.error:
+            session.revert()        # undo everything, back to original
+            # try again...
+        else:
+            session.finalize()      # remove backup, extraction complete
+    """
+
+    def __init__(self, tools: "SwarmLeanTools", file_path: str, main_theorem: str, workspace: str):
+        self._tools = tools
+        self._file_path = file_path
+        self._main_theorem = main_theorem
+        self._workspace = workspace
+        self._moves: list[MoveIntent] = []
+        self._split: SplitResult | None = None
+        self._backup: str | None = None  # original file content
+        self._committed = False
+
+    def get_declarations(self) -> list[dict]:
+        """Return declaration info for the LLM to see. Also takes backup."""
+        root = self._tools._root
+        source = root / self._file_path
+        if self._backup is None:
+            self._backup = source.read_text()
+        self._split = self._tools.split_theorems(self._file_path)
+        if self._split.error:
+            return []
+        return [
+            {
+                "name": b.name,
+                "decl_type": b.decl_type,
+                "has_sorry": b.has_sorry,
+                "lines": f"{b.start}-{b.end}",
+                "mutual_group": b.mutual_group,
+                "is_main": b.name == self._main_theorem,
+            }
+            for b in self._split.blocks
+        ]
+
+    def move_decl(self, decl_name: str, additional_imports: list[str] | None = None) -> str:
+        """Register intent to move a declaration. Returns confirmation or error."""
+        if not self._split:
+            self._split = self._tools.split_theorems(self._file_path)
+
+        # Validate decl exists
+        block = next((b for b in self._split.blocks if b.name == decl_name), None)
+        if not block:
+            return f"Error: declaration '{decl_name}' not found in file"
+        if decl_name == self._main_theorem:
+            return f"Error: cannot move main theorem '{decl_name}'"
+
+        # If part of a mutual group, all members must be moved together
+        if block.mutual_group is not None:
+            group_names = self._split.mutual_groups.get(block.mutual_group, [])
+            # Check if any group member is already registered
+            already = [m for m in self._moves if m.decl_name in group_names]
+            if already:
+                return f"OK: '{decl_name}' is in mutual group with {group_names}, already registered via '{already[0].decl_name}'"
+            # Register all members as one move (use first name)
+            self._moves.append(MoveIntent(
+                decl_name=group_names[0],
+                additional_imports=additional_imports or [],
+            ))
+            return f"OK: moved mutual group {group_names} (filed under '{group_names[0]}')"
+
+        # Check not already moved
+        if any(m.decl_name == decl_name for m in self._moves):
+            return f"OK: '{decl_name}' already registered"
+
+        self._moves.append(MoveIntent(
+            decl_name=decl_name,
+            additional_imports=additional_imports or [],
+        ))
+        return f"OK: registered move for '{decl_name}'"
+
+    def commit(self) -> ExtractResult:
+        """Execute all moves: write files, rewrite Stub.lean, build, verify."""
+        import subprocess
+
+        root = self._tools._root
+        source = root / self._file_path
+        content = source.read_text()
+        lines = content.splitlines()
+
+        if not self._split:
+            self._split = self._tools.split_theorems(self._file_path)
+        if self._split.error:
+            return ExtractResult(error=self._split.error)
+
+        # Header (imports, open, variable — before first decl)
+        first_decl_line = min(b.start for b in self._split.blocks) - 1 if self._split.blocks else 0
+        header_lines = [l for l in lines[:first_decl_line]
+                        if not l.strip().startswith("/-") and not l.strip().startswith("--")
+                        and l.strip() not in ("mutual", "end")]
+        header = "\n".join(header_lines)
+
+        # Output directory
+        out_path = root / self._workspace / "decomposed"
+        out_path.mkdir(parents=True, exist_ok=True)
+        out_rel = str(out_path.relative_to(root))
+
+        # Build name → module mapping
+        name_to_module: dict[str, str] = {}
+        for move in self._moves:
+            safe_name = _ascii_escape(move.decl_name)
+            module = f"{out_rel}/lemma_helper_{safe_name}".replace("/", ".")
+            # Map all members if mutual
+            block = next((b for b in self._split.blocks if b.name == move.decl_name), None)
+            if block and block.mutual_group is not None:
+                for member_name in self._split.mutual_groups.get(block.mutual_group, []):
+                    name_to_module[member_name] = module
+            else:
+                name_to_module[move.decl_name] = module
+
+        # Write each moved declaration to its own file
+        created_files: list[str] = []
+        extracted_names: list[str] = []
+
+        for move in self._moves:
+            block = next((b for b in self._split.blocks if b.name == move.decl_name), None)
+            if not block:
+                continue
+
+            # Get block text
+            if block.mutual_group is not None:
+                # Mutual: grab raw lines from file (mutual...end inclusive)
+                group_blocks = [b for b in self._split.blocks if b.mutual_group == block.mutual_group]
+                first_line = min(b.start for b in group_blocks) - 1
+                last_line = max(b.end for b in group_blocks)
+                end_idx = last_line
+                while end_idx < len(lines) and lines[end_idx].strip() != "end":
+                    end_idx += 1
+                block_lines = lines[first_line:end_idx + 1]
+                block_lines = [l.replace("private theorem ", "theorem ")
+                                .replace("private def ", "def ")
+                                .replace("private noncomputable def ", "noncomputable def ")
+                               for l in block_lines]
+                block_text = "\n".join(block_lines)
+                group_names = [b.name for b in group_blocks]
+            else:
+                block_text = block.text
+                block_text = block_text.replace("private theorem ", "theorem ", 1)
+                block_text = block_text.replace("private def ", "def ", 1)
+                block_text = block_text.replace("private noncomputable def ", "noncomputable def ", 1)
+                group_names = [block.name]
+
+            # Build imports from additional_imports
+            dep_imports = []
+            for dep_name in move.additional_imports:
+                if dep_name in name_to_module:
+                    imp = f"import {name_to_module[dep_name]}"
+                    if imp not in dep_imports:
+                        dep_imports.append(imp)
+
+            # Write file
+            safe_name = _ascii_escape(move.decl_name)
+            new_filename = f"lemma_helper_{safe_name}.lean"
+            new_path = out_path / new_filename
+
+            h_lines = header.rstrip().splitlines()
+            if dep_imports:
+                insert_pos = 0
+                for idx, hl in enumerate(h_lines):
+                    if hl.strip().startswith("import "):
+                        insert_pos = idx + 1
+                for idx, imp in enumerate(dep_imports):
+                    h_lines.insert(insert_pos + idx, imp)
+            new_content = "\n".join(h_lines) + "\n\n" + block_text + "\n"
+            new_path.write_text(new_content)
+
+            rel_path = str(new_path.relative_to(root))
+            created_files.append(rel_path)
+            extracted_names.extend(group_names)
+
+        # Rewrite Stub.lean: header + all imports + main theorem only
+        main_block = next((b for b in self._split.blocks if b.name == self._main_theorem), None)
+        if not main_block:
+            return ExtractResult(error=f"Main theorem '{self._main_theorem}' not found")
+
+        import_lines = [f"import {name_to_module[m.decl_name]}" for m in self._moves
+                        if m.decl_name in name_to_module]
+        h_lines = header.rstrip().splitlines()
+        insert_pos = 0
+        for idx, hl in enumerate(h_lines):
+            if hl.strip().startswith("import "):
+                insert_pos = idx + 1
+        for idx, imp in enumerate(import_lines):
+            h_lines.insert(insert_pos + idx, imp)
+
+        main_text = main_block.text
+        new_stub = "\n".join(h_lines) + "\n\n" + main_text + "\n"
+        source.write_text(new_stub)
+
+        # Build all decomposed files then Stub.lean
+        for f in created_files:
+            module = f.replace("/", ".").removesuffix(".lean")
+            subprocess.run(["lake", "build", module],
+                          cwd=str(root), capture_output=True, timeout=120)
+
+        # Verify Stub.lean compiles sorry-free
+        cr = self._tools.check_compiles(self._file_path)
+        has_sorry = self._tools.has_sorry(self._file_path)
+
+        self._committed = True
+        self._created_files = created_files
+        self._extracted_names = extracted_names
+
+        if not cr.success or has_sorry:
+            error_msg = "Stub.lean doesn't compile after extraction" if not cr.success else "Stub.lean still has sorry"
+            return ExtractResult(error=error_msg, created_files=created_files, extracted_names=extracted_names)
+
+        return ExtractResult(created_files=created_files, extracted_names=extracted_names)
+
+    def revert(self) -> str:
+        """Undo everything: restore original Stub.lean, remove decomposed files."""
+        root = self._tools._root
+        source = root / self._file_path
+
+        if self._backup is None:
+            return "Error: no backup available (get_declarations not called?)"
+
+        # Restore original file
+        source.write_text(self._backup)
+
+        # Remove decomposed files we created
+        out_path = root / self._workspace / "decomposed"
+        if out_path.exists():
+            shutil.rmtree(out_path)
+
+        # Reset state for retry
+        self._moves.clear()
+        self._committed = False
+        self._split = None
+
+        return "OK: reverted to original"
+
+    def finalize(self) -> str:
+        """Confirm extraction is done. Remove backup, extraction is permanent."""
+        if not self._committed:
+            return "Error: nothing committed yet"
+
+        # Verify one last time
+        cr = self._tools.check_compiles(self._file_path)
+        has_sorry = self._tools.has_sorry(self._file_path)
+        if not cr.success:
+            return "Error: Stub.lean doesn't compile — cannot finalize"
+        if has_sorry:
+            return "Error: Stub.lean still has sorry — cannot finalize"
+
+        # Clear backup (extraction is permanent)
+        self._backup = None
+        return "OK: finalized"
+
+
+@dataclass
 class WriteResult:
     file_path: str = ""
     theorem_name: str = ""
@@ -579,14 +848,73 @@ class SwarmLeanTools:
         return result
 
     def thm_depends_on(self, file_path: str, theorem_name: str) -> list[str]:
-        """Get which other theorems in the same file are referenced by this theorem's proof."""
-        result = self._send("thm_depends_on_", f"{file_path}:{theorem_name}")
-        if "error" in result:
+        """Get which other declarations in the same file are referenced by this one.
+
+        Uses word-boundary regex on the text field to avoid substring false positives
+        (e.g. 'sim_terminal' matching inside 'sim_terminal_cmd').
+        """
+        import re
+        split = self.split_theorems(file_path)
+        if split.error:
             return []
-        return result.get("uses", [])
+
+        target = next((b for b in split.blocks if b.name == theorem_name), None)
+        if not target or not target.text:
+            return []
+
+        # Get the proof body (after := or := by) to avoid matching the signature
+        text = target.text
+        body_start = text.find(":= by")
+        if body_start == -1:
+            body_start = text.find(":=")
+        if body_start != -1:
+            text = text[body_start + 2:]
+
+        all_names = [b.name for b in split.blocks if b.name != theorem_name]
+        # Sort by length descending so longer names are checked first
+        # (avoids 'blockSz' matching before 'blockSz_something')
+        all_names.sort(key=len, reverse=True)
+        uses = []
+        for name in all_names:
+            # Word boundary: name must not be preceded/followed by alphanumeric or underscore
+            if re.search(r'(?<![a-zA-Z0-9_])' + re.escape(name) + r'(?![a-zA-Z0-9_])', text):
+                uses.append(name)
+        return uses
 
     def get_reachable_theorems(self, file_path: str, root_name: str) -> set[str]:
-        """Get all theorems transitively reachable from root_name's proof body."""
+        """Get all declarations transitively reachable from root_name."""
+        import re
+        split = self.split_theorems(file_path)
+        if split.error:
+            return {root_name}
+
+        all_names = [b.name for b in split.blocks]
+        # Sort by length descending for matching priority
+        sorted_names = sorted(all_names, key=len, reverse=True)
+
+        # Build dependency map using word-boundary regex on proof bodies
+        deps_map: dict[str, list[str]] = {}
+        for block in split.blocks:
+            if not block.text:
+                deps_map[block.name] = []
+                continue
+            # Extract proof body
+            text = block.text
+            body_start = text.find(":= by")
+            if body_start == -1:
+                body_start = text.find(":=")
+            if body_start != -1:
+                text = text[body_start + 2:]
+
+            deps = []
+            for name in sorted_names:
+                if name == block.name:
+                    continue
+                if re.search(r'(?<![a-zA-Z0-9_])' + re.escape(name) + r'(?![a-zA-Z0-9_])', text):
+                    deps.append(name)
+            deps_map[block.name] = deps
+
+        # BFS from root
         reachable = set()
         queue = [root_name]
         while queue:
@@ -594,8 +922,9 @@ class SwarmLeanTools:
             if current in reachable:
                 continue
             reachable.add(current)
-            deps = self.thm_depends_on(file_path, current)
-            queue.extend(d for d in deps if d not in reachable)
+            for dep in deps_map.get(current, []):
+                if dep not in reachable:
+                    queue.append(dep)
         return reachable
 
     def has_sorry(self, file_path: str) -> bool:
@@ -672,7 +1001,6 @@ class SwarmLeanTools:
         lines = content.splitlines()
 
         # Header = everything before first declaration (imports, open, variable)
-        # Use 1-indexed start from first block, convert to 0-indexed for line slicing
         first_decl_line = min(b.start for b in split.blocks) - 1 if split.blocks else 0
         header_lines = [l for l in lines[:first_decl_line]
                         if not l.strip().startswith("/-") and not l.strip().startswith("--")
@@ -686,14 +1014,13 @@ class SwarmLeanTools:
             out_path = source.parent
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Group target_blocks by mutual group
+        # ── Step 1: Group by mutual blocks ──
         groups: list[list[TheoremBlock]] = []
         seen = set()
         for block in target_blocks:
             if block.name in seen:
                 continue
             if block.mutual_group is not None:
-                # Find all target_blocks in same mutual group
                 group = [b for b in target_blocks if b.mutual_group == block.mutual_group]
                 for b in group:
                     seen.add(b.name)
@@ -702,42 +1029,49 @@ class SwarmLeanTools:
                 seen.add(block.name)
                 groups.append([block])
 
-        # Build dependency map using thm_depends_on
+        # ── Step 2: Build dependency graph between groups ──
         extracted_name_set = {b.name for b in target_blocks}
-        deps_map: dict[str, list[str]] = {}
+        # Per-block deps (text-based)
+        block_deps: dict[str, list[str]] = {}
         for block in target_blocks:
-            deps = self.thm_depends_on(file_path, block.name)
-            deps_map[block.name] = [d for d in deps if d in extracted_name_set]
+            block_deps[block.name] = [n for n in extracted_name_set
+                                       if n != block.name and n in (block.text or "")]
 
-        # Merge groups with circular dependencies (SCC on group graph)
-        # Build group-level dependency graph
-        name_to_group_idx = {}
+        # Map name → group index
+        name_to_gi: dict[str, int] = {}
         for gi, group in enumerate(groups):
             for b in group:
-                name_to_group_idx[b.name] = gi
+                name_to_gi[b.name] = gi
 
-        # Find cycles: if group A depends on group B and B depends on A, merge them
+        # Group-level deps
+        group_deps: dict[int, set[int]] = {i: set() for i in range(len(groups))}
+        for gi, group in enumerate(groups):
+            for b in group:
+                for dep_name in block_deps.get(b.name, []):
+                    dep_gi = name_to_gi.get(dep_name)
+                    if dep_gi is not None and dep_gi != gi:
+                        group_deps[gi].add(dep_gi)
+
+        # ── Step 3: Find SCCs and merge cyclic groups ──
         merged = True
         while merged:
             merged = False
-            group_deps: dict[int, set[int]] = {i: set() for i in range(len(groups))}
-            # Rebuild name→group mapping
-            name_to_group_idx = {}
+            # Rebuild group index mapping
+            name_to_gi = {}
             for gi, group in enumerate(groups):
                 for b in group:
-                    name_to_group_idx[b.name] = gi
-            # Build group-level deps
+                    name_to_gi[b.name] = gi
+            group_deps = {i: set() for i in range(len(groups))}
             for gi, group in enumerate(groups):
                 for b in group:
-                    for dep_name in deps_map.get(b.name, []):
-                        dep_gi = name_to_group_idx.get(dep_name)
+                    for dep_name in block_deps.get(b.name, []):
+                        dep_gi = name_to_gi.get(dep_name)
                         if dep_gi is not None and dep_gi != gi:
                             group_deps[gi].add(dep_gi)
-            # Find any mutual dependency (cycle of length 2+)
+            # Merge any cycle
             for gi in range(len(groups)):
                 for gj in group_deps.get(gi, set()):
                     if gi in group_deps.get(gj, set()):
-                        # Merge gj into gi
                         groups[gi] = groups[gi] + groups[gj]
                         groups.pop(gj)
                         merged = True
@@ -745,56 +1079,128 @@ class SwarmLeanTools:
                 if merged:
                     break
 
-        # For each group, use the first theorem's name as the file name
-        name_to_module: dict[str, str] = {}
+        # ── Step 4: Topological sort ──
+        # Rebuild after merging
+        name_to_gi = {}
+        for gi, group in enumerate(groups):
+            for b in group:
+                name_to_gi[b.name] = gi
+        group_deps = {i: set() for i in range(len(groups))}
+        for gi, group in enumerate(groups):
+            for b in group:
+                for dep_name in block_deps.get(b.name, []):
+                    dep_gi = name_to_gi.get(dep_name)
+                    if dep_gi is not None and dep_gi != gi:
+                        group_deps[gi].add(dep_gi)
+
+        # Kahn's algorithm
+        in_degree = {i: 0 for i in range(len(groups))}
+        for gi, deps in group_deps.items():
+            for dep_gi in deps:
+                in_degree[gi] = in_degree.get(gi, 0)  # ensure exists
+        for gi, deps in group_deps.items():
+            for dep_gi in deps:
+                in_degree[gi] += 1  # gi depends on dep_gi, so gi has in-degree from dep_gi
+        # Wait — in_degree should count how many things point TO a node
+        # If gi depends on dep_gi, then dep_gi must come first. So dep_gi has
+        # an edge pointing to gi. in_degree[gi] = number of deps gi has.
+        in_degree = {i: len(group_deps.get(i, set())) for i in range(len(groups))}
+        # Reverse graph: who depends on me?
+        rev_deps: dict[int, set[int]] = {i: set() for i in range(len(groups))}
+        for gi, deps in group_deps.items():
+            for dep_gi in deps:
+                rev_deps[dep_gi].add(gi)
+
+        topo_order = []
+        queue = [i for i in range(len(groups)) if in_degree[i] == 0]
+        while queue:
+            node = queue.pop(0)
+            topo_order.append(node)
+            for dependent in rev_deps.get(node, set()):
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+        # Any remaining (shouldn't happen after SCC merge) go at end
+        for i in range(len(groups)):
+            if i not in topo_order:
+                topo_order.append(i)
+
+        # ── Step 5: Write files in topological order ──
+        import subprocess
         out_rel = str(out_path.relative_to(root))
-        for group in groups:
+        name_to_module: dict[str, str] = {}
+        created_files: list[str] = []
+        extracted_names: list[str] = []
+
+        for gi in topo_order:
+            group = groups[gi]
+
+            # Determine file name/module
             safe_name = _ascii_escape(group[0].name)
             module = f"{out_rel}/lemma_helper_{safe_name}".replace("/", ".")
             for b in group:
                 name_to_module[b.name] = module
 
-        # Extract each group into its own file
-        created_files: list[str] = []
-        extracted_names: list[str] = []
-
-        for group in groups:
+            # Build block text
             if len(group) > 1:
-                # Mutual group: grab raw lines from file (mutual...end inclusive)
-                # Lines are 1-indexed; first member starts at mutual keyword
-                first_line = min(b.start for b in group) - 1  # 0-indexed, includes 'mutual'
-                last_line = max(b.end for b in group)  # 1-indexed end of last member
-                # Find the 'end' line after last member
-                end_idx = last_line  # 0-indexed search start
+                # Multiple declarations: grab raw lines (mutual...end)
+                first_line = min(b.start for b in group) - 1
+                last_line = max(b.end for b in group)
+                end_idx = last_line
                 while end_idx < len(lines) and lines[end_idx].strip() != "end":
                     end_idx += 1
                 block_lines = lines[first_line:end_idx + 1]
-                # Strip 'private' from all declarations
-                block_lines = [l.replace("private theorem ", "theorem ").replace("private def ", "def ").replace("private noncomputable def ", "noncomputable def ")
+                block_lines = [l.replace("private theorem ", "theorem ")
+                                .replace("private def ", "def ")
+                                .replace("private noncomputable def ", "noncomputable def ")
                                for l in block_lines]
                 block_text = "\n".join(block_lines)
             else:
-                # Standalone: use the clean text from itp_interface
                 block = group[0]
                 block_text = block.text
-                # Strip 'private'
                 block_text = block_text.replace("private theorem ", "theorem ", 1)
                 block_text = block_text.replace("private def ", "def ", 1)
                 block_text = block_text.replace("private noncomputable def ", "noncomputable def ", 1)
 
-            # Add imports for sibling theorems this group depends on
+            # Compute imports: only from earlier groups in topo order
+            # Then prune transitive redundancies
             group_names = {b.name for b in group}
-            dep_imports = set()
+            dep_group_idxs = set()
             for b in group:
-                for dep_name in deps_map.get(b.name, []):
-                    if dep_name not in group_names:
-                        dep_imports.add(f"import {name_to_module[dep_name]}")
+                for dep_name in block_deps.get(b.name, []):
+                    if dep_name not in group_names and dep_name in name_to_gi:
+                        dep_group_idxs.add(name_to_gi[dep_name])
 
-            safe_name = _ascii_escape(group[0].name)
+            # Prune: remove dep groups that are transitively reachable from other dep groups
+            # (i.e. if A depends on B depends on C, and we depend on both A and C, drop C)
+            minimal_deps = set(dep_group_idxs)
+            for dgi in list(dep_group_idxs):
+                # Check if dgi is reachable from any other dep via group_deps
+                others = dep_group_idxs - {dgi}
+                reachable_from_others = set()
+                q = list(others)
+                visited = set()
+                while q:
+                    curr = q.pop()
+                    if curr in visited:
+                        continue
+                    visited.add(curr)
+                    reachable_from_others.add(curr)
+                    q.extend(group_deps.get(curr, set()))
+                if dgi in reachable_from_others:
+                    minimal_deps.discard(dgi)
+
+            dep_imports = set()
+            for dgi in minimal_deps:
+                # Get the module name for this dep group
+                dep_group = groups[dgi]
+                dep_safe_name = _ascii_escape(dep_group[0].name)
+                dep_module = f"{out_rel}/lemma_helper_{dep_safe_name}".replace("/", ".")
+                dep_imports.add(f"import {dep_module}")
+
+            # Write file
             new_filename = f"lemma_helper_{safe_name}.lean"
             new_path = out_path / new_filename
-
-            # Build file: header + dep imports + block text
             h_lines = header.rstrip().splitlines()
             if dep_imports:
                 insert_pos = 0
@@ -806,31 +1212,39 @@ class SwarmLeanTools:
             new_content = "\n".join(h_lines) + "\n\n" + block_text + "\n"
             new_path.write_text(new_content)
 
+            # Build immediately (deps already built due to topo order)
+            file_module = f"{out_rel}/lemma_helper_{safe_name}".replace("/", ".")
+            build_result = subprocess.run(["lake", "build", file_module],
+                          cwd=str(root), capture_output=True, text=True, timeout=120)
+
+            # Handle "environment already contains X from Y" conflicts
+            # by removing the redundant import (the symbol is available transitively)
+            if build_result.returncode != 0 and "environment already contains" in (build_result.stdout + build_result.stderr):
+                import re
+                output = build_result.stdout + build_result.stderr
+                # May have multiple conflicts — remove all bad imports
+                bad_imports = set()
+                for match in re.finditer(r"import (\S+) failed", output):
+                    bad_imports.add(match.group(1))
+                if bad_imports:
+                    file_content = new_path.read_text()
+                    fixed_lines = [l for l in file_content.splitlines()
+                                   if not any(l.strip() == f"import {bi}" for bi in bad_imports)]
+                    new_path.write_text("\n".join(fixed_lines) + "\n")
+                    # Also remove from the stmtSz import if that's the source
+                    for conflict_src in re.finditer(r"from (\S+)", output):
+                        src_module = conflict_src.group(1)
+                        if src_module in [l.strip().removeprefix("import ") for l in fixed_lines if l.strip().startswith("import ")]:
+                            fixed_lines = [l for l in fixed_lines
+                                           if l.strip() != f"import {src_module}"]
+                            new_path.write_text("\n".join(fixed_lines) + "\n")
+                            break
+                    subprocess.run(["lake", "build", file_module],
+                                  cwd=str(root), capture_output=True, timeout=120)
+
             rel_path = str(new_path.relative_to(root))
             created_files.append(rel_path)
             extracted_names.extend(b.name for b in group)
-
-        # Build files in dependency order so .olean files exist for sibling imports
-        import subprocess
-        # Topological sort: build files that have no sibling deps first
-        file_to_deps: dict[str, set[str]] = {}
-        name_to_file: dict[str, str] = {}
-        for f, names in zip(created_files, [extracted_names]):
-            pass  # need per-group info
-
-        # Simple approach: build all files, repeat until no progress (handles cycles)
-        remaining = list(created_files)
-        for _ in range(3):  # max 3 passes
-            still_failing = []
-            for f in remaining:
-                module = f.replace("/", ".").removesuffix(".lean")
-                result = subprocess.run(["lake", "build", module],
-                    cwd=str(root), capture_output=True, timeout=120)
-                if result.returncode != 0:
-                    still_failing.append(f)
-            if not still_failing:
-                break
-            remaining = still_failing
 
         # Verify: each extracted file should compile (with sorry)
         failed_files: list[str] = []

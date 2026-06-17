@@ -182,6 +182,11 @@ class swarm_agent:
             from ._lean_tools_mcp import create_lean_tools_server
             mcp_servers["lean_tools"] = create_lean_tools_server(workspace=self._workspace)
 
+        # Inject any extra MCP servers passed via overrides
+        extra_mcp = self._overrides.get("extra_mcp_servers")
+        if extra_mcp:
+            mcp_servers.update(extra_mcp)
+
         # Get event callback from swarm for dashboard visibility
         on_event = getattr(self._swarm, '_on_event_with_telemetry', None)
 

@@ -319,3 +319,79 @@ def create_lean_tools_server(workspace: str | None = None):
                check_imports, show_file_state, write_helper_lemma_tool,
                get_sorry_positions, get_sorries_by_theorem, collect_progress_tool],
     )
+
+
+def create_extractor_mcp_server(session: "MoveSession"):
+    """Create an MCP server with extraction tools bound to a MoveSession.
+
+    Tools:
+      - get_declarations: see all declarations in the file
+      - move_decl: register a declaration to be moved to its own file
+      - commit: execute all moves, rewrite Stub.lean, build, verify
+      - revert: undo everything, back to original for retry
+    """
+    from .modules.po_lean import MoveSession
+
+    @tool(
+        name="get_declarations",
+        description="Get all declarations in the file. Shows name, type, sorry status, mutual groups, and which is the main theorem.",
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def get_declarations_tool(input: dict[str, Any]) -> dict[str, Any]:
+        decls = session.get_declarations()
+        return {"content": [{"type": "text", "text": json.dumps(decls, indent=2)}]}
+
+    @tool(
+        name="move_decl",
+        description=(
+            "Register a declaration to be moved to its own file. "
+            "Specify which other declarations it depends on (that are also being moved) as additional_imports. "
+            "Mutual group members are moved together automatically. "
+            "Do NOT move the main theorem."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "decl_name": {"type": "string", "description": "Name of the declaration to move"},
+                "additional_imports": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Names of other declarations this one depends on (local deps only, not library imports)",
+                },
+            },
+            "required": ["decl_name"],
+        },
+    )
+    async def move_decl_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.move_decl(input["decl_name"], input.get("additional_imports", []))
+        return {"content": [{"type": "text", "text": result}]}
+
+    @tool(
+        name="commit",
+        description=(
+            "Execute all registered moves: write decomposed files, rewrite Stub.lean "
+            "(header + imports + main theorem only), build everything, verify Stub.lean "
+            "compiles sorry-free. Returns success or error."
+        ),
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def commit_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.commit()
+        if result.error:
+            return {"content": [{"type": "text", "text": f"FAILED: {result.error}"}]}
+        return {"content": [{"type": "text", "text": f"SUCCESS: {len(result.created_files)} files created, Stub.lean compiles sorry-free"}]}
+
+    @tool(
+        name="revert",
+        description="Undo everything: restore original Stub.lean, remove decomposed files. Use this after a failed commit to retry with different moves.",
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def revert_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.revert()
+        return {"content": [{"type": "text", "text": result}]}
+
+    return create_sdk_mcp_server(
+        name="extractor_tools",
+        version="1.0.0",
+        tools=[get_declarations_tool, move_decl_tool, commit_tool, revert_tool],
+    )
