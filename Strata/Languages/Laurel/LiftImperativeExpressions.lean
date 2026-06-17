@@ -102,6 +102,9 @@ private def freshCondVar : LiftM Identifier := do
 private def prepend (stmt : StmtExprMd) : LiftM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
+private def prependList (stmts : List StmtExprMd) : LiftM Unit :=
+  modify fun s => { s with prependedStmts := stmts ++ s.prependedStmts }
+
 private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmts with
   | [] => return []
@@ -215,6 +218,22 @@ private def liftAssignExpr (targets : List VariableMd) (seqValue : StmtExprMd)
     | _ => pure ()
 
 mutual
+
+
+/--
+Process an expression in expression context, traversing arguments right to left.
+Assignments are lifted to prependedStmts and replaced with snapshot variable references.
+-/
+def transformLiftedExpr (expr : StmtExprMd) : LiftM (List StmtExprMd × StmtExprMd) := do
+  let savedSubst := (← get).subst
+  let savedPrepends ← takePrepends
+  modify fun s => { s with prependedStmts := [], subst := []}
+  let result ← transformExpr expr
+  let newPrepends ← takePrepends
+  modify fun s => { s with prependedStmts := savedPrepends, subst := savedSubst }
+  return (newPrepends, result)
+  termination_by (sizeOf expr, 1)
+
 /--
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
@@ -399,17 +418,15 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return expr
 
   | .Assume cond =>
-      let prepends ← takePrepends
-      _ ← transformExpr cond
-      let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
+      let (argPrepends, newCond) ← transformLiftedExpr cond
+      prepend ⟨ .Assume newCond, source⟩
+      prependList argPrepends
       default
 
   | .Assert cond =>
-      let prepends ← takePrepends
-      _ ← transformExpr cond.condition
-      let argPrepends ← takePrepends
-      modify fun s => { s with prependedStmts := argPrepends ++ [expr] ++ prepends }
+      let (argPrepends, newCond) ← transformLiftedExpr cond.condition
+      prepend ⟨ .Assert {cond with condition := newCond}, source⟩
+      prependList argPrepends
       default
 
   | .Return (some retExpr) =>

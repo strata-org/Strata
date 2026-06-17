@@ -13,13 +13,13 @@ open Strata
 #strata
 program Laurel;
 
-function localVariableWithoutInitializer(): int {
+procedure localVariableWithoutInitializer(): int {
   var x: int;
 //^^^^^^^^^^ error: local variables must have initializers in transparent bodies or contracts
   return 3
 };
 
-function deadCodeAfterIfElse(x: int) returns (r: int) {
+procedure deadCodeAfterIfElse(x: int) returns (r: int) {
   if x > 0 then { return 1 } else { return 2 };
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: if-then-else only supported as the last statement in a block
   return 3

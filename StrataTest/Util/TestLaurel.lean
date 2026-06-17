@@ -3,14 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.LaurelCompilationPipeline
+public import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Elab
 import StrataDDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
-import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel
 
 open Strata
@@ -258,8 +260,8 @@ private def runAndCheck (block : SourcedProgram)
     `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
     solver). Pass an explicit value to override the solver, timeout, etc. — for
     example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`. -/
-def testLaurel (block : SourcedProgram)
-    (options : LaurelVerifyOptions := defaultLaurelTestOptions) : IO Unit :=
+public def testLaurel (block : SourcedProgram)
+    (options : LaurelVerifyOptions := default) : IO Unit :=
   runAndCheck block (runLaurelPipelineRaw · options)
 
 /-- Path to the directory for intermediate files, inside the build directory.
@@ -268,7 +270,7 @@ def buildDir : IO String := do
   let cwd ← IO.currentDir
   return s!"{cwd}/.lake/build/intermediatePrograms/"
 
-def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
   let dir ← buildDir
   runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
 
@@ -276,7 +278,7 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     Use when the test only cares about resolution, not the verifier — e.g.
     "shadowing in nested blocks is OK", or asserting a specific resolution
     error without the verifier surfacing unrelated noise. -/
-def testLaurelResolution (block : SourcedProgram) : IO Unit :=
+public def testLaurelResolution (block : SourcedProgram) : IO Unit :=
   runAndCheck block runLaurelResolutionRaw
 
 end StrataTest.Util

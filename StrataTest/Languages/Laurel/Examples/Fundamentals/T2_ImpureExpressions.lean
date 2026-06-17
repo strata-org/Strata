@@ -156,4 +156,10 @@ procedure assertInsideConditionalExpression(a: int): int
       5
     };
 
+procedure assertInBlockExpr()
+opaque {
+  var x: int := 0;
+  var y: int := { assert x == 0; x := 1; x };
+  assert y == 1
+};
 #end

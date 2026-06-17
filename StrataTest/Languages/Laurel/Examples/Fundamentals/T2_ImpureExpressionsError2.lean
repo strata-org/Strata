@@ -5,10 +5,10 @@
 -/
 module
 
+public import StrataDDM.AST
 import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
-open Strata
 
 #eval testLaurel <|
 #strata
