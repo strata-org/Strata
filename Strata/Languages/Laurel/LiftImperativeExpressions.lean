@@ -195,26 +195,6 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     all_goals (try term_by_mem)
     all_goals omega
 
-/--
-Shared logic for lifting an assignment in expression position:
-prepends the assignment, creates before-snapshots for all targets,
-and updates substitutions. The value should already be transformed by the caller.
--/
-private def liftAssignExpr (targets : List VariableMd) (seqValue : StmtExprMd)
-    (source : Option FileRange) : LiftM Unit := do
-  -- Prepend the assignment itself
-  prepend (⟨.Assign targets seqValue, source⟩)
-  -- Create a before-snapshot for each target and update substitutions
-  for target in targets do
-    match target.val with
-    | .Local varName =>
-        let snapshotName ← freshTempFor varName
-        let varType ← computeType ⟨ .Var (.Local varName), source ⟩
-        -- Snapshot goes before the assignment (cons pushes to front)
-        prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
-        setSubst varName snapshotName
-    | _ => pure ()
-
 mutual
 
 
@@ -271,9 +251,22 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
 
-      -- Use the original value (not seqValue) for the prepended assignment,
-      -- because prepended statements execute in program order and don't need substitutions.
-      liftAssignExpr targets value source
+      let (valuePrepends, newValue) ← transformLiftedExpr value
+
+      prepend (⟨.Assign targets newValue, source⟩)
+
+      -- Create a before-snapshot for each target and update substitutions
+      for target in targets do
+        match target.val with
+        | .Local varName =>
+            let snapshotName ← freshTempFor varName
+            let varType ← computeType ⟨ .Var (.Local varName), source ⟩
+            -- Snapshot goes before the assignment (cons pushes to front)
+            prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
+            setSubst varName snapshotName
+        | _ => pure ()
+
+      prependList valuePrepends
 
       return resultExpr
 

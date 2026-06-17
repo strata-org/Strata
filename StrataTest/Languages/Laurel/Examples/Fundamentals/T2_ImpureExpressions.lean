@@ -179,7 +179,7 @@ opaque {
 procedure liftInsideAssignmentInExpression()
 opaque {
   var x: int := 0;
-  var y: int := (x := 1 + transparentProc(x));
+  var y: int := ((x := 1) + transparentProc(x));
   assert y == 3
 };
 
