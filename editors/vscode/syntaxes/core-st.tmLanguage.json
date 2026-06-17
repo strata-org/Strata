@@ -79,7 +79,7 @@
         },
         {
           "name": "keyword.operator.symbol.core-st",
-          "match": "(safe_neg|safe-|safe\\+|safe\\*|<==>|>=s|==>|>>s|<=s|/t|\\|\\||>=|%t|<<|>>|&&|<=|==|!=|<s|>s|>|\\^|\\+|\\*|/|%|!|-|~|&|<|\\|)"
+          "match": "(safe_neg|as_bv128|as_bv32|as_bv64|as_sint|as_bv16|as_uint|as_bv1|as_bv8|safe-|safe\\+|safe\\*|<==>|>=s|==>|>>s|<=s|!=|/t|%t|<<|>>|&&|\\|\\||==|<s|<=|>=|>s|!|\\^|-|\\+|\\*|/|%|<|>|~|&|\\|)"
         }
       ]
     },
