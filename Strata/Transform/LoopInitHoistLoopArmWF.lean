@@ -1298,15 +1298,13 @@ theorem Block.transportShape_hoistLoopPrefixInitsM [HasIdent P] [HasSubstFvar P]
     (h_nd : Block.containsNondetLoop body = false)
     (h_fd : Block.containsFuncDecl body = false)
     (h_inv : Block.loopHasNoInvariants body = true)
-    (h_measure : Block.loopMeasureNone body = true)
-    (h_noexit : Block.noExit body = true) :
+    (h_measure : Block.loopMeasureNone body = true) :
     Block.transportShape (Block.hoistLoopPrefixInitsM body σ).1 = true := by
   apply Block.transportShape_of_arm_preconds
   · rw [Block.hoistLoopPrefixInitsM_containsNondetLoop]; exact h_nd
   · rw [Block.hoistLoopPrefixInitsM_containsFuncDecl]; exact h_fd
   · rw [Block.hoistLoopPrefixInitsM_loopHasNoInvariants]; exact h_inv
   · rw [Block.hoistLoopPrefixInitsM_loopMeasureNone]; exact h_measure
-  · rw [Block.hoistLoopPrefixInitsM_noExit]; exact h_noexit
 
 /-! ## The post-order body's `initVars` is `Nodup` (GAP 1 part (b)).
 
@@ -2316,11 +2314,13 @@ two-guard loop driver → stitch (havoc prelude ++ loop run) → `stepJ_restrict
 back to the ambient carriers — producing the §E sum-typed terminal conclusion
 for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`. -/
 
-open LoopInitHoistLoopDriver (BodySim BodySimUSF bodySim_is_driver_slot
-  bodySimUSF_is_driver_slot compose_union compose_union_sf
+open LoopInitHoistLoopDriver (BodySim BodySimSum BodySimUSF BodySimUSFSum bodySim_is_driver_slot
+  bodySimUSF_is_driver_slot bodySimUSFSum_is_driver_slot compose_union compose_union_sf
+  compose_union_sf_sum
   bridge_in_guarded bridge_in_guarded_undef_sf stepJ_restrict
   loopDet_lift_2g_recovers_single
-  loopDet_lift_sf_undef_recovers_single loopDet_no_exit
+  loopDet_lift_sf_undef_recovers_single loopDet_lift_sf_undef_TE_recovers_single
+  loopDet_lift_sf_undef_E_recovers_single loopDet_no_exit
   prelude_bridge_list_md_frame)
 
 /-- Loop-entry union `HoistInv` builder (guarded frame). -/
@@ -2382,7 +2382,7 @@ theorem Block.stepB_self_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P
     (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
     (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
-    LoopInitHoistLoopDriver.BodySim (extendEval := extendEval)
+    LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
       (sourcesOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
       (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
       (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
@@ -2427,7 +2427,7 @@ theorem Block.stepB_self_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P
         = targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2) from
       (LoopInitHoistLoopDriver.targetsOf'_eq_substOf'_snd _).symm]
     exact Block.sourcesOf'_disjoint_targetsOf'_self hQmint body σ h_wf_σ h_unique h_src_shapefree
-  · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure h_noexit
+  · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure
   · rw [substOf'_map_fst]; exact fun a ha => ha
   · rw [substOf'_map_fst]; exact fun a ha => ha
   · rw [show (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2)).map Prod.snd
@@ -2504,13 +2504,22 @@ theorem Block.stepB_noFuncDecl_h_of_lift [HasIdent P] [LawfulHasIdent P] [HasSub
         = targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2) from
       (LoopInitHoistLoopDriver.targetsOf'_eq_substOf'_snd _).symm]
     exact Block.sourcesOf'_disjoint_targetsOf'_self hQmint body σ h_wf_σ h_unique h_src_shapefree
-  · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure h_noexit
+  · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure
 
-/-- The full §E `.loop` arm reconciliation: given Step A (`BodySim A B subst body
-body₁`) and Step B (`BodySim (sources)(targets)(substOf'E) body₁ body₃`) plus the
-arm's disjointness / freshness / run facts, produce the §E sum-typed terminal
-conclusion for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`.
-Guard `g` is UNCHANGED (the renames live inside `body₃`). -/
+/-- The full §E `.loop` arm reconciliation: given a SUM-TYPED Step A (both the
+terminal `stepA` and exiting `stepA_exit` clauses for `body ↝ body₁`) and a
+SUM-TYPED Step B (`BodySimSum (sources)(targets)(substOf'E) body₁ body₃`) plus the
+arm's disjointness / freshness / run facts, produce the §E sum-typed conclusion
+for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`.
+
+The two clauses compose into a `BodySimUSFSum` (`compose_union_sf_sum`), which
+drives BOTH source loop outcomes: a `.terminal` source run is matched by a
+`.terminal` hoist run (the sum-typed terminal driver `loopDet_lift_sf_undef_TE`),
+and an `.exiting label` source run (some iteration's body broke) is matched by an
+`.exiting label` hoist run (the sum-typed exiting driver
+`loopDet_lift_sf_undef_E`).  NO `h_src_body_no_exit` is required: a body `.exit`
+is admitted and faithfully simulated.  Guard `g` is UNCHANGED (the renames live
+inside `body₃`). -/
 theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasSubstFvar P]
     {Q : String → Prop}
@@ -2536,7 +2545,22 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
            StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.terminal ρ_h') ∧
            HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
            ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
-    (stepB : BodySim (extendEval := extendEval)
+    (stepA_exit : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vs, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+    (stepB : BodySimSum (extendEval := extendEval)
        (sourcesOf' entries) (targetsOf' entries) (substOf' entries) body₁ body₃)
     (h_entry_Vs : ∀ y ∈ Vs, ρ_src.store y = none)
     (h_entry_Vh : ∀ y ∈ Vs, ρ_hoist.store y = none)
@@ -2561,8 +2585,6 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
     (h_g_As_fresh : ∀ x ∈ sourcesOf' entries, x ∉ HasVarsPure.getVars g)
     (h_g_Bs_fresh : ∀ x ∈ targetsOf' entries, x ∉ HasVarsPure.getVars g)
     (h_src_As_undef : ∀ a ∈ sourcesOf' entries, ρ_src.store a = none)
-    (h_src_body_no_exit : ∀ (ρ : Env P) (lbl : String) (ρe : Env P),
-       ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ) (.exiting lbl ρe))
     (h_nofd_src : Block.noFuncDecl body = true)
     (h_nofd_h : Block.noFuncDecl body₃ = true)
     (h_tgt_nodup : (targetsOf' entries).Nodup)
@@ -2575,6 +2597,14 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
     (h_post_tgt_none : ∀ (ρ_post : Env P) (x : P.Ident),
        StepStmtStar P (EvalCmd P) extendEval
          (.stmt (.loop (.det g) none [] body md) ρ_src) (.terminal ρ_post) →
+       x ∈ targetsOf' entries → ρ_post.store x = none)
+    (h_post_src_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+       StepStmtStar P (EvalCmd P) extendEval
+         (.stmt (.loop (.det g) none [] body md) ρ_src) (.exiting lbl ρ_post) →
+       x ∈ sourcesOf' entries → ρ_post.store x = none)
+    (h_post_tgt_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+       StepStmtStar P (EvalCmd P) extendEval
+         (.stmt (.loop (.det g) none [] body md) ρ_src) (.exiting lbl ρ_post) →
        x ∈ targetsOf' entries → ρ_post.store x = none)
     (h_wfvar : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
     (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
@@ -2601,23 +2631,19 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
             ρ_src'.hasFailure = ρ_h'.hasFailure ∧
             (∀ y ∈ B, ρ_h'.store y ≠ none))) := by
   classical
-  obtain ⟨ρ_post, h_cfg_terminal⟩ : ∃ ρ_post, cfg_src = .terminal ρ_post := by
-    rcases h_cfg_src with ⟨ρ', h⟩ | ⟨lbl, ρ', h⟩
-    · exact ⟨ρ', h⟩
-    · subst h
-      exact (loopDet_no_exit (g := g) (md := md)
-        (fun ρ hif lbl ρe => h_src_body_no_exit _ lbl ρe) h_run_src).elim
-  subst h_cfg_terminal
-  have h_run : StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.loop (.det g) none [] body md) ρ_src) (.terminal ρ_post) := h_run_src
   obtain ⟨ρ_pre, h_prelude_run, h_pre_hinv, h_pre_eval, h_pre_hf, h_pre_bnd,
           h_pre_frame⟩ :=
     prelude_bridge_list_md_frame (A := A) entries ρ_hoist ρ_hoist rfl rfl rfl
       h_src_undef_h h_tgt_undef_h h_tgt_nodup h_wfvar
-  have composed : BodySimUSF (extendEval := extendEval) Q Vs Vs σ_sf
+  -- Compose Step A (sum-typed: both outcomes) with Step B (sum-typed `BodySimSum`)
+  -- into a sum-typed `BodySimUSFSum`: a body run that terminates is matched by a
+  -- terminating hoist run, and a body run that breaks is matched by a hoist run
+  -- that breaks with the same label.
+  have composed : BodySimUSFSum (extendEval := extendEval) Q Vs Vs σ_sf
       (A ++ sourcesOf' entries) (B ++ targetsOf' entries) (subst ++ substOf' entries)
       body body₃ :=
-    compose_union_sf stepA stepB h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs
+    compose_union_sf_sum stepA stepA_exit stepB
+      h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs
       (fun _ hy => hy)
       (fun ρ_s ρ_h h he hf hb hVh hsf =>
         bridge_in_guarded_undef_sf h_subst_wf h_ss_wf h_As_notA h_As_notB h_Vs_notA h_Vs_notB
@@ -2669,31 +2695,67 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
   have h_entry_Vh_pre : ∀ y ∈ Vs, ρ_pre.store y = none := by
     intro y hy
     rw [h_pre_frame y (h_Vs_notBs y hy)]; exact h_entry_Vh y hy
-  obtain ⟨ρ_post_h, h_loop_h_run, h_post_hinv, h_post_hf, h_post_bnd⟩ :=
-    loopDet_lift_sf_undef_recovers_single (g := g) (md_s := md) (md_h := md)
-      (A := A ++ sourcesOf' entries) (B := B ++ targetsOf' entries)
-      (subst := subst ++ substOf' entries) (Vs := Vs) (Vh := Vs) (σ_sf := σ_sf)
-      h_guard_tt h_guard_ff (fun _ _ he hwfb => he ▸ hwfb)
-      (bodySimUSF_is_driver_slot _ _ _ _ _ _ _ _ composed)
-      h_src_body_no_exit h_nofd_src h_nofd_h
-      h_union_entry h_union_eval h_union_hf h_union_bnd
-      h_entry_Vs h_entry_Vh_pre h_arm_src_sf h_run
-  refine ⟨ρ_post_h, .terminal ρ_post_h, ?_, ?_⟩
-  · have h_pfx := stmts_prefix_terminal_append P (EvalCmd P) extendEval
-      (havocStmts' entries) [Stmt.loop (.det g) none [] body₃ md] ρ_hoist ρ_pre h_prelude_run
-    refine ReflTrans_Transitive _ _ _ _ h_pfx ?_
-    refine ReflTrans.step _ _ _ .step_stmts_cons ?_
-    refine ReflTrans_Transitive _ _ _ _
-      (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_loop_h_run) ?_
-    exact ReflTrans.step _ _ _ .step_seq_done
-      (ReflTrans.step _ _ _ .step_stmts_nil (.refl _))
-  · refine Or.inl ⟨ρ_post, rfl, rfl, ?_, ?_, ?_⟩
-    · exact stepJ_restrict h_post_hinv
-        (fun x hx => h_post_src_none ρ_post x h_run hx)
-        (fun x hx => h_post_tgt_none ρ_post x h_run hx)
-    · exact h_post_hf
-    · intro y hy
-      exact h_post_bnd y (List.mem_append.mpr (Or.inl hy))
+  -- Dispatch on the source loop outcome.  Both arms run the SAME hoist residual
+  -- (havoc prelude ++ hoisted loop) from `ρ_hoist`; only the driver (terminal vs
+  -- exiting target) and the final restriction differ.
+  rcases h_cfg_src with ⟨ρ_post, h_cfg⟩ | ⟨lbl, ρ_post, h_cfg⟩
+  · -- TERMINAL: feed the terminal driver the terminal clause of the composed sim.
+    subst h_cfg
+    have h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body md) ρ_src) (.terminal ρ_post) := h_run_src
+    obtain ⟨ρ_post_h, h_loop_h_run, h_post_hinv, h_post_hf, h_post_bnd⟩ :=
+      loopDet_lift_sf_undef_TE_recovers_single (g := g) (md_s := md) (md_h := md)
+        (A := A ++ sourcesOf' entries) (B := B ++ targetsOf' entries)
+        (subst := subst ++ substOf' entries) (Vs := Vs) (Vh := Vs) (σ_sf := σ_sf)
+        h_guard_tt h_guard_ff (fun _ _ he hwfb => he ▸ hwfb)
+        (bodySimUSFSum_is_driver_slot _ _ _ _ _ _ _ _ composed)
+        h_nofd_src h_nofd_h
+        h_union_entry h_union_eval h_union_hf h_union_bnd
+        h_entry_Vs h_entry_Vh_pre h_arm_src_sf h_run
+    refine ⟨ρ_post_h, .terminal ρ_post_h, ?_, ?_⟩
+    · have h_pfx := stmts_prefix_terminal_append P (EvalCmd P) extendEval
+        (havocStmts' entries) [Stmt.loop (.det g) none [] body₃ md] ρ_hoist ρ_pre h_prelude_run
+      refine ReflTrans_Transitive _ _ _ _ h_pfx ?_
+      refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+      refine ReflTrans_Transitive _ _ _ _
+        (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_loop_h_run) ?_
+      exact ReflTrans.step _ _ _ .step_seq_done
+        (ReflTrans.step _ _ _ .step_stmts_nil (.refl _))
+    · refine Or.inl ⟨ρ_post, rfl, rfl, ?_, ?_, ?_⟩
+      · exact stepJ_restrict h_post_hinv
+          (fun x hx => h_post_src_none ρ_post x h_run hx)
+          (fun x hx => h_post_tgt_none ρ_post x h_run hx)
+      · exact h_post_hf
+      · intro y hy
+        exact h_post_bnd y (List.mem_append.mpr (Or.inl hy))
+  · -- EXITING: feed the sum-typed exiting-target driver the full composed sim.
+    subst h_cfg
+    have h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body md) ρ_src) (.exiting lbl ρ_post) := h_run_src
+    obtain ⟨ρ_post_h, h_loop_h_run, h_post_hinv, h_post_hf, h_post_bnd⟩ :=
+      loopDet_lift_sf_undef_E_recovers_single (g := g) (md_s := md) (md_h := md)
+        (A := A ++ sourcesOf' entries) (B := B ++ targetsOf' entries)
+        (subst := subst ++ substOf' entries) (Vs := Vs) (Vh := Vs) (σ_sf := σ_sf)
+        h_guard_tt (fun _ _ he hwfb => he ▸ hwfb)
+        (bodySimUSFSum_is_driver_slot _ _ _ _ _ _ _ _ composed)
+        h_nofd_src h_nofd_h
+        h_union_entry h_union_eval h_union_hf h_union_bnd
+        h_entry_Vs h_entry_Vh_pre h_arm_src_sf h_run
+    refine ⟨ρ_post_h, .exiting lbl ρ_post_h, ?_, ?_⟩
+    · have h_pfx := stmts_prefix_terminal_append P (EvalCmd P) extendEval
+        (havocStmts' entries) [Stmt.loop (.det g) none [] body₃ md] ρ_hoist ρ_pre h_prelude_run
+      refine ReflTrans_Transitive _ _ _ _ h_pfx ?_
+      refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+      refine ReflTrans_Transitive _ _ _ _
+        (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_loop_h_run) ?_
+      exact ReflTrans.step _ _ _ .step_seq_exit (.refl _)
+    · refine Or.inr ⟨lbl, ρ_post, rfl, rfl, ?_, ?_, ?_⟩
+      · exact stepJ_restrict h_post_hinv
+          (fun x hx => h_post_src_none_exit lbl ρ_post x h_run hx)
+          (fun x hx => h_post_tgt_none_exit lbl ρ_post x h_run hx)
+      · exact h_post_hf
+      · intro y hy
+        exact h_post_bnd y (List.mem_append.mpr (Or.inl hy))
 
 end LoopInitHoistLoopArmWF
 end Imperative

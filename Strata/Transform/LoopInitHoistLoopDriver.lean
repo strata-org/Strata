@@ -1043,6 +1043,80 @@ public theorem loopDet_lift_2g_E [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [
   loopDet_lift_2g_E_fuel h_guard_transport h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
     (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound (reflTrans_to_T h_run) (Nat.le_refl _)
 
+/-- **`loopDet_preserves_none` for an EXITING loop run — WITHOUT a no-exit
+hypothesis.**
+
+A loop run reaching `.exiting label ρ_post` keeps any variable `x` undefined at
+the exit store provided it was undefined at loop entry.  No `h_body_no_exit` is
+needed: a `.none`-block iteration projects (`projectStore`) every entry undefined
+at iteration entry back to `none`, so the entry-undefinedness of `x` is an
+invariant across iterations, and the FINAL (exiting) iteration's `.block .none`
+mismatch caps the body-exit store via the same `projectStore` (so `x` stays
+`none` at the projected exit env).  Mirrors `loopDet_lift_2g_E_fuel`'s exit-run
+inversion, tracking a single `x`'s undefinedness instead of the simulation. -/
+public theorem loopDet_preserves_none_exiting_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {x : P.Ident} :
+    ∀ (n : Nat) {ρ ρ_post : Env P} {label : String},
+      ρ.store x = none →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g) none [] body md) ρ) (.exiting label ρ_post)) →
+      h_run.len ≤ n →
+      ρ_post.store x = none := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ ρ_post label _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ ρ_post label h_none h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        match hrest with
+        | .step _ _ _ hd _ => exact nomatch hd
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        rcases seqT_reaches_exiting' hrest with ⟨h_block_exit, _⟩ | ⟨ρ₁, h_block_term, h_loop_stmts, _⟩
+        · -- inl: this iteration's body exits; `ρ_post` is the projected exit store.
+          obtain ⟨ρ_inner, _, h_ρpost_eq, _⟩ := blockT_none_reaches_exiting' h_block_exit
+          subst h_ρpost_eq
+          show projectStore ρ.store ρ_inner.store x = none
+          exact projectStore_undef_at h_none
+        · -- inr: this iteration's body terminates; recurse on the inner loop.
+          obtain ⟨ρ_inner, _, h_ρ_block_eq, _⟩ := blockT_none_reaches_terminal h_block_term
+          subst h_ρ_block_eq
+          have h_none_inner :
+              ({ ρ_inner with store := projectStore ρ.store ρ_inner.store } : Env P).store x = none := by
+            show projectStore ρ.store ρ_inner.store x = none
+            exact projectStore_undef_at h_none
+          rcases stmtsT_cons_exiting' h_loop_stmts with ⟨h_inner_loop_T, _⟩ | ⟨ρ₂, _, h_nil, _⟩
+          · exact ih h_none_inner h_inner_loop_T (by simp only [ReflTransT.len] at hlen; omega)
+          · match h_nil with
+            | .step _ _ _ .step_stmts_nil hr2 =>
+              match hr2 with
+              | .step _ _ _ hd _ => exact nomatch hd
+
+/-- Prop-level corollary of `loopDet_preserves_none_exiting_fuel`. -/
+public theorem loopDet_preserves_none_exiting [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {x : P.Ident} {ρ ρ_post : Env P} {label : String}
+    (h_none : ρ.store x = none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt (.loop (.det g) none [] body md) ρ) (.exiting label ρ_post)) :
+    ρ_post.store x = none :=
+  loopDet_preserves_none_exiting_fuel (reflTrans_to_T h_run).len h_none
+    (reflTrans_to_T h_run) (Nat.le_refl _)
+
 /-- **The sum-typed two-guard TERMINAL-target fuel recursion.**
 
 The TERMINAL analogue of `loopDet_lift_2g_E_fuel`: like `loopDet_lift_2g_fuel`
@@ -2582,6 +2656,745 @@ public theorem bodySimUSF_is_driver_slot [HasFvar P] [HasBool P] [HasNot P] [Has
            HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
            ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) :=
   h
+
+
+/-! ## Sum-typed shapefree-carrying body simulation + union compose + exiting driver.
+
+The terminal-only stack above (`BodySimUSF` / `compose_union_sf` /
+`loopDet_lift_sf_2g_undef_fuel`) rules out a loop body that breaks (it concludes
+only the TERMINAL loop outcome and feeds Step B a TERMINAL-only `BodySim`).  The
+following ADDITIVE stack is the sum-typed (terminal-OR-exiting) analogue, built by
+combining the shapefree-carrying compose's per-iteration store-kind-freedom
+bookkeeping with the sum-typed exiting outcome of `BodySimSum` / `loopDet_lift_2g_E_fuel`:
+
+* `BodySimUSFSum` augments `BodySimUSF` with the parallel EXITING clause (a body
+  run that breaks with label `l` is matched by a hoist body run that breaks with
+  the SAME label, re-establishing `HoistInv` / `hasFailure` / `B`-boundedness at
+  the body-exit stores).
+* `compose_union_sf_sum` composes a sum-typed Step A (explicit ∀-shape with both
+  outcomes) with a sum-typed Step B (`BodySimSum`) into a `BodySimUSFSum`; the
+  exiting clause composes sequentially body→body₁→body₃ exactly as the terminal
+  clause does (structurally parallel to the proven `bodySimES_cons`).
+* `loopDet_lift_sf_2g_undef_E_fuel` is the EXITING-target driver: structurally
+  `loopDet_lift_2g_E_fuel` with the `Vs`/`Vh`/`σ_sf` carriers threaded but UNUSED on
+  the exit path (the exiting outcome caps both stores via `HoistInv.project_both`
+  and never recurses on the inner loop), consuming a `BodySimUSFSum`.
+
+This section is strictly ADDITIVE: the terminal-only stack and its support lemmas
+are untouched, so existing call paths keep building unchanged. -/
+
+/-- The sum-typed shapefree-carrying body simulation: `BodySimUSF` augmented with
+the parallel EXITING clause.  A body run that TERMINATES is matched by a
+terminating hoist run (the existing `BodySimUSF` clause); a body run that EXITS
+with label `l` is matched by a hoist run that exits with the SAME label `l`,
+re-establishing `HoistInv` / `hasFailure` / `B`-boundedness at the body-exit
+stores.  The `σ_sf`-relative SOURCE store-kind-freedom invariant is assumed at
+entry exactly as in `BodySimUSF` (it gates which `Q`-kind names may be undefined). -/
+public def BodySimUSFSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
+    (Q : String → Prop)
+    (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
+    (subst : List (P.Ident × P.Ident))
+    (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
+  ∀ (ρ_s ρ_h : Env P),
+    HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+    ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+    (∀ y ∈ B, ρ_h.store y ≠ none) →
+    (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+    (∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+    -- TERMINAL clause (exactly `BodySimUSF`):
+    (∀ (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
+      ∃ ρ_h' : Env P,
+        StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.terminal ρ_h') ∧
+        HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+        ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+    ∧
+    -- EXITING clause (new):
+    (∀ (l : String) (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.exiting l ρ_s') →
+      ∃ ρ_h' : Env P,
+        StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.exiting l ρ_h') ∧
+        HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+        ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+
+/-- The sum-typed shapefree-carrying union compose: `compose_union_sf` augmented
+with the EXITING clause.  Step A is the explicit ∀-shape carrying BOTH outcomes
+(terminal AND exiting), with the `σ_sf`-relative store-kind-freedom assumed on
+both `ρ_s` and its hoist mid env `ρ₁`.  Step B is a sum-typed `BodySimSum`.  The
+composed body simulation (`BodySimUSFSum`) carries both outcomes: the terminal
+clause is `compose_union_sf` verbatim; the exiting clause composes sequentially
+body→body₁→body₃ (Step A's exiting clause produces an exiting body₁ run at the
+mid env `ρ₁`, then Step B's exiting clause produces an exiting body₃ run),
+exactly parallel to `bodySimES_cons`' exiting head case. -/
+public theorem compose_union_sf_sum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    {Ao Bo As Bs : List P.Ident}
+    {so ss : List (P.Ident × P.Ident)}
+    {body body₁ body₃ : List (Stmt P (Cmd P))}
+    (stepA_term : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) Ao Bo so ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) Ao Bo so ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ Bo, ρ_h'.store y ≠ none))
+    (stepA_exit : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) Ao Bo so ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) Ao Bo so ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ Bo, ρ_h'.store y ≠ none))
+    (stepB : BodySimSum (extendEval := extendEval) As Bs ss body₁ body₃)
+    (h_so_wf : ∀ a b, (a, b) ∈ so → a ∈ Ao ∧ b ∈ Bo)
+    (h_ss_wf : ∀ a b, (a, b) ∈ ss → a ∈ As ∧ b ∈ Bs)
+    (h_As_notAo : ∀ x ∈ As, x ∉ Ao) (h_As_notBo : ∀ x ∈ As, x ∉ Bo)
+    (h_Bo_notAs : ∀ b ∈ Bo, b ∉ As) (h_Bo_notBs : ∀ b ∈ Bo, b ∉ Bs)
+    (h_Vh_sub_Vs : ∀ y ∈ Vh, y ∈ Vs)
+    (bridge_in : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) (Ao ++ As) (Bo ++ Bs) (so ++ ss) ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo ++ Bs, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vh, ρ_s.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       ∃ ρ₁ : Env P,
+         HoistInv (P := P) Ao Bo so ρ_s.store ρ₁.store ∧
+         ρ_s.eval = ρ₁.eval ∧ ρ_s.hasFailure = ρ₁.hasFailure ∧
+         (∀ y ∈ Bo, ρ₁.store y ≠ none) ∧
+         (∀ y ∈ Vh, ρ₁.store y = none) ∧
+         (∀ str : String, Q str →
+            str ∉ StringGenState.stringGens σ_sf → ρ₁.store (HasIdent.ident (P := P) str) = none) ∧
+         HoistInv (P := P) As Bs ss ρ₁.store ρ_h.store ∧
+         ρ₁.eval = ρ_h.eval ∧ ρ₁.hasFailure = ρ_h.hasFailure ∧
+         (∀ y ∈ Bs, ρ_h.store y ≠ none)) :
+    BodySimUSFSum (extendEval := extendEval) Q Vs Vh σ_sf (Ao ++ As) (Bo ++ Bs) (so ++ ss) body body₃ := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd h_Vs h_Vh h_src_sf
+  obtain ⟨ρ₁, h_hinv_A, h_eval_A, h_hf_A, h_bnd_A, h_Vh_A, h_sf_A,
+          h_hinv_B, h_eval_B, h_hf_B, h_bnd_B⟩ :=
+    bridge_in ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+      (by intro y hy; exact h_Vs y (h_Vh_sub_Vs y hy)) h_src_sf
+  refine ⟨?_, ?_⟩
+  · -- TERMINAL clause: `compose_union_sf` verbatim.
+    intro ρ_s' h_run
+    obtain ⟨ρ₁', h_run₁, h_hinv₁, h_hf₁, h_bnd₁⟩ :=
+      stepA_term ρ_s ρ₁ h_hinv_A h_eval_A h_hf_A h_bnd_A h_Vs h_Vh_A h_src_sf h_sf_A ρ_s' h_run
+    obtain ⟨ρ_h', h_run₃, h_hinv₃, h_hf₃, h_bnd₃⟩ :=
+      (stepB ρ₁ ρ_h h_hinv_B h_eval_B h_hf_B h_bnd_B).1 ρ₁' h_run₁
+    refine ⟨ρ_h', h_run₃, ?_, ?_, ?_⟩
+    · exact bridge_out_union_list h_hinv₁ h_hinv₃ h_so_wf h_ss_wf
+        h_As_notAo h_As_notBo h_Bo_notAs h_Bo_notBs
+    · rw [h_hf₁, h_hf₃]
+    · intro y hy
+      rcases List.mem_append.mp hy with hyBo | hyBs
+      · exact bound_Bo_through_stepB h_hinv₃ h_bnd₁ h_Bo_notAs h_Bo_notBs y hyBo
+      · exact h_bnd₃ y hyBs
+  · -- EXITING clause: compose body→body₁→body₃ via the two exiting clauses.
+    intro l ρ_s' h_run
+    obtain ⟨ρ₁', h_run₁, h_hinv₁, h_hf₁, h_bnd₁⟩ :=
+      stepA_exit ρ_s ρ₁ h_hinv_A h_eval_A h_hf_A h_bnd_A h_Vs h_Vh_A h_src_sf h_sf_A l ρ_s' h_run
+    obtain ⟨ρ_h', h_run₃, h_hinv₃, h_hf₃, h_bnd₃⟩ :=
+      (stepB ρ₁ ρ_h h_hinv_B h_eval_B h_hf_B h_bnd_B).2 l ρ₁' h_run₁
+    refine ⟨ρ_h', h_run₃, ?_, ?_, ?_⟩
+    · exact bridge_out_union_list h_hinv₁ h_hinv₃ h_so_wf h_ss_wf
+        h_As_notAo h_As_notBo h_Bo_notAs h_Bo_notBs
+    · rw [h_hf₁, h_hf₃]
+    · intro y hy
+      rcases List.mem_append.mp hy with hyBo | hyBs
+      · exact bound_Bo_through_stepB h_hinv₃ h_bnd₁ h_Bo_notAs h_Bo_notBs y hyBo
+      · exact h_bnd₃ y hyBs
+
+/-- `BodySimUSFSum` unfolds definitionally to the ∀-shape the sum-typed exiting
+driver `loopDet_lift_sf_2g_undef_E_fuel`'s `body_sim` parameter expects (a
+`BodySimSum`-like predicate guarded by the `Vs`/`Vh`/`σ_sf` carriers). -/
+public theorem bodySimUSFSum_is_driver_slot [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
+    (subst : List (P.Ident × P.Ident))
+    (bsrc bh : List (Stmt P (Cmd P)))
+    (h : BodySimUSFSum (extendEval := extendEval) Q Vs Vh σ_sf A B subst bsrc bh) :
+    ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+       ∧
+       (∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)) :=
+  h
+
+/-- **The sum-typed shapefree-carrying two-guard EXITING-target fuel recursion.**
+
+The EXITING analogue of `loopDet_lift_2g_E_fuel`, with the `Vs`/`Vh`/`σ_sf`
+carriers of `loopDet_lift_sf_2g_undef_fuel` threaded through.  Given a source loop
+run reaching `.exiting label ρ_post`, produces a hoist loop run reaching `.exiting
+label ρ_post_h` with `HoistInv` / `hasFailure` / `B`-boundedness at the exit
+stores.  The body simulation slot is the `BodySimUSFSum`-shaped predicate
+(terminal AND exiting clauses, guarded by the carriers).
+
+On the exit path the carriers play the same bookkeeping role as in
+`loopDet_lift_sf_2g_undef_fuel`: each terminal intermediate iteration re-establishes
+them at the projected store (`projectStore_undef_at`) before recursing; the
+exiting final iteration consumes the body's exiting clause and caps both stores
+via `HoistInv.project_both` (no further recursion). -/
+public theorem loopDet_lift_sf_2g_undef_E_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+       ∧
+       (∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)))
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true) :
+    ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P} {label : String},
+      HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store →
+      ρ_src.eval = ρ_hoist.eval → ρ_src.hasFailure = ρ_hoist.hasFailure →
+      (∀ y ∈ B, ρ_hoist.store y ≠ none) →
+      (∀ y ∈ Vs, ρ_src.store y = none) → (∀ y ∈ Vh, ρ_hoist.store y = none) →
+      (∀ str : String, Q str →
+         str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none) →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) →
+      h_run.len ≤ n →
+      ∃ ρ_post_h : Env P,
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
+        HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+        ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+        (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ_src ρ_hoist ρ_post label _ _ _ _ _ _ _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ_src ρ_hoist ρ_post label h_hinv h_eval h_hf h_bound h_Vs h_Vh h_src_sf h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        -- A `.terminal` target; `hrest : .terminal … →* .exiting …` is impossible.
+        match hrest with
+        | .step _ _ _ hd _ => exact nomatch hd
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
+        let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
+        have h_hinv_body : HoistInv (P := P) A B subst ρ_src_body.store ρ_h_body.store := by
+          show HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store; exact h_hinv
+        have h_eval_body : ρ_src_body.eval = ρ_h_body.eval := h_eval
+        have h_hf_body : ρ_src_body.hasFailure = ρ_h_body.hasFailure := by
+          show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        have h_bound_body : ∀ y ∈ B, ρ_h_body.store y ≠ none := h_bound
+        have h_Vs_body : ∀ y ∈ Vs, ρ_src_body.store y = none := h_Vs
+        have h_Vh_body : ∀ y ∈ Vh, ρ_h_body.store y = none := h_Vh
+        have h_src_sf_body : ∀ str : String, Q str →
+            str ∉ StringGenState.stringGens σ_sf →
+            ρ_src_body.store (HasIdent.ident (P := P) str) = none := h_src_sf
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        -- Decompose the seq run to `.exiting`: either this iteration's block exits
+        -- (inl), or it terminates and the recursive loop exits (inr).
+        rcases seqT_reaches_exiting' hrest with ⟨h_block_exit, hl⟩ | ⟨ρ₁, h_block_term, h_loop_stmts, hl⟩
+        · -- inl: this iteration's body exits with `label`.
+          obtain ⟨ρ_inner, h_body_exit_T, h_ρpost_eq, hl2⟩ := blockT_none_reaches_exiting' h_block_exit
+          obtain ⟨ρ_h_inner, h_body_h_exit, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+            (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body
+              h_Vs_body h_Vh_body h_src_sf_body).2
+              label ρ_inner (reflTransT_to_prop h_body_exit_T)
+          refine ⟨{ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }, ?_, ?_, ?_, ?_⟩
+          · refine ReflTrans.step _ _ _
+              (.step_loop_enter (hasInvFailure := false)
+                h_guard_h (by intro le hle; simp at hle) (by simp) h_wfb_h) ?_
+            refine ReflTrans_Transitive _ _ _ _
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _
+                (block_inner_star P (EvalCmd P) extendEval _ _ (none : Option String) ρ_hoist.store
+                  (show StepStmtStar P (EvalCmd P) extendEval
+                      (.stmts body_h { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false })
+                      (.exiting label ρ_h_inner) from h_body_h_exit))) ?_
+            refine ReflTrans.step _ _ _ (.step_seq_inner (.step_block_exit_mismatch ?_)) ?_
+            · exact (by simp)
+            · exact ReflTrans.step _ _ _ .step_seq_exit (.refl _)
+          · subst h_ρpost_eq
+            exact HoistInv.project_both h_hinv h_hinv_inner
+          · subst h_ρpost_eq
+            show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+          · intro y hy
+            show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+            unfold projectStore
+            have h_parent_some : (ρ_hoist.store y).isSome = true := by
+              cases h : ρ_hoist.store y with
+              | none => exact absurd h (h_bound y hy)
+              | some _ => rfl
+            rw [h_parent_some]; simp; exact h_bound_inner y hy
+        · -- inr: this iteration's body terminates; recurse on the inner loop.
+          obtain ⟨ρ_inner, h_body_term_T, h_ρ_block_eq, hl_blk⟩ := blockT_none_reaches_terminal h_block_term
+          subst h_ρ_block_eq
+          obtain ⟨ρ_h_inner, h_body_h_run, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+            (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body
+              h_Vs_body h_Vh_body h_src_sf_body).1
+              ρ_inner (reflTransT_to_prop h_body_term_T)
+          have h_hoist_iter : StepStmtStar P (EvalCmd P) extendEval
+              (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist)
+              (.stmts [.loop (.det g_h) none [] body_h md_h]
+                { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
+            have hb : StepStmtStar P (EvalCmd P) extendEval
+                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
+            have := buildLoopIterationDet (g := g_h) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
+            · simpa [ρ_h_body] using this
+            · show ρ_h_body.eval ρ_h_body.store g_h = .some HasBool.tt
+              show ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt; exact h_guard_h
+            · show WellFormedSemanticEvalBool ρ_h_body.eval
+              show WellFormedSemanticEvalBool ρ_hoist.eval; exact h_wfb_h
+          have h_hinv_block : HoistInv (P := P) A B subst
+              (projectStore ρ_src.store ρ_inner.store)
+              (projectStore ρ_hoist.store ρ_h_inner.store) :=
+            HoistInv.project_both h_hinv h_hinv_inner
+          have h_eval_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).eval
+              = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).eval := by
+            show ρ_inner.eval = ρ_h_inner.eval
+            have e1 : ρ_inner.eval = ρ_src_body.eval :=
+              smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+                body_src ρ_src_body ρ_inner h_src_body_nofd (reflTransT_to_prop h_body_term_T)
+            have e2 : ρ_h_inner.eval = ρ_h_body.eval :=
+              smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+                body_h ρ_h_body ρ_h_inner h_h_body_nofd h_body_h_run
+            rw [e1, e2]; exact h_eval_body
+          have h_hf_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).hasFailure
+              = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).hasFailure := by
+            show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+          have h_bound_block : ∀ y ∈ B,
+              ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y ≠ none := by
+            intro y hy
+            show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+            unfold projectStore
+            have h_parent_some : (ρ_hoist.store y).isSome = true := by
+              cases h : ρ_hoist.store y with
+              | none => exact absurd h (h_bound y hy)
+              | some _ => rfl
+            rw [h_parent_some]; simp; exact h_bound_inner y hy
+          have h_Vs_block : ∀ y ∈ Vs,
+              ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).store y = none := by
+            intro y hy; show projectStore ρ_src.store ρ_inner.store y = none
+            exact projectStore_undef_at (h_Vs y hy)
+          have h_Vh_block : ∀ y ∈ Vh,
+              ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y = none := by
+            intro y hy; show projectStore ρ_hoist.store ρ_h_inner.store y = none
+            exact projectStore_undef_at (h_Vh y hy)
+          have h_src_sf_block : ∀ str : String, Q str →
+              str ∉ StringGenState.stringGens σ_sf →
+              ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).store
+                (HasIdent.ident (P := P) str) = none := by
+            intro str h_suf h_notσ
+            show projectStore ρ_src.store ρ_inner.store (HasIdent.ident (P := P) str) = none
+            exact projectStore_undef_at (h_src_sf str h_suf h_notσ)
+          rcases stmtsT_cons_exiting' h_loop_stmts with ⟨h_inner_loop_T, _⟩ | ⟨ρ₂, _, h_nil, _⟩
+          · obtain ⟨ρ_post_h, h_post_h_run, h_hinv_post, h_hf_post, h_bound_post⟩ :=
+              ih h_hinv_block h_eval_block h_hf_block h_bound_block h_Vs_block h_Vh_block
+                h_src_sf_block h_inner_loop_T
+                (by simp only [ReflTransT.len] at hlen; omega)
+            refine ⟨ρ_post_h, ?_, h_hinv_post, h_hf_post, h_bound_post⟩
+            refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
+            refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+            refine ReflTrans_Transitive _ _ _ _
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_post_h_run) ?_
+            exact ReflTrans.step _ _ _ .step_seq_exit (.refl _)
+          · match h_nil with
+            | .step _ _ _ .step_stmts_nil hr2 =>
+              match hr2 with
+              | .step _ _ _ hd _ => exact nomatch hd
+
+/-- Prop-level wrapper of `loopDet_lift_sf_2g_undef_E_fuel` specialised to the
+single-guard diagonal `g_s = g_h = g` (the shape the §E `.loop` arm produces:
+the loop guard is UNCHANGED by the hoist pass).  The EXITING-target analogue of
+`loopDet_lift_sf_undef_recovers_single`. -/
+public theorem loopDet_lift_sf_undef_E_recovers_single [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+       ∧
+       (∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)))
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P} {label : String}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_Vs : ∀ y ∈ Vs, ρ_src.store y = none) (h_Vh : ∀ y ∈ Vh, ρ_hoist.store y = none)
+    (h_src_sf : ∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) :=
+  loopDet_lift_sf_2g_undef_E_fuel (g_s := g) (g_h := g)
+    h_guard_transport h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
+    (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound h_Vs h_Vh h_src_sf
+    (reflTrans_to_T h_run) (Nat.le_refl _)
+
+/-- **The sum-typed shapefree-carrying two-guard TERMINAL-target fuel recursion.**
+
+The TERMINAL analogue of `loopDet_lift_sf_2g_undef_E_fuel`: like
+`loopDet_lift_sf_2g_undef_fuel` but DROPS `h_src_body_no_exit` and consumes the
+sum-typed `BodySimUSFSum`-shaped `body_sim`.  A source loop run reaching `.terminal
+ρ_post` means NO iteration's body broke (a body `.exit` would propagate the loop
+to `.exiting`, not `.terminal`); so each peeled iteration's `.block .none` reaches
+`.terminal` via `blockT_none_reaches_terminal` (which recovers the body's TERMINAL
+run WITHOUT a no-exit hypothesis), the body's TERMINAL clause drives one hoist
+iteration, and the recursion handles the residual loop.  The `Vs`/`Vh`/`σ_sf`
+carriers are re-established at each projected iteration store exactly as in
+`loopDet_lift_sf_2g_undef_fuel`. -/
+public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.ff → ρ_h.eval ρ_h.store g_h = .some HasBool.ff)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+       ∧
+       (∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)))
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true) :
+    ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P},
+      HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store →
+      ρ_src.eval = ρ_hoist.eval → ρ_src.hasFailure = ρ_hoist.hasFailure →
+      (∀ y ∈ B, ρ_hoist.store y ≠ none) →
+      (∀ y ∈ Vs, ρ_src.store y = none) → (∀ y ∈ Vh, ρ_hoist.store y = none) →
+      (∀ str : String, Q str →
+         str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none) →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.terminal ρ_post)) →
+      h_run.len ≤ n →
+      ∃ ρ_post_h : Env P,
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
+        HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+        ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+        (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ_src ρ_hoist ρ_post _ _ _ _ _ _ _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ_src ρ_hoist ρ_post h_hinv h_eval h_hf h_bound h_Vs h_Vh h_src_sf h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        have h_ρ_post_eq : ρ_post = { ρ_src with hasFailure := ρ_src.hasFailure || hasInvFailure } := by
+          match hrest with
+          | .refl _ => rfl
+          | .step _ _ _ hd _ => exact nomatch hd
+        subst h_ρ_post_eq
+        subst h_hif_false
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.ff :=
+          h_guard_transport_ff ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        refine ⟨{ ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }, ?_, ?_, ?_, ?_⟩
+        · exact .step _ _ _
+            (.step_loop_exit h_guard_h (by intro le hle; simp at hle) (by simp) h_wfb_h)
+            (.refl _)
+        · simpa using h_hinv
+        · show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        · intro y hy; show ρ_hoist.store y ≠ none; exact h_bound y hy
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        obtain ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
+          seqT_reaches_terminal extendEval hrest
+        obtain ⟨ρ_inner, h_body_src_T, h_ρ_block_eq, hlen_block⟩ :=
+          blockT_none_reaches_terminal h_block_term
+        subst h_ρ_block_eq
+        obtain ⟨ρ_x, h_loop_T, h_nil, hlen_cons⟩ :=
+          stmtsT_cons_terminal extendEval h_loop_stmts
+        have hρ_x_eq : ρ_x = ρ_post := by
+          match h_nil with
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h _ => exact nomatch h
+        subst hρ_x_eq
+        let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
+        let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
+        have h_hinv_body : HoistInv (P := P) A B subst ρ_src_body.store ρ_h_body.store := by
+          show HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store; exact h_hinv
+        have h_eval_body : ρ_src_body.eval = ρ_h_body.eval := h_eval
+        have h_hf_body : ρ_src_body.hasFailure = ρ_h_body.hasFailure := by
+          show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        have h_bound_body : ∀ y ∈ B, ρ_h_body.store y ≠ none := h_bound
+        have h_Vs_body : ∀ y ∈ Vs, ρ_src_body.store y = none := h_Vs
+        have h_Vh_body : ∀ y ∈ Vh, ρ_h_body.store y = none := h_Vh
+        have h_src_sf_body : ∀ str : String, Q str →
+            str ∉ StringGenState.stringGens σ_sf →
+            ρ_src_body.store (HasIdent.ident (P := P) str) = none := h_src_sf
+        obtain ⟨ρ_h_inner, h_body_h_run, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+          (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body
+            h_Vs_body h_Vh_body h_src_sf_body).1
+            ρ_inner (reflTransT_to_prop h_body_src_T)
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        have h_hoist_iter : StepStmtStar P (EvalCmd P) extendEval
+            (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist)
+            (.stmts [.loop (.det g_h) none [] body_h md_h]
+              { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
+          have hb : StepStmtStar P (EvalCmd P) extendEval
+              (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
+          have := buildLoopIterationDet (g := g_h) (body := body_h) (md := md_h)
+            (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
+          · simpa [ρ_h_body] using this
+          · show ρ_h_body.eval ρ_h_body.store g_h = .some HasBool.tt
+            show ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt; exact h_guard_h
+          · show WellFormedSemanticEvalBool ρ_h_body.eval
+            show WellFormedSemanticEvalBool ρ_hoist.eval; exact h_wfb_h
+        have h_hinv_block : HoistInv (P := P) A B subst
+            (projectStore ρ_src.store ρ_inner.store)
+            (projectStore ρ_hoist.store ρ_h_inner.store) :=
+          HoistInv.project_both h_hinv h_hinv_inner
+        have h_eval_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).eval
+            = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).eval := by
+          show ρ_inner.eval = ρ_h_inner.eval
+          have e1 : ρ_inner.eval = ρ_src_body.eval :=
+            smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+              body_src ρ_src_body ρ_inner h_src_body_nofd (reflTransT_to_prop h_body_src_T)
+          have e2 : ρ_h_inner.eval = ρ_h_body.eval :=
+            smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+              body_h ρ_h_body ρ_h_inner h_h_body_nofd h_body_h_run
+          rw [e1, e2]; exact h_eval_body
+        have h_hf_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).hasFailure
+            = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).hasFailure := by
+          show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+        have h_bound_block : ∀ y ∈ B,
+            ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y ≠ none := by
+          intro y hy
+          show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+          unfold projectStore
+          have h_parent_some : (ρ_hoist.store y).isSome = true := by
+            cases h : ρ_hoist.store y with
+            | none => exact absurd h (h_bound y hy)
+            | some _ => rfl
+          rw [h_parent_some]; simp; exact h_bound_inner y hy
+        have h_Vs_block : ∀ y ∈ Vs,
+            ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).store y = none := by
+          intro y hy; show projectStore ρ_src.store ρ_inner.store y = none
+          exact projectStore_undef_at (h_Vs y hy)
+        have h_Vh_block : ∀ y ∈ Vh,
+            ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y = none := by
+          intro y hy; show projectStore ρ_hoist.store ρ_h_inner.store y = none
+          exact projectStore_undef_at (h_Vh y hy)
+        have h_src_sf_block : ∀ str : String, Q str →
+            str ∉ StringGenState.stringGens σ_sf →
+            ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).store
+              (HasIdent.ident (P := P) str) = none := by
+          intro str h_suf h_notσ
+          show projectStore ρ_src.store ρ_inner.store (HasIdent.ident (P := P) str) = none
+          exact projectStore_undef_at (h_src_sf str h_suf h_notσ)
+        obtain ⟨ρ_post_h, h_post_h_run, h_hinv_post, h_hf_post, h_bound_post⟩ :=
+          ih h_hinv_block h_eval_block h_hf_block h_bound_block h_Vs_block h_Vh_block
+            h_src_sf_block h_loop_T
+            (by simp only [ReflTransT.len] at hlen; omega)
+        refine ⟨ρ_post_h, ?_, h_hinv_post, h_hf_post, h_bound_post⟩
+        refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
+        refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+        refine ReflTrans_Transitive _ _ _ _
+          (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_post_h_run) ?_
+        exact ReflTrans.step _ _ _ .step_seq_done
+          (ReflTrans.step _ _ _ .step_stmts_nil (.refl _))
+
+/-- Prop-level wrapper of `loopDet_lift_sf_2g_undef_TE_fuel` specialised to the
+single-guard diagonal `g_s = g_h = g`.  The TERMINAL-target analogue of
+`loopDet_lift_sf_undef_E_recovers_single` (consumes the sum-typed
+`BodySimUSFSum`-shaped `body_sim`, no `h_src_body_no_exit`). -/
+public theorem loopDet_lift_sf_undef_TE_recovers_single [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt)
+    (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g = .some HasBool.ff → ρ_h.eval ρ_h.store g = .some HasBool.ff)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+       ∧
+       (∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none)))
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_Vs : ∀ y ∈ Vs, ρ_src.store y = none) (h_Vh : ∀ y ∈ Vh, ρ_hoist.store y = none)
+    (h_src_sf : ∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) (.terminal ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_h md_h) ρ_hoist) (.terminal ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) :=
+  loopDet_lift_sf_2g_undef_TE_fuel (g_s := g) (g_h := g)
+    h_guard_transport h_guard_transport_ff h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
+    (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound h_Vs h_Vh h_src_sf
+    (reflTrans_to_T h_run) (Nat.le_refl _)
+
 
 /-! ## The `compose_union` callback under the GUARDED frame.
 
