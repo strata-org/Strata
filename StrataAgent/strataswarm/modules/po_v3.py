@@ -467,8 +467,8 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
 
 async def _stage_extract(state: ProverState, agent) -> Trans:
     """LLM-driven extraction: decl_extractor agent moves declarations to files."""
-    from ._lean_tools_mcp import create_extractor_mcp_server
-    from .modules.po_lean import MoveSession
+    from .._lean_tools_mcp import create_extractor_mcp_server
+    from .po_lean import MoveSession
 
     cwd = _resolve(agent)
     stub_rel = f"{state.workspace}/Stub.lean"
