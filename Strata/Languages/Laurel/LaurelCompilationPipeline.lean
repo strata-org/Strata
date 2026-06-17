@@ -23,6 +23,7 @@ import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.InlineLocalVariables
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
@@ -101,6 +102,7 @@ def laurelPipeline : Array LoweringPass := #[
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
   eliminateValueInReturnsPass,
+  liftInstanceProceduresPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -191,6 +193,17 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
   let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
+
+  -- Sanity check: `LiftInstanceProcedures` should have cleared every
+  -- composite's `instanceProcedures` list.
+  let mut passDiags := passDiags
+  for td in program.types do
+    if let .Composite ct := td then
+      for proc in ct.instanceProcedures do
+        passDiags := passDiags ++ [diagnosticFromSource proc.name.source
+          s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
+          DiagnosticType.StrataBug]
+
   -- This early return is a simple way to protect against duplicative errors. Without this return,
   -- resolution errors reported by Laurel would also be reported by Core.
   -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
