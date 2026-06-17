@@ -55,21 +55,36 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       (CallArg.getLhs callArgs).length = proc.header.outputs.length →
       -- All lhs variables exist in context
       (∀ v, v ∈ CallArg.getLhs callArgs → (Γ.types.find? v).isSome) →
-      -- Input expressions have the instantiated formal types
+      -- Input positions have a type alias-equivalent to the instantiated formal
+      -- type. (The typechecker resolves aliases in the formal types via
+      -- `instantiateWithCheck`, so the actual inferred type may differ from the
+      -- raw formal `subst [σ] inputs.values[i]` only by alias expansion.)
+      --
+      -- The typing predicate branches on the kind of argument node:
+      -- * an in-out argument is a pass-by-reference variable; `getInputExprs`
+      --   manufactures it as a bare, *unannotated* `fvar` whose type lives in the
+      --   context, so we assert its type via context lookup (as in the LHS/output
+      --   obligation below). This is the only way the annotated relation
+      --   `HasTypeA` — which cannot type an unannotated `fvar` — can be satisfied.
+      -- * a genuine by-value input is a self-typing expression (after resolution
+      --   even a bare-variable actual carries its annotation), typed via
+      --   `S.exprTyped`.
       (∀ i (hi : i < (CallArg.getInputExprs callArgs).length)
            (hj : i < proc.header.inputs.values.length),
-        S.exprTyped C Γ ((CallArg.getInputExprs callArgs)[i])
-          (S.embed (LMonoTy.subst [σ] (proc.header.inputs.values[i])))) →
-      -- LHS variable types match instantiated output types
+        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.inputs.values[i])) ∧
+          (match (CallArg.getInputExprs callArgs)[i] with
+           | .fvar _ x none => Γ.types.find? x = some (.forAll [] mty)
+           | e => S.exprTyped C Γ e (S.embed mty))) →
+      -- LHS variable types are alias-equivalent to the instantiated output types
       (∀ i (hi : i < (CallArg.getLhs callArgs).length)
            (hj : i < proc.header.outputs.values.length),
-        Γ.types.find? ((CallArg.getLhs callArgs)[i]) =
-          some (.forAll [] (LMonoTy.subst [σ] (proc.header.outputs.values[i])))) →
+        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.outputs.values[i])) ∧
+          Γ.types.find? ((CallArg.getLhs callArgs)[i]) = some (.forAll [] mty)) →
       -- In-out arguments are simple variables with matching names
       (∀ i (hi : i < proc.header.inputs.keys.length),
         (ListMap.keys proc.header.outputs).contains (proc.header.inputs.keys[i]) →
-        ∃ m, (CallArg.getInputExprs callArgs)[i]? =
-        some (.fvar m (proc.header.inputs.keys[i]) none)) →
+        ∃ m ty, (CallArg.getInputExprs callArgs)[i]? =
+        some (.fvar m (proc.header.inputs.keys[i]) ty)) →
       CmdExtHasType' C P Γ (.call pname callArgs md) Γ
 
 /-- `CmdExtHasType'` instantiated with the polymorphic `HasType` relation. -/

@@ -7,8 +7,10 @@ module
 
 import Strata.Languages.Core.CmdTypeSpec
 import Strata.Languages.Core.CmdTypeProps
+import all Strata.Languages.Core.StatementType
 import Strata.DL.Imperative.CmdType
 import all Strata.DL.Imperative.CmdType
+import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Lambda.LExprResolveProps
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 
@@ -582,7 +584,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     (h_mono : ContextMono Env.context)
     (h_resolved : TContext.AliasesResolved Env.context) :
     CmdHasTypeA C (TContext.subst Env.context Env'.stateSubstInfo.subst)
-      (TypeSpec.Cmd.applySubst cmd' Env'.stateSubstInfo.subst)
+      (Core.Statement.Cmd.subst Env'.stateSubstInfo.subst cmd')
       (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
   cases cmd with
   | init x xty e md =>
@@ -656,7 +658,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
         simp only [HasVarsPure.getVars, Imperative.HasVarsPure.getVars] at h_not_in_vars
         rw [h_vars_eq]
         exact h_not_in_vars
-      simp only [Cmd.applySubst]
+      simp only [Core.Statement.Cmd.subst, Statement.substExprOrNondet, ExprOrNondet.map]
       have h_find_none_subst := Lambda.TContext.subst_find_none Env.context
         (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst x h_find_none
       -- The output command's declared type `v3.fst` is already the monotype `mty`,
@@ -664,6 +666,10 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       have h_pr := CmdType.postprocess_result C Env_unified v3.snd mty_pre v3.fst
         (h_mty_pre ▸ h_postprocess)
       have h_v3_mty : v3.fst = LTy.forAll [] mty := by rw [h_pr.1, h_mty_eq]
+      have h_ty_idem : LTy.subst (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst v3.fst = v3.fst := by
+        rw [h_subst_eq, h_v3_mty, LTy.subst_forAll_nil, h_mty_eq,
+            LMonoTy.subst_idempotent _ Env_unified.stateSubstInfo.isWF]
+      rw [h_ty_idem]
       have h_open : LTy.openFull v3.fst [] = mty := by
         rw [h_v3_mty]
         simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
@@ -693,7 +699,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst
         (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
       rw [h_update_ctx, h_ctx_eq, h_mty]
-      simp only [Cmd.applySubst]
+      simp only [Core.Statement.Cmd.subst, Statement.substExprOrNondet, ExprOrNondet.map]
       -- The output command's declared type `v2.fst` is already the monotype `mty`.
       obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
       have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
@@ -707,6 +713,9 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
           v1.snd.stateSubstInfo.isWF mty_pre
         rw [h_idem] at h_mty'
         rw [h_pr.1]; exact h_mty'
+      have h_ty_idem : LTy.subst (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst v2.fst = v2.fst := by
+        rw [h_mty, h_v2_mty]
+      rw [h_ty_idem]
       have h_open : LTy.openFull v2.fst [] = mty := by
         rw [h_v2_mty]
         simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
@@ -757,7 +766,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       have h_hta_subst := applySubst_typeCheck Env'.stateSubstInfo.subst h_hta
       simp at h_hta_subst
       rw [h_unify_eq] at h_hta_subst
-      simp only [Cmd.applySubst]
+      simp only [Core.Statement.Cmd.subst]
       exact CmdHasType'.set_det _ x (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) _ md
         h_find_subst h_hta_subst
     | nondet =>

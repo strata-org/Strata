@@ -261,10 +261,6 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ e (.forAll [] mty')
 
 
-/--
-If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
-bound variables.
--/
 theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e ty) :
   LExpr.WF e := by
   open LExpr in
@@ -5599,6 +5595,72 @@ theorem inferFVar_HasType
             (by simp [h_bv_subst]; exact h_tys_len)
             h_open h_annot)
 
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/--
+Helper for the input-typing obligation of the `call` command spec.
+
+In the unannotated case, `inferFVar` looks up `x` in the context to get a
+scheme that is monomorphic by `h_mono` (so `forAll [] mty_ctx`), and the
+inferred type `ty_res` is alias-equivalent to `mty_ctx`. The equivalence is
+preserved under any substitution `S`.
+
+Unlike `inferFVar_HasType`, this extracts only the alias-equivalence fact,
+which is relation-independent (used by both `HasType` and `HasTypeA`).
+-/
+theorem inferFVar_none_find_aliasEquiv
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (x : Identifier T.IDMeta)
+    (ty_res : LMonoTy)
+    (h : inferFVar C Env x none = .ok (ty_res, Env'))
+    (h_mono : ∀ y t, Env.context.types.find? y = some t → LTy.boundVars t = [])
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∃ mty_ctx, Env.context.types.find? x = some (.forAll [] mty_ctx) ∧
+      ∀ S, AliasEquiv Env.context.aliases (LMonoTy.subst S mty_ctx)
+        (LMonoTy.subst S ty_res) := by
+  simp only [inferFVar, Bind.bind, Except.bind] at h
+  elim_err h  -- context lookup failed
+  rename_i ty h_find
+  elim_err h  -- instantiateWithCheck failed
+  rename_i v1 h_inst
+  obtain ⟨mty, Env1⟩ := v1
+  simp at h h_inst
+  -- `fty = none` branch: return `(mty, Env1)`
+  obtain ⟨h_ty, h_env⟩ := h
+  subst h_ty; subst h_env
+  -- `h_mono` forces `ty = forAll [] body`
+  have h_bv := h_mono x ty h_find
+  cases ty with
+  | forAll xs body =>
+    simp only [LTy.boundVars] at h_bv
+    subst h_bv
+    refine ⟨body, h_find, ?_⟩
+    -- Decompose `instantiateWithCheck` to its `resolveAliases` core
+    simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h_inst
+    elim_err h_inst
+    rename_i v_ra h_ra; obtain ⟨mty_ra, Env_ra⟩ := v_ra; dsimp at h_inst h_ra
+    elim_errs h_inst
+    simp at h_inst
+    obtain ⟨h_mty, h_env⟩ := h_inst; subst h_mty; subst h_env
+    -- Decompose `resolveAliases` into `instantiate` + `LMonoTy.resolveAliases`
+    simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+    elim_err h_ra
+    rename_i v_inst h_lty_inst; obtain ⟨mty_inst, genEnv'⟩ := v_inst
+    simp at h_ra h_lty_inst
+    -- `instantiate` on nil binders leaves the body unchanged
+    simp only [LTy.instantiate, Except.ok.injEq, Prod.mk.injEq] at h_lty_inst
+    obtain ⟨h_mi, h_ge⟩ := h_lty_inst; subst h_mi; subst h_ge
+    -- `AliasEquiv aliases body mty_ra` from `resolveAliases`
+    have h_aliases_env : Env.context.aliases =
+        ({genEnv := Env.genEnv, stateSubstInfo := Env.stateSubstInfo}
+          : TEnv T.IDMeta).context.aliases := by
+      simp [TEnv.context]
+    have h_ae := resolveAliases_aliasEquiv body
+      ({genEnv := Env.genEnv, stateSubstInfo := Env.stateSubstInfo} : TEnv T.IDMeta)
+      mty_ra Env_ra h_ra
+      h_aliases_env (by unfold TContext.AliasesWF; exact h_aw)
+    intro S
+    exact AliasEquiv_subst Env.context.aliases body mty_ra S h_ae
+      (fun a ha => h_aw a ha)
+
 /-!
 ### Core theorem: `resolveAux_HasType`
 
@@ -7222,6 +7284,89 @@ theorem resolve_preserves_context
       h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen
       h_envwf.boundVarsFresh
     exact h_props.context
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `resolve` produces a substitution that absorbs the input substitution. -/
+theorem resolve_absorbs
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok ⟨e_typed, Env'⟩)
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions) :
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  cases h_types : Env.context.types with
+  | nil => exact absurd h_types h_ne
+  | cons hd tl =>
+    simp [Maps.isEmpty, h_types] at h
+    elim_err h
+    rename_i v h_aux
+    obtain ⟨et, Env_r⟩ := v
+    simp at h
+    obtain ⟨_, h_env'⟩ := h
+    subst h_env'
+    have h_props := resolveAux_properties e et C Env Env_r h_aux
+      (by rw [h_types]; exact List.cons_ne_nil _ _)
+      h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen
+      h_envwf.boundVarsFresh
+    exact h_props.absorbs
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/--
+For a bare input free variable (`fvar m x none`, as emitted for inout call
+arguments), `resolve` returns a typed expression whose monotype is alias-
+equivalent to the (monomorphic) context type of `x`, under any substitution
+that absorbs the final environment's substitution.
+
+This is the `resolve`-level wrapper of `inferFVar_none_find_aliasEquiv`,
+threading the algorithm's `applySubstT` step through `applySubstT_toLMonoTy`
+and `LMonoTy.subst_absorbs`. Relation-independent (no `HasType`/`HasTypeA`),
+so it serves both soundness theorems.
+-/
+theorem resolve_fvar_none_find_aliasEquiv
+    (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (m : T.mono.base.Metadata) (x : Identifier T.IDMeta) (et : LExprT T.mono)
+    (h : (LExpr.fvar m x none).resolve C Env = .ok (et, Env'))
+    (h_wf : TEnvWF Env) (h_ne : Env.context.types ≠ []) (_h_fwf : FactoryWF C.functions)
+    (h_mono : ∀ y t, Env.context.types.find? y = some t → LTy.boundVars t = []) :
+    ∃ mty_ctx, Env.context.types.find? x = some (.forAll [] mty_ctx) ∧
+      ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst →
+        AliasEquiv Env.context.aliases (LMonoTy.subst S mty_ctx)
+          (LMonoTy.subst S et.toLMonoTy) := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  cases h_types : Env.context.types with
+  | nil => exact absurd h_types h_ne
+  | cons hd tl =>
+    simp [Maps.isEmpty, h_types] at h
+    elim_err h
+    rename_i v h_aux
+    obtain ⟨et_aux, Env_r⟩ := v
+    simp at h
+    obtain ⟨h_typed, h_env'⟩ := h
+    subst h_env'
+    -- `resolveAux` fvar case: `inferFVar` then re-tag.
+    simp only [resolveAux, Bind.bind, Except.bind] at h_aux
+    elim_err h_aux
+    rename_i v_if h_inf
+    obtain ⟨ty, Env_inf⟩ := v_if
+    simp at h_aux
+    obtain ⟨h_et_aux, h_env_r⟩ := h_aux
+    -- Apply Layer 1 to the `inferFVar` call.
+    have h_ae := inferFVar_none_find_aliasEquiv C Env Env_inf x ty h_inf h_mono
+      h_wf.aliasesWF
+    obtain ⟨mty_ctx, h_find, h_ae_S⟩ := h_ae
+    rw [h_types] at h_find
+    refine ⟨mty_ctx, h_find, ?_⟩
+    intro S h_abs_S
+    -- `et.toLMonoTy = subst Env_r.subst ty`, and `absorbs S Env_r.subst` collapses it.
+    have h_et_ty : et.toLMonoTy = LMonoTy.subst Env_r.stateSubstInfo.subst ty := by
+      rw [← h_typed, applySubstT_toLMonoTy, ← h_et_aux]
+      simp [LExpr.toLMonoTy]
+    rw [h_et_ty, LMonoTy.subst_absorbs S Env_r.stateSubstInfo.subst ty h_abs_S]
+    exact h_ae_S S
 
 /-- Top-level soundness: if `LExpr.resolve` succeeds, the result is well-typed
     and the output environment is well-formed.

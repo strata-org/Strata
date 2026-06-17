@@ -234,21 +234,27 @@ private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expressio
   e.map (LExpr.applySubst · S)
 
 /--
+Apply type substitution `S` to an imperative command (Cmd).
+-/
+def Cmd.subst (S : Subst) (c : Cmd Expression) : Cmd Expression :=
+  match c with
+  | .init x ty e md =>
+    .init x (LTy.subst S ty) (substExprOrNondet S e) md
+  | .set x e md =>
+    .set x (substExprOrNondet S e) md
+  | .assert label b md =>
+    .assert label (b.applySubst S) md
+  | .assume label b md =>
+    .assume label (b.applySubst S) md
+  | .cover label b md =>
+    .cover label (b.applySubst S) md
+
+/--
 Apply type substitution `S` to a command.
 -/
 def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
-  | .cmd c => match c with
-    | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (substExprOrNondet S e) md
-    | .set x e md =>
-      .cmd $ .set x (substExprOrNondet S e) md
-    | .assert label b md =>
-      .cmd $ .assert label (b.applySubst S) md
-    | .assume label b md =>
-      .cmd $ .assume label (b.applySubst S) md
-    | .cover label b md =>
-      .cmd $ .cover label (b.applySubst S) md
+  | .cmd c => .cmd (Cmd.subst S c)
   | .call pname callArgs md =>
     .call pname (callArgs.map fun
       | .inArg e => .inArg (e.applySubst S)

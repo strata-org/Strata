@@ -80,6 +80,10 @@ where
   | [], _ => []
   | .inArg _ :: rest, e :: es => .inArg e :: go rest es
   | .inArg e :: rest, [] => .inArg e :: go rest []
+  -- `getInputExprs` emits an entry for each `inoutArg` too (a bare `fvar`), so
+  -- `newExprs` has a slot for it. Discard that slot — the inout argument keeps
+  -- its identifier — to stay aligned with the remaining `inArg` positions.
+  | .inoutArg id :: rest, _ :: es => .inoutArg id :: go rest es
   | a :: rest, es => a :: go rest es
 
 theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
@@ -93,7 +97,8 @@ theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) 
     match a, es with
     | .inArg _, e :: es => simp [replaceInArgs.go, ih]
     | .inArg _, [] => simp [replaceInArgs.go, ih]
-    | .inoutArg _, es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, [] => simp [replaceInArgs.go, ih]
     | .outArg _, es => simp [replaceInArgs.go, ih]
 
 def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
