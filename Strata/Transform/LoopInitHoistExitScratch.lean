@@ -349,5 +349,84 @@ REMAINING (mechanical assembly + 2 sub-lemmas, NOT a soundness gap):
     (the underlying `hoistLoopPrefixInits_preserves` is already sum-typed); drop
     `h_noexit` from `hoistLoopPrefixInits_preserves(_kind)` and `pipeline_sound`. -/
 
+/-! # Phase 4 (DROP `h_noexit` + verify) — INVESTIGATION RECORD, not landed.
+
+VERDICT: feasible-not-completed.  Re-audited the FULL consumption chain end to end
+this phase; the soundness GO holds at every seam (re-confirmed below) and the deepest
+feared piece is genuinely banked, but `h_noexit` is NOT yet dropped because the
+remaining work is the PRODUCTION-CHAIN re-typing (a)-(d), ~600-900 LoC across four
+files, which cannot be partially landed without leaving the build red — and the
+anti-fabrication mandate forbids any sorry/admit scaffold.  The banked Phases 1-3 are
+purely ADDITIVE: the new sum-typed vocabulary lives ALONGSIDE the terminal-only chain,
+so the aggregate stays green and `pipeline_sound` keeps `h_noexit`.
+
+BASELINE BUILD EVIDENCE (this phase, warm `.lake`, `LEAN_NUM_THREADS=4`):
+* `lake build Strata` → EXIT=0 (313 jobs).
+* `#print axioms pipeline_sound` → `[propext, Classical.choice, Quot.sound]` (no `sorryAx`).
+* Driver / Provider / StepCProducer / BodyTransport each build green standalone.
+
+WHY NOT LANDED HERE.  The chain `pipeline_sound` (PipelineBridge:1959 `h_noexit`,
+:2022 `nondetElim_noExit` bridge) → `hoistLoopPrefixInits_preserves_kind` (:3320
+`h_no_exit`) → §E `.loop` arm (`LoopInitHoistCorrect`:2168-2418, derives
+`h_src_body_no_exit` and feeds `loop_arm_close`) → `loop_arm_close`
+(`LoopInitHoistLoopArmWF`:2514, consumes `h_src_body_no_exit` at TWO load-bearing
+sites: :2604-2609 collapses the `.exiting cfg_src` case as vacuous via
+`loopDet_no_exit`, and :2678 feeds the terminal-only union-carrier driver
+`loopDet_lift_sf_undef_recovers_single`) → that driver, `compose_union_sf`/`BodySimUSF`,
+and `BodyTransport`/`transportShape`/`bodyTransport_of_lift`/`Block.bodyTransport` — is
+all still TERMINAL-ONLY.  Each link must be re-typed sum-typed in one coherent pass.
+
+RESOLVED PHASE-4(b) DECISION.  `nondetElim` is a det-loop-elimination pass and never
+INTRODUCES an `.exit`; the relaxed hoist admits ARBITRARY loop-body `.exit`.  So the
+bridge is FULLY removed: drop `h_no_exit` from `hoistLoopPrefixInits_preserves(_kind)`,
+delete the `nondetElim_noExit ss h_noexit` call (PipelineBridge:2022), and drop
+`h_noexit` (PipelineBridge:1959) from `pipeline_sound`.  No weaker no-exit-in-body
+preservation is needed; `Stmt.nondetElimM_noExit`/`Block.nondetElim_noExit` simply
+become unused by the pipeline (they may stay as standalone lemmas).
+
+SOUNDNESS GO — re-confirmed at every seam with the banked, build-green lemmas:
+* base `.exit`: `exit_body_establishes_exiting_clause` (above) + provider `exit_stmtSimES`.
+* projection cap: `exit_clause_project_block` (above) = `HoistInv.project_both`, the
+  SAME relation the §E mutual's `.exiting` disjunct and `Block.bodyTransport`'s `.block`
+  arm already carry — no new soundness argument.
+* the StepC-comment's hard `.block` (label-match catch / label-mismatch propagate /
+  terminal): provider `block_stmtSimES`, all three outcomes proven standalone.
+* the SELF-REFERENTIAL `.loop` core (the original §E close's hardest part): provider
+  `nestedLoop_stmtSimES` consumes a `BodySimSum` inner sim and routes terminal→
+  `loopDet_lift_renamedGuard_TE`, exiting→`loopDet_lift_renamedGuard_E`.  The recursion
+  bottoms out via the `BodyTransport` inductive's structural recursion exactly as the
+  terminal-only `Block.bodyTransport` `.loop` arm does (it feeds `bodySimES_to_bodySimSum
+  ih_lbody`); the feared self-reference does NOT diverge.
+
+PRECISE CLOSE-SEQUENCE (each step behind the build gate; LoopInitHoistCorrect is HEAVY):
+1. Provider/BodyTransport: add `BodyTransport.exit` + a sum-typed-block ctor; add
+   `Stmt.transportShape (.exit _ _) = true`; drop `h_noexit` from
+   `transportShape_of_arm_preconds`; add `.exit`/sum-block arms to
+   `Block.bodyTransport_of_lift` (the lift passes `.exit` through verbatim —
+   `applyRenames_exit_singleton`); re-prove the consumer `Block.bodyTransport` to
+   produce `BodySimES` (swap `bodySimE_cons`→`bodySimES_cons`, feed the banked
+   `stmtSimES` arms; the `.block`/`.loop` arms drop their `src_no_exit` use); re-prove
+   `stepB_bodySim_of_lift` to return a sum-typed body sim.
+2. Driver: sum-typed `BodySimUSF`/`compose_union_sf` (item b, ~70 LoC) and
+   `loopDet_lift_sf_2g_undef_fuel`+`_recovers_single` (item c, ~184 LoC; structurally
+   `= loopDet_lift_2g_E_fuel` with `Vs`/`Vh`/`σ_sf` threaded, unused on the exit path).
+3. `loop_arm_close` (item d): its conclusion is ALREADY sum-typed (:2587-2602), so this
+   is a PROOF-BODY change, not a signature change — replace the :2604-2609 vacuity
+   collapse with a dispatch of the `.exiting cfg_src` case to the sum-typed sf+undef
+   driver; thread `stepA`'s exiting clause (the underlying `hoistLoopPrefixInits_preserves`
+   is already sum-typed); drop the `h_src_body_no_exit` param.
+4. §E `.loop` arm: stop deriving/passing `h_src_body_no_exit`; pass the sum-typed
+   `BodySimES`-backed `stepB` through.  Drop `h_no_exit` from
+   `hoistLoopPrefixInits_preserves(_kind)`.
+5. PipelineBridge: per the resolved 4(b) decision, delete the bridge call and drop
+   `h_noexit` from `pipeline_sound`.
+
+RELAXED `pipeline_sound` SIGNATURE (post-close): identical to today EXCEPT line 1959
+`(h_noexit : Block.noExit ss = true)` is REMOVED.  Conclusion UNCHANGED (a TERMINAL
+program run `(.stmts ss ρ₀) →* .terminal ρ'` yields the matching CFG terminal run +
+`StoreAgreement`); NON-VACUOUS because `ss` may now contain `.exit` inside loop bodies
+(the break pattern), whose early-exit terminates the loop and the whole program still
+runs to `.terminal ρ'`.  Soundness preserved by the projected-exit-store cap. -/
+
 end LoopInitHoistExitScratch
 end Imperative
