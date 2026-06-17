@@ -1916,7 +1916,8 @@ program: `ss` is shape-restricted (no func decls, no loop invariants/measures,
 simple shape, no exits) and *kind-free* — it mentions none of the
 `$__ndelim_*$` / `_hoist` / S2U construct prefixes that the three passes mint
 (the `*_kindfree` hypotheses), and never writes or reads such a name.  `ρ₀`'s
-store is everywhere `none` (`h_store_clean`). -/
+store need only leave the source inits (`h_store_inits`) and the three passes'
+minted names (`h_store_mints`) undefined — not the entire store. -/
 
 section PipelineSound
 variable {P : PureExpr}
@@ -1950,7 +1951,17 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
     (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
-    (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    -- `ρ₀` need only leave the source inits and the three passes' minted
+    -- (gen-kind) names undefined — not the entire store.  Source inits are the
+    -- runtime-shape precondition the hoist's `prelude_execution` consumes; the
+    -- minted names (`ndelimKind`/`hoistKind`/`s2uKind`) are foreign to the source
+    -- vars and their undefinedness is irreducibly required (a fresh guard or a
+    -- fresh CFG-relevant binder collides with a populated store).  `modVars` need
+    -- NOT be undefined.
+    (h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
+    (h_store_mints : ∀ s : String,
+      (ndelimKind s ∨ hoistKind s ∨ StructuredToUnstructuredCorrect.s2uKind s) →
+      ρ₀.store (HasIdent.ident (P := P) s) = none)
     -- source shape restrictions (front-end well-formedness):
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -1983,7 +1994,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
     nondetElim_sound_kind extendEval ss ρ₀ ρ'
       hwfb hwfv hwf_def hwf_congr hwf_var
-      (fun s _ => h_store_clean _) h_ndelim_writes h_nofd h_lhni h_term
+      (fun s hk => h_store_mints s (Or.inl hk)) h_ndelim_writes h_nofd h_lhni h_term
   -- Direction-A hoist §F preconds on the `nondetElim` output, at `Q := hoistKind`.
   have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
     (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
@@ -2009,6 +2020,15 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       ss StringGenState.emp h_hoist_exprs
   have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
     nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs h_unique h_init_not_nd
+  -- Each init of the `nondetElim` output is undefined in `ρ₀`: by the output
+  -- init classification it is either a genuine source init (`h_store_inits`) or a
+  -- freshly-minted `ndelimKind` guard (`h_store_mints ∘ Or.inl`).
+  have h_out_undef : ∀ y ∈ Block.initVars (Block.nondetElim ss), ρ₀.store y = none := by
+    intro y hy
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
+      h_src | ⟨str, h_eq, h_nd⟩
+    · exact h_store_inits y h_src
+    · rw [h_eq]; exact h_store_mints str (Or.inl h_nd)
   -- === STEP 2: hoist (input `nondetElim ss`, source run = Step 1's) ===
   -- StoreAgreement ρ_out.store ρ_h'.store.
   obtain ⟨ρ_h', h_run2, h_agree2, h_hf2⟩ :=
@@ -2021,8 +2041,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (nondetElim_noExit ss h_noexit)
       h_out_exprs_sf h_out_unique h_out_fresh
       h_out_iv_sf h_out_mv_sf
-      (fun y _ => h_store_clean y)
-      (fun str _ => h_store_clean _)
+      h_out_undef
+      (fun str hk => h_store_mints str (Or.inr (Or.inl hk)))
       h_run1
       hwfvar' hwfcongr' hwfsubst' hwfdef'
   -- === Direction-B S2U preconds on the hoist output, at `Q := s2uKind` ===
@@ -2033,6 +2053,15 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf
   have h_step3_unique : Block.uniqueInits (Block.hoistLoopPrefixInits (Block.nondetElim ss)) :=
     h_hoist_iv_cls.2
+  -- Each init of the hoist output is undefined in `ρ₀`: by the output init
+  -- classification it is either a `nondetElim`-output init (`h_out_undef`) or a
+  -- freshly-minted `hoistKind` name (`h_store_mints ∘ Or.inr ∘ Or.inl`).
+  have h_step3_undef : ∀ x ∈ Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss)),
+      ρ₀.store x = none := by
+    intro x hx
+    rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · exact h_out_undef x h_src
+    · rw [h_eq]; exact h_store_mints str (Or.inr (Or.inl h_hoistk))
   -- `NoGenSuffix s2uKind` on the hoist-output `initVars`: each init is foreign to
   -- `s2uKind` — a fresh `hoistKind`, or (further classified) a fresh `ndelimKind`
   -- or a genuine source init (`s2uKind`-free by hypothesis).
@@ -2080,9 +2109,9 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (hoist_loopBodyNoInits _)
       (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
       (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
-      (fun x _ => h_store_clean x)
+      h_step3_undef
       h_disj
-      h_store_clean
+      (fun x hx => h_store_mints x (Or.inr (Or.inr hx)))
       h_step3_iv h_step3_mv
       h_run2
   -- === CHAIN via StoreAgreement.trans (source on the left) ===

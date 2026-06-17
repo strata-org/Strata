@@ -8910,7 +8910,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
-    (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    (h_store_gens : ∀ x : String, Q x → ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
     (hQmint : S2UMintWitness Q)
@@ -8951,7 +8951,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
   have h_store_no_gens_upper :
       ∀ x : String, Q x →
         x ∉ StringGenState.stringGens gen' →
-        ρ₀.store (HasIdent.ident (P := P) x) = none := fun x _ _ => h_store_clean _
+        ρ₀.store (HasIdent.ident (P := P) x) = none := fun x hx _ => h_store_gens x hx
   -- Self-discharge of the foreign-label obligation.  `gen` is the empty
   -- generator state advanced by the single `"end$"` mint; every label `gen`
   -- holds therefore satisfies `Q` (by `hQmint`'s `"end$"` witness).
@@ -9006,7 +9006,8 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
-    (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    (h_store_gens : ∀ x : String, String.HasUnderscoreDigitSuffix x →
+      ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) String.HasUnderscoreDigitSuffix (Block.initVars ss))
     (h_input_no_gen_suffix_mod :
       NoGenSuffix (P := P) String.HasUnderscoreDigitSuffix (transformBlockModVars ss))
@@ -9020,7 +9021,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
   stmtsToCFG_terminal (Q := String.HasUnderscoreDigitSuffix)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
-    h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
+    h_fresh_inits h_disj h_store_gens h_input_no_gen_suffix
     h_input_no_gen_suffix_mod
     -- Every `gen`-output has the `_<digits>` suffix shape, so the
     -- thirteen-conjunct mint witness holds for the blanket predicate uniformly.
@@ -9161,7 +9162,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
     (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
-    (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
+    (h_store_gens : ∀ x : String, Q x → ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
     (h_term : StepStmtStar P (EvalCmd P) extendEval
@@ -9179,7 +9180,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
   stmtsToCFG_terminal (Q := Q)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
-    h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
+    h_fresh_inits h_disj h_store_gens h_input_no_gen_suffix
     h_input_no_gen_suffix_mod hQmint h_term
 
 ---------------------------------------------------------------------
