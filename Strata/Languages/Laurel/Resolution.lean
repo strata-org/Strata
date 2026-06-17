@@ -231,10 +231,15 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
+/-- Scope key for a name nested inside a container (composite, datatype),
+    used to disambiguate members in the flat global scope. -/
+private def containerScopedName (containerName memberName : Identifier) : Identifier :=
+  mkId s!"{containerName.text}${memberName.text}"
+
 /-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
-  match target.val with
+  match _h : target.val with
   | .Var (.Local ref) =>
     match s.scope.get? ref.text with
     | some (_, node) =>
@@ -242,7 +247,26 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
       | .UserDefined typRef => pure (some typRef.text)
       | _ => pure none
     | none => pure none
+  | .Var (.Field inner fieldName) => do
+    match (← targetTypeName inner) with
+    | none => pure none
+    | some innerTy =>
+      match s.typeScopes.get? innerTy with
+      | none => pure none
+      | some typeScope =>
+        match typeScope.get? fieldName.text with
+        | some (_, node) =>
+          match node.getType.val with
+          | .UserDefined typRef => pure (some typRef.text)
+          | _ => pure none
+        | none => pure none
   | _ => pure none
+  termination_by sizeOf target
+  decreasing_by
+    have := AstNode.sizeOf_val_lt target
+    have : sizeOf target.val = sizeOf (StmtExpr.Var (Variable.Field inner fieldName)) := congrArg sizeOf _h
+    simp at this
+    omega
 
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
@@ -469,6 +493,73 @@ private def procArity (callee : Identifier) (dropSelf : Bool) : ResolveM (Option
     pure (some (if dropSelf then proc.inputs.length - 1 else proc.inputs.length))
   | _ => pure none
 
+/-- Unfold any constrained types down to their underlying base type
+    (e.g. `nat` ⇒ `int`). `fuel` keeps the function total; chains longer than
+    `fuel` simply stop unfolding (the conservative, no-false-positive direction). -/
+private def underlyingBaseType (s : ResolveState) (fuel : Nat) (ty : HighType) : HighType :=
+  match fuel with
+  | 0 => ty
+  | fuel + 1 =>
+    match ty with
+    | .UserDefined typRef =>
+      match s.scope.get? typRef.text with
+      | some (_, .constrainedType ct) => underlyingBaseType s fuel ct.base.val
+      | _ => ty
+    | _ => ty
+
+/-- Look up the declared type of an `IncrDecr` target during resolution.
+    Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
+    `none` when the type cannot be determined (e.g. an unresolved name). -/
+private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType) := do
+  let s ← get
+  match target.val with
+  | .Local ref =>
+    match s.scope.get? ref.text with
+    | some (_, node) => pure (some node.getType.val)
+    | none => pure none
+  | .Field tgt fieldName =>
+    match (← targetTypeName tgt) with
+    | some typeName =>
+      match s.typeScopes.get? typeName with
+      | some typeScope =>
+        match typeScope.get? fieldName.text with
+        | some (_, node) => pure (some node.getType.val)
+        | none => pure none
+      | none => pure none
+    | none => pure none
+  | .Declare param => pure (some param.type.val)
+
+/-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
+    Only `int` and int-based constrained types (e.g. `nat`) are supported by the
+    `EliminateIncrDecr` lowering; `bv`, `real`, and `float64` are rejected here
+    with a clear Laurel diagnostic (and a source range) rather than leaking a raw
+    Core unification error from a later pass. Unknown/unresolved types are left
+    alone so that resolution errors are not duplicated as spurious incr/decr
+    errors. -/
+private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
+    (source : Option FileRange) : ResolveM Unit := do
+  match (← incrDecrTargetType target) with
+  | none => pure ()
+  | some ty =>
+    let s ← get
+    let baseTy := underlyingBaseType s 100 ty
+    let unsupported? : Option String := match baseTy with
+      | .TReal => some "real"
+      | .TFloat64 => some "float64"
+      | .TBv n => some s!"bv{n}"
+      | _ => none
+    match unsupported? with
+    | none => pure ()
+    | some tyName =>
+      let opName := match op with
+        | .Incr => "increment ('++')"
+        | .Decr => "decrement ('--')"
+      let diag := diagnosticFromSource source
+        s!"The {opName} operator is only supported on 'int' and int-based \
+           constrained types (e.g. 'nat'), but the operand has type '{tyName}'. \
+           Use an explicit assignment instead, e.g. 'x := x + 1'."
+      modify fun s => { s with errors := s.errors.push diag }
+
 /-! ## Typing rules
 
 The judgment is bidirectional:
@@ -582,6 +673,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .LiteralString v => pure (Synth.litString v source)
   | .LiteralDecimal v => pure (Synth.litDecimal v source)
   | .Var (.Local ref) => Synth.varLocal ref source
+  | .IncrDecr mode op target =>
+    Synth.incrDecr exprMd mode op target source (by rw [h_node])
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
   | .Assign targets value =>
@@ -2543,7 +2636,9 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← resolveRef proc.name
+  let scopedKey := containerScopedName typeName proc.name
+  let resolved ← resolveRef scopedKey
+  let procName' := { proc.name with uniqueId := resolved.uniqueId }
   withScope do
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
@@ -2691,6 +2786,8 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
         collectHighType map param.type
       | _ => map) map
     collectStmtExpr map value
+  | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
   | .Var (.Field target _) => collectStmtExpr map target
   | .PureFieldUpdate target _ newVal =>
     let map := collectStmtExpr map target
@@ -2723,7 +2820,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
+  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Abstract | .All | .Hole _ _ => map
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
@@ -2882,16 +2979,24 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
   | .StaticCall _ args =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
   | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
+  | .IncrDecr _ _ target =>
+    match _htgt : target.val with
+    | .Field tgt fieldName =>
+      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
+      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
+      innerErrors ++ fieldError
+    | .Local _ | .Declare _ => []
   | _ => []
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf
     all_goals (try have := AstNode.sizeOf_val_lt expr)
     all_goals (try have := AstNode.sizeOf_val_lt t)
+    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
     all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
     all_goals (try term_by_mem)
     all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) case
+    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
     all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
 
 /--
@@ -2936,7 +3041,9 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
         let qualifiedName := ct.name.text ++ "." ++ field.name.text
         let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
+        let scopedKey := (containerScopedName ct.name proc.name).text
         let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
+                                   (some scopedKey)
     | .Constrained ct =>
       let _ ← defineNameCheckDup ct.name (.constrainedType ct)
     | .Datatype dt =>
@@ -2970,15 +3077,6 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
-
-    for td in program.types do
-      if let .Composite ct := td then
-        for proc in ct.instanceProcedures do
-          let diag := diagnosticFromSource proc.name.source
-            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' is not yet supported"
-            DiagnosticType.NotYetImplemented
-          modify fun s => { s with errors := s.errors.push diag }
-
     preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
