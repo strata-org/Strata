@@ -63,7 +63,10 @@ inductive hypothesis on the inner body into the renamed-guard loop driver.
 
 open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendStoreOne_other)
 open OptEStepBProvider (BodySim BodySimE StmtSimE bodySimE_cons bodySimE_nil
-  bodySimE_to_bodySim nestedLoop_stmtSimE)
+  bodySimE_to_bodySim nestedLoop_stmtSimE
+  BodySimES StmtSimES bodySimES_cons bodySimES_nil bodySimES_to_bodySimSum
+  stmtSimE_to_stmtSimES_of_noExit cmd_stmt_no_exit exit_stmtSimES
+  block_stmtSimES ite_stmtSimES ite_nondet_stmtSimES nestedLoop_stmtSimES)
 
 variable {P : PureExpr}
 
@@ -97,91 +100,6 @@ private theorem stmt_cmd_step_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVa
       (.terminal { ρ with store := σ', hasFailure := ρ.hasFailure || hf }) :=
   .step _ _ _ (.step_cmd h) (.refl _)
 
-/-- Forward: enter a labeled block, run its inner body to terminal, exit
-projecting through the parent store. -/
-private theorem block_step_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {lbl : String} {body : List (Stmt P (Cmd P))} {md : MetaData P}
-    {ρ ρ_inner : Env P}
-    (h_inner : StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ) (.terminal ρ_inner)) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.block lbl body md) ρ)
-      (.terminal { ρ_inner with store := projectStore ρ.store ρ_inner.store }) := by
-  refine .step _ _ _ .step_block ?_
-  have h_lift := block_inner_star P (EvalCmd P) extendEval _ _ (.some lbl) ρ.store h_inner
-  refine ReflTrans_Transitive _ _ _ _ h_lift ?_
-  exact .step _ _ _ .step_block_done (.refl _)
-
-/-- Invert a det-`.ite` run to terminal: the guard selects a branch, which then
-runs to terminal in the same store frame. -/
-private theorem ite_terminal_inv' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt (.ite (.det g) tss ess md) ρ) (.terminal ρ')) :
-    (ρ.eval ρ.store g = .some HasBool.tt ∧ WellFormedSemanticEvalBool ρ.eval ∧
-       StepStmtStar P (EvalCmd P) extendEval (.stmts tss ρ) (.terminal ρ')) ∨
-    (ρ.eval ρ.store g = .some HasBool.ff ∧ WellFormedSemanticEvalBool ρ.eval ∧
-       StepStmtStar P (EvalCmd P) extendEval (.stmts ess ρ) (.terminal ρ')) := by
-  cases h with
-  | step _ _ _ h1 hr1 =>
-    cases h1 with
-    | step_ite_true h_g h_wfb => exact .inl ⟨h_g, h_wfb, hr1⟩
-    | step_ite_false h_g h_wfb => exact .inr ⟨h_g, h_wfb, hr1⟩
-
-/-- Forward: a det-`.ite` whose guard is tt steps to its then-branch run. -/
-private theorem ite_step_then_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h_g : ρ.eval ρ.store g = .some HasBool.tt)
-    (h_wfb : WellFormedSemanticEvalBool ρ.eval)
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval (.stmts tss ρ) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite (.det g) tss ess md) ρ) (.terminal ρ') :=
-  .step _ _ _ (.step_ite_true h_g h_wfb) h_branch
-
-/-- Forward: a det-`.ite` whose guard is ff steps to its else-branch run. -/
-private theorem ite_step_else_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h_g : ρ.eval ρ.store g = .some HasBool.ff)
-    (h_wfb : WellFormedSemanticEvalBool ρ.eval)
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval (.stmts ess ρ) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite (.det g) tss ess md) ρ) (.terminal ρ') :=
-  .step _ _ _ (.step_ite_false h_g h_wfb) h_branch
-
-/-- Invert a nondet-`.ite` run to terminal: the run selected the then- or else-
-branch (no guard evaluation), which then runs to terminal in the same frame. -/
-private theorem ite_nondet_terminal_inv' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt (.ite .nondet tss ess md) ρ) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval (.stmts tss ρ) (.terminal ρ') ∨
-    StepStmtStar P (EvalCmd P) extendEval (.stmts ess ρ) (.terminal ρ') := by
-  cases h with
-  | step _ _ _ h1 hr1 =>
-    cases h1 with
-    | step_ite_nondet_true => exact .inl hr1
-    | step_ite_nondet_false => exact .inr hr1
-
-/-- Forward: a nondet-`.ite` steps to its then-branch run. -/
-private theorem ite_nondet_step_then_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval (.stmts tss ρ) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite .nondet tss ess md) ρ) (.terminal ρ') :=
-  .step _ _ _ .step_ite_nondet_true h_branch
-
-/-- Forward: a nondet-`.ite` steps to its else-branch run. -/
-private theorem ite_nondet_step_else_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
-    {extendEval : ExtendEval P}
-    {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {ρ ρ' : Env P}
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval (.stmts ess ρ) (.terminal ρ')) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite .nondet tss ess md) ρ) (.terminal ρ') :=
-  .step _ _ _ .step_ite_nondet_false h_branch
-
 /-- Invert a `.typeDecl` run to terminal: it is a runtime no-op (env unchanged). -/
 private theorem typeDecl_terminal_inv' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
@@ -202,24 +120,19 @@ private theorem typeDecl_step_forward' [HasFvar P] [HasBool P] [HasNot P] [HasVa
     StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) (.terminal ρ) :=
   .step _ _ _ .step_typeDecl (.refl _)
 
-/-- Split a source block run into its inner terminal run (given no exit). -/
-private theorem block_terminal_inv' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+/-- A single `.typeDecl` statement never reaches `.exiting` (it steps to `.terminal`
+via `step_typeDecl` and is then stuck). -/
+private theorem typeDecl_stmt_no_exit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     {extendEval : ExtendEval P}
-    {lbl : String} {body : List (Stmt P (Cmd P))} {md : MetaData P}
-    {ρ ρ' : Env P}
-    (h_no_exit : ∀ (l : String) (ρe : Env P),
-      ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ) (.exiting l ρe))
-    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt (.block lbl body md) ρ) (.terminal ρ')) :
-    ∃ ρ_inner : Env P,
-      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ) (.terminal ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
+    (tc : TypeConstructor) (md : MetaData P) :
+    ∀ (ρ : Env P) (l : String) (ρe : Env P),
+      ¬ StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) (.exiting l ρe) := by
+  intro ρ l ρe h
   cases h with
-  | step _ _ _ hs hr =>
-    cases hs
-    rcases block_reaches_terminal P (EvalCmd P) extendEval hr with
-      ⟨ρ_inner, hterm, heq⟩ | ⟨l, ρ_inner, hexit, heq⟩
-    · exact ⟨ρ_inner, hterm, heq⟩
-    · exact absurd hexit (h_no_exit l ρ_inner)
+  | step _ _ _ h1 hr1 =>
+    cases h1
+    cases hr1 with
+    | step _ _ _ hd _ => exact nomatch hd
 
 /-- Condition transport across the multi-pair `HoistInv`, re-derived from the
 public `substFvarMany_eval_tweak`. -/
@@ -412,6 +325,16 @@ inductive BodyTransport [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident] [HasV
       BodyTransport A B subst
         (.loop (.det g) none [] lbody_src md :: body_src)
         (.loop (.det (substFvarMany g subst)) none [] lbody_h md :: body_h)
+  -- An `.exit lbl md` is left literally unchanged by the rename (`substIdent_exit`
+  -- fixes it).  Its body run reaches `.exiting lbl` (the break pattern), which the
+  -- hoist `.exit` replays at the SAME label.  The exiting clause of the sum-typed
+  -- body sim copies the body-entry invariant unchanged.
+  | exit {lbl : String} {md : MetaData P}
+      {body_src body_h : List (Stmt P (Cmd P))}
+      (h_rest : BodyTransport A B subst body_src body_h) :
+      BodyTransport A B subst
+        (.exit lbl md :: body_src)
+        (.exit lbl md :: body_h)
 
 /-! ## Structural facts about `BodyTransport` source/hoist bodies.
 
@@ -428,7 +351,7 @@ theorem BodyTransport.noFuncDecl_src [HasFvar P] [HasSubstFvar P] [HasVarsPure P
   | nil => simp [Block.noFuncDecl]
   | init_set _ _ _ _ _ _ _ ih | assert _ _ ih | assume _ _ ih | cover _ ih
   | init_nondet _ _ _ _ _ _ ih | set _ _ _ _ ih | set_nondet _ _ _ ih | typeDecl _ ih
-  | set_renamed _ _ _ _ _ _ _ ih | set_renamed_nondet _ _ _ _ _ _ ih =>
+  | set_renamed _ _ _ _ _ _ _ ih | set_renamed_nondet _ _ _ _ _ _ ih | exit _ ih =>
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.true_and]; exact ih
   | block _ _ ih_inner ih_rest =>
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
@@ -455,7 +378,7 @@ theorem BodyTransport.noFuncDecl_h [HasFvar P] [HasSubstFvar P] [HasVarsPure P P
   | nil => simp [Block.noFuncDecl]
   | init_set _ _ _ _ _ _ _ ih | assert _ _ ih | assume _ _ ih | cover _ ih
   | init_nondet _ _ _ _ _ _ ih | set _ _ _ _ ih | set_nondet _ _ _ ih | typeDecl _ ih
-  | set_renamed _ _ _ _ _ _ _ ih | set_renamed_nondet _ _ _ _ _ _ ih =>
+  | set_renamed _ _ _ _ _ _ _ ih | set_renamed_nondet _ _ _ _ _ _ ih | exit _ ih =>
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.true_and]; exact ih
   | block _ _ ih_inner ih_rest =>
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
@@ -472,109 +395,17 @@ theorem BodyTransport.noFuncDecl_h [HasFvar P] [HasSubstFvar P] [HasVarsPure P P
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
     exact ⟨by simpa [Block.noFuncDecl] using ih_lbody, ih_rest⟩
 
-/-- A `BodyTransport` source body never reaches a labeled `.exiting`. -/
-theorem BodyTransport.src_no_exit [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
-    {extendEval : ExtendEval P}
-    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
-    {body_src body_h : List (Stmt P (Cmd P))}
-    (hrw : BodyTransport (P := P) A B subst body_src body_h) :
-    ∀ (ρ : Env P) (lbl : String) (ρe : Env P),
-      ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ) (.exiting lbl ρe) := by
-  induction hrw with
-  | nil =>
-    intro ρ lbl ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1
-      cases hr1 with
-      | step _ _ _ hd _ => exact nomatch hd
-  | init_set _ _ _ _ _ _ _ ih | assert _ _ ih | assume _ _ ih | cover _ ih
-  | init_nondet _ _ _ _ _ _ ih | set _ _ _ _ ih | set_nondet _ _ _ ih
-  | set_renamed _ _ _ _ _ _ _ ih | set_renamed_nondet _ _ _ _ _ _ ih =>
-    intro ρ lbl ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1
-      rcases seq_reaches_exiting _ _ _ hr1 with h_inner | ⟨ρ_m, _h_term, h_tail⟩
-      · cases h_inner with
-        | step _ _ _ h2 hr2 =>
-          cases h2 with
-          | step_cmd _ =>
-            cases hr2 with
-            | step _ _ _ hd _ => exact nomatch hd
-      · exact ih ρ_m lbl ρe h_tail
-  | typeDecl _ ih =>
-    intro ρ lbl ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1
-      rcases seq_reaches_exiting _ _ _ hr1 with h_inner | ⟨ρ_m, _h_term, h_tail⟩
-      · cases h_inner with
-        | step _ _ _ h2 hr2 =>
-          cases h2 with
-          | step_typeDecl =>
-            cases hr2 with
-            | step _ _ _ hd _ => exact nomatch hd
-      · exact ih ρ_m lbl ρe h_tail
-  | @block lbl md inner_src inner_h body_src body_h h_inner h_rest ih_inner ih_rest =>
-    intro ρ lbl' ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1
-      rcases seq_reaches_exiting _ _ _ hr1 with h_blk | ⟨ρ_m, _h_term, h_tail⟩
-      · cases h_blk with
-        | step _ _ _ h2 hr2 =>
-          cases h2
-          obtain ⟨lbl_i, ρ_i, hexit, _⟩ := block_reaches_exiting P (EvalCmd P) extendEval hr2
-          exact ih_inner ρ lbl_i ρ_i hexit
-      · exact ih_rest ρ_m lbl' ρe h_tail
-  | @ite g md tss_src tss_h ess_src ess_h body_src body_h
-      _ h_then h_else h_rest ih_then ih_else ih_rest =>
-    intro ρ lbl' ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1 with
-      | step_stmts_cons =>
-        rcases seq_reaches_exiting _ _ _ hr1 with h_ite | ⟨ρ_m, _h_term, h_tail⟩
-        · cases h_ite with
-          | step _ _ _ hi hri =>
-            cases hi with
-            | step_ite_true _ _ => exact ih_then ρ lbl' ρe hri
-            | step_ite_false _ _ => exact ih_else ρ lbl' ρe hri
-        · exact ih_rest ρ_m lbl' ρe h_tail
-  | @ite_nondet md tss_src tss_h ess_src ess_h body_src body_h
-      h_then h_else h_rest ih_then ih_else ih_rest =>
-    intro ρ lbl' ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1 with
-      | step_stmts_cons =>
-        rcases seq_reaches_exiting _ _ _ hr1 with h_ite | ⟨ρ_m, _h_term, h_tail⟩
-        · cases h_ite with
-          | step _ _ _ hi hri =>
-            cases hi with
-            | step_ite_nondet_true => exact ih_then ρ lbl' ρe hri
-            | step_ite_nondet_false => exact ih_else ρ lbl' ρe hri
-        · exact ih_rest ρ_m lbl' ρe h_tail
-  | @loop g md lbody_src lbody_h body_src body_h _ h_lbody h_rest ih_lbody ih_rest =>
-    intro ρ lbl' ρe h
-    cases h with
-    | step _ _ _ h1 hr1 =>
-      cases h1 with
-      | step_stmts_cons =>
-        rcases seq_reaches_exiting _ _ _ hr1 with h_loop | ⟨ρ_m, _h_term, h_tail⟩
-        · exact LoopInitHoistLoopDriver.loopDet_no_exit
-            (fun ρ0 hif lbl0 ρe0 => ih_lbody { ρ0 with hasFailure := ρ0.hasFailure || hif } lbl0 ρe0)
-            h_loop
-        · exact ih_rest ρ_m lbl' ρe h_tail
-
-/-! ## The body transport: `BodyTransport` derivation → `BodySimE`.
+/-! ## The body transport: `BodyTransport` derivation → `BodySimES`.
 
 By induction on the `BodyTransport` derivation.  Each arm fires the per-statement
 hoist replay (renamed set/predicate, recursive block/ite, renamed nested loop) and
-sequences via the cons-shaped tail IH.  The nested-loop arm feeds the inner-body
-IH into the renamed-guard loop driver (via `nestedLoop_stmtSimE`). -/
-theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+sequences via the SUM-TYPED cons-shaped tail IH (`bodySimES_cons`).  Each `.cmd`
+arm produces a terminal-only `StmtSimE` (a command never `.exiting`s) which lifts
+to a `StmtSimES` for free via `stmtSimE_to_stmtSimES_of_noExit`; the `.block` /
+`.ite` / nested-`.loop` arms feed their sum-typed inner IH into the banked
+`block_stmtSimES` / `ite_stmtSimES` / `nestedLoop_stmtSimES` arms; the new `.exit`
+base case is `exit_stmtSimES`. -/
+theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
     {body_src body_h : List (Stmt P (Cmd P))}
@@ -589,13 +420,13 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
     (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
-    BodySimE (extendEval := extendEval) A B subst body_src body_h := by
+    BodySimES (extendEval := extendEval) A B subst body_src body_h := by
   classical
   induction hrw with
-  | nil => exact bodySimE_nil A B subst
+  | nil => exact bodySimES_nil A B subst
   | @init_set a b τ rhs md body_src body_h h_pair h_a_in_A h_b_in_B
       h_unique_a h_unique_b h_B_fresh_rhs _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: init a → set b.
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
@@ -665,7 +496,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · rw [h_eval']; exact h_eval
   | @init_nondet a b τ md body_src body_h h_pair h_a_in_A h_b_in_B
       h_unique_a h_unique_b _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: nondet init a → nondet set b (replays the SAME chosen value).
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
@@ -722,7 +553,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · rw [h_eval']; exact h_eval
   | @set_renamed a b rhs md body_src body_h h_pair h_a_in_A h_b_in_B
       h_unique_a h_unique_b h_B_fresh_rhs _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: set a (.det rhs) → set b (.det (substFvarMany rhs subst)).
     -- The LHS `a` is a rename SOURCE, renamed to its target `b`.  The source updates
     -- slot `a` (def → `v`); the hoist updates slot `b` (def → the SAME `v`) — exactly
@@ -795,7 +626,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · rw [h_eval']; exact h_eval
   | @set_renamed_nondet a b md body_src body_h h_pair h_a_in_A h_b_in_B
       h_unique_a h_unique_b _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: nondet set a → nondet set b (replays the SAME chosen value).
     -- The LHS `a` is a rename source, renamed to `b`; `set_both_in_subst` transport.
     unfold OptEStepBProvider.StmtSimE
@@ -855,7 +686,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · rw [h_eval']; exact h_eval
   | @set name rhs md body_src body_h h_name_notin_A h_name_notin_B
       h_B_fresh_rhs _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: set name (.det rhs) → set name (.det (substFvarMany rhs subst)).
     -- The name is UNCHANGED (it is `∉ A`, and the subst sources lie in `A`), so both
     -- sides update the SAME slot, off the subst frame — `extend_both_outside_subst`.
@@ -936,7 +767,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
         rw [e]; exact h_bnd b' hb'
     · rw [h_eval']; exact h_eval
   | @set_nondet name md body_src body_h h_name_notin_A h_name_notin_B _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     -- head StmtSimE: nondet set name → nondet set name (same slot, off the frame).
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
@@ -1001,7 +832,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
         rw [e]; exact h_bnd b' hb'
     · rw [h_eval']; exact h_eval
   | @assert lbl e md body_src body_h h_B_fresh_e _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
     obtain ⟨σ_a, hf_a, h_head_eval, h_ρ_a_eq⟩ := stmt_cmd_terminal_inv' h_run
@@ -1042,7 +873,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · intro b' hb'; rw [h_store']; exact h_bnd b' hb'
     · rw [h_eval']; exact h_eval
   | @assume lbl e md body_src body_h h_B_fresh_e _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
     obtain ⟨σ_a, hf_a, h_head_eval, h_ρ_a_eq⟩ := stmt_cmd_terminal_inv' h_run
@@ -1078,7 +909,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · intro b' hb'; rw [h_store']; exact h_bnd b' hb'
     · rw [h_eval']; exact h_eval
   | @cover lbl e md body_src body_h _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (cmd_stmt_no_exit _) ?_) ih
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
     obtain ⟨σ_a, hf_a, h_head_eval, h_ρ_a_eq⟩ := stmt_cmd_terminal_inv' h_run
@@ -1102,7 +933,7 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     · intro b' hb'; rw [h_store']; exact h_bnd b' hb'
     · rw [h_eval']; exact h_eval
   | @typeDecl tc md body_src body_h _ ih =>
-    refine bodySimE_cons ?_ ih
+    refine bodySimES_cons (stmtSimE_to_stmtSimES_of_noExit (typeDecl_stmt_no_exit tc md) ?_) ih
     -- head StmtSimE: a `.typeDecl` is a no-op on both sides (env unchanged).
     unfold OptEStepBProvider.StmtSimE
     intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
@@ -1110,100 +941,46 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasSubstFvar P] 
     subst h_ρ_s'_eq
     exact ⟨ρ_h, typeDecl_step_forward', h_hinv, h_hf, h_bnd, h_eval⟩
   | @block lbl md inner_src inner_h body_src body_h h_inner h_rest ih_inner ih_rest =>
-    refine bodySimE_cons ?_ ih_rest
-    unfold OptEStepBProvider.StmtSimE
-    intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
-    obtain ⟨ρ_inner, h_inner_run, h_ρ_a_eq⟩ :=
-      block_terminal_inv' (h_inner.src_no_exit ρ_s) h_run
-    obtain ⟨ρ_h_inner, h_inner_h_run, h_hinv_inner, h_hf_inner, h_bnd_inner, h_eval_inner⟩ :=
-      ih_inner ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_inner h_inner_run
-    have h_hinv_blk : HoistInv (P := P) A B subst
-        (projectStore ρ_s.store ρ_inner.store)
-        (projectStore ρ_h.store ρ_h_inner.store) :=
-      HoistInv.project_both h_hinv h_hinv_inner
-    obtain ⟨ρ_h', h_ρ_h'⟩ : ∃ em : Env P,
-        em = { ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store } := ⟨_, rfl⟩
-    have h_store' : ρ_h'.store = projectStore ρ_h.store ρ_h_inner.store := congrArg (·.store) h_ρ_h'
-    have h_eval' : ρ_h'.eval = ρ_h_inner.eval := congrArg (·.eval) h_ρ_h'
-    have h_hf' : ρ_h'.hasFailure = ρ_h_inner.hasFailure := congrArg (·.hasFailure) h_ρ_h'
-    refine ⟨ρ_h', ?_, ?_, ?_, ?_, ?_⟩
-    · rw [h_ρ_h']; exact block_step_forward' h_inner_h_run
-    · rw [h_ρ_a_eq, h_store']; exact h_hinv_blk
-    · rw [h_ρ_a_eq, h_hf']; exact h_hf_inner
-    · intro b' hb'
-      rw [h_store']
-      show projectStore ρ_h.store ρ_h_inner.store b' ≠ none
-      unfold projectStore
-      have h_parent_some : (ρ_h.store b').isSome = true := by
-        cases h : ρ_h.store b' with
-        | none => exact absurd h (h_bnd b' hb')
-        | some _ => rfl
-      rw [h_parent_some]; simp; exact h_bnd_inner b' hb'
-    · rw [h_ρ_a_eq, h_eval']; exact h_eval_inner
+    -- The inner body's SUM-TYPED sim feeds the banked `block_stmtSimES` (all three
+    -- block outcomes: inner-terminal, label-match catch, label-mismatch propagate).
+    exact bodySimES_cons (block_stmtSimES ih_inner) ih_rest
   | @ite g md tss_src tss_h ess_src ess_h body_src body_h
       h_B_fresh_g h_then h_else h_rest ih_then ih_else ih_rest =>
-    refine bodySimE_cons ?_ ih_rest
-    unfold OptEStepBProvider.StmtSimE
-    intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
-    -- Invert the source `.ite` run first to expose the (successful) guard
-    -- evaluation, which discharges the guarded-frame read-var definedness.
-    have h_g_some : ∃ w, ρ_s.eval ρ_s.store g = some w := by
-      rcases ite_terminal_inv' h_run with
-        ⟨h_g_tt, _, _⟩ | ⟨h_g_ff, _, _⟩
-      · exact ⟨_, h_g_tt⟩
-      · exact ⟨_, h_g_ff⟩
     -- The renamed guard `substFvarMany g subst` evaluates on `ρ_h` exactly as the
-    -- source guard `g` on `ρ_s` (it reads no renamed name).
-    have h_guard_eq : ρ_s.eval ρ_s.store g
-        = ρ_h.eval ρ_h.store (substFvarMany g subst) := by
-      obtain ⟨w, h_g_w⟩ := h_g_some
+    -- source guard `g` on `ρ_s` (it reads no renamed name) — the `cond_transport'`
+    -- fact, packaged for `ite_stmtSimES`.
+    have h_guard_eq : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+        (∃ w, ρ_s.eval ρ_s.store g = some w) →
+        ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store (substFvarMany g subst) := by
+      intro ρ_s ρ_h h_hinv h_eval ⟨w, h_g_w⟩
       have h := cond_transport' (δ := ρ_s.eval) (e := g) (σ_s := ρ_s.store) (σ_h := ρ_h.store)
         h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup
         h_B_fresh_g h_hinv
         (read_vars_def_of_eval (h_wfdef ρ_s) h_g_w)
         (h_wfcongr ρ_s) (h_wfsubst ρ_s)
       rw [h, h_eval]
-    rcases ite_terminal_inv' h_run with
-      ⟨h_g_tt, h_wfb, h_branch_run⟩ | ⟨h_g_ff, h_wfb, h_branch_run⟩
-    · obtain ⟨ρ_h_a, h_branch_h, h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩ :=
-        ih_then ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_branch_run
-      have h_g_tt_h : ρ_h.eval ρ_h.store (substFvarMany g subst) = .some HasBool.tt := by
-        rw [← h_guard_eq]; exact h_g_tt
-      have h_wfb_hoist : WellFormedSemanticEvalBool ρ_h.eval := h_eval ▸ h_wfb
-      exact ⟨ρ_h_a, ite_step_then_forward' h_g_tt_h h_wfb_hoist h_branch_h,
-        h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩
-    · obtain ⟨ρ_h_a, h_branch_h, h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩ :=
-        ih_else ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_branch_run
-      have h_g_ff_h : ρ_h.eval ρ_h.store (substFvarMany g subst) = .some HasBool.ff := by
-        rw [← h_guard_eq]; exact h_g_ff
-      have h_wfb_hoist : WellFormedSemanticEvalBool ρ_h.eval := h_eval ▸ h_wfb
-      exact ⟨ρ_h_a, ite_step_else_forward' h_g_ff_h h_wfb_hoist h_branch_h,
-        h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩
+    exact bodySimES_cons (ite_stmtSimES h_guard_eq ih_then ih_else) ih_rest
   | @ite_nondet md tss_src tss_h ess_src ess_h body_src body_h
       h_then h_else h_rest ih_then ih_else ih_rest =>
-    refine bodySimE_cons ?_ ih_rest
     -- A nondet `.ite` makes no guard test; the hoist replays the SAME branch choice.
-    unfold OptEStepBProvider.StmtSimE
-    intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
-    rcases ite_nondet_terminal_inv' h_run with h_branch_run | h_branch_run
-    · obtain ⟨ρ_h_a, h_branch_h, h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩ :=
-        ih_then ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_branch_run
-      exact ⟨ρ_h_a, ite_nondet_step_then_forward' h_branch_h,
-        h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩
-    · obtain ⟨ρ_h_a, h_branch_h, h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩ :=
-        ih_else ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_branch_run
-      exact ⟨ρ_h_a, ite_nondet_step_else_forward' h_branch_h,
-        h_hinv_a, h_hf_a, h_bnd_a, h_eval_a⟩
+    exact bodySimES_cons (ite_nondet_stmtSimES ih_then ih_else) ih_rest
   | @loop g md lbody_src lbody_h body_src body_h
       h_B_fresh_g h_lbody h_rest ih_lbody ih_rest =>
-    refine bodySimE_cons ?_ ih_rest
-    -- head StmtSimE for the renamed nested loop, via nestedLoop_stmtSimE.
-    have inner_sim : BodySim (extendEval := extendEval) A B subst lbody_src lbody_h :=
-      bodySimE_to_bodySim ih_lbody
-    exact nestedLoop_stmtSimE (A := A) (B := B) (subst := subst)
-      h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_B_fresh_g
-      h_wfvar h_wfcongr h_wfsubst h_wfdef inner_sim
-      (h_lbody.src_no_exit) h_lbody.noFuncDecl_src h_lbody.noFuncDecl_h
+    -- head StmtSimES for the renamed nested loop, via `nestedLoop_stmtSimES`; its
+    -- inner-body sim is the SUM-TYPED IH (`bodySimES_to_bodySimSum ih_lbody`).
+    have inner_sim : LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval) A B subst
+        lbody_src lbody_h := bodySimES_to_bodySimSum ih_lbody
+    exact bodySimES_cons
+      (nestedLoop_stmtSimES (A := A) (B := B) (subst := subst)
+        h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_B_fresh_g
+        h_wfvar h_wfcongr h_wfsubst h_wfdef inner_sim
+        h_lbody.noFuncDecl_src h_lbody.noFuncDecl_h)
+      ih_rest
+  | @exit lbl md body_src body_h h_rest ih_rest =>
+    -- A `.exit lbl md` is left literally unchanged by the rename; its base sim is
+    -- the banked `exit_stmtSimES`.
+    exact bodySimES_cons (exit_stmtSimES A B subst lbl md) ih_rest
 
 end LoopInitHoistBodyTransport
 end Imperative

@@ -260,6 +260,16 @@ theorem stmtSubstMany_typeDecl [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident
     rcases hd with ⟨x, y⟩
     rw [stmtSubstMany_cons, Stmt.substIdent_typeDecl]; exact ih
 
+/-- An `.exit` is left literally unchanged by the rename fold (`substIdent_exit`). -/
+theorem stmtSubstMany_exit [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
+    (lbl : String) (md : MetaData P) (subst : List (P.Ident × P.Ident)) :
+    stmtSubstMany (.exit lbl md) subst = (.exit lbl md : Stmt P (Cmd P)) := by
+  induction subst with
+  | nil => rfl
+  | cons hd tl ih =>
+    rcases hd with ⟨x, y⟩
+    rw [stmtSubstMany_cons, Stmt.substIdent_exit]; exact ih
+
 /-! ## The membership invariant carried through the recursion. -/
 
 /-- Every entry harvested from `body₁` at `σ` has its source ident in `A`, its
@@ -602,28 +612,20 @@ theorem unique_of_tgt_nodup
 
 `BodyTransport` (read its constructors) covers: `.det`-rhs `init`, `.nondet`-rhs
 `init`, `.det`-rhs `set`, `.nondet`-rhs `set`, `assert`/`assume`/`cover`,
-`.block`, `.det`-guard `.ite`, `.nondet`-guard `.ite`, `.typeDecl`, and a
-measure-free, invariant-free, `.det`-guard nested `.loop`.  It carries NO
-constructor for a measured / invariant-bearing / `.nondet`-guard `.loop`, a
-`.funcDecl`, or an `.exit`.
+`.block`, `.det`-guard `.ite`, `.nondet`-guard `.ite`, `.typeDecl`, an `.exit`,
+and a measure-free, invariant-free, `.det`-guard nested `.loop`.  It carries NO
+constructor for a measured / invariant-bearing / `.nondet`-guard `.loop` or a
+`.funcDecl`.
 
 `transportShape` is the Bool walker that asserts a body lies in this expressible
 fragment.  Via `transportShape_of_arm_preconds` below it FOLLOWS FROM the genuine
-§E `.loop` arm Bool preconditions (`containsNondetLoop = false`,
+§E `.loop` arm Bool preconditions ALONE (`containsNondetLoop = false`,
 `containsFuncDecl = false`, `loopHasNoInvariants = true`, `loopMeasureNone =
-true`) PLUS one residual fact, `Block.noExit body = true` (no `.exit` anywhere in
-the body).
-
-That `noExit` requirement is the PRECISE residual gap.  It is NOT implied by the
-§E `.loop` arm's `exitsCoveredByBlocks []`: a block-covered exit
-(`.block "L" [.exit "L" md] md`) satisfies `exitsCoveredByBlocks []` and would
-run to `.terminal` (caught by `step_block_exit_match`), yet `transportShape`
-rejects it because `BodyTransport` has no `.exit` constructor and `Block.bodyTransport`'s
-`.block` arm consumes the inner sub-derivation through `block_terminal_inv'`,
-which assumes the inner body never `.exiting`s (`BodySimE` is TERMINAL-ONLY).
-Relating a `.block` whose inner body exits to the block's own label would require
-extending `BodySimE` to a sum-typed (terminal-OR-exiting) inner simulation — a
-genuine framework extension, deferred. -/
+true`).  An `.exit` is now admitted: `BodyTransport` carries an `.exit`
+constructor and `Block.bodyTransport` produces a SUM-TYPED `BodySimES`, so a
+`.block` whose inner body breaks (and the loop early-exit pattern) is handled by
+the banked `block_stmtSimES` / `exit_stmtSimES` arms — no `noExit` residual is
+needed. -/
 
 mutual
 @[expose] def Stmt.transportShape (s : Stmt P (Cmd P)) : Bool :=
@@ -640,7 +642,7 @@ mutual
   | .ite .nondet tss ess _ => Block.transportShape tss && Block.transportShape ess
   | .loop (.det _) none [] lbody _ => Block.transportShape lbody
   | .loop _ _ _ _ _ => false
-  | .exit _ _ => false
+  | .exit _ _ => true
   | .funcDecl _ _ => false
   | .typeDecl _ _ => true
   termination_by sizeOf s
@@ -652,30 +654,25 @@ mutual
   termination_by sizeOf ss
 end
 
-/-! ## `noExit`: the residual fact `transportShape` needs beyond the §E preconds.
+/-! ## `transportShape` from the §E `.loop` arm Bool preconditions.
 
-`transportShape` rejects an `.exit` anywhere (no `BodyTransport.exit` ctor, and
-`BodySimE` is terminal-only).  `Block.noExit` is the Bool walker asserting a body
-has no `.exit` constructor anywhere; `transportShape_of_arm_preconds` discharges
-`transportShape` from the §E Bool loop preconditions plus `noExit`.  The walker
-itself is defined upstream in `LoopInitHoistContains` so the correctness proof
-and this producer share one constant. -/
+With `BodyTransport` now carrying an `.exit` constructor (and `Block.bodyTransport`
+producing a SUM-TYPED `BodySimES`, so an inner body that breaks is handled), the
+expressible fragment ADMITS `.exit` anywhere — `transportShape (.exit _ _) = true`.
+The residual `noExit` requirement is therefore GONE.
 
-/-! `transportShape` FOLLOWS FROM the genuine §E `.loop` arm Bool preconditions
+`transportShape` FOLLOWS FROM the genuine §E `.loop` arm Bool preconditions ALONE
 (`containsNondetLoop = false`, `containsFuncDecl = false`, `loopHasNoInvariants =
-true`, `loopMeasureNone = true`) plus the residual `Block.noExit` fact.  Proved
-by mutual structural induction; each statement constructor reduces to its
-sub-blocks under the corresponding Bool-walker reductions.  The consumer (the §E
-`.loop` arm) discharges `transportShape` by supplying these preconditions and
-`noExit`. -/
+true`, `loopMeasureNone = true`).  Proved by mutual structural induction; each
+statement constructor reduces to its sub-blocks under the corresponding Bool-walker
+reductions (the `.exit` arm is now a trivial `true`). -/
 mutual
 theorem Stmt.transportShape_of_arm_preconds
     (s : Stmt P (Cmd P))
     (h_nd : Stmt.containsNondetLoop s = false)
     (h_fd : Stmt.containsFuncDecl s = false)
     (h_inv : Stmt.loopHasNoInvariants s = true)
-    (h_measure : Stmt.loopMeasureNone s = true)
-    (h_noexit : Stmt.noExit s = true) :
+    (h_measure : Stmt.loopMeasureNone s = true) :
     Stmt.transportShape s = true := by
   match s with
   | .cmd c =>
@@ -692,15 +689,13 @@ theorem Stmt.transportShape_of_arm_preconds
         (by simpa only [Stmt.containsFuncDecl] using h_fd)
         (by simpa only [Stmt.loopHasNoInvariants] using h_inv)
         (by simpa only [Stmt.loopMeasureNone] using h_measure)
-        (by simpa only [Stmt.noExit] using h_noexit)
   | .ite g tss ess md =>
       simp only [Stmt.containsNondetLoop, Bool.or_eq_false_iff] at h_nd
       simp only [Stmt.containsFuncDecl, Bool.or_eq_false_iff] at h_fd
       simp only [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_inv
       simp only [Stmt.loopMeasureNone, Bool.and_eq_true] at h_measure
-      simp only [Stmt.noExit, Bool.and_eq_true] at h_noexit
-      have h_t := Block.transportShape_of_arm_preconds tss h_nd.1 h_fd.1 h_inv.1 h_measure.1 h_noexit.1
-      have h_e := Block.transportShape_of_arm_preconds ess h_nd.2 h_fd.2 h_inv.2 h_measure.2 h_noexit.2
+      have h_t := Block.transportShape_of_arm_preconds tss h_nd.1 h_fd.1 h_inv.1 h_measure.1
+      have h_e := Block.transportShape_of_arm_preconds ess h_nd.2 h_fd.2 h_inv.2 h_measure.2
       cases g <;>
         simp only [Stmt.transportShape, Bool.and_eq_true] <;> exact ⟨h_t, h_e⟩
   | .loop g m inv body md =>
@@ -722,8 +717,7 @@ theorem Stmt.transportShape_of_arm_preconds
           (by simpa only [Stmt.containsFuncDecl] using h_fd)
           (by rw [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_inv; exact h_inv.2)
           (by rw [Stmt.loopMeasureNone, Bool.and_eq_true] at h_measure; exact h_measure.2)
-          (by simpa only [Stmt.noExit] using h_noexit)
-  | .exit lbl md => exact absurd h_noexit (by simp [Stmt.noExit])
+  | .exit lbl md => simp only [Stmt.transportShape]
   | .funcDecl d md => exact absurd h_fd (by simp [Stmt.containsFuncDecl])
   | .typeDecl t md => simp only [Stmt.transportShape]
   termination_by sizeOf s
@@ -733,8 +727,7 @@ theorem Block.transportShape_of_arm_preconds
     (h_nd : Block.containsNondetLoop ss = false)
     (h_fd : Block.containsFuncDecl ss = false)
     (h_inv : Block.loopHasNoInvariants ss = true)
-    (h_measure : Block.loopMeasureNone ss = true)
-    (h_noexit : Block.noExit ss = true) :
+    (h_measure : Block.loopMeasureNone ss = true) :
     Block.transportShape ss = true := by
   match ss with
   | [] => simp only [Block.transportShape]
@@ -743,10 +736,9 @@ theorem Block.transportShape_of_arm_preconds
       simp only [Block.containsFuncDecl, Bool.or_eq_false_iff] at h_fd
       simp only [Block.loopHasNoInvariants, Bool.and_eq_true] at h_inv
       simp only [Block.loopMeasureNone, Bool.and_eq_true] at h_measure
-      simp only [Block.noExit, Bool.and_eq_true] at h_noexit
       simp only [Block.transportShape, Bool.and_eq_true]
-      exact ⟨Stmt.transportShape_of_arm_preconds s h_nd.1 h_fd.1 h_inv.1 h_measure.1 h_noexit.1,
-             Block.transportShape_of_arm_preconds rest h_nd.2 h_fd.2 h_inv.2 h_measure.2 h_noexit.2⟩
+      exact ⟨Stmt.transportShape_of_arm_preconds s h_nd.1 h_fd.1 h_inv.1 h_measure.1,
+             Block.transportShape_of_arm_preconds rest h_nd.2 h_fd.2 h_inv.2 h_measure.2⟩
   termination_by sizeOf ss
 end
 
@@ -932,6 +924,14 @@ theorem Block.bodyTransport_of_lift [HasFvar P] [HasIdent P] [HasSubstFvar P] [H
             simp [Stmt.liftInitsInLoopBodyM]
           rw [h_sres, applyRenames_singleton, stmtSubstMany_typeDecl]
           exact BodyTransport.typeDecl h_tail
+      | .exit lbl md, _, _, _, _, _ =>
+          -- residual of an `.exit` is the exit verbatim; `applyRenames`/`substIdent`
+          -- leave it unchanged.
+          have h_sres : (Stmt.liftInitsInLoopBodyM (.exit lbl md) σ).1.2.2
+              = [.exit lbl md] := by
+            simp [Stmt.liftInitsInLoopBodyM]
+          rw [h_sres, applyRenames_singleton, stmtSubstMany_exit]
+          exact BodyTransport.exit h_tail
       | .block lbl bss md, h_if_s, h_entries, h_B_fresh, h_mdB, h_shape_s =>
           -- residual of a .block = [.block lbl bss_res md].
           rw [Stmt.liftInitsInLoopBodyM_block_residual, applyRenames_singleton, stmtSubstMany_block]
@@ -1011,28 +1011,26 @@ theorem Block.bodyTransport_of_lift [HasFvar P] [HasIdent P] [HasSubstFvar P] [H
           rw [Block.liftInitsInLoopBodyM_snd_no_inits lbody σ h_lbody_iv] at h_lbody
           exact BodyTransport.loop h_B_g h_lbody h_tail
       -- The remaining head shapes are excluded by `transportShape` (a measured /
-      -- invariant-bearing / nondet-guard loop, a top-level `.exit`, or a
-      -- `.funcDecl`).
+      -- invariant-bearing / nondet-guard loop, or a `.funcDecl`).
       | .loop (.det g) (some me) inv lbody md, _, _, _, _, h_shape =>
           exact absurd h_shape (by simp [Stmt.transportShape])
       | .loop (.det g) none (i :: inv) lbody md, _, _, _, _, h_shape =>
           exact absurd h_shape (by simp [Stmt.transportShape])
       | .loop ExprOrNondet.nondet m inv lbody md, _, _, _, _, h_shape =>
           exact absurd h_shape (by simp [Stmt.transportShape])
-      | .exit lbl md, _, _, _, _, h_shape =>
-          exact absurd h_shape (by simp [Stmt.transportShape])
       | .funcDecl d md, _, _, _, _, h_shape =>
           exact absurd h_shape (by simp [Stmt.transportShape])
   termination_by sizeOf body₁
 
 /-! ## Step B builder: the producer's `BodyTransport` becomes the driver's
-`BodySim`.
+sum-typed `BodySimSum`.
 
 `Block.bodyTransport_of_lift` produces a `BodyTransport` derivation;
-`LoopInitHoistBodyTransport.Block.bodyTransport` turns it into the eval-carrying
-`BodySimE`; `OptEStepBProvider.bodySimE_to_bodySim` forgets the eval conjunct to
-land in the driver's `BodySim` slot.  This packages Step B for the §E `.loop`
-arm at the harvest carriers `A B subst`. -/
+`LoopInitHoistBodyTransport.Block.bodyTransport` turns it into the eval-carrying,
+SUM-TYPED `BodySimES`; `OptEStepBProvider.bodySimES_to_bodySimSum` forgets the eval
+conjunct to land in the driver's `BodySimSum` slot (terminal-OR-exiting).  This
+packages Step B for the §E `.loop` arm at the harvest carriers `A B subst` and
+admits a loop body that breaks (`.exit`). -/
 theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
@@ -1053,23 +1051,20 @@ theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasVal P
     (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
     (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
-    LoopInitHoistLoopDriver.BodySim (extendEval := extendEval) A B subst
+    LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval) A B subst
       body₁
       (Block.applyRenames subst (Block.liftInitsInLoopBodyM body₁ σ).1.2.2) := by
-  -- `BodySimE` (eval-carrying, `@[expose]`) drives into `LoopInitHoistLoopDriver.BodySim`
-  -- via `mk_bodySim`, dropping the eval conjunct from each output.
-  have hBE : OptEStepBProvider.BodySimE (extendEval := extendEval) A B subst body₁
+  -- `BodySimES` (eval-carrying, sum-typed, `@[expose]`) drives into
+  -- `LoopInitHoistLoopDriver.BodySimSum` via `bodySimES_to_bodySimSum`, dropping the
+  -- eval conjunct from each (terminal and exiting) output.
+  have hBES : OptEStepBProvider.BodySimES (extendEval := extendEval) A B subst body₁
       (Block.applyRenames subst (Block.liftInitsInLoopBodyM body₁ σ).1.2.2) :=
     LoopInitHoistBodyTransport.Block.bodyTransport (extendEval := extendEval)
       (Block.bodyTransport_of_lift body₁ σ A B subst h_initfree h_entries h_B_fresh
         h_mod_disjoint_B h_subst_wf h_A_subst_fst h_src_nodup h_tgt_nodup h_disjoint h_shape)
       h_subst_fst_A h_A_subst_fst h_subst_snd_B h_src_nodup h_disjoint h_tgt_nodup
       h_wfvar h_wfcongr h_wfsubst h_wfdef
-  refine LoopInitHoistLoopDriver.mk_bodySim A B subst _ _
-    (fun ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run => ?_)
-  obtain ⟨ρ_h', h_run_h, h_hinv', h_hf', h_bnd', _⟩ :=
-    hBE ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
-  exact ⟨ρ_h', h_run_h, h_hinv', h_hf', h_bnd'⟩
+  exact OptEStepBProvider.bodySimES_to_bodySimSum hBES
 
 end LoopInitHoistStepCProducer
 end Imperative
