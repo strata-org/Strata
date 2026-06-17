@@ -86,15 +86,13 @@ structure LiftState where
 
 @[expose] abbrev LiftM := StateM LiftState
 
-private def emptyMd : Option String := none
-
 private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
   let counter := counters.find? (·.1 == varName) |>.map (·.2) |>.getD 0
   modify fun s => { s with varCounters := (varName, counter + 1) :: s.varCounters.filter (·.1 != varName) }
   return s!"${varName.text}_{counter}"
 
-private def freshCondVar : LiftM Identifier := do
+private def freshTempVar : LiftM Identifier := do
   let n := (← get).condCounter
   modify fun s => { s with condCounter := n + 1 }
   return s!"$cndtn_{n}"
@@ -249,7 +247,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
-      let holeVar ← freshCondVar
+      let holeVar ← freshTempVar
       prepend ⟨ .Var (.Declare ⟨holeVar, holeType⟩), source⟩
       return ⟨ .Var (.Local holeVar), source ⟩
 
@@ -292,10 +290,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       return seqCall
     else
-      let startingPrepend ← takePrepends
-      let seqArgs ← args.reverse.mapM transformExpr
-      let argsPrepends ← takePrepends
-      let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
+      let seqArgsAndPrepends ← args.reverse.mapM transformLiftedExpr
+      let seqArgs := seqArgsAndPrepends.map (fun t => t.2)
+      let seqCall: StmtExprMd := ⟨.StaticCall callee seqArgs.reverse, source⟩
       -- Imperative call in expression position: lift to an assignment.
       -- Only valid for single-output procedures (or unresolved ones where we
       -- fall back to a single target). Multi-output procedures in expression
@@ -305,15 +302,16 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         | .staticProcedure proc => proc.outputs
         | .instanceProcedure _ proc => proc.outputs
         | _ => []
-      let callResultVar ← freshCondVar
+      let callResultVar ← freshTempVar
       let callResultType ← match outputs with
         | [single] => pure single.type
         | _ => computeType expr
-      let liftedCall := [
+      let liftedCall: List StmtExprMd := [
         ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
         ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
       ]
-      modify fun s => { s with prependedStmts := argsPrepends ++ liftedCall ++ startingPrepend}
+      prependList liftedCall
+      prependList (seqArgsAndPrepends.map (fun t => t.1)).flatten
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -335,7 +333,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         let needsCondVar := condType.val != .TVoid
 
         -- Lift the entire if-then-else. Introduce a fresh variable for the result.
-        let condVar ← freshCondVar
+        let condVar ← freshTempVar
         -- Save outer state
         let savedSubst := (← get).subst
         let savedPrepends ← takePrepends
