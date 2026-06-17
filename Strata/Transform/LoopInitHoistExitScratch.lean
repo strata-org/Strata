@@ -305,5 +305,49 @@ remaining downstream work (Phase 3+) is: re-derive the StepB body-transport
 then rewire the §E `.loop` arm to consume `loopDet_lift_2g_E` and finally drop the
 `h_noexit` precondition from `pipeline_sound`. -/
 
+/-! # Phase 3 (provider/StmtSimES layer — DONE; build-green, sorryAx-free).
+
+SCOPE CORRECTION discovered in Phase 3: the §E `.loop` arm does NOT consume the
+simple two-guard driver `loopDet_lift_2g` directly — it consumes the HEAVIER
+shapefree+undef union-carrier driver `loopDet_lift_sf_undef_recovers_single` (via
+`BodySimUSF` / `compose_union_sf`).  So a SOUND end-to-end relaxation must make the
+ENTIRE body-sim / compose / driver stack sum-typed, not just the simple driver.  The
+make-or-break soundness questions are all answered AFFIRMATIVELY with build evidence;
+the remaining cost is volume + two genuine sub-lemmas (sum-typed `compose_union_sf`
+and the sf+undef exiting driver), with NO soundness obstruction at any seam.
+
+NEW, build-green, sorryAx-free (`[propext(, Classical.choice, Quot.sound)]`):
+
+Driver (`LoopInitHoistLoopDriver.lean`):
+* `loopDet_lift_2g_TE_fuel` / `loopDet_lift_2g_TE` — sum-typed TERMINAL-target driver
+  (drops `h_src_body_no_exit`; peels iterations via `blockT_none_reaches_terminal`).
+* `loopDet_lift_renamedGuard_E` / `loopDet_lift_renamedGuard_TE` — thin renamed-guard
+  wrappers over the exiting / terminal sum-typed drivers.
+
+Provider (`LoopInitHoistOptEStepBProviderSpike.lean`):
+* `BodySimES` / `StmtSimES` — eval-carrying SUM-TYPED sims.
+* `bodySimES_nil` / `bodySimES_cons` (the sum-typed cons-sequencer) /
+  `bodySimES_to_bodySimSum`.
+* Every per-statement arm a sum-typed `Block.bodyTransport` needs, PROVEN standalone:
+  `stmtSimE_to_stmtSimES_of_noExit` + `cmd_stmt_no_exit` (`.cmd`/`.typeDecl`),
+  `exit_stmtSimES` (`.exit`), `block_stmtSimES` (the StepC-comment's hard `.block`
+  arm — all three outcomes: terminal / label-match catch / label-mismatch propagate),
+  `ite_stmtSimES` / `ite_nondet_stmtSimES` (`.ite`), `nestedLoop_stmtSimES` (`.loop`).
+
+Support (`StmtSemanticsProps.lean`): `smallStep_noFuncDecl_preserves_eval_exiting`.
+
+REMAINING (mechanical assembly + 2 sub-lemmas, NOT a soundness gap):
+(a) `BodyTransport` inductive `.exit` + exit-permitting `.block` ctors; rewrite
+    `Block.bodyTransport` to produce `BodySimES` (swap `bodySimE_cons`→`bodySimES_cons`
+    and feed the proven arms above).
+(b) sum-typed `BodySimUSF` + `compose_union_sf` (exiting clause composes sequentially
+    body→body₁→body₃, parallel to the cons-sequencer).
+(c) sum-typed `loopDet_lift_sf_2g_undef_fuel` (structurally = `loopDet_lift_2g_E_fuel`
+    with `Vs`/`Vh`/`σ_sf` threaded, unused on the exit path).
+(d) rewire `loop_arm_close` (dispatch the exiting `h_cfg_src` case to the sum-typed
+    sf+undef driver instead of `loopDet_no_exit.elim`); supply `stepA`'s exiting clause
+    (the underlying `hoistLoopPrefixInits_preserves` is already sum-typed); drop
+    `h_noexit` from `hoistLoopPrefixInits_preserves(_kind)` and `pipeline_sound`. -/
+
 end LoopInitHoistExitScratch
 end Imperative
