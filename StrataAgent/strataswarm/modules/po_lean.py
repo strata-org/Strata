@@ -116,14 +116,18 @@ class CompileResult:
 @dataclass
 class TheoremBlock:
     name: str = ""
-    start: int = 0  # line number (0-indexed)
+    start: int = 0  # line number (1-indexed, from itp_interface)
     end: int = 0
     has_sorry: bool = False
+    decl_type: str = ""  # "theorem", "def", "unknown", "end"
+    text: str = ""  # full declaration text (clean, no trailing comments)
+    mutual_group: int | None = None  # index of mutual group, or None
 
 
 @dataclass
 class SplitResult:
     blocks: list[TheoremBlock] = field(default_factory=list)
+    mutual_groups: dict[int, list[str]] = field(default_factory=dict)
     error: str | None = None
 
 
@@ -342,15 +346,79 @@ class SwarmLeanTools:
         )
 
     def split_theorems(self, file_path: str) -> SplitResult:
-        """Get theorem blocks with line extents and sorry status."""
-        result = self._send("split_theorems_", file_path)
-        if "error" in result:
-            return SplitResult(error=result["error"])
-        return SplitResult(
-            blocks=[TheoremBlock(name=b["name"], start=b["start"], end=b["end"],
-                                 has_sorry=b["has_sorry"])
-                    for b in result.get("blocks", [])],
-        )
+        """Get theorem/def blocks with line extents, sorry status, and text.
+
+        Uses itp_interface's TacticParser for proper Lean 4 syntax parsing.
+        Handles mutual blocks, noncomputable def, termination_by, etc.
+        """
+        from itp_interface.lean.tactic_parser import TacticParser, RequestType
+
+        try:
+            parser = TacticParser(project_path=str(self._root))
+            results, errors = parser.parse_file(file_path, parse_type=RequestType.PARSE_THEOREM)
+            parser.close()
+        except Exception as e:
+            return SplitResult(error=str(e))
+
+        if not results:
+            return SplitResult(error=errors[0].message if errors else "No declarations found")
+
+        # Filter to actual declarations (skip open/variable/end/anonymous)
+        decl_types = {"theorem", "def", "unknown"}  # unknown = first in mutual block
+        blocks = []
+        end_lines = []  # track end markers for mutual group detection
+
+        for r in results:
+            if r.decl_type == "end" and r.name == "[anonymous]":
+                end_lines.append(r.line)
+                continue
+            if r.decl_type not in decl_types:
+                continue
+            if r.name in ("[anonymous]", ""):
+                continue
+            # Skip open/variable declarations (no text or trivial)
+            if not r.text or r.text.strip().startswith("open ") or r.text.strip().startswith("variable "):
+                continue
+
+            has_sorry = "sorry" in r.text
+            blocks.append(TheoremBlock(
+                name=r.name,
+                start=r.line,
+                end=r.end_line,
+                has_sorry=has_sorry,
+                decl_type=r.decl_type,
+                text=r.text,
+            ))
+
+        # Detect mutual groups by finding mutual...end ranges in the source
+        content = (self._root / file_path).read_text()
+        file_lines = content.splitlines()
+        mutual_ranges: list[tuple[int, int]] = []  # (mutual_line, end_line) both 1-indexed
+        i = 0
+        while i < len(file_lines):
+            if file_lines[i].strip() == "mutual":
+                mutual_start = i + 1  # 1-indexed
+                # Find matching end
+                j = i + 1
+                while j < len(file_lines) and file_lines[j].strip() != "end":
+                    j += 1
+                mutual_end = j + 1  # 1-indexed
+                mutual_ranges.append((mutual_start, mutual_end))
+                i = j + 1
+            else:
+                i += 1
+
+        mutual_groups: dict[int, list[str]] = {}
+        group_id = 0
+        for m_start, m_end in mutual_ranges:
+            group_members = [b for b in blocks if b.start >= m_start and b.end <= m_end]
+            if len(group_members) > 1:
+                for b in group_members:
+                    b.mutual_group = group_id
+                mutual_groups[group_id] = [b.name for b in group_members]
+                group_id += 1
+
+        return SplitResult(blocks=blocks, mutual_groups=mutual_groups)
 
     # ─── Convenience methods ─────────────────────────────────────────────
 
@@ -394,20 +462,53 @@ class SwarmLeanTools:
         # Get sorry positions grouped by theorem
         sorry_by_thm = self.get_sorries_by_theorem(file_path)
 
+        # Detect mutual blocks
+        content = source.read_text() if not errors else ""
+        file_lines = content.splitlines() if content else []
+        mutual_ranges = []
+        i = 0
+        while i < len(file_lines):
+            if file_lines[i].strip() == "mutual":
+                end_i = i + 1
+                while end_i < len(file_lines) and file_lines[end_i].strip() != "end":
+                    end_i += 1
+                mutual_ranges.append((i, end_i))
+                i = end_i + 1
+            else:
+                i += 1
+
+        # Map theorem → mutual group id
+        def get_mutual_id(block):
+            for idx, (mr_start, mr_end) in enumerate(mutual_ranges):
+                if mr_start <= block.start <= mr_end:
+                    return idx
+            return None
+
         theorems = []
         for b in (split.blocks if not split.error else []):
-            theorems.append({
+            entry = {
                 "name": b.name,
                 "status": "sorry" if b.has_sorry else "proved",
                 "start_line": b.start,
                 "end_line": b.end,
                 "has_sorry": b.has_sorry,
                 "sorry_positions": sorry_by_thm.get(b.name, []),
-            })
+            }
+            mid = get_mutual_id(b)
+            if mid is not None:
+                entry["mutual_group"] = mid
+            theorems.append(entry)
 
         main_thm = theorems[-1] if theorems else None
 
-        return {
+        # Build mutual groups summary
+        mutual_groups = {}
+        for t in theorems:
+            mg = t.get("mutual_group")
+            if mg is not None:
+                mutual_groups.setdefault(mg, []).append(t["name"])
+
+        result = {
             "theorems": theorems,
             "sorry_count": sorry_info.total,
             "compiles": success,
@@ -416,6 +517,9 @@ class SwarmLeanTools:
             "main_theorem": main_thm["name"] if main_thm else None,
             "main_theorem_sorry_free": (not main_thm["has_sorry"]) if main_thm else False,
         }
+        if mutual_groups:
+            result["mutual_groups"] = mutual_groups
+        return result
 
     def get_sorry_positions(self, file_path: str) -> list[dict]:
         """Get all sorry positions in a file (comment-aware).
@@ -454,6 +558,8 @@ class SwarmLeanTools:
             return {}
 
         # Group sorry positions by which theorem block they fall in
+        # sorry_positions from SwarmAgentTools are 0-indexed
+        # block.start/end from itp_interface TacticParser are 1-indexed
         result = {}
         for block in split.blocks:
             if not block.has_sorry:
@@ -463,7 +569,8 @@ class SwarmLeanTools:
 
             block_sorries = []
             for pos in positions:
-                if block.start <= pos["line"] <= block.end:
+                pos_1indexed = pos["line"] + 1
+                if block.start <= pos_1indexed <= block.end:
                     block_sorries.append(pos)
 
             if block_sorries:
@@ -564,10 +671,10 @@ class SwarmLeanTools:
         content = source.read_text()
         lines = content.splitlines()
 
-        # Header = everything before first theorem (imports, opens, variables)
-        # Strip comments and structural keywords (mutual/end) that don't make sense standalone
-        first_thm_line = min(b.start for b in split.blocks) if split.blocks else 0
-        header_lines = [l for l in lines[:first_thm_line]
+        # Header = everything before first declaration (imports, open, variable)
+        # Use 1-indexed start from first block, convert to 0-indexed for line slicing
+        first_decl_line = min(b.start for b in split.blocks) - 1 if split.blocks else 0
+        header_lines = [l for l in lines[:first_decl_line]
                         if not l.strip().startswith("/-") and not l.strip().startswith("--")
                         and l.strip() not in ("mutual", "end")]
         header = "\n".join(header_lines)
@@ -579,27 +686,151 @@ class SwarmLeanTools:
             out_path = source.parent
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Extract each theorem into its own file
+        # Group target_blocks by mutual group
+        groups: list[list[TheoremBlock]] = []
+        seen = set()
+        for block in target_blocks:
+            if block.name in seen:
+                continue
+            if block.mutual_group is not None:
+                # Find all target_blocks in same mutual group
+                group = [b for b in target_blocks if b.mutual_group == block.mutual_group]
+                for b in group:
+                    seen.add(b.name)
+                groups.append(group)
+            else:
+                seen.add(block.name)
+                groups.append([block])
+
+        # Build dependency map using thm_depends_on
+        extracted_name_set = {b.name for b in target_blocks}
+        deps_map: dict[str, list[str]] = {}
+        for block in target_blocks:
+            deps = self.thm_depends_on(file_path, block.name)
+            deps_map[block.name] = [d for d in deps if d in extracted_name_set]
+
+        # Merge groups with circular dependencies (SCC on group graph)
+        # Build group-level dependency graph
+        name_to_group_idx = {}
+        for gi, group in enumerate(groups):
+            for b in group:
+                name_to_group_idx[b.name] = gi
+
+        # Find cycles: if group A depends on group B and B depends on A, merge them
+        merged = True
+        while merged:
+            merged = False
+            group_deps: dict[int, set[int]] = {i: set() for i in range(len(groups))}
+            # Rebuild name→group mapping
+            name_to_group_idx = {}
+            for gi, group in enumerate(groups):
+                for b in group:
+                    name_to_group_idx[b.name] = gi
+            # Build group-level deps
+            for gi, group in enumerate(groups):
+                for b in group:
+                    for dep_name in deps_map.get(b.name, []):
+                        dep_gi = name_to_group_idx.get(dep_name)
+                        if dep_gi is not None and dep_gi != gi:
+                            group_deps[gi].add(dep_gi)
+            # Find any mutual dependency (cycle of length 2+)
+            for gi in range(len(groups)):
+                for gj in group_deps.get(gi, set()):
+                    if gi in group_deps.get(gj, set()):
+                        # Merge gj into gi
+                        groups[gi] = groups[gi] + groups[gj]
+                        groups.pop(gj)
+                        merged = True
+                        break
+                if merged:
+                    break
+
+        # For each group, use the first theorem's name as the file name
+        name_to_module: dict[str, str] = {}
+        out_rel = str(out_path.relative_to(root))
+        for group in groups:
+            safe_name = _ascii_escape(group[0].name)
+            module = f"{out_rel}/lemma_helper_{safe_name}".replace("/", ".")
+            for b in group:
+                name_to_module[b.name] = module
+
+        # Extract each group into its own file
         created_files: list[str] = []
         extracted_names: list[str] = []
 
-        for block in target_blocks:
-            block_lines = lines[block.start:block.end + 1]
-            # Strip 'private' — extracted theorems must be importable
-            if block_lines and block_lines[0].strip().startswith("private "):
-                block_lines[0] = block_lines[0].replace("private ", "", 1)
-            block_text = "\n".join(block_lines)
+        for group in groups:
+            if len(group) > 1:
+                # Mutual group: grab raw lines from file (mutual...end inclusive)
+                # Lines are 1-indexed; first member starts at mutual keyword
+                first_line = min(b.start for b in group) - 1  # 0-indexed, includes 'mutual'
+                last_line = max(b.end for b in group)  # 1-indexed end of last member
+                # Find the 'end' line after last member
+                end_idx = last_line  # 0-indexed search start
+                while end_idx < len(lines) and lines[end_idx].strip() != "end":
+                    end_idx += 1
+                block_lines = lines[first_line:end_idx + 1]
+                # Strip 'private' from all declarations
+                block_lines = [l.replace("private theorem ", "theorem ").replace("private def ", "def ").replace("private noncomputable def ", "noncomputable def ")
+                               for l in block_lines]
+                block_text = "\n".join(block_lines)
+            else:
+                # Standalone: use the clean text from itp_interface
+                block = group[0]
+                block_text = block.text
+                # Strip 'private'
+                block_text = block_text.replace("private theorem ", "theorem ", 1)
+                block_text = block_text.replace("private def ", "def ", 1)
+                block_text = block_text.replace("private noncomputable def ", "noncomputable def ", 1)
 
-            safe_name = _ascii_escape(block.name)
+            # Add imports for sibling theorems this group depends on
+            group_names = {b.name for b in group}
+            dep_imports = set()
+            for b in group:
+                for dep_name in deps_map.get(b.name, []):
+                    if dep_name not in group_names:
+                        dep_imports.add(f"import {name_to_module[dep_name]}")
+
+            safe_name = _ascii_escape(group[0].name)
             new_filename = f"lemma_helper_{safe_name}.lean"
             new_path = out_path / new_filename
 
-            new_content = header.rstrip() + "\n\n" + block_text + "\n"
+            # Build file: header + dep imports + block text
+            h_lines = header.rstrip().splitlines()
+            if dep_imports:
+                insert_pos = 0
+                for idx, hl in enumerate(h_lines):
+                    if hl.strip().startswith("import "):
+                        insert_pos = idx + 1
+                for idx, imp in enumerate(sorted(dep_imports)):
+                    h_lines.insert(insert_pos + idx, imp)
+            new_content = "\n".join(h_lines) + "\n\n" + block_text + "\n"
             new_path.write_text(new_content)
 
             rel_path = str(new_path.relative_to(root))
             created_files.append(rel_path)
-            extracted_names.append(block.name)
+            extracted_names.extend(b.name for b in group)
+
+        # Build files in dependency order so .olean files exist for sibling imports
+        import subprocess
+        # Topological sort: build files that have no sibling deps first
+        file_to_deps: dict[str, set[str]] = {}
+        name_to_file: dict[str, str] = {}
+        for f, names in zip(created_files, [extracted_names]):
+            pass  # need per-group info
+
+        # Simple approach: build all files, repeat until no progress (handles cycles)
+        remaining = list(created_files)
+        for _ in range(3):  # max 3 passes
+            still_failing = []
+            for f in remaining:
+                module = f.replace("/", ".").removesuffix(".lean")
+                result = subprocess.run(["lake", "build", module],
+                    cwd=str(root), capture_output=True, timeout=120)
+                if result.returncode != 0:
+                    still_failing.append(f)
+            if not still_failing:
+                break
+            remaining = still_failing
 
         # Verify: each extracted file should compile (with sorry)
         failed_files: list[str] = []

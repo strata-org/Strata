@@ -5,8 +5,15 @@ description = "Multi-agent orchestration framework for claude_agent_sdk"
 requires-python = ">=3.14"
 dependencies = [
     "claude-agent-sdk>=0.2.82",
+    "itp-interface>=1.9.0; python_version < '4'",
     "jinja2>=3.1",
     "pydantic>=2.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
 ]
+
+[tool.uv]
+# itp-interface installed with --no-deps (numpy build fails on GCC 7.3)
+# Install manually: uv pip install itp-interface==1.9.0 --no-deps
+# Then: LEAN_VERSION="4.29.1" install-itp-interface
+no-build-isolation-package = ["itp-interface"]

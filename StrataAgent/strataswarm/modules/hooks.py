@@ -15,31 +15,6 @@ from claude_agent_sdk.types import HookMatcher
 from .._workspace_hooks import matches_any, deny, allow, make_hook
 
 
-# ─── Tool error reminder: fires on PostToolUseFailure ────────────────────────
-
-def tool_error_reminder_hooks(reminder: str) -> dict:
-    """Inject a helpful reminder when any tool call fails.
-
-    The reminder is added as `additionalContext` which the model sees
-    alongside the error — guaranteed delivery, no timing issues.
-    """
-
-    async def _on_failure(input_data, tool_use_id, context):
-        if not isinstance(input_data, dict):
-            return {}
-        if input_data.get("hook_event_name") != "PostToolUseFailure":
-            return {}
-
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUseFailure",
-                "additionalContext": reminder,
-            }
-        }
-
-    return {
-        "PostToolUseFailure": [HookMatcher(matcher=".*", hooks=[_on_failure])]
-    }
 
 
 # ─── Budget warning: fires on PreToolUse when turns running low ──────────────

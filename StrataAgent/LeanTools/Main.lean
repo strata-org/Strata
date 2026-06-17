@@ -231,7 +231,9 @@ private def handleSplitTheorems (filePath : String) : IO String := do
     for i in [:lines.length] do
       let line := lines[i]!
       let trimmed := line.trimAsciiStart.toString
-      if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " then
+      if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
+         trimmed.startsWith "def " || trimmed.startsWith "private def " ||
+         trimmed.startsWith "noncomputable def " || trimmed.startsWith "private noncomputable def " then
         -- Save previous theorem — trim end to exclude trailing comments/blanks
         if currentThm != "" then
           let hasSorry := strContains currentBlock "sorry"
@@ -244,9 +246,13 @@ private def handleSplitTheorems (filePath : String) : IO String := do
             else
               break
           blocks := blocks.push (currentThm, currentStart, endLine, hasSorry)
-        -- Start new theorem
+        -- Start new theorem/def — find the name (after keywords)
         let parts := trimmed.splitOn " "
-        let idx := if trimmed.startsWith "private" then 2 else 1
+        -- Count keyword tokens before the name: private? noncomputable? theorem/def
+        let mut idx : Nat := 0
+        if trimmed.startsWith "private " then idx := idx + 1
+        if trimmed.startsWith "private noncomputable " || trimmed.startsWith "noncomputable " then idx := idx + 1
+        idx := idx + 1  -- skip "theorem"/"def" itself
         currentThm := if h : idx < parts.length then
           ((parts[idx]).takeWhile (fun c => c != ':' && c != '(' && c != '{')).toString
         else ""
@@ -339,9 +345,13 @@ private def handleThmDependsOn (input : String) : IO String := do
     for line in lines do
       let trimmed := line.trimAsciiStart.toString
       if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
-         trimmed.startsWith "def " || trimmed.startsWith "private def " then
+         trimmed.startsWith "def " || trimmed.startsWith "private def " ||
+         trimmed.startsWith "noncomputable def " || trimmed.startsWith "private noncomputable def " then
         let parts := trimmed.splitOn " "
-        let idx := if trimmed.startsWith "private" then 2 else 1
+        let mut idx : Nat := 0
+        if trimmed.startsWith "private " then idx := idx + 1
+        if trimmed.startsWith "private noncomputable " || trimmed.startsWith "noncomputable " then idx := idx + 1
+        idx := idx + 1
         if h : idx < parts.length then
           let name := ((parts[idx]).takeWhile (fun c => c != ':' && c != '(' && c != '{')).toString
           if !name.isEmpty then
@@ -355,7 +365,11 @@ private def handleThmDependsOn (input : String) : IO String := do
       let trimmed := line.trimAsciiStart.toString
       if !foundStart then
         if (trimmed.startsWith s!"theorem {thmName}") ||
-           (trimmed.startsWith s!"private theorem {thmName}") then
+           (trimmed.startsWith s!"private theorem {thmName}") ||
+           (trimmed.startsWith s!"def {thmName}") ||
+           (trimmed.startsWith s!"private def {thmName}") ||
+           (trimmed.startsWith s!"noncomputable def {thmName}") ||
+           (trimmed.startsWith s!"private noncomputable def {thmName}") then
           foundStart := true
           -- Check if := is on the same line
           if strContains line ":= by" || strContains line ":= " then
@@ -373,7 +387,9 @@ private def handleThmDependsOn (input : String) : IO String := do
       else
         -- In body — stop at next top-level declaration
         if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
-           trimmed.startsWith "def " || trimmed.startsWith "axiom " then
+           trimmed.startsWith "def " || trimmed.startsWith "private def " ||
+           trimmed.startsWith "noncomputable def " || trimmed.startsWith "private noncomputable def " ||
+           trimmed.startsWith "axiom " then
           break
         bodyLines := bodyLines.push line
 

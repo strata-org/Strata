@@ -211,19 +211,6 @@ class swarm_agent:
                 else:
                     combined_hooks = spec_hooks
 
-        # Add tool_error_reminder as a PostToolUseFailure hook
-        if spec.tool_error_reminder:
-            from .modules.hooks import tool_error_reminder_hooks
-            reminder_hooks = tool_error_reminder_hooks(spec.tool_error_reminder)
-            if combined_hooks:
-                for event, matchers in reminder_hooks.items():
-                    if event in combined_hooks:
-                        combined_hooks[event].extend(matchers)
-                    else:
-                        combined_hooks[event] = matchers
-            else:
-                combined_hooks = reminder_hooks
-
         # Add budget warning as a PreToolUse hook (fires when turns running low)
         if spec.max_turns:
             from .modules.hooks import budget_warning_hooks

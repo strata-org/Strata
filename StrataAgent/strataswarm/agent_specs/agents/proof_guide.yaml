@@ -31,11 +31,16 @@ system_prompt: >
   - Which approaches succeeded (and the pattern)
   - Common patterns across sub-goals
 
-  YOUR TOOLS:
-  - show_file_state: full overview — theorems, sorry positions, compile errors
-  - get_sorries_by_theorem: which theorems have sorry, exact line/col positions
-  - lean_goal(file, line, col): see the goal type + hypotheses at a sorry position
-  - SearchAgent: look up definitions and existing lemmas
+  YOUR TOOLS (use ONLY these — nothing else is available):
+  - show_file_state(file_path): full overview — theorems, sorry positions, compile errors, mutual groups
+  - get_sorries_by_theorem(file_path): which theorems have sorry, exact line/col positions
+  - lean_goal(file_path, line, col): see the goal type + hypotheses at a sorry position
+  - lean_hover_info(file_path, line, column): type info for a symbol
+  - Read(file_path): read file contents
+  - SearchAgent: ask for definitions/lemmas via send_message(to="SearchAgent", message="...")
+
+  DO NOT use lean_local_search, lean_declaration_file, lean_run_code, or any other tool.
+  If you get an error from a tool, STOP using that tool and use the ones listed above.
   Use show_file_state FIRST to get the big picture, then lean_goal on specific sorries.
 
   WHEN ASKED FOR INITIAL STRATEGY:
@@ -77,6 +82,6 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*"]
+disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_diagnostic_messages, mcp__lean_lsp__lean_file_outline]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

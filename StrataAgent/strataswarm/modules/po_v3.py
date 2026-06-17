@@ -36,7 +36,7 @@ T = TypeVar("T")
 
 MAX_RETRIES = 3
 MAX_RECURSION_DEPTH = 3
-WRITER_TURNS_PER_ATTEMPT = [75, 30, 15]  # decreasing budget per attempt
+WRITER_TURNS_PER_ATTEMPT = [50, 25, 12]  # decreasing budget per attempt
 GRACE_TURNS_PER_ATTEMPT = 20  # turns per grace attempt (sorry wrap-up phase)
 WRITER_CLEANUP_TURNS = 10
 EXTRACTOR_MAX_TURNS = 50
@@ -586,45 +586,60 @@ async def _stage_child_pos(state: ProverState, agent) -> Trans:
 # ─── Stage: assemble ─────────────────────────────────────────────────────────
 
 async def _stage_assemble(state: ProverState, agent) -> Trans:
-    """Bottom-up assembly: merge Def.lean, copy proofs back, rewrite imports, verify.
+    """Bottom-up assembly: rewrite imports to point to proved child Stubs, build, verify.
 
-    Strategy (bottom-up by path depth):
-    1. For each proved child: copy its Stub.lean back to parent's lemma file
-    2. Merge all child Def.lean into the top-level Def.lean
-    3. Rewrite all local Stub.Def imports to point to top-level Def.lean
-    4. Build all decomposed files (produce .olean)
-    5. Verify Stub.lean compiles sorry-free
+    For each child PO that proved a lemma, the proved version lives at:
+      decomposed/lemma_helper_<name>/Stub.lean
+    We rewrite the import from:
+      import ...decomposed.lemma_helper_<name>
+    to:
+      import ...decomposed.lemma_helper_<name>.Stub
+
+    Only rewrite for children that actually have a Stub.lean (were proved by child PO).
     """
     import subprocess
     cwd = _resolve(agent)
     tools = get_lean_tools()
     stub_rel = f"{state.workspace}/Stub.lean"
     top_module = state.workspace.replace("/", ".")
-    top_def = cwd / state.workspace / "Stub" / "Def.lean"
-
-    # ── Step 1: Rewrite parent Stub.lean imports to point to child's Stub ──
-    # Change: import ...decomposed.lemma_helper_foo
-    # To:     import ...decomposed.lemma_helper_foo.Stub
-    # This way parent imports the child's PROVED Stub.lean directly (no copy needed)
-    stub_path = cwd / stub_rel
-    stub_content = stub_path.read_text()
-    decomposed_module_prefix = f"{top_module}.decomposed."
-    new_stub_lines = []
-    for line in stub_content.splitlines():
-        stripped = line.strip()
-        if (stripped.startswith("import ") and
-                decomposed_module_prefix in stripped and
-                not stripped.endswith(".Stub")):
-            # Append .Stub to import the child's proved file
-            new_stub_lines.append(f"{stripped}.Stub")
-        else:
-            new_stub_lines.append(line)
-    stub_path.write_text("\n".join(new_stub_lines) + "\n")
-
-    # ── Step 2: Rewrite each child's Stub.Def import to point to parent's Def ──
-    # Child imported its own copy: import ...decomposed.lemma_helper_foo.Stub.Def
-    # Change to: import <parent>.Stub.Def
     decomposed_dir_path = cwd / state.workspace / "decomposed"
+
+    # Find which child POs produced a proved Stub.lean
+    proved_modules = set()
+    if decomposed_dir_path.exists():
+        for child_dir in decomposed_dir_path.iterdir():
+            if child_dir.is_dir() and (child_dir / "Stub.lean").exists():
+                # This child was proved — its module needs .Stub suffix
+                module = str(child_dir.relative_to(cwd)).replace("/", ".")
+                proved_modules.add(module)
+
+    # Rewrite imports in Stub.lean and sibling decomposed/*.lean files
+    files_to_rewrite = [cwd / stub_rel]
+    if decomposed_dir_path.exists():
+        files_to_rewrite.extend(decomposed_dir_path.glob("lemma_helper_*.lean"))
+
+    for lean_file in files_to_rewrite:
+        if not lean_file.exists():
+            continue
+        content = lean_file.read_text()
+        new_lines = []
+        changed = False
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("import ") and not stripped.endswith(".Stub"):
+                # Check if this import matches a proved child module
+                import_module = stripped.removeprefix("import ").strip()
+                if import_module in proved_modules:
+                    new_lines.append(f"import {import_module}.Stub")
+                    changed = True
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        if changed:
+            lean_file.write_text("\n".join(new_lines) + "\n")
+
+    # Rewrite each child's Stub.Def import to point to parent's Def
     if decomposed_dir_path.exists():
         for child_dir in decomposed_dir_path.iterdir():
             if not child_dir.is_dir():
@@ -644,17 +659,30 @@ async def _stage_assemble(state: ProverState, agent) -> Trans:
                     new_lines.append(line)
             if rewritten:
                 child_stub.write_text("\n".join(new_lines) + "\n")
-                await agent._emit("message", f"[PO] Rewrote Def import in {child_dir.name}/Stub.lean")
 
-    # ── Step 4: Build all decomposed files ──
-    decomposed_dir = cwd / state.workspace / "decomposed"
-    if decomposed_dir.exists():
-        for helper in decomposed_dir.glob("lemma_helper_*.lean"):
-            helper_module = str(helper.relative_to(cwd)).replace("/", ".").removesuffix(".lean")
-            subprocess.run(["lake", "build", helper_module],
-                          cwd=str(cwd), capture_output=True, timeout=120)
+    # Build all decomposed files (multi-pass for dependency order)
+    if decomposed_dir_path.exists():
+        all_modules = []
+        for helper in decomposed_dir_path.glob("lemma_helper_*.lean"):
+            all_modules.append(str(helper.relative_to(cwd)).replace("/", ".").removesuffix(".lean"))
+        # Also build child Stub modules
+        for child_dir in decomposed_dir_path.iterdir():
+            if child_dir.is_dir() and (child_dir / "Stub.lean").exists():
+                all_modules.append(str((child_dir / "Stub.lean").relative_to(cwd)).replace("/", ".").removesuffix(".lean"))
 
-    # ── Step 5: Verify Stub.lean ──
+        remaining = list(all_modules)
+        for _ in range(3):
+            still_failing = []
+            for mod in remaining:
+                result = subprocess.run(["lake", "build", mod],
+                    cwd=str(cwd), capture_output=True, timeout=120)
+                if result.returncode != 0:
+                    still_failing.append(mod)
+            if not still_failing:
+                break
+            remaining = still_failing
+
+    # Verify Stub.lean compiles sorry-free
     cr = tools.check_compiles(stub_rel)
     if cr.success and not tools.has_sorry(stub_rel):
         await agent._emit("message", "[PO] Assembly verified ✅")
@@ -866,77 +894,51 @@ def _check_attempt_result(tools, stub_rel: str, cwd: Path, original_content: str
 
 
 def _rewrite_stub_after_extraction(cwd: Path, stub_rel: str, extract_result, tools, state):
-    """After extracting sorry helpers to decomposed/, rewrite Stub.lean:
-    - Remove inline sorry theorem definitions (they now live in decomposed/)
-    - Add imports to the decomposed files
-    - The main theorem uses the helpers via imports instead of inline defs
+    """After extracting helpers to decomposed/, rewrite Stub.lean:
+    Keep only the header (imports/open/variable) + new imports + main theorem.
+    Everything else was extracted to decomposed/ files.
     """
     stub_path = cwd / stub_rel
     content = stub_path.read_text()
     lines = content.splitlines()
 
-    # Get block boundaries for the extracted theorems
     split = tools.split_theorems(stub_rel)
     if split.error:
         return
 
-    extracted_set = set(extract_result.extracted_names)
-    # Also remove unreachable dead helpers (sorry theorems not used by main theorem)
-    reachable = tools.get_reachable_theorems(stub_rel, state.theorem_name)
-    dead_helpers = set()
-    for block in split.blocks:
-        if block.has_sorry and block.name not in extracted_set and block.name != state.theorem_name:
-            if block.name not in reachable:
-                dead_helpers.add(block.name)
+    # Find the main theorem block
+    main_block = next((b for b in split.blocks if b.name == state.theorem_name), None)
+    if not main_block:
+        return
 
-    # Find line ranges to remove (extracted + dead helper blocks)
-    remove_set_names = extracted_set | dead_helpers
-    remove_ranges = []
-    for block in split.blocks:
-        if block.name in remove_set_names:
-            # Expand upward to include the preceding doc-comment for THIS theorem
-            actual_start = block.start
-            while actual_start > 0:
-                prev = lines[actual_start - 1].strip()
-                if prev == "" or prev.startswith("/--") or prev.startswith("--"):
-                    actual_start -= 1
-                else:
-                    break
-            # Trim end: don't include trailing doc-comments/section-markers (belong to next block)
-            actual_end = block.end
-            while actual_end >= actual_start:
-                line = lines[actual_end].strip()
-                if line == "" or line.startswith("/-") or line.startswith("--"):
-                    actual_end -= 1
-                else:
-                    break
-            remove_ranges.append((actual_start, actual_end))
+    # Header = everything before first declaration (1-indexed → 0-indexed slice)
+    first_decl_line = min(b.start for b in split.blocks) - 1 if split.blocks else 0
+    header_lines = lines[:first_decl_line]
+    # Strip comments and mutual/end keywords from header
+    header_lines = [l for l in header_lines
+                    if not l.strip().startswith("/-") and not l.strip().startswith("--")
+                    and l.strip() not in ("mutual", "end")]
 
-    # Build import lines for decomposed files
-    top_module = state.workspace.replace("/", ".")
+    # Build import lines for ALL decomposed files
     import_lines = []
     for f in extract_result.created_files:
         module = f.replace("/", ".").removesuffix(".lean")
         import_lines.append(f"import {module}")
 
-    # Mark lines for removal (use a set to handle overlaps)
-    remove_set = set()
-    for start, end in remove_ranges:
-        for i in range(start, end + 1):
-            remove_set.add(i)
-
-    # Build new content: keep non-removed lines
-    new_lines = [line for i, line in enumerate(lines) if i not in remove_set]
-
-    # Add imports after the existing import block
+    # Insert new imports after existing imports in header
     insert_pos = 0
-    for i, line in enumerate(new_lines):
+    for i, line in enumerate(header_lines):
         if line.strip().startswith("import "):
             insert_pos = i + 1
     for i, imp in enumerate(import_lines):
-        new_lines.insert(insert_pos + i, imp)
+        header_lines.insert(insert_pos + i, imp)
 
-    stub_path.write_text("\n".join(new_lines) + "\n")
+    # Main theorem text (from itp_interface — clean, no trailing junk)
+    main_text = main_block.text
+
+    # Write: header + main theorem only
+    new_content = "\n".join(header_lines) + "\n\n" + main_text + "\n"
+    stub_path.write_text(new_content)
 
 
 def _build_initial_action(state: ProverState) -> str:
