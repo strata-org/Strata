@@ -2204,6 +2204,45 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       · cases hr1; cases hr2
         exact ⟨ρ_h', h_run_h, hr3, hr4, hr5⟩
       · exact absurd hr1 (by rintro ⟨⟩)
+    -- === Step A (exiting): the §E Block IH at the harvest `σ`, presented in the
+    --     raw ∀-shape `loop_arm_close` expects for a body iteration that BREAKS
+    --     with a label.  Same Block IH, dispatched with the `.exiting` `cfg_src`
+    --     disjunct; the `.terminal` output clause is impossible (`cfg_src` is
+    --     `.exiting`).  No `h_noexit` is consumed: a body `.exit` is admitted. ===
+    have stepA_exit : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+        (∀ y ∈ B, ρ_h.store y ≠ none) →
+        (∀ y ∈ Block.initVars body, ρ_s.store y = none) →
+        (∀ y ∈ Block.initVars body, ρ_h.store y = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+        ∀ (l : String) (ρ_s' : Env P),
+          StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.exiting l ρ_s') →
+          ∃ ρ_h' : Env P,
+            StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.exiting l ρ_h') ∧
+            HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+            ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) := by
+      intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i l ρ_s' h_run_i
+      obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
+          h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body
+          h_exprs_shapefree_body h_unique_body h_fresh_body
+          h_names_fresh_A_body h_names_fresh_B_body
+          h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
+          (fun y hy => h_Vs_i y hy) (fun y hy => h_Vh_i y hy)
+          h_src_sf_i h_hoist_sf_i
+          h_wf_σ h_src_fresh_body h_src_shapefree_body h_subst_wf h_hinv_i h_eval_i h_hf_i h_bnd_i
+          h_run_i (Or.inr ⟨l, ρ_s', rfl⟩)
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      rcases h_out with ⟨r, hr1, _, _, _, _⟩ | ⟨l', r, hr1, hr2, hr3, hr4, hr5⟩
+      · exact absurd hr1 (by rintro ⟨⟩)
+      · obtain ⟨hl_eq, hr_eq⟩ : l' = l ∧ r = ρ_s' := by
+          cases hr1; exact ⟨rfl, rfl⟩
+        cases hl_eq; cases hr_eq; cases hr2
+        exact ⟨ρ_h', h_run_h, hr3, hr4, hr5⟩
     -- === Step B: the lift renaming simulation at `body₁`'s own harvest carriers. ===
     have h_src_shapefree_body_iv : ∀ str : String, Q str →
         HasIdent.ident (P := P) str ∉ Block.initVars body := fun str h_suf =>
@@ -2227,7 +2266,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     -- `body₃` (arm-local) uses the lift's OWN renames `(lift body₁ σ₁).1.2.1`,
     -- whereas `stepB_self_of_lift` produces `body₃` over `substOf' E`; the two
     -- coincide by the harvest identity `h_renames_eq`.
-    have stepB : LoopInitHoistLoopDriver.BodySim (extendEval := extendEval)
+    have stepB : LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
         (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
         (LoopInitHoistLoopDriver.substOf' E) body₁ body₃ := by
       have hB :=
@@ -2235,7 +2274,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
           h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body h_unique_body
           h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
           h_wfvar h_wfcongr h_wfsubst h_wfdef
-      show LoopInitHoistLoopDriver.BodySim (extendEval := extendEval)
+      show LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
         (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
         (LoopInitHoistLoopDriver.substOf' E) body₁
         (Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
@@ -2394,6 +2433,28 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       obtain ⟨str, he, hsuf, hnotσ₁⟩ := h_tgt_class x hx
       exact he ▸ h_src_store_shapefree str hsuf
         (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
+    -- post-store undef of sources/targets on an EXITING source loop run.  In §E
+    -- the source body is `noExit`, so the loop can never reach `.exiting`: these
+    -- two obligations are discharged vacuously via `loopDet_no_exit` (the body
+    -- `.exit`-impossibility lifted to the loop).  `loop_arm_close` requires them
+    -- only to feed the sum-typed driver's exit branch — which never fires here.
+    have h_loop_body_no_exit_hif : ∀ (ρ : Env P) (hif : Bool) (lbl : String) (ρe : Env P),
+        ¬ StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body { ρ with hasFailure := ρ.hasFailure || hif })
+            (.exiting lbl ρe) :=
+      fun ρ _ lbl ρe h => LoopInitHoistLoopDriver.block_noExit_no_exiting h_noexit_body h
+    have h_post_src_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.sourcesOf' E → ρ_post.store x = none := by
+      intro lbl ρ_post x h_run _
+      exact (LoopInitHoistLoopDriver.loopDet_no_exit h_loop_body_no_exit_hif h_run).elim
+    have h_post_tgt_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.targetsOf' E → ρ_post.store x = none := by
+      intro lbl ρ_post x h_run _
+      exact (LoopInitHoistLoopDriver.loopDet_no_exit h_loop_body_no_exit_hif h_run).elim
     have h_tgt_nodup : (LoopInitHoistLoopDriver.targetsOf' E).Nodup :=
       (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).2
     -- σ_sf-relative source-store shape-freedom at ρ_src for the driver.
@@ -2408,13 +2469,14 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       fun str h_suf _ => (h_src_shapefree_body str h_suf).2.1
     exact LoopInitHoistLoopArmWF.loop_arm_close (σ_sf := σ) (Vs := Block.initVars body)
       (entries := E) (body := body) (body₁ := body₁) (body₃ := body₃) (g := g') (md := md)
-      stepA stepB
+      stepA stepA_exit stepB
       h_hoist_undef_body h_hoist_undef_h_body h_arm_src_sf h_sf_notA h_sf_notB
       h_lhs_disjoint_body h_extra_disjoint_body h_Vs_notBs
       h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs h_Bs_notB
       h_g_A_fresh h_g_B_fresh h_g_As_fresh h_g_Bs_fresh
-      h_src_As_undef h_src_body_no_exit h_nofd_src h_nofd_h h_tgt_nodup
+      h_src_As_undef h_nofd_src h_nofd_h h_tgt_nodup
       h_src_undef_h h_tgt_undef_h h_post_src_none h_post_tgt_none
+      h_post_src_none_exit h_post_tgt_none_exit
       h_wfvar h_wfcongr h_wfdef h_hinv h_eval_eq h_hf_eq h_hoist_bound h_run_src h_cfg_src
   | .exit lbl md =>
     subst h_match
