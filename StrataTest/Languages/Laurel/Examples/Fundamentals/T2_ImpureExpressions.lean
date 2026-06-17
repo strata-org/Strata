@@ -163,10 +163,15 @@ opaque {
   assert y == 1
 };
 
-procedure assignmentInExpressionAfterImperativeProcCall()
+procedure transparentProc(x: int) returns (r: int)
+{
+  return x + 1
+};
+
+procedure assignmentInExpressionAfterProcCall()
 opaque {
   var x: int := 0;
-  var y: int := imperativeProc(x) + (x := 2);
+  var y: int := transparentProc(x) + (x := 2);
   assert y == 3
 };
 #end
