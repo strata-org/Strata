@@ -737,6 +737,313 @@ public theorem loopDet_lift_2g [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P
     (Nat.le_refl _)
 
 
+/-! ## The sum-typed (terminal-OR-exiting) two-guard driver.
+
+The driver above (`loopDet_lift_2g*`) concludes only the TERMINAL loop outcome and
+takes `h_src_body_no_exit`, ruling out a loop body that breaks (`.exit`).  This
+section drops `h_src_body_no_exit` and adds the parallel EXITING outcome: a source
+loop run that reaches `.exiting label ρ_post` (the loop terminated early because
+some iteration's body broke) is matched by a hoist loop run that reaches
+`.exiting label ρ_post_h`, with `HoistInv` / `hasFailure` / `B`-boundedness at the
+projected (capped) exit stores.
+
+The `body_sim` slot is replaced by the sum-typed `BodySimSum`: a body run that
+TERMINATES is matched by a terminating hoist run (the existing terminal clause),
+and a body run that EXITS with label `l` is matched by a hoist run that exits with
+the SAME label `l`, re-establishing `HoistInv` at the body-exit stores.  The
+enclosing loop's `.block .none` projection then caps both the source body-local
+and the hoist target away, so `HoistInv` survives via `HoistInv.project_both` —
+exactly the relation the §E mutual already carries on its `.exiting` disjunct.
+
+This section is strictly ADDITIVE: the terminal-only driver and its `*_no_exit`
+support lemmas are untouched, so existing call paths keep building unchanged. -/
+
+/-- The sum-typed body simulation: a body run that TERMINATES is matched by a
+terminating hoist run (the existing terminal clause), and a body run that EXITS
+with label `l` is matched by a hoist run that exits with the SAME label `l`,
+re-establishing `HoistInv` at the body-exit stores together with `hasFailure`
+agreement and `B`-boundedness.  This is the predicate the sum-typed two-guard
+driver's `body_sim` slot consumes. -/
+public def BodySimSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
+    (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
+  ∀ (ρ_s ρ_h : Env P),
+    HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+    ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+    (∀ y ∈ B, ρ_h.store y ≠ none) →
+    -- TERMINAL clause (the existing `BodySim`):
+    (∀ (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
+      ∃ ρ_h' : Env P,
+        StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.terminal ρ_h') ∧
+        HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+        ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+    ∧
+    -- EXITING clause (new):
+    (∀ (l : String) (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.exiting l ρ_s') →
+      ∃ ρ_h' : Env P,
+        StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) (.exiting l ρ_h') ∧
+        HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+        ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+
+/-- No-exit-free block-terminal inversion for a `.none`-labelled block: a `.none`
+block can only reach `.terminal` via `step_block_done` from an inner `.terminal`
+(an inner `.exiting` always MISMATCHES `.none` and propagates as `.exiting`, never
+`.terminal`), so the inner body reached `.terminal ρ_inner` with the projected
+store — WITHOUT any no-exit hypothesis.  The sum-typed driver's recursive
+(terminal-iteration) case uses this to recover the body's terminal run for an
+intermediate iteration without ruling out body exits in general. -/
+public theorem blockT_none_reaches_terminal [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.block .none σ_parent inner) (.terminal ρ')) :
+    ∃ (ρ_inner : Env P)
+      (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store } ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+    have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_none_reaches_terminal hrest
+    exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match heq) _ => exact (nomatch heq)
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- **The sum-typed two-guard exiting-target fuel recursion.**
+
+The EXITING analogue of `loopDet_lift_2g_fuel`.  Takes a sum-typed `body_sim`
+(terminal AND exiting clauses) and, given a source loop run reaching `.exiting
+label ρ_post`, produces a hoist loop run reaching `.exiting label ρ_post_h` with
+`HoistInv` / `hasFailure` / `B`-boundedness at the exit stores.
+
+Structure of the recursion (fuel `n` on the source run length):
+* `step_loop_exit` cannot reach `.exiting` (it goes to `.terminal`) — discharged
+  by inverting `hrest`.
+* `step_loop_enter`: the body of THIS iteration runs in `.block .none`.  By
+  `seqT_reaches_exiting'`:
+  - **inl** (this iteration's block exits): `blockT_none_reaches_exiting'` gives a
+    body run to `.exiting label ρ_inner` with `ρ_post = {ρ_inner with store :=
+    projectStore ρ_src.store ρ_inner.store}`.  Feed the body's EXITING clause →
+    hoist body exits → build the hoist loop's early exit (`step_loop_enter` then
+    the `.none`-block mismatch + seq exit).
+  - **inr** (this iteration's block terminates, then the recursive loop exits):
+    `blockT_none_reaches_terminal` recovers the body's TERMINAL run (no no-exit
+    needed); feed the body's TERMINAL clause, build one hoist iteration, and
+    recurse via `ih` on the inner loop. -/
+public theorem loopDet_lift_2g_E_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true) :
+    ∀ (n : Nat) {ρ_src ρ_hoist ρ_post : Env P} {label : String},
+      HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store →
+      ρ_src.eval = ρ_hoist.eval → ρ_src.hasFailure = ρ_hoist.hasFailure →
+      (∀ y ∈ B, ρ_hoist.store y ≠ none) →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) →
+      h_run.len ≤ n →
+      ∃ ρ_post_h : Env P,
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
+        HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+        ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+        (∀ y ∈ B, ρ_post_h.store y ≠ none) := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ_src ρ_hoist ρ_post label _ _ _ _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ_src ρ_hoist ρ_post label h_hinv h_eval h_hf h_bound h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        -- A `.terminal` target; `hrest : .terminal … →* .exiting …` is impossible.
+        match hrest with
+        | .step _ _ _ hd _ => exact nomatch hd
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        -- Common bodies, with the `|| false` collapse.
+        let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
+        let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
+        have h_hinv_body : HoistInv (P := P) A B subst ρ_src_body.store ρ_h_body.store := by
+          show HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store; exact h_hinv
+        have h_eval_body : ρ_src_body.eval = ρ_h_body.eval := h_eval
+        have h_hf_body : ρ_src_body.hasFailure = ρ_h_body.hasFailure := by
+          show (ρ_src.hasFailure || false) = (ρ_hoist.hasFailure || false); simp [h_hf]
+        have h_bound_body : ∀ y ∈ B, ρ_h_body.store y ≠ none := h_bound
+        have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+        have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
+          h_wfb_transport ρ_src ρ_hoist h_eval hwf
+        -- Decompose the seq run to `.exiting`: either this iteration's block exits
+        -- (inl), or it terminates and the recursive loop exits (inr).
+        rcases seqT_reaches_exiting' hrest with ⟨h_block_exit, hl⟩ | ⟨ρ₁, h_block_term, h_loop_stmts, hl⟩
+        · -- inl: this iteration's body exits with `label`.
+          obtain ⟨ρ_inner, h_body_exit_T, h_ρpost_eq, hl2⟩ := blockT_none_reaches_exiting' h_block_exit
+          -- Feed the EXITING clause of the body simulation.
+          obtain ⟨ρ_h_inner, h_body_h_exit, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+            (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body).2
+              label ρ_inner (reflTransT_to_prop h_body_exit_T)
+          -- Build the hoist loop's early exit:
+          --   .stmt loop ρ_hoist
+          --   → .seq (.block .none ρ_hoist.store (.stmts body_h ρ_h_body)) [loop]   (step_loop_enter)
+          --   →* .seq (.block .none ρ_hoist.store (.exiting label ρ_h_inner)) [loop]  (body run)
+          --   → .seq (.exiting label {ρ_h_inner with store := projectStore …}) [loop] (block mismatch)
+          --   → .exiting label {ρ_h_inner with store := projectStore …}              (seq exit)
+          refine ⟨{ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }, ?_, ?_, ?_, ?_⟩
+          · refine ReflTrans.step _ _ _
+              (.step_loop_enter (hasInvFailure := false)
+                h_guard_h (by intro le hle; simp at hle) (by simp) h_wfb_h) ?_
+            -- Run the body inside the seq+block context to `.exiting`.
+            refine ReflTrans_Transitive _ _ _ _
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _
+                (block_inner_star P (EvalCmd P) extendEval _ _ (none : Option String) ρ_hoist.store
+                  (show StepStmtStar P (EvalCmd P) extendEval
+                      (.stmts body_h { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false })
+                      (.exiting label ρ_h_inner) from h_body_h_exit))) ?_
+            -- `.seq (.block .none ρ_hoist.store (.exiting label ρ_h_inner)) [loop]` exits.
+            refine ReflTrans.step _ _ _ (.step_seq_inner (.step_block_exit_mismatch ?_)) ?_
+            · exact (by simp)
+            · exact ReflTrans.step _ _ _ .step_seq_exit (.refl _)
+          · -- HoistInv at the projected exit stores: `HoistInv.project_both`.
+            subst h_ρpost_eq
+            exact HoistInv.project_both h_hinv h_hinv_inner
+          · -- hasFailure agreement at the projected stores (store-only projection).
+            subst h_ρpost_eq
+            show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+          · -- `B`-boundedness survives the projection (parent binds `B`).
+            intro y hy
+            show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+            unfold projectStore
+            have h_parent_some : (ρ_hoist.store y).isSome = true := by
+              cases h : ρ_hoist.store y with
+              | none => exact absurd h (h_bound y hy)
+              | some _ => rfl
+            rw [h_parent_some]; simp; exact h_bound_inner y hy
+        · -- inr: this iteration's body terminates; recurse on the inner loop.
+          obtain ⟨ρ_inner, h_body_term_T, h_ρ_block_eq, hl_blk⟩ := blockT_none_reaches_terminal h_block_term
+          subst h_ρ_block_eq
+          -- Feed the TERMINAL clause of the body simulation for this iteration.
+          obtain ⟨ρ_h_inner, h_body_h_run, h_hinv_inner, h_hf_inner, h_bound_inner⟩ :=
+            (body_sim ρ_src_body ρ_h_body h_hinv_body h_eval_body h_hf_body h_bound_body).1
+              ρ_inner (reflTransT_to_prop h_body_term_T)
+          -- Build one hoist iteration: loop → … → .stmts [loop_h] {ρ_h_inner with projected}.
+          have h_hoist_iter : StepStmtStar P (EvalCmd P) extendEval
+              (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist)
+              (.stmts [.loop (.det g_h) none [] body_h md_h]
+                { ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store }) := by
+            have hb : StepStmtStar P (EvalCmd P) extendEval
+                (.stmts body_h ρ_h_body) (.terminal ρ_h_inner) := h_body_h_run
+            have := buildLoopIterationDet (g := g_h) (body := body_h) (md := md_h)
+              (ρ_pre := ρ_h_body) (ρ_body := ρ_h_inner) ?_ ?_ hb
+            · simpa [ρ_h_body] using this
+            · show ρ_h_body.eval ρ_h_body.store g_h = .some HasBool.tt
+              show ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt; exact h_guard_h
+            · show WellFormedSemanticEvalBool ρ_h_body.eval
+              show WellFormedSemanticEvalBool ρ_hoist.eval; exact h_wfb_h
+          -- The inner-loop entry stores are HoistInv-related (project_both) etc.
+          have h_hinv_block : HoistInv (P := P) A B subst
+              (projectStore ρ_src.store ρ_inner.store)
+              (projectStore ρ_hoist.store ρ_h_inner.store) :=
+            HoistInv.project_both h_hinv h_hinv_inner
+          have h_eval_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).eval
+              = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).eval := by
+            show ρ_inner.eval = ρ_h_inner.eval
+            have e1 : ρ_inner.eval = ρ_src_body.eval :=
+              smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+                body_src ρ_src_body ρ_inner h_src_body_nofd (reflTransT_to_prop h_body_term_T)
+            have e2 : ρ_h_inner.eval = ρ_h_body.eval :=
+              smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+                body_h ρ_h_body ρ_h_inner h_h_body_nofd h_body_h_run
+            rw [e1, e2]; exact h_eval_body
+          have h_hf_block : ({ ρ_inner with store := projectStore ρ_src.store ρ_inner.store } : Env P).hasFailure
+              = ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).hasFailure := by
+            show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+          have h_bound_block : ∀ y ∈ B,
+              ({ ρ_h_inner with store := projectStore ρ_hoist.store ρ_h_inner.store } : Env P).store y ≠ none := by
+            intro y hy
+            show projectStore ρ_hoist.store ρ_h_inner.store y ≠ none
+            unfold projectStore
+            have h_parent_some : (ρ_hoist.store y).isSome = true := by
+              cases h : ρ_hoist.store y with
+              | none => exact absurd h (h_bound y hy)
+              | some _ => rfl
+            rw [h_parent_some]; simp; exact h_bound_inner y hy
+          -- The residual after the terminal block is `.stmts [loop_s] ρ_inner_proj`
+          -- reaching `.exiting`.  Recover the inner-loop run via stmtsT_cons_exiting'.
+          rcases stmtsT_cons_exiting' h_loop_stmts with ⟨h_inner_loop_T, _⟩ | ⟨ρ₂, _, h_nil, _⟩
+          · -- The single loop statement (the recursive loop) reaches `.exiting`; recurse.
+            obtain ⟨ρ_post_h, h_post_h_run, h_hinv_post, h_hf_post, h_bound_post⟩ :=
+              ih h_hinv_block h_eval_block h_hf_block h_bound_block h_inner_loop_T
+                (by simp only [ReflTransT.len] at hlen; omega)
+            refine ⟨ρ_post_h, ?_, h_hinv_post, h_hf_post, h_bound_post⟩
+            -- Splice: one hoist iteration, then the recursive hoist loop's exit.
+            refine ReflTrans_Transitive _ _ _ _ h_hoist_iter ?_
+            refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+            refine ReflTrans_Transitive _ _ _ _
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_post_h_run) ?_
+            exact ReflTrans.step _ _ _ .step_seq_exit (.refl _)
+          · -- tail is `[]`, cannot reach `.exiting`.
+            match h_nil with
+            | .step _ _ _ .step_stmts_nil hr2 =>
+              match hr2 with
+              | .step _ _ _ hd _ => exact nomatch hd
+
+/-- Prop-level wrapper of `loopDet_lift_2g_E_fuel`: the sum-typed exiting-target
+two-guard driver.  Given a source loop run reaching `.exiting label ρ_post`,
+produces the matching hoist loop run reaching `.exiting label ρ_post_h`. -/
+public theorem loopDet_lift_2g_E [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist ρ_post : Env P} {label : String}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) (.exiting label ρ_post)) :
+    ∃ ρ_post_h : Env P,
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) (.exiting label ρ_post_h) ∧
+      HoistInv (P := P) A B subst ρ_post.store ρ_post_h.store ∧
+      ρ_post.hasFailure = ρ_post_h.hasFailure ∧
+      (∀ y ∈ B, ρ_post_h.store y ≠ none) :=
+  loopDet_lift_2g_E_fuel h_guard_transport h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
+    (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound (reflTrans_to_T h_run) (Nat.le_refl _)
+
+
 /-! ## The shapefree-carrying two-guard fuel core.
 
 Identical to `loopDet_lift_2g_undef_fuel` but threads, in addition to the two

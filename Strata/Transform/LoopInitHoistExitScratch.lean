@@ -277,5 +277,33 @@ StepB body-transport (`BodyTransport`/`BodySimE`), which must gain a sum-typed
 projection seam — the hard part of the original §E close (the self-referential
 body-transport core) is the only nontrivial downstream cost. -/
 
+/-\! # Phase 2 (DONE — moved to the driver file).
+
+The Phase 2 driver threading is COMPLETE and lives in
+`Strata/Transform/LoopInitHoistLoopDriver.lean` (it must, because the fuel core
+consumes the driver-private `buildLoopIterationDet` / `peelIterationDet`
+helpers).  Three additive, build-verified, sorryAx-free declarations:
+
+* `BodySimSum A B subst bsrc bh` — the sum-typed body simulation (terminal AND
+  exiting clauses), the exact predicate from Phase 1's `BodySimSum`.
+* `blockT_none_reaches_terminal` — no-exit-free block-terminal inversion for a
+  `.none` block (an inner `.exiting` always mismatches `.none`, so reaching
+  `.terminal` forces an inner `.terminal`); the recursive terminal-iteration case
+  uses it without ruling out body exits.
+* `loopDet_lift_2g_E_fuel` / `loopDet_lift_2g_E` — the exiting-target two-guard
+  fuel recursion (+ Prop wrapper).  DROPS `h_src_body_no_exit`; consumes
+  `BodySimSum`; produces the matching hoist `.exiting` outcome with `HoistInv` /
+  `hasFailure` / `B`-boundedness at the projected (capped) exit stores.
+
+`#print axioms` on all three: `[propext, (Classical.choice,) Quot.sound]` — no
+`sorryAx`.  The terminal-only driver (`loopDet_lift_2g*`) and its `*_no_exit`
+support lemmas are UNTOUCHED, so existing call paths build unchanged.
+
+The Phase 1 isolated feasibility lemmas above remain as the design record.  The
+remaining downstream work (Phase 3+) is: re-derive the StepB body-transport
+(`BodySimE`/`BodyTransport`) with the exiting clause to PRODUCE a `BodySimSum`,
+then rewire the §E `.loop` arm to consume `loopDet_lift_2g_E` and finally drop the
+`h_noexit` precondition from `pipeline_sound`. -/
+
 end LoopInitHoistExitScratch
 end Imperative
