@@ -132,7 +132,7 @@ procedure forLoopStep()
 
 // --- More complex scenarios -------------------------------------------------
 
-function double(n: int): int { 2 * n };
+procedure double(n: int): int { return 2 * n };
 
 procedure incrementAsFunctionArgument()
   opaque

@@ -8,6 +8,7 @@
 Tests for the generic `mapStmtExprM` traversal. Verifies that `mapStmtExpr id`
 is the identity: applying it to a parsed program produces identical output.
 -/
+module
 
 import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.MapStmtExpr

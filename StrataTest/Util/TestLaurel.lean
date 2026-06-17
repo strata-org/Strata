@@ -24,7 +24,7 @@ namespace StrataTest.Util
 /-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
     `Program`. Used by tests that need to plug in a custom post-translation
     pipeline stage; throws if translation fails. -/
-def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
+public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
