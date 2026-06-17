@@ -402,8 +402,11 @@ def StmtExpr.constrName : StmtExpr → String
   | .LiteralBool ..      => "boolean literal"
   | .LiteralString ..    => "string literal"
   | .LiteralDecimal ..   => "decimal literal"
+  | .LiteralBv ..        => "bitvector literal"
   | .Var ..              => "variable"
   | .Assign ..           => ":="
+  | .IncrDecr _ .Incr .. => "++"
+  | .IncrDecr _ .Decr .. => "--"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
   | .PrimitiveOp op ..   => toString op

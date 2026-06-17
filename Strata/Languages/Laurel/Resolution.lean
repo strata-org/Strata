@@ -672,6 +672,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .LiteralBool v => pure (Synth.litBool v source)
   | .LiteralString v => pure (Synth.litString v source)
   | .LiteralDecimal v => pure (Synth.litDecimal v source)
+  | .LiteralBv v width => pure (Synth.litBv v width source)
   | .Var (.Local ref) => Synth.varLocal ref source
   | .IncrDecr mode op target =>
     Synth.incrDecr exprMd mode op target source (by rw [h_node])
@@ -861,6 +862,11 @@ def Synth.litString (v : String) (source : Option FileRange) : StmtExpr × HighT
 /-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
 def Synth.litDecimal (v : StrataDDM.Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralDecimal v, { val := .TReal, source := source })
+
+/-- `Γ ⊢ LiteralBv v (width := n) ⇒ TBv n` — a bitvector literal's type is
+    fixed by its declared width. -/
+def Synth.litBv (v : Nat) (width : Nat) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+  (.LiteralBv v width, { val := .TBv width, source := source })
 
 -- ### Variables
 
@@ -1145,11 +1151,14 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
       value-producing `IfThenElse` — fails this check (its type is not
       consistent with `TVoid`) and is reported as dead code.
 
-    * **Discard-Call** — `s` is a call (`StaticCall`/`InstanceCall`). The
-      call is synthesized and its result dropped, so the `list.add(x);`
-      idiom type-checks even when the callee returns a value. A call is
-      the *only* value-producing form admitted in effect position: its
-      effects are the point and its result is incidental.
+    * **Discard-Call / Discard-IncrDecr** — `s` is a call
+      (`StaticCall`/`InstanceCall`) or an `IncrDecr` (`x++`/`--x`). The
+      expression is synthesized and its result dropped, so the
+      `list.add(x);` idiom type-checks even when the callee returns a
+      value, and a bare `x++;` is admitted even though `++` synthesizes
+      the (non-void) target type. These are the value-producing forms
+      admitted in effect position: their effects are the point and their
+      results are incidental.
 
     This is the single definition of "what counts as a statement". It is
     used by `Check.block` for every non-last statement, and for the last
@@ -1157,7 +1166,7 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     (`expected = TVoid`). -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   match s.val with
-  | .StaticCall .. | .InstanceCall .. =>
+  | .StaticCall .. | .InstanceCall .. | .IncrDecr .. =>
     let (s', _) ← Synth.resolveStmtExpr s; pure s'
   | _ => Check.resolveStmtExpr s { val := .TVoid, source := s.source }
   termination_by (s, 4)
@@ -1587,6 +1596,60 @@ def Check.assign (exprMd : StmtExprMd)
            simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
       omega
 
+-- ### Increment / decrement
+
+/-- (IncrDecr)
+    ```
+    Γ ⊢ target ⇒ T    T ∈ {int, int-based constrained}
+    ─────────────────────────────────────────────────
+    Γ ⊢ IncrDecr mode op target ⇒ T
+    ```
+    `++`/`--` reads and writes its target, so it synthesizes the target's
+    own type. The target is resolved the same way as an `Assign` target (a
+    `Local` is resolved against scope; a `Field` synthesizes its receiver
+    and resolves the field against it; the `Declare` form should not occur —
+    the translator rejects it — and is handled conservatively). The element
+    type is then checked by `checkIncrDecrTargetType`, which emits a Laurel
+    diagnostic when `++`/`--` is applied to an unsupported type (`bv`,
+    `real`, `float64`) rather than letting a raw Core unification error leak
+    from the later `EliminateIncrDecr` lowering. Used in expression position
+    (`var y := ++x`, `if x++ > 0`, `f(x++)`); in statement position the
+    yielded value is discarded by `Check.statement`. -/
+def Synth.incrDecr (exprMd : StmtExprMd)
+    (mode : IncrDecrMode) (op : IncrDecrOp) (target : VariableMd)
+    (source : Option FileRange)
+    (h : exprMd.val = .IncrDecr mode op target) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let target' ← match h_tgt : target.val with
+    | .Local ref =>
+      let ref' ← resolveRef ref source
+      pure (⟨.Local ref', target.source⟩ : VariableMd)
+    | .Field tgt fieldName =>
+      let (tgt', _) ← Synth.resolveStmtExpr tgt
+      let fieldName' ← resolveFieldRef tgt' fieldName source
+      pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
+    | .Declare param =>
+      -- Should not occur — the translator rejects a declaration target;
+      -- treat conservatively by resolving its type only.
+      let ty' ← resolveHighType param.type
+      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+  checkIncrDecrTargetType op target' source
+  let resultTy ← match target'.val with
+    | .Local ref => getVarType ref
+    | .Declare param => pure param.type
+    | .Field _ fieldName => getVarType fieldName
+  pure (.IncrDecr mode op target', resultTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.IncrDecr.sizeOf_spec] at hsz
+    have hsz2 := target.sizeOf_val_lt
+    rw [h_tgt] at hsz2
+    simp only [Variable.Field.sizeOf_spec] at hsz2
+    omega
+
 -- ### Calls
 
 /-- Cases on the arity of the callee's declared outputs.
@@ -1696,20 +1759,29 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (h : exprMd.val = .InstanceCall target callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
-  let callee' ← resolveRef callee source
+  -- An instance procedure is registered under the container-scoped key
+  -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
+  -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
+  -- produces. Look the method up under that key, derived from the receiver's
+  -- type; fall back to the bare callee name when the target's type can't be
+  -- determined (an unresolved name, which already reported its own error).
+  let lookupKey ← match (← targetTypeName target') with
+    | some tyName => pure (containerScopedName (mkId tyName) callee)
+    | none => pure callee
+  let resolved ← resolveRef lookupKey source
     (expected := #[.instanceProcedure, .staticProcedure])
-  let (retTy, paramTypes) ← getCallInfo callee
+  -- Preserve the user-facing callee text for diagnostics; only stamp the
+  -- resolved `uniqueId` from the container-scoped lookup.
+  let callee' := { callee with uniqueId := resolved.uniqueId }
+  let (retTy, paramTypes) ← getCallInfo lookupKey
   -- The callee resolves to either an instance- or a static-procedure. An
   -- instance procedure's first parameter is the implicit `self` receiver,
   -- which is not supplied positionally here, so it must be dropped before
   -- pairing parameter types with `args`. A static procedure (also accepted
   -- on this path) has no `self`, so all its parameters are real and none may
   -- be dropped. We distinguish the two by the same scope lookup `getCallInfo`
-  -- uses. (NOTE: this branch is currently unreachable — no Laurel/Python
-  -- frontend produces a `StmtExpr.InstanceCall`; the only call production
-  -- lowers to `StaticCall`. The guard below keeps this rule correct should a
-  -- method-call production ever be added.)
-  let dropSelf : Bool := match (← get).scope.get? callee.text with
+  -- uses.
+  let dropSelf : Bool := match (← get).scope.get? lookupKey.text with
     | some (_, .instanceProcedure ..) => true
     | _ => false
   let callParamTypes :=
@@ -1727,7 +1799,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- above, so an instance procedure's implicit `self` is excluded; it returns
   -- `none` for any non-procedure resolution, leaving the Unknown-padding (and
   -- no duplicate diagnostic) for those. Args are resolved above regardless.
-  if let some arity ← procArity callee dropSelf then
+  if let some arity ← procArity lookupKey dropSelf then
     if args.length > arity then
       let diag := diagnosticFromSource source
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
