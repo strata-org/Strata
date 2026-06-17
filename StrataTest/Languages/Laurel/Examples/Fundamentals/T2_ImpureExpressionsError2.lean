@@ -5,10 +5,11 @@
 -/
 module
 
-public import StrataDDM.AST
-import StrataTest.Util.TestLaurel
+meta import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+
+meta section
 
 #eval testLaurel <|
 #strata
@@ -22,3 +23,5 @@ procedure transparentWithWhile(x: int): int
 };
 
 #end
+
+end

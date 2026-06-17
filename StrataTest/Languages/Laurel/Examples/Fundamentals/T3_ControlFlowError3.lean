@@ -5,10 +5,12 @@
 -/
 module
 
-import StrataTest.Util.TestLaurel
+meta import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
+
+meta section
 
 #eval testLaurel <|
 #strata
@@ -30,3 +32,5 @@ procedure callLetExpressionsInTransparent() opaque {
 };
 
 #end
+
+end
