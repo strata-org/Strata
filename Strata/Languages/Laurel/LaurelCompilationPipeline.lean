@@ -20,6 +20,7 @@ import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.InlineLocalVariables
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.TypeAliasElim
@@ -166,7 +167,8 @@ private def runLaurelPasses
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
-  liftImperativeExpressionsPass
+  liftImperativeExpressionsPass,
+  inlineLocalVariablesPass
 ]
 
 /-- All pipeline passes, projected to their parameter-free metadata. Combines
@@ -200,9 +202,12 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   emit "transparencyPass" "core.st" unorderedCore
   let mut unorderedCore := unorderedCore
   let mut fnModel := model
+  let mut ucDiags : List DiagnosticModel := []
 
   for pass in unorderedCorePipeline do
-    unorderedCore := (pass.run unorderedCore fnModel options).1
+    let (uc, passPassDiags, _) := pass.run unorderedCore fnModel options
+    unorderedCore := uc
+    ucDiags := ucDiags ++ passPassDiags
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
       let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
@@ -211,16 +216,22 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
           { d with message :=
               s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}" }
         emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
-        return (none, passDiags ++ newDiags, program, stats)
+        return (none, passDiags ++ ucDiags ++ newDiags, program, stats)
       unorderedCore := uc'
       fnModel := m'
     emit pass.name "unorderedCoreWithLaurelTypes.st" unorderedCore
+
+  -- An error introduced by an unordered-core pass (e.g. an assignment to an
+  -- inlined local) prevents producing a Core program, just like Laurel pass
+  -- errors above.
+  if ucDiags.any (·.type != .Warning) then
+    return (none, passDiags ++ ucDiags, program, stats)
 
   let coreWithLaurelTypes := (orderingPass.run unorderedCore model options).1
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
   let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run coreWithLaurelTypes fnModel options
-  let mut allDiagnostics: List DiagnosticModel := passDiags ++ coreDiagnostics;
+  let mut allDiagnostics: List DiagnosticModel := passDiags ++ ucDiags ++ coreDiagnostics;
 
   emit "Core" "core.st" coreProgram
   let coreProgramOption :=
