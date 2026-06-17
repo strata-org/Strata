@@ -27,15 +27,24 @@ def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
 
-/-- Pretty-print a `Diagnostic` for error reporting.
-    Format: `<line>:<colStart>-<colEnd>  <kind>: <message>` -/
-def formatDiagnostic (d : Strata.Diagnostic) : String :=
+/-- Pretty-print a `Diagnostic` for error reporting, prefixed with its
+    **file-relative** `file:line:col` — anchored to the enclosing `.lean`
+    source rather than the `#strata` snippet. A snippet line `L` is file line
+    `block.baseLine + L - 1` (`baseLine` is the file line of the snippet's first
+    line); columns coincide. Only the file's *basename* is shown (like
+    `FileRange.format`), so the location is stable whether the file was opened
+    via a relative or absolute path — and thus safe to pin in a `#guard_msgs`
+    golden across machines.
+    Format: `<file>:<fileLine>:<col>  <line>:<colStart>-<colEnd>  <kind>: <message>` -/
+def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic) : String :=
+  let baseName := (System.FilePath.mk block.fileName).fileName.getD block.fileName
   let kind := match d.type with
     | .Warning => "warning"
     | .UserError => "error"
     | .NotYetImplemented => "not-yet-implemented"
     | .StrataBug => "strata-bug"
-  s!"{d.start.line}:{d.start.column}-{d.ending.column}  {kind}: {d.message}"
+  s!"{baseName}:{block.baseLine + d.start.line - 1}:{d.start.column}  \
+    {d.start.line}:{d.start.column}-{d.ending.column}  {kind}: {d.message}"
 
 /-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
@@ -211,15 +220,23 @@ private def formatAnnotation (a : DiagnosticAnnotation) : String :=
     - Otherwise asserts an exact match: every diagnostic must be annotated,
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
-    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
+    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
+    (showLocations : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
+  -- Echo each diagnostic's file-relative `file:line:col` (computed from the
+  -- snippet's `baseLine`, no manual offsets) so a `#guard_msgs` golden can
+  -- demonstrate the localization. The annotation matching below still runs, so
+  -- the test asserts correctness rather than just printing.
+  if showLocations then
+    for d in actual do
+      IO.println (formatDiagnostic block d)
   if annotations.isEmpty then
     unless actual.isEmpty do
       let mut report := s!"expected no diagnostics, got {actual.size}:\n"
       for d in actual do
-        report := report ++ s!"  {formatDiagnostic d}\n"
+        report := report ++ s!"  {formatDiagnostic block d}\n"
       throw <| IO.userError report
     return
   -- Pair up: every actual diagnostic must match exactly one annotation.
@@ -248,7 +265,7 @@ private def runAndCheck (block : SourcedProgram)
   if !unmatchedDiags.isEmpty then
     report := report ++ s!"\nActual diagnostics with no matching annotation:\n"
     for d in unmatchedDiags do
-      report := report ++ s!"  {formatDiagnostic d}\n"
+      report := report ++ s!"  {formatDiagnostic block d}\n"
   throw <| IO.userError report
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -257,10 +274,15 @@ private def runAndCheck (block : SourcedProgram)
 
     `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
     solver). Pass an explicit value to override the solver, timeout, etc. — for
-    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`. -/
+    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`.
+
+    Set `showLocations := true` to also print each diagnostic's file-relative
+    `file:line:col` (still asserting the inline annotations), so a `#guard_msgs`
+    golden can demonstrate the localization. -/
 def testLaurel (block : SourcedProgram)
-    (options : LaurelVerifyOptions := defaultLaurelTestOptions) : IO Unit :=
-  runAndCheck block (runLaurelPipelineRaw · options)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions)
+    (showLocations : Bool := false) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options) showLocations
 
 /-- Like `testLaurel` but skips SMT verification (translate + resolve only).
     Use when the test only cares about resolution, not the verifier — e.g.

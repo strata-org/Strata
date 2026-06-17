@@ -243,13 +243,20 @@ def verifyToVcResults (program : Program)
   match coreProgramOption with
   | some coreProgram =>
     let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
-    let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
-          (_root_.Core.verify coreProgram tempDir .none options)
-    let ioResult ← match options.vcDirectory with
+    -- Preserve the structured `DiagnosticModel` error (it carries a `fileRange`)
+    -- via `.toBaseIO` instead of stringifying it. This lets a type-checking /
+    -- symbolic-evaluation error flow into `translateDiags`, where
+    -- `verifyToDiagnostics` renders it through a `FileMap` to snippet-local
+    -- `line:col` like every other diagnostic — rather than leaking a raw,
+    -- file-global byte offset baked into the message text.
+    let runner tempDir : IO (Except DiagnosticModel VCResults) :=
+      (_root_.Core.verify coreProgram tempDir .none options).toBaseIO
+    let result ← match options.vcDirectory with
       | .none => IO.FS.withTempDir runner
       | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-    return (some ioResult, translateDiags)
+    match result with
+    | .ok ioResult => return (some ioResult, translateDiags)
+    | .error dm => return (none, translateDiags ++ [dm])
   | none => return (none, translateDiags)
 
 /--

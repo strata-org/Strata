@@ -9,14 +9,19 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! ## Function called with too many arguments -/
+/-! ## Function called with too many arguments
+
+`showLocations := true` prints each diagnostic's file-relative `file:line:col`
+(computed from the snippet's base line — no manual offsets), while the inline
+`// ^^^` annotation still asserts the error. The golden below thus *shows* the
+localization without catching a spurious "unexpected diagnostic". -/
 
 /--
-error: <#strata>(436-457) ❌ Type checking error.
+info: T22_ArityMismatch.lean:32:2  7:2-23  error: ❌ Type checking error.
 Impossible to unify int with (arrow int $__ty35).
 -/
 #guard_msgs in
-#eval testLaurel <|
+#eval testLaurel (showLocations := true) <|
 #strata
 program Laurel;
 function f(x: int): int { x };
@@ -25,6 +30,7 @@ procedure caller()
   opaque
 {
   var y: int := f(1, 2)
+//^^^^^^^^^^^^^^^^^^^^^ error: Impossible to unify int with (arrow int $__ty35).
 };
 #end
 
