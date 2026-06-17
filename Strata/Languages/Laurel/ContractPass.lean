@@ -105,19 +105,19 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let preAssumes : List StmtExprMd :=
     proc.preconditions.zip info.preNames |>.map fun (pc, name, _) =>
       ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
+  let postAsserts : List StmtExprMd :=
+    postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
+      let summary := pc.summary.getD "postcondition"
+      ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
   match proc.body with
   | .Transparent body =>
-    let postAsserts : List StmtExprMd :=
-      postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
-        let summary := pc.summary.getD "postcondition"
-        ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
     .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
   | .Opaque _ (some impl) _ =>
-    .Opaque postconds (some ⟨.Block (preAssumes ++ [impl]) none, impl.source⟩) []
+    .Opaque [] (some ⟨.Block (preAssumes ++ [impl] ++ postAsserts) none, impl.source⟩) []
   | .Opaque _ none mods =>
-    .Opaque postconds none mods
+    .Opaque [] none mods
   | .Abstract _ =>
-    .Abstract postconds
+    .Abstract []
   | b => b
 
 /-- Monad used by the contract-pass rewriter; carries a global counter for

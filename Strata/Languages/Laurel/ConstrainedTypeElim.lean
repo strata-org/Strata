@@ -61,9 +61,9 @@ def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     else none
   | _ => none
 
-/-- Generate a constraint function for a constrained type.
-    For nested types, the function calls the parent's constraint function. -/
-def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
+/-- Generate a constraint procedure for a constrained type.
+    For nested types, the procedure calls the parent's constraint function. -/
+def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
   let bodyExpr := match ct.base.val with
     | .UserDefined parent =>
@@ -233,7 +233,7 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let constraintFuncs := program.types.filterMap fun
-    | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
+    | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
   ({ program with

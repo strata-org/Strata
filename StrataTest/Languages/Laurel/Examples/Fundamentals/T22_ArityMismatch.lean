@@ -12,14 +12,13 @@ open Strata
 /-! ## Function called with too many arguments -/
 
 /--
-error: <#strata>(436-457) ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
+error: input length and args length mismatch
 -/
 #guard_msgs in
 #eval testLaurel <|
 #strata
 program Laurel;
-procedure f(x: int): int { x };
+procedure f(x: int): int { return x };
 
 procedure caller()
   opaque
