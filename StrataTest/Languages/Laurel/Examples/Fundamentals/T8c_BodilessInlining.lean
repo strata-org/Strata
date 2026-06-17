@@ -17,6 +17,7 @@ body, so inlining would make everything after the call trivially provable.
 Now the body assumes the postconditions instead, so `assert false` after
 the inlined call is correctly rejected. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel (options := { translateOptions := { inlineFunctionsWhenPossible := true } }) <|
 #strata
 program Laurel;

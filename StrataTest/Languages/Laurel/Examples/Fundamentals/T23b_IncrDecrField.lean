@@ -36,6 +36,7 @@ The parentheses around `(c#n)` are needed in the surface syntax because
 (90); `c#n++` parses ambiguously without them.
 -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

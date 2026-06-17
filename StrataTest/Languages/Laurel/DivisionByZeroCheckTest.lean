@@ -18,6 +18,7 @@ generates verification conditions for these preconditions.
 
 /-! ### Safe paths verify cleanly -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -47,6 +48,7 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -60,6 +62,7 @@ procedure unsafeDivision(x: int)
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

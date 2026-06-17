@@ -9,6 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+#guard_msgs (drop info) in
 #eval testLaurel
     (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
 #strata

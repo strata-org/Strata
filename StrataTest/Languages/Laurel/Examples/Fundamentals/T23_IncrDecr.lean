@@ -32,6 +32,7 @@ parameterization which interacts poorly with counterexample search
 for the failing tests in this file).
 -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
