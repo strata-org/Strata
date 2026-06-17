@@ -162,4 +162,11 @@ opaque {
   var y: int := { assert x == 0; x := 1; x };
   assert y == 1
 };
+
+procedure assignmentInExpressionAfterImperativeProcCall()
+opaque {
+  var x: int := 0;
+  var y: int := imperativeProc(x) + (x := 2);
+  assert y == 3
+};
 #end
