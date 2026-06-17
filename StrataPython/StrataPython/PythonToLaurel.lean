@@ -2383,7 +2383,6 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       preconditions := typeConstraintPreconditions
       decreases := none
       body := bodyTrans
-      isFunctional := false
     }
     return (proc, {newCtx with variableTypes := []})
 
@@ -2560,7 +2559,6 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [{ condition := mkStmtExprMd (StmtExpr.LiteralBool true) }]
-    isFunctional := false
     decreases := none
     body := .Opaque [] .none wildcardModifies
   }
@@ -2755,7 +2753,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | _ => s
   procedures :=
     prog.staticProcedures.foldl (init := {}) fun m p =>
-      if p.body.isExternal || p.isFunctional then m
+      if p.body.isExternal then m
       else
         -- Use "Any" for all parameter types to match the Python→Laurel
         -- pipeline's Any-wrapping convention at call sites.
@@ -2778,8 +2776,6 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
             typeTesters := pyLauTypeTesters tys : PyRetInfo }
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
-    let funcNames := prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal || !p.isFunctional then none else some p.name.text
     let dtFuncs := prog.types.flatMap fun td =>
       match td with
       | .Datatype dt =>
@@ -2791,12 +2787,12 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         let testers := dt.constructors.map fun c => "is" ++ c.name.text
         ctors ++ destrs ++ testers
       | _ => []
-    funcNames ++ dtFuncs
+    dtFuncs
   maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
     if p.name.text ∈ AnyMaybeExceptionList then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal || p.isFunctional then none else some p.name.text
+      if p.body.isExternal then none else some p.name.text
   callableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
       match p.body with
@@ -2980,7 +2976,6 @@ def pythonToLaurel (info : PreludeInfo)
     preconditions := [],
     decreases := none,
     body := .Opaque [] (some bodyBlock) wildcardModifies
-    isFunctional := false
   }
 
   -- Generate $composite_to_string_<type> and $composite_to_string_any_<type>
@@ -2998,16 +2993,14 @@ def pythonToLaurel (info : PreludeInfo)
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none wildcardModifies
-        isFunctional := false }
+        body := .Opaque [] none wildcardModifies }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none wildcardModifies
-        isFunctional := false }
+        body := .Opaque [] none wildcardModifies }
 
   let program : Laurel.Program := {
     staticProcedures := (procedures.push mainProc).toList
