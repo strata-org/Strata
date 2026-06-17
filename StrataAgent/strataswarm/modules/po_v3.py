@@ -36,7 +36,7 @@ T = TypeVar("T")
 
 MAX_RETRIES = 3
 MAX_RECURSION_DEPTH = 3
-WRITER_TURNS_PER_ATTEMPT = [50, 25, 12]  # decreasing budget per attempt
+WRITER_TURNS_PER_ATTEMPT = [25, 12, 6]  # decreasing budget per attempt
 GRACE_TURNS_PER_ATTEMPT = 20  # turns per grace attempt (sorry wrap-up phase)
 WRITER_CLEANUP_TURNS = 10
 EXTRACTOR_MAX_TURNS = 50
