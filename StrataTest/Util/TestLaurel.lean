@@ -93,7 +93,11 @@ private def runLaurelPipelineRaw (program : StrataDDM.Program)
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    Laurel.verifyToDiagnosticModels laurelProgram options
+    -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
+    -- back as a structured `DiagnosticModel` (rather than thrown like the CLI),
+    -- so it flows through the same snippet-local `line:col` rendering as every
+    -- other diagnostic instead of leaking a raw byte offset in its message.
+    Laurel.verifyToDiagnosticModelsCapturing laurelProgram options
 
 /-! ## Inline-annotation matcher
 
