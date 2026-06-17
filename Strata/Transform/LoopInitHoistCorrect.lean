@@ -1427,7 +1427,6 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     (h_no_fd      : Stmt.containsFuncDecl s = false)
     (h_no_inv     : Stmt.loopHasNoInvariants s = true)
     (h_no_measure : Stmt.loopMeasureNone s = true)
-    (h_no_exit    : Block.noExit [s] = true)
     (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q [s])
     (h_unique     : Block.uniqueInits [s])
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true)
@@ -1516,8 +1515,6 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       simpa only [Block.loopHasNoInvariants, Stmt.loopHasNoInvariants, Bool.and_true] using h_no_inv
     have h_measure_bss : Block.loopMeasureNone bss = true := by
       simpa only [Block.loopMeasureNone, Stmt.loopMeasureNone, Bool.and_true] using h_no_measure
-    have h_noexit_bss : Block.noExit bss = true := by
-      simpa only [Block.noExit, Stmt.noExit, Bool.and_true] using h_no_exit
     have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) Q bss := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
@@ -1593,7 +1590,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
         · -- inner terminates.
           obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
             Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
-              h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
+              h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
               h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
               h_mod_disjoint_A_bss h_mod_disjoint_B_bss
               h_hoist_undef_bss h_hoist_undef_h_bss
@@ -1637,7 +1634,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
         · -- inner exits with the matching label `lbl`: block catches it, terminates.
           obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
             Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
-              h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
+              h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
               h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
               h_mod_disjoint_A_bss h_mod_disjoint_B_bss
               h_hoist_undef_bss h_hoist_undef_h_bss
@@ -1682,7 +1679,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
         subst h_li_eq
         obtain ⟨ρ_h', cfg_hoist, h_body_hoist, h_outcome⟩ :=
           Block.hoistLoopPrefixInits_preserves hQmint A B subst bss σ
-            h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_noexit_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
+            h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
             h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
             h_mod_disjoint_A_bss h_mod_disjoint_B_bss
             h_hoist_undef_bss h_hoist_undef_h_bss
@@ -1743,9 +1740,6 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     have h_measure_branches : Block.loopMeasureNone tss = true ∧ Block.loopMeasureNone ess = true := by
       simp only [Stmt.loopMeasureNone,
         Bool.and_eq_true] at h_no_measure; exact h_no_measure
-    have h_noexit_branches : Block.noExit tss = true ∧ Block.noExit ess = true := by
-      simp only [Block.noExit, Stmt.noExit, Bool.and_true,
-        Bool.and_eq_true] at h_no_exit; exact h_no_exit
     have h_exprs_shapefree_branches :
         Block.exprsShapeFree (P := P) Q tss ∧
           Block.exprsShapeFree (P := P) Q ess := by
@@ -1961,7 +1955,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       obtain ⟨ρ_h', cfg_hoist, h_branch_hoist, h_outcome⟩ :=
         Block.hoistLoopPrefixInits_preserves hQmint A B subst tss σ
           h_nd_branches.1 h_fd_branches.1 h_inv_branches.1 h_measure_branches.1
-          h_noexit_branches.1 h_exprs_shapefree_branches.1
+          h_exprs_shapefree_branches.1
           h_unique_tss h_fresh_tss h_names_fresh_A_split.1 h_names_fresh_B_split.1
           h_lhs_disjoint_tss h_extra_disjoint_tss h_mod_disjoint_A_tss h_mod_disjoint_B_tss
           h_hoist_undef_tss h_hoist_undef_h_tss
@@ -1981,7 +1975,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       obtain ⟨ρ_h', cfg_hoist, h_branch_hoist, h_outcome⟩ :=
         Block.hoistLoopPrefixInits_preserves hQmint A B subst ess (Block.hoistLoopPrefixInitsM tss σ).2
           h_nd_branches.2 h_fd_branches.2 h_inv_branches.2 h_measure_branches.2
-          h_noexit_branches.2 h_exprs_shapefree_branches.2
+          h_exprs_shapefree_branches.2
           h_unique_ess h_fresh_ess h_names_fresh_A_split.2 h_names_fresh_B_split.2
           h_lhs_disjoint_ess h_extra_disjoint_ess h_mod_disjoint_A_ess h_mod_disjoint_B_ess
           h_hoist_undef_ess h_hoist_undef_h_ess
@@ -2049,10 +2043,6 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       rw [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_no_inv_s; exact h_no_inv_s.2
     have h_measure_body : Block.loopMeasureNone body = true := by
       rw [Stmt.loopMeasureNone, Bool.and_eq_true] at h_no_measure_s; exact h_no_measure_s.2
-    have h_noexit_body : Block.noExit body = true := by
-      have : Stmt.noExit (Stmt.loop (.det g') none [] body md) = true := by
-        simpa only [Block.noExit, Bool.and_true] using h_no_exit
-      rw [Stmt.noExit] at this; exact this
     have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) Q body := by
       have h := h_exprs_shapefree
       simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
@@ -2165,10 +2155,6 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     have h_renames_eq : (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1 =
         LoopInitHoistLoopDriver.substOf' E := h_harvest.2
     rw [h_havoc_eq]
-    -- Source body never reaches `.exiting` (it is `noExit`).
-    have h_src_body_no_exit : ∀ (ρ : Env P) (lbl : String) (ρe : Env P),
-        ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ) (.exiting lbl ρe) :=
-      fun ρ lbl ρe h => LoopInitHoistLoopDriver.block_noExit_no_exiting h_noexit_body h
     -- === Step A: the §E Block IH at the harvest `σ`, presented in the raw
     --     ∀-shape `loop_arm_close` expects (both source- and hoist-side
     --     `σ`-relative store-shape-freedom supplied directly per iteration). ===
@@ -2191,7 +2177,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i ρ_s' h_run_i
       obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
         Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
-          h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body
+          h_nd_body h_fd_body h_inv_body h_measure_body
           h_exprs_shapefree_body h_unique_body h_fresh_body
           h_names_fresh_A_body h_names_fresh_B_body
           h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
@@ -2228,7 +2214,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i l ρ_s' h_run_i
       obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
         Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
-          h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body
+          h_nd_body h_fd_body h_inv_body h_measure_body
           h_exprs_shapefree_body h_unique_body h_fresh_body
           h_names_fresh_A_body h_names_fresh_B_body
           h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
@@ -2271,7 +2257,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
         (LoopInitHoistLoopDriver.substOf' E) body₁ body₃ := by
       have hB :=
         LoopInitHoistLoopArmWF.Block.stepB_self_of_lift hQmint (extendEval := extendEval) body σ h_wf_σ
-          h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body h_unique_body
+          h_nd_body h_fd_body h_inv_body h_measure_body h_unique_body
           h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
           h_wfvar h_wfcongr h_wfsubst h_wfdef
       show LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
@@ -2393,7 +2379,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
           (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2) = true
       rw [h_renames_eq]
       exact LoopInitHoistLoopArmWF.Block.stepB_noFuncDecl_h_of_lift hQmint body σ h_wf_σ
-        h_nd_body h_fd_body h_inv_body h_measure_body h_noexit_body h_unique_body
+        h_nd_body h_fd_body h_inv_body h_measure_body h_unique_body
         h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
     -- entry-undef of sources/targets at ρ_hoist (the harvest carriers are undef there).
     have h_src_undef_h : ∀ e ∈ E, ρ_hoist.store e.1 = none := by
@@ -2415,46 +2401,48 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
       rcases h_src_class a ha with h_o | ⟨str, he, hsuf, _, hnotσ⟩
       · exact h_hoist_undef_body a h_o
       · exact he ▸ h_src_store_shapefree str hsuf hnotσ
-    -- post-store undef of sources/targets via `loopDet_preserves_none`.
+    -- post-store undef of sources/targets via `loopDet_preserves_none_terminal`.
+    -- No-exit-free: a `.terminal` source loop run keeps any loop-entry-undefined
+    -- carrier undefined (each iteration's `.none`-block projects undefined entries
+    -- back to `none`; an inner `.exiting` would propagate the loop to `.exiting`,
+    -- not `.terminal`).  The source body need NOT be statically `noExit`.
     have h_post_src_none : ∀ (ρ_post : Env P) (x : P.Ident),
         StepStmtStar P (EvalCmd P) extendEval
           (.stmt (.loop (.det g') none [] body md) ρ_src) (.terminal ρ_post) →
         x ∈ LoopInitHoistLoopDriver.sourcesOf' E → ρ_post.store x = none := by
       intro ρ_post x h_run hx
-      exact LoopInitHoistLoopDriver.loopDet_preserves_none
-        (fun ρ lbl ρe => h_src_body_no_exit ρ lbl ρe) (h_src_As_undef x hx) h_run
+      exact LoopInitHoistLoopDriver.loopDet_preserves_none_terminal (h_src_As_undef x hx) h_run
     have h_post_tgt_none : ∀ (ρ_post : Env P) (x : P.Ident),
         StepStmtStar P (EvalCmd P) extendEval
           (.stmt (.loop (.det g') none [] body md) ρ_src) (.terminal ρ_post) →
         x ∈ LoopInitHoistLoopDriver.targetsOf' E → ρ_post.store x = none := by
       intro ρ_post x h_run hx
-      refine LoopInitHoistLoopDriver.loopDet_preserves_none
-        (fun ρ lbl ρe => h_src_body_no_exit ρ lbl ρe) ?_ h_run
+      refine LoopInitHoistLoopDriver.loopDet_preserves_none_terminal ?_ h_run
       obtain ⟨str, he, hsuf, hnotσ₁⟩ := h_tgt_class x hx
       exact he ▸ h_src_store_shapefree str hsuf
         (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
-    -- post-store undef of sources/targets on an EXITING source loop run.  In §E
-    -- the source body is `noExit`, so the loop can never reach `.exiting`: these
-    -- two obligations are discharged vacuously via `loopDet_no_exit` (the body
-    -- `.exit`-impossibility lifted to the loop).  `loop_arm_close` requires them
-    -- only to feed the sum-typed driver's exit branch — which never fires here.
-    have h_loop_body_no_exit_hif : ∀ (ρ : Env P) (hif : Bool) (lbl : String) (ρe : Env P),
-        ¬ StepStmtStar P (EvalCmd P) extendEval
-            (.stmts body { ρ with hasFailure := ρ.hasFailure || hif })
-            (.exiting lbl ρe) :=
-      fun ρ _ lbl ρe h => LoopInitHoistLoopDriver.block_noExit_no_exiting h_noexit_body h
+    -- post-store undef of sources/targets on an EXITING source loop run.  A body
+    -- `.exit` is ADMITTED: when some iteration breaks with a label, the loop reaches
+    -- `.exiting`.  `loopDet_preserves_none_exiting` (no-exit-free) keeps any
+    -- loop-entry-undefined carrier undefined at the exit store — the same
+    -- per-iteration `projectStore` invariant, capped by the breaking iteration's
+    -- `.none`-block mismatch.  These obligations feed the sum-typed driver's exit
+    -- branch, which now genuinely fires on a body `.exit`.
     have h_post_src_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
         StepStmtStar P (EvalCmd P) extendEval
           (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
         x ∈ LoopInitHoistLoopDriver.sourcesOf' E → ρ_post.store x = none := by
-      intro lbl ρ_post x h_run _
-      exact (LoopInitHoistLoopDriver.loopDet_no_exit h_loop_body_no_exit_hif h_run).elim
+      intro lbl ρ_post x h_run hx
+      exact LoopInitHoistLoopDriver.loopDet_preserves_none_exiting (h_src_As_undef x hx) h_run
     have h_post_tgt_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
         StepStmtStar P (EvalCmd P) extendEval
           (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
         x ∈ LoopInitHoistLoopDriver.targetsOf' E → ρ_post.store x = none := by
-      intro lbl ρ_post x h_run _
-      exact (LoopInitHoistLoopDriver.loopDet_no_exit h_loop_body_no_exit_hif h_run).elim
+      intro lbl ρ_post x h_run hx
+      refine LoopInitHoistLoopDriver.loopDet_preserves_none_exiting ?_ h_run
+      obtain ⟨str, he, hsuf, hnotσ₁⟩ := h_tgt_class x hx
+      exact he ▸ h_src_store_shapefree str hsuf
+        (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
     have h_tgt_nodup : (LoopInitHoistLoopDriver.targetsOf' E).Nodup :=
       (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).2
     -- σ_sf-relative source-store shape-freedom at ρ_src for the driver.
@@ -2573,7 +2561,6 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
     (h_no_fd      : Block.containsFuncDecl ss = false)
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
-    (h_no_exit    : Block.noExit ss = true)
     (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
@@ -2669,11 +2656,6 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
     have h_measure_s : Block.loopMeasureNone [s] = true ∧ Block.loopMeasureNone rest = true := by
       rw [h_split_list, Block.loopMeasureNone_append, Bool.and_eq_true] at h_no_measure
       exact h_no_measure
-    have h_noexit_s : Block.noExit [s] = true ∧ Block.noExit rest = true := by
-      -- `Block.noExit (s :: rest) = Stmt.noExit s && Block.noExit rest`, and
-      -- `Block.noExit [s] = Stmt.noExit s` (singleton).
-      rw [Block.noExit, Bool.and_eq_true] at h_no_exit
-      exact ⟨by simpa only [Block.noExit, Bool.and_true] using h_no_exit.1, h_no_exit.2⟩
     have h_exprs_shapefree_s :
         Block.exprsShapeFree (P := P) Q [s] ∧
           Block.exprsShapeFree (P := P) Q rest := by
@@ -2842,7 +2824,7 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
       -- HEAD §E Stmt-IH at σ.
       obtain ⟨ρ_h_mid, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
         Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
-          h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
+          h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_exprs_shapefree_s.1 h_unique_s h_fresh_s
           h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
           h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
           h_src_store_shapefree h_hoist_store_shapefree
@@ -2875,7 +2857,7 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
       -- TAIL §E Block-IH at σ1.
       obtain ⟨ρ_h_fin, cfg_hoist_tail, h_tail_hoist, h_tail_outcome⟩ :=
         Block.hoistLoopPrefixInits_preserves hQmint A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
-          h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_noexit_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
+          h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
           h_names_fresh_rest h_names_fresh_B_rest h_lhs_disjoint_rest h_extra_disjoint_rest
           h_mod_disjoint_A_rest h_mod_disjoint_B_rest
           (by
@@ -3005,7 +2987,7 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
         · -- HEAD exits: tail never runs.
           obtain ⟨ρ_h_fin, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
             Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
-              h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
+              h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_exprs_shapefree_s.1 h_unique_s h_fresh_s
               h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
               h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
               h_src_store_shapefree h_hoist_store_shapefree
@@ -3031,7 +3013,7 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
               (.stmt s ρ_src) (.terminal ρ_s_mid) := h_head_term
           obtain ⟨ρ_h_mid, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
             Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
-              h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_noexit_s.1 h_exprs_shapefree_s.1 h_unique_s h_fresh_s
+              h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_exprs_shapefree_s.1 h_unique_s h_fresh_s
               h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
               h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
               h_src_store_shapefree h_hoist_store_shapefree
@@ -3140,7 +3122,7 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
               h_residual_contains_nofd h_z_not_residual h_z_h_none h_head_hoist
           obtain ⟨ρ_h_fin, cfg_hoist_tail, h_tail_hoist, h_tail_outcome⟩ :=
             Block.hoistLoopPrefixInits_preserves hQmint A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
-              h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_noexit_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
+              h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
               h_names_fresh_rest h_names_fresh_B_rest h_lhs_disjoint_rest h_extra_disjoint_rest
               h_mod_disjoint_A_rest h_mod_disjoint_B_rest h_hoist_undef_mid h_hoist_undef_h_mid
               h_src_store_shapefree_mid h_hoist_store_shapefree_mid
@@ -3202,7 +3184,6 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
     (h_no_fd      : Block.containsFuncDecl ss = false)
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
-    (h_no_exit    : Block.noExit ss = true)
     (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
@@ -3273,7 +3254,7 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
   obtain ⟨ρ_h', cfg_hoist, h_run_h, h_disj⟩ :=
     Block.hoistLoopPrefixInits_preserves hQmint (extendEval := extendEval) [] [] [] ss
       StringGenState.emp
-      h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
+      h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
       h_names_fresh_nil h_names_fresh_nil h_lhs_disjoint_nil h_lhs_disjoint_nil
       h_mod_disjoint_nil h_mod_disjoint_nil
       h_hoist_undef h_hoist_undef h_src_store_shapefree_emp h_src_store_shapefree_emp
@@ -3306,13 +3287,6 @@ hoisting pass entry):
 * `h_no_fd`     — no `.funcDecl ...` anywhere
 * `h_no_inv`    — no `.loop` carries a non-empty `invariants` list
 * `h_no_measure` — no `.loop` carries an explicit termination measure
-* `h_no_exit`   — no `.exit` constructor appears anywhere in the program.
-                   The pass is proven correct for exit-free loop bodies; the
-                   `.loop` arm feeds this to the Step-C producer, whose
-                   `BodyTransport`/`BodySimE` correspondence is terminal-only
-                   (it has no `.exit`-carrying constructor). Extending the
-                   correctness statement to covered exits requires a sum-typed
-                   `BodySimE` and is deferred.
 * `h_unique`    — `.init` LHS uniqueness across the program
 * `h_fresh`     — hoisted names are fresh in every guard and RHS expression
                    they would be moved past
@@ -3363,7 +3337,6 @@ theorem hoistLoopPrefixInits_preserves
     (h_no_fd      : Block.containsFuncDecl ss = false)
     (h_no_inv     : Block.loopHasNoInvariants ss = true)
     (h_no_measure : Block.loopMeasureNone ss = true)
-    (h_no_exit    : Block.noExit ss = true)
     (h_exprs_shapefree : Block.exprsShapeFree (P := P) String.HasUnderscoreDigitSuffix ss)
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
@@ -3399,7 +3372,7 @@ theorem hoistLoopPrefixInits_preserves
     (Q := String.HasUnderscoreDigitSuffix)
     (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg)
     ss
-    h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
+    h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
     h_src_initVars_shapefree h_src_modifiedVars_shapefree h_hoist_undef
     h_src_store_shapefree h_run_src h_wfvar h_wfcongr h_wfsubst h_wfdef
 

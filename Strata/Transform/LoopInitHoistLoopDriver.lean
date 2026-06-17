@@ -1117,6 +1117,90 @@ public theorem loopDet_preserves_none_exiting [HasFvar P] [HasBool P] [HasNot P]
   loopDet_preserves_none_exiting_fuel (reflTrans_to_T h_run).len h_none
     (reflTrans_to_T h_run) (Nat.le_refl _)
 
+/-- **`loopDet_preserves_none` for a TERMINAL loop run — WITHOUT a no-exit
+hypothesis.**
+
+The TERMINAL analogue of `loopDet_preserves_none_exiting_fuel`: like
+`loopDet_preserves_none_fuel` but DROPS `h_body_no_exit`.  A loop run reaching
+`.terminal ρ_post` keeps any variable `x` undefined at the exit store provided it
+was undefined at loop entry.  No `h_body_no_exit` is needed: the loop terminates
+either by failing the guard (`step_loop_exit`, store unchanged at `x`) or by
+running an iteration whose `.none`-block reaches `.terminal`
+(`blockT_none_reaches_terminal`, an inner `.exiting` always mismatches `.none` and
+propagates, so a `.none`-block reaching `.terminal` forces an inner `.terminal`);
+each iteration projects (`projectStore`) every entry undefined at iteration entry
+back to `none`, so the entry-undefinedness of `x` is an invariant across
+iterations.  Mirrors `loopDet_preserves_none_exiting_fuel`'s inversion, with the
+`.terminal` target instead of `.exiting`. -/
+public theorem loopDet_preserves_none_terminal_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {x : P.Ident} :
+    ∀ (n : Nat) {ρ ρ_post : Env P},
+      ρ.store x = none →
+      (h_run : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.stmt (.loop (.det g) none [] body md) ρ) (.terminal ρ_post)) →
+      h_run.len ≤ n →
+      ρ_post.store x = none := by
+  intro n
+  induction n with
+  | zero =>
+    intro ρ ρ_post _ h_run hlen
+    match h_run with
+    | .step _ _ _ _ _ => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    intro ρ ρ_post h_none h_run hlen
+    match h_run with
+    | .step _ _ _ step hrest =>
+      cases step with
+      | step_loop_exit ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_ρ_post_eq : ρ_post = { ρ with hasFailure := ρ.hasFailure || hasInvFailure } := by
+          match hrest with
+          | .refl _ => rfl
+          | .step _ _ _ hd _ => exact nomatch hd
+        subst h_ρ_post_eq
+        exact h_none
+      | step_loop_enter ht hinv hiff hwf =>
+        rename_i hasInvFailure
+        have h_hif_false : hasInvFailure = false := by
+          cases h_hif : hasInvFailure with
+          | false => rfl
+          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
+        subst h_hif_false
+        -- Peel one iteration WITHOUT a no-exit hypothesis: the seq decomposes to a
+        -- `.block .none` reaching `.terminal`, which forces an inner `.terminal`.
+        obtain ⟨ρ_block, h_block_term, h_loop_stmts, _⟩ :=
+          seqT_reaches_terminal extendEval hrest
+        obtain ⟨ρ_inner, _, h_ρ_block_eq, _⟩ := blockT_none_reaches_terminal h_block_term
+        subst h_ρ_block_eq
+        obtain ⟨ρ_x, h_loop_T, h_nil, _⟩ :=
+          stmtsT_cons_terminal extendEval h_loop_stmts
+        have hρ_x_eq : ρ_x = ρ_post := by
+          match h_nil with
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h _ => exact nomatch h
+        subst hρ_x_eq
+        have h_none_inner :
+            ({ ρ_inner with store := projectStore ρ.store ρ_inner.store } : Env P).store x = none := by
+          show projectStore ρ.store ρ_inner.store x = none
+          exact projectStore_undef_at h_none
+        exact ih h_none_inner h_loop_T (by simp only [ReflTransT.len] at hlen; omega)
+
+/-- Prop-level corollary of `loopDet_preserves_none_terminal_fuel`. -/
+public theorem loopDet_preserves_none_terminal [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {x : P.Ident} {ρ ρ_post : Env P}
+    (h_none : ρ.store x = none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt (.loop (.det g) none [] body md) ρ) (.terminal ρ_post)) :
+    ρ_post.store x = none :=
+  loopDet_preserves_none_terminal_fuel (reflTrans_to_T h_run).len h_none
+    (reflTrans_to_T h_run) (Nat.le_refl _)
+
 /-- **The sum-typed two-guard TERMINAL-target fuel recursion.**
 
 The TERMINAL analogue of `loopDet_lift_2g_E_fuel`: like `loopDet_lift_2g_fuel`

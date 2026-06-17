@@ -2369,7 +2369,6 @@ theorem Block.stepB_self_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P
     (h_fd : Block.containsFuncDecl body = false)
     (h_inv : Block.loopHasNoInvariants body = true)
     (h_measure : Block.loopMeasureNone body = true)
-    (h_noexit : Block.noExit body = true)
     (h_unique : Block.uniqueInits body)
     (h_sf : Block.exprsShapeFree (P := P) Q body)
     (h_src_shapefree :
@@ -2450,7 +2449,6 @@ theorem Block.stepB_noFuncDecl_h_of_lift [HasIdent P] [LawfulHasIdent P] [HasSub
     (h_fd : Block.containsFuncDecl body = false)
     (h_inv : Block.loopHasNoInvariants body = true)
     (h_measure : Block.loopMeasureNone body = true)
-    (h_noexit : Block.noExit body = true)
     (h_unique : Block.uniqueInits body)
     (h_sf : Block.exprsShapeFree (P := P) Q body)
     (h_src_shapefree :

@@ -238,11 +238,12 @@ discharged here from the corresponding facts on the source `ss`:
   * `containsNondetLoop = false`  — established (nondetElim removes nondet loops),
   * `containsFuncDecl = false`    — preserved (from `noFuncDecl`),
   * `loopHasNoInvariants = true`  — preserved,
-  * `loopMeasureNone = true`      — preserved (via `noMeasureLoops`),
-  * `noExit = true`               — preserved.
+  * `loopMeasureNone = true`      — preserved (via `noMeasureLoops`).
 
-The `loopMeasureNone` and `noExit` preservations are net-new here; the other
-three reuse the `nondetElim_*` postconditions from `NondetElim.lean`. -/
+The hoist soundness theorem no longer requires the source to be exit-free, so no
+`noExit` precondition is discharged here.  The `loopMeasureNone` preservation is
+net-new here; the other two reuse the `nondetElim_*` postconditions from
+`NondetElim.lean`. -/
 
 /-- nondetElim establishes the hoist §F `containsNondetLoop = false` precond. -/
 theorem nondetElim_containsNondetLoop {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
@@ -256,81 +257,10 @@ theorem nondetElim_containsFuncDecl {P : PureExpr} [HasIdent P] [HasFvar P] [Has
     Block.containsFuncDecl (Block.nondetElim ss) = false :=
   Block.not_containsFuncDecl_of_noFuncDecl _ (nondetElim_noFuncDecl ss h)
 
-/-! ### `noExit` preservation through the pass
-
-`nondetElim` never introduces an `.exit`; it adds only `init`/`ite`/`loop`/
-`havoc` statements.  We prove preservation by induction mirroring
-`nondetElim_loopHasNoInvariants`. -/
-
-/-- `Block.noExit` distributes over `++`. -/
-theorem Block.noExit_append {P : PureExpr} (xs ys : List (Stmt P (Cmd P))) :
-    Block.noExit (xs ++ ys) =
-      (Block.noExit xs && Block.noExit ys) := by
-  induction xs with
-  | nil => simp [Block.noExit]
-  | cons x rest ih => simp [Block.noExit, ih, Bool.and_assoc]
-
-mutual
-/-- `Stmt.nondetElimM` preserves `noExit`: the rewrite never emits an
-`.exit` and passes through the body's exit structure unchanged (the only
-new tail statement is a `havoc`, which is exit-free). -/
-theorem Stmt.nondetElimM_noExit {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (s : Stmt P (Cmd P)) (σ : StringGenState)
-    (h : Stmt.noExit s = true) :
-    Block.noExit (Stmt.nondetElimM s σ).1 = true := by
-  match s with
-  | .cmd c => simp [Stmt.nondetElimM, Block.noExit, Stmt.noExit]
-  | .block lbl bss md =>
-      rw [Stmt.nondetElimM_block_out]
-      simp only [Block.noExit, Stmt.noExit, Bool.and_true]
-      rw [Stmt.noExit] at h
-      exact Block.nondetElimM_noExit bss σ h
-  | .ite (.det e) tss ess md =>
-      rw [Stmt.nondetElimM_ite_det_out]
-      rw [Stmt.noExit, Bool.and_eq_true] at h
-      simp only [Block.noExit, Stmt.noExit, Bool.and_true,
-                 Block.nondetElimM_noExit tss σ h.1,
-                 Block.nondetElimM_noExit ess _ h.2]
-  | .ite .nondet tss ess md =>
-      rw [Stmt.nondetElimM_ite_nondet_out]
-      rw [Stmt.noExit, Bool.and_eq_true] at h
-      simp only [Block.noExit, Stmt.noExit, Bool.and_true,
-                 Block.nondetElimM_noExit tss _ h.1,
-                 Block.nondetElimM_noExit ess _ h.2]
-  | .loop (.det e) m inv body md =>
-      rw [Stmt.nondetElimM_loop_det_out]
-      simp only [Block.noExit, Stmt.noExit, Bool.and_true]
-      rw [Stmt.noExit] at h
-      exact Block.nondetElimM_noExit body σ h
-  | .loop .nondet m inv body md =>
-      rw [Stmt.nondetElimM_loop_nondet_out]
-      rw [Stmt.noExit] at h
-      simp only [Block.noExit_append, Block.noExit, Stmt.noExit, Bool.and_true,
-                 Block.nondetElimM_noExit body _ h]
-  | .exit lbl md => exact absurd h (by simp [Stmt.noExit])
-  | .funcDecl d md => simp [Stmt.nondetElimM, Block.noExit, Stmt.noExit]
-  | .typeDecl t md => simp [Stmt.nondetElimM, Block.noExit, Stmt.noExit]
-  termination_by sizeOf s
-
-theorem Block.nondetElimM_noExit {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
-    (h : Block.noExit ss = true) :
-    Block.noExit (Block.nondetElimM ss σ).1 = true := by
-  match ss with
-  | [] => simp [Block.nondetElimM, Block.noExit]
-  | s :: rest =>
-      rw [Block.noExit, Bool.and_eq_true] at h
-      rw [Block.nondetElimM_cons_out, Block.noExit_append]
-      simp only [Stmt.nondetElimM_noExit s σ h.1,
-                 Block.nondetElimM_noExit rest _ h.2, Bool.and_true]
-  termination_by sizeOf ss
-end
-
-/-- Top-level: `nondetElim` preserves `noExit`. -/
-theorem nondetElim_noExit {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (h : Block.noExit ss = true) :
-    Block.noExit (Block.nondetElim ss) = true :=
-  Block.nondetElimM_noExit ss StringGenState.emp h
+-- A `noExit` preservation bridge for `nondetElim` is intentionally absent: the
+-- hoist soundness theorem no longer requires the source to be exit-free, so the
+-- pipeline composition need not carry `noExit` across the `nondetElim` pass.  A
+-- loop-body `.exit` in the user source is admitted and faithfully simulated.
 
 ---------------------------------------------------------------------
 /-! ## Section 4 — Direction B: structural simple-S2U preconditions on `hoist`
@@ -1912,8 +1842,8 @@ rather than the blanket suffix-shape exclusion that obstructed the original
 composition.
 
 The front-end hypotheses on the user source `ss` are all satisfiable by a real
-program: `ss` is shape-restricted (no func decls, no loop invariants/measures,
-simple shape, no exits) and *kind-free* — it mentions none of the
+program: `ss` is shape-restricted (no func decls, no loop invariants/measures)
+and *kind-free* — it mentions none of the
 `$__ndelim_*$` / `_hoist` / S2U construct prefixes that the three passes mint
 (the `*_kindfree` hypotheses), and never writes or reads such a name.  `ρ₀`'s
 store need only leave the source inits (`h_store_inits`) and the three passes'
@@ -1966,7 +1896,6 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
     (h_nml : Block.noMeasureLoops ss = true)
-    (h_noexit : Block.noExit ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
@@ -2038,7 +1967,6 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (nondetElim_containsFuncDecl ss h_nofd)
       (nondetElim_loopHasNoInvariants ss h_lhni)
       (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
-      (nondetElim_noExit ss h_noexit)
       h_out_exprs_sf h_out_unique h_out_fresh
       h_out_iv_sf h_out_mv_sf
       h_out_undef
