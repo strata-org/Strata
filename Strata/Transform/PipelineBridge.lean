@@ -1969,8 +1969,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (h_noexit : Block.noExit ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
-    (h_disj : ∀ gen', StructuredToUnstructuredCorrect.Block.userLabelsDisjoint
-      (Block.hoistLoopPrefixInits (Block.nondetElim ss)) gen')
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
+      (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
     -- source kind-freedom (user names never collide with any minted prefix):
     (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
     (h_init_not_nd : ∀ str : String, ndelimKind str →

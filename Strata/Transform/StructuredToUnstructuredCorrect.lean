@@ -1208,6 +1208,32 @@ labels from generator output: client code chooses readable labels (e.g.
   (Block.userBlockLabels ss).Nodup ∧
   (∀ l ∈ Block.userBlockLabels ss, l ∉ StringGenState.stringGens gen')
 
+/-- The gen-free core of `userLabelsDisjoint`: user-provided block labels are
+shape-free (do not have the `_<digits>` generator suffix) and pairwise distinct.
+
+This drops `userLabelsDisjoint`'s third conjunct (the universal "no user label
+is in `gen'`'s `stringGens`"), which is *derivable* from the shape-free conjunct
+together with well-formedness of `gen'`: a shape-free label is never in the
+`stringGens` of any WF state.  Stating the precondition in this gen-free form lets
+callers discharge it without quantifying over generator states. -/
+@[expose] def Block.userLabelsShapeNodup {P : PureExpr}
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  (∀ l ∈ Block.userBlockLabels ss, ¬ String.HasUnderscoreDigitSuffix l) ∧
+  (Block.userBlockLabels ss).Nodup
+
+/-- `userLabelsShapeNodup` recovers `userLabelsDisjoint` at any WF generator
+state: the third (disjointness) conjunct follows from the shape-free conjunct via
+`userLabel_not_in_stringGens_of_shape_free`. -/
+theorem Block.userLabelsDisjoint_of_shapeNodup {P : PureExpr}
+    (ss : List (Stmt P (Cmd P)))
+    (h : Block.userLabelsShapeNodup ss) :
+    ∀ gen : StringGenState, StringGenState.WF gen →
+      Block.userLabelsDisjoint ss gen := by
+  intro gen hwf
+  refine ⟨h.1, h.2, ?_⟩
+  intro l hl
+  exact userLabel_not_in_stringGens_of_shape_free hwf (h.1 l hl)
+
 /-- `userLabelsDisjoint` distributes over `cons`: if a longer list is
 disjoint, so is the tail. -/
 private theorem Block.userLabelsDisjoint_tail {P : PureExpr}
@@ -3756,7 +3782,7 @@ the inner blocks' labels are NOT in `gen0.gens`, so `lend` is disjoint from them
 private theorem stmtsToCFG_nodup_keys {P : PureExpr}
     [HasBool P] [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
     (ss : List (Stmt P (Cmd P)))
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen') :
+    (h_disj : ∀ gen', StringGenState.WF gen' → Block.userLabelsDisjoint ss gen') :
     ((stmtsToCFG ss).blocks.map Prod.fst).Nodup := by
   -- Define the generator state after generating "end$" and the resulting label.
   let p_end := StringGenState.gen "end$" StringGenState.emp
@@ -3785,8 +3811,10 @@ private theorem stmtsToCFG_nodup_keys {P : PureExpr}
     rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl)
   -- Get invariant from the helper
   have h_eq : stmtsToBlocks lend ss [] [] gen0 = ((r.1.1, r.1.2), r.2) := rfl
+  have hwf_r2 : StringGenState.WF r.2 :=
+    (stmtsToBlocks_genStep lend ss [] [] gen0 r.2 r.1.1 r.1.2 h_eq).wf_mono hwf0
   have h_inv : @GenInv P gen0 r.2 (Block.userBlockLabels ss) r.1.2 :=
-    stmtsToBlocks_invariant lend ss [] [] gen0 r.2 _ _ h_eq hwf0 (h_disj _)
+    stmtsToBlocks_invariant lend ss [] [] gen0 r.2 _ _ h_eq hwf0 (h_disj _ hwf_r2)
   -- Build Nodup of r.1.2.map Prod.fst ++ [lend]
   rw [List.nodup_append]
   refine ⟨h_inv.nodup, ?_, ?_⟩
@@ -8776,7 +8804,7 @@ Specialized to `CmdT = Cmd P` so we can use `stmtsToBlocks_invariant`
 theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
     [HasBool P] [HasIdent P] [HasFvar P] [HasIntOrder P] [HasNot P]
     (ss : List (Stmt P (Cmd P)))
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen') :
+    (h_disj : ∀ gen', StringGenState.WF gen' → Block.userLabelsDisjoint ss gen') :
     ∃ (lend : String) (gen gen' : StringGenState)
       (entry : String) (blocks : DetBlocks String (Cmd P) P),
       stmtsToBlocks lend ss [] [] gen = ((entry, blocks), gen') ∧
@@ -8818,8 +8846,10 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
       rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl)
     -- All labels in r.1.2 are NOT in stringGens gen0 (by invariant fresh field)
     have h_eq : stmtsToBlocks lend ss [] [] gen0 = ((r.1.1, r.1.2), r.2) := rfl
+    have hwf_r2 : StringGenState.WF r.2 :=
+      (stmtsToBlocks_genStep lend ss [] [] gen0 r.2 r.1.1 r.1.2 h_eq).wf_mono hwf0
     have h_inv : @GenInv P gen0 r.2 (Block.userBlockLabels ss) r.1.2 :=
-      stmtsToBlocks_invariant lend ss [] [] gen0 r.2 _ _ h_eq hwf0 (h_disj _)
+      stmtsToBlocks_invariant lend ss [] [] gen0 r.2 _ _ h_eq hwf0 (h_disj _ hwf_r2)
     have h_lend_not_in_blocks : lend ∉ r.1.2.map Prod.fst := by
       intro h_in
       cases h_inv.fresh _ h_in with
@@ -8909,7 +8939,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (h_lhni : Block.loopHasNoInvariants ss = true)
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
+    (h_disj : Block.userLabelsShapeNodup ss)
     (h_store_gens : ∀ x : String, Q x → ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
@@ -8922,13 +8952,18 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg := by
   intro cfg
+  -- Bridge the gen-free `userLabelsShapeNodup` precondition to the
+  -- `∀ WF gen', userLabelsDisjoint ss gen'` form the spec/nodup helpers consume:
+  -- the disjointness conjunct is recovered from shape-freedom at any WF state.
+  have h_disj_wf : ∀ gen', StringGenState.WF gen' → Block.userLabelsDisjoint ss gen' :=
+    Block.userLabelsDisjoint_of_shapeNodup ss h_disj
   have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend, h_wf_gen, h_gen0⟩ :=
-    stmtsToCFG_stmtsToBlocks_spec ss h_disj
+    stmtsToCFG_stmtsToBlocks_spec ss h_disj_wf
   rw [h_entry]
   have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
     EvalCmds.eval_cmds_none
   have h_hf : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
-  have h_nodup := stmtsToCFG_nodup_keys ss h_disj
+  have h_nodup := stmtsToCFG_nodup_keys ss h_disj_wf
   -- Combined freshness/Nodup: empty accum, so reduces to just inits.
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
       ρ₀.store x = none := by
@@ -9005,7 +9040,7 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (h_lhni : Block.loopHasNoInvariants ss = true)
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
+    (h_disj : Block.userLabelsShapeNodup ss)
     (h_store_gens : ∀ x : String, String.HasUnderscoreDigitSuffix x →
       ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) String.HasUnderscoreDigitSuffix (Block.initVars ss))
@@ -9161,7 +9196,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
     (h_lhni : Block.loopHasNoInvariants ss = true)
     (h_nml : Block.noMeasureLoops ss = true)
     (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
-    (h_disj : ∀ gen', Block.userLabelsDisjoint ss gen')
+    (h_disj : Block.userLabelsShapeNodup ss)
     (h_store_gens : ∀ x : String, Q x → ρ₀.store (HasIdent.ident (P := P) x) = none)
     (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
