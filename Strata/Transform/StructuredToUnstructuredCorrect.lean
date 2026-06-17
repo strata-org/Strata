@@ -8902,7 +8902,6 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_simple : Block.simpleShape ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -8919,7 +8918,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
     ∃ σ_cfg, StepDetCFGStar extendEval cfg
-      (.atBlock cfg.entry ρ₀.store false)
+      (.atBlock cfg.entry ρ₀.store ρ₀.hasFailure)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg := by
   intro cfg
@@ -8928,7 +8927,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
   rw [h_entry]
   have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
     EvalCmds.eval_cmds_none
-  have h_hf : ρ₀.hasFailure = (false || false) := by simp [hf₀]
+  have h_hf : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
   have h_nodup := stmtsToCFG_nodup_keys ss h_disj
   -- Combined freshness/Nodup: empty accum, so reduces to just inits.
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
@@ -8970,7 +8969,7 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
   have ⟨σ_cfg, h_sim, h_agree, _h_preserve⟩ :=
     stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
       h_gen h_nofd h_simple h_unique h_lbni h_lhni h_nml
-      ρ₀.store ρ₀.store false false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+      ρ₀.store ρ₀.store ρ₀.hasFailure false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
       h_term h_accum (StoreAgreement.refl _) h_fresh_combined h_unique_combined h_hf
       h_wf_gen h_combined_no_gen_suffix h_combined_no_gen_suffix_mod
       gen' (fun _ h => h) h_store_no_gens_upper h_foreign
@@ -8999,7 +8998,6 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_simple : Block.simpleShape ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -9016,12 +9014,11 @@ theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
     ∃ σ_cfg, StepDetCFGStar extendEval cfg
-      (.atBlock cfg.entry ρ₀.store false)
+      (.atBlock cfg.entry ρ₀.store ρ₀.hasFailure)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
   stmtsToCFG_terminal (Q := String.HasUnderscoreDigitSuffix)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
-    hf₀
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
     h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
     h_input_no_gen_suffix_mod
@@ -9156,7 +9153,6 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (hf₀ : ρ₀.hasFailure = false)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_simple : Block.simpleShape ss = true)
     (h_unique : Block.uniqueInits ss)
@@ -9172,7 +9168,7 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
       (.stmts ss ρ₀) (.terminal ρ')) :
     let cfg := stmtsToCFG ss
     ∃ σ_cfg, StepDetCFGStar extendEval cfg
-      (.atBlock cfg.entry ρ₀.store false)
+      (.atBlock cfg.entry ρ₀.store ρ₀.hasFailure)
       (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg :=
   -- `hQmint` is the thirteen-conjunct mint witness for the construct prefixes —
@@ -9182,7 +9178,6 @@ theorem structuredToUnstructured_sound_kind {P : PureExpr} [HasFvar P] [HasNot P
   -- `hQmint` via `s2uKind_gen` at `Q := s2uKind`.
   stmtsToCFG_terminal (Q := Q)
     extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
-    hf₀
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
     h_fresh_inits h_disj h_store_clean h_input_no_gen_suffix
     h_input_no_gen_suffix_mod hQmint h_term

@@ -1951,7 +1951,6 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
     (hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
     (h_store_clean : ∀ ident : P.Ident, ρ₀.store ident = none)
-    (h_hf₀ : ρ₀.hasFailure = false)
     -- source shape restrictions (front-end well-formedness):
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -1977,7 +1976,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
     (h_term : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ')) :
     ∃ σ_cfg, StructuredToUnstructuredCorrect.StepDetCFGStar extendEval (pipeline ss)
-        (.atBlock (pipeline ss).entry ρ₀.store false)
+        (.atBlock (pipeline ss).entry ρ₀.store ρ₀.hasFailure)
         (.terminal σ_cfg ρ'.hasFailure)
       ∧ StoreAgreement ρ'.store σ_cfg := by
   -- === STEP 1: nondetElim ===  StoreAgreement ρ'.store ρ_out.store.
@@ -2024,7 +2023,6 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       h_out_iv_sf h_out_mv_sf
       (fun y _ => h_store_clean y)
       (fun str _ => h_store_clean _)
-      h_hf₀
       h_run1
       hwfvar' hwfcongr' hwfsubst' hwfdef'
   -- === Direction-B S2U preconds on the hoist output, at `Q := s2uKind` ===
@@ -2075,7 +2073,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (Q := StructuredToUnstructuredCorrect.s2uKind)
       StructuredToUnstructuredCorrect.s2uKind_gen
       extendEval (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀ ρ_h'
-      hwfb hwfv hwf_def hwf_congr hwf_var h_hf₀
+      hwfb hwfv hwf_def hwf_congr hwf_var
       (hoist_noFuncDecl _ (nondetElim_noFuncDecl ss h_nofd))
       (hoist_simpleShape _ (nondetElim_simpleShape ss))
       h_step3_unique

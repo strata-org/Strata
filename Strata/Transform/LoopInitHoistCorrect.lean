@@ -3154,7 +3154,6 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
     (h_src_store_shapefree :
       ∀ str : String, Q str →
         ρ_src.store (HasIdent.ident (P := P) str) = none)
-    (_h_hf₀        : ρ_src.hasFailure = false)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
                        (.stmts ss ρ_src) (.terminal ρ_src'))
     (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
@@ -3272,7 +3271,6 @@ hoisting pass entry):
                    eligible for hoisting) is unbound in `ρ_src`. This is
                    the runtime-shape precondition consumed by the §E
                    `.loop` arm via `prelude_execution`.
-* `h_hf₀`       — initial environment is failure-free
 
 Plus two semantic well-formedness preconditions for the underlying step
 relation (matching the LoopInitHoistInfra convention):
@@ -3317,7 +3315,6 @@ theorem hoistLoopPrefixInits_preserves
     (h_src_store_shapefree :
       ∀ str : String, String.HasUnderscoreDigitSuffix str →
         ρ_src.store (HasIdent.ident (P := P) str) = none)
-    (_h_hf₀        : ρ_src.hasFailure = false)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
                        (.stmts ss ρ_src) (.terminal ρ_src'))
     (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
@@ -3342,7 +3339,7 @@ theorem hoistLoopPrefixInits_preserves
     ss
     h_no_nd h_no_fd h_no_inv h_no_measure h_no_exit h_exprs_shapefree h_unique h_fresh
     h_src_initVars_shapefree h_src_modifiedVars_shapefree h_hoist_undef
-    h_src_store_shapefree _h_hf₀ h_run_src h_wfvar h_wfcongr h_wfsubst h_wfdef
+    h_src_store_shapefree h_run_src h_wfvar h_wfcongr h_wfsubst h_wfdef
 
 -- NOTE: the former `hoistLoopPrefixInits_preserves_funext` corollary (extensional
 -- store equality `ρ_h'.store = ρ_src'.store`) is intentionally dropped: that
