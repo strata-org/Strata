@@ -50,6 +50,7 @@ procedure useCounter()
     Without per-composite scoping, `tick` would collide in the global scope
     during pre-registration. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -94,6 +95,7 @@ procedure runClock()
 
 /-! ## 3. Method with multiple parameters: `c#setTo(v)` -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -120,6 +122,7 @@ procedure useCell(x: int)
 /-! ## 4. Boolean-typed field updated through an instance method, and read
     back via field access in the caller's `assert`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -148,6 +151,7 @@ procedure useWidget()
     only `a`; the unused `b` parameter is included to confirm method
     dispatch picks the right receiver. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -175,6 +179,7 @@ procedure resetTwoCounters(a: Counter, b: Counter)
     confirms an extra (unused) method parameter doesn't break call
     dispatch or framing. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -201,6 +206,7 @@ procedure useAccount()
 /-! ## 7. Instance method called through a field-selected receiver:
     `obj#field#method()`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -226,6 +232,7 @@ procedure useOuter()
 
 /-! ## 8. Chained field read: `obj#field#x`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
