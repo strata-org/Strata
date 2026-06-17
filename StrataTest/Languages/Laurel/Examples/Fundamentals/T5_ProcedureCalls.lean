@@ -23,6 +23,7 @@ procedure fooReassign(): int
 };
 
 procedure fooSingleAssign(): int
+  opaque // required because we don't yet support let variables in transparent bodies
 {
   var x: int := 0;
   var x2: int := x + 1;

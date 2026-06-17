@@ -30,7 +30,7 @@ procedure safeDivision()
   assert z == 5
 };
 
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
   return x / y
@@ -63,10 +63,10 @@ procedure unsafeDivision(x: int)
 #eval testLaurel <|
 #strata
 program Laurel;
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivUnsafe(x: int)
