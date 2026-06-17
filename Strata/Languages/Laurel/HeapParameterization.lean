@@ -187,6 +187,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
+  | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
@@ -203,6 +204,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
+  | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
@@ -219,6 +221,8 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
+  | .TBv n =>
+        some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
@@ -282,7 +286,8 @@ where
           | return [⟨ .Hole, source ⟩]
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        let selectTarget' ← recurseOne selectTarget
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
@@ -534,16 +539,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
-  let program := { program with
-    types := program.types
-    staticProcedures := program.staticProcedures }
-  let instanceProcs := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => acc ++ ct.instanceProcedures
-    | _ => acc) ([] : List Procedure)
-  let allProcs := program.staticProcedures ++ instanceProcs
-  let heapReaders := computeReadsHeap allProcs
-  let heapWriters := computeWritesHeap allProcs
+  -- Instance procedures are already lifted to `staticProcedures` by an earlier
+  -- pass, so they're covered by the calls below.
+  let heapReaders := computeReadsHeap program.staticProcedures
+  let heapWriters := computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
   let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
   -- Collect all qualified field names and generate a Field datatype
@@ -553,18 +552,14 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Remove fields from composite types since they are now stored in the heap
-  -- Also transform instance procedures, accumulating used Box constructors
-  let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
+  -- Remove fields from composite types since they are now stored in the heap.
+  let types' := program.types.map fun td =>
     match td with
-    | .Composite ct =>
-      let (instProcs', s') := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run accState
-      (accTypes ++ [.Composite { ct with fields := [], instanceProcedures := instProcs' }], s')
-    | other => (accTypes ++ [other], accState))
-    ([], state1)
+    | .Composite ct => .Composite { ct with fields := [] }
+    | other => other
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
+    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }

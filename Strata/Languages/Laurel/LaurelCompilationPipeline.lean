@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.LaurelToCoreTranslator
 import Strata.Languages.Laurel.DesugarShortCircuit
+import Strata.Languages.Laurel.EliminateIncrDecr
 import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
 import Strata.Languages.Laurel.ModifiesClauses
@@ -18,6 +19,7 @@ import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.PushOldInward
+import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
@@ -91,9 +93,11 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LaurelPass := #[
+  eliminateIncrDecrPass,
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
   eliminateValueInReturnsPass,
+  liftInstanceProceduresPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -186,6 +190,15 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
     let (program, model, passDiags, stats) ← runLaurelPasses pctx program
+    -- Sanity check: `LiftInstanceProcedures` should have cleared every
+    -- composite's `instanceProcedures` list.
+    let mut passDiags := passDiags
+    for td in program.types do
+      if let .Composite ct := td then
+        for proc in ct.instanceProcedures do
+          passDiags := passDiags ++ [diagnosticFromSource proc.name.source
+            s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
+            DiagnosticType.StrataBug]
     let unorderedCore := transparencyPass program
     emit "transparencyPass" "core.st" unorderedCore
 
