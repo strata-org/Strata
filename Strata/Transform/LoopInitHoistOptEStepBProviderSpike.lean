@@ -659,6 +659,290 @@ theorem nestedLoop_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasB
       smallStep_noFuncDecl_preserves_eval_exiting P (EvalCmd P) extendEval _ ρ_h ρ_h' l h_h_nofd_loop h_loop_h_run
     rw [e_s, e_h]; exact h_eval
 
+/-- Generic lifter: a terminal-only `StmtSimE s s'` whose SOURCE statement `s` can
+NEVER reach `.exiting` lifts to a sum-typed `StmtSimES s s'` — the exiting clause is
+vacuous.  This is what every `.cmd` arm (init/set/assert/assume/cover/typeDecl) of
+`Block.bodyTransport` needs: a command steps only to `.terminal` (`step_cmd`), so it
+never `.exiting`s, and its existing `StmtSimE` lifts for free. -/
+theorem stmtSimE_to_stmtSimES_of_noExit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {s s' : Stmt P (Cmd P)}
+    (h_src_no_exit : ∀ (ρ : Env P) (l : String) (ρe : Env P),
+       ¬ StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) (.exiting l ρe))
+    (h : StmtSimE (extendEval := extendEval) A B subst s s') :
+    StmtSimES (extendEval := extendEval) A B subst s s' := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  refine ⟨?_, ?_⟩
+  · intro ρ_s' h_run; exact h ρ_s ρ_h h_hinv h_eval h_hf h_bnd ρ_s' h_run
+  · intro l ρ_s' h_run; exact absurd h_run (h_src_no_exit ρ_s l ρ_s')
+
+/-- A single `.cmd` statement never reaches `.exiting` (it steps to `.terminal` via
+`step_cmd` and is then stuck). -/
+theorem cmd_stmt_no_exit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (c : Cmd P) :
+    ∀ (ρ : Env P) (l : String) (ρe : Env P),
+      ¬ StepStmtStar P (EvalCmd P) extendEval (.stmt (.cmd c) ρ) (.exiting l ρe) := by
+  intro ρ l ρe h
+  cases h with
+  | step _ _ _ h1 hr1 =>
+    cases h1
+    cases hr1 with
+    | step _ _ _ hd _ => exact nomatch hd
+
+/-! ## The `.ite` arms of a sum-typed `StmtSimES`.
+
+An `.ite` steps to its taken branch body `.stmts tss/ess ρ` in the SAME store (no
+block wrapper — branch-locals are not projected).  So an `.ite` reaches `.exiting l`
+exactly when the taken branch exits with `l`, propagated verbatim.  The det-guard
+arm transports the guard via the supplied `h_guard_eq` (the renamed guard evaluates as
+the source guard, exactly the `cond_transport'` fact `Block.bodyTransport`'s `.ite`
+arm computes); the nondet arm replays the same branch choice. -/
+theorem ite_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    -- the renamed guard evaluates as the source guard under any HoistInv-related
+    -- entry with eval-equality (the `cond_transport'` fact):
+    (h_guard_eq : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∃ w, ρ_s.eval ρ_s.store g = some w) →
+       ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store (substFvarMany g subst))
+    (then_sim : BodySimES (extendEval := extendEval) A B subst tss_s tss_h)
+    (else_sim : BodySimES (extendEval := extendEval) A B subst ess_s ess_h) :
+    StmtSimES (extendEval := extendEval) A B subst
+      (.ite (.det g) tss_s ess_s md)
+      (.ite (.det (substFvarMany g subst)) tss_h ess_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  -- Peel the source `.ite` step into a branch run (guard tt → then, ff → else).  The
+  -- `.refl` case is impossible: a target reaching `.terminal`/`.exiting` differs from
+  -- the un-stepped `.stmt (.ite …)`, so any such run takes the ite step first.
+  have peel : ∀ {ρ' : Env P} {tgt : Config P (Cmd P)},
+      (tgt = .terminal ρ' ∨ ∃ l, tgt = .exiting l ρ') →
+      StepStmtStar P (EvalCmd P) extendEval (.stmt (.ite (.det g) tss_s ess_s md) ρ_s) tgt →
+      (ρ_s.eval ρ_s.store g = .some HasBool.tt ∧ WellFormedSemanticEvalBool ρ_s.eval ∧
+        StepStmtStar P (EvalCmd P) extendEval (.stmts tss_s ρ_s) tgt) ∨
+      (ρ_s.eval ρ_s.store g = .some HasBool.ff ∧ WellFormedSemanticEvalBool ρ_s.eval ∧
+        StepStmtStar P (EvalCmd P) extendEval (.stmts ess_s ρ_s) tgt) := by
+    intro ρ' tgt htgt h
+    cases h with
+    | refl => rcases htgt with h | ⟨l, h⟩ <;> exact nomatch h
+    | step _ _ _ h1 hr1 =>
+      cases h1 with
+      | step_ite_true hg hwf => exact .inl ⟨hg, hwf, hr1⟩
+      | step_ite_false hg hwf => exact .inr ⟨hg, hwf, hr1⟩
+  -- The hoist guard equals the source guard's value (transported).
+  have guard_h : ∀ {bv : P.Expr}, ρ_s.eval ρ_s.store g = .some bv →
+      ρ_h.eval ρ_h.store (substFvarMany g subst) = .some bv := by
+    intro bv hg
+    have := h_guard_eq ρ_s ρ_h h_hinv h_eval ⟨_, hg⟩
+    rw [hg] at this; exact this.symm
+  refine ⟨?_, ?_⟩
+  · -- terminal clause.
+    intro ρ_s' h_run
+    rcases peel (Or.inl rfl) h_run with ⟨hg, hwf, h_branch⟩ | ⟨hg, hwf, h_branch⟩
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (then_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_s' h_branch
+      refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+      exact ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (h_eval ▸ hwf)) h_branch_h
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (else_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_s' h_branch
+      refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+      exact ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (h_eval ▸ hwf)) h_branch_h
+  · -- exiting clause.
+    intro l ρ_s' h_run
+    rcases peel (Or.inr ⟨l, rfl⟩) h_run with ⟨hg, hwf, h_branch⟩ | ⟨hg, hwf, h_branch⟩
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (then_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ_s' h_branch
+      refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+      exact ReflTrans.step _ _ _ (StepStmt.step_ite_true (guard_h hg) (h_eval ▸ hwf)) h_branch_h
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (else_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ_s' h_branch
+      refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+      exact ReflTrans.step _ _ _ (StepStmt.step_ite_false (guard_h hg) (h_eval ▸ hwf)) h_branch_h
+
+/-- The nondet-guard `.ite` arm: no guard test; the hoist replays the SAME branch
+choice (then/else) the source took. -/
+theorem ite_nondet_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (then_sim : BodySimES (extendEval := extendEval) A B subst tss_s tss_h)
+    (else_sim : BodySimES (extendEval := extendEval) A B subst ess_s ess_h) :
+    StmtSimES (extendEval := extendEval) A B subst
+      (.ite .nondet tss_s ess_s md) (.ite .nondet tss_h ess_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  have peel : ∀ {ρ' : Env P} {tgt : Config P (Cmd P)},
+      (tgt = .terminal ρ' ∨ ∃ l, tgt = .exiting l ρ') →
+      StepStmtStar P (EvalCmd P) extendEval (.stmt (.ite .nondet tss_s ess_s md) ρ_s) tgt →
+      (StepStmtStar P (EvalCmd P) extendEval (.stmts tss_s ρ_s) tgt) ∨
+      (StepStmtStar P (EvalCmd P) extendEval (.stmts ess_s ρ_s) tgt) := by
+    intro ρ' tgt htgt h
+    cases h with
+    | refl => rcases htgt with h | ⟨l, h⟩ <;> exact nomatch h
+    | step _ _ _ h1 hr1 =>
+      cases h1 with
+      | step_ite_nondet_true => exact .inl hr1
+      | step_ite_nondet_false => exact .inr hr1
+  refine ⟨?_, ?_⟩
+  · intro ρ_s' h_run
+    rcases peel (Or.inl rfl) h_run with h_branch | h_branch
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (then_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_s' h_branch
+      exact ⟨ρ_h', ReflTrans.step _ _ _ StepStmt.step_ite_nondet_true h_branch_h,
+        h_hinv', h_hf', h_bnd', h_eval'⟩
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (else_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_s' h_branch
+      exact ⟨ρ_h', ReflTrans.step _ _ _ StepStmt.step_ite_nondet_false h_branch_h,
+        h_hinv', h_hf', h_bnd', h_eval'⟩
+  · intro l ρ_s' h_run
+    rcases peel (Or.inr ⟨l, rfl⟩) h_run with h_branch | h_branch
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (then_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ_s' h_branch
+      exact ⟨ρ_h', ReflTrans.step _ _ _ StepStmt.step_ite_nondet_true h_branch_h,
+        h_hinv', h_hf', h_bnd', h_eval'⟩
+    · obtain ⟨ρ_h', h_branch_h, h_hinv', h_hf', h_bnd', h_eval'⟩ :=
+        (else_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ_s' h_branch
+      exact ⟨ρ_h', ReflTrans.step _ _ _ StepStmt.step_ite_nondet_false h_branch_h,
+        h_hinv', h_hf', h_bnd', h_eval'⟩
+
+/-! ## The `.block` arm of a sum-typed `StmtSimES` (the hard extension).
+
+This is the arm the StepC-producer comment names as "the hard extension".  A
+`.block lbl inner` whose inner body can `.exit` has THREE outcomes:
+  (T1) inner `.terminal` → block `.terminal` (projected);
+  (T2) inner `.exiting lbl` (matches the block label) → block CATCHES it →
+       `.terminal` (projected) — this is the previously-unhandled case;
+  (X)  inner `.exiting l` with `l ≠ lbl` (mismatch) → block PROPAGATES `.exiting l`
+       (projected).
+Given a `BodySimES` for the inner body, all three close: the hoist block replays the
+same inner outcome (terminal/match/mismatch) at the SAME label, and `HoistInv` survives
+the projection via `HoistInv.project_both`. -/
+theorem block_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (inner_sim : BodySimES (extendEval := extendEval) A B subst inner inner_h) :
+    StmtSimES (extendEval := extendEval) A B subst
+      (.block lbl inner md) (.block lbl inner_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  -- A `b ∈ B` survives the projection `projectStore ρ_h.store · b`: the parent binds
+  -- `b` (`h_bnd`), so `projectStore` keeps the inner value, which the inner sim's
+  -- boundedness makes `some`.
+  have bound_proj : ∀ (ρ_inner : Env P), (∀ y ∈ B, ρ_inner.store y ≠ none) →
+      ∀ y ∈ B, projectStore ρ_h.store ρ_inner.store y ≠ none := by
+    intro ρ_inner h_bnd_inner y hy
+    unfold projectStore
+    have h_parent_some : (ρ_h.store y).isSome = true := by
+      cases h : ρ_h.store y with
+      | none => exact absurd h (h_bnd y hy)
+      | some _ => rfl
+    rw [h_parent_some]; simp; exact h_bnd_inner y hy
+  -- Peel the source block-enter step: `.stmt (.block lbl inner md) ρ → .block (.some lbl)
+  -- ρ.store (.stmts inner ρ)`, exposing the inner-config run for inversion.
+  have peel_term : ∀ (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt (.block lbl inner md) ρ_s) (.terminal ρ_s') →
+      StepStmtStar P (EvalCmd P) extendEval
+        (.block (.some lbl) ρ_s.store (.stmts inner ρ_s)) (.terminal ρ_s') := by
+    intro ρ_s' h_run
+    cases h_run with
+    | step _ _ _ h1 hr1 => cases h1; exact hr1
+  have peel_exit : ∀ (l : String) (ρ_s' : Env P),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt (.block lbl inner md) ρ_s) (.exiting l ρ_s') →
+      StepStmtStar P (EvalCmd P) extendEval
+        (.block (.some lbl) ρ_s.store (.stmts inner ρ_s)) (.exiting l ρ_s') := by
+    intro l ρ_s' h_run
+    cases h_run with
+    | step _ _ _ h1 hr1 => cases h1; exact hr1
+  refine ⟨?_, ?_⟩
+  · -- terminal clause: inner `.terminal` (T1) OR inner `.exiting lbl` matched (T2).
+    intro ρ_s' h_run0
+    have h_run := peel_term ρ_s' h_run0
+    rcases block_some_reaches_terminal P (EvalCmd P) extendEval h_run with
+      ⟨ρ_inner, h_inner_term, h_eq⟩ | ⟨ρ_inner, h_inner_exit, h_eq⟩
+    · -- T1: inner terminates.  Feed the inner TERMINAL clause.
+      obtain ⟨ρ_h_inner, h_inner_h_run, h_hinv_inner, h_hf_inner, h_bnd_inner, h_eval_inner⟩ :=
+        (inner_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_inner h_inner_term
+      refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store }, ?_, ?_, ?_, ?_, ?_⟩
+      · -- hoist block: enter, run inner to terminal, `step_block_done`.
+        refine ReflTrans.step _ _ _ StepStmt.step_block ?_
+        refine ReflTrans_Transitive _ _ _ _
+          (block_inner_star P (EvalCmd P) extendEval _ _ (some lbl) ρ_h.store h_inner_h_run) ?_
+        exact ReflTrans.step _ _ _ StepStmt.step_block_done (ReflTrans.refl _)
+      · subst h_eq; exact HoistInv.project_both h_hinv h_hinv_inner
+      · subst h_eq; show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+      · subst h_eq; exact bound_proj ρ_h_inner h_bnd_inner
+      · subst h_eq; show ρ_inner.eval = ρ_h_inner.eval; exact h_eval_inner
+    · -- T2: inner exits with the block's own label `lbl` → block catches it.
+      obtain ⟨ρ_h_inner, h_inner_h_run, h_hinv_inner, h_hf_inner, h_bnd_inner, h_eval_inner⟩ :=
+        (inner_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 lbl ρ_inner h_inner_exit
+      refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store }, ?_, ?_, ?_, ?_, ?_⟩
+      · -- hoist block: enter, run inner to `.exiting lbl`, `step_block_exit_match`.
+        refine ReflTrans.step _ _ _ StepStmt.step_block ?_
+        refine ReflTrans_Transitive _ _ _ _
+          (block_inner_star P (EvalCmd P) extendEval _ _ (some lbl) ρ_h.store h_inner_h_run) ?_
+        exact ReflTrans.step _ _ _ (StepStmt.step_block_exit_match rfl) (ReflTrans.refl _)
+      · subst h_eq; exact HoistInv.project_both h_hinv h_hinv_inner
+      · subst h_eq; show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+      · subst h_eq; exact bound_proj ρ_h_inner h_bnd_inner
+      · subst h_eq; show ρ_inner.eval = ρ_h_inner.eval; exact h_eval_inner
+  · -- exiting clause: inner exits with `l ≠ lbl` (mismatch) → block propagates.
+    intro l ρ_s' h_run0
+    have h_run := peel_exit l ρ_s' h_run0
+    obtain ⟨ρ_inner, h_inner_exit, h_ne, h_eq⟩ :=
+      block_reaches_exiting_strong P (EvalCmd P) extendEval h_run
+    obtain ⟨ρ_h_inner, h_inner_h_run, h_hinv_inner, h_hf_inner, h_bnd_inner, h_eval_inner⟩ :=
+      (inner_sim ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ_inner h_inner_exit
+    refine ⟨{ ρ_h_inner with store := projectStore ρ_h.store ρ_h_inner.store }, ?_, ?_, ?_, ?_, ?_⟩
+    · -- hoist block: enter, run inner to `.exiting l`, `step_block_exit_mismatch`.
+      refine ReflTrans.step _ _ _ StepStmt.step_block ?_
+      refine ReflTrans_Transitive _ _ _ _
+        (block_inner_star P (EvalCmd P) extendEval _ _ (some lbl) ρ_h.store h_inner_h_run) ?_
+      exact ReflTrans.step _ _ _ (StepStmt.step_block_exit_mismatch h_ne) (ReflTrans.refl _)
+    · subst h_eq; exact HoistInv.project_both h_hinv h_hinv_inner
+    · subst h_eq; show ρ_inner.hasFailure = ρ_h_inner.hasFailure; exact h_hf_inner
+    · subst h_eq; exact bound_proj ρ_h_inner h_bnd_inner
+    · subst h_eq; show ρ_inner.eval = ρ_h_inner.eval; exact h_eval_inner
+
+/-! ## The `.exit` base case for a sum-typed `StmtSimES`.
+
+A single `.exit lbl md` statement is the new base case the (future) `BodyTransport.exit`
+constructor invokes.  The source `.stmt (.exit lbl md) ρ_s` reaches ONLY `.exiting lbl ρ_s`
+(never `.terminal` — `step_exit` produces `.exiting`).  The hoist side is the SAME
+`.exit lbl md` (`applyRenames`/`substIdent` leaves `.exit` literally unchanged), which
+reaches `.exiting lbl ρ_h` carrying the body-entry `HoistInv`/eval/hf/bound unchanged
+(the `.exit` copies the env).  So the terminal clause is vacuous and the exiting clause
+re-uses the entry invariant. -/
+theorem exit_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident)) (lbl : String) (md : MetaData P) :
+    StmtSimES (extendEval := extendEval) A B subst (.exit lbl md) (.exit lbl md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  refine ⟨?_, ?_⟩
+  · -- terminal clause: `.exit` never reaches `.terminal` (only `.exiting`).
+    intro ρ_s' h_run
+    exfalso
+    cases h_run with
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      cases hr1 with
+      | step _ _ _ hd _ => exact nomatch hd
+  · -- exiting clause: invert the source `.exit` run (label = lbl, env unchanged),
+    -- then drive the hoist `.exit` to `.exiting lbl ρ_h`.
+    intro l ρ_s' h_run
+    have h_inv : l = lbl ∧ ρ_s' = ρ_s := by
+      cases h_run with
+      | step _ _ _ h1 hr1 =>
+        cases h1
+        cases hr1 with
+        | refl => exact ⟨rfl, rfl⟩
+        | step _ _ _ hd _ => exact nomatch hd
+    obtain ⟨h_l, h_ρ⟩ := h_inv
+    subst h_l; subst h_ρ
+    refine ⟨ρ_h, ?_, h_hinv, h_hf, h_bnd, h_eval⟩
+    exact ReflTrans.step _ _ _ StepStmt.step_exit (ReflTrans.refl _)
+
 end OptEStepBProvider
 end Imperative
 
