@@ -2194,7 +2194,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     --     raw ∀-shape `loop_arm_close` expects for a body iteration that BREAKS
     --     with a label.  Same Block IH, dispatched with the `.exiting` `cfg_src`
     --     disjunct; the `.terminal` output clause is impossible (`cfg_src` is
-    --     `.exiting`).  No `h_noexit` is consumed: a body `.exit` is admitted. ===
+    --     `.exiting`).  A body `.exit` is admitted (no static no-exit guard is consumed). ===
     have stepA_exit : ∀ (ρ_s ρ_h : Env P),
         HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
         ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
@@ -2405,7 +2405,7 @@ private theorem Stmt.hoistLoopPrefixInits_preserves {Q : String → Prop}
     -- No-exit-free: a `.terminal` source loop run keeps any loop-entry-undefined
     -- carrier undefined (each iteration's `.none`-block projects undefined entries
     -- back to `none`; an inner `.exiting` would propagate the loop to `.exiting`,
-    -- not `.terminal`).  The source body need NOT be statically `noExit`.
+    -- not `.terminal`).  The source body need NOT be statically exit-free.
     have h_post_src_none : ∀ (ρ_post : Env P) (x : P.Ident),
         StepStmtStar P (EvalCmd P) extendEval
           (.stmt (.loop (.det g') none [] body md) ρ_src) (.terminal ρ_post) →

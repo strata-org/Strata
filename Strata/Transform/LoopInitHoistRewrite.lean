@@ -463,7 +463,7 @@ mints rather than every gen-suffix-shaped name.
 The predicate is `Prop`-valued (function-form recursion, like
 `DisjointModuloRewrite` above) because its leaf condition quantifies over the
 `Prop`-valued kind predicate `Q`.  It mirrors the recursion shape of
-`namesFreshInExprs`/`noExit`, descending into `.block`/`.ite`/`.loop` bodies,
+`namesFreshInExprs`, descending into `.block`/`.ite`/`.loop` bodies,
 and is threaded through the hoisting-preservation proof exactly like the
 source-shape-freedom invariant carried for the carrier names.  The discharge
 consumer is the `.loop` arm, which needs that the freshly minted harvest

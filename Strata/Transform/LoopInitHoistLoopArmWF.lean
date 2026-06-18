@@ -1001,7 +1001,7 @@ theorem Block.entriesOf_substOf_src_nodup_of_initVars [HasIdent P]
 `Block.bodyTransport_of_lift` needs `Block.transportShape body₁ = true` for
 `body₁ = (Block.hoistLoopPrefixInitsM body σ).1`.  The post-order pass preserves
 each of the structural Bool walkers (`containsNondetLoop`, `containsFuncDecl`,
-`loopHasNoInvariants`, `loopMeasureNone`, `noExit`) in value, so the body's §E
+`loopHasNoInvariants`, `loopMeasureNone`) in value, so the body's §E
 arm preconditions transport to `body₁`, and `transportShape_of_arm_preconds`
 assembles them. -/
 theorem Block.transportShape_hoistLoopPrefixInitsM [HasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident]
@@ -2021,8 +2021,8 @@ theorem Block.modifiedVars_disjoint_targetsOf'_self [HasIdent P] [LawfulHasIdent
 `union_entry_hinv` builds the loop-entry union `HoistInv` (ambient `A B subst`
 relating `ρ_src ρ_hoist`, prelude relating `ρ_hoist ρ_pre` on the fresh
 carriers, composed at the union).  `loop_arm_close` then runs the full guarded
-assembly — prelude bridge → union entry → `compose_union(bridge_in_guarded)` →
-two-guard loop driver → stitch (havoc prelude ++ loop run) → `stepJ_restrict`
+assembly — prelude bridge → union entry → `compose_union_sf_sum` (composing the
+guarded bridge) → two-guard loop driver → stitch (havoc prelude ++ loop run) → `stepJ_restrict`
 back to the ambient carriers — producing the §E sum-typed terminal conclusion
 for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`. -/
 
@@ -2223,11 +2223,11 @@ for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`.
 
 The two clauses compose into a `BodySimUSFSum` (`compose_union_sf_sum`), which
 drives BOTH source loop outcomes: a `.terminal` source run is matched by a
-`.terminal` hoist run (the sum-typed terminal driver `loopDet_lift_sf_undef_TE`),
+`.terminal` hoist run (the sum-typed terminal driver `loopDet_lift_sf_undef_TE_recovers_single`),
 and an `.exiting label` source run (some iteration's body broke) is matched by an
 `.exiting label` hoist run (the sum-typed exiting driver
-`loopDet_lift_sf_undef_E`).  NO `h_src_body_no_exit` is required: a body `.exit`
-is admitted and faithfully simulated.  Guard `g` is UNCHANGED (the renames live
+`loopDet_lift_sf_undef_E_recovers_single`).  No static no-exit precondition is
+required: a body `.exit` is admitted and faithfully simulated.  Guard `g` is UNCHANGED (the renames live
 inside `body₃`). -/
 theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P]
     [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasSubstFvar P]
