@@ -93,7 +93,7 @@ import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Util.HList
-import Strata.Languages.Core.CmdTypeSpecProps
+import Strata.Languages.Core.CommandTypeSpecProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
