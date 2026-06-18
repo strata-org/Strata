@@ -156,7 +156,7 @@ private def runLaurelPasses
         let newDiags := newErrors.toList.map fun d =>
           { d with
               message :=
-                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
+                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d}. Existing diagnostics were: {resolutionErrors.toList}"
               type := .StrataBug }
         emit pass.name "laurel.st" program
         return (program, model, allDiags ++ newDiags, allStats)
