@@ -29,7 +29,7 @@ structured-to-unstructured passes chain end-to-end:
 The three soundness theorems are:
   * `nondetElim_sound` (`NondetElimCorrect`),
   * `hoistLoopPrefixInits_preserves` (`LoopInitHoistCorrect`, the §F theorem),
-  * `structuredToUnstructured_sound` (`StructuredToUnstructuredCorrect`).
+  * `structuredToUnstructured_sound_kind` (`StructuredToUnstructuredCorrect`).
 
 To compose them via `StoreAgreement.trans`, the OUTPUT of each pass must
 satisfy the INPUT preconditions of the next.  This file establishes those
@@ -257,15 +257,13 @@ theorem nondetElim_containsFuncDecl {P : PureExpr} [HasIdent P] [HasFvar P] [Has
     Block.containsFuncDecl (Block.nondetElim ss) = false :=
   Block.not_containsFuncDecl_of_noFuncDecl _ (nondetElim_noFuncDecl ss h)
 
--- A `noExit` preservation bridge for `nondetElim` is intentionally absent: the
--- hoist soundness theorem no longer requires the source to be exit-free, so the
--- pipeline composition need not carry `noExit` across the `nondetElim` pass.  A
--- loop-body `.exit` in the user source is admitted and faithfully simulated.
+-- No `noExit` bridge for `nondetElim`: a loop-body `.exit` in the user source is
+-- admitted and faithfully simulated, so the composition need not carry `noExit`.
 
 ---------------------------------------------------------------------
 /-! ## Section 4 — Direction B: structural simple-S2U preconditions on `hoist`
 
-The simple-S2U theorem `structuredToUnstructured_sound` takes the hoist output
+The simple-S2U theorem `structuredToUnstructured_sound_kind` takes the hoist output
 as its input program.  Its structural (shape-only) preconditions are discharged
 here from hoist's preservation/postcondition lemmas:
 
@@ -276,7 +274,7 @@ here from hoist's preservation/postcondition lemmas:
   * `noMeasureLoops = true`    — preserved (via `loopMeasureNone`).
 
 The remaining simple-S2U preconditions (`uniqueInits`, `fresh_inits`,
-`store_clean`, `NoGenSuffix`, `userLabelsDisjoint`) are NAME-level conditions
+`store_gens`, `NoGenSuffix`, `userLabelsShapeNodup`) are NAME-level conditions
 on the hoist output's `initVars`/`modVars`, discharged by the composition in
 the sections that follow. -/
 
