@@ -64,6 +64,78 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
 
+/--
+Builders for the heap-specific leaf commands, parameterized over the target
+command type `C`. The statement traversal is shared and control-flow-preserving;
+only these leaves vary between the explicit and implicit encodings.
+
+On the explicit path these are unreachable — `HeapParameterization` lowers
+field operations to map operations before translation runs, so a surviving
+field operation here is a pipeline bug. The implicit path (a later step)
+supplies real builders that emit `heapRead`/`heapWrite`/`heapAlloc`.
+-/
+structure HeapLowering (C : Type) where
+  /-- Lower a field read `obj.field : ty` in expression position. Returns
+      straight-line commands binding fresh temps, plus the replacement
+      expression (the fresh temp). -/
+  lowerFieldRead :
+    (obj field : Core.Expression.Expr) → (ty : Core.Expression.Ty) →
+    (md : Imperative.MetaData Core.Expression) →
+    TranslateM (List (Imperative.Stmt Core.Expression C) × Core.Expression.Expr)
+  /-- Lower a field write `obj.field := rhs`. -/
+  lowerFieldWrite :
+    (obj field rhs : Core.Expression.Expr) →
+    (md : Imperative.MetaData Core.Expression) →
+    TranslateM (List (Imperative.Stmt Core.Expression C))
+  /-- Lower an allocation `lhs := new(typeName)`. -/
+  lowerNew :
+    (lhs : Core.Expression.Ident) → (typeName : String) →
+    (md : Imperative.MetaData Core.Expression) →
+    TranslateM (List (Imperative.Stmt Core.Expression C))
+
+/--
+How the Laurel→Core traversal lowers leaf commands. `embedCore` injects a
+standard Core command into the target command type `C`; `heap` supplies the
+heap-specific leaves. The control-flow traversal is shared and generic over
+`C`, so the two encodings produce control-flow-identical programs.
+-/
+structure LoweringScheme (C : Type) where
+  /-- Embed a standard Core command into the target command type. -/
+  embedCore : Core.Command → C
+  /-- Heap-specific leaf builders. -/
+  heap : HeapLowering C
+
+/-- Build a leaf statement by embedding a Core command into `C`. -/
+@[inline] def LoweringScheme.emit {C : Type} (κ : LoweringScheme C)
+    (c : Core.Command) : Imperative.Stmt Core.Expression C :=
+  Imperative.Stmt.cmd (κ.embedCore c)
+
+/--
+The explicit lowering scheme: today's behavior. `embedCore` is the identity
+(`C = Core.Command`), so every leaf reduces definitionally to the Core
+statement constructor it replaced. The heap builders are unreachable stubs —
+field operations are gone by the time translation runs.
+-/
+def explicitScheme : LoweringScheme Core.Command where
+  embedCore := id
+  heap := {
+    lowerFieldRead := fun obj _field _ty md => do
+      let d := md.toDiagnostic "field read should have been lowered by heap parameterization" DiagnosticType.StrataBug
+      emitDiagnostic d
+      emitCoreDiagnostic d
+      return ([], obj)
+    lowerFieldWrite := fun _obj _field _rhs md => do
+      let d := md.toDiagnostic "field write should have been lowered by heap parameterization" DiagnosticType.StrataBug
+      emitDiagnostic d
+      emitCoreDiagnostic d
+      return []
+    lowerNew := fun _lhs _typeName md => do
+      let d := md.toDiagnostic "allocation should have been lowered by heap parameterization" DiagnosticType.StrataBug
+      emitDiagnostic d
+      emitCoreDiagnostic d
+      return []
+  }
+
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
@@ -328,8 +400,9 @@ def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
 Translate an expression in statement position into a `var $unused_N := expr` init.
 Preserves the expression so it is not silently dropped from the Core output.
 -/
-private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.Expression)
-    : TranslateM (List Core.Statement) := do
+private def exprAsUnusedInit {C : Type} (κ : LoweringScheme C)
+    (expr : StmtExprMd) (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
   let coreExpr ← translateExpr expr
   let id ← freshId
   let model := (← get).model
@@ -338,9 +411,10 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   -- The empty type-variable list is valid because Laurel does not currently
   -- support polymorphism. If polymorphism is added, this will need updating.
   let coreType := LTy.forAll [] ty
-  return [Core.Statement.init ident coreType (.det coreExpr) md]
+  return [κ.emit (.cmd (.init ident coreType (.det coreExpr) md))]
 
-def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
+def throwStmtDiagnostic {C : Type} (d : DiagnosticModel)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return []
@@ -349,8 +423,8 @@ def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) 
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
-def translateStmt (stmt : StmtExprMd)
-    : TranslateM (List Core.Statement) := do
+def translateStmt {C : Type} (κ : LoweringScheme C) (stmt : StmtExprMd)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd stmt
@@ -361,12 +435,12 @@ def translateStmt (stmt : StmtExprMd)
       let md' := match cond.summary with
         | some msg => md.pushElem Imperative.MetaData.propertySummary (.msg msg)
         | none => md
-      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']
+      return [κ.emit (.cmd (.assert ("assert" ++ getNameFromMd md) coreExpr md'))]
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
-      return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
+      return [κ.emit (.cmd (.assume ("assume" ++ getNameFromMd md) coreExpr md))]
   | .Block stmts label =>
-      let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
+      let innerStmts ← stmts.flatMapM (fun s => translateStmt κ s)
       match label with
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
@@ -374,7 +448,7 @@ def translateStmt (stmt : StmtExprMd)
       let coreMonoType ← translateType param.type
       let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨param.name.text, ()⟩
-      return [Core.Statement.init ident coreType .nondet md]
+      return [κ.emit (.cmd (.init ident coreType .nondet md))]
   | .Assign targets value =>
       -- Check if any target is a Field — these should have been lowered already
       let hasField := targets.any fun t => match t.val with | .Field _ _ => true | _ => false
@@ -383,10 +457,10 @@ def translateStmt (stmt : StmtExprMd)
       else
       -- Dispatch over targets, calling onDeclare/onLocal per target type.
       let dispatchTargets
-          (onDeclare : Core.CoreIdent → LTy → TranslateM (List Core.Statement))
-          (onLocal : Core.CoreIdent → TranslateM (List Core.Statement))
-          : TranslateM (List Core.Statement) := do
-        let mut result : List Core.Statement := []
+          (onDeclare : Core.CoreIdent → LTy → TranslateM (List (Imperative.Stmt Core.Expression C)))
+          (onLocal : Core.CoreIdent → TranslateM (List (Imperative.Stmt Core.Expression C)))
+          : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
+        let mut result : List (Imperative.Stmt Core.Expression C) := []
         for target in targets do
           match target.val with
           | .Declare param =>
@@ -399,15 +473,15 @@ def translateStmt (stmt : StmtExprMd)
           | .Field _ _ => pure () -- already handled above
         return result
       -- Partition targets into init-nondet statements and CoreIdent list (for procedure calls).
-      let initTargetsNondet : TranslateM (List Core.Statement × List Core.CoreIdent) := do
-        let mut inits : List Core.Statement := []
+      let initTargetsNondet : TranslateM (List (Imperative.Stmt Core.Expression C) × List Core.CoreIdent) := do
+        let mut inits : List (Imperative.Stmt Core.Expression C) := []
         let mut lhs : List Core.CoreIdent := []
         for target in targets do
           match target.val with
           | .Declare param =>
             let coreType := LTy.forAll [] (← translateType param.type)
             let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
-            inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+            inits := inits ++ [κ.emit (.cmd (.init ident coreType .nondet md))]
             lhs := lhs ++ [ident]
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
@@ -415,11 +489,11 @@ def translateStmt (stmt : StmtExprMd)
           | .Field _ _ => pure () -- already handled above
         return (inits, lhs)
       -- Translate a procedure/instance call: init Declare targets with nondet, then emit call
-      let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
+      let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
         let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-        return inits ++ [Core.Statement.call calleeName (coreArgs.map .inArg ++ outArgs) md]
+        return inits ++ [κ.emit (.call calleeName (coreArgs.map .inArg ++ outArgs) md)]
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
@@ -429,8 +503,8 @@ def translateStmt (stmt : StmtExprMd)
           match targets with
           | [_target] =>
             let result ← dispatchTargets
-              (onDeclare := fun ident coreType => pure [Core.Statement.init ident coreType (.det coreExpr) md])
-              (onLocal := fun ident => pure [Core.Statement.set ident coreExpr md])
+              (onDeclare := fun ident coreType => pure [κ.emit (.cmd (.init ident coreType (.det coreExpr) md))])
+              (onLocal := fun ident => pure [κ.emit (.cmd (.set ident (.det coreExpr) md))])
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
@@ -441,29 +515,29 @@ def translateStmt (stmt : StmtExprMd)
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
-            (onDeclare := fun ident coreType => pure [Core.Statement.init ident coreType .nondet md])
-            (onLocal := fun ident => pure [Core.Statement.havoc ident md])
+            (onDeclare := fun ident coreType => pure [κ.emit (.cmd (.init ident coreType .nondet md))])
+            (onLocal := fun ident => pure [κ.emit (.cmd (.set ident .nondet md))])
       | _ =>
         match targets with
         | [_target] =>
           let coreExpr ← translateExpr value
           dispatchTargets
-            (onDeclare := fun ident coreType => pure [Core.Statement.init ident coreType (.det coreExpr) md])
-            (onLocal := fun ident => pure [Core.Statement.set ident coreExpr md])
+            (onDeclare := fun ident coreType => pure [κ.emit (.cmd (.init ident coreType (.det coreExpr) md))])
+            (onLocal := fun ident => pure [κ.emit (.cmd (.set ident (.det coreExpr) md))])
         | _ =>
           throwStmtDiagnostic $ md.toDiagnostic "Multi-target assignment need a call as a RHS" DiagnosticType.StrataBug
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
-      let bthen ← translateStmt thenBranch
+      let bthen ← translateStmt κ thenBranch
       let belse ← match elseBranch with
-                  | some e => translateStmt e
+                  | some e => translateStmt κ e
                   | none => pure []
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
       if model.isFunction callee then
         -- Function call in statement position: preserve as unused init
-        exprAsUnusedInit stmt md
+        exprAsUnusedInit κ stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
         -- Generate throwaway LHS variables for all outputs so Core arity
@@ -472,16 +546,16 @@ def translateStmt (stmt : StmtExprMd)
           | .staticProcedure proc => proc.outputs
           | .instanceProcedure _ proc => proc.outputs
           | _ => []
-        let mut inits : List Core.Statement := []
+        let mut inits : List (Imperative.Stmt Core.Expression C) := []
         let mut lhs : List Core.CoreIdent := []
         for out in outputs do
           let id ← freshId
           let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
           let coreType := LTy.forAll [] (← translateType out.type)
-          inits := inits ++ [Core.Statement.init ident coreType .nondet md]
+          inits := inits ++ [κ.emit (.cmd (.init ident coreType .nondet md))]
           lhs := lhs ++ [ident]
         let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-        return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
+        return inits ++ [κ.emit (.call callee.text (coreArgs.map .inArg ++ outArgs) md)]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
@@ -497,7 +571,7 @@ def translateStmt (stmt : StmtExprMd)
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
-      let bodyStmts ← translateStmt body
+      let bodyStmts ← translateStmt κ body
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
   | .Exit target =>
       return [Imperative.Stmt.exit target md]
@@ -507,7 +581,7 @@ def translateStmt (stmt : StmtExprMd)
       return []
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
-      exprAsUnusedInit stmt md
+      exprAsUnusedInit κ stmt md
   termination_by sizeOf stmt
   decreasing_by
     all_goals
@@ -544,7 +618,7 @@ Translate Laurel Procedure to Core Procedure using `TranslateM`.
 Diagnostics from disallowed constructs in preconditions, postconditions, and body
 are emitted into the monad state.
 -/
-def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
+def translateProcedure (κ : LoweringScheme Core.Command) (proc : Procedure) : TranslateM Core.Procedure := do
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
@@ -560,10 +634,10 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let bodyStmts : Option (List Core.Statement) ←
     match proc.body with
     | .Transparent bodyExpr =>
-      let r ← translateStmt bodyExpr
+      let r ← translateStmt κ bodyExpr
       pure $ some r
     | .Opaque _postconds (some impl) _ =>
-      let r ← translateStmt impl
+      let r ← translateStmt κ impl
       pure $ some r
     | _ =>
       pure none
@@ -712,7 +786,7 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
 The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
-def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
+def translateLaurelToCore (κ : LoweringScheme Core.Command) (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
   let coreDecls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
@@ -726,7 +800,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
       else
         return coreFuncs
     | .procedure proc => do
-      let procDecl ← translateProcedure proc
+      let procDecl ← translateProcedure κ proc
       -- Translate axioms from invokeOn
       let invokeOnDecls ← match proc.invokeOn with
         | some trigger => do
