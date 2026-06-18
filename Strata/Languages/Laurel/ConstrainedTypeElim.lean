@@ -31,8 +31,6 @@ namespace Strata.Laurel
 open Strata
 
 abbrev ConstrainedTypeMap := Std.HashMap String ConstrainedType
-/-- Map from variable name to its constrained HighType (e.g. UserDefined "nat") -/
-abbrev PredVarMap := Std.HashMap String HighType
 
 def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :=
   types.foldl (init := {}) fun m td =>
@@ -130,29 +128,40 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
   | _ => expr
 
-abbrev ElimM := StateM PredVarMap
+/-- If `target` is an assignment target of a constrained type, return that
+    constrained type together with an expression that reads the target back.
+    The declared type is taken from the `Declare` parameter or, for
+    `Local`/`Field` targets, from the semantic model.
 
-private def inScope (action : ElimM α) : ElimM α := do
-  let saved ← get
-  let result ← action
-  set saved
-  return result
-
-/-- If `target` is an assignment target of a constrained type, return the
-    constrained type's name together with an expression that reads the target
-    back. The declared type is taken from the `Declare` parameter or, for
-    `Local`/`Field` targets, from the semantic model. -/
+    Both `Local` and `Field` targets are resolved (they carry a `uniqueId`
+    after the resolution pass, which `constrainedTypeElimPass` requires), so the
+    model lookup reliably returns their declared type. -/
 def constrainedTargetReadback (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (target : VariableMd) : Option (Identifier × StmtExprMd) :=
+    (target : VariableMd) : Option (HighType × StmtExprMd) :=
   let src := target.source
-  let check (ty : HighType) (ref : StmtExprMd) : Option (Identifier × StmtExprMd) :=
-    match ty with
-    | .UserDefined name => if ptMap.contains name.text then some (name, ref) else none
-    | _ => none
+  let check (ty : HighType) (ref : StmtExprMd) : Option (HighType × StmtExprMd) :=
+    if isConstrainedType ptMap ty then some (ty, ref) else none
   match target.val with
   | .Local name => check (model.get name).getType.val ⟨.Var (.Local name), src⟩
   | .Declare param => check param.type.val ⟨.Var (.Local param.name), src⟩
   | .Field tgt fieldName => check (model.get fieldName).getType.val ⟨.Var (.Field tgt fieldName), src⟩
+
+/-- Build `assert T$constraint(<read-back of target>)` for an assignment
+    `target` of constrained type `T`, or `none` if the target's type is not
+    constrained. This is the single point that turns any assignment target
+    (`Local`, `Declare`, or `Field`) into its constraint check, used by both the
+    statement-position handler (`elimStmt`) and the expression-position handler
+    (`wrapAssignNode`).
+
+    `src` is the source range reported on the generated assertion (and its
+    constraint call); it defaults to the target's own source but callers pass
+    the enclosing assignment's source so a failed check points at the whole
+    assignment. -/
+def constrainedTargetAssert (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (target : VariableMd) (src : Option FileRange := target.source) : Option StmtExprMd :=
+  (constrainedTargetReadback ptMap model target).bind fun (ty, ref) =>
+    (constraintCallForExpr ptMap ty ref (src := src)).map fun c =>
+      ⟨.Assert { condition := c }, src⟩
 
 /-- Wrap an assignment that appears in *expression* position so that the
     constraint of any constrained-typed target is checked.
@@ -175,10 +184,9 @@ def wrapAssignNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
   | .Assign targets _value =>
     match targets.filterMap (constrainedTargetReadback ptMap model) with
     | [] => node
-    | infos@((_, resultRef) :: _) =>
+    | (_, resultRef) :: _ =>
       let src := node.source
-      let asserts : List StmtExprMd := infos.map fun (name, ref) =>
-        ⟨.Assert { condition := ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩ }, src⟩
+      let asserts : List StmtExprMd := targets.filterMap (constrainedTargetAssert ptMap model · (src := src))
       ⟨.Block ([node] ++ asserts ++ [resultRef]) none, src⟩
   | _ => node
 
@@ -190,80 +198,54 @@ def wrapExprAssigns (ptMap : ConstrainedTypeMap) (model : SemanticModel)
   mapStmtExpr (wrapAssignNode ptMap model) expr
 
 def elimStmt (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
+    (stmt : StmtExprMd) : List StmtExprMd :=
   let source := stmt.source
 
   match _h : stmt.val with
   | .Var (.Declare param) =>
-    let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
-    let check := match callOpt with
-      | some c => [⟨.Assume c, source⟩]
-      | none => []
-    pure ([stmt] ++ check)
+    -- Uninitialized constrained-typed declaration (`var x: T;`): assume its
+    -- constraint, since the variable's value is otherwise unconstrained.
+    let check := (constraintCallFor ptMap param.type.val param.name (src := source)).toList.map
+      fun c => ⟨.Assume c, source⟩
+    [stmt] ++ check
 
   | .Assign targets value =>
     -- Wrap any assignments nested in the value expression (expression-position
     -- assignments) so their constrained-type constraints are checked too.
     let value := wrapExprAssigns ptMap model value
     let stmt' : StmtExprMd := ⟨.Assign targets value, source⟩
-    -- Handle Declare targets for constrained type elimination
-    let declareChecks ← targets.foldlM (init := ([] : List StmtExprMd)) fun acc target =>
-      match target.val with
-      | .Declare param => do
-        let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
-        if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
-        pure (acc ++ callOpt.toList.map fun c => ⟨.Assert { condition := c }, source⟩)
-      | .Local name => do
-        match (← get).get? name.text with
-        | some ty =>
-          let assert := (constraintCallFor ptMap ty name (src := source)).toList.map
-            fun c => ⟨.Assert { condition := c }, source⟩
-          pure (acc ++ assert)
-        | none => pure acc
-      | .Field fieldTarget fieldName => do
-        -- Writing to a constrained-typed composite field: assert the
-        -- constraint holds for the stored value. The field's declared type
-        -- comes from the semantic model. (When this pass ran after
-        -- HeapParameterization, this check was produced via the `Declare`
-        -- temporary that lowering introduced; running first, we must emit it
-        -- directly from the field write.)
-        --
-        -- The constraint is asserted on a *read-back* of the field rather than
-        -- on `value`. `value` is the full RHS expression, already emitted as
-        -- the field-write statement above; re-using it here would emit it a
-        -- second time, so any side effect in the RHS would run twice (e.g.
-        -- `c#count := (x := x + 1) + 1` would increment `x` twice). Reading the
-        -- field back evaluates the RHS exactly once. This mirrors the
-        -- `constrainedTargetReadback` helper used for expression-position
-        -- assignments.
-        let readback : StmtExprMd := ⟨.Var (.Field fieldTarget fieldName), source⟩
-        let assert := (constraintCallForExpr ptMap (model.get fieldName).getType.val
-            readback (src := source)).toList.map
-          fun c => ⟨.Assert { condition := c }, source⟩
-        pure (acc ++ assert)
-    pure ([stmt'] ++ declareChecks)
+    -- Assert the constraint of every constrained-typed target, uniformly across
+    -- `Local`, `Declare`, and `Field` targets via `constrainedTargetAssert`.
+    --
+    -- The constraint is asserted on a *read-back* of the target (after the
+    -- write) rather than on `value`. `value` is the full RHS expression, already
+    -- emitted as the assignment statement above; re-using it would emit it a
+    -- second time, so any side effect in the RHS would run twice (e.g.
+    -- `c#count := (x := x + 1) + 1` would increment `x` twice). Reading the
+    -- target back evaluates the RHS exactly once.
+    let checks := targets.filterMap (constrainedTargetAssert ptMap model · (src := source))
+    [stmt'] ++ checks
 
   | .Block stmts sep =>
-    let stmtss ← inScope (stmts.mapM (elimStmt ptMap model))
-    pure [⟨.Block stmtss.flatten sep, source⟩]
+    let stmtss := stmts.map (elimStmt ptMap model)
+    [⟨.Block stmtss.flatten sep, source⟩]
 
   | .IfThenElse cond thenBr (some elseBr) =>
     let cond := wrapExprAssigns ptMap model cond
-    let thenSs ← inScope (elimStmt ptMap model thenBr)
-    let elseSs ← inScope (elimStmt ptMap model elseBr)
-    pure [⟨.IfThenElse cond (wrap thenSs source) (some (wrap elseSs source)), source⟩]
+    let thenSs := elimStmt ptMap model thenBr
+    let elseSs := elimStmt ptMap model elseBr
+    [⟨.IfThenElse cond (wrap thenSs source) (some (wrap elseSs source)), source⟩]
   | .IfThenElse cond thenBr none =>
     let cond := wrapExprAssigns ptMap model cond
-    let thenSs ← inScope (elimStmt ptMap model thenBr)
-    pure [⟨.IfThenElse cond (wrap thenSs source) none, source⟩]
+    let thenSs := elimStmt ptMap model thenBr
+    [⟨.IfThenElse cond (wrap thenSs source) none, source⟩]
 
   | .While cond inv dec body =>
     let cond := wrapExprAssigns ptMap model cond
-    let bodySs ← inScope (elimStmt ptMap model body)
-    pure [⟨.While cond inv dec (wrap bodySs source), source⟩]
+    let bodySs := elimStmt ptMap model body
+    [⟨.While cond inv dec (wrap bodySs source), source⟩]
 
-  | _ => pure [stmt]
+  | _ => [stmt]
 termination_by sizeOf stmt
 decreasing_by
   all_goals simp_wf
@@ -278,18 +260,16 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
-  let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
-    if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
   | .Transparent bodyExpr =>
-    let (stmts, _) := (elimStmt ptMap model bodyExpr).run initVars
+    let stmts := elimStmt ptMap model bodyExpr
     let body := wrap stmts bodyExpr.source
     if outputEnsures.isEmpty then .Transparent body
     else
       let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
       .Opaque outputEnsures (some retBody) []
   | .Opaque postconds impl modif =>
-    let impl' := impl.map fun b => wrap ((elimStmt ptMap model b).run initVars).1 b.source
+    let impl' := impl.map fun b => wrap (elimStmt ptMap model b) b.source
     .Opaque (postconds ++ outputEnsures) impl' modif
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
