@@ -124,6 +124,79 @@ private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := d
   | _ => return exprMd
 
 /--
+Rewrite a type so that every reference to a composite type (a name in
+`composites`) becomes the flattened `Composite` datatype. After the type
+hierarchy pass all composite values are represented by `Composite` references,
+so their *static* types must follow suit; otherwise re-resolution sees a
+`Pixel`-typed value flowing into a `Composite`-typed slot (`readField`,
+`Composite..ref!`, an allocation `new C`, …). Recurses through compound types. -/
+partial def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if composites.contains name.text then { ty with val := .UserDefined "Composite" } else ty
+  | .TSet et => { ty with val := .TSet (compositeRefToComposite composites et) }
+  | .TMap kt vt =>
+    { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
+  | .Applied base args =>
+    { ty with val := .Applied (compositeRefToComposite composites base) (args.map (compositeRefToComposite composites ·)) }
+  | .Pure base => { ty with val := .Pure (compositeRefToComposite composites base) }
+  | .Intersection tys => { ty with val := .Intersection (tys.map (compositeRefToComposite composites ·)) }
+  | _ => ty
+
+/-- Rewrite composite references in an assignment target's declared type. -/
+private def rewriteCompositeVar (composites : Std.HashSet String) (v : VariableMd) : VariableMd :=
+  match v.val with
+  | .Declare param => ⟨.Declare { param with type := compositeRefToComposite composites param.type }, v.source⟩
+  | _ => v
+
+/-- Rewrite composite references in the type positions carried by a single
+    `StmtExpr` node (local declarations and quantifier binders). `IsType`/`AsType`
+    are intentionally left untouched: they have already been lowered to type-tag
+    lookups by `rewriteTypeHierarchyNode`, and their type argument is a type-test
+    target rather than a value type. -/
+private def rewriteCompositeExprNode (composites : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
+  match expr.val with
+  | .Assign targets value =>
+    ⟨.Assign (targets.map (rewriteCompositeVar composites)) value, expr.source⟩
+  | .Var (.Declare param) =>
+    ⟨.Var (.Declare { param with type := compositeRefToComposite composites param.type }), expr.source⟩
+  | .Quantifier mode param trigger body =>
+    ⟨.Quantifier mode { param with type := compositeRefToComposite composites param.type } trigger body, expr.source⟩
+  | _ => expr
+
+/-- Rewrite every composite reference type in a procedure (parameters, body,
+    contracts) to `Composite`. -/
+def rewriteCompositeInProc (composites : Std.HashSet String) (proc : Procedure) : Procedure :=
+  let f := mapStmtExpr (rewriteCompositeExprNode composites)
+  let rewriteBody : Body → Body := fun body => match body with
+    | .Transparent b => .Transparent (f b)
+    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition f)) (impl.map f) (modif.map f)
+    | .Abstract ps => .Abstract (ps.map (·.mapCondition f))
+    | .External => .External
+  { proc with
+    body := rewriteBody proc.body
+    inputs := proc.inputs.map fun p => { p with type := compositeRefToComposite composites p.type }
+    outputs := proc.outputs.map fun p => { p with type := compositeRefToComposite composites p.type }
+    preconditions := proc.preconditions.map (·.mapCondition f)
+    decreases := proc.decreases.map f
+    invokeOn := proc.invokeOn.map f }
+
+/-- Rewrite composite reference types appearing inside a type definition
+    (datatype constructor arguments, constrained-type base/constraint/witness). -/
+def rewriteCompositeInType (composites : Std.HashSet String) (td : TypeDefinition) : TypeDefinition :=
+  match td with
+  | .Datatype dt =>
+    .Datatype { dt with constructors := dt.constructors.map fun ctor =>
+      { ctor with args := ctor.args.map fun p => { p with type := compositeRefToComposite composites p.type } } }
+  | .Constrained ct =>
+    let f := mapStmtExpr (rewriteCompositeExprNode composites)
+    .Constrained { ct with
+      base := compositeRefToComposite composites ct.base
+      constraint := f ct.constraint
+      witness := f ct.witness }
+  | _ => td
+
+/--
 Type hierarchy transformation pass (Laurel → Laurel).
 
 1. Rewrites `IsType target ty` into `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
@@ -140,18 +213,24 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
   let typeHierarchyConstants := generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
+  -- Now that `New`/`IsType` have been lowered (they needed the original
+  -- composite names), flatten every remaining composite reference type to the
+  -- `Composite` datatype so the program re-resolves consistently.
+  let compositeSet : Std.HashSet String :=
+    compositeNames.foldl (init := {}) (·.insert ·)
+  let procs' := procs'.map (rewriteCompositeInProc compositeSet)
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none⟩
   let remainingTypes := program.types.map fun td =>
-    match td with
+    match (rewriteCompositeInType compositeSet td) with
     | .Datatype dt =>
       if dt.name.text == "Composite" then
         .Datatype { dt with constructors := dt.constructors.map fun c =>
           if c.name.text == "MkComposite" then
             { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
-      else td
-    | _ => td
+      else .Datatype dt
+    | other => other
   { program with
     staticProcedures := procs',
     types := [typeTagDatatype] ++ remainingTypes,
@@ -161,7 +240,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
 public def typeHierarchyTransformPass : LaurelPass where
   name := "TypeHierarchyTransform"
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
-  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun p m =>
     (typeHierarchyTransform m p, [], {})
 
