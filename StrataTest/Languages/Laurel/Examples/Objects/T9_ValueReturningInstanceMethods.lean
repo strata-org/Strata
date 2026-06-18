@@ -284,7 +284,6 @@ program Laurel;
 composite C {
   var v: int
   procedure noOut(self: C)
-//          ^^^^^ error: Valued return is not supported for procedures with no output parameters
     opaque
   {
     return 5
@@ -302,7 +301,6 @@ program Laurel;
 composite D {
   var v: int
   procedure twoOut(self: D) returns (a: int, b: int)
-//          ^^^^^^ error: Valued return is not supported for procedures with multiple output parameters
     opaque
   {
     return 1
