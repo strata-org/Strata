@@ -620,6 +620,71 @@ class SwarmDashboard:
                 "state_data": state_data,
             }
 
+        @self.app.get("/api/ledger/dag")
+        async def get_ledger_dag() -> dict[str, Any]:
+            """Return the lemma DAG structure and Mermaid visualization.
+
+            Similar to /api/agents/{name}/state_machine — provides structured
+            data for frontend rendering + a Mermaid string. The currently-active
+            lemma (status=proving) is highlighted.
+            """
+            from .modules.lemma_ledger import LemmaLedger, LemmaStatus
+
+            cwd = Path.cwd()
+            candidates = list(cwd.glob("**/lemma_ledger.json"))
+            if not candidates:
+                return {"error": "No lemma_ledger.json found"}
+
+            ledger = LemmaLedger(candidates[0])
+            entries = ledger.entries()
+            if not entries:
+                return {"nodes": [], "edges": [], "mermaid": "", "stats": {}}
+
+            current_id = None
+            nodes = []
+            for e in entries:
+                is_current = e.status == LemmaStatus.PROVING
+                if is_current:
+                    current_id = e.id
+                nodes.append({
+                    "id": e.id,
+                    "name": e.name,
+                    "status": e.status.value,
+                    "is_current": is_current,
+                    "depth": e.depth,
+                    "indegree": ledger.indegree(e.id),
+                    "file_path": e.file_path,
+                    "children": e.children,
+                    "parent_id": e.parent_id,
+                    "attempts": e.attempts,
+                    "turn_budget": e.turn_budget,
+                    "statement_snippet": (e.statement or "")[:120],
+                })
+
+            edges = []
+            for e in entries:
+                for child_id in e.children:
+                    edges.append({"from": e.id, "to": child_id})
+
+            stats = {
+                "total": len(entries),
+                "proved": sum(1 for e in entries if e.status == LemmaStatus.PROVED),
+                "pending": sum(1 for e in entries if e.status == LemmaStatus.PENDING),
+                "proving": sum(1 for e in entries if e.status == LemmaStatus.PROVING),
+                "failed": sum(1 for e in entries if e.status == LemmaStatus.FAILED),
+                "cycle": sum(1 for e in entries if e.status == LemmaStatus.CYCLE),
+                "pruned": sum(1 for e in entries if e.status == LemmaStatus.PRUNED),
+            }
+
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "mermaid": ledger.render_mermaid(),
+                "stats": stats,
+                "root_id": ledger.root_id,
+                "current_lemma": current_id,
+            }
+
         @self.app.get("/api/agents/live")
         async def get_live_agents() -> dict[str, Any]:
             """Return runtime state of all agents including spawned ones."""

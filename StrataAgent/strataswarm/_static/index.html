@@ -116,6 +116,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
       <div class="view-tab" onclick="switchView('telemetry')" id="tab-telemetry">Telemetry</div>
       <div class="view-tab" onclick="switchView('nudges')" id="tab-nudges">Nudges</div>
       <div class="view-tab" onclick="switchView('statemachine')" id="tab-statemachine">State Machine</div>
+      <div class="view-tab" onclick="switchView('lemmadag')" id="tab-lemmadag">Lemma DAG</div>
     </div>
     <div class="messages" id="messages"><div class="empty">Add agents and start the swarm</div></div>
     <div class="controls">
@@ -544,10 +545,12 @@ function switchView(v) {
   document.getElementById('tab-telemetry').classList.toggle('active', v==='telemetry');
   document.getElementById('tab-nudges').classList.toggle('active', v==='nudges');
   document.getElementById('tab-statemachine').classList.toggle('active', v==='statemachine');
+  document.getElementById('tab-lemmadag').classList.toggle('active', v==='lemmadag');
   if (v === 'history') { fetchCheckpointList(); }
   else if (v === 'telemetry') { refreshTelemetry(); }
   else if (v === 'nudges') { refreshNudges(); }
   else if (v === 'statemachine') { refreshStateMachine(); }
+  else if (v === 'lemmadag') { refreshLemmaDag(); }
   else { renderMessages(); }
 }
 
@@ -773,6 +776,89 @@ async function renderStateMachineGraph(sm) {
     ${dataHtml}
     ${histHtml}
   </div>`;
+}
+
+// Lemma DAG visualization
+let lemmaDagCounter = 0;
+
+async function refreshLemmaDag() {
+  const el = document.getElementById('messages');
+  el.innerHTML = '<div class="empty">Loading lemma DAG...</div>';
+
+  try {
+    const resp = await fetch('/api/ledger/dag');
+    const data = await resp.json();
+
+    if (data.error) {
+      el.innerHTML = `<div class="empty">${data.error}</div>`;
+      return;
+    }
+    if (!data.nodes || data.nodes.length === 0) {
+      el.innerHTML = '<div class="empty">No lemmas registered yet. Start a v4 proof session to see the DAG.</div>';
+      return;
+    }
+
+    let html = '<div style="padding:16px;overflow-y:auto;">';
+
+    // Stats bar
+    const s = data.stats;
+    html += `<div style="background:#1e2a3a;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#ccc;display:flex;gap:16px;flex-wrap:wrap;">
+      <span style="color:#4fc3f7;font-weight:bold;">Lemma DAG</span>
+      <span>Total: <b>${s.total}</b></span>
+      <span style="color:#4caf50;">Proved: <b>${s.proved}</b></span>
+      <span style="color:#64b5f6;">Proving: <b>${s.proving}</b></span>
+      <span style="color:#aaa;">Pending: <b>${s.pending}</b></span>
+      <span style="color:#ef5350;">Failed: <b>${s.failed}</b></span>
+      <span style="color:#ffa726;">Cycle: <b>${s.cycle}</b></span>
+      <span style="color:#888;">Pruned: <b>${s.pruned}</b></span>
+    </div>`;
+
+    // Mermaid graph
+    const mermaidCode = data.mermaid.replace(/```mermaid\n?/, '').replace(/```\n?$/, '');
+    let svgHtml = '';
+    try {
+      const id = `lemma-dag-${lemmaDagCounter++}`;
+      const { svg } = await mermaid.render(id, mermaidCode);
+      svgHtml = svg;
+    } catch (e) {
+      svgHtml = `<div style="color:#f44336;font-size:11px;">Mermaid render error: ${e.message}<br><pre style="color:#888;font-size:10px;">${mermaidCode.slice(0,500)}</pre></div>`;
+    }
+    html += `<div style="background:#111;border-radius:8px;padding:16px;margin-bottom:16px;overflow-x:auto;">${svgHtml}</div>`;
+
+    // Current lemma highlight
+    const current = data.nodes.find(n => n.is_current);
+    if (current) {
+      html += `<div style="background:#1b3a5e;border:1px solid #4fc3f7;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;">
+        <span style="color:#4fc3f7;font-weight:bold;">Currently proving:</span>
+        <span style="color:#fff;">${current.name}</span>
+        <span style="color:#888;margin-left:8px;">depth=${current.depth} | indegree=${current.indegree} | attempt=${current.attempts} | budget=${current.turn_budget} turns</span>
+        <div style="color:#aaa;margin-top:4px;font-family:monospace;font-size:10px;">${current.statement_snippet}</div>
+      </div>`;
+    }
+
+    // Node list table
+    html += '<div style="background:#1a1a2e;border-radius:6px;padding:10px 14px;font-size:11px;font-family:monospace;max-height:300px;overflow-y:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;color:#ccc;">';
+    html += '<tr style="border-bottom:1px solid #333;color:#888;"><th style="text-align:left;padding:4px;">Name</th><th>Status</th><th>Depth</th><th>In°</th><th>Attempts</th><th>ID</th></tr>';
+    const statusColors = { proved:'#4caf50', proving:'#64b5f6', pending:'#aaa', failed:'#ef5350', cycle:'#ffa726', pruned:'#666' };
+    data.nodes.forEach(n => {
+      const color = statusColors[n.status] || '#ccc';
+      const highlight = n.is_current ? 'background:#1b3a5e;' : '';
+      html += `<tr style="border-bottom:1px solid #222;${highlight}">
+        <td style="padding:4px;color:${color};">${n.name}</td>
+        <td style="text-align:center;color:${color};">${n.status}</td>
+        <td style="text-align:center;">${n.depth}</td>
+        <td style="text-align:center;${n.indegree > 1 ? 'color:#ffa726;font-weight:bold;' : ''}">${n.indegree}</td>
+        <td style="text-align:center;">${n.attempts}</td>
+        <td style="color:#555;">${n.id.slice(0,8)}</td>
+      </tr>`;
+    });
+    html += '</table></div>';
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = `<div class="empty">Error loading DAG: ${e.message}</div>`;
+  }
 }
 
 // Budget control
