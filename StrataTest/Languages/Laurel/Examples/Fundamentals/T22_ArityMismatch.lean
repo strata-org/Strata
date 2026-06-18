@@ -11,11 +11,6 @@ open Strata
 
 /-! ## Function called with too many arguments -/
 
-/--
-error: <#strata>(436-457) ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
--/
-#guard_msgs in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -25,6 +20,7 @@ procedure caller()
   opaque
 {
   var y: int := f(1, 2)
+//              ^^^^^^^ error: call to 'f' expects 1 argument(s) but 2 were provided
 };
 #end
 
@@ -42,6 +38,6 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch: 1 targets but right-hand side produces 2 values
+//            ^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 #end

@@ -151,6 +151,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
   | .LiteralDecimal d => return .const () (.realConst (StrataDDM.Decimal.toRat d))
+  | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -253,6 +254,9 @@ def translateExpr (expr : StmtExprMd)
       return .eq () re1 re2
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
+  | .IncrDecr _ _ _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source
+        "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
   | .While _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
@@ -488,17 +492,25 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt body
-      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
+      -- Attach each invariant's source provenance to the loop metadata, in
+      -- invariant order, so loop elimination can point an invariant's
+      -- verification condition at the specific invariant rather than the whole
+      -- loop. (The Core loop IR stores invariants as `(label, expr)` pairs with
+      -- no per-invariant metadata slot, and Core expressions carry no source
+      -- range, so we thread the ranges through the loop metadata instead.)
+      let mdWithInvs := invariants.foldl
+        (fun acc i => acc.pushInvariantProvenance (fileRangeToProvenance i.source)) md
+      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts mdWithInvs]
   | .Exit target =>
       return [Imperative.Stmt.exit target md]
   | .Hole _ _ =>
@@ -568,14 +580,17 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
-  -- Translate postconditions for Opaque and Abstract bodies
+  -- Translate postconditions for Opaque and Abstract bodies. A bodiless
+  -- procedure (bodyStmts = none) gets its postconditions marked `free`
+  -- (overrideFree) so they are assumed, not checked — and an empty body.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
-
-  let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
+  -- Wrap body in a labeled block so early returns (exit) work correctly.
+  -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
+  let body : List Core.Statement := [.block bodyLabel (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
@@ -710,7 +725,6 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
 /--
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
-The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
 def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 

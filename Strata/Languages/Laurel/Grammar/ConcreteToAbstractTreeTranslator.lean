@@ -244,6 +244,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.string, #[arg0] =>
       let s ← translateString arg0
       return mkStmtExprMd (.LiteralString s) src
+    | q`Laurel.bvLiteral, #[valueArg, widthArg] =>
+      let value ← translateNat valueArg
+      let width ← translateNat widthArg
+      return mkStmtExprMd (.LiteralBv value width) src
     | q`Laurel.hole, #[] => return mkStmtExprMd (.Hole true none) src
     | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
@@ -273,6 +277,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => TransM.error s!"assign target must be a variable or field access"
       let value ← translateStmtExpr arg1
       return mkStmtExprMd (.Assign [targetVar] value) src
+    | q`Laurel.preIncr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "preIncr"
+      return mkStmtExprMd (.IncrDecr .Pre .Incr target) src
+    | q`Laurel.preDecr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "preDecr"
+      return mkStmtExprMd (.IncrDecr .Pre .Decr target) src
+    | q`Laurel.postIncr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "postIncr"
+      return mkStmtExprMd (.IncrDecr .Post .Incr target) src
+    | q`Laurel.postDecr, #[arg0] =>
+      let target ← translateIncrDecrTarget arg0 "postDecr"
+      return mkStmtExprMd (.IncrDecr .Post .Decr target) src
     | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>
       let targets ← match targetsSeq with
         | .seq _ .comma args => args.toList.mapM fun targ => do
@@ -308,13 +324,20 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) src)) src
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
-      let calleeName := match callee.val with
-        | .Var (.Local name) => name
-        | _ => ""
       let argsList ← match argsSeq with
         | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
-      return mkStmtExprMd (.StaticCall calleeName argsList) src
+      -- `obj#method(args)` parses as `call(fieldAccess(obj, method), args)`.
+      -- Treat such calls as instance-method calls; everything else stays a
+      -- static call by callee text (empty when the callee is a higher-order
+      -- expression — preserved to match prior behavior).
+      match callee.val with
+      | .Var (.Field target fieldName) =>
+        return mkStmtExprMd (.InstanceCall target fieldName argsList) src
+      | .Var (.Local name) =>
+        return mkStmtExprMd (.StaticCall name argsList) src
+      | _ =>
+        return mkStmtExprMd (.StaticCall (mkId "") argsList) src
     | q`Laurel.return, #[arg0] =>
       let value ← match arg0 with
         | .option _ (some valArg) => some <$> translateStmtExpr valArg
@@ -414,6 +437,19 @@ partial def translateSeqCommand (arg : Arg) : TransM (List StmtExprMd) := do
 
 partial def translateCommand (arg : Arg) : TransM StmtExprMd := do
   translateStmtExpr arg
+
+/--
+Translate the target of an increment/decrement operator. The target must be an
+lvalue: either a local variable reference (`Var (.Local _)`) or a field access
+(`Var (.Field _ _)`). Anything else is reported as a translation error.
+-/
+partial def translateIncrDecrTarget (arg : Arg) (opName : String) : TransM VariableMd := do
+  let inner ← translateStmtExpr arg
+  match inner.val with
+  | .Var v@(.Local _) => pure ⟨v, inner.source⟩
+  | .Var v@(.Field _ _) => pure ⟨v, inner.source⟩
+  | _ =>
+    TransM.error s!"{opName} target must be a local variable or field access"
 
 end
 
