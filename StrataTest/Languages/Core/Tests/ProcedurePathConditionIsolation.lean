@@ -11,17 +11,10 @@ import StrataDDM.Integration.Lean.HashCommands
 /-
 Regression test for strata-org/Strata#1390.
 
-`Program.eval` threads one `Env` through every procedure. A path that leaves a
-labeled block via a structured `exit` does not get its path conditions popped
-(the exiting path bypasses `Env.merge`), so a procedure's preconditions and
-in-scope assumptions used to leak into the next procedure's verification
-context. When the leaked set was contradictory, the next procedure proved false
-obligations vacuously — a silent green pass.
-
-`first` has an unsatisfiable precondition (`n >= 1` and `n <= 0`) and a
-non-final structured `exit`. `second` has no spec; its `assert false` must be
-reported as failing, not silently accepted. Before the fix this reported
-`✅ pass`.
+A structured `exit` bypasses `Env.merge`, so a procedure's path conditions used
+to leak into later procedures; a contradictory leaked set then proved their
+false obligations vacuously. `first` has an unsatisfiable precondition + a
+structured `exit`; `second`'s `assert false` must fail, not silently pass.
 -/
 
 meta section
