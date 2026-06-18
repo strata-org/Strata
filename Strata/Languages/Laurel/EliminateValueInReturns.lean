@@ -83,29 +83,13 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure × Array Diagnost
 
 public section
 
-/-- Transform a program by eliminating value returns in all imperative procedures,
-    including instance procedures declared inside `composite` blocks.
-
-    Instance procedures are processed here (rather than after they are lifted to
-    static scope by `LiftInstanceProcedures`) because this pass must run before
-    `HeapParameterization`, which itself runs before lifting. -/
+/-- Transform a program by eliminating value returns in all imperative procedures. -/
 def eliminateValueInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
-  let (procs, staticDiags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
+  let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (proc', procDiags) := eliminateValueReturnsInProc proc
     (proc' :: ps, ds ++ procDiags)
   ) ([], #[])
-  let (types, instanceDiags) := program.types.foldl (fun (ts, ds) td =>
-    match td with
-    | .Composite ct =>
-      let (instProcs, ctDiags) := ct.instanceProcedures.foldl (fun (ps, ds') proc =>
-        let (proc', procDiags) := eliminateValueReturnsInProc proc
-        (proc' :: ps, ds' ++ procDiags)
-      ) ([], #[])
-      (.Composite { ct with instanceProcedures := instProcs.reverse } :: ts, ds ++ ctDiags)
-    | _ => (td :: ts, ds)
-  ) ([], #[])
-  ({ program with staticProcedures := procs.reverse, types := types.reverse },
-   staticDiags ++ instanceDiags)
+  ({ program with staticProcedures := procs.reverse }, diags)
 
 end -- public section
 
