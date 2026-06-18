@@ -288,6 +288,7 @@ composite C {
     opaque
   {
     return 5
+//  ^^^^^^^^ error: void procedure cannot return a value
   };
 }
 #end
@@ -305,6 +306,7 @@ composite D {
     opaque
   {
     return 1
+//  ^^^^^^^^  error: multi-output procedure cannot use 'return e'; assign to named outputs instead
   };
 }
 #end
