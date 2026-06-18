@@ -119,8 +119,14 @@ jobs:
         working-directory: downstream
         run: ${{ matrix.post_build }}
 
+      # Save only on pull_request. The issue_comment (!downstream-check) path
+      # runs in the privileged default-branch context, where a cache written
+      # after checking out untrusted PR code could poison the base-branch cache
+      # scope (CodeQL: cache poisoning via untrusted code). pull_request runs
+      # get an isolated cache scope, so saving there is safe. The comment path
+      # stays restore-only — slower on repeated on-demand checks, but secure.
       - name: Save lake cache
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         uses: actions/cache/save@v5
         with:
           path: |
