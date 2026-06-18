@@ -71,6 +71,9 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
       { proc with body := .Opaque postconds (some (rewrite impl)) modif }
     | _ => proc
   | _ =>
+  -- Procedures without any out param (void) or with multiple output
+  -- cannot have return statements. This raises a Resolution error
+  -- (see `Check.return` in Resolution.lean)
     proc
 
 public section
