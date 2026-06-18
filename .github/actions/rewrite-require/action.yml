@@ -1,0 +1,30 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Rewrite require to local path
+description: >
+  Rewrite a [[require]] block in a downstream lakefile.toml to point at a
+  local path instead of a git/rev dependency. Used by downstream-check
+  workflows to build a downstream repo against an upstream PR's checked-out
+  code (fork-safe: the PR head SHA need not be fetchable from the upstream
+  remote). The targeted block keeps its `name`; any git/rev/path/scope lines
+  are replaced with a single `path` line. Fails if no matching block exists.
+
+inputs:
+  lakefile:
+    description: Path to the downstream lakefile.toml to rewrite.
+    required: true
+  package:
+    description: The require `name` to override (e.g. "Strata", "StrataDDM").
+    required: true
+  path:
+    description: Local path to substitute (relative to the lakefile's repo root).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Rewrite require
+      shell: bash
+      run: |
+        python "${{ github.action_path }}/../../scripts/rewrite_require.py" \
+          "${{ inputs.lakefile }}" "${{ inputs.package }}" "${{ inputs.path }}"

@@ -1,0 +1,128 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# Downstream check: builds each repo that depends on Strata against this PR's
+# code, so we catch breakage before it lands on main. Advisory only — these
+# checks are visible on the PR but do not gate merge.
+#
+# Mechanism: check out the PR's Strata, clone each downstream, rewrite the
+# downstream's `require "Strata"` to a local path pointing at the checked-out
+# PR code (fork-safe: no need for the PR head SHA to exist on the strata-org
+# remote), then `lake update Strata` + build + test.
+#
+# Trigger logic (non-draft PRs on ready_for_review/synchronize; the
+# `!downstream-check` comment from a collaborator) lives in the shared
+# downstream-gate composite action.
+
+name: Downstream check
+
+on:
+  pull_request:
+    types: [ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+# One in-flight run per PR; a new push cancels the previous downstream check.
+concurrency:
+  group: downstream-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      - name: Gate
+        id: gate
+        uses: ./.github/actions/downstream-gate
+
+  downstream:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't let one broken downstream hide the status of the others.
+      fail-fast: false
+      matrix:
+        include:
+          # Boole and Python define a lake testDriver, so `test: true` builds
+          # and runs their suites.
+          - repo: Strata-Boole
+            test: true
+          - repo: Strata-Python
+            test: true
+          # Strata-CLI has no testDriver; mirror its own CI — build, then
+          # exercise the binary + examples via post_build (run below).
+          - repo: Strata-CLI
+            test: false
+            post_build: |
+              lake exe strata --help
+              ./scripts/run_examples.sh
+    # The job name is what reviewers see in the PR's Checks tab:
+    # "Downstream / Strata-Boole", etc.
+    name: ${{ matrix.repo }}
+    steps:
+      - name: Check out PR's Strata
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: upstream
+
+      - name: Clone downstream (${{ matrix.repo }})
+        run: git clone --depth 1 https://github.com/strata-org/${{ matrix.repo }}.git downstream
+
+      - name: Override Strata require -> local PR checkout
+        uses: ./upstream/.github/actions/rewrite-require
+        with:
+          lakefile: downstream/lakefile.toml
+          package: Strata
+          path: ../upstream
+
+      - name: Install cvc5
+        uses: ./upstream/.github/actions/install-cvc5
+      - name: Install z3
+        uses: ./upstream/.github/actions/install-z3
+
+      # Cache keyed on upstream head SHA + downstream repo. The restore-keys
+      # fallback lets a new push reuse the previous build for this PR; lake
+      # rebuilds the modules whose (overridden, local) Strata source changed.
+      # Trades a small stale-result risk for ~15-30 min, matching Strata CI's
+      # PR caching posture. This is advisory CI, so the trade is acceptable.
+      - name: Restore lake cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            downstream/.lake
+          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ needs.gate.outputs.head_sha }}
+          restore-keys: |
+            downstream-${{ matrix.repo }}-${{ runner.os }}-
+
+      - name: lake update Strata
+        working-directory: downstream
+        run: lake update Strata
+
+      - name: Build downstream
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: downstream
+          use-github-cache: false
+          test: ${{ matrix.test }}
+
+      # Repos without a lake testDriver verify via their own post-build steps.
+      - name: Post-build checks (${{ matrix.repo }})
+        if: matrix.post_build != ''
+        working-directory: downstream
+        run: ${{ matrix.post_build }}
+
+      - name: Save lake cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            downstream/.lake
+          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ needs.gate.outputs.head_sha }}
