@@ -285,6 +285,8 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (⟨ .While _ _ _ _, whileSource⟩ :: tail) _ =>
+      disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>
