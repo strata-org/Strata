@@ -246,20 +246,6 @@ public theorem stmtsT_cons_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsP
 
 
 
-/-! ## `Block.noExit` ⇒ the body never reaches `.exiting`.
-
-The §E `.loop` arm feeds the loop driver `h_src_body_no_exit` for the source
-loop body, derived from `Block.noExit body = true`.  A body that contains no
-`.exit` constructor anywhere in its tree can never reach `.exiting`: the only
-step producing `.exiting` is `step_exit` on an `.exit` statement, and the only
-propagation paths (`.seq`/`.stmts`/`.block` mismatch/nested loops) carry an
-inner `.exiting` outward, so an outer `.exiting` always traces back to a body
-`.exit` — contradicting `noExit`.  Proved by a mutual fuel recursion over all
-statement shapes. -/
-
-
-
-
 
 
 
