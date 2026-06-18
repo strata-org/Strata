@@ -9,8 +9,17 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! ## Function called with too many arguments -/
+/-! ## Function called with too many arguments
 
+`testLaurel` prints each diagnostic's file-relative `line:col` range (computed
+from the snippet's base line — no manual offsets) by default, while the inline
+`// ^^^` annotation still asserts the error. The golden below thus *shows* the
+localization without catching a spurious "unexpected diagnostic". -/
+
+/--
+info: 31:16-23  error: call to 'f' expects 1 argument(s) but 2 were provided
+-/
+#guard_msgs in
 #eval testLaurel <|
 #strata
 program Laurel;
