@@ -311,7 +311,7 @@ A source-side `EvalCmd c σ_src₀ σ_src₁ failed` can be replayed on a target
 `.cmd` arm: the rewrite is the identity on `.cmd`, so the target replays the
 exact same command, and we only need that the command's evaluation depends on
 the store solely through the source-visible part.  Ported (self-contained) from
-the analogous replay machinery in `structuredToUnstructured_sound`. -/
+the analogous replay machinery in `structuredToUnstructured_sound_kind`. -/
 
 /-- Invert a single `.cmd` execution: `.stmt (.cmd c) ρ →* .terminal ρ'` is
 exactly one `step_cmd`, exposing the `EvalCmd` witness and the post-state. -/
@@ -1015,7 +1015,7 @@ pass.  Without it the theorem is false — a pass-through source
 `.ite .nondet`'s inserted `init $g := *` would collide and be stuck.
 
 We carry it as `NoGenSuffix` over the block's defined + modified variables
-(mirroring `structuredToUnstructured_sound`'s threaded `NoGenSuffix` on
+(mirroring `structuredToUnstructured_sound_kind`'s threaded `NoGenSuffix` on
 `definedVars ++ initVars` / `modifiedVars`).  Membership in `++` distributes
 the obligation across sequencing and recursion automatically. -/
 
@@ -3271,7 +3271,7 @@ havoc value to match the source's nondeterministic choice; `StoreAgreement`'s
 one-directionality hides the generated guard variables.
 
 The instance and well-formed-eval hypothesis list mirrors
-`structuredToUnstructured_sound`
+`structuredToUnstructured_sound_kind`
 (`Strata/Transform/StructuredToUnstructuredCorrect.lean`) exactly, so this
 theorem composes with that proof downstream. See spec §4. -/
 theorem nondetElim_sound {P : PureExpr} [HasFvar P] [HasNot P]

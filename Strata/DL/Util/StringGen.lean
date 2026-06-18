@@ -20,8 +20,7 @@ public section
 -/
 
 /-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
-from mathlib https://github.com/leanprover-community/mathlib4/blob/f3c56c29d5c787d62f66c207e097a159ff66318a/Mathlib/Data/String/Defs.lean#L37-L39
--/
+Mirrors mathlib's `String.IsSuffix`. -/
 abbrev String.IsSuffix (s1 s2 : String) : Prop := List.IsSuffix s1.toList s2.toList
 
 local infixl:50 " <:+ " => String.IsSuffix
@@ -333,8 +332,8 @@ they do *not* match this suffix shape, or that they have a non-overlapping
 prefix in front of the trailing `_<digits>`.
 
 The lemmas below provide the building blocks for proving such disjointness.
-The most useful one for client code is `gen_ne_of_no_underscore_digit_suffix`:
-a string with no `_` followed by digits at the end can never be the output
+The most useful one for client code is `gen_ne_of_not_hasUnderscoreDigitSuffix`:
+a string without the `_<digits>` suffix shape can never be the output
 of `gen`. -/
 
 /-- A string has the shape `_<digits>` as a (non-empty) suffix.  Equivalently,

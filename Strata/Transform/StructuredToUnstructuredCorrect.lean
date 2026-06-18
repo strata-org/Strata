@@ -8903,8 +8903,7 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasNot P] [HasVar
   exact h_run
 
 /-- If the structured program reaches a terminal state, the CFG also reaches
-    a corresponding terminal state. Requires that the initial failure flag is
-    false, since the CFG always starts with failure = false.
+    a corresponding terminal state.
 
     The CFG end-store agrees with the structured end-store on every defined
     variable (`StoreAgreement`); they may differ only on variables introduced
@@ -9094,11 +9093,11 @@ theorem s2uKind_gen : S2UMintWitness s2uKind := by
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
       ⟨l, sg, StringGenState.gen_hasGenPrefix (s!"block${l}$") sg, rfl⟩)))))))))))
 
-/-- Kind-generalized soundness of `stmtsToCFG`.  Identical to
-`structuredToUnstructured_sound` except the threaded input-freshness invariant
-(`NoGenSuffix`) constrains only the labels *this* pass mints (`s2uKind`) rather
-than every gen-shaped name, which is what lets a composition partner — one that
-mints under disjoint prefixes — satisfy it.
+/-- Kind-generalized soundness of `stmtsToCFG`.  Like a blanket-freshness
+formulation but with the threaded input-freshness invariant (`NoGenSuffix`)
+constraining only the labels *this* pass mints (`s2uKind`) rather than every
+gen-shaped name, which is what lets a composition partner — one that mints under
+disjoint prefixes — satisfy it.
 
 Unlike the structured-to-structured passes (`nondetElim`, the loop-init hoist),
 `stmtsToCFG` produces a CFG and so its soundness must dispatch a *foreign-label*
