@@ -15,8 +15,8 @@ public import Strata.Transform.LoopInitHoistFreshness
 public import Strata.Transform.LoopInitHoistRewrite
 public import Strata.Transform.LoopInitHoistInfra
 public import Strata.Transform.LoopInitHoistLoopDriver
-public import Strata.Transform.LoopInitHoistOptEStepBProviderSpike
-public import Strata.Transform.LoopInitHoistOptEKeystoneScratch
+public import Strata.Transform.LoopInitHoistStepBProvider
+public import Strata.Transform.LoopInitHoistKeystone
 
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
