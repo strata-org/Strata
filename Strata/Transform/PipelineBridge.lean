@@ -1874,9 +1874,6 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
     (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
-    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
-    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
-    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
     (hwfvar' : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
     (hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
     (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
@@ -1902,17 +1899,17 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
     -- source kind-freedom (user names never collide with any minted prefix):
     (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
-    (h_init_not_nd : ∀ str : String, ndelimKind str →
-      HasIdent.ident (P := P) str ∉ Block.initVars ss)
     (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
     (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
-    (h_hoist_initVars : ∀ str : String, hoistKind str →
+    -- The three passes' minted-name kinds avoid the source `initVars` (one merged
+    -- disjunction over the three pass kinds, replacing the per-kind triple):
+    (h_disj_initVars : ∀ str : String,
+      (ndelimKind str ∨ hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
       HasIdent.ident (P := P) str ∉ Block.initVars ss)
-    (h_hoist_modVars : ∀ str : String, hoistKind str →
-      HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
-    (h_s2u_initVars : ∀ str : String, StructuredToUnstructuredCorrect.s2uKind str →
-      HasIdent.ident (P := P) str ∉ Block.initVars ss)
-    (h_s2u_modVars : ∀ str : String, StructuredToUnstructuredCorrect.s2uKind str →
+    -- The hoist/S2U minted-name kinds avoid the source `modifiedVars` (one merged
+    -- disjunction; `ndelimKind` modVars-freedom is folded into `h_ndelim_writes`):
+    (h_disj_modVars : ∀ str : String,
+      (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
       HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
     (h_term : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ')) :
     ∃ σ_cfg, StructuredToUnstructuredCorrect.StepDetCFGStar extendEval (pipeline ss)
@@ -1922,25 +1919,25 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   -- === STEP 1: nondetElim ===  StoreAgreement ρ'.store ρ_out.store.
   obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
     nondetElim_sound_kind extendEval ss ρ₀ ρ'
-      hwfb hwfv hwf_def hwf_congr hwf_var
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
       (fun s hk => h_store_mints s (Or.inl hk)) h_ndelim_writes h_nofd h_lhni h_term
   -- Direction-A hoist §F preconds on the `nondetElim` output, at `Q := hoistKind`.
   have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
     (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
-      h_unique h_init_not_nd).2
+      h_unique (fun str hk => h_disj_initVars str (Or.inl hk))).2
   have h_out_iv_sf : ∀ str : String, hoistKind str →
       HasIdent.ident (P := P) str ∉ Block.initVars (Block.nondetElim ss) := by
     intro str hk hmem
     rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ hmem with
       h_src | ⟨str', h_eq, h_nd⟩
-    · exact h_hoist_initVars str hk h_src
+    · exact h_disj_initVars str (Or.inr (Or.inl hk)) h_src
     · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
   have h_out_mv_sf : ∀ str : String, hoistKind str →
       HasIdent.ident (P := P) str ∉ Block.modifiedVars (Block.nondetElim ss) := by
     intro str hk hmem
     rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ hmem with
       h_src | ⟨str', h_eq, h_nd⟩
-    · exact h_hoist_modVars str hk h_src
+    · exact h_disj_modVars str (Or.inl hk) h_src
     · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
   have h_out_exprs_sf : Block.exprsShapeFree (P := P) hoistKind (Block.nondetElim ss) :=
     Block.nondetElimM_exprsShapeFree
@@ -1948,7 +1945,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (fun sg => (ndelim_name_not_hoistKind sg).2)
       ss StringGenState.emp h_hoist_exprs
   have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
-    nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs h_unique h_init_not_nd
+    nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs h_unique
+      (fun str hk => h_disj_initVars str (Or.inl hk))
   -- Each init of the `nondetElim` output is undefined in `ρ₀`: by the output
   -- init classification it is either a genuine source init (`h_store_inits`) or a
   -- freshly-minted `ndelimKind` guard (`h_store_mints ∘ Or.inl`).
@@ -1999,7 +1997,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
     · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp x h_src with
         h_src2 | ⟨str2, h_eq2, h_nd⟩
-      · exact h_s2u_initVars s hk (hxs ▸ h_src2)
+      · exact h_disj_initVars s (Or.inr (Or.inr hk)) (hxs ▸ h_src2)
       · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
     · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj (hxs ▸ h_eq) ▸ hk)
   -- `NoGenSuffix s2uKind` on `transformBlockModVars` (≡ `Block.modifiedVars`):
@@ -2016,11 +2014,11 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       rcases h_src with h_mv | h_iv
       · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp x h_mv with
           h_src2 | ⟨str2, h_eq2, h_nd⟩
-        · exact h_s2u_modVars s hk (hxs ▸ h_src2)
+        · exact h_disj_modVars s (Or.inr hk) (hxs ▸ h_src2)
         · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
       · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp x h_iv with
           h_src2 | ⟨str2, h_eq2, h_nd⟩
-        · exact h_s2u_initVars s hk (hxs ▸ h_src2)
+        · exact h_disj_initVars s (Or.inr (Or.inr hk)) (hxs ▸ h_src2)
         · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
     · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj (hxs ▸ h_eq) ▸ hk)
   -- === STEP 3: stmtsToCFG (input `hoist (nondetElim ss)`, source run = Step 2's) ===
@@ -2030,7 +2028,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (Q := StructuredToUnstructuredCorrect.s2uKind)
       StructuredToUnstructuredCorrect.s2uKind_gen
       extendEval (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀ ρ_h'
-      hwfb hwfv hwf_def hwf_congr hwf_var
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
       (hoist_noFuncDecl _ (nondetElim_noFuncDecl ss h_nofd))
       (hoist_simpleShape _ (nondetElim_simpleShape ss))
       h_step3_unique
