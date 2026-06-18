@@ -94,20 +94,20 @@ function cmp(x: string, y: int): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-procedure foo() opaque {
+procedure invalidAssignment() opaque {
   var x: int := true
 //              ^^^^ error: expected 'int', got 'bool'
 };
 #end
 
-/-! ## Function return type checks -/
+/-! ## Procedure return type checks -/
 
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(): int {
-  true
-//^^^^ error: expected 'int', got 'bool'
+procedure foo(): int {
+  return true
+//       ^^^^ error: expected 'int', got 'bool'
 };
 #end
 

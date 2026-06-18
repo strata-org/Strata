@@ -64,8 +64,6 @@ private def fmtHighType : HighType → String
   | .TReal => "TReal"
   | .TFloat64 => "TFloat64"
   | .TString => "TString"
-  | .THeap => "THeap"
-  | .TTypedField _ => "TTypedField"
   | .TSet _ => "TSet"
   | .TMap _ _ => "TMap"
   | .UserDefined name => s!"UserDefined({name})"

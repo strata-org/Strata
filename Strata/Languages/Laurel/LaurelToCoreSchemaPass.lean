@@ -79,13 +79,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TString => return LMonoTy.string
   | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => return .tcons "Heap" []
-  | .TTypedField _ => return .tcons "Field" []
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     match model.get? name with
-    | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
@@ -281,6 +278,8 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (⟨ .While _ _ _ _, whileSource⟩ :: tail) _ =>
+      disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>

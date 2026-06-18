@@ -135,12 +135,12 @@ private def runLaurelPasses
 
   -- Initial resolution
   let result := resolve program
-  let resolutionErrors : List DiagnosticModel := result.errors.toList
+  let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := resolutionErrors
+  let mut allDiags : List DiagnosticModel := result.errors.toList
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do

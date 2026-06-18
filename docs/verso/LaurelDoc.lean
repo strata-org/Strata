@@ -252,7 +252,7 @@ implementation introduces that have no surface syntax.
 
 The {name Strata.Laurel.HighType}`HighType` type enumerates every type Laurel
 tracks. Alongside the user-writable types it also includes internal constructors
-(such as `THeap`, `Unknown`, and `MultiValuedExpr`) that the compiler introduces
+(such as `Unknown` and `MultiValuedExpr`) that the compiler introduces
 during resolution and later passes; these have no surface syntax.
 
 {docstring Strata.Laurel.HighType}

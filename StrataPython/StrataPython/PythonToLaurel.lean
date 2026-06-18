@@ -2731,8 +2731,6 @@ def getHighTypeName : Laurel.HighType → String
   | .TString => "string"
   | .TVoid => "void"
   | .TFloat64 => "real"
-  | .THeap => "Heap"
-  | .TTypedField _ => "Field"
   | .TCore s => s
   | .UserDefined name => name.text
   | .TSet _ => "Map"
