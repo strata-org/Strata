@@ -76,8 +76,8 @@ sequencer `bodySimES_cons` can stitch it into the whole-body `BodySimES`. -/
 
 /-! ## SUM-TYPED (terminal-OR-exiting) body/statement simulation.
 
-The predicates above (`BodySimE` / `StmtSimE`) are TERMINAL-ONLY by construction:
-they say nothing about a body that runs to `.exiting l ρ'` (the break pattern).
+The `StmtSimE` predicate above is TERMINAL-ONLY by construction: it says nothing
+about a statement that runs to `.exiting l ρ'` (the break pattern).
 The redesigned `loopDet_lift_*_E` driver family (which drops `h_src_body_no_exit`)
 consumes the sum-typed `BodySimSum`; to PRODUCE one from a `BodyTransport`
 derivation, the eval-carrying provider vocabulary must also gain the exiting
@@ -92,10 +92,10 @@ its `.exiting` disjunct (the body-exit `HoistInv`, NOT the weaker projected-stor
 `StoreAgreement`), so the enclosing loop's `.block .none` projection re-establishes
 `HoistInv` via `HoistInv.project_both` exactly as the terminal clause does. -/
 
-/-- Eval-carrying SUM-TYPED body sim: the terminal clause of `BodySimE`, plus an
-exiting clause (a source `.exiting l` run is matched by a hoist `.exiting l` run
-at the SAME label, with `HoistInv` / `hasFailure` / `B`-bound / `eval` agreement at
-the body-exit stores). -/
+/-- Eval-carrying SUM-TYPED body sim: a terminal clause (source `.terminal` matched
+by hoist `.terminal`), plus an exiting clause (a source `.exiting l` run is matched
+by a hoist `.exiting l` run at the SAME label), each with `HoistInv` / `hasFailure` /
+`B`-bound / `eval` agreement at the body-exit stores. -/
 @[expose] def BodySimES [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
     (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
@@ -103,7 +103,7 @@ the body-exit stores). -/
     HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
     ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
     (∀ y ∈ B, ρ_h.store y ≠ none) →
-    -- TERMINAL clause (exactly `BodySimE`):
+    -- TERMINAL clause:
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
       ∃ ρ_h' : Env P,
@@ -165,15 +165,15 @@ theorem bodySimES_to_bodySimSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [H
     obtain ⟨ρ_h', h_run_h, h_hinv', h_hf', h_bnd', _⟩ := h_exit l ρ_s' h_run
     exact ⟨ρ_h', h_run_h, h_hinv', h_hf', h_bnd'⟩
 
-/-- The empty body is a `BodySimES`: terminal stays terminal (the `bodySimE_nil`
-proof), and the empty body NEVER reaches `.exiting` (the only run is `step_stmts_nil`
-to `.terminal`, so the exiting clause is vacuous). -/
+/-- The empty body is a `BodySimES`: terminal stays terminal (the only run is
+`step_stmts_nil` to `.terminal`, so the hoist replays it), and the empty body NEVER
+reaches `.exiting`, so the exiting clause is vacuous. -/
 theorem bodySimES_nil [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
     (A B : List P.Ident) (subst : List (P.Ident × P.Ident)) :
     BodySimES (extendEval := extendEval) A B subst [] [] := by
   intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
   refine ⟨?_, ?_⟩
-  · -- terminal clause: replay `bodySimE_nil`.
+  · -- terminal clause: the empty body's only run is `step_stmts_nil` to `.terminal`.
     intro ρ_s' h_run
     have h_eq : ρ_s' = ρ_s := by
       cases h_run with
@@ -197,7 +197,8 @@ theorem bodySimES_nil [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] 
 /-- THE SUM-TYPED CONS-SEQUENCER: a head `StmtSimES` and a tail `BodySimES` compose
 into a `BodySimES` for the cons body.
 
-The terminal clause is the `bodySimE_cons` proof verbatim.  The exiting clause:
+The terminal clause sequences the head's terminal clause then the tail's, splicing
+the two hoist runs.  The exiting clause:
 a cons-run reaching `.exiting l ρ_s'` steps `.stmts (s :: rest) → .seq (.stmt s ρ_s) rest`,
 then by `seq_reaches_exiting` either
   (a) the HEAD exits (`.stmt s ρ_s →* .exiting l ρ_s'`): fire the head's exiting
@@ -215,7 +216,7 @@ theorem bodySimES_cons [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     BodySimES (extendEval := extendEval) A B subst (s :: rest) (s' :: rest') := by
   intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
   refine ⟨?_, ?_⟩
-  · -- terminal clause: `bodySimE_cons`.
+  · -- terminal clause: head terminal then tail terminal.
     intro ρ_s' h_run
     obtain ⟨ρ_mid, h_head_run, h_rest_run⟩ :=
       stmts_cons_terminal_inv (extendEval := extendEval) h_run
@@ -258,12 +259,11 @@ theorem bodySimES_cons [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
 
 /-! ## SUM-TYPED nested-loop `StmtSimES`.
 
-The sum-typed analogue of `nestedLoop_stmtSimE`.  A nested loop
-`.loop (.det g2) none [] inner` reaches `.exiting l` exactly when its OWN body
-`inner` breaks with a label `l` (a loop has no catching label, so a body `.exit`
-propagates straight through).  The terminal clause replays `nestedLoop_stmtSimE`'s
-proof via `loopDet_lift_renamedGuard` (consuming the inner body's TERMINAL clause);
-the exiting clause fires `loopDet_lift_renamedGuard_E` on the inner body's SUM-TYPED
+A nested loop `.loop (.det g2) none [] inner` reaches `.exiting l` exactly when its
+OWN body `inner` breaks with a label `l` (a loop has no catching label, so a body
+`.exit` propagates straight through).  The terminal clause fires
+`loopDet_lift_renamedGuard_TE` (consuming the inner body's TERMINAL clause); the
+exiting clause fires `loopDet_lift_renamedGuard_E` on the inner body's SUM-TYPED
 sim, then recovers eval-preservation from both loop runs (`noFuncDecl` ⇒ eval fixed).
 
 The inner-body simulation is supplied as a `BodySimSum` (the SELF-REFERENTIAL piece:

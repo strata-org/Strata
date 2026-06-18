@@ -47,8 +47,8 @@ The library has four parts:
    equal — only to evaluate equally under `HoistInv`, which
    `renamed_guard_eval_same_delta` establishes because the loop guard reads no
    renamed name (every variable it reads lies in the `HoistInv` frame).
-   `loopDet_lift_renamedGuard` packages this specialisation: the caller supplies
-   only the body simulation and the freshness / well-formedness side facts.
+   `loopDet_lift_renamedGuard_E` / `_TE` package this specialisation: the caller
+   supplies only the body simulation and the freshness / well-formedness side facts.
 
 2. **Entries-from-lift structural bridge.**  Connects the concrete lift output
    `Block.liftInitsInLoopBodyM ss σ` to the abstract `entries` list consumed by
@@ -162,14 +162,14 @@ private theorem buildLoopIterationDet [HasFvar P] [HasBool P] [HasNot P] [HasVar
       (.step _ _ _ .step_seq_done (.refl _))
   exact ReflTrans.step _ _ _ h_enter h_seq_run
 
-/-! ## No-exit lemmas for hoist-eligible determinised loops.
+/-! ## Exiting-trace decompositions for determinised loops.
 
-A determinised loop whose body never produces a labeled `.exiting` can itself
-never reach `.exiting`.  These `*'`-suffixed `ReflTransT` exiting-trace
-decompositions and the fuel-bounded `loopDet_no_exit*` family are restated here
-(rather than imported from the equivalence proof) so this driver library sits
-strictly upstream of that proof.  They are self-contained against the iteration
-machinery in `DetToKleeneCorrect` and the store/relation helpers. -/
+These `*'`-suffixed `ReflTransT` exiting-trace decompositions invert a run that
+reaches a labeled `.exiting` through a `.seq` / `.none`-block / `.stmts`-cons
+context.  They are restated here (rather than imported from the equivalence proof)
+so this driver library sits strictly upstream of that proof, and are self-contained
+against the iteration machinery in `DetToKleeneCorrect` and the store/relation
+helpers. -/
 
 /-- T-version of `seq_reaches_exiting` (private in SUC; re-derived here). -/
 public theorem seqT_reaches_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
@@ -253,24 +253,19 @@ public theorem stmtsT_cons_exiting' [HasFvar P] [HasBool P] [HasNot P] [HasVarsP
 
 /-! ## The sum-typed (terminal-OR-exiting) two-guard driver.
 
-The driver above (`loopDet_lift_2g*`) concludes only the TERMINAL loop outcome and
-takes `h_src_body_no_exit`, ruling out a loop body that breaks (`.exit`).  This
-section drops `h_src_body_no_exit` and adds the parallel EXITING outcome: a source
-loop run that reaches `.exiting label ρ_post` (the loop terminated early because
-some iteration's body broke) is matched by a hoist loop run that reaches
-`.exiting label ρ_post_h`, with `HoistInv` / `hasFailure` / `B`-boundedness at the
+This driver handles BOTH loop outcomes, with no `h_src_body_no_exit` hypothesis: a
+source loop run reaching `.terminal ρ_post` OR `.exiting label ρ_post` (the loop
+terminated early because some iteration's body broke) is matched by a hoist loop run
+to the corresponding outcome, with `HoistInv` / `hasFailure` / `B`-boundedness at the
 projected (capped) exit stores.
 
-The `body_sim` slot is replaced by the sum-typed `BodySimSum`: a body run that
-TERMINATES is matched by a terminating hoist run (the existing terminal clause),
-and a body run that EXITS with label `l` is matched by a hoist run that exits with
-the SAME label `l`, re-establishing `HoistInv` at the body-exit stores.  The
-enclosing loop's `.block .none` projection then caps both the source body-local
-and the hoist target away, so `HoistInv` survives via `HoistInv.project_both` —
-exactly the relation the §E mutual already carries on its `.exiting` disjunct.
-
-This section is strictly ADDITIVE: the terminal-only driver and its `*_no_exit`
-support lemmas are untouched, so existing call paths keep building unchanged. -/
+The `body_sim` slot is the sum-typed `BodySimSum`: a body run that TERMINATES is
+matched by a terminating hoist run, and a body run that EXITS with label `l` is
+matched by a hoist run that exits with the SAME label `l`, re-establishing
+`HoistInv` at the body-exit stores.  The enclosing loop's `.block .none` projection
+then caps both the source body-local and the hoist target away, so `HoistInv`
+survives via `HoistInv.project_both` — exactly the relation the §E mutual already
+carries on its `.exiting` disjunct. -/
 
 /-- The sum-typed body simulation: a body run that TERMINATES is matched by a
 terminating hoist run (the existing terminal clause), and a body run that EXITS
@@ -285,7 +280,7 @@ public def BodySimSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal 
     HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
     ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
     (∀ y ∈ B, ρ_h.store y ≠ none) →
-    -- TERMINAL clause (the existing `BodySim`):
+    -- TERMINAL clause:
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
       ∃ ρ_h' : Env P,
@@ -332,10 +327,10 @@ public theorem blockT_none_reaches_terminal [HasFvar P] [HasBool P] [HasNot P] [
 
 /-- **The sum-typed two-guard exiting-target fuel recursion.**
 
-The EXITING analogue of `loopDet_lift_2g_fuel`.  Takes a sum-typed `body_sim`
-(terminal AND exiting clauses) and, given a source loop run reaching `.exiting
-label ρ_post`, produces a hoist loop run reaching `.exiting label ρ_post_h` with
-`HoistInv` / `hasFailure` / `B`-boundedness at the exit stores.
+The EXITING-target recursion.  Takes a sum-typed `body_sim` (terminal AND exiting
+clauses) and, given a source loop run reaching `.exiting label ρ_post`, produces a
+hoist loop run reaching `.exiting label ρ_post_h` with `HoistInv` / `hasFailure` /
+`B`-boundedness at the exit stores.
 
 Structure of the recursion (fuel `n` on the source run length):
 * `step_loop_exit` cannot reach `.exiting` (it goes to `.terminal`) — discharged
@@ -557,7 +552,7 @@ public theorem loopDet_lift_2g_E [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [
   loopDet_lift_2g_E_fuel h_guard_transport h_wfb_transport body_sim h_src_body_nofd h_h_body_nofd
     (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound (reflTrans_to_T h_run) (Nat.le_refl _)
 
-/-- **`loopDet_preserves_none` for an EXITING loop run — WITHOUT a no-exit
+/-- **Undefinedness preservation for an EXITING loop run — WITHOUT a no-exit
 hypothesis.**
 
 A loop run reaching `.exiting label ρ_post` keeps any variable `x` undefined at
@@ -631,11 +626,11 @@ public theorem loopDet_preserves_none_exiting [HasFvar P] [HasBool P] [HasNot P]
   loopDet_preserves_none_exiting_fuel (reflTrans_to_T h_run).len h_none
     (reflTrans_to_T h_run) (Nat.le_refl _)
 
-/-- **`loopDet_preserves_none` for a TERMINAL loop run — WITHOUT a no-exit
+/-- **Undefinedness preservation for a TERMINAL loop run — WITHOUT a no-exit
 hypothesis.**
 
-The TERMINAL analogue of `loopDet_preserves_none_exiting_fuel`: like
-`loopDet_preserves_none_fuel` but DROPS `h_body_no_exit`.  A loop run reaching
+The TERMINAL analogue of `loopDet_preserves_none_exiting_fuel`, taking no
+`h_body_no_exit`.  A loop run reaching
 `.terminal ρ_post` keeps any variable `x` undefined at the exit store provided it
 was undefined at loop entry.  No `h_body_no_exit` is needed: the loop terminates
 either by failing the guard (`step_loop_exit`, store unchanged at `x`) or by
@@ -717,8 +712,8 @@ public theorem loopDet_preserves_none_terminal [HasFvar P] [HasBool P] [HasNot P
 
 /-- **The sum-typed two-guard TERMINAL-target fuel recursion.**
 
-The TERMINAL analogue of `loopDet_lift_2g_E_fuel`: like `loopDet_lift_2g_fuel`
-but DROPS `h_src_body_no_exit` and consumes a sum-typed `body_sim` (`BodySimSum`).
+The TERMINAL analogue of `loopDet_lift_2g_E_fuel`: takes no `h_src_body_no_exit`
+and consumes a sum-typed `body_sim` (`BodySimSum`).
 A source loop run reaching `.terminal ρ_post` means NO iteration's body broke (a
 body `.exit` would propagate the loop to `.exiting`, not `.terminal`); so each
 peeled iteration's `.block .none` reaches `.terminal` via `blockT_none_reaches_terminal`
@@ -961,8 +956,8 @@ public theorem renamed_guard_eval_same_delta [HasFvar P] [HasSubstFvar P] [HasVa
   exact substFvarMany_eval_tweak δ subst h_src_nodup h_disjoint h_tgt_nodup h_wfsubst
 
 
-/-- The SUM-TYPED (exiting-target) renamed-guard driver: the exiting analogue of
-`loopDet_lift_renamedGuard`, a thin wrapper over the sum-typed exiting driver
+/-- The SUM-TYPED (exiting-target) renamed-guard driver: a thin wrapper over the
+sum-typed exiting driver
 `loopDet_lift_2g_E` (the renamed-guard discharge of the guard-tt transport is
 identical; the exit path never takes the false-guard branch, so no ff-transport is
 needed).  Consumes a sum-typed `BodySimSum` (the inner loop body may break) and a
@@ -1669,17 +1664,15 @@ public theorem bridge_in_guarded_undef_sf [HasIdent P] [DecidableEq P.Ident]
 
 /-! ## Sum-typed shapefree-carrying body simulation + union compose + exiting driver.
 
-The terminal-only stack above (`BodySimUSF` / `compose_union_sf` /
-`loopDet_lift_sf_2g_undef_fuel`) rules out a loop body that breaks (it concludes
-only the TERMINAL loop outcome and feeds Step B a TERMINAL-only `BodySim`).  The
-following ADDITIVE stack is the sum-typed (terminal-OR-exiting) analogue, built by
-combining the shapefree-carrying compose's per-iteration store-kind-freedom
-bookkeeping with the sum-typed exiting outcome of `BodySimSum` / `loopDet_lift_2g_E_fuel`:
+The sum-typed (terminal-OR-exiting) shapefree-carrying stack, combining
+per-iteration store-kind-freedom bookkeeping (the `Vs`/`Vh`/`σ_sf` carriers) with
+the sum-typed exiting outcome of `BodySimSum` / `loopDet_lift_2g_E_fuel`:
 
-* `BodySimUSFSum` augments `BodySimUSF` with the parallel EXITING clause (a body
-  run that breaks with label `l` is matched by a hoist body run that breaks with
-  the SAME label, re-establishing `HoistInv` / `hasFailure` / `B`-boundedness at
-  the body-exit stores).
+* `BodySimUSFSum` is the shapefree-carrying body sim with both clauses: a body run
+  that TERMINATES is matched by a terminating hoist run, and a body run that breaks
+  with label `l` is matched by a hoist body run that breaks with the SAME label,
+  re-establishing `HoistInv` / `hasFailure` / `B`-boundedness at the body-exit
+  stores.
 * `compose_union_sf_sum` composes a sum-typed Step A (explicit ∀-shape with both
   outcomes) with a sum-typed Step B (`BodySimSum`) into a `BodySimUSFSum`; the
   exiting clause composes sequentially body→body₁→body₃ exactly as the terminal
@@ -1687,18 +1680,15 @@ bookkeeping with the sum-typed exiting outcome of `BodySimSum` / `loopDet_lift_2
 * `loopDet_lift_sf_2g_undef_E_fuel` is the EXITING-target driver: structurally
   `loopDet_lift_2g_E_fuel` with the `Vs`/`Vh`/`σ_sf` carriers threaded but UNUSED on
   the exit path (the exiting outcome caps both stores via `HoistInv.project_both`
-  and never recurses on the inner loop), consuming a `BodySimUSFSum`.
+  and never recurses on the inner loop), consuming a `BodySimUSFSum`. -/
 
-This section is strictly ADDITIVE: the terminal-only stack and its support lemmas
-are untouched, so existing call paths keep building unchanged. -/
-
-/-- The sum-typed shapefree-carrying body simulation: `BodySimUSF` augmented with
-the parallel EXITING clause.  A body run that TERMINATES is matched by a
-terminating hoist run (the existing `BodySimUSF` clause); a body run that EXITS
+/-- The sum-typed shapefree-carrying body simulation, with both clauses.  A body
+run that TERMINATES is matched by a
+terminating hoist run; a body run that EXITS
 with label `l` is matched by a hoist run that exits with the SAME label `l`,
 re-establishing `HoistInv` / `hasFailure` / `B`-boundedness at the body-exit
 stores.  The `σ_sf`-relative SOURCE store-kind-freedom invariant is assumed at
-entry exactly as in `BodySimUSF` (it gates which `Q`-kind names may be undefined). -/
+entry (it gates which `Q`-kind names may be undefined). -/
 public def BodySimUSFSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     (Q : String → Prop)
     (Vs Vh : List P.Ident) (σ_sf : StringGenState) (A B : List P.Ident)
@@ -1711,7 +1701,7 @@ public def BodySimUSFSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolV
     (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
     (∀ str : String, Q str →
        str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
-    -- TERMINAL clause (exactly `BodySimUSF`):
+    -- TERMINAL clause:
     (∀ (ρ_s' : Env P),
       StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) (.terminal ρ_s') →
       ∃ ρ_h' : Env P,
@@ -1727,15 +1717,13 @@ public def BodySimUSFSum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolV
         HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
         ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
 
-/-- The sum-typed shapefree-carrying union compose: `compose_union_sf` augmented
-with the EXITING clause.  Step A is the explicit ∀-shape carrying BOTH outcomes
+/-- The sum-typed shapefree-carrying union compose.  Step A is the explicit ∀-shape
+carrying BOTH outcomes
 (terminal AND exiting), with the `σ_sf`-relative store-kind-freedom assumed on
 both `ρ_s` and its hoist mid env `ρ₁`.  Step B is a sum-typed `BodySimSum`.  The
-composed body simulation (`BodySimUSFSum`) carries both outcomes: the terminal
-clause is `compose_union_sf` verbatim; the exiting clause composes sequentially
-body→body₁→body₃ (Step A's exiting clause produces an exiting body₁ run at the
-mid env `ρ₁`, then Step B's exiting clause produces an exiting body₃ run),
-exactly parallel to `bodySimES_cons`' exiting head case. -/
+composed body simulation (`BodySimUSFSum`) carries both outcomes, each composing
+sequentially body→body₁→body₃ (Step A produces a body₁ run at the mid env `ρ₁`,
+then Step B produces the body₃ run), exactly parallel to `bodySimES_cons`. -/
 public theorem compose_union_sf_sum [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
     {Q : String → Prop}
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
@@ -1802,7 +1790,7 @@ public theorem compose_union_sf_sum [HasFvar P] [HasBool P] [HasNot P] [HasVal P
     bridge_in ρ_s ρ_h h_hinv h_eval h_hf h_bnd
       (by intro y hy; exact h_Vs y (h_Vh_sub_Vs y hy)) h_src_sf
   refine ⟨?_, ?_⟩
-  · -- TERMINAL clause: `compose_union_sf` verbatim.
+  · -- TERMINAL clause: Step A terminal then Step B terminal, composed.
     intro ρ_s' h_run
     obtain ⟨ρ₁', h_run₁, h_hinv₁, h_hf₁, h_bnd₁⟩ :=
       stepA_term ρ_s ρ₁ h_hinv_A h_eval_A h_hf_A h_bnd_A h_Vs h_Vh_A h_src_sf h_sf_A ρ_s' h_run
@@ -1864,15 +1852,15 @@ public theorem bodySimUSFSum_is_driver_slot [HasFvar P] [HasBool P] [HasNot P] [
 
 /-- **The sum-typed shapefree-carrying two-guard EXITING-target fuel recursion.**
 
-The EXITING analogue of `loopDet_lift_2g_E_fuel`, with the `Vs`/`Vh`/`σ_sf`
-carriers of `loopDet_lift_sf_2g_undef_fuel` threaded through.  Given a source loop
+`loopDet_lift_2g_E_fuel` with the `Vs`/`Vh`/`σ_sf` store-kind-freedom
+carriers threaded through.  Given a source loop
 run reaching `.exiting label ρ_post`, produces a hoist loop run reaching `.exiting
 label ρ_post_h` with `HoistInv` / `hasFailure` / `B`-boundedness at the exit
 stores.  The body simulation slot is the `BodySimUSFSum`-shaped predicate
 (terminal AND exiting clauses, guarded by the carriers).
 
-On the exit path the carriers play the same bookkeeping role as in
-`loopDet_lift_sf_2g_undef_fuel`: each terminal intermediate iteration re-establishes
+On the exit path the carriers do bookkeeping only: each terminal intermediate
+iteration re-establishes
 them at the projected store (`projectStore_undef_at`) before recursing; the
 exiting final iteration consumes the body's exiting clause and caps both stores
 via `HoistInv.project_both` (no further recursion). -/
@@ -2079,8 +2067,7 @@ public theorem loopDet_lift_sf_2g_undef_E_fuel [HasFvar P] [HasBool P] [HasNot P
 
 /-- Prop-level wrapper of `loopDet_lift_sf_2g_undef_E_fuel` specialised to the
 single-guard diagonal `g_s = g_h = g` (the shape the §E `.loop` arm produces:
-the loop guard is UNCHANGED by the hoist pass).  The EXITING-target analogue of
-`loopDet_lift_sf_undef_recovers_single`. -/
+the loop guard is UNCHANGED by the hoist pass), the EXITING-target driver. -/
 public theorem loopDet_lift_sf_undef_E_recovers_single [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {Q : String → Prop}
@@ -2137,16 +2124,15 @@ public theorem loopDet_lift_sf_undef_E_recovers_single [HasFvar P] [HasBool P] [
 
 /-- **The sum-typed shapefree-carrying two-guard TERMINAL-target fuel recursion.**
 
-The TERMINAL analogue of `loopDet_lift_sf_2g_undef_E_fuel`: like
-`loopDet_lift_sf_2g_undef_fuel` but DROPS `h_src_body_no_exit` and consumes the
+The TERMINAL analogue of `loopDet_lift_sf_2g_undef_E_fuel`: takes no
+`h_src_body_no_exit` and consumes the
 sum-typed `BodySimUSFSum`-shaped `body_sim`.  A source loop run reaching `.terminal
 ρ_post` means NO iteration's body broke (a body `.exit` would propagate the loop
 to `.exiting`, not `.terminal`); so each peeled iteration's `.block .none` reaches
 `.terminal` via `blockT_none_reaches_terminal` (which recovers the body's TERMINAL
 run WITHOUT a no-exit hypothesis), the body's TERMINAL clause drives one hoist
 iteration, and the recursion handles the residual loop.  The `Vs`/`Vh`/`σ_sf`
-carriers are re-established at each projected iteration store exactly as in
-`loopDet_lift_sf_2g_undef_fuel`. -/
+carriers are re-established at each projected iteration store. -/
 public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     {extendEval : ExtendEval P}
     {Q : String → Prop}
@@ -2413,7 +2399,7 @@ the union carriers; the §E `.loop` arm needs it at the ambient `A B subst`.
 Under the GUARDED frame this restriction is SOUND: the fresh sources/targets
 `As`/`Bs` are undefined in the source loop post-store `ρ_post` (they are body
 inits / generator names absent from the source store — see
-`loopDet_preserves_none`), so the guarded ambient frame, whose obligation only
+`loopDet_preserves_none_terminal` / `_exiting`), so the guarded ambient frame, whose obligation only
 fires at `ρ_post x ≠ none`, never applies to them and the union frame covers
 every remaining variable.  The pairing restricts directly (`subst ⊆ subst++ss`). -/
 public theorem stepJ_restrict

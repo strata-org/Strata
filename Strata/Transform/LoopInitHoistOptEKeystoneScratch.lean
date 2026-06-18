@@ -70,7 +70,7 @@ through `Block.substIdent` one pair at a time — equals descending the
 PER-EXPRESSION simultaneous fold (`substFvarMany`) into the body, i.e. it lands
 in exactly the renamed shapes the loop driver consumes:
 
-  * a `.det` guard becomes `substFvarMany g subst`            (driver: `loopDet_lift_renamedGuard`)
+  * a `.det` guard becomes `substFvarMany g subst`            (driver: `loopDet_lift_renamedGuard_E` / `_TE`)
   * an `assert`/`assume`/`cover` predicate becomes `substFvarMany b subst`
   * an `init`/`set` name becomes its `renameLookup`-image and its rhs `substFvarMany`-renamed
   * sub-blocks (`.block`/`.ite`/`.loop` body) are `applyRenames`-renamed recursively
@@ -136,9 +136,9 @@ statement of the body (by `applyRenames_stmt_cons`). -/
       = stmtSubstMany (Stmt.substIdent a b s) rest := rfl
 
 /-- `applyRenames` on a body = map `stmtSubstMany` over the statements.  This is
-the clean characterisation the cons-sequencer (`bodySimE_cons`) consumes: the
+the clean characterisation the cons-sequencer (`bodySimES_cons`) consumes: the
 hoist body `applyRenames subst body` is the per-statement `stmtSubstMany`-image,
-so `bodySimE_cons` can be driven head-statement at a time. -/
+so `bodySimES_cons` can be driven head-statement at a time. -/
 public theorem applyRenames_eq_map_stmtSubstMany [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (subst : List (P.Ident × P.Ident)) (ss : List (Stmt P (Cmd P))) :
     Block.applyRenames subst ss = ss.map (fun s => stmtSubstMany s subst) := by
@@ -156,7 +156,7 @@ descents that show `stmtSubstMany` produces EXACTLY the `substFvarMany` /
 `renameLookup` shapes the driver and the per-statement sims speak. -/
 
 /-- A `.det` guard `ExprOrNondet` folds to the `substFvarMany` of its expression.
-This is the guard the `loopDet_lift_renamedGuard` driver expects:
+This is the guard the `loopDet_lift_renamedGuard_E` / `_TE` drivers expect:
 `.det (substFvarMany g subst)`. -/
 public theorem exprOrNondet_substMany_det [HasFvar P] [HasSubstFvar P]
     (g : P.Expr) (subst : List (P.Ident × P.Ident)) :
@@ -185,8 +185,8 @@ public theorem exprOrNondet_substMany_nondet [HasFvar P] [HasSubstFvar P]
 
 /-- A nested-loop statement folds to a loop whose `.det` guard is
 `substFvarMany g subst` and whose body is `applyRenames subst body` — exactly the
-shape `nestedLoop_stmtSimE` / `loopDet_lift_renamedGuard` consume.  (Measure-free,
-invariant-free loops, as the lifted form produces.) -/
+shape `nestedLoop_stmtSimES` / `loopDet_lift_renamedGuard_E` / `_TE` consume.
+(Measure-free, invariant-free loops, as the lifted form produces.) -/
 public theorem stmtSubstMany_loop_det [HasFvar P] [HasSubstFvar P] [DecidableEq P.Ident]
     (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (subst : List (P.Ident × P.Ident)) :
