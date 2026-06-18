@@ -94,7 +94,7 @@ function cmp(x: string, y: int): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-procedure foo() opaque {
+procedure invalidAssignment() opaque {
   var x: int := true
 //              ^^^^ error: expected 'int', got 'bool'
 };
