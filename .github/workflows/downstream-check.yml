@@ -83,6 +83,17 @@ jobs:
       - name: Install z3
         uses: ./upstream/.github/actions/install-z3
 
+      # Install the Lean toolchain (elan/lake) before `lake update`. elan is
+      # installed unconditionally by lean-action; auto-config: false skips its
+      # build/test so this step only provisions the toolchain. The build itself
+      # runs in the "Build downstream" step below.
+      - name: Set up Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: downstream
+          auto-config: false
+          use-github-cache: false
+
       # Cache keyed on upstream head SHA + downstream repo. The restore-keys
       # fallback lets a new push reuse the previous build for this PR; lake
       # rebuilds the modules whose (overridden, local) Strata source changed.
