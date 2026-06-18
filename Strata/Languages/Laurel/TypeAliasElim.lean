@@ -39,7 +39,6 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     else match amap.get? name.text with
       | some target => resolveAliasType amap target (visited.insert name.text)
       | none => ty
-  | .TTypedField vt => { val := .TTypedField (resolveAliasType amap vt visited), source := ty.source }
   | .TSet et => { val := .TSet (resolveAliasType amap et visited), source := ty.source }
   | .TMap kt vt =>
     { val := .TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), source := ty.source }

@@ -338,9 +338,6 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
       | none => false  -- name not defined: resolveRef already reported it
     if kindOk then pure (HighType.UserDefined ref')
     else pure HighType.Unknown
-  | .TTypedField vt =>
-    let vt' ← resolveHighType vt
-    pure (.TTypedField vt')
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
@@ -2839,7 +2836,6 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   match ty with
   | AstNode.mk val _ =>
   match val with
-  | .TTypedField vt => collectHighType map vt
   | .TSet et => collectHighType map et
   | .TMap kt vt =>
     let map := collectHighType map kt
