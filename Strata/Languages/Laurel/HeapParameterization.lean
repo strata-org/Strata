@@ -291,7 +291,8 @@ where
           | return [⟨ .Hole, source ⟩]
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        let selectTarget' ← recurseOne selectTarget
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
@@ -414,20 +415,24 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
-      -- For == and != on Composite types, compare refs instead
+      -- For == and != on Composite types, compare refs instead. Note
+      -- `.UserDefined` covers BOTH composites (heap references — `ref!` is
+      -- correct) and datatypes (values — `ref!` is wrong and would unify a
+      -- datatype value against `Composite`). Only ref-compare composites;
+      -- datatype equality falls through to structural comparison.
       match op, args with
       | .Eq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
@@ -549,16 +554,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
-  let program := { program with
-    types := program.types
-    staticProcedures := program.staticProcedures }
-  let instanceProcs := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => acc ++ ct.instanceProcedures
-    | _ => acc) ([] : List Procedure)
-  let allProcs := program.staticProcedures ++ instanceProcs
-  let heapReaders := computeReadsHeap allProcs
-  let heapWriters := computeWritesHeap allProcs
+  -- Instance procedures are already lifted to `staticProcedures` by an earlier
+  -- pass, so they're covered by the calls below.
+  let heapReaders := computeReadsHeap program.staticProcedures
+  let heapWriters := computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
   let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
   -- Collect all qualified field names and generate a Field datatype
@@ -568,18 +567,14 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Remove fields from composite types since they are now stored in the heap
-  -- Also transform instance procedures, accumulating used Box constructors
-  let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
+  -- Remove fields from composite types since they are now stored in the heap.
+  let types' := program.types.map fun td =>
     match td with
-    | .Composite ct =>
-      let (instProcs', s') := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run accState
-      (accTypes ++ [.Composite { ct with fields := [], instanceProcedures := instProcs' }], s')
-    | other => (accTypes ++ [other], accState))
-    ([], state1)
+    | .Composite ct => .Composite { ct with fields := [] }
+    | other => other
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
+    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
