@@ -83,7 +83,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     match model.get? name with
-    | some (.compositeType _) => return .tcons "Composite" []
+    | some (.compositeType _) => return .tcons "Composite" [] -- TODO no longer needed?
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
