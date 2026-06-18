@@ -554,12 +554,18 @@ class LemmaLedger:
             lines = ["```mermaid", "flowchart TD"]
 
             # Define nodes
+            status_emoji = {
+                LemmaStatus.PROVED: "✅", LemmaStatus.PROVING: "🔨",
+                LemmaStatus.PENDING: "⏳", LemmaStatus.FAILED: "❌",
+                LemmaStatus.PRUNED: "✗", LemmaStatus.CYCLE: "⟳",
+            }
             for entry in self._entries.values():
                 node_id = entry.id[:8]
                 indeg = self._indegree.get(entry.id, 0)
                 sig_snippet = self._sig_snippet(entry.statement, max_len=40)
                 indeg_label = f" [in:{indeg}]" if indeg > 1 else ""
-                label = f"{entry.name}{indeg_label}\\n({node_id})\\n{sig_snippet}"
+                emoji = status_emoji.get(entry.status, "")
+                label = f"{emoji} {entry.name}{indeg_label}\\n({node_id})\\n{sig_snippet}"
                 lines.append(f"    {entry.id}[\"{label}\"]")
 
             # Define edges
