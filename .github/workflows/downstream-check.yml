@@ -37,6 +37,16 @@ jobs:
       run: ${{ steps.gate.outputs.run }}
       head_sha: ${{ steps.gate.outputs.head_sha }}
     steps:
+      # The gate is a local composite action, so it must be on disk first.
+      # It only reads the event payload (no repo source needed), so sparse-
+      # checkout just .github. On issue_comment this checks out the base
+      # branch (the trusted gate, incl. the collaborator auth check); on
+      # pull_request it's the PR ref, which is fine — that path only gates on
+      # draft status, not trust.
+      - name: Checkout gate action
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github
       - name: Gate
         id: gate
         uses: ./.github/actions/downstream-gate
