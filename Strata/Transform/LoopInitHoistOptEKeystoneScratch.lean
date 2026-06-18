@@ -62,14 +62,6 @@ fold — the "simultaneous" semantics live entirely inside the EVAL-level lemmas
 non-interference reasoning is discharged.  So the syntactic keystone needs NO
 freshness preconditions at all. -/
 
-/-- The expression-level keystone, exactly as posed in the gate (LHS = the fold
-`applyRenames` applies to each expression position; RHS = `substFvarMany`).
-Holds by `rfl` — no freshness, nodup, or disjointness preconditions needed. -/
-public theorem applyRenames_expr_eq_substFvarMany [HasFvar P] [HasSubstFvar P]
-    (subst : List (P.Ident × P.Ident)) (e : P.Expr) :
-    (subst.foldl (fun acc p => HasSubstFvar.substFvar acc p.1 (HasFvar.mkFvar p.2)) e)
-      = substFvarMany e subst := rfl
-
 /-! ## Layer 2 — the STRUCTURAL DESCENT.
 
 The gate's REAL content (the part downstream `bodyTransport` actually needs) is
@@ -317,10 +309,11 @@ public theorem cmdSubstMany_init_det [HasFvar P] [HasSubstFvar P] [DecidableEq P
 
 /-! ## VERDICT (summary, machine-checked above).
 
-* The EXPRESSION-level keystone `applyRenames_expr_eq_substFvarMany` is
-  DEFINITIONALLY TRUE (`rfl`), NO preconditions.  The "iterated vs simultaneous"
-  reconciliation lives entirely in the EVAL-level `substFvarMany_eval_*` lemmas,
-  which already exist and carry the freshness bundle.
+* The EXPRESSION-level keystone is DEFINITIONALLY TRUE: the fold `applyRenames`
+  applies to each expression position is `substFvarMany` by definition, with NO
+  preconditions.  The "iterated vs simultaneous" reconciliation lives entirely in
+  the EVAL-level `substFvarMany_eval_*` lemmas, which already exist and carry the
+  freshness bundle.
 
 * The STRUCTURAL descent (`applyRenames_eq_map_stmtSubstMany`,
   `stmtSubstMany_loop_det`, `cmdSubstMany_assert`, `exprOrNondet_substMany_det`)

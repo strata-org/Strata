@@ -3364,19 +3364,4 @@ theorem nondetElim_sound_kind {P : PureExpr} [HasFvar P] [HasNot P]
     extendEval ss ρ₀ ρ'
     hwfb hwfv hwf_def hwf_congr hwf_var h_no_gen_suffix h_no_writes h_nofd h_lhni h_term
 
-/-- A label minted by the loop-init hoist pass (prefix `hoistFreshPrefix`) is
-*not* an `ndelimKind` label: the hoist prefix begins with `_` while both
-`nondetElim` prefixes begin with `$`, so neither generator prefix can prefix a
-hoist-named label.  This is the composition unblock — a target store populated
-only with hoist-named guards satisfies `nondetElim_sound_kind`'s entry
-precondition vacuously, so the two passes compose without `nondetElim`
-clobbering a hoist guard. -/
-theorem hoist_name_not_ndelimKind (sg : StringGenState) :
-    ¬ ndelimKind (StringGenState.gen hoistFreshPrefix sg).1 := by
-  rw [StringGenState.gen_eq]
-  rintro (⟨_, hpref, _⟩ | ⟨_, hpref, _⟩) <;>
-    · simp only [String.HasGenPrefix, ndelimItePrefix, ndelimLoopPrefix,
-        hoistFreshPrefix, String.toList_append] at hpref
-      simp [List.isPrefixOf] at hpref
-
 end Imperative

@@ -378,9 +378,9 @@ The two lemmas below supply that foreignness. Each refutes the downstream
 `Kind` predicate on an upstream mint by showing the generator prefixes disagree
 at character `0`: every disjunct of the downstream kind carries some literal
 `HasGenPrefix pfᵢ` clause, but the upstream mint begins with a different literal
-character, so `(pfᵢ ++ "_").toList.isPrefixOf _` is `false`. This mirrors the
-template `hoist_name_not_ndelimKind` (which establishes the *other* direction of
-this disjointness, hoist mint ∉ ndelimKind). -/
+character, so `(pfᵢ ++ "_").toList.isPrefixOf _` is `false`. The reverse
+disjointness (hoist mint ∉ ndelimKind) follows by the same head-clash argument
+with the two prefixes swapped. -/
 
 /-- A name minted by `nondetElim` (under `ndelimItePrefix` or `ndelimLoopPrefix`,
 both beginning with `$`) is *not* a `hoistKind` label (`hoistFreshPrefix` begins

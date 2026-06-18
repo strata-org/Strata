@@ -24,7 +24,7 @@ overapproximates the original structured statements. Specifically, any terminal
 store reachable by executing the structured program is also reachable by
 executing the CFG.
 
-The top-level theorem is `structuredToUnstructured_sound`.
+The top-level theorem is `structuredToUnstructured_sound_kind`.
 
 ## Proof Strategy
 
@@ -9013,67 +9013,6 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasNot P]
   exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
 
 /-! ## Main theorems -/
-
-/-- `stmtsToCFG` is sound: any terminal state reachable from the structured
-    execution is reachable from the CFG execution at a store that agrees with
-    the structured store on every defined variable.
-
-    Since CFGs have no "exiting" configs (exits are compiled to jumps), the
-    exiting case is ruled out by the `h_exits` precondition. -/
-theorem structuredToUnstructured_sound {P : PureExpr} [HasFvar P] [HasNot P]
-    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
-    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
-    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
-    [LawfulHasIntOrder P] [LawfulHasNot P]
-    (extendEval : ExtendEval P)
-    (ss : List (Stmt P (Cmd P)))
-    (ρ₀ ρ' : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
-    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
-    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
-    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_nofd : Block.noFuncDecl ss = true)
-    (h_simple : Block.simpleShape ss = true)
-    (h_unique : Block.uniqueInits ss)
-    (h_lbni : Block.loopBodyNoInits ss = true)
-    (h_lhni : Block.loopHasNoInvariants ss = true)
-    (h_nml : Block.noMeasureLoops ss = true)
-    (h_fresh_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
-    (h_disj : Block.userLabelsShapeNodup ss)
-    (h_store_gens : ∀ x : String, String.HasUnderscoreDigitSuffix x →
-      ρ₀.store (HasIdent.ident (P := P) x) = none)
-    (h_input_no_gen_suffix : NoGenSuffix (P := P) String.HasUnderscoreDigitSuffix (Block.initVars ss))
-    (h_input_no_gen_suffix_mod :
-      NoGenSuffix (P := P) String.HasUnderscoreDigitSuffix (transformBlockModVars ss))
-    (h_term : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts ss ρ₀) (.terminal ρ')) :
-    let cfg := stmtsToCFG ss
-    ∃ σ_cfg, StepDetCFGStar extendEval cfg
-      (.atBlock cfg.entry ρ₀.store ρ₀.hasFailure)
-      (.terminal σ_cfg ρ'.hasFailure)
-      ∧ StoreAgreement ρ'.store σ_cfg :=
-  stmtsToCFG_terminal (Q := String.HasUnderscoreDigitSuffix)
-    extendEval ss ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
-    h_nofd h_simple h_unique h_lbni h_lhni h_nml
-    h_fresh_inits h_disj h_store_gens h_input_no_gen_suffix
-    h_input_no_gen_suffix_mod
-    -- Every `gen`-output has the `_<digits>` suffix shape, so the
-    -- thirteen-conjunct mint witness holds for the blanket predicate uniformly.
-    ⟨fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg,
-     fun _ sg => StringGenState.gen_hasUnderscoreDigitSuffix _ sg⟩
-    h_term
 
 /-! ### The structured-to-unstructured label *kind*
 
