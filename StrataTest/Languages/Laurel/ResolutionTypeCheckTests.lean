@@ -19,6 +19,18 @@ open Strata
 #eval testLaurelResolution <|
 #strata
 program Laurel;
+
+procedure voidReturn(x: int)
+  returns (r: int)
+{
+  r := 1;
+  return
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 function foo(x: int): int {
   if x then 1 else 0
 //   ^ error: expected 'bool', got 'int'

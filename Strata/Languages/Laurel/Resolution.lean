@@ -1089,10 +1089,7 @@ def Check.return (exprMd : StmtExprMd)
     | _ => let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
   match val, expectedReturn with
   | none,   some []          => pure ()
-  | none,   some [singleOutput] =>
-    -- `return;` synthesizes the missing payload as `TVoid`; require it to
-    -- be a consistent subtype of the declared output.
-    checkSubtype source singleOutput { val := .TVoid, source := source }
+  | none,   some [singleOutput] => pure ()
   | none,   some _           => pure ()
   | some _, some []          =>
     let diag := diagnosticFromSource source
@@ -1693,6 +1690,32 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
+
+  -- Hack because we use these polymorphic map primitives but Laurel does not
+  -- support polymorphism yet, so they cannot be type-checked against their
+  -- placeholder `int` signatures. Instead we resolve the arguments and infer the
+  -- result type structurally from them, keeping a concrete `HighType` flowing into
+  -- Core translation:
+  --   * `select(map, key)`     ⇒ the map's value type
+  --   * `update(map, key, val)` ⇒ the map type itself
+  --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
+  if callee == "select" || callee == "update" || callee == "const" then
+    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Synth.resolveStmtExpr a)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
+    let resultTy : HighTypeMd ←
+      match callee, argTys with
+      | "select", mapTy :: _ =>
+        match mapTy.val with
+        | .TMap _ valueTy => pure valueTy
+        | _ => pure ⟨ .Unknown, source ⟩
+      | "update", mapTy :: _ => pure mapTy
+      | "const", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
+      | _, _ => pure ⟨ .Unknown, source ⟩
+    return (.StaticCall callee args', resultTy)
+
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
   let (retTy, paramTypes) ← getCallInfo callee
@@ -1719,12 +1742,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
   pure (.StaticCall callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
-    apply Prod.Lex.left
-    have hsz := exprMd.sizeOf_val_lt
-    rw [h] at hsz
-    simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-    omega
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
+      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
+      omega
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -2620,40 +2644,20 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
     output: a single output `T` for single-output functional procedures,
     `Unknown` otherwise. Bodies without an impl block (`Abstract`, `External`) ignore
     `expected`. -/
-def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
+def resolveBody (body : Body) : ResolveM Body := do
   match body with
   | .Transparent b =>
-    let b' ← Check.resolveStmtExpr b expected
+    let b' ← Check.resolveStmtExpr b ⟨ HighType.Unknown, b.source ⟩
     return .Transparent b'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM (Check.resolveStmtExpr · expected)
+    let impl' ← impl.mapM (Check.resolveStmtExpr · ⟨ HighType.Unknown, default ⟩)
     let mods' ← mods.mapM resolveStmtExpr
     return .Opaque posts' impl' mods'
   | .Abstract posts =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     return .Abstract posts'
   | .External => return .External
-
-/-- Compute the expected *value type* `A` for a procedure body, i.e.
-    the `A` in `Γ ⊢ body ⇐ A`. Functional procedures with a single
-    output `T` expect `A = T`: the body's last statement is the result
-    and must produce a `T`. Non-functional procedures expect
-    `A = Unknown`: their body is run as a statement and the last
-    statement's value (if any) is discarded — outputs are observed via
-    `return e` (whose payload is matched against the procedure's
-    declared outputs by `Resolution.Check.return`) or via named-output
-    assignment.
-
-    This computes only the body's value type. The procedure's declared
-    output list is bound separately by the procedure rule
-    (`resolveProcedure` / `resolveInstanceProcedure`) into
-    `ResolveState.answerType`. -/
-private def procedureBodyType (isFunctional : Bool) (outputs : List Parameter)
-    (source : Option FileRange) : HighTypeMd :=
-  match isFunctional, outputs with
-  | true, [singleOutput] => singleOutput.type
-  | _, _ => { val := .Unknown, source := source }
 
 /-- (Procedure)
     ```
@@ -2676,12 +2680,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
-    -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
-    -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
-    -- so that frontends emitting `Exit bodyLabel` for early-return lowering
-    -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
@@ -2722,9 +2721,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
