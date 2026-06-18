@@ -26,5 +26,5 @@ runs:
     - name: Rewrite require
       shell: bash
       run: |
-        python "${{ github.action_path }}/../../scripts/rewrite_require.py" \
+        python3 "${{ github.action_path }}/../../scripts/rewrite_require.py" \
           "${{ inputs.lakefile }}" "${{ inputs.package }}" "${{ inputs.path }}"

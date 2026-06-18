@@ -10,50 +10,35 @@
 # PR code (fork-safe: no need for the PR head SHA to exist on the strata-org
 # remote), then `lake update Strata` + build + test.
 #
-# Trigger logic (non-draft PRs on ready_for_review/synchronize; the
-# `!downstream-check` comment from a collaborator) lives in the shared
-# downstream-gate composite action.
+# Trigger: non-draft PRs only (ready_for_review + every push via synchronize).
+# We deliberately do NOT support an issue_comment (`!downstream-check`) trigger:
+# that runs in the privileged default-branch context, and building untrusted PR
+# code there is a cache-poisoning / code-execution vector (CodeQL
+# actions/cache-poisoning/poisonable-step). pull_request runs the same build in
+# an isolated, unprivileged context, which is safe. If on-demand checks are
+# wanted later, add them via label-indirection (a privileged workflow turns a
+# comment into a label; `pull_request: types: [labeled]` does the build
+# unprivileged) — never by reintroducing issue_comment here.
 
 name: Downstream check
 
 on:
   pull_request:
     types: [ready_for_review, synchronize]
-  issue_comment:
-    types: [created]
 
 # One in-flight run per PR; a new push cancels the previous downstream check.
 concurrency:
-  group: downstream-${{ github.event.issue.number || github.event.pull_request.number }}
+  group: downstream-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.gate.outputs.run }}
-      head_sha: ${{ steps.gate.outputs.head_sha }}
-    steps:
-      # The gate is a local composite action, so it must be on disk first.
-      # It only reads the event payload (no repo source needed), so sparse-
-      # checkout just .github. On issue_comment this checks out the base
-      # branch (the trusted gate, incl. the collaborator auth check); on
-      # pull_request it's the PR ref, which is fine — that path only gates on
-      # draft status, not trust.
-      - name: Checkout gate action
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: .github
-      - name: Gate
-        id: gate
-        uses: ./.github/actions/downstream-gate
-
   downstream:
-    needs: gate
-    if: needs.gate.outputs.run == 'true'
+    # Non-draft PRs only. (The `types` filter already restricts to
+    # ready_for_review/synchronize.)
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     strategy:
       # Don't let one broken downstream hide the status of the others.
@@ -80,7 +65,7 @@ jobs:
       - name: Check out PR's Strata
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.gate.outputs.head_sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           path: upstream
 
       - name: Clone downstream (${{ matrix.repo }})
@@ -108,7 +93,7 @@ jobs:
         with:
           path: |
             downstream/.lake
-          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ needs.gate.outputs.head_sha }}
+          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ github.event.pull_request.head.sha }}
           restore-keys: |
             downstream-${{ matrix.repo }}-${{ runner.os }}-
 
@@ -129,16 +114,10 @@ jobs:
         working-directory: downstream
         run: ${{ matrix.post_build }}
 
-      # Save only on pull_request. The issue_comment (!downstream-check) path
-      # runs in the privileged default-branch context, where a cache written
-      # after checking out untrusted PR code could poison the base-branch cache
-      # scope (CodeQL: cache poisoning via untrusted code). pull_request runs
-      # get an isolated cache scope, so saving there is safe. The comment path
-      # stays restore-only — slower on repeated on-demand checks, but secure.
       - name: Save lake cache
-        if: always() && github.event_name == 'pull_request'
+        if: always()
         uses: actions/cache/save@v5
         with:
           path: |
             downstream/.lake
-          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ needs.gate.outputs.head_sha }}
+          key: downstream-${{ matrix.repo }}-${{ runner.os }}-${{ github.event.pull_request.head.sha }}
