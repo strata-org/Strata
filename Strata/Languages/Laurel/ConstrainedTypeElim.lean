@@ -52,14 +52,26 @@ def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
 def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
   match ty with | .UserDefined name => ptMap.contains name.text | _ => false
 
-/-- Build a call to the constraint function for a constrained type, or `none` if not constrained -/
-def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
+/-- Build a call to the constraint function for a constrained type, asserting
+    the constraint on the read-back expression `ref`. Returns `none` if `ty` is
+    not a constrained type.
+
+    `ref` is the expression whose value is checked (e.g. a local read
+    `x` or a field read `c#count`), allowing this to serve every assignment
+    target kind uniformly. -/
+def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
+    (ref : StmtExprMd) (src : Option FileRange := none) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Var (.Local varName), src⟩], src⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩
     else none
   | _ => none
+
+/-- Build a call to the constraint function for a constrained type, checking a
+    local variable read, or `none` if not constrained. -/
+def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
+    (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
+  constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
 
 /-- Generate a constraint function for a constrained type.
     For nested types, the function calls the parent's constraint function. -/
@@ -225,14 +237,11 @@ def elimStmt (ptMap : ConstrainedTypeMap) (model : SemanticModel)
         -- field back evaluates the RHS exactly once. This mirrors the
         -- `constrainedTargetReadback` helper used for expression-position
         -- assignments.
-        match (model.get fieldName).getType.val with
-        | .UserDefined name =>
-          if ptMap.contains name.text then
-            let readback : StmtExprMd := ⟨.Var (.Field fieldTarget fieldName), source⟩
-            let c : StmtExprMd := ⟨.StaticCall (mkId s!"{name.text}$constraint") [readback], source⟩
-            pure (acc ++ [⟨.Assert { condition := c }, source⟩])
-          else pure acc
-        | _ => pure acc
+        let readback : StmtExprMd := ⟨.Var (.Field fieldTarget fieldName), source⟩
+        let assert := (constraintCallForExpr ptMap (model.get fieldName).getType.val
+            readback (src := source)).toList.map
+          fun c => ⟨.Assert { condition := c }, source⟩
+        pure (acc ++ assert)
     pure ([stmt'] ++ declareChecks)
 
   | .Block stmts sep =>
