@@ -142,7 +142,24 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 
     await agent._emit("status_change", "running")
 
+    # Restore from checkpoint only if explicitly triggered (via _restored_state)
+    # The swarm resume endpoint sets _restored_state; cold starts do NOT auto-resume
+    import json as _json
+    from pathlib import Path as _Path
     restored = getattr(agent, '_restored_state', None)
+
+    # If _restored_state is set (explicit resume), also check tm_checkpoint.json for fresher state
+    if restored:
+        tm_cp_path = _Path("StrataAgent/strataswarm/temp/tm_checkpoint.json")
+        if tm_cp_path.exists():
+            try:
+                tm_state = _json.loads(tm_cp_path.read_text())
+                # Use tm_checkpoint if it's in a later stage (proving > clarifying)
+                if tm_state.get("mode") == "proving":
+                    restored = tm_state
+            except (ValueError, KeyError):
+                pass
+
     if restored and isinstance(restored, dict):
         # Convert enum strings back to enum values
         fields = {}
@@ -166,6 +183,16 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         state = WorkflowState()
 
     agent._workflow_state = state
+
+    # On resume: clear the Claude session so TM starts fresh (state comes from checkpoint, not conversation)
+    if restored:
+        agent.spec.resume_session_id = None
+
+    # Re-dispatch prover if we resumed in proving mode but prover isn't running
+    if (state.mode == WorkflowMode.PROVING and not state.prover_done
+            and not getattr(agent, '_prover_task', None)):
+        await agent._emit("message", "[TM] Re-dispatching prover (resumed from checkpoint)...")
+        await _dispatch_prover(state, agent, resume=True)
 
     while not agent.cancellation.is_cancelled:
         try:
@@ -258,6 +285,13 @@ async def _state_thinking(state: WorkflowState, agent) -> Transition:
     if decision.forward_to:
         state.active_handler = decision.forward_to
 
+    # Hard gate: never declare prover_done if the prover task is still running
+    if decision.state_transition == Transition.PROVER_DONE:
+        prover_task = getattr(agent, '_prover_task', None)
+        if prover_task and not prover_task.done():
+            await agent._emit("message", "[TM] Prover task still running — ignoring premature prover_done")
+            return Transition.RESPOND
+
     return decision.state_transition
 
 
@@ -291,17 +325,20 @@ async def _state_setup(state: WorkflowState, agent) -> Transition:
 
 
 
-async def _state_dispatch(state: WorkflowState, agent) -> Transition:
+async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
+    """Spawn and launch the prover as a background task."""
     import asyncio
     from .._helpers import swarm_agent
 
     task = UserIntent(**{k: v for k, v in state.task.items() if k in UserIntent.__dataclass_fields__})
-    await agent._emit("message", "[TM] Dispatching to Prover...")
 
     await _cleanup_internal(agent, Handler.CLARIFIER)
 
     prover_ctx = swarm_agent("prover", swarm=agent.swarm, cwd=agent._cwd)
     prover = await prover_ctx.__aenter__()
+    # Only signal resume if explicitly resuming from checkpoint
+    if resume:
+        prover._restored_state = {"_resume": True}
     agent._prover_ctx = prover_ctx
     agent._prover_agent = prover
     state.prover_agent_name = prover.spec.name
@@ -327,6 +364,11 @@ async def _state_dispatch(state: WorkflowState, agent) -> Transition:
     state.active_handler = Handler.MONITOR
 
     await agent._emit("message", f"[TM] Prover: {state.prover_agent_name}")
+
+
+async def _state_dispatch(state: WorkflowState, agent) -> Transition:
+    await agent._emit("message", "[TM] Dispatching to Prover...")
+    await _dispatch_prover(state, agent)
 
     # Checkpoint — prover dispatched, task is committed
     swarm = getattr(agent, 'swarm', None)

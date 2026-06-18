@@ -35,6 +35,8 @@ system_prompt: >
 
   RULES:
   - File must ALWAYS compile (lean_verify)
+  - NEVER change theorem/def SIGNATURES — name, parameters, and return type must stay EXACTLY as given
+  - You may only replace `sorry` with proof tactics or add NEW helper theorems above
   - Use `theorem` (NOT `lemma`, NOT `axiom`)
   - Only edit your assigned file
   - Ask SearchAgent BEFORE guessing — saves wasted turns

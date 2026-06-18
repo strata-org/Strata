@@ -34,8 +34,17 @@ from .._helpers import swarm_agent
 
 T = TypeVar("T")
 
+
+@dataclass
+class ContradictionVerdict:
+    """Structured response from guide when asked about provability."""
+    is_contradictory: bool = False
+    confidence: str = "low"  # "low", "medium", "high"
+    reason: str = ""
+
+
 MAX_RETRIES = 3
-MAX_RECURSION_DEPTH = 3
+MAX_RECURSION_DEPTH = 8
 WRITER_TURNS_PER_ATTEMPT = [25, 12, 6]  # decreasing budget per attempt
 GRACE_TURNS_PER_ATTEMPT = 20  # turns per grace attempt (sorry wrap-up phase)
 WRITER_CLEANUP_TURNS = 10
@@ -67,6 +76,7 @@ class Trans(str, Enum):
     PROVED = "proved"
     HAS_SORRY = "has_sorry"
     NO_PROGRESS = "no_progress"
+    CONTRADICTORY = "contradictory"
     EXTRACTED = "extracted"
     EXTRACT_FAILED = "extract_failed"
     ALL_PROVED = "all_proved"
@@ -90,6 +100,7 @@ TRANSITIONS: dict[tuple[Stage, Trans], Stage] = {
     (Stage.PROVE, Trans.PROVED):           Stage.ASSEMBLE,
     (Stage.PROVE, Trans.HAS_SORRY):        Stage.EXTRACT,
     (Stage.PROVE, Trans.NO_PROGRESS):      Stage.RETRY,
+    (Stage.PROVE, Trans.CONTRADICTORY):    Stage.FAILED,
 
     (Stage.EXTRACT, Trans.EXTRACTED):      Stage.CHILD_POS,
     (Stage.EXTRACT, Trans.EXTRACT_FAILED): Stage.RETRY,
@@ -123,6 +134,7 @@ class ProverState:
     proved_files: list[str] = field(default_factory=list)
 
     attempt: int = 0
+    contradictory_count: int = 0
     parent_agent: str = "TaskManager"
     failure_reason: str = ""
     last_failure_details: str = ""
@@ -172,6 +184,11 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if not (originals_dir / "Stub.lean").exists():
         shutil.copy2(stub_file, originals_dir / "Stub.lean")
 
+    # Create Stub.clean.lean for retry restoration (before any modifications)
+    stub_clean = workspace_abs / "Stub.clean.lean"
+    if not stub_clean.exists():
+        shutil.copy2(stub_file, stub_clean)
+
     # Copy cheat sheet into workspace so all agents (guide, writer) can read it
     cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
     cheat_dst = workspace_abs / "StrataProofCheatSheet.md"
@@ -179,7 +196,16 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         shutil.copy2(cheat_src, cheat_dst)
 
     # Resume or fresh start
-    restored = getattr(agent, '_restored_state', None)
+    # Always resume from po_checkpoint.json if it exists in the workspace
+    import json as _json
+    restored = None
+    cp_path = workspace_abs / "po_checkpoint.json"
+    if cp_path.exists():
+        try:
+            restored = _json.loads(cp_path.read_text())
+        except (ValueError, KeyError):
+            restored = None
+
     if restored and isinstance(restored, dict):
         state = ProverState(**{k: (Stage(v) if k == "stage" else v)
                                for k, v in restored.items() if k in ProverState.__dataclass_fields__})
@@ -198,6 +224,16 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         match = re.search(r"'([^']+)'", state.theorem_name)
         if match:
             state.theorem_name = match.group(1)
+
+    # Validate theorem_name exists in the file; if not, use the last theorem
+    tools = get_lean_tools()
+    split = tools.split_theorems(f"{workspace_rel}/Stub.lean")
+    if split.blocks and state.theorem_name:
+        names_in_file = [b.name for b in split.blocks]
+        if state.theorem_name not in names_in_file:
+            # Use last theorem as the main one
+            last_thm = split.blocks[-1].name
+            state.theorem_name = last_thm
 
     state.agent_name = agent.spec.name
     agent._workflow_state = state
@@ -290,10 +326,27 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
             f"A proof_writer is about to prove theorem '{state.theorem_name}' in {stub_rel}.\n"
             f"Read the cheat sheet and then advise on the best approach.\n"
             f"Consider: what proof technique fits this theorem's structure? "
-            f"What common pitfalls should the writer avoid?"
+            f"What common pitfalls should the writer avoid?\n"
+            f"If the theorem statement looks contradictory or not provable as stated, "
+            f"say so clearly."
         ),
     )
     guide_preamble = initial_advice.raw_result or ""
+
+    # If guide hints at contradiction, ask for structured confirmation
+    if "contradictory" in guide_preamble.lower() or "not provable" in guide_preamble.lower():
+        verdict = await _ask_guide_contradictory(
+            guide, state.theorem_name,
+            f"Your initial analysis said: {guide_preamble}")
+        if verdict.is_contradictory and verdict.confidence in ("medium", "high"):
+            state.contradictory_count += 1
+            await agent._emit("message",
+                f"[PO] Guide confirms theorem is contradictory "
+                f"(confidence={verdict.confidence}): {verdict.reason}")
+            state.last_failure_details = (
+                f"Guide diagnosed theorem as contradictory: {verdict.reason}")
+            state.failure_reason = "contradictory"
+            return Trans.CONTRADICTORY
 
     action = _build_initial_action(state)
     if guide_preamble:
@@ -319,13 +372,13 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
         result = _check_attempt_result(tools, stub_rel, cwd, original_content)
         write_progress(cwd, state)
 
-        if result["sorry_free"]:
-            await agent._emit("message", "[PO] Proof complete ✅")
-            return Trans.PROVED
         if result["unchanged"]:
             await agent._emit("message", "[PO] No progress — file unchanged")
             state.last_failure_details = "Writer made no changes"
             return Trans.NO_PROGRESS
+        if result["sorry_free"]:
+            await agent._emit("message", "[PO] Proof complete ✅")
+            return Trans.PROVED
         if result["broken"]:
             await agent._emit("message", "[PO] File doesn't compile — cleanup round")
             await writer.run_ai(
@@ -364,10 +417,25 @@ async def _stage_prove(state: ProverState, agent) -> Trans:
         )
         advice = advice_result.raw_result or "Try a different approach."
 
-        if "contradictory" in advice.lower() and "not provable" in advice.lower():
-            await agent._emit("message", f"[PO] Guide says goal is contradictory")
-            state.last_failure_details = f"Guide diagnosed contradictory goal"
-            return Trans.NO_PROGRESS
+        if "contradictory" in advice.lower() or "not provable" in advice.lower():
+            verdict = await _ask_guide_contradictory(
+                guide, state.theorem_name,
+                f"After attempt {attempt + 1}, your diagnosis said: {advice}")
+            if verdict.is_contradictory and verdict.confidence in ("medium", "high"):
+                state.contradictory_count += 1
+                if state.contradictory_count >= 2:
+                    await agent._emit("message",
+                        f"[PO] Guide repeatedly confirms goal is contradictory — aborting: {verdict.reason}")
+                    state.last_failure_details = (
+                        f"Guide diagnosed contradictory goal (confirmed {state.contradictory_count}x): "
+                        f"{verdict.reason}")
+                    state.failure_reason = "contradictory"
+                    return Trans.CONTRADICTORY
+                await agent._emit("message",
+                    f"[PO] Guide says goal may be contradictory (confidence={verdict.confidence}) "
+                    f"— will retry with new approach")
+                state.last_failure_details = f"Guide diagnosed potentially contradictory goal: {verdict.reason}"
+                return Trans.NO_PROGRESS
 
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
         await agent._emit("message", f"[PO] Feeding guidance to writer...")
@@ -543,6 +611,15 @@ async def _stage_child_pos(state: ProverState, agent) -> Trans:
     import json as _json
     tools = get_lean_tools()
 
+    # Enforce depth limit — refuse to recurse further
+    if state.depth + 1 > MAX_RECURSION_DEPTH:
+        await agent._emit("message",
+            f"[PO] Depth limit reached ({MAX_RECURSION_DEPTH}) — cannot spawn child POs")
+        state.last_failure_details = (
+            f"Max recursion depth ({MAX_RECURSION_DEPTH}) reached, "
+            f"helpers still have sorry")
+        return Trans.CHILD_FAILED
+
     # Only attempt child POs for files that actually have sorry
     remaining = [f for f in state.decomposed_files
                  if f not in state.proved_files and tools.has_sorry(f)]
@@ -585,12 +662,9 @@ async def _stage_child_pos(state: ProverState, agent) -> Trans:
             await swarm_checkpoint(agent, f"child_proved:{Path(lemma_file).name}")
         else:
             reason = result.get("details", "unknown") if result else "no output"
-            failed.append((lemma_file, reason))
-            await agent._emit("message", f"[PO] ❌ Child failed: {Path(lemma_file).name}: {reason}")
-
-    if failed:
-        state.last_failure_details = f"{len(failed)} children failed: {[Path(f).name for f, _ in failed[:3]]}"
-        return Trans.CHILD_FAILED
+            await agent._emit("message", f"[PO] ❌ Child failed: {Path(lemma_file).name}: {reason} — aborting remaining children")
+            state.last_failure_details = f"Child failed: {Path(lemma_file).name}: {reason}"
+            return Trans.CHILD_FAILED
 
     return Trans.ALL_PROVED
 
@@ -710,9 +784,24 @@ async def _stage_assemble(state: ProverState, agent) -> Trans:
 # ─── Stage: validate ─────────────────────────────────────────────────────────
 
 async def _stage_validate(state: ProverState, agent) -> Trans:
-    """Final check: compiles, no sorry, no axiom."""
+    """Final check: compiles, no sorry, no axiom — including all decomposed helpers."""
+    cwd = _resolve(agent)
     stub_rel = f"{state.workspace}/Stub.lean"
     tools = get_lean_tools()
+
+    # Verify decomposed source files exist for all imports
+    decomposed_dir = cwd / state.workspace / "decomposed"
+    stub_content = (cwd / stub_rel).read_text()
+    decomposed_module_prefix = state.workspace.replace("/", ".") + ".decomposed."
+    for line in stub_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("import ") and decomposed_module_prefix in stripped:
+            import_module = stripped.removeprefix("import ").strip()
+            # Convert module path to file path
+            rel_path = import_module.replace(".", "/") + ".lean"
+            if not (cwd / rel_path).exists():
+                state.last_failure_details = f"Validation: imported module {import_module} has no source file"
+                return Trans.INVALID
 
     cr = tools.check_compiles(stub_rel)
     if not cr.success:
@@ -722,6 +811,14 @@ async def _stage_validate(state: ProverState, agent) -> Trans:
     if tools.has_sorry(stub_rel):
         state.last_failure_details = "Validation: still has sorry"
         return Trans.INVALID
+
+    # Check all decomposed helpers for sorry too
+    if decomposed_dir.exists():
+        for helper in decomposed_dir.glob("lemma_helper_*.lean"):
+            helper_rel = str(helper.relative_to(cwd))
+            if tools.has_sorry(helper_rel):
+                state.last_failure_details = f"Validation: helper {helper.name} still has sorry"
+                return Trans.INVALID
 
     ax = tools.check_axioms(stub_rel)
     if ax.has_axiom:
@@ -751,11 +848,25 @@ async def _stage_retry(state: ProverState, agent) -> Trans:
         decomposed_dir.rename(target)
     decomposed_dir.mkdir(parents=True, exist_ok=True)
 
-    # Restore Stub.lean from clean backup
+    # Invalidate stale .olean cache for workspace (decomposed + Stub)
+    olean_base = cwd / ".lake" / "build" / "lib" / "lean" / state.workspace
+    if olean_base.exists():
+        shutil.rmtree(olean_base)
+
+    # Restore Stub.lean from clean backup (mandatory — retrying with stale content is invalid)
     stub_clean = cwd / state.workspace / "Stub.clean.lean"
     stub_path = cwd / state.workspace / "Stub.lean"
     if stub_clean.exists():
         shutil.copy2(stub_clean, stub_path)
+    else:
+        # Fall back to _originals if clean backup is missing
+        originals_stub = cwd / state.workspace / "_originals" / "Stub.lean"
+        if originals_stub.exists():
+            shutil.copy2(originals_stub, stub_path)
+            await agent._emit("message", "[PO] WARNING: Stub.clean.lean missing, restored from _originals")
+        else:
+            state.last_failure_details = "Cannot retry: no clean Stub.lean backup found"
+            return Trans.MAX_RETRIES
 
     # Notify guide about the failure (it accumulates context)
     guide = await _get_guide(agent, state)
@@ -888,6 +999,30 @@ async def _cleanup_all(agent):
 
 def _resolve(agent) -> Path:
     return Path(agent._cwd) if agent._cwd else Path.cwd()
+
+
+async def _ask_guide_contradictory(guide, theorem_name: str, context: str) -> ContradictionVerdict:
+    """Ask the guide point-blank whether the theorem is contradictory/unprovable.
+
+    Uses structured output so we get a clean boolean rather than parsing free text.
+    """
+    result = await guide.run_ai(
+        inp=(
+            f"DIRECT QUESTION — answer with structured output only.\n\n"
+            f"Based on your analysis of theorem '{theorem_name}', "
+            f"is the theorem statement itself contradictory or unprovable as stated?\n\n"
+            f"Context: {context}\n\n"
+            f"This is NOT asking whether the proof is hard — it's asking whether "
+            f"the statement is FALSE (no valid proof can exist).\n"
+            f"Be conservative: only say is_contradictory=true if you are confident "
+            f"the statement is actually false, not merely difficult."
+        ),
+        result_type=ContradictionVerdict,
+        max_turns=3,
+    )
+    if result.output and isinstance(result.output, ContradictionVerdict):
+        return result.output
+    return ContradictionVerdict()
 
 
 def _check_attempt_result(tools, stub_rel: str, cwd: Path, original_content: str) -> dict:

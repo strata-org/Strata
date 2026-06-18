@@ -571,20 +571,30 @@ class SwarmLeanTools:
         return ImportsResult(imports=result.get("imports", []))
 
     def check_compiles(self, file_path: str) -> CompileResult:
-        """Check if a file compiles. Runs lake env lean directly from Python.
+        """Check if a file compiles. Uses lake build for reliable dependency handling.
 
-        NOTE: lake env lean outputs diagnostics on STDOUT (not stderr).
-        We check both to be safe.
+        Falls back to lake env lean if lake build can't determine the module name.
         """
         import subprocess
         try:
+            # Prefer lake build (handles olean rebuilds)
+            module_name = file_path.replace("/", ".").removesuffix(".lean")
             result = subprocess.run(
-                ["lake", "env", "lean", file_path],
+                ["lake", "build", module_name],
                 cwd=str(self._root),
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
+            # If lake build fails, fall back to lake env lean for error diagnostics
+            if result.returncode != 0:
+                result = subprocess.run(
+                    ["lake", "env", "lean", file_path],
+                    cwd=str(self._root),
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
             # Lean outputs diagnostics on stdout; check both stdout and stderr
             output = result.stdout + "\n" + result.stderr
             has_sorry = "sorry" in output or "declaration uses 'sorry'" in output

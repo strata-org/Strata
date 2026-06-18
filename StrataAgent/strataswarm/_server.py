@@ -292,29 +292,58 @@ class SwarmDashboard:
             checkpoint_name = body.get("checkpoint", "")
             if not checkpoint_name:
                 return {"status": "error", "message": "checkpoint name required"}
-            if not self._swarm or not self._swarm._checkpoint_manager:
-                return {"status": "error", "message": "no swarm or checkpointing disabled"}
+
+            # Find checkpoint directory — don't require a running swarm
+            cp_base = SWARM_SAVE_DIR / "checkpoints"
+            cp_dir_path = cp_base / checkpoint_name
+            if not cp_dir_path.exists():
+                return {"status": "error", "message": f"checkpoint '{checkpoint_name}' not found"}
+
             try:
-                state = self._swarm._checkpoint_manager.restore(checkpoint_name)
+                # Load state from checkpoint
+                import yaml as _yaml
+                state_file = cp_dir_path / "state.yaml"
+                if state_file.exists():
+                    state = _yaml.safe_load(state_file.read_text()) or {}
+                else:
+                    state = {}
                 sessions = state.get("sessions", {})
 
                 # Load per-agent checkpoint .md files for resume
-                cp_dir = self._swarm._checkpoint_manager._dir / checkpoint_name / "agents"
+                agents_dir = cp_dir_path / "agents"
                 agent_checkpoints: dict[str, str] = {}
-                if cp_dir.exists():
-                    for f in cp_dir.glob("*.md"):
+                if agents_dir.exists():
+                    for f in agents_dir.glob("*.md"):
                         agent_checkpoints[f.stem] = f.read_text()
 
+                # Load agent specs if not already loaded
+                if not self._agent_specs:
+                    swarm_name = state.get("swarm_name", "LeanSwarm")
+                    swarm_spec_path = AGENT_SPECS_DIR / f"{swarm_name}.yaml"
+                    if swarm_spec_path.exists():
+                        raw = yaml.safe_load(swarm_spec_path.read_text())
+                        agents_raw = raw.get("agents", [])
+                        if agents_raw and isinstance(agents_raw[0], str):
+                            agents_dir = AGENT_SPECS_DIR / "agents"
+                            for agent_name in agents_raw:
+                                agent_path = agents_dir / f"{agent_name}.yaml"
+                                if agent_path.exists():
+                                    agent_raw = yaml.safe_load(agent_path.read_text())
+                                    self._agent_specs.append(_agent_request_from_raw(agent_raw, agent_name))
+                        self._swarm_name = raw.get("name", swarm_name)
+                        self._nudge_module = raw.get("nudge_module")
+                        self._manager = raw.get("manager")
+
                 chat_data = {
-                    "swarm_name": state.get("swarm_name", "resumed"),
-                    "agents": [s.model_dump() for s in self._agent_specs],
+                    "swarm_name": state.get("swarm_name", checkpoint_name),
+                    "agents": [s.model_dump() for s in self._agent_specs] if self._agent_specs else [],
                     "sessions": sessions,
                     "agent_checkpoints": agent_checkpoints,
                 }
                 await self._resume_from_chat(chat_data)
                 return {"status": "resumed", "from": checkpoint_name}
-            except FileNotFoundError:
-                return {"status": "error", "message": f"checkpoint '{checkpoint_name}' not found"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
 
         @self.app.post("/api/swarm/create_new")
         async def create_new() -> dict[str, str]:
@@ -900,6 +929,7 @@ class SwarmDashboard:
 
             agent_spec = AgentSpec(
                 name=spec_req.name,
+                module=spec_req.module,
                 system_prompt=spec_req.system_prompt,
                 prompt=spec_req.prompt,
                 tools=tools,
@@ -919,7 +949,7 @@ class SwarmDashboard:
                 max_inbound_length=spec_req.max_inbound_length,
                 max_inbound_response=spec_req.max_inbound_response,
                 max_outbound_length=spec_req.max_outbound_length,
-                max_outbound_response=spec_req.max_outbound_response,
+                max_outbound_response=spec_req.max_outbound_length,
             )
 
             if shard_config and shard_config.replicas > 1:

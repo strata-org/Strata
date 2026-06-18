@@ -205,7 +205,14 @@ class SwarmAgent:
                 await self._emit_heartbeat_if_needed()
                 await self._emit("message", "[Waiting for backend response...]")
                 message = await asyncio.wait_for(msg_iter.__anext__(), timeout=stall_timeout)
-                self._last_message_time = time.monotonic()  # reset watchdog
+                # Only reset watchdog on substantive messages (not heartbeats)
+                if message.type != "heartbeat":
+                    self._last_message_time = time.monotonic()
+                else:
+                    # Heartbeat received but check if we've been stalled too long
+                    elapsed = time.monotonic() - self._last_message_time
+                    if stall_timeout and elapsed > stall_timeout:
+                        raise asyncio.TimeoutError()
             except StopAsyncIteration:
                 return True
             except asyncio.TimeoutError:
