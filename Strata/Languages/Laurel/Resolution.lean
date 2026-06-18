@@ -2640,40 +2640,20 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
     output: a single output `T` for single-output functional procedures,
     `Unknown` otherwise. Bodies without an impl block (`Abstract`, `External`) ignore
     `expected`. -/
-def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
+def resolveBody (body : Body) : ResolveM Body := do
   match body with
   | .Transparent b =>
-    let b' ← Check.resolveStmtExpr b expected
+    let (b', _) ← Synth.resolveStmtExpr b
     return .Transparent b'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM (Check.resolveStmtExpr · expected)
+    let impl' ← impl.mapM Synth.resolveStmtExpr
     let mods' ← mods.mapM resolveStmtExpr
-    return .Opaque posts' impl' mods'
+    return .Opaque posts' (impl'.map (fun t => t.1)) mods'
   | .Abstract posts =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     return .Abstract posts'
   | .External => return .External
-
-/-- Compute the expected *value type* `A` for a procedure body, i.e.
-    the `A` in `Γ ⊢ body ⇐ A`. Functional procedures with a single
-    output `T` expect `A = T`: the body's last statement is the result
-    and must produce a `T`. Non-functional procedures expect
-    `A = Unknown`: their body is run as a statement and the last
-    statement's value (if any) is discarded — outputs are observed via
-    `return e` (whose payload is matched against the procedure's
-    declared outputs by `Resolution.Check.return`) or via named-output
-    assignment.
-
-    This computes only the body's value type. The procedure's declared
-    output list is bound separately by the procedure rule
-    (`resolveProcedure` / `resolveInstanceProcedure`) into
-    `ResolveState.answerType`. -/
-private def procedureBodyType (isFunctional : Bool) (outputs : List Parameter)
-    (source : Option FileRange) : HighTypeMd :=
-  match isFunctional, outputs with
-  | true, [singleOutput] => singleOutput.type
-  | _, _ => { val := .Unknown, source := source }
 
 /-- (Procedure)
     ```
@@ -2696,12 +2676,11 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
     -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
     -- so that frontends emitting `Exit bodyLabel` for early-return lowering
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
@@ -2740,9 +2719,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    let bodyExpected := procedureBodyType proc.isFunctional outputs' proc.name.source
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body bodyExpected
+    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     if !proc.isFunctional && body'.isTransparent && !proc.name.text.any (· == '$') then
       let diag := diagnosticFromSource proc.name.source
