@@ -11,17 +11,16 @@ open Strata
 
 /-! ## Function called with too many arguments
 
-`showLocations := true` prints each diagnostic's file-relative `file:line:col`
-(computed from the snippet's base line — no manual offsets), while the inline
+`testLaurel` prints each diagnostic's file-relative `line:col` range (computed
+from the snippet's base line — no manual offsets) by default, while the inline
 `// ^^^` annotation still asserts the error. The golden below thus *shows* the
 localization without catching a spurious "unexpected diagnostic". -/
 
 /--
-info: T22_ArityMismatch.lean:32:2  7:2-23  error: ❌ Type checking error.
-Impossible to unify int with (arrow int $__ty35).
+info: 31:16-23  error: call to 'f' expects 1 argument(s) but 2 were provided
 -/
 #guard_msgs in
-#eval testLaurel (showLocations := true) <|
+#eval testLaurel <|
 #strata
 program Laurel;
 function f(x: int): int { x };
@@ -30,7 +29,7 @@ procedure caller()
   opaque
 {
   var y: int := f(1, 2)
-//^^^^^^^^^^^^^^^^^^^^^ error: Impossible to unify int with (arrow int $__ty35).
+//              ^^^^^^^ error: call to 'f' expects 1 argument(s) but 2 were provided
 };
 #end
 
