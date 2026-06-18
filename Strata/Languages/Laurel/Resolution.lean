@@ -1089,10 +1089,7 @@ def Check.return (exprMd : StmtExprMd)
     | _ => let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
   match val, expectedReturn with
   | none,   some []          => pure ()
-  | none,   some [singleOutput] =>
-    -- `return;` synthesizes the missing payload as `TVoid`; require it to
-    -- be a consistent subtype of the declared output.
-    checkSubtype source singleOutput { val := .TVoid, source := source }
+  | none,   some [singleOutput] => pure ()
   | none,   some _           => pure ()
   | some _, some []          =>
     let diag := diagnosticFromSource source
@@ -1693,6 +1690,32 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
+
+  -- Hack because we use these polymorphic map primitives but Laurel does not
+  -- support polymorphism yet, so they cannot be type-checked against their
+  -- placeholder `int` signatures. Instead we resolve the arguments and infer the
+  -- result type structurally from them, keeping a concrete `HighType` flowing into
+  -- Core translation:
+  --   * `select(map, key)`     ⇒ the map's value type
+  --   * `update(map, key, val)` ⇒ the map type itself
+  --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
+  if callee == "select" || callee == "update" || callee == "const" then
+    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Synth.resolveStmtExpr a)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
+    let resultTy : HighTypeMd ←
+      match callee, argTys with
+      | "select", mapTy :: _ =>
+        match mapTy.val with
+        | .TMap _ valueTy => pure valueTy
+        | _ => pure ⟨ .Unknown, source ⟩
+      | "update", mapTy :: _ => pure mapTy
+      | "const", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
+      | _, _ => pure ⟨ .Unknown, source ⟩
+    return (.StaticCall callee args', resultTy)
+
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
   let (retTy, paramTypes) ← getCallInfo callee
@@ -1719,12 +1742,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
   pure (.StaticCall callee' args', retTy)
   termination_by (exprMd, 1)
   decreasing_by
-    apply Prod.Lex.left
-    have hsz := exprMd.sizeOf_val_lt
-    rw [h] at hsz
-    simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-    omega
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
+      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
+      omega
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
