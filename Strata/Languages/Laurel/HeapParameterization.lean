@@ -483,8 +483,8 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Type the heap parameters as the prelude `Heap` datatype so they stay
     -- consistent with the generated heap functions (`readField`, `updateField`,
     -- `increment`, `Heap..nextReference!`), all of which are declared over `Heap`.
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.UserDefined "Heap", none⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", none⟩ }
+    let heapInParam : Parameter := { name := heapInName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
+    let heapOutParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
@@ -525,7 +525,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure only reads the heap - add $heap as input only.
     -- Use the prelude `Heap` datatype for the parameter type (see the
     -- writes-heap branch above for rationale).
-    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", none⟩ }
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
