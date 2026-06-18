@@ -48,6 +48,6 @@ procedure mismatch()
 {
   var x: int;
   assign x := twoReturns()
-//^^^^^^^^^^^^^^^^^^^^^^^^ error: Assignment target count mismatch: 1 targets but right-hand side produces 2 values
+//            ^^^^^^^^^^^^ error: expected 'int', got '(int, int)'
 };
 #end
