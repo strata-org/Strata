@@ -8,11 +8,6 @@ TESTDATA="testdata"
 GEN_DIR="testdata/generated"
 JAR="testdata/ion-java-1.11.11.jar"
 
-# Download ion-java if needed
-if [ ! -f "$JAR" ]; then
-  echo "=== Downloading ion-java ==="
-  curl -sLo "$JAR" "https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar"
-fi
 
 echo "=== Generating Java classes from dialect ==="
 (cd "$STRATA_ROOT" && lake env lean --run Scripts/JavaGenTestData.lean javaGen "$STRATA_ROOT/StrataTestExtra/Languages/Java/$TESTDATA/Simple.dialect.st" com.strata.simple "$STRATA_ROOT/StrataTestExtra/Languages/Java/$GEN_DIR")
