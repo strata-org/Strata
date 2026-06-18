@@ -55,15 +55,14 @@ relation `BodyTransport A B subst body_src body_h`: a per-statement rewrite wher
   `substFvarMany g subst` and its body rewritten recursively.
 
 `Block.bodyTransport` then turns a `BodyTransport` derivation into the
-eval-carrying body simulation `BodySimE A B subst body_src body_h` (the loop
-driver's `body_sim` slot, after forgetting the eval conjunct).  The proof is by
+eval-carrying SUM-TYPED body simulation `BodySimES A B subst body_src body_h` (the
+loop driver's sum-typed `body_sim` slot).  The proof is by
 induction on the `BodyTransport` derivation; the nested-loop arm feeds the
 inductive hypothesis on the inner body into the renamed-guard loop driver.
 -/
 
 open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendStoreOne_other)
-open OptEStepBProvider (BodySim BodySimE StmtSimE bodySimE_cons bodySimE_nil
-  bodySimE_to_bodySim nestedLoop_stmtSimE
+open OptEStepBProvider (StmtSimE
   BodySimES StmtSimES bodySimES_cons bodySimES_nil bodySimES_to_bodySimSum
   stmtSimE_to_stmtSimES_of_noExit cmd_stmt_no_exit exit_stmtSimES
   block_stmtSimES ite_stmtSimES ite_nondet_stmtSimES nestedLoop_stmtSimES)

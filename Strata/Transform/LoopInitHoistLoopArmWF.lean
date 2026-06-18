@@ -2314,13 +2314,12 @@ two-guard loop driver → stitch (havoc prelude ++ loop run) → `stepJ_restrict
 back to the ambient carriers — producing the §E sum-typed terminal conclusion
 for the residual `havocStmts' E ++ [.loop (.det g) none [] body₃ md]`. -/
 
-open LoopInitHoistLoopDriver (BodySim BodySimSum BodySimUSF BodySimUSFSum bodySim_is_driver_slot
-  bodySimUSF_is_driver_slot bodySimUSFSum_is_driver_slot compose_union compose_union_sf
+open LoopInitHoistLoopDriver (BodySimSum BodySimUSFSum
+  bodySimUSFSum_is_driver_slot
   compose_union_sf_sum
-  bridge_in_guarded bridge_in_guarded_undef_sf stepJ_restrict
-  loopDet_lift_2g_recovers_single
-  loopDet_lift_sf_undef_recovers_single loopDet_lift_sf_undef_TE_recovers_single
-  loopDet_lift_sf_undef_E_recovers_single loopDet_no_exit
+  bridge_in_guarded_undef_sf stepJ_restrict
+  loopDet_lift_sf_undef_TE_recovers_single
+  loopDet_lift_sf_undef_E_recovers_single
   prelude_bridge_list_md_frame)
 
 /-- Loop-entry union `HoistInv` builder (guarded frame). -/
