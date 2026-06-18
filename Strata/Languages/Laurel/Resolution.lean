@@ -722,12 +722,24 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Hole det (some ty) =>
     let ty' ← resolveHighType ty
     pure (.Hole det (some ty'), ty')
-  | _ =>
-    let unknown : HighTypeMd := { val := .Unknown, source := source }
-    typeMismatch source (some expr)
-      "this expression's type cannot be synthesized; try to annotate it or use it in a context where there is an expected type"
-      unknown
-    pure (expr, unknown)
+  | .Var (.Declare param) => do
+    let r ← Check.varDeclare param source
+    return (r, ⟨ .TVoid, source ⟩)
+  | .While cond invs dec body => do
+    let r ← Check.while exprMd cond invs dec body source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Exit target => do
+    let r ← Check.exit target source
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Return val => do
+    let r ← Check.return exprMd val source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Assert ⟨condExpr, summary, free⟩ => do
+    let r ← Check.assert exprMd condExpr summary free source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
+  | .Assume cond => do
+    let r ← Check.assume exprMd cond source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
@@ -776,16 +788,6 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.assign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
-  | .Var (.Declare param) => Check.varDeclare param source
-  | .While cond invs dec body =>
-    Check.while exprMd cond invs dec body source (by rw [h_node])
-  | .Exit target => Check.exit target source
-  | .Return val =>
-    Check.return exprMd val source (by rw [h_node])
-  | .Assert ⟨condExpr, summary, free⟩ =>
-    Check.assert exprMd condExpr summary free source (by rw [h_node])
-  | .Assume cond =>
-    Check.assume exprMd cond source (by rw [h_node])
   | .Old val =>
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
@@ -1159,10 +1161,7 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
     statement when the block itself sits in statement position
     (`expected = TVoid`). -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
-  match s.val with
-  | .StaticCall .. | .InstanceCall .. | .IncrDecr .. =>
-    let (s', _) ← Synth.resolveStmtExpr s; pure s'
-  | _ => Check.resolveStmtExpr s { val := .TVoid, source := s.source }
+  let (s', _) ← Synth.resolveStmtExpr s; pure s'
   termination_by (s, 4)
   decreasing_by all_goals (apply Prod.Lex.right; decide)
 
