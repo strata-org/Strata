@@ -176,10 +176,8 @@ private theorem instantiateWithSubst_go_context (C : LContext CoreLParams)
   | cons t tr ih =>
     intro Env result h
     simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
-    elim_err h
-    rename_i v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
     injection h with h'; rw [← h']
     rw [ih Env_mid (mtrest, Env_end) h_rest]
     exact LTy_instantiateWithCheck_context' t C Env mt Env_mid h_iwc
@@ -191,8 +189,7 @@ private theorem instantiateEnvWithSubst_context
     (h : LMonoTys.instantiateEnvWithSubst ids mtys Env = .ok result) :
     result.2.fst.context = Env.context := by
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
+  elim_err h with v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
   simp only [Except.ok.injEq] at h
   rw [← h]
   show genEnv'.context = Env.genEnv.context
@@ -204,10 +201,8 @@ theorem instantiateWithSubst_preserves_context (C : LContext CoreLParams)
     (h : LMonoTySignature.instantiateWithSubst C Env tyArgs sig = .ok result) :
     result.2.fst.context = Env.context := by
   simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
-  elim_err h
-  rename_i v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
   simp only [Except.ok.injEq] at h
   rw [← h]
   rw [instantiateWithSubst_go_context C _ Env₁ (newtys, Env₂) h_go]
@@ -227,10 +222,8 @@ private theorem instantiateWithSubst_go_stateSubstInfo (C : LContext CoreLParams
   | cons t tr ih =>
     intro Env result h
     simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
-    elim_err h
-    rename_i v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
     injection h with h'; rw [← h']
     rw [ih Env_mid (mtrest, Env_end) h_rest]
     exact LTy_instantiateWithCheck_preserves_stateSubstInfo t C Env mt Env_mid h_iwc
@@ -242,17 +235,14 @@ theorem instantiateWithSubst_preserves_stateSubstInfo (C : LContext CoreLParams)
     (h : LMonoTySignature.instantiateWithSubst C Env tyArgs sig = .ok result) :
     result.2.fst.stateSubstInfo = Env.stateSubstInfo := by
   simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
-  elim_err h
-  rename_i v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
   simp only [Except.ok.injEq] at h
   rw [← h]
   rw [instantiateWithSubst_go_stateSubstInfo C _ Env₁ (newtys, Env₂) h_go]
   -- `instantiateEnvWithSubst` only changes `genEnv`.
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h_env
-  elim_err h_env
-  rename_i vg h_gen; obtain ⟨freshtvs, genEnv'⟩ := vg
+  elim_err h_env with vg h_gen; obtain ⟨freshtvs, genEnv'⟩ := vg
   simp only [Except.ok.injEq, Prod.mk.injEq] at h_env
   obtain ⟨_, h_env1, _⟩ := h_env; rw [← h_env1]
 
@@ -262,8 +252,7 @@ private theorem LTy_instantiateAndSubst_context
     (h : LTy.instantiateAndSubst ty C E = .ok (m, E')) :
     E'.context = E.context := by
   simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
+  elim_err h with v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
   simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨_, he⟩ := h; rw [← he]
   exact LTy_instantiateWithCheck_context' ty C E mt Emid h_iwc
@@ -277,8 +266,7 @@ private theorem Identifier_instantiateAndSubst_context
   split at h
   · rename_i ty h_find
     simp only [Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_ias; obtain ⟨mt, Emid⟩ := v1
+    elim_err h with v1 h_ias; obtain ⟨mt, Emid⟩ := v1
     simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨_, he⟩ := h; rw [← he]
     exact LTy_instantiateAndSubst_context ty C E Emid mt h_ias
@@ -291,8 +279,7 @@ private theorem LTy_instantiateAndSubst_stateSubstInfo
     (h : LTy.instantiateAndSubst ty C E = .ok (m, E')) :
     E'.stateSubstInfo = E.stateSubstInfo := by
   simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
+  elim_err h with v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
   simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨_, he⟩ := h; rw [← he]
   exact LTy_instantiateWithCheck_preserves_stateSubstInfo ty C E mt Emid h_iwc
@@ -306,8 +293,7 @@ private theorem Identifier_instantiateAndSubst_stateSubstInfo
   split at h
   · rename_i ty h_find
     simp only [Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_ias; obtain ⟨mt, Emid⟩ := v1
+    elim_err h with v1 h_ias; obtain ⟨mt, Emid⟩ := v1
     simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨_, he⟩ := h; rw [← he]
     exact LTy_instantiateAndSubst_stateSubstInfo ty C E Emid mt h_ias
@@ -326,14 +312,12 @@ private theorem instantiateAndSubsts_preserves_stateSubstInfo
     obtain ⟨_, he⟩ := h; rw [← he]
   | cons x xrest ih =>
     simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i ans h_step; cases ans with
+    elim_err h with ans h_step; cases ans with
     | none => simp [pure, Except.pure] at h
     | some p =>
       obtain ⟨xty, Env_mid⟩ := p
       simp only at h
-      elim_err h
-      rename_i ans2 h_rest; cases ans2 with
+      elim_err h with ans2 h_rest; cases ans2 with
       | none => simp [pure, Except.pure] at h
       | some p2 =>
         obtain ⟨xtys, Env_end⟩ := p2
@@ -354,14 +338,12 @@ theorem instantiateAndSubsts_preserves_context (xs : List CoreLParams.Identifier
     obtain ⟨_, he⟩ := h; rw [← he]
   | cons x xrest ih =>
     simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i ans h_step; cases ans with
+    elim_err h with ans h_step; cases ans with
     | none => simp [pure, Except.pure] at h
     | some p =>
       obtain ⟨xty, Env_mid⟩ := p
       simp only at h
-      elim_err h
-      rename_i ans2 h_rest; cases ans2 with
+      elim_err h with ans2 h_rest; cases ans2 with
       | none => simp [pure, Except.pure] at h
       | some p2 =>
         obtain ⟨xtys, Env_end⟩ := p2
@@ -379,8 +361,7 @@ private theorem LTy_instantiateAndSubst_TEnvWF
     (h_wf : TEnvWF (T := CoreLParams) E) :
     TEnvWF (T := CoreLParams) E' := by
   simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
+  elim_err h with v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
   simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨_, he⟩ := h; rw [← he]
   exact LTy_instantiateWithCheck_TEnvWF ty C E mt Emid h_iwc h_wf
@@ -395,8 +376,7 @@ private theorem Identifier_instantiateAndSubst_TEnvWF
   split at h
   · rename_i ty h_find
     simp only [Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_ias; obtain ⟨mt, Emid⟩ := v1
+    elim_err h with v1 h_ias; obtain ⟨mt, Emid⟩ := v1
     simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨_, he⟩ := h; rw [← he]
     exact LTy_instantiateAndSubst_TEnvWF ty C E Emid mt h_ias h_wf
@@ -414,14 +394,12 @@ theorem instantiateAndSubsts_preserves_wf (xs : List CoreLParams.Identifier)
     obtain ⟨_, he⟩ := h; rw [← he]; exact h_wf
   | cons x xrest ih =>
     simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i ans h_step; cases ans with
+    elim_err h with ans h_step; cases ans with
     | none => simp [pure, Except.pure] at h
     | some p =>
       obtain ⟨xty, Env_mid⟩ := p
       simp only at h
-      elim_err h
-      rename_i ans2 h_rest; cases ans2 with
+      elim_err h with ans2 h_rest; cases ans2 with
       | none => simp [pure, Except.pure] at h
       | some p2 =>
         obtain ⟨xtys, Env_end⟩ := p2
@@ -441,8 +419,7 @@ private theorem instantiateEnvWithSubst_TEnvWF
     (h_wf : TEnvWF (T := CoreLParams) Env) :
     TEnvWF (T := CoreLParams) result.2.fst := by
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
+  elim_err h with v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
   simp only [Except.ok.injEq] at h
   rw [← h]
   show TEnvWF (T := CoreLParams)
@@ -482,10 +459,8 @@ private theorem instantiateWithSubst_go_TEnvWF (C : LContext CoreLParams)
   | cons t tr ih =>
     intro Env result h h_wf
     simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
-    elim_err h
-    rename_i v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
     injection h with h'; rw [← h']
     have h_mid_wf : TEnvWF (T := CoreLParams) Env_mid :=
       LTy_instantiateWithCheck_TEnvWF t C Env mt Env_mid h_iwc h_wf
@@ -498,10 +473,8 @@ theorem instantiateWithSubst_preserves_wf (C : LContext CoreLParams)
     (h_wf : TEnvWF (T := CoreLParams) Env) :
     TEnvWF (T := CoreLParams) result.2.fst := by
   simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
-  elim_err h
-  rename_i v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
   simp only [Except.ok.injEq] at h
   rw [← h]
   have h_env_wf : TEnvWF (T := CoreLParams) Env₁ :=
@@ -519,8 +492,7 @@ theorem freeVarChecks_implies_WellScoped (Env : TEnv Unit)
   | nil => intro e he; simp at he
   | cons hd tl ih =>
     simp only [TEnv.freeVarChecks, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_hd
+    elim_err h with v1 h_hd
     intro e he
     simp only [List.mem_cons] at he
     rcases he with rfl | he
@@ -542,8 +514,7 @@ private theorem resolves_go_length (C : LContext CoreLParams)
   | cons hd tl ih =>
     intro Env Env' acc ets h
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_hd; obtain ⟨et, Env_mid⟩ := v1
+    elim_err h with v1 h_hd; obtain ⟨et, Env_mid⟩ := v1
     have h_ih := ih Env_mid Env' (et :: acc) ets h
     simp only [List.length_cons] at h_ih ⊢
     omega
@@ -565,8 +536,7 @@ private theorem instantiateWithCheck_forAll_nil_resolveAliases
     ∃ Env'', LMonoTy.resolveAliases m Env = .ok (mt, Env'') := by
   simp only [LTy.instantiateWithCheck, LTy.resolveAliases, LTy.instantiate,
     Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_ra; obtain ⟨mty', Env1⟩ := v1
+  elim_err h with v1 h_ra; obtain ⟨mty', Env1⟩ := v1
   simp only at h h_ra
   elim_errs h
   simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
@@ -586,8 +556,7 @@ private theorem instantiateEnvWithSubst_decompose
       result.2.2 = [ids.zip (freshtvs.map LMonoTy.ftvar)] ∧
       result.2.1.context = Env.context := by
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
+  elim_err h with v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
   simp only [Except.ok.injEq] at h
   subst h
   refine ⟨freshtvs, genEnv', h_gen, rfl, rfl, ?_⟩
@@ -613,10 +582,8 @@ private theorem instantiateWithSubst_go_elem_aliasEquiv (C : LContext CoreLParam
     intro i hi; exact absurd hi (Nat.not_lt_zero i)
   | cons t trest ih =>
     simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
-    elim_err h
-    rename_i v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_nt, _⟩ := h; subst h_nt
     have h_mid_ctx : Env_mid.context = Env.context :=
@@ -658,10 +625,8 @@ theorem instantiateWithSubst_elem_aliasEquiv (C : LContext CoreLParams)
         ((ListMap.values v2.fst).get ⟨i, hi2⟩) := by
   -- Unfold instantiateWithSubst: instantiateEnvWithSubst then the go loop.
   simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v_env h_env; obtain ⟨mtys, Env_e, S⟩ := v_env
-  elim_err h
-  rename_i v_go h_go; obtain ⟨newtys, Env₂⟩ := v_go
+  elim_err h with v_env h_env; obtain ⟨mtys, Env_e, S⟩ := v_env
+  elim_err h with v_go h_go; obtain ⟨newtys, Env₂⟩ := v_go
   simp only [Except.ok.injEq] at h
   -- v2 = (sig.keys.zip newtys, Env₂, S)
   subst h
@@ -824,14 +789,12 @@ theorem instantiateAndSubsts_elem (xs : List CoreLParams.Identifier)
   | cons x xrest ih =>
     -- Decompose `instantiateAndSubsts (x :: xrest)`.
     simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i ans h_step; cases ans with
+    elim_err h with ans h_step; cases ans with
     | none => simp [pure, Except.pure] at h
     | some p =>
       obtain ⟨xty, Env_mid⟩ := p
       simp only at h
-      elim_err h
-      rename_i ans2 h_rest; cases ans2 with
+      elim_err h with ans2 h_rest; cases ans2 with
       | none => simp [pure, Except.pure] at h
       | some p2 =>
         obtain ⟨xtys, Env_end⟩ := p2
@@ -848,14 +811,12 @@ theorem instantiateAndSubsts_elem (xs : List CoreLParams.Identifier)
           simp only [LTy.boundVars] at h_bv; subst h_bv
           -- Peel the `Option`-lift: `instantiateAndSubst (forAll [] body) C Env = .ok (mt_x, Env_iwc)`.
           simp only [Bind.bind, Except.bind] at h_step
-          elim_err h_step
-          rename_i v_ias h_ias; obtain ⟨mt_x, Env_iwc⟩ := v_ias
+          elim_err h_step with v_ias h_ias; obtain ⟨mt_x, Env_iwc⟩ := v_ias
           simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h_step
           obtain ⟨h_xty, h_envmid⟩ := h_step
           -- Decompose `LTy.instantiateAndSubst` into its `instantiateWithCheck` + subst steps.
           simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h_ias
-          elim_err h_ias
-          rename_i v_iwc h_iwc; obtain ⟨mt_resolved, Env_resolved⟩ := v_iwc
+          elim_err h_ias with v_iwc h_iwc; obtain ⟨mt_resolved, Env_resolved⟩ := v_iwc
           simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h_ias
           obtain ⟨h_mtx, h_env_res⟩ := h_ias
           -- resolveAliases body Env = .ok (mt_resolved, _).
@@ -1066,8 +1027,7 @@ private theorem resolves_go_HasType_core (C : LContext CoreLParams)
   | cons e erest ih =>
     intro Env Env' acc ets h h_wf h_fwf h_ne h_ws
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v_step h_step
+    elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
     -- `h` is now the recursive `go` equation; `h_step` is the per-step `resolve`.
     -- Per-step facts for `e`.
@@ -1138,8 +1098,7 @@ private theorem resolves_go_fvar_aliasEquiv_core (C : LContext CoreLParams)
   | cons e erest ih =>
     intro Env Env' acc ets h h_wf h_fwf h_ne h_mono h_ws
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v_step h_step
+    elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
     have h_ctx_mid : Env_mid.context = Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
@@ -1247,8 +1206,7 @@ private theorem resolves_go_HasTypeA_core (C : LContext CoreLParams)
   | cons e erest ih =>
     intro Env Env' acc ets h h_wf h_fwf h_ne h_resolved
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v_step h_step
+    elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
     have h_ctx_mid : Env_mid.context = Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
@@ -1304,12 +1262,10 @@ private theorem resolve_fvar_eq_fvar (C : LContext CoreLParams) (Env Env' : TEnv
     ∃ m' ty', et = .fvar m' x ty' := by
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
-  elim_err h
-  rename_i v h_aux
+  elim_err h with v h_aux
   obtain ⟨et_aux, Env_r⟩ := v
   simp only [resolveAux, Bind.bind, Except.bind] at h_aux
-  elim_err h_aux
-  rename_i v_if h_inf
+  elim_err h_aux with v_if h_inf
   obtain ⟨ty, Env_inf⟩ := v_if
   simp only [Except.ok.injEq, Prod.mk.injEq] at h h_aux
   obtain ⟨h_et, _⟩ := h
@@ -1344,8 +1300,7 @@ private theorem resolves_go_fvar_name_core (C : LContext CoreLParams)
   | cons e erest ih =>
     intro Env Env' acc ets h h_wf h_fwf h_ne
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v_step h_step
+    elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
     have h_ctx_mid : Env_mid.context = Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
@@ -1553,31 +1508,20 @@ theorem typeCheckCmd_call_preserves_context (C : LContext CoreLParams) (Env : TE
   · rename_i proc heq_find
     simp only [tryCatchThe, tryCatch, MonadExcept.tryCatch,
                MonadExceptOf.tryCatch, Except.tryCatch] at h
-    elim_err h
-    rename_i h_inner h_eq
+    elim_err h with h_inner h_eq
     obtain ⟨h1, h2⟩ := Prod.mk.inj (Except.ok.inj h)
     subst h2; clear h
     -- Eliminate the 4 if-checks.
-    elim_err h_eq
-    rename_i h_lhs_exist
-    elim_err h_eq
-    rename_i h_out_arity
-    elim_err h_eq
-    rename_i h_inp_arity
-    elim_err h_eq
-    rename_i h_inout_check
-    elim_err h_eq
-    rename_i h_inout_valid
-    elim_err h_eq
-    rename_i v1 h_inst_lhs
-    elim_err h_eq
-    rename_i lhs_tys Env1
-    elim_err h_eq
-    rename_i v2 h_fvc
-    elim_err h_eq
-    rename_i v3 h_inst_inputs
-    elim_err h_eq
-    rename_i v4 h_resolves
+    elim_err h_eq with h_lhs_exist
+    elim_err h_eq with h_out_arity
+    elim_err h_eq with h_inp_arity
+    elim_err h_eq with h_inout_check
+    elim_err h_eq with h_inout_valid
+    elim_err h_eq with v1 h_inst_lhs
+    elim_err h_eq with lhs_tys Env1
+    elim_err h_eq with v2 h_fvc
+    elim_err h_eq with v3 h_inst_inputs
+    elim_err h_eq with v4 h_resolves
     cases h_eq
     -- Raw (mapError-stripped) step equations.
     have h_unify : Constraints.unify
@@ -1634,34 +1578,23 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
   · rename_i proc heq_find
     simp only [tryCatchThe, tryCatch, MonadExcept.tryCatch,
                MonadExceptOf.tryCatch, Except.tryCatch] at h
-    elim_err h
     -- inner computation succeeded
-    rename_i h_inner h_eq
+    elim_err h with h_inner h_eq
     obtain ⟨h1, h2⟩ := Prod.mk.inj (Except.ok.inj h)
     subst h1; subst h2; clear h
     refine ⟨proc, heq_find, ?_⟩
     -- Eliminate the 4 if-checks
-    elim_err h_eq
-    rename_i h_lhs_exist
-    elim_err h_eq
-    rename_i h_out_arity
-    elim_err h_eq
-    rename_i h_inp_arity
-    elim_err h_eq
-    rename_i h_inout_check
-    elim_err h_eq
-    rename_i h_inout_valid
+    elim_err h_eq with h_lhs_exist
+    elim_err h_eq with h_out_arity
+    elim_err h_eq with h_inp_arity
+    elim_err h_eq with h_inout_check
+    elim_err h_eq with h_inout_valid
     -- Now h_eq is the match chain = .ok h_inner
-    elim_err h_eq
-    rename_i v1 h_inst_lhs
-    elim_err h_eq
-    rename_i lhs_tys Env1
-    elim_err h_eq
-    rename_i v2 h_fvc
-    elim_err h_eq
-    rename_i v3 h_inst_inputs
-    elim_err h_eq
-    rename_i v4 h_resolves
+    elim_err h_eq with v1 h_inst_lhs
+    elim_err h_eq with lhs_tys Env1
+    elim_err h_eq with v2 h_fvc
+    elim_err h_eq with v3 h_inst_inputs
+    elim_err h_eq with v4 h_resolves
     cases h_eq
     show CmdExtHasType C P (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
       (.call pname callArgs md) (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
@@ -1804,8 +1737,7 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
   | cmd c =>
     unfold Statement.typeCheckCmd at h
     simp only [Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v h_tc
+    elim_err h with v h_tc
     obtain ⟨c', Env'_inner⟩ := v
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
@@ -2162,31 +2094,20 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
   · rename_i proc heq_find
     simp only [tryCatchThe, tryCatch, MonadExcept.tryCatch,
                MonadExceptOf.tryCatch, Except.tryCatch] at h
-    elim_err h
-    rename_i h_inner h_eq
+    elim_err h with h_inner h_eq
     obtain ⟨h1, h2⟩ := Prod.mk.inj (Except.ok.inj h)
     subst h1; subst h2; clear h
     -- Eliminate the 4 if-checks.
-    elim_err h_eq
-    rename_i h_lhs_exist
-    elim_err h_eq
-    rename_i h_out_arity
-    elim_err h_eq
-    rename_i h_inp_arity
-    elim_err h_eq
-    rename_i h_inout_check
-    elim_err h_eq
-    rename_i h_inout_valid
-    elim_err h_eq
-    rename_i v1 h_inst_lhs
-    elim_err h_eq
-    rename_i lhs_tys Env1
-    elim_err h_eq
-    rename_i v2 h_fvc
-    elim_err h_eq
-    rename_i v3 h_inst_inputs
-    elim_err h_eq
-    rename_i v4 h_resolves
+    elim_err h_eq with h_lhs_exist
+    elim_err h_eq with h_out_arity
+    elim_err h_eq with h_inp_arity
+    elim_err h_eq with h_inout_check
+    elim_err h_eq with h_inout_valid
+    elim_err h_eq with v1 h_inst_lhs
+    elim_err h_eq with lhs_tys Env1
+    elim_err h_eq with v2 h_fvc
+    elim_err h_eq with v3 h_inst_inputs
+    elim_err h_eq with v4 h_resolves
     cases h_eq
     show CmdExtHasTypeA C P (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
       (Statement.Command.subst (v3.snd.updateSubst v4).stateSubstInfo.subst
@@ -2380,8 +2301,7 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
   | cmd c =>
     unfold Statement.typeCheckCmd at h
     simp only [Bind.bind, Except.bind] at h
-    elim_err h
-    rename_i v h_tc
+    elim_err h with v h_tc
     obtain ⟨c', Env'_inner⟩ := v
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
