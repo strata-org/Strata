@@ -2643,19 +2643,11 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
   | .Transparent b =>
-<<<<<<< HEAD
-    let b' ← Check.resolveStmtExpr b ⟨ HighType.Unknown, b.source ⟩
-    return .Transparent b'
-  | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM (Check.resolveStmtExpr · ⟨ HighType.Unknown, default ⟩)
-=======
     let (b', _) ← Synth.resolveStmtExpr b
     return .Transparent b'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     let impl' ← impl.mapM Synth.resolveStmtExpr
->>>>>>> fixResolutionErrorsDuringPhases
     let mods' ← mods.mapM resolveStmtExpr
     return .Opaque posts' (impl'.map (fun t => t.1)) mods'
   | .Abstract posts =>
@@ -2684,13 +2676,10 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-<<<<<<< HEAD
-=======
     -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
     -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
     -- so that frontends emitting `Exit bodyLabel` for early-return lowering
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
->>>>>>> fixResolutionErrorsDuringPhases
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
