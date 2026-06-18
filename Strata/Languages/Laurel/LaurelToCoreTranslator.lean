@@ -942,5 +942,138 @@ def translateLaurelToCore (κ : LoweringScheme Core.Command) (options: LaurelTra
 
   pure { decls := coreDecls }
 
+/-- Whether a Laurel expression contains a field read (`obj#field`). Used to
+reject spec field reads in implicit mode, which are not yet supported (there is
+no expression-level heap-read form in Core-implicit; specs have no statement
+slot for a `heapRead`). -/
+def containsFieldRead (expr : StmtExprMd) : Bool :=
+  match expr with
+  | AstNode.mk val _ =>
+  match val with
+  | .Var (.Field ..) => true
+  | .Var _ => false
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsFieldRead x.val)
+  | .StaticCall _ args => args.attach.any (fun x => containsFieldRead x.val)
+  | .InstanceCall t _ args => containsFieldRead t || args.attach.any (fun x => containsFieldRead x.val)
+  | .ReferenceEquals a b => containsFieldRead a || containsFieldRead b
+  | .Old v => containsFieldRead v
+  | .Quantifier _ _ trigger body =>
+      (match trigger with | some t => containsFieldRead t | none => false) || containsFieldRead body
+  | .Block stmts _ => stmts.attach.any (fun x => containsFieldRead x.val)
+  | .IfThenElse c t e =>
+      containsFieldRead c || containsFieldRead t ||
+      (match e with | some x => containsFieldRead x | none => false)
+  | _ => false
+  termination_by expr
+  decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
+
+/--
+Translate a Laurel procedure to a Core-implicit procedure. Mirrors
+`translateProcedure` but emits an implicit body (`heapRead`/`heapWrite`/
+`heapAlloc`) via `implicitScheme` and carries a `HeapEffect`. Field reads in
+specifications are rejected (not yet supported in implicit mode).
+
+TODO: `effect` is stubbed to `.none`. The faithful value is inferred from the
+emitted heap commands (a `heapWrite` ⇒ `.writes`, else a `heapRead` ⇒ `.reads`).
+-/
+def translateProcedureImplicit (proc : Procedure) : TranslateM Core.Implicit.Procedure := do
+  let inputs ← proc.inputs.mapM translateParameterToCore
+  let outputs ← proc.outputs.mapM translateParameterToCore
+  let header : Core.Procedure.Header := {
+    name := proc.name.text
+    typeArgs := []
+    inputs := inputs
+    outputs := outputs
+  }
+  -- Field reads in specifications are not yet supported in implicit mode:
+  -- there is no expression-level heap-read form, and a spec has no statement
+  -- slot for a `heapRead`. Reject such conditions with a clear diagnostic and
+  -- drop them (so translation does not also hit the generic field-read guard).
+  let rejectSpecFieldReads (cs : List Condition) : TranslateM (List Condition) := do
+    cs.filterMapM fun c => do
+      if containsFieldRead c.condition then
+        emitCoreDiagnostic (diagnosticFromSource c.condition.source
+          "field reads in specifications are not yet supported in implicit heap mode" DiagnosticType.NotYetImplemented)
+        return none
+      else
+        return some c
+  let preconds ← rejectSpecFieldReads proc.preconditions
+  let preconditions ← translateChecks preconds "requires" false
+  let bodyStmts : Option Core.Implicit.Statements ←
+    match proc.body with
+    | .Transparent bodyExpr => some <$> translateStmt implicitScheme bodyExpr
+    | .Opaque _postconds (some impl) _ => some <$> translateStmt implicitScheme impl
+    | _ => pure none
+  let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
+    match proc.body with
+    | .Opaque postconds _ _ | .Abstract postconds => do
+        translateChecks (← rejectSpecFieldReads postconds) s!"postcondition" bodyStmts.isNone
+    | _ => pure []
+  let body : Core.Implicit.Statements :=
+    [Imperative.Stmt.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
+  let spec : Core.Procedure.Spec := { preconditions, postconditions }
+  return { header, effect := .none, spec, body }
+
+/-- Convert a non-procedure Core declaration to the corresponding implicit
+declaration. Non-heap declarations (types, axioms, functions) are shared
+verbatim with Core-explicit. Procedure declarations are handled separately
+(their procedure type differs) and are not expected here. -/
+private def coreDeclToImplicitDecl (d : Core.Decl) : TranslateM Core.Implicit.Decl := do
+  match d with
+  | .type t md => return .type t md
+  | .ax a md => return .ax a md
+  | .distinct name es md => return .distinct name es md
+  | .func f md => return .func f md
+  | .recFuncBlock fs md => return .recFuncBlock fs md
+  | .proc _ md =>
+    emitCoreDiagnostic (md.toDiagnostic "unexpected procedure declaration in non-procedure position" DiagnosticType.StrataBug)
+    return .distinct ⟨"$bug", ()⟩ [] md
+
+/--
+Translate a `CoreWithLaurelTypes` program to a Core-implicit `Program`,
+emitting heap commands directly. Mirrors `translateLaurelToCore`; procedures
+go through `translateProcedureImplicit`, and non-procedure declarations are
+shared with the explicit path. The `prelude` is empty — direct emission keeps
+no explicit encoding to preserve.
+
+Field reads and allocations must already sit in canonical position; run
+`liftHeapExpressions` first.
+-/
+def translateLaurelToCoreImplicit (options : LaurelTranslateOptions) (ordered : CoreWithLaurelTypes)
+    : TranslateM Core.Implicit.Program := do
+  let decls ← ordered.decls.flatMapM fun
+    | .funcs funcs isRecursive => do
+      let nonExternal := funcs.filter (fun p => !p.body.isExternal)
+      let coreFuncs ← nonExternal.mapM (translateProcedureToFunction options isRecursive)
+      if isRecursive then
+        let coreFuncValues := coreFuncs.filterMap (fun d => match d with
+          | .func f _ => some f
+          | _ => none)
+        return [Core.Implicit.Decl.recFuncBlock coreFuncValues mdWithUnknownLoc]
+      else
+        coreFuncs.mapM coreDeclToImplicitDecl
+    | .procedure proc => do
+      let procDecl ← translateProcedureImplicit proc
+      let invokeOnDecls ← match proc.invokeOn with
+        | some trigger => do
+          let axDecl? ← translateInvokeOnAxiom proc trigger
+          (axDecl?.toList).mapM coreDeclToImplicitDecl
+        | none => pure []
+      return [Core.Implicit.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ invokeOnDecls
+    | .datatypes dts => do
+      let ldatatypes ← dts.mapM translateDatatypeDefinition
+      return [Core.Implicit.Decl.type (.data ldatatypes) mdWithUnknownLoc]
+    | .constant c => do
+      let coreTy ← translateType c.type
+      let body ← c.initializer.mapM (translateExpr ·)
+      return [Core.Implicit.Decl.func {
+        name := ⟨c.name.text, ()⟩
+        typeArgs := []
+        inputs := []
+        output := coreTy
+        body := body
+      } mdWithUnknownLoc]
+  pure { decls := decls }
+
 end -- public section
 end Laurel

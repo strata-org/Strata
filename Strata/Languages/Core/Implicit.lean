@@ -10,3 +10,4 @@ public import Strata.Languages.Core.Implicit.Command
 public import Strata.Languages.Core.Implicit.Statement
 public import Strata.Languages.Core.Implicit.Procedure
 public import Strata.Languages.Core.Implicit.Program
+public import Strata.Languages.Core.Implicit.Format
