@@ -100,14 +100,14 @@ procedure invalidAssignment() opaque {
 };
 #end
 
-/-! ## Function return type checks -/
+/-! ## Procedure return type checks -/
 
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(): int {
-  true
-//^^^^ error: expected 'int', got 'bool'
+procedure foo(): int {
+  return true
+//       ^^^^ error: expected 'int', got 'bool'
 };
 #end
 
