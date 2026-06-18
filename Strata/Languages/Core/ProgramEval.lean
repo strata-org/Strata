@@ -54,6 +54,15 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
     | .proc proc _md =>
       let (E, procStats) := Procedure.eval declsE proc
+      -- Reset path conditions to the pre-procedure state: a procedure's
+      -- preconditions and in-scope assumptions must not leak into later
+      -- procedures. A structured `exit` out of a labeled block does not pop the
+      -- path-condition frames it accumulated (the exiting path bypasses
+      -- `Env.merge`), so without this reset those frames would be threaded into
+      -- the next procedure and verify its obligations against an inconsistent
+      -- context. Everything else (deferred obligations, fresh-name set) carries
+      -- forward unchanged. See strata-org/Strata#1390.
+      let E := { E with pathConditions := declsE.pathConditions }
       go rest E (stats.merge procStats)
 
     | .func func _ => do
