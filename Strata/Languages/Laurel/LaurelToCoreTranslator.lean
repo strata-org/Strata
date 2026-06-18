@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Implicit
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -15,6 +16,7 @@ import Std.Tactic.BVDecide.Normalize.Bool
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.Factory
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.HeapParameterization
 
 open Core (VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
@@ -75,13 +77,14 @@ field operation here is a pipeline bug. The implicit path (a later step)
 supplies real builders that emit `heapRead`/`heapWrite`/`heapAlloc`.
 -/
 structure HeapLowering (C : Type) where
-  /-- Lower a field read `obj.field : ty` in expression position. Returns
-      straight-line commands binding fresh temps, plus the replacement
-      expression (the fresh temp). -/
+  /-- Lower a field read `lhs := obj.field : ty`. The read arrives in
+      canonical position (sole RHS of an assignment), so `lhs` already
+      exists — embedded reads are hoisted into this form by the
+      `LiftHeapExpressions` pre-pass before translation. -/
   lowerFieldRead :
-    (obj field : Core.Expression.Expr) → (ty : Core.Expression.Ty) →
-    (md : Imperative.MetaData Core.Expression) →
-    TranslateM (List (Imperative.Stmt Core.Expression C) × Core.Expression.Expr)
+    (lhs : Core.Expression.Ident) → (obj field : Core.Expression.Expr) →
+    (ty : Core.Expression.Ty) → (md : Imperative.MetaData Core.Expression) →
+    TranslateM (List (Imperative.Stmt Core.Expression C))
   /-- Lower a field write `obj.field := rhs`. -/
   lowerFieldWrite :
     (obj field rhs : Core.Expression.Expr) →
@@ -119,13 +122,15 @@ field operations are gone by the time translation runs.
 def explicitScheme : LoweringScheme Core.Command where
   embedCore := id
   heap := {
-    lowerFieldRead := fun obj _field _ty md => do
+    lowerFieldRead := fun _lhs _obj _field _ty md => do
       let d := md.toDiagnostic "field read should have been lowered by heap parameterization" DiagnosticType.StrataBug
       emitDiagnostic d
       emitCoreDiagnostic d
-      return ([], obj)
+      return []
     lowerFieldWrite := fun _obj _field _rhs md => do
-      let d := md.toDiagnostic "field write should have been lowered by heap parameterization" DiagnosticType.StrataBug
+      -- Same diagnostic the inline `.Assign` field-target check used to emit,
+      -- so the explicit path is unchanged.
+      let d := md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" DiagnosticType.StrataBug
       emitDiagnostic d
       emitCoreDiagnostic d
       return []
@@ -134,6 +139,28 @@ def explicitScheme : LoweringScheme Core.Command where
       emitDiagnostic d
       emitCoreDiagnostic d
       return []
+  }
+
+open Core.Implicit in
+/--
+The implicit lowering scheme: direct emission of heap commands. `embedCore`
+injects a standard Core command into `ImplicitCmd` via `.core`; the heap
+builders emit `heapRead`/`heapWrite`/`heapAlloc` directly, with no `$heap`
+threading, `Box` wrapping, or `readField`/`updateField` encoding.
+
+Field reads and allocations arrive in canonical position (sole RHS of an
+assignment) because the `LiftHeapExpressions` pre-pass hoists embedded ones
+before translation; each builder therefore emits a single command.
+-/
+def implicitScheme : LoweringScheme ImplicitCmd where
+  embedCore := ImplicitCmd.core
+  heap := {
+    lowerFieldRead := fun lhs obj field ty _md =>
+      return [Imperative.Stmt.cmd (.heap (.heapRead lhs obj field ty))]
+    lowerFieldWrite := fun obj field rhs _md =>
+      return [Imperative.Stmt.cmd (.heap (.heapWrite obj field rhs))]
+    lowerNew := fun lhs typeName _md =>
+      return [Imperative.Stmt.cmd (.heap (.heapAlloc lhs typeName))]
   }
 
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
@@ -420,6 +447,87 @@ def throwStmtDiagnostic {C : Type} (d : DiagnosticModel)
   return []
 
 /--
+Lower a single-target field write `obj#field := rhs`. The actual leaf
+command is built by the scheme: `explicitScheme` rejects it (field writes
+should already have been lowered before translation), while `implicitScheme`
+emits a `heapWrite`. Multi-target field writes are unsupported.
+-/
+def lowerFieldWriteStmt {C : Type} (κ : LoweringScheme C) (model : SemanticModel)
+    (targets : List VariableMd) (value : StmtExprMd)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
+  match targets with
+  | [⟨.Field selectTarget fieldName, _⟩] =>
+    let some qualifiedName := resolveQualifiedFieldName model fieldName
+      | throwStmtDiagnostic $ md.toDiagnostic s!"field name {fieldName.text} did not resolve" DiagnosticType.StrataBug
+    let objExpr ← translateExpr selectTarget
+    -- The field reference is the nullary field-name operator, matching the
+    -- explicit encoding's `readField`/`updateField` field argument.
+    let fieldExpr : Core.Expression.Expr := .op () ⟨qualifiedName, ()⟩ none
+    let rhsExpr ← translateExpr value
+    κ.heap.lowerFieldWrite objExpr fieldExpr rhsExpr md
+  | _ =>
+    -- Laurel only permits multiple assignment targets when they are all
+    -- identifiers with a call RHS, so a field among multiple targets is
+    -- malformed input.
+    throwStmtDiagnostic $ md.toDiagnostic "field target is not allowed in a multi-target assignment" DiagnosticType.StrataBug
+
+/--
+Resolve a single assignment target to its lhs identifier, emitting a leading
+declaration command for a `.Declare` target so the lhs is in scope before it
+is written. Returns the leading commands plus the lhs identifier, or `none`
+for an unsupported target shape (the caller emits the diagnostic).
+-/
+private def resolveHeapLhs {C : Type} (κ : LoweringScheme C) (target : VariableMd)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (Option (List (Imperative.Stmt Core.Expression C) × Core.CoreIdent)) := do
+  match target.val with
+  | .Declare param =>
+    let coreType := LTy.forAll [] (← translateType param.type)
+    let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
+    return some ([κ.emit (.cmd (.init ident coreType .nondet md))], ident)
+  | .Local name =>
+    return some ([], ⟨name.text, ()⟩)
+  | .Field _ _ =>
+    return none
+
+/--
+Lower a single-target field read `lhs := obj#field`. A `.Declare` target is
+declared first, then the read writes into it. The leaf command is built by the
+scheme: `implicitScheme` emits a `heapRead`; `explicitScheme` rejects it.
+Reads arrive in this canonical position via the `LiftHeapExpressions` pre-pass.
+-/
+def lowerFieldReadStmt {C : Type} (κ : LoweringScheme C) (model : SemanticModel)
+    (target : VariableMd) (selectTarget : StmtExprMd) (fieldName : Identifier)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
+  let some qualifiedName := resolveQualifiedFieldName model fieldName
+    | throwStmtDiagnostic $ md.toDiagnostic s!"field name {fieldName.text} did not resolve" DiagnosticType.StrataBug
+  let some (declStmts, lhs) ← resolveHeapLhs κ target md
+    | throwStmtDiagnostic $ md.toDiagnostic "field read target must be a local or declaration" DiagnosticType.StrataBug
+  let objExpr ← translateExpr selectTarget
+  let fieldExpr : Core.Expression.Expr := .op () ⟨qualifiedName, ()⟩ none
+  let ty ← translateType ((model.get fieldName).getType)
+  let readStmts ← κ.heap.lowerFieldRead lhs objExpr fieldExpr (LTy.forAll [] ty) md
+  return declStmts ++ readStmts
+
+/--
+Lower a single-target allocation `lhs := new Foo`. A `.Declare` target is
+declared first, then the allocation writes into it. The leaf command is built
+by the scheme: `implicitScheme` emits a `heapAlloc`; `explicitScheme` rejects
+it. Allocations arrive in this canonical position via the `LiftHeapExpressions`
+pre-pass.
+-/
+def lowerNewStmt {C : Type} (κ : LoweringScheme C)
+    (target : VariableMd) (typeName : Identifier)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
+  let some (declStmts, lhs) ← resolveHeapLhs κ target md
+    | throwStmtDiagnostic $ md.toDiagnostic "allocation target must be a local or declaration" DiagnosticType.StrataBug
+  let allocStmts ← κ.heap.lowerNew lhs typeName.text md
+  return declStmts ++ allocStmts
+
+/--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
@@ -450,10 +558,10 @@ def translateStmt {C : Type} (κ : LoweringScheme C) (stmt : StmtExprMd)
       let ident := ⟨param.name.text, ()⟩
       return [κ.emit (.cmd (.init ident coreType .nondet md))]
   | .Assign targets value =>
-      -- Check if any target is a Field — these should have been lowered already
+      -- A field target `obj#field := rhs` is a heap write (see lowerFieldWriteStmt).
       let hasField := targets.any fun t => match t.val with | .Field _ _ => true | _ => false
       if hasField then
-        throwStmtDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" DiagnosticType.StrataBug
+        lowerFieldWriteStmt κ model targets value md
       else
       -- Dispatch over targets, calling onDeclare/onLocal per target type.
       let dispatchTargets
@@ -517,6 +625,16 @@ def translateStmt {C : Type} (κ : LoweringScheme C) (stmt : StmtExprMd)
           dispatchTargets
             (onDeclare := fun ident coreType => pure [κ.emit (.cmd (.init ident coreType .nondet md))])
             (onLocal := fun ident => pure [κ.emit (.cmd (.set ident .nondet md))])
+      | .Var (.Field selectTarget fieldName) =>
+          -- Canonical field read `lhs := obj#field` (see lowerFieldReadStmt).
+          match targets with
+          | [target] => lowerFieldReadStmt κ model target selectTarget fieldName md
+          | _ => throwStmtDiagnostic $ md.toDiagnostic "field read must have a single target" DiagnosticType.StrataBug
+      | .New typeName =>
+          -- Canonical allocation `lhs := new Foo` (see lowerNewStmt).
+          match targets with
+          | [target] => lowerNewStmt κ target typeName md
+          | _ => throwStmtDiagnostic $ md.toDiagnostic "allocation must have a single target" DiagnosticType.StrataBug
       | _ =>
         match targets with
         | [_target] =>
