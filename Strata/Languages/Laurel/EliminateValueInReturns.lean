@@ -20,6 +20,8 @@ the return-value assignment from the `LaurelToCoreTranslator`, which no
 longer needs to know about output parameters when translating returns.
 
 The pass is a Laurel-to-Laurel rewrite that runs before Core translation.
+It only applies to static procedures, hence LiftInstanceProcedures must
+be executed before it.
 -/
 
 namespace Strata.Laurel
