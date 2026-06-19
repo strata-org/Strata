@@ -237,9 +237,9 @@ Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
 -/
 def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
-  match expr with
+  match h_node : expr with
   | AstNode.mk val source =>
-  match val with
+  match h_val : val with
   | .Var (.Local name) =>
       return ⟨.Var (.Local (← getSubst name)), source⟩
 
@@ -496,8 +496,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | _ => return expr
   termination_by (sizeOf expr, 2)
   decreasing_by
-    all_goals (simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem; try omega)
+    all_goals first
+      | (apply Prod.Lex.left; (try have := Condition.sizeOf_condition_lt ‹_›); term_by_mem)
+      | (apply Prod.Lex.left; simp <;> omega)
+      | (try subst h_node; try subst h_val; apply Prod.Lex.right; omega)
 
 def transformStmtAssignImperativeCall
     (targets : List (AstNode Variable))
@@ -511,8 +513,9 @@ def transformStmtAssignImperativeCall
   return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
   termination_by (sizeOf args, 0)
   decreasing_by
-    all_goals (simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem; try omega)
+    all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
@@ -634,8 +637,9 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       return [stmt]
   termination_by (sizeOf stmt, 0)
   decreasing_by
-    all_goals (try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem)
+    all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end
 
 def transformProcedureBody (source: Option FileRange) (body : StmtExprMd) : LiftM StmtExprMd := do
