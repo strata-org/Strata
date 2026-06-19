@@ -536,8 +536,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     -- Synthesized postconditions: allocation counter is monotone, and every
-    -- composite output is allocated in the output heap. Both reference Core
-    -- heap intrinsics directly and need no field-access transform.
+    -- composite output is allocated in the output heap.
     let wfPostconditions :=
       heapMonotonicityPostcond heapInName heapName
         :: heapOutputAllocationPostconds model proc.outputs heapName
