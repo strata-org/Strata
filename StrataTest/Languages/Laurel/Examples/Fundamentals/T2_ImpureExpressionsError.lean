@@ -34,9 +34,8 @@ function functionWithMutatingAssignment(x: int): int
 
 function functionWithWhile(x: int): int
 {
-  while(false) {};
+  while(false) {}
 //^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
-  3
 };
 function functionCallingHasMutationAssignment(x: int): int
 {
