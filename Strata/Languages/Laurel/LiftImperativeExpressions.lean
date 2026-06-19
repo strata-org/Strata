@@ -198,6 +198,13 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
 mutual
 
 
+def asLifted { t: Type } (runner: LiftM t) : LiftM t := do
+  let savedState ← get
+  modify fun s => { s with prependedStmts := [], subst := []}
+  let result ← runner
+  modify fun s => savedState
+  return result
+
 /--
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
@@ -210,7 +217,7 @@ def transformLiftedExpr (expr : StmtExprMd) : LiftM (List StmtExprMd × StmtExpr
   let newPrepends ← takePrepends
   modify fun s => { s with prependedStmts := savedPrepends, subst := savedSubst }
   return (newPrepends, result)
-  termination_by (sizeOf expr, 1)
+  termination_by (sizeOf expr, 3)
 
 /--
 Process an expression in expression context, traversing arguments right to left.
@@ -303,8 +310,10 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         | _ => []
       let callResultVar ← freshTempVar
       let callResultType ← computeType expr
-      let liftedCall: StmtExprMd := ⟨.Assign [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] expr, source⟩
-      transformLiftedStmt liftedCall
+
+      let prepends ← asLifted (transformStmtAssignImperativeCall
+        [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)
+      prependList prepends
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -485,7 +494,22 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.ContractOf ty seqFunc, source⟩
 
   | _ => return expr
-  termination_by (sizeOf expr, 0)
+  termination_by (sizeOf expr, 2)
+  decreasing_by
+    all_goals (simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (apply Prod.Lex.left; try term_by_mem; try omega)
+
+def transformStmtAssignImperativeCall
+    (targets : List (AstNode Variable))
+    (callee: Identifier)
+    (args: List StmtExprMd)
+    (source: Option FileRange)
+    (callSource: Option FileRange): LiftM (List StmtExprMd) := do
+  let seqArgs ← args.reverse.mapM transformExpr
+  let argPrepends ← takePrepends
+  modify fun s => { s with subst := [] }
+  return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
+  termination_by (sizeOf args, 0)
   decreasing_by
     all_goals (simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (apply Prod.Lex.left; try term_by_mem; try omega)
@@ -533,16 +557,13 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       match _: value with
       | .StaticCall callee args =>
           let imperativeCallees := (← get).imperativeCallees
-          if !imperativeCallees.contains callee.text then
+          if imperativeCallees.contains callee.text then
+            transformStmtAssignImperativeCall targets callee args source callSource
+          else
             let seqValue ← transformExpr valueMd
             let prepends ← takePrepends
             modify fun s => { s with subst := [] }
             return prepends ++ [⟨.Assign targets seqValue, source⟩]
-          else
-            let seqArgs ← args.reverse.mapM transformExpr
-            let argPrepends ← takePrepends
-            modify fun s => { s with subst := [] }
-            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
@@ -583,7 +604,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
 
-  | .PrimitiveOp _ _ =>
+  | .PrimitiveOp _ args =>
       -- A `PrimitiveOp` in statement position. If it carries any side effects
       -- (an embedded assignment or imperative call — typically the result of
       -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
@@ -592,7 +613,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- `exprAsUnusedInit`.
       let imperativeCallees := (← get).imperativeCallees
       if containsAssignmentOrImperativeCall imperativeCallees stmt then
-        let _ ← transformExpr stmt
+        let _ ← args.reverse.mapM transformExpr
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
         return prepends
