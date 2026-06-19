@@ -707,23 +707,16 @@ theorem call_input_type_eq (C : LContext CoreLParams) (Env_lhs : TEnv Unit)
         v3.snd.stateSubstInfo = .ok v4)
     (h_closed : ProcHeaderClosed proc)
     (h_aliases_wf : TContext.AliasesWF Env_lhs.context)
-    (h_absorbs_v2 : Subst.absorbs v4.subst v2.2.fst.stateSubstInfo.subst) :
+    (h_absorbs_v2 : Subst.absorbs v4.subst v2.2.fst.stateSubstInfo.subst)
+    (S : Subst) (h_absorbs_S : Subst.absorbs S v4.subst) :
     AliasEquiv Env_lhs.context.aliases
-      (LMonoTy.subst (v3.snd.updateSubst v4).stateSubstInfo.subst
+      (LMonoTy.subst S
         ((v3.fst.get ⟨i, h_len ▸ hi⟩).toLMonoTy))
       (LMonoTy.subst
         [proc.header.typeArgs.zip
-          (proc.header.typeArgs.map (fun a => LMonoTy.subst (v3.snd.updateSubst v4).stateSubstInfo.subst
+          (proc.header.typeArgs.map (fun a => LMonoTy.subst S
             (LMonoTy.subst v2.2.snd (.ftvar a))))]
         ((ListMap.values proc.header.inputs).get ⟨i, hj⟩)) := by
-  -- Abbreviations (definitionally; `S_final` is `v4.subst`).
-  show AliasEquiv Env_lhs.context.aliases
-    (LMonoTy.subst v4.subst ((v3.fst.get ⟨i, h_len ▸ hi⟩).toLMonoTy))
-    (LMonoTy.subst
-      [proc.header.typeArgs.zip
-        (proc.header.typeArgs.map (fun a => LMonoTy.subst v4.subst
-          (LMonoTy.subst v2.2.snd (.ftvar a))))]
-      ((ListMap.values proc.header.inputs).get ⟨i, hj⟩))
   -- i-th input formal via the elem decomposition of instantiateWithSubst.
   obtain ⟨freshVars, hi2, h_fv_len, h_tyArgSubst, h_elem_ae⟩ :=
     instantiateWithSubst_elem_aliasEquiv C Env_lhs proc.header.typeArgs proc.header.inputs
@@ -757,16 +750,22 @@ theorem call_input_type_eq (C : LContext CoreLParams) (Env_lhs : TEnv Unit)
   -- Collapse the inner v2.2.fst.subst via absorption.
   rw [LMonoTy.subst_absorbs v4.subst v2.2.fst.stateSubstInfo.subst _ h_absorbs_v2] at h_eq
   -- h_eq : subst v4.subst (toLMonoTy v3.fst[i]) = subst v4.subst inp_sig.values[i]
-  -- (2) AliasEquiv from the instantiate elem decomposition, under v4.subst, symm.
-  have h_ae_S := AliasEquiv_subst Env_lhs.context.aliases _ _ v4.subst h_elem_ae
+  -- Lift the equality from `v4.subst` to the generic absorbing `S`.
+  have h_eq_S : LMonoTy.subst S ((v3.fst.get ⟨i, h_len ▸ hi⟩).toLMonoTy) =
+      LMonoTy.subst S ((ListMap.values v2.fst).get ⟨i, hi2⟩) := by
+    rw [← LMonoTy.subst_absorbs S v4.subst _ h_absorbs_S,
+        ← LMonoTy.subst_absorbs S v4.subst ((ListMap.values v2.fst).get ⟨i, hi2⟩) h_absorbs_S,
+        h_eq]
+  -- (2) AliasEquiv from the instantiate elem decomposition, under `S`, symm.
+  have h_ae_S := AliasEquiv_subst Env_lhs.context.aliases _ _ S h_elem_ae
     (fun a ha => h_aliases_wf a ha)
-  -- h_ae_S : AliasEquiv aliases (subst v4.subst (subst v2.2.snd formal))
-  --                             (subst v4.subst inp_sig.values[i])
+  -- h_ae_S : AliasEquiv aliases (subst S (subst v2.2.snd formal))
+  --                             (subst S inp_sig.values[i])
   -- (3) Apply the shared kernel.
-  exact call_type_bridge Env_lhs.context.aliases proc.header.typeArgs v4.subst v2.2.snd
+  exact call_type_bridge Env_lhs.context.aliases proc.header.typeArgs S v2.2.snd
     _ _ ((ListMap.values proc.header.inputs).get ⟨i, hj⟩)
     (fun x hx => h_closed.1 _ (List.get_mem _ _) x hx)
-    h_eq
+    h_eq_S
     (AliasEquiv.symm h_ae_S)
 
 /-- Per-element decomposition of `Identifier.instantiateAndSubsts`: the i-th
@@ -875,29 +874,21 @@ theorem call_output_type_eq (C : LContext CoreLParams) (Env Env_lhs : TEnv Unit)
     (h_closed : ProcHeaderClosed proc)
     (h_aw : TContext.AliasesWF Env.context)
     (h_subst_v2_env : v2.2.fst.stateSubstInfo.subst = Env.stateSubstInfo.subst)
-    (h_absorbs_v2 : Subst.absorbs v4.subst v2.2.fst.stateSubstInfo.subst) :
+    (h_absorbs_v2 : Subst.absorbs v4.subst v2.2.fst.stateSubstInfo.subst)
+    (S : Subst) (h_absorbs_S : Subst.absorbs S v4.subst) :
     ∃ mty, AliasEquiv Env.context.aliases mty
         (LMonoTy.subst
           [proc.header.typeArgs.zip
-            (proc.header.typeArgs.map (fun a => LMonoTy.subst (v3.snd.updateSubst v4).stateSubstInfo.subst
+            (proc.header.typeArgs.map (fun a => LMonoTy.subst S
               (LMonoTy.subst v2.2.snd (.ftvar a))))]
           ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) ∧
-      (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst).types.find?
+      (Env.context.subst S).types.find?
         (CallArg.getLhs callArgs)[i] = some (LTy.forAll [] mty) := by
-  -- `S_final` is `v4.subst` definitionally.
-  show ∃ mty, AliasEquiv Env.context.aliases mty
-      (LMonoTy.subst
-        [proc.header.typeArgs.zip
-          (proc.header.typeArgs.map (fun a => LMonoTy.subst v4.subst
-            (LMonoTy.subst v2.2.snd (.ftvar a))))]
-        ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) ∧
-    (Env.context.subst v4.subst).types.find?
-      (CallArg.getLhs callArgs)[i] = some (LTy.forAll [] mty)
   -- (1) Decompose the i-th lhs element.
   obtain ⟨mty_i, mt_i, hi', h_find, h_v1_i, h_elem_ae⟩ :=
     instantiateAndSubsts_elem (CallArg.getLhs callArgs) C Env Env_lhs v1 h_inst_lhs i hi h_mono h_aw
-  -- (2) The find side gives the witness `mty := subst v4.subst mty_i`.
-  refine ⟨LMonoTy.subst v4.subst mty_i, ?_, ?_⟩
+  -- (2) The find side gives the witness `mty := subst S mty_i`.
+  refine ⟨LMonoTy.subst S mty_i, ?_, ?_⟩
   case _ =>
     -- (3) unify_sound on the i-th OUTPUT constraint (right append).
     have hi_v1 : i < v1.length := hi'
@@ -931,25 +922,33 @@ theorem call_output_type_eq (C : LContext CoreLParams) (Env Env_lhs : TEnv Unit)
     rw [h_v1_i, ← h_subst_v2_env,
       LMonoTy.subst_absorbs v4.subst v2.2.fst.stateSubstInfo.subst _ h_absorbs_v2] at h_eq
     -- h_eq : subst v4.subst mt_i = subst v4.subst (subst v2.2.snd outputs[i])
-    -- (6) AliasEquiv from elem decomposition, under v4.subst.
-    have h_ae_S := AliasEquiv_subst Env.context.aliases _ _ v4.subst h_elem_ae
+    -- Lift the equality from `v4.subst` to the generic absorbing `S`.
+    have h_eq_S : LMonoTy.subst S mt_i =
+        LMonoTy.subst S (LMonoTy.subst v2.2.snd
+          ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) := by
+      rw [← LMonoTy.subst_absorbs S v4.subst mt_i h_absorbs_S,
+          ← LMonoTy.subst_absorbs S v4.subst
+            (LMonoTy.subst v2.2.snd ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) h_absorbs_S,
+          h_eq]
+    -- (6) AliasEquiv from elem decomposition, under `S`.
+    have h_ae_S := AliasEquiv_subst Env.context.aliases _ _ S h_elem_ae
       (fun a ha => h_aw a ha)
-    -- h_ae_S : AliasEquiv aliases (subst v4.subst mty_i) (subst v4.subst mt_i)
-    -- (7) Rewrite h_eq into h_ae_S's RHS, then subst_diag_eq for the σ-form.
-    rw [h_eq] at h_ae_S
+    -- h_ae_S : AliasEquiv aliases (subst S mty_i) (subst S mt_i)
+    -- (7) Rewrite h_eq_S into h_ae_S's RHS, then subst_diag_eq for the σ-form.
+    rw [h_eq_S] at h_ae_S
     rw [show LMonoTy.subst
         [proc.header.typeArgs.zip
-          (proc.header.typeArgs.map (fun a => LMonoTy.subst v4.subst
+          (proc.header.typeArgs.map (fun a => LMonoTy.subst S
             (LMonoTy.subst v2.2.snd (.ftvar a))))]
         ((ListMap.values proc.header.outputs).get ⟨i, hj⟩) =
-        LMonoTy.subst v4.subst (LMonoTy.subst v2.2.snd
+        LMonoTy.subst S (LMonoTy.subst v2.2.snd
           ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) from
-      subst_diag_eq proc.header.typeArgs v4.subst v2.2.snd _
+      subst_diag_eq proc.header.typeArgs S v2.2.snd _
         (fun x hx => h_closed.2 _ (List.get_mem _ _) x hx)]
     exact h_ae_S
   case _ =>
     -- find side: TContext.subst_find_some + subst_forAll_nil.
-    have h_fs := TContext.subst_find_some Env.context v4.subst (CallArg.getLhs callArgs)[i]
+    have h_fs := TContext.subst_find_some Env.context S (CallArg.getLhs callArgs)[i]
       (LTy.forAll [] mty_i) h_find
     rw [LTy.subst_forAll_nil] at h_fs
     exact h_fs
@@ -1611,40 +1610,44 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
       Program.Procedure.find? P ⟨pname, ()⟩ = some proc →
       ProcHeaderClosed proc) :
     ∃ proc, Program.Procedure.find? P ⟨pname, ()⟩ = some proc ∧
-      CmdExtHasType C P (TContext.subst Env.context Env'.stateSubstInfo.subst)
-        (.call pname callArgs md)
-        (TContext.subst Env.context Env'.stateSubstInfo.subst) := by
+      ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+        CmdExtHasType C P (TContext.subst Env.context S)
+          (.call pname callArgs md)
+          (TContext.subst Env.context S) := by
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, _, h_env, F,
       h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   subst h_env
   refine ⟨proc, heq_find, ?_⟩
-  show CmdExtHasType C P (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
-    (.call pname callArgs md) (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
-  let S_final := (v3.snd.updateSubst v4).stateSubstInfo.subst
+  intro S hS_abs hS_wf
+  -- `Env'.subst = (v3.snd.updateSubst v4).subst = v4.subst` definitionally.
+  have hS_abs_v4 : Subst.absorbs S v4.subst := hS_abs
+  -- `v4.subst` absorbs `v3.snd.subst` (from the unify step), so `S` absorbs it too.
+  have h_abs_v4_v3 : Subst.absorbs v4.subst v3.snd.stateSubstInfo.subst :=
+    Constraints.unify_absorbs _ _ _ F.unify
+  have h_abs_S_v3 : Subst.absorbs S v3.snd.stateSubstInfo.subst :=
+    Subst.absorbs_trans v3.snd.stateSubstInfo.subst v4.subst S h_abs_v4_v3 hS_abs_v4
   let tyArgSubst : Subst := v2.2.snd
   let σ : List (TyIdentifier × LMonoTy) :=
     List.zip proc.header.typeArgs
-      (proc.header.typeArgs.map (fun a => LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))
-  apply CmdExtHasType'.call (Γ := Env.context.subst S_final) (σ := σ) (proc := proc)
+      (proc.header.typeArgs.map (fun a => LMonoTy.subst S (LMonoTy.subst tyArgSubst (.ftvar a))))
+  apply CmdExtHasType'.call (Γ := Env.context.subst S) (σ := σ) (proc := proc)
   · exact heq_find
   · exact h_inp_arity
   · exact h_out_arity
   · -- lhs vars exist in substituted context
     intro v hv
     obtain ⟨ty, h_opt⟩ := Option.isSome_iff_exists.mp (h_lhs_exist v hv)
-    exact Option.isSome_iff_exists.mpr ⟨_, TContext.subst_find_some Env.context S_final v ty h_opt⟩
+    exact Option.isSome_iff_exists.mpr ⟨_, TContext.subst_find_some Env.context S v ty h_opt⟩
   · -- HasType for inputs
     intro i hi hj
-    have h_absorbs_final : Subst.absorbs S_final v3.snd.stateSubstInfo.subst :=
-      Constraints.unify_absorbs _ _ _ F.unify
     have h_res_sound := resolves_HasType_core C v2.2.fst v3.snd
       (CallArg.getInputExprs callArgs) v3.fst F.resolves_raw F.wf_v2 h_fwf F.ne_v2 F.ws F.len
-    have h_pkf : Subst.polyKeysFresh (T := CoreLParams) S_final v2.2.fst.context :=
-      Subst.polyKeysFresh_of_mono S_final v2.2.fst.context (F.ctx_eq ▸ h_mono)
-    have h_resolves_typing := h_res_sound.2.2.2 i hi S_final h_absorbs_final v4.isWF h_pkf
+    have h_pkf : Subst.polyKeysFresh (T := CoreLParams) S v2.2.fst.context :=
+      Subst.polyKeysFresh_of_mono S v2.2.fst.context (F.ctx_eq ▸ h_mono)
+    have h_resolves_typing := h_res_sound.2.2.2 i hi S h_abs_S_v3 hS_wf h_pkf
     have h_alias_equiv := call_input_type_eq C h_inst_lhs proc callArgs v1 v2 v3 v4 i hi hj F.len
-        F.inst_inp_raw F.unify (h_closed proc heq_find) F.aliases_wf_lhs F.absorbs_v2
+        F.inst_inp_raw F.unify (h_closed proc heq_find) F.aliases_wf_lhs F.absorbs_v2 S hS_abs_v4
     rw [F.ctx_eq] at h_resolves_typing
     simp only [List.get_eq_getElem] at h_resolves_typing h_alias_equiv
     -- The shared `∃ mty` witness must satisfy BOTH the AliasEquiv conjunct and
@@ -1662,22 +1665,22 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
         resolves_fvar_aliasEquiv C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
           F.resolves_raw F.wf_v2 h_fwf F.ne_v2 (F.ctx_eq ▸ h_mono) F.ws F.len i hi m x h_node'
       rw [h_node]
-      refine ⟨LMonoTy.subst S_final mty_ctx, ?_, ?_⟩
-      · -- AliasEquiv via trans(Layer-3 @ S_final, call_input_type_eq).
+      refine ⟨LMonoTy.subst S mty_ctx, ?_, ?_⟩
+      · -- AliasEquiv via trans(Layer-3 @ S, call_input_type_eq).
         rw [TContext.subst_aliases, ← F.ctx_lhs_env]
-        have h_ae_S := h_ae_ctx S_final h_absorbs_final
+        have h_ae_S := h_ae_ctx S h_abs_S_v3
         simp only [List.get_eq_getElem] at h_ae_S
         rw [F.ctx_eq, ← F.ctx_lhs_env] at h_ae_S
         exact AliasEquiv.trans h_ae_S h_alias_equiv
       · -- find? side: lift the context lookup through `TContext.subst`.
         have h_find_env : Env.context.types.find? x = some (.forAll [] mty_ctx) :=
           F.ctx_eq ▸ h_find_ctx
-        have h_find_subst := TContext.subst_find_some Env.context S_final x
+        have h_find_subst := TContext.subst_find_some Env.context S x
           (.forAll [] mty_ctx) h_find_env
         rw [LTy.subst_forAll_nil] at h_find_subst
         exact h_find_subst
     · -- Any other node: witness is the resolved/substituted input type.
-      refine ⟨LMonoTy.subst S_final ((v3.fst[i]'(F.len ▸ hi)).toLMonoTy), ?_, ?_⟩
+      refine ⟨LMonoTy.subst S ((v3.fst[i]'(F.len ▸ hi)).toLMonoTy), ?_, ?_⟩
       · rw [TContext.subst_aliases, ← F.ctx_lhs_env]
         exact h_alias_equiv
       · split
@@ -1689,7 +1692,7 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
     rw [TContext.subst_aliases]
     exact call_output_type_eq C Env h_inst_lhs proc callArgs v1 v2 v3 v4 i hi hj
       h_mono F.inst_lhs_raw F.unify (h_closed proc heq_find)
-      h_wf.aliasesWF F.subst_v2_env F.absorbs_v2
+      h_wf.aliasesWF F.subst_v2_env F.absorbs_v2 S hS_abs_v4
   · -- inout args are simple vars
     intro i hi h_contains
     have h_arity : (CallArg.getInputExprs callArgs).length
@@ -1704,6 +1707,58 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
 Soundness of the command typechecker for `Command` (CmdExt):
 if `typeCheckCmd` succeeds, then `CmdExtHasType` holds between the
 substituted input and output contexts.
+-/
+theorem Command.typeCheckCmd_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_closed : ∀ proc pname callArgs md,
+      cmd = .call pname callArgs md →
+      Program.Procedure.find? P pname = some proc →
+      ProcHeaderClosed proc) :
+    ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
+      CmdExtHasType C P (TContext.subst Env.context S) cmd
+        (TContext.subst Env'.context S) := by
+  intro S hS_abs hS_wf hS_rigid
+  cases cmd with
+  | cmd c =>
+    unfold Statement.typeCheckCmd at h
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v h_tc
+    obtain ⟨c', Env'_inner⟩ := v
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_cmd_eq, h_env_eq⟩ := h
+    subst h_cmd_eq; subst h_env_eq
+    have h_sound := Core.TypeSpec.Cmd.typeCheck_sound_gen C Env c c' Env'_inner h_tc
+      h_wf h_fwf h_ne h_mono S hS_abs hS_wf hS_rigid
+    exact CmdExtHasType'.cmd _ _ c h_sound
+  | call pname callArgs md =>
+    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
+      h_wf h_fwf h_ne
+    rw [h_ctx]
+    have h_closed' := h_closed
+    simp only [CmdExt.call.injEq] at h_closed'
+    -- Extract proc from the successful typechecking
+    have ⟨proc, h_find, h_call_sound⟩ :=
+      typeCheckCmd_call_sound_aux C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne h_mono
+        (fun proc h_find => h_closed' proc pname callArgs md ⟨rfl, rfl, rfl⟩ h_find)
+    exact h_call_sound S hS_abs hS_wf
+
+/--
+Soundness of the command typechecker for `Command` (fixed final-substitution
+corollary): if `typeCheckCmd` succeeds, then `CmdExtHasType` holds between the
+substituted input and output contexts, grounding type variables at
+`Env'.stateSubstInfo.subst`.
+
+The `cmd` case delegates to the fixed-`S` `Cmd.typeCheck_sound` corollary (which
+discharges its own rigid-identity bookkeeping internally); the `call` case uses
+`typeCheckCmd_call_sound_aux` at `S := Env'.stateSubstInfo.subst` (`absorbs`
+reflexive, `SubstWF` from the env's `isWF`). The rigid invariant `h_rigid_inv` is
+needed only by the `cmd` case.
 -/
 theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
@@ -1729,7 +1784,7 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_cmd_eq, h_env_eq⟩ := h
     subst h_cmd_eq; subst h_env_eq
-    have h_sound := Cmd.typeCheck_sound C Env c c' Env'_inner h_tc
+    have h_sound := Core.TypeSpec.Cmd.typeCheck_sound C Env c c' Env'_inner h_tc
       h_wf h_fwf h_ne h_mono h_rigid_inv
     exact CmdExtHasType'.cmd _ _ c h_sound
   | call pname callArgs md =>
@@ -1738,11 +1793,11 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     rw [h_ctx]
     have h_closed' := h_closed
     simp only [CmdExt.call.injEq] at h_closed'
-    -- Extract proc from the successful typechecking
     have ⟨proc, h_find, h_call_sound⟩ :=
       typeCheckCmd_call_sound_aux C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne h_mono
         (fun proc h_find => h_closed' proc pname callArgs md ⟨rfl, rfl, rfl⟩ h_find)
-    exact h_call_sound
+    exact h_call_sound Env'.stateSubstInfo.subst
+      (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
 
 /-! ### Annotated case helpers -/
 
@@ -2045,24 +2100,28 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
     (h_closed : ∀ proc,
       Program.Procedure.find? P ⟨pname, ()⟩ = some proc →
       ProcHeaderClosed proc) :
-    CmdExtHasTypeA C P (TContext.subst Env.context Env'.stateSubstInfo.subst)
-      (Statement.Command.subst Env'.stateSubstInfo.subst cmd')
-      (TContext.subst Env.context Env'.stateSubstInfo.subst) := by
+    ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      CmdExtHasTypeA C P (TContext.subst Env.context S)
+        (Statement.Command.subst S cmd')
+        (TContext.subst Env.context S) := by
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, h_cmd, h_env, F,
       h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   subst h_cmd; subst h_env
-  show CmdExtHasTypeA C P (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
-    (Statement.Command.subst (v3.snd.updateSubst v4).stateSubstInfo.subst
-      (.call pname (CallArg.replaceInArgs callArgs (List.map LExpr.unresolved v3.fst)) md))
-    (Env.context.subst (v3.snd.updateSubst v4).stateSubstInfo.subst)
-  let S_final := (v3.snd.updateSubst v4).stateSubstInfo.subst
+  intro S hS_abs hS_wf
+  -- `Env'.subst = (v3.snd.updateSubst v4).subst = v4.subst` definitionally.
+  have hS_abs_v4 : Subst.absorbs S v4.subst := hS_abs
+  -- `v4.subst` absorbs `v3.snd.subst` (from the unify step), so `S` absorbs it too.
+  have h_abs_v4_v3 : Subst.absorbs v4.subst v3.snd.stateSubstInfo.subst :=
+    Constraints.unify_absorbs _ _ _ F.unify
+  have h_abs_S_v3 : Subst.absorbs S v3.snd.stateSubstInfo.subst :=
+    Subst.absorbs_trans v3.snd.stateSubstInfo.subst v4.subst S h_abs_v4_v3 hS_abs_v4
   let tyArgSubst : Subst := v2.2.snd
   let σ : List (TyIdentifier × LMonoTy) :=
     List.zip proc.header.typeArgs
-      (proc.header.typeArgs.map (fun a => LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))
+      (proc.header.typeArgs.map (fun a => LMonoTy.subst S (LMonoTy.subst tyArgSubst (.ftvar a))))
   rw [Command_subst_call]
-  apply CmdExtHasType'.call (Γ := Env.context.subst S_final) (σ := σ) (proc := proc)
+  apply CmdExtHasType'.call (Γ := Env.context.subst S) (σ := σ) (proc := proc)
   · exact heq_find
   · -- input arity
     rw [getInputExprs_transformed_length]; exact h_inp_arity
@@ -2072,21 +2131,21 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
     rw [getLhs_transformed]
     intro v hv
     obtain ⟨ty, h_opt⟩ := Option.isSome_iff_exists.mp (h_lhs_exist v hv)
-    exact Option.isSome_iff_exists.mpr ⟨_, TContext.subst_find_some Env.context S_final v ty h_opt⟩
+    exact Option.isSome_iff_exists.mpr ⟨_, TContext.subst_find_some Env.context S v ty h_opt⟩
   · -- HasTypeA for inputs
     intro i hi hj
     -- The original `getInputExprs[i]` index, transported across the bridge.
     have h_hi_orig : i < (CallArg.getInputExprs callArgs).length := by
       rw [getInputExprs_transformed_length] at hi; exact hi
     have h_alias_equiv := call_input_type_eq C h_inst_lhs proc callArgs v1 v2 v3 v4 i h_hi_orig hj
-        F.len F.inst_inp_raw F.unify (h_closed proc heq_find) F.aliases_wf_lhs F.absorbs_v2
+        F.len F.inst_inp_raw F.unify (h_closed proc heq_find) F.aliases_wf_lhs F.absorbs_v2 S hS_abs_v4
     simp only [List.get_eq_getElem] at h_alias_equiv
     rw [TContext.subst_aliases, ← F.ctx_lhs_env]
     -- Split on the transformed node: by-value (annotated) vs inout (bare fvar).
-    rcases getInputExprs_transformed_node callArgs v3.fst S_final F.len i hi with
+    rcases getInputExprs_transformed_node callArgs v3.fst S F.len i hi with
       ⟨hi_e, h_node⟩ | ⟨x, hi_o, h_node_tr, h_node_orig⟩
-    · -- Branch B: by-value position. Witness = subst S_final (v3.fst[i].toLMonoTy).
-      refine ⟨LMonoTy.subst S_final ((v3.fst[i]'(F.len ▸ h_hi_orig)).toLMonoTy), ?_, ?_⟩
+    · -- Branch B: by-value position. Witness = subst S (v3.fst[i].toLMonoTy).
+      refine ⟨LMonoTy.subst S ((v3.fst[i]'(F.len ▸ h_hi_orig)).toLMonoTy), ?_, ?_⟩
       · -- AliasEquiv via call_input_type_eq.
         have h_get_eq : (v3.fst.get ⟨i, F.len ▸ h_hi_orig⟩).toLMonoTy
             = (v3.fst[i]'(F.len ▸ h_hi_orig)).toLMonoTy := by simp only [List.get_eq_getElem]
@@ -2100,35 +2159,33 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
             (CallArg.getInputExprs callArgs) v3.fst F.resolves_raw F.wf_v2 h_fwf F.ne_v2
             (F.ctx_eq ▸ h_resolved) F.len i h_hi_orig
           simpa only [List.get_eq_getElem] using h_hta
-        have h_hta_subst := applySubst_typeCheck S_final h_hta_raw
+        have h_hta_subst := applySubst_typeCheck S h_hta_raw
         simp only [List.map_nil] at h_hta_subst
         -- The transformed by-value node is never a bare fvar, so the match
         -- reduces to its `e` arm (`exprTyped = HasTypeA [] e mty`, embed = id).
         split
         · rename_i m y h_eq
-          exact absurd h_eq (unresolved_applySubst_ne_fvar_none _ S_final m y)
+          exact absurd h_eq (unresolved_applySubst_ne_fvar_none _ S m y)
         · exact h_hta_subst
-    · -- Branch A: inout position. Witness = subst S_final mty_ctx (relation-indep).
+    · -- Branch A: inout position. Witness = subst S mty_ctx (relation-indep).
       obtain ⟨mty_ctx, h_find_ctx, h_ae_ctx⟩ :=
         resolves_fvar_aliasEquiv C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
           F.resolves_raw F.wf_v2 h_fwf F.ne_v2 (F.ctx_eq ▸ h_mono) F.ws F.len i h_hi_orig () x
           (by simp only [List.get_eq_getElem]; exact h_node_orig)
       rw [h_node_tr]
-      refine ⟨LMonoTy.subst S_final mty_ctx, ?_, ?_⟩
-      · -- AliasEquiv via trans(Layer-3 @ S_final, call_input_type_eq).
-        have h_absorbs_final : Subst.absorbs S_final v3.snd.stateSubstInfo.subst :=
-          Constraints.unify_absorbs _ _ _ F.unify
-        have h_ae_S := h_ae_ctx S_final h_absorbs_final
+      refine ⟨LMonoTy.subst S mty_ctx, ?_, ?_⟩
+      · -- AliasEquiv via trans(Layer-3 @ S, call_input_type_eq).
+        have h_ae_S := h_ae_ctx S h_abs_S_v3
         simp only [List.get_eq_getElem] at h_ae_S
         rw [F.ctx_eq, ← F.ctx_lhs_env] at h_ae_S
         exact AliasEquiv.trans h_ae_S h_alias_equiv
       · -- find? side: lift the context lookup through `TContext.subst`.
-        show (h_inst_lhs.context.subst S_final).types.find? x
-          = some (LTy.forAll [] (LMonoTy.subst S_final mty_ctx))
+        show (h_inst_lhs.context.subst S).types.find? x
+          = some (LTy.forAll [] (LMonoTy.subst S mty_ctx))
         rw [F.ctx_lhs_env]
         have h_find_env : Env.context.types.find? x = some (.forAll [] mty_ctx) :=
           F.ctx_eq ▸ h_find_ctx
-        have h_find_subst := TContext.subst_find_some Env.context S_final x
+        have h_find_subst := TContext.subst_find_some Env.context S x
           (.forAll [] mty_ctx) h_find_env
         rw [LTy.subst_forAll_nil] at h_find_subst
         exact h_find_subst
@@ -2138,7 +2195,7 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
     rw [TContext.subst_aliases]
     exact call_output_type_eq C Env h_inst_lhs proc callArgs v1 v2 v3 v4 i hi hj
       h_mono F.inst_lhs_raw F.unify (h_closed proc heq_find)
-      h_wf.aliasesWF F.subst_v2_env F.absorbs_v2
+      h_wf.aliasesWF F.subst_v2_env F.absorbs_v2 S hS_abs_v4
   · -- inout args are simple vars
     intro i hi h_contains
     have h_arity : (CallArg.getInputExprs callArgs).length
@@ -2155,11 +2212,11 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
     -- Transform the `[i]?` goal into a `[i]` claim (index is in range).
     have hi_tr : i < (CallArg.getInputExprs
         ((CallArg.replaceInArgs callArgs (List.map LExpr.unresolved v3.fst)).map
-          (substCallArgFn S_final))).length := by
+          (substCallArgFn S))).length := by
       rw [getInputExprs_transformed_length, h_arity]; exact hi
     rw [List.getElem?_eq_getElem hi_tr]
     -- Bridge: transformed node is annotated by-value or bare inout fvar.
-    rcases getInputExprs_transformed_node callArgs v3.fst S_final F.len i hi_tr with
+    rcases getInputExprs_transformed_node callArgs v3.fst S F.len i hi_tr with
       ⟨hi_e, h_node⟩ | ⟨x, hi_o, h_node_tr, h_node_orig⟩
     · -- By-value: the resolved node `v3.fst[i]` is a fvar named `keys[i]`.
       have h_get : (CallArg.getInputExprs callArgs).get ⟨i, hi_orig⟩
@@ -2189,6 +2246,55 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
 Annotated soundness of the command typechecker for `Command` (CmdExt):
 if `typeCheckCmd` succeeds, the output command satisfies `CmdExtHasTypeA`.
 -/
+theorem Command.typeCheckCmd_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_closed : ∀ proc pname callArgs md,
+      cmd = .call pname callArgs md →
+      Program.Procedure.find? P pname = some proc →
+      ProcHeaderClosed proc) :
+    ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      CmdExtHasTypeA C P (TContext.subst Env.context S)
+        (Statement.Command.subst S cmd')
+        (TContext.subst Env'.context S) := by
+  intro S hS_abs hS_wf
+  cases cmd with
+  | cmd c =>
+    unfold Statement.typeCheckCmd at h
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v h_tc
+    obtain ⟨c', Env'_inner⟩ := v
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_cmd_eq, h_env_eq⟩ := h
+    subst h_cmd_eq; subst h_env_eq
+    have h_sound := Core.TypeSpec.Cmd.typeCheck_annotated_sound_gen C Env c c' Env'_inner h_tc
+      h_wf h_fwf h_ne h_mono h_resolved S hS_abs hS_wf
+    exact CmdExtHasType'.cmd _ _ _ h_sound
+  | call pname callArgs md =>
+    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
+      h_wf h_fwf h_ne
+    rw [h_ctx]
+    have h_closed' := h_closed
+    simp only [CmdExt.call.injEq] at h_closed'
+    exact typeCheckCmd_call_annotated_sound_aux C Env P pname callArgs md cmd' Env' h
+      h_wf h_fwf h_ne h_mono h_resolved
+      (fun proc h_find => h_closed' proc pname callArgs md ⟨rfl, rfl, rfl⟩ h_find)
+      S hS_abs hS_wf
+
+/--
+Annotated soundness of the command typechecker for `Command` (fixed
+final-substitution corollary): if `typeCheckCmd` succeeds, the output command
+satisfies `CmdExtHasTypeA`, grounding type variables at `Env'.stateSubstInfo.subst`.
+
+This is the `S := Env'.stateSubstInfo.subst` instance of
+`Command.typeCheckCmd_annotated_sound_gen` (`absorbs` reflexive, `SubstWF` from
+the env's `isWF`).
+-/
 theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
     (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
@@ -2203,28 +2309,10 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
       ProcHeaderClosed proc) :
     CmdExtHasTypeA C P (TContext.subst Env.context Env'.stateSubstInfo.subst)
       (Statement.Command.subst Env'.stateSubstInfo.subst cmd')
-      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
-  cases cmd with
-  | cmd c =>
-    unfold Statement.typeCheckCmd at h
-    simp only [Bind.bind, Except.bind] at h
-    elim_err h with v h_tc
-    obtain ⟨c', Env'_inner⟩ := v
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨h_cmd_eq, h_env_eq⟩ := h
-    subst h_cmd_eq; subst h_env_eq
-    have h_sound := Cmd.typeCheck_annotated_sound C Env c c' Env'_inner h_tc
-      h_wf h_fwf h_ne h_mono h_resolved
-    exact Command_subst_cmd_HasTypeA C P Env Env'_inner c' h_sound
-  | call pname callArgs md =>
-    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
-      h_wf h_fwf h_ne
-    rw [h_ctx]
-    have h_closed' := h_closed
-    simp only [CmdExt.call.injEq] at h_closed'
-    exact typeCheckCmd_call_annotated_sound_aux C Env P pname callArgs md cmd' Env' h
-      h_wf h_fwf h_ne h_mono h_resolved
-      (fun proc h_find => h_closed' proc pname callArgs md ⟨rfl, rfl, rfl⟩ h_find)
+      (TContext.subst Env'.context Env'.stateSubstInfo.subst) :=
+  Command.typeCheckCmd_annotated_sound_gen C Env P cmd cmd' Env' h h_wf h_fwf h_ne h_mono
+    h_resolved h_closed Env'.stateSubstInfo.subst
+    (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
 
 end TypeSpec
 end Core

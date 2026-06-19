@@ -150,17 +150,17 @@ theorem init_nondet_context_setup (C : LContext CoreLParams) (Env : TEnv Unit)
 For `set x := *` (nondet): if `x` is in the context with a mono type, then
 after substitution it remains mono.
 -/
-theorem set_nondet_sound (Env : TEnv Unit) (x : CoreIdent) (xty : LTy)
+theorem set_nondet_sound (Env : TEnv Unit) (x : CoreIdent) (xty : LTy) (S : Subst)
     (h_lookup : CmdType.lookup Env x = some xty)
     (h_mono : ContextMono Env.context) :
-    ∃ mty, (TContext.subst Env.context Env.stateSubstInfo.subst).types.find? x =
+    ∃ mty, (TContext.subst Env.context S).types.find? x =
       some (.forAll [] mty) := by
   have h_find := (CmdType.lookup_some_iff_find_some Env x xty).mp h_lookup
   have h_xty_bv := h_mono x xty h_find
   obtain ⟨xs, mty_x⟩ := xty
   simp [LTy.boundVars] at h_xty_bv
   subst h_xty_bv
-  have h_find_subst := Lambda.TContext.subst_find_some Env.context Env.stateSubstInfo.subst x
+  have h_find_subst := Lambda.TContext.subst_find_some Env.context S x
     (.forAll [] mty_x) h_find
   rw [LTy.subst_forAll_nil] at h_find_subst
   exact ⟨_, h_find_subst⟩
@@ -174,15 +174,18 @@ has the final monotype under the unified substitution applied to the original co
 private theorem init_det_expr_HasType (C : LContext CoreLParams) (Env Env_pre Env_infer Env' : TEnv Unit)
     (x : CoreIdent) (expr e' : LExpr CoreLParams.mono)
     (xty pre_ty ety : LTy) (mty_pre : LMonoTy) (md : MetaData Expression)
+    (S : Subst)
     (h_pre : CmdType.preprocess C Env xty = .ok (pre_ty, Env_pre))
     (h_pre_mono : pre_ty = .forAll [] mty_pre)
     (h_infer : CmdType.inferType C Env_pre (.init x xty (.det expr) md) expr = .ok (e', ety, Env_infer))
     (h_unify : CmdType.unifyTypes Env_infer [(pre_ty, ety)] = .ok Env')
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
-    (h_mono : ContextMono Env.context) :
-    HasType (T := CoreLParams) C (TContext.subst Env.context Env'.stateSubstInfo.subst) expr
-      (.forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty_pre)) := by
+    (h_mono : ContextMono Env.context)
+    (hS_abs : Subst.absorbs S Env'.stateSubstInfo.subst)
+    (hS_wf : SubstWF S) :
+    HasType (T := CoreLParams) C (TContext.subst Env.context S) expr
+      (.forAll [] (LMonoTy.subst S mty_pre)) := by
   have h_wf_pre : TEnvWF (T := CoreLParams) Env_pre :=
     CmdType.preprocess_preserves_TEnvWF C Env xty pre_ty Env_pre h_pre h_wf
   have h_ctx_pre : Env_pre.context = Env.context :=
@@ -191,42 +194,60 @@ private theorem init_det_expr_HasType (C : LContext CoreLParams) (Env Env_pre En
     CmdType.inferType_HasType C Env_pre Env_infer (.init x xty (.det expr) md) expr e' ety h_infer h_wf_pre h_fwf
   have h_abs : Subst.absorbs Env'.stateSubstInfo.subst Env_infer.stateSubstInfo.subst :=
     CmdType.unifyTypes_absorbs Env_infer Env' [(pre_ty, ety)] h_unify
+  have h_abs_S : Subst.absorbs S Env_infer.stateSubstInfo.subst :=
+    Subst.absorbs_trans Env_infer.stateSubstInfo.subst Env'.stateSubstInfo.subst S h_abs hS_abs
   have h_mono_pre : ContextMono Env_pre.context := h_ctx_pre ▸ h_mono
-  have h_pkf : Subst.polyKeysFresh (T := CoreLParams) Env'.stateSubstInfo.subst Env_pre.context :=
+  have h_pkf : Subst.polyKeysFresh (T := CoreLParams) S Env_pre.context :=
     Subst.polyKeysFresh_of_mono _ _ h_mono_pre
-  have h_ht := h_hastype Env'.stateSubstInfo.subst h_abs Env'.stateSubstInfo.isWF h_pkf
+  have h_ht := h_hastype S h_abs_S hS_wf h_pkf
   rw [h_ctx_pre] at h_ht
-  have h_unify_eq : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
-      LMonoTy.subst Env'.stateSubstInfo.subst mty_pre := by
-    rw [h_pre_mono, h_ety_eq] at h_unify
-    exact (CmdType.unifyTypes_eq Env_infer Env' mty_pre mty_infer h_unify).symm
+  have h_unify_eq : LMonoTy.subst S mty_infer = LMonoTy.subst S mty_pre := by
+    have h_base : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
+        LMonoTy.subst Env'.stateSubstInfo.subst mty_pre := by
+      rw [h_pre_mono, h_ety_eq] at h_unify
+      exact (CmdType.unifyTypes_eq Env_infer Env' mty_pre mty_infer h_unify).symm
+    calc LMonoTy.subst S mty_infer
+        = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_infer) :=
+          (LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst mty_infer hS_abs).symm
+      _ = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_pre) := by rw [h_base]
+      _ = LMonoTy.subst S mty_pre := LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst mty_pre hS_abs
   rw [h_unify_eq] at h_ht
   exact h_ht
 
 /-- For `set x := expr`: the expression has the variable's type under the unified substitution. -/
 private theorem set_det_HasType (C : LContext CoreLParams) (Env Env_infer Env' : TEnv Unit)
     (x : CoreIdent) (expr e' : LExpr CoreLParams.mono) (xty ety : LTy)
-    (mty_x : LMonoTy) (h_xty_eq : xty = .forAll [] mty_x)
+    (mty_x : LMonoTy) (S : Subst) (h_xty_eq : xty = .forAll [] mty_x)
     (h_infer : CmdType.inferType C Env (.set x (.det expr) md) expr = .ok (e', ety, Env_infer))
     (h_unify : CmdType.unifyTypes Env_infer [(xty, ety)] = .ok Env')
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
-    (h_mono : ContextMono Env.context) :
-    HasType (T := CoreLParams) C (TContext.subst Env.context Env'.stateSubstInfo.subst) expr
-      (LTy.subst Env'.stateSubstInfo.subst xty) := by
+    (h_mono : ContextMono Env.context)
+    (hS_abs : Subst.absorbs S Env'.stateSubstInfo.subst)
+    (hS_wf : SubstWF S) :
+    HasType (T := CoreLParams) C (TContext.subst Env.context S) expr
+      (LTy.subst S xty) := by
   subst h_xty_eq
   obtain ⟨mty_infer, h_ety_eq, h_hastype⟩ :=
     CmdType.inferType_HasType C Env Env_infer (.set x (.det expr) md) expr e' ety h_infer h_wf h_fwf
   have h_abs : Subst.absorbs Env'.stateSubstInfo.subst Env_infer.stateSubstInfo.subst :=
     CmdType.unifyTypes_absorbs Env_infer Env' [(.forAll [] mty_x, ety)] h_unify
-  have h_pkf : Subst.polyKeysFresh (T := CoreLParams) Env'.stateSubstInfo.subst Env.context :=
+  have h_abs_S : Subst.absorbs S Env_infer.stateSubstInfo.subst :=
+    Subst.absorbs_trans Env_infer.stateSubstInfo.subst Env'.stateSubstInfo.subst S h_abs hS_abs
+  have h_pkf : Subst.polyKeysFresh (T := CoreLParams) S Env.context :=
     Subst.polyKeysFresh_of_mono _ _ h_mono
-  have h_ht := h_hastype Env'.stateSubstInfo.subst h_abs Env'.stateSubstInfo.isWF h_pkf
+  have h_ht := h_hastype S h_abs_S hS_wf h_pkf
   rw [LTy.subst_forAll_nil]
-  have h_unify_eq : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
-      LMonoTy.subst Env'.stateSubstInfo.subst mty_x := by
-    rw [h_ety_eq] at h_unify
-    exact (CmdType.unifyTypes_eq Env_infer Env' mty_x mty_infer h_unify).symm
+  have h_unify_eq : LMonoTy.subst S mty_infer = LMonoTy.subst S mty_x := by
+    have h_base : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
+        LMonoTy.subst Env'.stateSubstInfo.subst mty_x := by
+      rw [h_ety_eq] at h_unify
+      exact (CmdType.unifyTypes_eq Env_infer Env' mty_x mty_infer h_unify).symm
+    calc LMonoTy.subst S mty_infer
+        = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_infer) :=
+          (LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst mty_infer hS_abs).symm
+      _ = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) := by rw [h_base]
+      _ = LMonoTy.subst S mty_x := LMonoTy.subst_absorbs S Env'.stateSubstInfo.subst mty_x hS_abs
   rw [h_unify_eq] at h_ht
   exact h_ht
 
@@ -236,14 +257,16 @@ is bool-typed, then `HasType` holds for the expression at type bool, and
 the context is preserved.
 -/
 private theorem inferType_bool_HasType (C : LContext CoreLParams) (Env Env_out : TEnv Unit)
-    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
+    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy) (S : Subst)
     (h_infer : CmdType.inferType C Env c e = .ok (e', ety, Env_out))
     (h_isbool : CmdType.isBoolType ety = true)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_mono : ContextMono Env.context) :
-    HasType (T := CoreLParams) C (TContext.subst Env.context Env_out.stateSubstInfo.subst) e
+    (h_mono : ContextMono Env.context)
+    (hS_abs : Subst.absorbs S Env_out.stateSubstInfo.subst)
+    (hS_wf : SubstWF S) :
+    HasType (T := CoreLParams) C (TContext.subst Env.context S) e
       (.forAll [] .bool) ∧
     Env_out.context = Env.context := by
   obtain ⟨mty, h_ety_eq, h_hastype⟩ := CmdType.inferType_HasType C Env Env_out c e e' ety h_infer h_wf h_fwf
@@ -252,9 +275,7 @@ private theorem inferType_bool_HasType (C : LContext CoreLParams) (Env Env_out :
   have h_mty_bool : mty = .bool := by cases h_bool_ty; rfl
   subst h_mty_bool
   have h_ctx := CmdType.inferType_preserves_context C Env Env_out c e e' ety h_infer h_wf h_ne h_fwf
-  have h_ht := h_hastype Env_out.stateSubstInfo.subst
-    (Subst.absorbs_refl _ Env_out.stateSubstInfo.isWF)
-    Env_out.stateSubstInfo.isWF
+  have h_ht := h_hastype S hS_abs hS_wf
     (Subst.polyKeysFresh_of_mono _ _ h_mono)
   rw [LMonoTy.subst_bool] at h_ht
   exact ⟨h_ht, h_ctx⟩
@@ -276,17 +297,18 @@ vars are values (not keys) of the initial substitution, so the invariant holds.
 *Preserved* by `Cmd.typeCheck_preserves_rigid_inv`: each command's `checkAnnotCompat`
 verifies identity on all rigid vars after unification, rejecting any refinement.
 -/
-theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
+theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_mono : ContextMono Env.context)
-    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
-      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) :
-    CmdHasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) cmd
-      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
+    (h_mono : ContextMono Env.context) :
+    ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
+      CmdHasType C (TContext.subst Env.context S) cmd
+        (TContext.subst Env'.context S) := by
+  intro S hS_abs hS_wf hS_rigid
   cases cmd with
   | init x xty e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -316,26 +338,34 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       obtain ⟨h_ctx_eq, h_wf_pre, mty_pre, h_mty_pre, mty, h_mty, h_mty_eq, h_v3_eq⟩ :=
         init_det_context_setup C Env x xty heq_det md v1 v2 Env_unified v3
           h_preprocess h_infer h_unify h_postprocess h_wf h_fwf h_ne
-      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst x h_find_none
+      -- `Env'.subst = (update v3.snd x v3.fst).subst = v3.snd.subst = Env_unified.subst`.
+      have h_env'_subst : (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst =
+          Env_unified.stateSubstInfo.subst := by
+        rw [CmdType.update_preserves_subst, h_v3_eq]
+      have hS_abs_unified : Subst.absorbs S Env_unified.stateSubstInfo.subst :=
+        h_env'_subst ▸ hS_abs
+      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context S x h_find_none
       have h_fresh_v3 : v3.snd.context.types.find? x = none :=
         h_ctx_eq ▸ h_find_none
-      have h_update_ctx := CmdType.update_subst_context v3.snd x v3.fst
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst h_fresh_v3
-      rw [h_update_ctx, h_ctx_eq, h_mty]
+      have h_update_ctx := CmdType.update_subst_context v3.snd x v3.fst S h_fresh_v3
+      rw [h_update_ctx, h_ctx_eq]
+      -- The stored type at `S` collapses to `forAll [] (subst S mty_pre)`.
+      have h_pr := CmdType.postprocess_result C Env_unified v3.snd mty_pre v3.fst
+        (h_mty_pre ▸ h_postprocess)
+      have h_stored : LTy.subst S v3.fst = .forAll [] (LMonoTy.subst S mty_pre) := by
+        rw [h_pr.1, LTy.subst_forAll_nil,
+          LMonoTy.subst_absorbs S Env_unified.stateSubstInfo.subst mty_pre hS_abs_unified]
+      rw [h_stored]
       have h_not_in_vars : x ∉ HasVarsPure.getVars (P := Expression) heq_det :=
         fun h => h_not_in_fv ((CmdType.freeVars_eq_getVars heq_det x).mpr h)
       have h_hastype : HasType (T := CoreLParams) C
-          (Env.context.subst (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst)
-          heq_det (.forAll [] (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre)) := by
-        rw [CmdType.update_preserves_subst, h_v3_eq]
-        exact init_det_expr_HasType C Env v1.snd v2.2.snd Env_unified x heq_det
-          v2.1 xty v1.fst v2.2.fst mty_pre md h_preprocess h_mty_pre
-          h_infer h_unify h_wf h_fwf h_mono
-      rw [h_mty_eq]
+          (Env.context.subst S)
+          heq_det (.forAll [] (LMonoTy.subst S mty_pre)) :=
+        init_det_expr_HasType C Env v1.snd v2.2.snd Env_unified x heq_det
+          v2.1 xty v1.fst v2.2.fst mty_pre md S h_preprocess h_mty_pre
+          h_infer h_unify h_wf h_fwf h_mono hS_abs_unified hS_wf
       have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
         rw [h_preprocess, ← h_mty_pre]
-      have h_rigid_unified := CmdType.checkAnnotCompat_rigid C Env_unified h_checkAnnot1
       have h_preprocess_subst := CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
       have h_infer_absorbs := CmdType.inferType_absorbs C v1.snd v2.2.snd
         (.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst h_infer h_wf_pre h_fwf
@@ -344,11 +374,11 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
           Env.stateSubstInfo.subst :=
         Subst.absorbs_trans _ _ _
           (h_preprocess_subst ▸ h_infer_absorbs) h_unify_absorbs
+      have hS_abs_env : Subst.absorbs S Env.stateSubstInfo.subst :=
+        Subst.absorbs_trans _ _ _ h_absorbs_unified hS_abs_unified
       obtain ⟨tys, h_tys_len, h_rac⟩ := CmdType.preprocess_isInstance_rigidAnnotCompat C Env v1.snd
-        Env_unified.stateSubstInfo.subst xty mty_pre h_pp h_wf
-        h_rigid_unified h_absorbs_unified
-      rw [← TContext.subst_aliases Env.context
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst] at h_rac
+        S xty mty_pre h_pp h_wf hS_rigid hS_abs_env
+      rw [← TContext.subst_aliases Env.context S] at h_rac
       exact CmdHasType'.init_det _ x xty heq_det _ tys md
         h_find_none_subst h_not_in_vars h_tys_len h_rac h_hastype
     · -- nondet case
@@ -361,48 +391,41 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
         TypeContext.postprocess] at *
       have h_find_none := (CmdType.lookup_none_iff_find_none Env x).mp h_lookup_none
-      obtain ⟨h_ctx_eq, h_find_none_subst, mty, h_mty⟩ :=
+      obtain ⟨h_ctx_eq, _h_find_none_subst_old, mty, h_mty⟩ :=
         init_nondet_context_setup C Env x xty v1 v2 h_preprocess h_postprocess h_find_none
+      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context S x h_find_none
       have h_fresh_v2 : v2.snd.context.types.find? x = none :=
         h_ctx_eq ▸ h_find_none
-      have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst
-        (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
-      rw [h_update_ctx, h_ctx_eq, h_mty]
+      have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst S h_fresh_v2
+      rw [h_update_ctx, h_ctx_eq]
       obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
       have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
         (h_mty_pre ▸ h_postprocess)
-      have h_subst_eq := CmdType.update_preserves_subst v2.snd x v2.fst
-      -- Double-subst collapses by idempotence since postprocess preserves env.
-      have h_mty_eq : mty = LMonoTy.subst v2.snd.stateSubstInfo.subst mty_pre := by
-        have h_mty' := h_mty
-        rw [h_subst_eq, h_pr.1, LTy.subst_forAll_nil] at h_mty'
-        have h_eq := ((LTy.forAll.injEq _ _ _ _ ▸ h_mty').2).symm
-        rw [h_pr.2] at h_eq
-        rw [LMonoTy.subst_idempotent v1.snd.stateSubstInfo.subst
-          v1.snd.stateSubstInfo.isWF mty_pre] at h_eq
-        rw [← h_pr.2] at h_eq
-        exact h_eq
       have h_pp : CmdType.preprocess C Env xty = .ok (.forAll [] mty_pre, v1.snd) := by
         rw [h_preprocess, ← h_mty_pre]
       -- v2.snd = v1.snd (postprocess preserves), so v2.snd.subst = Env.subst.
       have h_v2_subst : v2.snd.stateSubstInfo = Env.stateSubstInfo := by
         rw [h_pr.2]
         exact CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess
-      have h_rigid_v2 : ∀ v, v ∈ C.rigidTypeVars →
-          LMonoTy.subst v2.snd.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
-        intro v hv; rw [congrArg (·.subst) h_v2_subst]; exact h_rigid_inv v hv
-      have h_absorbs_nondet : Subst.absorbs v2.snd.stateSubstInfo.subst
+      -- `Env'.subst = (update v2.snd x v2.fst).subst = v2.snd.subst = Env.subst`.
+      have h_env'_subst : (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst =
           Env.stateSubstInfo.subst := by
-        rw [congrArg (·.subst) h_v2_subst]
-        exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+        rw [CmdType.update_preserves_subst, congrArg (·.subst) h_v2_subst]
+      have hS_abs_env : Subst.absorbs S Env.stateSubstInfo.subst :=
+        h_env'_subst ▸ hS_abs
+      have h_v1_subst : v1.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+        congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess)
+      -- The stored type at `S` collapses to `forAll [] (subst S mty_pre)`.
+      have h_stored : LTy.subst S v2.fst = .forAll [] (LMonoTy.subst S mty_pre) := by
+        rw [h_pr.1, LTy.subst_forAll_nil, h_v1_subst,
+          LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty_pre hS_abs_env]
+      rw [h_stored]
       obtain ⟨tys, h_tys_len, h_rac0⟩ :=
         CmdType.preprocess_isInstance_rigidAnnotCompat C Env v1.snd
-          v2.snd.stateSubstInfo.subst xty mty_pre h_pp h_wf
-          h_rigid_v2 h_absorbs_nondet
-      rw [← h_mty_eq] at h_rac0
-      rw [← TContext.subst_aliases Env.context
-        (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst] at h_rac0
-      exact CmdHasType'.init_nondet _ x xty mty tys md h_find_none_subst h_tys_len h_rac0
+          S xty mty_pre h_pp h_wf hS_rigid hS_abs_env
+      rw [← TContext.subst_aliases Env.context S] at h_rac0
+      exact CmdHasType'.init_nondet _ x xty (LMonoTy.subst S mty_pre) tys md
+        h_find_none_subst h_tys_len h_rac0
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -420,14 +443,13 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       obtain ⟨e', ety, Env_infer⟩ := v
       simp only at heq h_unify ⊢
       have h_find := (CmdType.lookup_some_iff_find_some Env x xty).mp h_lookup
-      have h_find_subst := Lambda.TContext.subst_find_some Env.context
-        Env'.stateSubstInfo.subst x xty h_find
+      have h_find_subst := Lambda.TContext.subst_find_some Env.context S x xty h_find
       have h_xty_bv := h_mono x xty h_find
       obtain ⟨xs, mty_x⟩ := xty
       simp [LTy.boundVars] at h_xty_bv
       subst h_xty_bv
       have h_hastype := set_det_HasType C Env Env_infer Env' x expr e'
-        (.forAll [] mty_x) ety mty_x rfl heq h_unify h_wf h_fwf h_mono
+        (.forAll [] mty_x) ety mty_x S rfl heq h_unify h_wf h_fwf h_mono hS_abs hS_wf
       have h_ctx_infer := CmdType.inferType_preserves_context C Env Env_infer
         (.set x (.det expr) md) expr e' ety heq h_wf h_ne h_fwf
       have h_ctx_unify := CmdType.unifyTypes_preserves_context Env_infer Env'
@@ -435,12 +457,12 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       have h_ctx : Env'.context = Env.context := by rw [h_ctx_unify, h_ctx_infer]
       rw [h_ctx]
       rw [LTy.subst_forAll_nil] at h_find_subst h_hastype
-      exact CmdHasType'.set_det _ x (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) expr md
+      exact CmdHasType'.set_det _ x (LMonoTy.subst S mty_x) expr md
         h_find_subst h_hastype
     | nondet =>
       simp at h
       cases h
-      obtain ⟨mty, h_find_subst⟩ := set_nondet_sound Env x xty h_lookup h_mono
+      obtain ⟨mty, h_find_subst⟩ := set_nondet_sound Env x xty S h_lookup h_mono
       exact CmdHasType'.set_nondet _ x mty md h_find_subst
   | assert label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -453,7 +475,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
     obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
-      (.assert label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
+      (.assert label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_mono hS_abs hS_wf
     rw [h_ctx]
     exact CmdHasType'.assert _ label e md h_ht
   | assume label e md =>
@@ -467,7 +489,7 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
     obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
-      (.assume label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
+      (.assume label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_mono hS_abs hS_wf
     rw [h_ctx]
     exact CmdHasType'.assume _ label e md h_ht
   | cover label e md =>
@@ -481,9 +503,48 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     cases h
     obtain ⟨e', ety, Env_out⟩ := v
     obtain ⟨h_ht, h_ctx⟩ := inferType_bool_HasType C Env Env_out
-      (.cover label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_mono
+      (.cover label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_mono hS_abs hS_wf
     rw [h_ctx]
     exact CmdHasType'.cover _ label e md h_ht
+
+/--
+Soundness of the command typechecker (fixed final-substitution corollary): if
+`Cmd.typeCheck` succeeds, then `CmdHasType` holds between the substituted
+input/output contexts, grounding type variables at `Env'.stateSubstInfo.subst`.
+
+This is the `S := Env'.stateSubstInfo.subst` instance of
+`Cmd.typeCheck_sound_gen`: `absorbs` is reflexive, `SubstWF` is the env's `isWF`,
+and the rigid-identity invariant at `Env'.subst` follows from `h_rigid_inv` (at
+`Env.subst`) via `Cmd.typeCheck_preserves_rigid_inv`.
+
+**Rigid-var-identity invariant** (`h_rigid_inv`):
+`∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`.
+
+*Established* in `ProcedureType.typeCheck`: `setupInputEnv` generates fresh vars
+(e.g. `$__ty0`) as rigid, then unifies the original names with them — the rigid
+vars are values (not keys) of the initial substitution, so the invariant holds.
+(TODO: prove)
+
+*Preserved* by `Cmd.typeCheck_preserves_rigid_inv`: each command's `checkAnnotCompat`
+verifies identity on all rigid vars after unification, rejecting any refinement.
+-/
+theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) :
+    CmdHasType C (TContext.subst Env.context Env'.stateSubstInfo.subst) cmd
+      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
+  have h_rigid' : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v :=
+    Core.Cmd.typeCheck_preserves_rigid_inv C Env cmd cmd' Env' h h_rigid_inv
+  exact Cmd.typeCheck_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono
+    Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
+    Env'.stateSubstInfo.isWF h_rigid'
 
 /-! ## Part II — Annotated soundness (`Cmd.typeCheck_annotated_sound`) -/
 
@@ -546,14 +607,14 @@ is bool-typed, then `HasTypeA` holds for the substituted expression at type bool
 and the context is preserved.
 -/
 private theorem inferType_bool_HasTypeA (C : LContext CoreLParams) (Env Env_out : TEnv Unit)
-    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
+    (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy) (S : Subst)
     (h_infer : CmdType.inferType C Env c e = .ok (e', ety, Env_out))
     (h_isbool : CmdType.isBoolType ety = true)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
     (h_resolved : TContext.AliasesResolved Env.context) :
-    LExpr.HasTypeA [] (e'.applySubst Env_out.stateSubstInfo.subst) .bool ∧
+    LExpr.HasTypeA [] (e'.applySubst S) .bool ∧
     Env_out.context = Env.context := by
   obtain ⟨mty, h_ety, h_hta⟩ := CmdType.inferType_HasTypeA C Env Env_out c e e' ety
     h_infer h_wf h_fwf h_resolved
@@ -562,7 +623,7 @@ private theorem inferType_bool_HasTypeA (C : LContext CoreLParams) (Env Env_out 
     rw [h_ety] at h_eq; cases h_eq; rfl
   subst h_bool_mty
   have h_ctx := CmdType.inferType_preserves_context C Env Env_out c e e' ety h_infer h_wf h_ne h_fwf
-  have h_hta_subst := applySubst_typeCheck Env_out.stateSubstInfo.subst h_hta
+  have h_hta_subst := applySubst_typeCheck S h_hta
   simp [LMonoTy.subst_bool] at h_hta_subst
   exact ⟨h_hta_subst, h_ctx⟩
 
@@ -575,7 +636,7 @@ unresolved type variables. After applying the final substitution, the context
 types become ground and match the expression types from `resolve` (which already
 applies the substitution internally).
 -/
-theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
+theorem Cmd.typeCheck_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
@@ -583,9 +644,11 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     (h_ne : Env.context.types ≠ [])
     (h_mono : ContextMono Env.context)
     (h_resolved : TContext.AliasesResolved Env.context) :
-    CmdHasTypeA C (TContext.subst Env.context Env'.stateSubstInfo.subst)
-      (Core.Statement.Cmd.subst Env'.stateSubstInfo.subst cmd')
-      (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
+    ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
+      CmdHasTypeA C (TContext.subst Env.context S)
+        (Core.Statement.Cmd.subst S cmd')
+        (TContext.subst Env'.context S) := by
+  intro S hS_abs hS_wf
   cases cmd with
   | init x xty e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -615,28 +678,35 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       obtain ⟨h_ctx_eq, h_wf_pre, mty_pre, h_mty_pre, mty, h_mty, h_mty_eq, h_v3_eq⟩ :=
         init_det_context_setup C Env x xty heq_det md v1 v2 Env_unified v3
           h_preprocess h_infer h_unify h_postprocess h_wf h_fwf h_ne
+      -- `Env'.subst = (update v3.snd x v3.fst).subst = v3.snd.subst = Env_unified.subst`.
+      have h_env'_subst : (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst =
+          Env_unified.stateSubstInfo.subst := by
+        rw [CmdType.update_preserves_subst, h_v3_eq]
+      have hS_abs_unified : Subst.absorbs S Env_unified.stateSubstInfo.subst :=
+        h_env'_subst ▸ hS_abs
       have h_fresh_v3 : v3.snd.context.types.find? x = none :=
         h_ctx_eq ▸ h_find_none
-      have h_update_ctx := CmdType.update_subst_context v3.snd x v3.fst
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst h_fresh_v3
-      rw [h_update_ctx, h_ctx_eq, h_mty]
+      have h_update_ctx := CmdType.update_subst_context v3.snd x v3.fst S h_fresh_v3
+      rw [h_update_ctx, h_ctx_eq]
       have h_ctx_pre := CmdType.preprocess_preserves_context C Env xty v1.fst v1.snd h_preprocess
       have h_resolved_pre : TContext.AliasesResolved v1.snd.context :=
         h_ctx_pre ▸ h_resolved
       obtain ⟨mty_infer, h_ety_eq, h_hta⟩ := CmdType.inferType_HasTypeA C v1.snd v2.2.snd
         (Cmd.init x xty (.det heq_det) md) heq_det v2.1 v2.2.fst
         h_infer h_wf_pre h_fwf h_resolved_pre
-      have h_subst_eq : (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst =
-          Env_unified.stateSubstInfo.subst := by
-        rw [CmdType.update_preserves_subst, h_v3_eq]
-      have h_hta_subst := applySubst_typeCheck
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst h_hta
+      have h_hta_subst := applySubst_typeCheck S h_hta
       simp at h_hta_subst
-      have h_unify_eq : LMonoTy.subst
-          (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst mty_infer = mty := by
-        rw [h_subst_eq, h_mty_eq]
-        rw [h_mty_pre, h_ety_eq] at h_unify
-        exact (CmdType.unifyTypes_eq v2.2.snd Env_unified mty_pre mty_infer h_unify).symm
+      -- `subst S mty_infer = subst S mty_pre` via absorbs-collapse over Env_unified.subst.
+      have h_unify_eq : LMonoTy.subst S mty_infer = LMonoTy.subst S mty_pre := by
+        have h_base : LMonoTy.subst Env_unified.stateSubstInfo.subst mty_infer =
+            LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre := by
+          rw [h_mty_pre, h_ety_eq] at h_unify
+          exact (CmdType.unifyTypes_eq v2.2.snd Env_unified mty_pre mty_infer h_unify).symm
+        calc LMonoTy.subst S mty_infer
+            = LMonoTy.subst S (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_infer) :=
+              (LMonoTy.subst_absorbs S _ mty_infer hS_abs_unified).symm
+          _ = LMonoTy.subst S (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre) := by rw [h_base]
+          _ = LMonoTy.subst S mty_pre := LMonoTy.subst_absorbs S _ mty_pre hS_abs_unified
       rw [h_unify_eq] at h_hta_subst
       have h_not_in_vars : x ∉ HasVarsPure.getVars (P := Expression) heq_det :=
         fun hv => h_not_in_fv ((CmdType.freeVars_eq_getVars heq_det x).mpr hv)
@@ -652,35 +722,34 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
         rw [h_v2_eq]
         exact eqModuloAnnotations_getVars h_eqmod
       have h_not_in_v2 : x ∉ HasVarsPure.getVars (P := Expression)
-          (v2.1.applySubst (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst) := by
+          (v2.1.applySubst S) := by
         simp only [HasVarsPure.getVars, Imperative.HasVarsPure.getVars]
         rw [applySubst_getVars_eq]
         simp only [HasVarsPure.getVars, Imperative.HasVarsPure.getVars] at h_not_in_vars
         rw [h_vars_eq]
         exact h_not_in_vars
       simp only [Core.Statement.Cmd.subst, Statement.substExprOrNondet, ExprOrNondet.map]
-      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context
-        (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst x h_find_none
-      -- The output command's declared type `v3.fst` is already the monotype `mty`,
+      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context S x h_find_none
+      -- The output command's declared type `v3.fst` collapses to `forAll [] (subst S mty_pre)`,
       -- so the instantiation is trivial (`tys = []`) and `AliasEquiv` is reflexive.
       have h_pr := CmdType.postprocess_result C Env_unified v3.snd mty_pre v3.fst
         (h_mty_pre ▸ h_postprocess)
-      have h_v3_mty : v3.fst = LTy.forAll [] mty := by rw [h_pr.1, h_mty_eq]
-      have h_ty_idem : LTy.subst (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst v3.fst = v3.fst := by
-        rw [h_subst_eq, h_v3_mty, LTy.subst_forAll_nil, h_mty_eq,
-            LMonoTy.subst_idempotent _ Env_unified.stateSubstInfo.isWF]
-      rw [h_ty_idem]
-      have h_open : LTy.openFull v3.fst [] = mty := by
-        rw [h_v3_mty]
+      have h_stored : LTy.subst S v3.fst = .forAll [] (LMonoTy.subst S mty_pre) := by
+        rw [h_pr.1, LTy.subst_forAll_nil,
+          LMonoTy.subst_absorbs S Env_unified.stateSubstInfo.subst mty_pre hS_abs_unified]
+      rw [h_stored]
+      have h_open : LTy.openFull (LTy.forAll [] (LMonoTy.subst S mty_pre)) [] =
+          LMonoTy.subst S mty_pre := by
         simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
         exact LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])
-      have h_tyslen : ([] : List LMonoTy).length = (LTy.boundVars v3.fst).length := by
-        rw [h_v3_mty]; simp [LTy.boundVars]
-      have h_rac : RigidAnnotCompat (Env.context.subst
-          (CmdType.update v3.snd x v3.fst).stateSubstInfo.subst).aliases
-          C.rigidTypeVars (LTy.openFull v3.fst []) mty := by
+      have h_tyslen : ([] : List LMonoTy).length =
+          (LTy.boundVars (LTy.forAll [] (LMonoTy.subst S mty_pre))).length := by
+        simp [LTy.boundVars]
+      have h_rac : RigidAnnotCompat (Env.context.subst S).aliases
+          C.rigidTypeVars (LTy.openFull (LTy.forAll [] (LMonoTy.subst S mty_pre)) [])
+          (LMonoTy.subst S mty_pre) := by
         rw [h_open]; exact .of_eq
-      exact CmdHasType'.init_det _ x v3.fst _ _ [] md
+      exact CmdHasType'.init_det _ x (LTy.forAll [] (LMonoTy.subst S mty_pre)) _ _ [] md
         h_find_none_subst h_not_in_v2 h_tyslen h_rac h_hta_subst
     · -- nondet case
       rename_i heq_nondet
@@ -692,41 +761,43 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
         TypeContext.postprocess] at *
       have h_find_none := (CmdType.lookup_none_iff_find_none Env x).mp h_lookup_none
-      obtain ⟨h_ctx_eq, h_find_none_subst, mty, h_mty⟩ :=
+      obtain ⟨h_ctx_eq, _h_find_none_subst_old, mty, h_mty⟩ :=
         init_nondet_context_setup C Env x xty v1 v2 h_preprocess h_postprocess h_find_none
       have h_fresh_v2 : v2.snd.context.types.find? x = none :=
         h_ctx_eq ▸ h_find_none
-      have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst
-        (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst h_fresh_v2
-      rw [h_update_ctx, h_ctx_eq, h_mty]
+      have h_update_ctx := CmdType.update_subst_context v2.snd x v2.fst S h_fresh_v2
+      rw [h_update_ctx, h_ctx_eq]
       simp only [Core.Statement.Cmd.subst, Statement.substExprOrNondet, ExprOrNondet.map]
-      -- The output command's declared type `v2.fst` is already the monotype `mty`.
+      have h_find_none_subst := Lambda.TContext.subst_find_none Env.context S x h_find_none
       obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1.fst v1.snd h_preprocess
       have h_pr := CmdType.postprocess_result C v1.snd v2.snd mty_pre v2.fst
         (h_mty_pre ▸ h_postprocess)
-      have h_subst_eq := CmdType.update_preserves_subst v2.snd x v2.fst
-      have h_v2_mty : v2.fst = LTy.forAll [] mty := by
-        have h_mty' := h_mty
-        rw [h_subst_eq, h_pr.1, LTy.subst_forAll_nil] at h_mty'
-        rw [h_pr.2] at h_mty'
-        have h_idem := LMonoTy.subst_idempotent v1.snd.stateSubstInfo.subst
-          v1.snd.stateSubstInfo.isWF mty_pre
-        rw [h_idem] at h_mty'
-        rw [h_pr.1]; exact h_mty'
-      have h_ty_idem : LTy.subst (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst v2.fst = v2.fst := by
-        rw [h_mty, h_v2_mty]
-      rw [h_ty_idem]
-      have h_open : LTy.openFull v2.fst [] = mty := by
-        rw [h_v2_mty]
+      have h_v1_subst : v1.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+        congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty v1.fst v1.snd h_preprocess)
+      -- `Env'.subst = (update v2.snd x v2.fst).subst = v2.snd.subst = v1.snd.subst = Env.subst`.
+      have h_env'_subst : (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst =
+          Env.stateSubstInfo.subst := by
+        rw [CmdType.update_preserves_subst, congrArg (·.stateSubstInfo.subst) h_pr.2, h_v1_subst]
+      have hS_abs_env : Subst.absorbs S Env.stateSubstInfo.subst :=
+        h_env'_subst ▸ hS_abs
+      -- The output command's declared type `v2.fst` collapses to `forAll [] (subst S mty_pre)`.
+      have h_stored : LTy.subst S v2.fst = .forAll [] (LMonoTy.subst S mty_pre) := by
+        rw [h_pr.1, LTy.subst_forAll_nil, h_v1_subst,
+          LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty_pre hS_abs_env]
+      rw [h_stored]
+      have h_open : LTy.openFull (LTy.forAll [] (LMonoTy.subst S mty_pre)) [] =
+          LMonoTy.subst S mty_pre := by
         simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
         exact LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])
-      have h_tyslen : ([] : List LMonoTy).length = (LTy.boundVars v2.fst).length := by
-        rw [h_v2_mty]; simp [LTy.boundVars]
-      have h_rac : RigidAnnotCompat (Env.context.subst
-          (CmdType.update v2.snd x v2.fst).stateSubstInfo.subst).aliases
-          C.rigidTypeVars (LTy.openFull v2.fst []) mty := by
+      have h_tyslen : ([] : List LMonoTy).length =
+          (LTy.boundVars (LTy.forAll [] (LMonoTy.subst S mty_pre))).length := by
+        simp [LTy.boundVars]
+      have h_rac : RigidAnnotCompat (Env.context.subst S).aliases
+          C.rigidTypeVars (LTy.openFull (LTy.forAll [] (LMonoTy.subst S mty_pre)) [])
+          (LMonoTy.subst S mty_pre) := by
         rw [h_open]; exact .of_eq
-      exact CmdHasType'.init_nondet _ x v2.fst mty [] md h_find_none_subst h_tyslen h_rac
+      exact CmdHasType'.init_nondet _ x (LTy.forAll [] (LMonoTy.subst S mty_pre))
+        (LMonoTy.subst S mty_pre) [] md h_find_none_subst h_tyslen h_rac
   | set x e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h
@@ -748,8 +819,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
       obtain ⟨xs, mty_x⟩ := xty
       simp [LTy.boundVars] at h_xty_bv
       subst h_xty_bv
-      have h_find_subst := Lambda.TContext.subst_find_some Env.context
-        Env'.stateSubstInfo.subst x (.forAll [] mty_x) h_find
+      have h_find_subst := Lambda.TContext.subst_find_some Env.context S x (.forAll [] mty_x) h_find
       rw [LTy.subst_forAll_nil] at h_find_subst
       obtain ⟨mty_infer, h_ety_eq, h_hta⟩ := CmdType.inferType_HasTypeA C Env _
         (.set x (.det expr) md) expr _ _ heq h_wf h_fwf h_resolved
@@ -759,20 +829,26 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
         [(.forAll [] mty_x, ety)] h_unify
       have h_ctx : Env'.context = Env.context := by rw [h_ctx_unify, h_ctx_infer]
       rw [h_ctx]
-      have h_unify_eq : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
-          LMonoTy.subst Env'.stateSubstInfo.subst mty_x := by
-        rw [h_ety_eq] at h_unify
-        exact (CmdType.unifyTypes_eq Env_infer Env' mty_x mty_infer h_unify).symm
-      have h_hta_subst := applySubst_typeCheck Env'.stateSubstInfo.subst h_hta
+      have h_unify_eq : LMonoTy.subst S mty_infer = LMonoTy.subst S mty_x := by
+        have h_base : LMonoTy.subst Env'.stateSubstInfo.subst mty_infer =
+            LMonoTy.subst Env'.stateSubstInfo.subst mty_x := by
+          rw [h_ety_eq] at h_unify
+          exact (CmdType.unifyTypes_eq Env_infer Env' mty_x mty_infer h_unify).symm
+        calc LMonoTy.subst S mty_infer
+            = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_infer) :=
+              (LMonoTy.subst_absorbs S _ mty_infer hS_abs).symm
+          _ = LMonoTy.subst S (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) := by rw [h_base]
+          _ = LMonoTy.subst S mty_x := LMonoTy.subst_absorbs S _ mty_x hS_abs
+      have h_hta_subst := applySubst_typeCheck S h_hta
       simp at h_hta_subst
       rw [h_unify_eq] at h_hta_subst
       simp only [Core.Statement.Cmd.subst]
-      exact CmdHasType'.set_det _ x (LMonoTy.subst Env'.stateSubstInfo.subst mty_x) _ md
+      exact CmdHasType'.set_det _ x (LMonoTy.subst S mty_x) _ md
         h_find_subst h_hta_subst
     | nondet =>
       simp at h
       cases h
-      obtain ⟨mty, h_find_subst⟩ := set_nondet_sound Env x xty h_lookup h_mono
+      obtain ⟨mty, h_find_subst⟩ := set_nondet_sound Env x xty S h_lookup h_mono
       exact CmdHasType'.set_nondet _ x mty md h_find_subst
   | assert label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -786,7 +862,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     obtain ⟨e', ety, Env_out⟩ := v
     simp at heq
     obtain ⟨h_hta, h_ctx⟩ := inferType_bool_HasTypeA C Env Env_out
-      (.assert label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_resolved
+      (.assert label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_resolved
     rw [h_ctx]
     exact CmdHasType'.assert _ label _ md h_hta
   | assume label e md =>
@@ -801,7 +877,7 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     obtain ⟨e', ety, Env_out⟩ := v
     simp at heq
     obtain ⟨h_hta, h_ctx⟩ := inferType_bool_HasTypeA C Env Env_out
-      (.assume label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_resolved
+      (.assume label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_resolved
     rw [h_ctx]
     exact CmdHasType'.assume _ label _ md h_hta
   | cover label e md =>
@@ -816,9 +892,39 @@ theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Uni
     obtain ⟨e', ety, Env_out⟩ := v
     simp at heq
     obtain ⟨h_hta, h_ctx⟩ := inferType_bool_HasTypeA C Env Env_out
-      (.cover label e md) e e' ety heq h_bool h_wf h_fwf h_ne h_resolved
+      (.cover label e md) e e' ety S heq h_bool h_wf h_fwf h_ne h_resolved
     rw [h_ctx]
     exact CmdHasType'.cover _ label _ md h_hta
+
+/--
+Annotated soundness of the command typechecker (fixed final-substitution
+corollary): if `Cmd.typeCheck` succeeds, the output command satisfies
+`CmdHasTypeA` between the substituted contexts, grounding type variables at
+`Env'.stateSubstInfo.subst`.
+
+This is the `S := Env'.stateSubstInfo.subst` instance of
+`Cmd.typeCheck_annotated_sound_gen` (`absorbs` reflexive, `SubstWF` from the
+env's `isWF`).
+
+The substitution is needed because variable types in `Env.context` may contain
+unresolved type variables. After applying the final substitution, the context
+types become ground and match the expression types from `resolve` (which already
+applies the substitution internally).
+-/
+theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    CmdHasTypeA C (TContext.subst Env.context Env'.stateSubstInfo.subst)
+      (Core.Statement.Cmd.subst Env'.stateSubstInfo.subst cmd')
+      (TContext.subst Env'.context Env'.stateSubstInfo.subst) :=
+  Cmd.typeCheck_annotated_sound_gen C Env cmd cmd' Env' h h_wf h_fwf h_ne h_mono h_resolved
+    Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
+    Env'.stateSubstInfo.isWF
 
 end TypeSpec
 end Core
