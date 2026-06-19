@@ -64,14 +64,14 @@ op boole_procedure (name : Ident,
 //     datatype testers) so the DDM never sees a bare dot between identifiers.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// choose assignment: `w := choose z : T . pred(z);`
+// choose assignment: `w := ε z : T . pred(z);`
 // Lowers to: `assert ∃ z : T . pred(z); havoc w; assume pred[z/w];`
 // The `. ` separator is normalized to `::` before parsing (see StrataDDM.Elab).
 // Both forms are accepted; `::` still works as well.
 op choose_assign (lhs : Ident, v : MonoBind, @[scope(v)] pred : bool) : Statement =>
-  lhs " := choose " v " :: " pred ";";
+  lhs " := ε " v " :: " pred ";";
 
-// choose function declaration: `function f(params) : R := choose z . pred(z, params);`
+// choose function declaration: `function f(params) : R := ε z . pred(z, params);`
 // Lowers to: uninterpreted function f + axiom ∀ params, ∀ z, z = f(params) → pred(z, params).
 // `@[scope(b)] v` makes b's parameter names available in v's type and (via the scope chain
 // @[scope(v)]) in pred, so pred can reference both z (bvar 0) and all params (bvars 1..n).
@@ -82,7 +82,7 @@ op command_choosefndef (name : Ident,
                         @[scope(typeArgs)] r : Type,
                         @[scope(b)] v : MonoBind,
                         @[scope(v)] pred : bool) : Command =>
-  "function " name typeArgs b " : " r " :=\n  choose " v " :: " pred ";\n";
+  "function " name typeArgs b " : " r " :=\n  ε " v " :: " pred ";\n";
 
 // Boole keeps the `call lhs := f(args)` syntax for calls with outputs.
 // Unit calls (no outputs) use Core's `call_statement` with `callArgExpr` args.

@@ -999,9 +999,13 @@ def toCoreDecls (cmd : BooleDDM.Command SourceRange) : TranslateM (List Core.Dec
     let tys := match targs? with | none => [] | some ts => typeArgsToList ts
     return [.func (← lowerPureFuncDef m n tys bs ret pres body inline?.isSome) .empty]
   | .command_choosefndef _ ⟨_, n⟩ ⟨_, targs?⟩ bs ret v pred =>
-    -- `function f(params) : R := choose z :: pred(z, params)`
+    -- `function f(params) : R := ε z :: pred(z, params)`
     -- Emits: uninterpreted function declaration + axiom
     --   ∀ p1:T1,...,pn:Tn, ∀ z:Tz, (z = f(p1,...,pn)) → pred(z, p1,...,pn)
+    -- Note: unlike `w := ε z . pred` (which guards soundness by asserting ∃ z . pred(z)
+    -- before havocing), this form emits the axiom unconditionally. The axiom is sound only
+    -- when pred is satisfiable for all parameter values; callers must supply that guarantee
+    -- (e.g. via a `requires ∃ z . pred(z, params)` precondition).
     -- De Bruijn context for pred (from @[scope(b)] v + @[scope(v)] pred):
     --   bvar 0 = z, bvar 1 = pn (innermost param), ..., bvar n = p1 (outermost param)
     -- This matches the 3-forall wrapping (z innermost, params outer) exactly.
