@@ -264,9 +264,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
 
-      let (valuePrepends, newValue) ← transformLiftedExpr value
-
-      prepend (⟨.Assign targets newValue, source⟩)
+      transformLiftedStmt expr
 
       -- Create a before-snapshot for each target and update substitutions
       for target in targets do
@@ -278,8 +276,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
             setSubst varName snapshotName
         | _ => pure ()
-
-      prependList valuePrepends
 
       return resultExpr
 
