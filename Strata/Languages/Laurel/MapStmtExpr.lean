@@ -223,5 +223,107 @@ def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) 
 def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
   mapProgramM (m := Id) f program
 
+/-! ## Type-annotation traversals
+
+`mapStmtExprHighTypesM` and friends apply a `HighType → HighType` rewrite to
+*every* type annotation reachable from a node / procedure / program, reusing
+`mapStmtExprM` for the structural recursion. This is the single source of truth
+for "rewrite all type references", so passes don't have to enumerate the
+type-carrying constructors by hand (and silently miss one). The supplied `f` is
+responsible for recursing into compound types (`TSet`/`TMap`/`Applied`/…). -/
+
+/-- Rewrite the declared type carried by a `Variable` (only `Declare` carries one). -/
+def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Variable) : m Variable := do
+  match v with
+  | .Declare param => pure (.Declare { param with type := ← f param.type })
+  | .Local _ | .Field _ _ => pure v
+
+/--
+Apply `f` to every `HighType` annotation carried *directly* by a single
+`StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
+targets), quantifier binders, `AsType`/`IsType` type arguments, and typed
+`Hole`s. Does **not** recurse into child expressions — compose with
+`mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
+-/
+def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd := do
+  let source := expr.source
+  match expr.val with
+  | .Var v => pure ⟨.Var (← mapVariableHighTypesM f v), source⟩
+  | .Assign targets value =>
+    let targets' ← targets.mapM (fun t => do pure (⟨← mapVariableHighTypesM f t.val, t.source⟩ : VariableMd))
+    pure ⟨.Assign targets' value, source⟩
+  | .IncrDecr mode op target =>
+    pure ⟨.IncrDecr mode op ⟨← mapVariableHighTypesM f target.val, target.source⟩, source⟩
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode { param with type := ← f param.type } trigger body, source⟩
+  | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩
+  | .IsType target ty => pure ⟨.IsType target (← f ty), source⟩
+  | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
+  | _ => pure expr
+
+/-- Apply `f` to every `HighType` annotation appearing anywhere in a `StmtExprMd`. -/
+def mapStmtExprHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd :=
+  mapStmtExprM (mapNodeHighTypesM f) expr
+
+/-- Pure version of `mapStmtExprHighTypesM`. -/
+def mapStmtExprHighTypes (f : HighTypeMd → HighTypeMd) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExprHighTypesM (m := Id) f expr
+
+/-- Apply `f` to every `HighType` annotation in a procedure: parameter types,
+    body, preconditions, decreases measure, and auto-invocation trigger. -/
+def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : Procedure) : m Procedure := do
+  let mapExpr := mapStmtExprHighTypesM f
+  let mapParam (p : Parameter) : m Parameter := do pure { p with type := ← f p.type }
+  let body' ← match proc.body with
+    | .Transparent b => pure (.Transparent (← mapExpr b))
+    | .Opaque ps impl mods =>
+      pure (.Opaque (← ps.mapM (·.mapM mapExpr)) (← impl.mapM mapExpr) (← mods.mapM mapExpr))
+    | .Abstract ps => pure (.Abstract (← ps.mapM (·.mapM mapExpr)))
+    | .External => pure .External
+  return { proc with
+    inputs := ← proc.inputs.mapM mapParam
+    outputs := ← proc.outputs.mapM mapParam
+    body := body'
+    preconditions := ← proc.preconditions.mapM (·.mapM mapExpr)
+    decreases := ← proc.decreases.mapM mapExpr
+    invokeOn := ← proc.invokeOn.mapM mapExpr }
+
+/-- Apply `f` to every `HighType` annotation in a type definition: composite
+    fields and instance procedures, constrained base/constraint/witness,
+    datatype constructor argument types, and alias targets. -/
+def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td : TypeDefinition) : m TypeDefinition := do
+  match td with
+  | .Composite ct =>
+    pure (.Composite { ct with
+      fields := ← ct.fields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+      instanceProcedures := ← ct.instanceProcedures.mapM (mapProcedureHighTypesM f) })
+  | .Constrained ct =>
+    pure (.Constrained { ct with
+      base := ← f ct.base
+      constraint := ← mapStmtExprHighTypesM f ct.constraint
+      witness := ← mapStmtExprHighTypesM f ct.witness })
+  | .Datatype dt =>
+    pure (.Datatype { dt with
+      constructors := ← dt.constructors.mapM (fun ctor => do
+        pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) })
+  | .Alias ta => pure (.Alias { ta with target := ← f ta.target })
+
+/-- Apply `f` to a constant's declared type and (optional) initializer. -/
+def mapConstantHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (c : Constant) : m Constant := do
+  pure { c with type := ← f c.type, initializer := ← c.initializer.mapM (mapStmtExprHighTypesM f) }
+
+/-- Apply `f` to every `HighType` annotation anywhere in a program: procedures,
+    static fields, type definitions, and constants. -/
+def mapProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : Program) : m Program := do
+  return { program with
+    staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
+    staticFields := ← program.staticFields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+    types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
+    constants := ← program.constants.mapM (mapConstantHighTypesM f) }
+
+/-- Pure version of `mapProgramHighTypesM`. -/
+def mapProgramHighTypes (f : HighTypeMd → HighTypeMd) (program : Program) : Program :=
+  mapProgramHighTypesM (m := Id) f program
+
 end -- public section
 end Strata.Laurel

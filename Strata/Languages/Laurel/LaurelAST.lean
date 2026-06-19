@@ -104,6 +104,20 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+instance : ToString Operation where
+  toString
+    | .Eq => "=="          | .Neq => "!="
+    | .And => "&&"         | .Or => "||"
+    | .Not => "!"          | .Implies => "==>"
+    | .AndThen => "&&!"    | .OrElse => "||!"
+    | .Neg => "-"          | .Add => "+"
+    | .Sub => "-"          | .Mul => "*"
+    | .Div => "/"          | .Mod => "%"
+    | .DivT => "/t"        | .ModT => "%t"
+    | .Lt => "<"           | .Leq => "<="
+    | .Gt => ">"           | .Geq => ">="
+    | .StrConcat => "++"
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -121,8 +135,7 @@ structure AstNode (t : Type) : Type where
 The type system for Laurel programs.
 
 `HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
-`TString`), internal types used by the heap parameterization pass (`THeap`,
-`TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
+`TString`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types
 (`Intersection`).
 -/
@@ -139,10 +152,6 @@ inductive HighType : Type where
   | TReal
   /-- String type for text data. -/
   | TString
-  /-- Internal type representing the heap. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | THeap
-  /-- Internal type for a field constant with a known value type. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | TTypedField (valueType : AstNode HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
@@ -377,9 +386,61 @@ inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
 
+/-- A short user-facing name for the construct, used in diagnostic messages. -/
+def StmtExpr.constrName : StmtExpr → String
+  | .IfThenElse ..       => "if"
+  | .Block ..            => "block"
+  | .While ..            => "while"
+  | .Exit ..             => "exit"
+  | .Return ..           => "return"
+  | .LiteralInt ..       => "integer literal"
+  | .LiteralBool ..      => "boolean literal"
+  | .LiteralString ..    => "string literal"
+  | .LiteralDecimal ..   => "decimal literal"
+  | .LiteralBv ..        => "bitvector literal"
+  | .Var ..              => "variable"
+  | .Assign ..           => ":="
+  | .IncrDecr _ .Incr .. => "++"
+  | .IncrDecr _ .Decr .. => "--"
+  | .PureFieldUpdate ..  => "field update"
+  | .StaticCall ..       => "call"
+  | .PrimitiveOp op ..   => toString op
+  | .New ..              => "new"
+  | .This                => "this"
+  | .ReferenceEquals ..  => "reference equality"
+  | .AsType ..           => "as"
+  | .IsType ..           => "is"
+  | .InstanceCall ..     => "method call"
+  | .Quantifier ..       => "quantifier"
+  | .Assigned ..         => "assigned"
+  | .Old ..              => "old"
+  | .Fresh ..            => "fresh"
+  | .Assert ..           => "assert"
+  | .Assume ..           => "assume"
+  | .ProveBy ..          => "by"
+  | .ContractOf ..       => "contractOf"
+  | .Abstract            => "abstract"
+  | .All                 => "all"
+  | .Hole ..             => "hole"
+
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
+
+/-- The label of the implicit block that wraps every procedure body.
+
+    `LaurelToCoreTranslator` lowers each procedure body to a single
+    `Core.Statement.block bodyLabel …`, and lowers an early `return`
+    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    so that jumping to the end of the body falls through past the block.
+    The resolution pass pre-registers this label in scope (via `withLabel`)
+    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    though the label has no syntactic declaration site.
+
+    Shared here so the translator, the resolver, and frontends agree on the
+    exact string rather than each hard-coding it. The leading `$` keeps it
+    out of the user-name space (no source identifier can contain `$`). -/
+def bodyLabel : String := "$body"
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
@@ -462,12 +523,11 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
-  | HighType.THeap, HighType.THeap => true
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
-  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
+  | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
   | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
@@ -488,6 +548,158 @@ instance : BEq HighTypeMd where
   beq := highEq
 
 deriving instance BEq for HighType
+
+/-- Lookup tables threaded through subtyping/consistency checks. Built from
+    the program's `TypeDefinition`s by the resolution pass:
+    - `unfoldMap` maps an alias or constrained type's name to the type it
+      unwraps to (alias target / constrained base). Followed transitively to
+      reach a non-alias, non-constrained type.
+    - `extendingMap` maps a composite type's name to the *direct* parents in
+      its `extending` list. Walked transitively for the subtype check.
+
+    Keyed by type-name *text* (`String`), not `Identifier`: this is consistent
+    with how `highEq` decides `UserDefined` equality (by `.text`), and is forced
+    because the lattice is built from the *unresolved* program in
+    `TypeLattice.ofTypes`, before the resolution pass assigns `uniqueId`s.
+    Consequence: nominal type identity is by name text, so subtyping
+    (`ancestors` walking `extendingMap`) assumes type names are globally unique.
+    Safe today (no module system); revisit when modules / namespacing / imports
+    land, since two distinct same-named types would otherwise share an
+    inheritance chain. -/
+structure TypeLattice where
+  unfoldMap : Std.HashMap String HighTypeMd := {}
+  extendingMap : Std.HashMap String (List String) := {}
+  deriving Inhabited
+
+/-- Unfold aliases and constrained types to their underlying type.
+    Composites and primitives are returned unchanged. A `visited` set guards
+    against cycles in the alias/constrained graph (already cycle-checked
+    elsewhere, but keeps `unfold` safe to call independently). -/
+partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if visited.contains name.text then ty
+    else match ctx.unfoldMap.get? name.text with
+      | some target => ctx.unfold target (visited.insert name.text)
+      | none => ty
+  | _ => ty
+
+/-- All ancestors of a composite type (including itself), reachable via
+    repeated `extending` lookups. Implemented as a visited-set BFS over the
+    `extending` graph: the accumulator `acc` doubles as the visited set, and
+    every node is `insert`ed before its parents are enqueued, so each name is
+    processed at most once. The accumulator only grows, hence cycles in the
+    (possibly malformed) graph terminate — no `fuel` parameter is needed. -/
+partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.HashSet String :=
+  let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
+    match frontier with
+    | [] => acc
+    | n :: rest =>
+      if acc.contains n then go acc rest
+      else
+        let acc' := acc.insert n
+        let parents := (ctx.extendingMap.get? n).getD []
+        go acc' (parents ++ rest)
+  go {} [name]
+
+/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
+    (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
+    then falls back to structural equality via `highEq`.
+
+    Used together with `isConsistent` to form `isConsistentSubtype`, which
+    is what the bidirectional checker invokes at every check-mode boundary
+    (rule `[⇐] Sub`). -/
+def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  let sub' := ctx.unfold sub
+  let sup' := ctx.unfold sup
+  match sub'.val, sup'.val with
+  | .UserDefined subName, .UserDefined supName =>
+    -- After unfolding, both sides are composites (or unresolved). A composite
+    -- is a subtype of any type in its extending chain.
+    (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
+  | _, _ => highEq sub' sup'
+
+/- ### Variance policy (covers `isSubtype` and `isConsistent`)
+   All child-carrying constructors are INVARIANT by design: `isConsistent`
+   bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
+   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
+   never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
+   collections, where covariance would be unsound; if you don't know the
+   element type, write a bare `Unknown`, not `TSet Unknown`.
+
+   `MultiValuedExpr` is the SOLE exception that recurses (element-wise
+   consistency, not equality). It is not a mutable container: it is a transient
+   tuple of independent procedure-output values matched against multi-assignment
+   targets, so per-element consistency (letting an `Unknown` output flow into
+   one slot) is correct rather than unsound.
+
+   `Pure b` is invariant today, but it is the one constructor where covariance
+   would be SOUND and desirable — it is the immutable value-view of a composite,
+   and immutability is exactly the condition that makes covariance safe.
+   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
+
+   `Applied` (generics) is invariant as the safe default for not-yet-designed
+   parametric types; real variance is per-constructor and deliberately deferred.
+
+   `Intersection` is NOT a variance question: `A & B` has lattice structure
+   (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
+   `highEq` arm zips element-wise IN DECLARATION ORDER, so `A & B ≠ B & A` even
+   though intersection is conceptually unordered. Known limitation, to fix with
+   bespoke subtyping rules when intersections become live. -/
+/-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
+    is the dynamic type and is consistent with everything; otherwise
+    structural equality after unfolding aliases / constrained types.
+
+    `TCore _` is also treated as gradual — consistent with everything —
+    pending its removal from the type representation.
+    `MultiValuedExpr` is checked element-wise so the same equivalence
+    propagates through procedure-output tuples.
+
+    Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
+    consistent (no subtype direction is privileged), and as one half of
+    `isConsistentSubtype`. -/
+def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  -- `MultiValuedExpr` is checked element-wise *before* unfolding so elements
+  -- remain demonstrable subterms of `a`/`b`. `unfold` is `partial`, and is in
+  -- any case the identity on `MultiValuedExpr`, so this loses no precision.
+  match _a: a.val, _b: b.val with
+  | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
+    ts1.length == ts2.length &&
+      (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  | _, _ =>
+    let a' := ctx.unfold a
+    let b' := ctx.unfold b
+    match a'.val, b'.val with
+    | .Unknown, _ | _, .Unknown => true
+    | .TCore _, _ | _, .TCore _ => true
+    | _, _ => highEq a' b'
+  termination_by (SizeOf.sizeOf a)
+  decreasing_by
+    all_goals (cases a; cases b; try term_by_mem)
+    cases t1; term_by_mem
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
+    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+
+    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
+    choice is what makes the system *gradual*: an expression of type
+    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
+    into any typed slot, and any expression flows freely into a slot of
+    type `Unknown`. Strict checking is applied between fully-known types
+    only.
+
+    A previous iteration was synth-only with two *bivariantly-compatible*
+    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
+    load-bearing: no assignment, call argument, or comparison involving a
+    user type was ever rejected. The bidirectional design retires that
+    carve-out — user-defined types are now a regular participant in `<:`,
+    with `isSubtype` walking inheritance chains and unwrapping aliases
+    and constrained types to deliver real checking on user-defined code. -/
+def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  isConsistent ctx sub sup || isSubtype ctx sub sup
 
 def HighType.isBool : HighType → Bool
   | TBool => true
@@ -662,6 +874,19 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Constrained ty => ty.name
   | .Datatype ty => ty.name
   | .Alias ty => ty.name
+
+/-- Build a `TypeLattice` from a list of `TypeDefinition`s.
+    Aliases populate `unfoldMap` with their target; constrained types populate
+    it with their base; composites populate `extendingMap` with their direct
+    parents. Datatypes contribute nothing — they're nominal and irreducible. -/
+def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
+  types.foldl (init := {}) fun ctx td =>
+    match td with
+    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
+    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
+    | .Composite c =>
+      { ctx with extendingMap := ctx.extendingMap.insert c.name.text (c.extending.map (·.text)) }
+    | .Datatype _ => ctx
 
 structure Constant where
   name : Identifier

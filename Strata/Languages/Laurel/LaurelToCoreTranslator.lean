@@ -86,13 +86,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TString => return LMonoTy.string
   | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => return .tcons "Heap" []
-  | .TTypedField _ => return .tcons "Field" []
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     match model.get? name with
-    | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
@@ -294,6 +291,8 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (⟨ .While _ _ _ _, whileSource⟩ :: tail) _ =>
+      disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>
@@ -559,11 +558,11 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -650,14 +649,17 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
-  -- Translate postconditions for Opaque and Abstract bodies
+  -- Translate postconditions for Opaque and Abstract bodies. A bodiless
+  -- procedure (bodyStmts = none) gets its postconditions marked `free`
+  -- (overrideFree) so they are assumed, not checked — and an empty body.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
-
-  let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
+  -- Wrap body in a labeled block so early returns (exit) work correctly.
+  -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
+  let body : List Core.Statement := [.block bodyLabel (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 

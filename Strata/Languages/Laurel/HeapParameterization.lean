@@ -25,12 +25,12 @@ and a `nextReference: int` for allocating new objects. Box is a sum type with co
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
-   - Input: `heap : THeap`
-   - Output: `heap : THeap`
+   - Input: `heap : Heap`
+   - Output: `heap : Heap`
    - Field writes become: `heap := updateField(heap, obj, field, BoxT(value))`
 
 2. Procedures that only read the heap get an in heap parameter
-   - Input: `heap : THeap`
+   - Input: `heap : Heap`
    - Field reads become: `Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
@@ -410,20 +410,24 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
-      -- For == and != on Composite types, compare refs instead
+      -- For == and != on Composite types, compare refs instead. Note
+      -- `.UserDefined` covers BOTH composites (heap references — `ref!` is
+      -- correct) and datatypes (values — `ref!` is wrong and would unify a
+      -- datatype value against `Composite`). Only ref-compare composites;
+      -- datatype equality falls through to structural comparison.
       match op, args with
       | .Eq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
@@ -509,8 +513,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add $heap as input only
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure only reads the heap - add $heap as input only.
+    -- Use the prelude `Heap` datatype for the parameter type (see the
+    -- writes-heap branch above for rationale).
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
@@ -568,7 +574,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
 public def heapParameterizationPass : LaurelPass where
   name := "HeapParameterization"
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
-  needsResolves := true
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun p m =>
     (heapParameterization m p, [], {})
   comesBefore := [
