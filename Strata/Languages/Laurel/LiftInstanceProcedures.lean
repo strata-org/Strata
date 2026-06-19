@@ -8,6 +8,8 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
+import Strata.Languages.Laurel.EliminateValueInReturns
+
 
 /-!
 # Lift Instance Procedures
@@ -38,7 +40,7 @@ Then, rewrite caller-side of `obj#proc` to call the lifted procedure
 
 /-- Top-level name produced for a lifted instance procedure. -/
 def liftedProcName (typeName methodName : Identifier) : Identifier :=
-  mkId s!"{typeName.text}${methodName.text}"
+  {mkId s!"{typeName.text}${methodName.text}" with source := methodName.source}
 
 /-- Rewrite a single node so that any callee resolving to an instance procedure
     is replaced by its lifted name. -/
@@ -128,5 +130,6 @@ public def liftInstanceProceduresPass : LoweringPass where
   documentation := "Lifts every procedure declared inside a `composite` block to a top-level static procedure named `<CompositeName>$<methodName>` and rewrites call sites resolved to an instance procedure (including `obj#method(args)` surface syntax) to point at the lifted name. Clears `instanceProcedures` on every composite. Must run before HeapParameterization."
   needsResolves := true
   run := fun p m _ => (liftInstanceProcedures m p, [], {})
+  comesBefore := [⟨ eliminateValueInReturnsPass.meta, "eliminateValueInReturns only applies to static methods, hence all instance methods must have been lifted before." ⟩]
 
 end Strata.Laurel
