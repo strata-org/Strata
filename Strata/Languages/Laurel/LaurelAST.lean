@@ -135,8 +135,7 @@ structure AstNode (t : Type) : Type where
 The type system for Laurel programs.
 
 `HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
-`TString`), internal types used by the heap parameterization pass (`THeap`,
-`TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
+`TString`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types
 (`Intersection`).
 -/
@@ -153,10 +152,6 @@ inductive HighType : Type where
   | TReal
   /-- String type for text data. -/
   | TString
-  /-- Internal type representing the heap. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | THeap
-  /-- Internal type for a field constant with a known value type. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | TTypedField (valueType : AstNode HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
@@ -538,9 +533,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
-  | HighType.THeap, HighType.THeap => true
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
-  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
@@ -641,7 +634,7 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    All child-carrying constructors are INVARIANT by design: `isConsistent`
    bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
-   `TTypedField`, `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
    TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
    never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
    collections, where covariance would be unsound; if you don't know the

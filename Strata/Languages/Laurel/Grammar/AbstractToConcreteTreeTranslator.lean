@@ -49,9 +49,7 @@ partial def highTypeValToArg : HighType → Arg
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   | .TCore s => laurelOp "coreType" #[ident s]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
-  | .THeap => laurelOp "compositeType" #[ident "Heap"]
-  -- Type parameters discarded; the grammar cannot represent Field[T] or Set[T]
-  | .TTypedField _vt => laurelOp "compositeType" #[ident "Field"]
+  -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base _args =>
     -- Applied types are not directly representable in the grammar;
