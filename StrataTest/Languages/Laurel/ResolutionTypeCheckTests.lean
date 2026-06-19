@@ -19,18 +19,6 @@ open Strata
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-
-procedure voidReturn(x: int)
-  returns (r: int)
-{
-  r := 1;
-  return
-};
-#end
-
-#eval testLaurelResolution <|
-#strata
-program Laurel;
 function foo(x: int): int {
   if x then 1 else 0
 //   ^ error: expected 'bool', got 'int'
@@ -94,20 +82,20 @@ function cmp(x: string, y: int): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-procedure invalidAssignment() opaque {
+procedure foo() opaque {
   var x: int := true
 //              ^^^^ error: expected 'int', got 'bool'
 };
 #end
 
-/-! ## Procedure return type checks -/
+/-! ## Function return type checks -/
 
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-procedure foo(): int {
-  return true
-//       ^^^^ error: expected 'int', got 'bool'
+function foo(): int {
+  true
+//^^^^ error: expected 'int', got 'bool'
 };
 #end
 
