@@ -18,7 +18,7 @@ abbrev SourceRange.none := StrataDDM.SourceRange.none
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 instance : Std.ToFormat Uri where
  format fr := private match fr with | .file path => path
@@ -26,7 +26,7 @@ instance : Std.ToFormat Uri where
 structure FileRange where
   file: Uri
   range: SourceRange
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 instance : Std.ToFormat FileRange where
  format fr := private f!"{fr.file}:{fr.range}"
@@ -76,7 +76,7 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
 
 inductive DiagnosticType where | Warning | UserError | NotYetImplemented | StrataBug
-  deriving Repr, BEq, Inhabited, Lean.ToExpr
+  deriving Repr, BEq, Inhabited, Lean.ToExpr, Hashable
 
 /-- A diagnostic model that holds a file range and a message.
     This can be converted to a formatted string using a FileMap. -/
@@ -84,7 +84,7 @@ structure DiagnosticModel where
   fileRange : FileRange
   message : String
   type : DiagnosticType
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Hashable
 
 instance : Inhabited DiagnosticModel where
   default := { fileRange := FileRange.unknown, message := "", type := .UserError }

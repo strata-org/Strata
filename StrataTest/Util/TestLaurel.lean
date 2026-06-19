@@ -299,6 +299,16 @@ def testLaurel (block : SourcedProgram)
     (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block (runLaurelPipelineRaw · options) showSnippet
 
+/-- Path to the directory for intermediate files, inside the build directory.
+    Resolved from the current working directory so it works on any machine. -/
+def buildDir : IO String := do
+  let cwd ← IO.currentDir
+  return s!"{cwd}/.lake/build/intermediatePrograms/"
+
+def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+  let dir ← buildDir
+  runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
+
 /-- Like `testLaurel` but skips SMT verification (translate + resolve only).
     Use when the test only cares about resolution, not the verifier — e.g.
     "shadowing in nested blocks is OK", or asserting a specific resolution
