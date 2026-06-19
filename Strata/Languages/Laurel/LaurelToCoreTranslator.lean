@@ -95,6 +95,12 @@ structure HeapLowering (C : Type) where
     (lhs : Core.Expression.Ident) → (typeName : String) →
     (md : Imperative.MetaData Core.Expression) →
     TranslateM (List (Imperative.Stmt Core.Expression C))
+  /-- Lower a type test `lhs := obj is typeName`. Like reads, this arrives in
+      canonical position (sole RHS of an assignment). -/
+  lowerInstanceOf :
+    (lhs : Core.Expression.Ident) → (obj : Core.Expression.Expr) → (typeName : String) →
+    (md : Imperative.MetaData Core.Expression) →
+    TranslateM (List (Imperative.Stmt Core.Expression C))
 
 /--
 How the Laurel→Core traversal lowers leaf commands. `embedCore` injects a
@@ -139,6 +145,11 @@ def explicitScheme : LoweringScheme Core.Command where
       emitDiagnostic d
       emitCoreDiagnostic d
       return []
+    lowerInstanceOf := fun _lhs _obj _typeName md => do
+      let d := md.toDiagnostic "type test should have been lowered by type hierarchy transform" DiagnosticType.StrataBug
+      emitDiagnostic d
+      emitCoreDiagnostic d
+      return []
   }
 
 open Core.Implicit in
@@ -161,6 +172,8 @@ def implicitScheme : LoweringScheme ImplicitCmd where
       return [Imperative.Stmt.cmd (.heap (.heapWrite obj field rhs))]
     lowerNew := fun lhs typeName _md =>
       return [Imperative.Stmt.cmd (.heap (.heapAlloc lhs typeName))]
+    lowerInstanceOf := fun lhs obj typeName _md =>
+      return [Imperative.Stmt.cmd (.heap (.heapInstanceOf lhs obj typeName))]
   }
 
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
@@ -528,6 +541,25 @@ def lowerNewStmt {C : Type} (κ : LoweringScheme C)
   return declStmts ++ allocStmts
 
 /--
+Lower a single-target type test `lhs := obj is T`. A `.Declare` target is
+declared first, then the test writes its boolean result into it. The leaf
+command is built by the scheme: `implicitScheme` emits a `heapInstanceOf`;
+`explicitScheme` rejects it (type tests are lowered by the type hierarchy
+transform in explicit mode). Arrives canonical via `LiftHeapExpressions`.
+-/
+def lowerInstanceOfStmt {C : Type} (κ : LoweringScheme C)
+    (target : VariableMd) (obj : StmtExprMd) (testType : HighTypeMd)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Imperative.Stmt Core.Expression C)) := do
+  let some typeName := (match testType.val with | .UserDefined name => some name.text | _ => none)
+    | throwStmtDiagnostic $ md.toDiagnostic "type test target type must be a user-defined type" DiagnosticType.StrataBug
+  let some (declStmts, lhs) ← resolveHeapLhs κ target md
+    | throwStmtDiagnostic $ md.toDiagnostic "type test target must be a local or declaration" DiagnosticType.StrataBug
+  let objExpr ← translateExpr obj
+  let testStmts ← κ.heap.lowerInstanceOf lhs objExpr typeName md
+  return declStmts ++ testStmts
+
+/--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
 Diagnostics are emitted into the monad state.
 -/
@@ -635,6 +667,11 @@ def translateStmt {C : Type} (κ : LoweringScheme C) (stmt : StmtExprMd)
           match targets with
           | [target] => lowerNewStmt κ target typeName md
           | _ => throwStmtDiagnostic $ md.toDiagnostic "allocation must have a single target" DiagnosticType.StrataBug
+      | .IsType obj testType =>
+          -- Canonical type test `lhs := obj is T` (see lowerInstanceOfStmt).
+          match targets with
+          | [target] => lowerInstanceOfStmt κ target obj testType md
+          | _ => throwStmtDiagnostic $ md.toDiagnostic "type test must have a single target" DiagnosticType.StrataBug
       | _ =>
         match targets with
         | [_target] =>
@@ -942,39 +979,66 @@ def translateLaurelToCore (κ : LoweringScheme Core.Command) (options: LaurelTra
 
   pure { decls := coreDecls }
 
-/-- Whether a Laurel expression contains a field read (`obj#field`). Used to
-reject spec field reads in implicit mode, which are not yet supported (there is
-no expression-level heap-read form in Core-implicit; specs have no statement
-slot for a `heapRead`). -/
-def containsFieldRead (expr : StmtExprMd) : Bool :=
+/-- Whether a Laurel expression contains a heap-dependent operation that has no
+expression-level form in Core-implicit: a field read (`obj#field`), a type test
+(`obj is T`), or a cast (`obj as T`, which lowers to a type test). Used to reject
+such expressions in specs, which have no statement slot to hoist a heap command
+into. -/
+def containsHeapExpr (expr : StmtExprMd) : Bool :=
   match expr with
   | AstNode.mk val _ =>
   match val with
   | .Var (.Field ..) => true
   | .Var _ => false
-  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsFieldRead x.val)
-  | .StaticCall _ args => args.attach.any (fun x => containsFieldRead x.val)
-  | .InstanceCall t _ args => containsFieldRead t || args.attach.any (fun x => containsFieldRead x.val)
-  | .ReferenceEquals a b => containsFieldRead a || containsFieldRead b
-  | .Old v => containsFieldRead v
+  | .IsType .. => true
+  | .AsType .. => true
+  | .PrimitiveOp _ args _ => args.attach.any (fun x => containsHeapExpr x.val)
+  | .StaticCall _ args => args.attach.any (fun x => containsHeapExpr x.val)
+  | .InstanceCall t _ args => containsHeapExpr t || args.attach.any (fun x => containsHeapExpr x.val)
+  | .ReferenceEquals a b => containsHeapExpr a || containsHeapExpr b
+  | .Old v => containsHeapExpr v
   | .Quantifier _ _ trigger body =>
-      (match trigger with | some t => containsFieldRead t | none => false) || containsFieldRead body
-  | .Block stmts _ => stmts.attach.any (fun x => containsFieldRead x.val)
+      (match trigger with | some t => containsHeapExpr t | none => false) || containsHeapExpr body
+  | .Block stmts _ => stmts.attach.any (fun x => containsHeapExpr x.val)
   | .IfThenElse c t e =>
-      containsFieldRead c || containsFieldRead t ||
-      (match e with | some x => containsFieldRead x | none => false)
+      containsHeapExpr c || containsHeapExpr t ||
+      (match e with | some x => containsHeapExpr x | none => false)
   | _ => false
   termination_by expr
   decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
 
+/-- The heap effect of a single implicit command. `heapWrite` and `heapAlloc`
+modify the heap (allocation adds a fresh object); `heapRead`/`heapInstanceOf`
+only read it; standard Core commands do not touch it directly. -/
+private def cmdHeapEffect : Core.Implicit.ImplicitCmd → Core.Implicit.HeapEffect
+  | .heap (.heapWrite ..) | .heap (.heapAlloc ..) => .writes
+  | .heap (.heapRead ..) | .heap (.heapInstanceOf ..) => .reads
+  | .core _ => .none
+
+/-- Join on the heap-effect lattice: `.writes` > `.reads` > `.none`. -/
+private def joinHeapEffect : Core.Implicit.HeapEffect → Core.Implicit.HeapEffect → Core.Implicit.HeapEffect
+  | .writes, _ | _, .writes => .writes
+  | .reads, _ | _, .reads => .reads
+  | .none, .none => .none
+
+/-- Infer a procedure's heap effect from its emitted body by joining the effect
+of every command. This captures the procedure's *direct* effect; a transitive
+(call-graph) effect is not yet computed. -/
+private partial def inferHeapEffect (stmts : Core.Implicit.Statements) : Core.Implicit.HeapEffect :=
+  stmts.foldl (init := .none) fun acc s =>
+    match s with
+    | .cmd c => joinHeapEffect acc (cmdHeapEffect c)
+    | .block _ b _ => joinHeapEffect acc (inferHeapEffect b)
+    | .ite _ t e _ => joinHeapEffect acc (joinHeapEffect (inferHeapEffect t) (inferHeapEffect e))
+    | .loop _ _ _ b _ => joinHeapEffect acc (inferHeapEffect b)
+    | .exit .. | .funcDecl .. | .typeDecl .. => acc
+
 /--
 Translate a Laurel procedure to a Core-implicit procedure. Mirrors
 `translateProcedure` but emits an implicit body (`heapRead`/`heapWrite`/
-`heapAlloc`) via `implicitScheme` and carries a `HeapEffect`. Field reads in
-specifications are rejected (not yet supported in implicit mode).
-
-TODO: `effect` is stubbed to `.none`. The faithful value is inferred from the
-emitted heap commands (a `heapWrite` ⇒ `.writes`, else a `heapRead` ⇒ `.reads`).
+`heapAlloc`/`heapInstanceOf`) via `implicitScheme` and carries a `HeapEffect`
+inferred from the body. Heap-dependent expressions in specifications are
+rejected (not yet supported in implicit mode).
 -/
 def translateProcedureImplicit (proc : Procedure) : TranslateM Core.Implicit.Procedure := do
   let inputs ← proc.inputs.mapM translateParameterToCore
@@ -985,19 +1049,20 @@ def translateProcedureImplicit (proc : Procedure) : TranslateM Core.Implicit.Pro
     inputs := inputs
     outputs := outputs
   }
-  -- Field reads in specifications are not yet supported in implicit mode:
-  -- there is no expression-level heap-read form, and a spec has no statement
-  -- slot for a `heapRead`. Reject such conditions with a clear diagnostic and
-  -- drop them (so translation does not also hit the generic field-read guard).
-  let rejectSpecFieldReads (cs : List Condition) : TranslateM (List Condition) := do
+  -- Heap-dependent expressions (field reads, type tests, casts) in
+  -- specifications are not yet supported in implicit mode: they have no
+  -- expression-level form in Core-implicit, and a spec has no statement slot to
+  -- hoist a heap command into. Reject such conditions with a clear diagnostic
+  -- and drop them (so translation does not also hit the generic field guard).
+  let rejectSpecHeapExprs (cs : List Condition) : TranslateM (List Condition) := do
     cs.filterMapM fun c => do
-      if containsFieldRead c.condition then
+      if containsHeapExpr c.condition then
         emitCoreDiagnostic (diagnosticFromSource c.condition.source
-          "field reads in specifications are not yet supported in implicit heap mode" DiagnosticType.NotYetImplemented)
+          "heap-dependent expressions (field reads, type tests) in specifications are not yet supported in implicit heap mode" DiagnosticType.NotYetImplemented)
         return none
       else
         return some c
-  let preconds ← rejectSpecFieldReads proc.preconditions
+  let preconds ← rejectSpecHeapExprs proc.preconditions
   let preconditions ← translateChecks preconds "requires" false
   let bodyStmts : Option Core.Implicit.Statements ←
     match proc.body with
@@ -1007,12 +1072,13 @@ def translateProcedureImplicit (proc : Procedure) : TranslateM Core.Implicit.Pro
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds => do
-        translateChecks (← rejectSpecFieldReads postconds) s!"postcondition" bodyStmts.isNone
+        translateChecks (← rejectSpecHeapExprs postconds) s!"postcondition" bodyStmts.isNone
     | _ => pure []
+  let bodyList := bodyStmts.getD []
   let body : Core.Implicit.Statements :=
-    [Imperative.Stmt.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
+    [Imperative.Stmt.block "$body" bodyList mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, effect := .none, spec, body }
+  return { header, effect := inferHeapEffect bodyList, spec, body }
 
 /-- Convert a non-procedure Core declaration to the corresponding implicit
 declaration. Non-heap declarations (types, axioms, functions) are shared

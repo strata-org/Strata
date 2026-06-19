@@ -49,7 +49,14 @@ inductive HeapCmd where
       The result is a fresh `Composite` reference with the correct TypeTag.
       `typeName` is the class name (e.g., `"BankAccount"`). -/
   | heapAlloc (lhs : Expression.Ident) (typeName : String)
+  /-- `heapInstanceOf lhs := obj is typeName`
+      Test whether `obj`'s runtime type is `typeName` or a descendant of it.
+      The subtype meaning is named here; resolving the type hierarchy is the
+      backend's responsibility. -/
+  | heapInstanceOf (lhs : Expression.Ident) (obj : Expression.Expr) (typeName : String)
   deriving Repr, Inhabited
+
+-- TODO: carry `MetaData` on heap commands, as Core's commands do.
 
 /--
 Core-implicit's command type: either a standard Core command (including

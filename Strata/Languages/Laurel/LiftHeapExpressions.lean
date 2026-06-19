@@ -98,15 +98,25 @@ private def declToReassign (stmt : StmtExprMd) : StmtExprMd :=
   | ⟨.Assign [⟨.Declare ⟨name, _⟩, dsrc⟩] v, src⟩ => ⟨.Assign [⟨.Local name, dsrc⟩] v, src⟩
   | _ => stmt
 
+/-- Bind `rhs` to a fresh temp of type `ty` (prepending `var $t := rhs`) and
+return the temp reference. The common move for lifting a heap expression into
+canonical position. -/
+private def bindToTemp (rhs : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange)
+    : HeapLiftM StmtExprMd := do
+  let t ← freshHeapTemp
+  prepend ⟨.Assign [⟨.Declare ⟨t, ty⟩, source⟩] rhs, source⟩
+  return ⟨.Var (.Local t), source⟩
+
 mutual
 /--
-Transform an expression, lifting every embedded field read and allocation into a
-preceding `var $t := …` (pushed onto `prepended`) and replacing it with a
-reference to the fresh temp.
+Transform an expression, lifting every embedded field read, allocation, and type
+test into a preceding `var $t := …` (pushed onto `prepended`) and replacing it
+with a reference to the fresh temp.
 -/
 def transformHeapExpr (expr : StmtExprMd) : HeapLiftM StmtExprMd := do
   match expr with
   | AstNode.mk val source =>
+  let bool : HighTypeMd := ⟨.TBool, source⟩
   match val with
   | .Var (.Field target fieldName) =>
       -- Lift any reads inside the object expression first, then bind this read.
@@ -114,14 +124,21 @@ def transformHeapExpr (expr : StmtExprMd) : HeapLiftM StmtExprMd := do
       -- lifting replaces it with a fresh temp not yet known to the model.
       let ty ← fieldReadType target fieldName source
       let target' ← transformHeapExpr target
-      let t ← freshHeapTemp
-      prepend ⟨.Assign [⟨.Declare ⟨t, ty⟩, source⟩] ⟨.Var (.Field target' fieldName), source⟩, source⟩
-      return ⟨.Var (.Local t), source⟩
+      bindToTemp ⟨.Var (.Field target' fieldName), source⟩ ty source
   | .New name =>
-      let t ← freshHeapTemp
-      let ty : HighTypeMd := ⟨.UserDefined name, source⟩
-      prepend ⟨.Assign [⟨.Declare ⟨t, ty⟩, source⟩] expr, source⟩
-      return ⟨.Var (.Local t), source⟩
+      bindToTemp expr ⟨.UserDefined name, source⟩ source
+  | .IsType obj testType =>
+      let obj' ← transformHeapExpr obj
+      bindToTemp ⟨.IsType obj' testType, source⟩ bool source
+  | .AsType target testType =>
+      -- `x as T` ≡ `{ assert (x is T); x }`, matching the explicit lowering.
+      -- Bind the value once (typed as the cast result), assert the type test
+      -- (itself lifted to a bool temp), and yield the bound value.
+      let target' ← transformHeapExpr target
+      let v ← bindToTemp target' testType source
+      let b ← bindToTemp ⟨.IsType v testType, source⟩ bool source
+      prepend ⟨.Assert { condition := b }, source⟩
+      return v
   | .PrimitiveOp op args skip =>
       let args' ← args.attach.mapM (fun ⟨a, _⟩ => transformHeapExpr a)
       return ⟨.PrimitiveOp op args' skip, source⟩
@@ -166,6 +183,10 @@ def transformHeapStmt (stmt : StmtExprMd) : HeapLiftM (List StmtExprMd) := do
               let obj' ← transformHeapExpr obj
               let prepends ← takePrepends
               return prepends ++ [⟨.Assign [target] ⟨.Var (.Field obj' fieldName), vsrc⟩, source⟩]
+          | ⟨.IsType obj testType, vsrc⟩ =>
+              let obj' ← transformHeapExpr obj
+              let prepends ← takePrepends
+              return prepends ++ [⟨.Assign [target] ⟨.IsType obj' testType, vsrc⟩, source⟩]
           | ⟨.New _, _⟩ =>
               return [stmt]
           | _ =>

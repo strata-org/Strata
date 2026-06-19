@@ -44,6 +44,8 @@ def formatHeapCmd (extraFreeVars : Array String) : HeapCmd → Format
       Core.formatExprs [field] extraFreeVars ++ ", " ++ Core.formatExprs [rhs] extraFreeVars ++ ")"
   | .heapAlloc lhs typeName =>
     format lhs.name ++ " := heapAlloc(" ++ typeName ++ ")"
+  | .heapInstanceOf lhs obj typeName =>
+    format lhs.name ++ " := heapInstanceOf(" ++ Core.formatExprs [obj] extraFreeVars ++ ", " ++ typeName ++ ")"
 
 /-- Format an implicit command: a heap command directly, or a standard Core
 command via the Core formatter (with `extraFreeVars` registered). -/

@@ -55,7 +55,7 @@ private def printImplicitDiagnostics (program : StrataDDM.Program) : IO Unit := 
 info: program CoreImplicit;
 
 
-procedure manipulate [heap: none]
+procedure manipulate [heap: writes]
 block $body {
   heapWrite(a, Account.balance, 1)
   var x : int;
@@ -91,7 +91,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure nested [heap: none]
+procedure nested [heap: writes]
 block $body {
   var $h_0 : Composite;
   $h_0 := heapRead(a, Node.next)
@@ -139,7 +139,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure consume [heap: none]
+procedure consume [heap: writes]
 block $body {
   var $h_0 : int;
   $h_0 := heapRead(self, Account.balance)
@@ -173,7 +173,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure shortCircuit [heap: none]
+procedure shortCircuit [heap: reads]
 block $body {
   var $h_0 : bool;
   $h_0 := heapRead(self, Account.ok)
@@ -201,7 +201,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure compoundGuard [heap: none]
+procedure compoundGuard [heap: writes]
 block $body {
   var $h_0 : int;
   $h_0 := heapRead(self, Account.balance)
@@ -237,7 +237,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure retRead [heap: none]
+procedure retRead [heap: reads]
 ensures r == retRead$asFunction(self)
 block $body {
   r := heapRead(self, Account.balance)
@@ -261,7 +261,7 @@ opaque {
 info: program CoreImplicit;
 
 
-procedure deep [heap: none]
+procedure deep [heap: reads]
 ensures r == deep$asFunction(a)
 block $body {
   var $h_0 : Composite;
@@ -297,7 +297,7 @@ block $body {
   var b : bool := true;
 }
 
-procedure makesAndPasses [heap: none]
+procedure makesAndPasses [heap: writes]
 block $body {
   var $h_0 : Composite;
   $h_0 := heapAlloc(Account)
@@ -321,11 +321,11 @@ opaque {
 };
 #end
 
--- A field read in a specification (here a postcondition) is rejected: implicit
--- mode has no expression-level heap-read form, and specs have no statement slot
--- for a heapRead. See the design's spec discussion.
+-- A heap-dependent expression in a specification (here a field read in a
+-- postcondition) is rejected: implicit mode has no expression-level heap form,
+-- and specs have no statement slot for a heap command.
 /--
-info: field reads in specifications are not yet supported in implicit heap mode
+info: heap-dependent expressions (field reads, type tests) in specifications are not yet supported in implicit heap mode
 -/
 #guard_msgs in
 #eval printImplicitDiagnostics
@@ -339,6 +339,92 @@ opaque
   ensures r == self#balance
 {
   r := self#balance
+};
+#end
+
+-- Type test `a is Dog` becomes a heapInstanceOf; the procedure reads the heap.
+/--
+info: program CoreImplicit;
+
+
+procedure classify [heap: reads]
+ensures r == classify$asFunction(a)
+block $body {
+  r := heapInstanceOf(a, Dog)
+}
+-/
+#guard_msgs in
+#eval printImplicit
+#strata
+program Laurel;
+composite Animal {
+  var legs: int
+}
+composite Dog extends Animal {
+  var name: int
+}
+procedure classify(a: Animal) returns (r: bool)
+opaque {
+  r := a is Dog
+};
+#end
+
+-- Cast `a as Dog` lowers to `assert (a is Dog); a`: bind the value once, lift
+-- the type test to a bool temp, assert it, then yield the value.
+/--
+info: program CoreImplicit;
+
+
+procedure downcast [heap: reads]
+ensures d == downcast$asFunction(a)
+block $body {
+  var $h_0 : Composite := a;
+  var $h_1 : bool;
+  $h_1 := heapInstanceOf($h_0, Dog)
+  assert [|assert(9283)|]: $h_1;
+  d := $h_0;
+}
+-/
+#guard_msgs in
+#eval printImplicit
+#strata
+program Laurel;
+composite Animal {
+  var legs: int
+}
+composite Dog extends Animal {
+  var name: int
+}
+procedure downcast(a: Animal) returns (d: Dog)
+opaque {
+  d := a as Dog
+};
+#end
+
+-- Object `==` is plain reference equality: `Composite` is opaque in implicit
+-- mode (no MkComposite wrapper), so `==` compares references directly with no
+-- rewrite and no heap effect. This pins that — if `Composite` ever gains
+-- structure, `==` would silently become structural equality and this fails.
+/--
+info: program CoreImplicit;
+
+
+procedure sameObj [heap: none]
+ensures r == sameObj$asFunction(a, b)
+block $body {
+  r := a == b;
+}
+-/
+#guard_msgs in
+#eval printImplicit
+#strata
+program Laurel;
+composite Account {
+  var balance: int
+}
+procedure sameObj(a: Account, b: Account) returns (r: bool)
+opaque {
+  r := a == b
 };
 #end
 
