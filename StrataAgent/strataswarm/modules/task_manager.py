@@ -334,7 +334,7 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
 
     await _cleanup_internal(agent, Handler.CLARIFIER)
 
-    prover_ctx = swarm_agent("prover", swarm=agent.swarm, cwd=agent._cwd)
+    prover_ctx = swarm_agent("prover_v4", swarm=agent.swarm, cwd=agent._cwd)
     prover = await prover_ctx.__aenter__()
     # Only signal resume if explicitly resuming from checkpoint
     if resume:

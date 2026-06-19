@@ -742,7 +742,7 @@ class SwarmLeanTools:
         sorry_by_thm = self.get_sorries_by_theorem(file_path)
 
         # Detect mutual blocks
-        content = source.read_text() if not errors else ""
+        content = (self._root / file_path).read_text() if not errors else ""
         file_lines = content.splitlines() if content else []
         mutual_ranges = []
         i = 0

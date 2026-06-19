@@ -201,6 +201,12 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         if not stub_clean.exists():
             shutil.copy2(cwd / stub_rel, stub_clean)
 
+        # Copy cheat sheet into workspace for guide access
+        cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
+        cheat_dst = cwd / workspace_rel / "StrataProofCheatSheet.md"
+        if cheat_src.exists() and not cheat_dst.exists():
+            shutil.copy2(cheat_src, cheat_dst)
+
         # Register root in ledger
         tools = get_lean_tools()
         split = tools.split_theorems(stub_rel)
@@ -274,6 +280,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         state.stage = next_stage.value
 
         ledger.save()
+        _write_progress(cwd, state, ledger)
         _save_state(cwd, state)
 
     # ─── Done ─────────────────────────────────────────────────────────────
@@ -400,26 +407,31 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
 
     # Brief guide with ledger context
     ledger_summary = _build_ledger_summary(ledger, entry)
-    await guide.run_ai(inp=f"CONTEXT:\n{ledger_summary}", max_turns=2)
-
-    # Get strategy from guide
+    # Get initial strategy from guide (same pattern as v3)
     await agent._emit("message", f"[PO4] Consulting guide for {entry.name}...")
-    strategy = await guide.run_ai(
-        inp=f"Advise on proving '{entry.name}' in {stub_rel}. Read the file and the cheat sheet.",
-        max_turns=5,
+    initial_advice = await guide.run_ai(
+        inp=(
+            f"CONTEXT:\n{ledger_summary}\n\n"
+            f"A proof_writer is about to prove theorem '{entry.name}' in {stub_rel}.\n"
+            f"Read the cheat sheet and then advise on the best approach.\n"
+            f"Consider: what proof technique fits this theorem's structure? "
+            f"What common pitfalls should the writer avoid?\n"
+            f"If the theorem statement looks contradictory or not provable as stated, "
+            f"say so clearly."
+        ),
     )
-    guide_advice = strategy.raw_result or ""
+    guide_advice = initial_advice.raw_result or ""
 
     # Check for contradictory diagnosis
     if "contradictory" in guide_advice.lower() and "not provable" in guide_advice.lower():
-        from .cycle_detection import _build_equivalence_file  # reuse structured ask pattern
-        # TODO: structured contradictory check (same as v3's _ask_guide_contradictory)
         await agent._emit("message", f"[PO4] Guide hints at contradiction for {entry.name}")
+        # TODO: structured contradictory confirmation
 
     # Build verifier
     verify_fn = make_proof_writer_verifier(stub_rel, original_content, entry.workspace, entry.name)
 
-    action = f"STRATEGY ADVICE:\n{guide_advice}\n\nProve theorem '{entry.name}' in {stub_rel}."
+    # Build initial action for writer (same pattern as v3 — explicit SearchAgent instructions)
+    action = _build_initial_action(entry, stub_rel, guide_advice)
 
     # ── Phase 1: Initial attempts (try to close all sorry directly) ──
     for attempt_idx in range(len(WRITER_TURNS)):
@@ -459,18 +471,29 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 (cwd / stub_rel).write_text(original_content)
                 continue
 
-        # Consult guide between attempts
+        # Consult guide between attempts (same pattern as v3)
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         sorry_count = sum(len(v) for v in sorry_info.values())
         await agent._emit("message", f"[PO4] Still has {sorry_count} sorry. Consulting guide...")
 
+        first_thm = next(iter(sorry_info), None)
+        sorry_detail = ""
+        if first_thm and sorry_info[first_thm]:
+            pos = sorry_info[first_thm][0]
+            sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see the stuck goal."
+
         advice_result = await guide.run_ai(
-            inp=f"Writer is stuck. File: {stub_rel}\nGoals with sorry: {sorry_info}\n"
-                f"Diagnose and advise what to try next.",
-            max_turns=5,
+            inp=(
+                f"Writer is stuck after attempt {entry.attempts}.\n"
+                f"File: {stub_rel}\n"
+                f"Goals with sorry: {sorry_info}\n"
+                f"{sorry_detail}\n"
+                f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
+                f"If a goal looks contradictory or needs strengthening, say so clearly."
+            ),
         )
-        advice = advice_result.raw_result or ""
-        action = f"STRATEGY ADVICE:\n{advice}\n\nApply this advice and continue the proof."
+        advice = advice_result.raw_result or "Try a different approach."
+        action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
     # ── Phase 2: Grace — factor remaining sorry into helpers ──
     sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -878,6 +901,36 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
     return getattr(agent, attr)
 
 
+# ─── Initial action for writer ─────────────────────────────────────────────────
+
+def _build_initial_action(entry: LemmaEntry, stub_rel: str, guide_advice: str) -> str:
+    """Build the first action message for proof_writer (mirrors v3's pattern)."""
+    msg = (
+        f"Prove the theorem in {stub_rel}.\n"
+        f"Theorem name: {entry.name}\n\n"
+        f"MANDATORY FIRST STEPS (do ALL of these IN ORDER before writing any tactic):\n\n"
+        f"Step 1. Read {stub_rel} to see the theorem statement\n\n"
+        f"Step 2. Use lean_goal at the sorry to see the exact goal and context\n\n"
+        f"Step 3. Ask SearchAgent about the types in the goal:\n"
+        f"   send_message(to=\"SearchAgent\", message=\"What is the definition of <TYPE>? What lemmas exist about it?\")\n"
+        f"   check_messages(timeout=60)\n\n"
+        f"Step 4. Read Stub/Def.lean for available definitions\n\n"
+        f"DO NOT write any proof tactics until you have completed steps 1-4.\n\n"
+        f"THEN write the proof:\n"
+        f"5. Factor hard sub-goals into helper theorems with sorry above the main theorem\n"
+        f"6. The main theorem's proof body must be sorry-free (helpers can have sorry)\n"
+        f"7. Verify with lean_verify after every change\n"
+    )
+    if guide_advice:
+        msg = f"STRATEGY ADVICE from your proof guide:\n{guide_advice}\n\n{msg}"
+    if entry.attempts > 0:
+        msg += (
+            f"\nThis is attempt {entry.attempts + 1}. Previous approaches failed.\n"
+            f"Try a DIFFERENT approach.\n"
+        )
+    return msg
+
+
 # ─── Ledger summary for guide ─────────────────────────────────────────────────
 
 def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
@@ -930,6 +983,61 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
         lines.append(f"\nBlocked on you (ancestry): {' → '.join(reversed(ancestor_names))} → {entry.name}")
 
     return "\n".join(lines)
+
+
+# ─── Progress ─────────────────────────────────────────────────────────────────
+
+def _write_progress(cwd: Path, state: PO4State, ledger: LemmaLedger):
+    """Write progress.md for TaskManager monitoring."""
+    workspace_abs = cwd / state.root_workspace
+    workspace_abs.mkdir(parents=True, exist_ok=True)
+    progress = workspace_abs / "progress.md"
+
+    entries = ledger.entries()
+    proved = [e for e in entries if e.status == LemmaStatus.PROVED]
+    pending = [e for e in entries if e.status == LemmaStatus.PENDING]
+    failed = [e for e in entries if e.status == LemmaStatus.FAILED]
+    cycles = [e for e in entries if e.status == LemmaStatus.CYCLE]
+    pruned = [e for e in entries if e.status == LemmaStatus.PRUNED]
+
+    current = ledger.get(state.current_lemma_id) if state.current_lemma_id else None
+    current_name = current.name if current else "none"
+
+    content = (
+        f"# Proof Progress (v4)\n\n"
+        f"- **Stage**: {state.stage}\n"
+        f"- **Root theorem**: {state.root_theorem_name}\n"
+        f"- **Current lemma**: {current_name}\n"
+        f"- **Total attempts**: {state.total_attempts}\n"
+        f"- **Proved**: {len(proved)}/{len(entries)}\n"
+        f"- **Pending**: {len(pending)}\n"
+        f"- **Failed**: {len(failed)}\n"
+        f"- **Cycles**: {len(cycles)}\n"
+        f"- **Pruned**: {len(pruned)}\n\n"
+    )
+
+    if proved:
+        content += "## Proved\n"
+        for e in proved:
+            content += f"- ✅ `{e.name}`\n"
+        content += "\n"
+
+    if pending:
+        content += "## Pending\n"
+        for e in pending:
+            content += f"- ⏳ `{e.name}` (depth={e.depth})\n"
+        content += "\n"
+
+    if failed or cycles:
+        content += "## Failed/Cycles\n"
+        for e in failed:
+            content += f"- ❌ `{e.name}`: {e.failure_reason}\n"
+        for e in cycles:
+            ancestor = ledger.get(e.cycle_ancestor_id)
+            content += f"- ⟳ `{e.name}` → {ancestor.name if ancestor else '?'}\n"
+        content += "\n"
+
+    progress.write_text(content)
 
 
 # ─── Checkpoint ───────────────────────────────────────────────────────────────
