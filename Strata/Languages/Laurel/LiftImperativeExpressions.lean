@@ -216,6 +216,19 @@ def transformLiftedExpr (expr : StmtExprMd) : LiftM (List StmtExprMd × StmtExpr
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
 -/
+def transformLiftedStmt (expr : StmtExprMd) : LiftM Unit := do
+  let savedSubst := (← get).subst
+  let previousPrepends := (← get).prependedStmts
+  modify fun s => { s with subst := [], prependedStmts := [] }
+  let result ← transformStmt expr
+  modify fun s => { s with subst := savedSubst, prependedStmts := previousPrepends }
+  prependList result
+  termination_by (sizeOf expr, 1)
+
+/--
+Process an expression in expression context, traversing arguments right to left.
+Assignments are lifted to prependedStmts and replaced with snapshot variable references.
+-/
 def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   match expr with
   | AstNode.mk val source =>
@@ -283,9 +296,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       return seqCall
     else
-      let seqArgsAndPrepends ← args.reverse.mapM transformLiftedExpr
-      let seqArgs := seqArgsAndPrepends.map (fun t => t.2)
-      let seqCall: StmtExprMd := ⟨.StaticCall callee seqArgs.reverse, source⟩
       -- Imperative call in expression position: lift to an assignment.
       -- Only valid for single-output procedures (or unresolved ones where we
       -- fall back to a single target). Multi-output procedures in expression
@@ -296,15 +306,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         | .instanceProcedure _ proc => proc.outputs
         | _ => []
       let callResultVar ← freshTempVar
-      let callResultType ← match outputs with
-        | [single] => pure single.type
-        | _ => computeType expr
-      let liftedCall: List StmtExprMd := [
-        ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
-        ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
-      ]
-      prependList liftedCall
-      prependList (seqArgsAndPrepends.map (fun t => t.1)).flatten
+      let callResultType ← computeType expr
+      let liftedCall: StmtExprMd := ⟨.Assign [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] expr, source⟩
+      transformLiftedStmt liftedCall
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
