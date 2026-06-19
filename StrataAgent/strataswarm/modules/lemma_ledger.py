@@ -194,7 +194,7 @@ class LemmaLedger:
                 statement=statement,
                 parent_id=parent_id,
                 depth=depth,
-                status=LemmaStatus.PROVING if not parent_id else LemmaStatus.PENDING,
+                status=LemmaStatus.PENDING,
                 is_mutual=is_mutual,
             )
             self._entries[entry.id] = entry

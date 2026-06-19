@@ -234,6 +234,79 @@ async def _run_short_writer(agent, file_path: str, instruction: str) -> bool:
     return True  # caller checks compilation
 
 
+# ─── DAG consistency passes (called from UPDATE phase) ───────────────────────
+
+def propagate_cycles(ledger) -> int:
+    """Pass 2: For each CYCLE node, mark everything between it and its ancestor as CYCLE.
+
+    If node C is CYCLE with ancestor A, and the path is A → B → ... → parent → C,
+    then parent, ..., B all get marked CYCLE (they are part of the tainted decomposition chain).
+    We don't mark A itself — A is the healthy ancestor that needs to be re-proved with induction.
+
+    Returns number of newly marked nodes.
+    """
+    from .lemma_ledger import LemmaStatus
+    marked = 0
+    for entry in ledger.entries():
+        if entry.status != LemmaStatus.CYCLE or not entry.cycle_ancestor_id:
+            continue
+        # Walk from this node's parent up to (but not including) the ancestor
+        current_id = entry.parent_id
+        while current_id and current_id != entry.cycle_ancestor_id:
+            node = ledger.get(current_id)
+            if not node:
+                break
+            if node.status not in (LemmaStatus.CYCLE, LemmaStatus.PROVED, LemmaStatus.PRUNED):
+                node.status = LemmaStatus.CYCLE
+                node.cycle_ancestor_id = entry.cycle_ancestor_id
+                marked += 1
+            current_id = node.parent_id
+    return marked
+
+
+def prune_siblings_of_dead(ledger) -> int:
+    """Pass 3: For each FAILED/CYCLE node, prune its pending siblings.
+
+    A sibling is another child of the same parent. If one child is dead,
+    the parent's decomposition is broken — pending siblings are invalid.
+    The parent itself gets re-activated (set to PENDING) for retry.
+
+    Proved siblings are never pruned. Root is never pruned.
+
+    Returns number of newly pruned nodes.
+    """
+    from .lemma_ledger import LemmaStatus
+    pruned_count = 0
+    parents_reactivated = set()
+
+    for entry in ledger.entries():
+        if entry.status not in (LemmaStatus.FAILED, LemmaStatus.CYCLE):
+            continue
+        if not entry.parent_id:
+            continue
+
+        parent = ledger.get(entry.parent_id)
+        if not parent or parent.status in (LemmaStatus.PROVED, LemmaStatus.PRUNED):
+            continue
+
+        # Prune pending siblings
+        for sibling_id in parent.children:
+            if sibling_id == entry.id:
+                continue
+            sibling = ledger.get(sibling_id)
+            if sibling and sibling.status in (LemmaStatus.PENDING, LemmaStatus.PROVING):
+                pruned = ledger.prune_branch(sibling_id, f"sibling '{entry.name}' is {entry.status.value}")
+                pruned_count += len(pruned)
+
+        # Re-activate parent (if not already done this round)
+        if parent.id not in parents_reactivated:
+            if parent.status not in (LemmaStatus.PROVED, LemmaStatus.PRUNED):
+                parent.status = LemmaStatus.PENDING
+                parents_reactivated.add(parent.id)
+
+    return pruned_count
+
+
 def _get_statement(file_path: str) -> str:
     """Get the theorem statement from a file using split_theorems (precise, itp-interface)."""
     from .po_lean import get_lean_tools

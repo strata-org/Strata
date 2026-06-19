@@ -84,6 +84,11 @@ allowed_tools:
   - mcp__lean_lsp__lean_hover_info
   - mcp__lean_tools__get_sorries_by_theorem
   - mcp__lean_tools__show_file_state
+  - mcp__ledger__ledger_search
+  - mcp__ledger__ledger_get
+  - mcp__ledger__ledger_children
+  - mcp__ledger__ledger_ancestry
+  - mcp__ledger__ledger_stats
   - send_message
   - check_messages
   - get_time

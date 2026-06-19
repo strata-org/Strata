@@ -1,0 +1,6 @@
+name: Prover_v4
+description: "Proof orchestrator v4. Single-PO worklist with lemma ledger, cycle detection, priority-based focus."
+module: strataswarm.modules.po_v4
+stateless: false
+checkpointable: true
+auto_start: false
