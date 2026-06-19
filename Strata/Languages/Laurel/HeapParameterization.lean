@@ -580,7 +580,7 @@ public def heapParameterizationPass : LaurelPass where
   name := "HeapParameterization"
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := true
-  run := fun p m =>
+  run := fun _ p m =>
     (heapParameterization m p, [], {})
   comesBefore := [
       ⟨ typeHierarchyTransformPass, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,

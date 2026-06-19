@@ -162,7 +162,7 @@ public def typeHierarchyTransformPass : LaurelPass where
   name := "TypeHierarchyTransform"
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
   needsResolves := true
-  run := fun p m =>
+  run := fun _ p m =>
     (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel

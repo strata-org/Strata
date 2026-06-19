@@ -58,7 +58,7 @@ end -- public section
 public def desugarShortCircuitPass : LaurelPass where
   name := "DesugarShortCircuit"
   documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
-  run := fun p m =>
+  run := fun _ p m =>
     (desugarShortCircuit m p, [], {})
   comesBefore := [
       ⟨ liftExpressionAssignmentsPass, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]

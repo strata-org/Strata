@@ -130,7 +130,7 @@ program state after each named Laurel pass is written to
 `{prefix}.{n}.{passName}.laurel.st`.
 -/
 private def runLaurelPasses
-    (pctx : Strata.Pipeline.PipelineContext) (program : Program)
+    (pctx : Strata.Pipeline.PipelineContext) (program : Program) (options : LaurelTranslateOptions)
     : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
@@ -150,8 +150,9 @@ private def runLaurelPasses
   let mut allDiags : List DiagnosticModel := resolutionErrors
   let mut allStats : Statistics := {}
 
-  for pass in laurelPipeline do
-    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model)
+  let passes := laurelPipeline
+  for pass in passes do
+    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
     allDiags := allDiags ++ diags
     allStats := allStats.merge stats
@@ -180,7 +181,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
   runPipelineM options.keepAllFilesPrefix do
-    let (program, model, passDiags, stats) ← runLaurelPasses pctx program
+    let (program, model, passDiags, stats) ← runLaurelPasses pctx program options
     let unorderedCore := transparencyPass program
     emit "transparencyPass" "core.st" unorderedCore
 

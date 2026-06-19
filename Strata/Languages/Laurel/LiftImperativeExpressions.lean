@@ -539,7 +539,7 @@ end -- public section
 public def liftExpressionAssignmentsPass : LaurelPass where
   name := "LiftExpressionAssignments"
   documentation := "Lifts assignments that appear in expression contexts into preceding statements. This is necessary because Strata Core does not support assignments within expressions. The pass introduces fresh temporary variables where needed."
-  run := fun p m =>
+  run := fun _ p m =>
     (liftExpressionAssignments m p, [], {})
 
 end Laurel

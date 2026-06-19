@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.Resolution
@@ -614,14 +615,6 @@ where
     | p :: rest => do
       let inner ← buildQuants rest body trigger
       return LExpr.all () p.name.text (some (← translateType p.type)) inner
-
-structure LaurelTranslateOptions where
-  inlineFunctionsWhenPossible : Bool := false
-  overflowChecks : Core.OverflowChecks := {}
-  keepAllFilesPrefix : Option String := none
-
-instance : Inhabited LaurelTranslateOptions where
-  default := {}
 
 structure LaurelVerifyOptions where
   translateOptions : LaurelTranslateOptions := {}

@@ -237,7 +237,7 @@ end -- public section
 public def filterNonCompositeModifiesPass : LaurelPass where
   name := "FilterNonCompositeModifies"
   documentation := "Filters modifies clauses that refer to non-composite types (e.g. primitives), which cannot be heap-parameterized. Emits a warning for each removed clause. Should run before heap parameterization so that phase remains agnostic to modifies clauses."
-  run := fun p m =>
+  run := fun _ p m =>
     let (p', diags) := filterNonCompositeModifies m p
     (p', diags, {})
 
@@ -246,7 +246,7 @@ public def modifiesClausesTransformPass : LaurelPass where
   name := "ModifiesClausesTransform"
   documentation := "Translates modifies clauses into additional ensures clauses. The modifies clause of a procedure is translated into a quantified assertion that states objects not mentioned in the modifies clause have their field values preserved between the input and output heap."
   needsResolves := true
-  run := fun p m =>
+  run := fun _ p m =>
     let (p', diags) := modifiesClausesTransform m p
     (p', diags, {})
 

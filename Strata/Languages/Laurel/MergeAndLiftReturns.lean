@@ -123,7 +123,7 @@ public def mergeAndLiftReturnsPass : LaurelPass where
   name := "MergeAndLiftReturns"
   documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
   needsResolves := true
-  run := fun p _m =>
+  run := fun _ p _m =>
     (mergeAndLiftReturns p, [], {})
 
 end Laurel
