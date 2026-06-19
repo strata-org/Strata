@@ -245,6 +245,7 @@ procedure useOuter()
   opaque
 {
   var o: Outer := new Outer;
+  o#inner := new Inner;
   var v: int := o#inner#getX();
   assert v == o#inner#x
 };
