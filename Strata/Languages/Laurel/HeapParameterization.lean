@@ -479,7 +479,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
     -- (true inout). Core's two-state semantics provide `old $heap` automatically.
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
     let inputs' := heapParam :: proc.inputs
     let outputs' := heapParam :: proc.outputs
