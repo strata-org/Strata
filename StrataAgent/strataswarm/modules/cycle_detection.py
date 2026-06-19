@@ -75,7 +75,7 @@ async def check_soft(agent, file_path: str, ledger) -> list[dict]:
         "cycle_checker",
         swarm=agent.swarm,
         cwd=agent._cwd,
-        mcp_servers_override={"ledger": ledger_mcp},
+        extra_mcp_servers={"ledger": ledger_mcp},
     ) as checker:
         result = await checker.run_ai(
             inp=(
@@ -173,10 +173,9 @@ async def verify_ancestor_match(
     if not our_statement or not ancestor_statement:
         return False
 
-    imports = _merge_imports(our_file, ancestor_file)
-    temp_content = "\n".join(f"import {imp}" for imp in imports) + "\n\n"
-    temp_content += ancestor_statement + "\n\n"
-    temp_content += our_statement
+    temp_content = await _build_equivalence_file(agent, our_file, ancestor_file, our_statement, ancestor_statement)
+    if not temp_content:
+        return False
 
     temp_path = str(Path(our_file).parent / "_cycle_check_temp.lean")
     (cwd / temp_path).parent.mkdir(parents=True, exist_ok=True)
@@ -200,10 +199,18 @@ async def verify_ancestor_match(
 
         # Check: file compiles AND the variant theorem specifically has no sorry
         # (ancestor is allowed to keep sorry — it's the "given")
-        if not success or not tools.check_compiles(temp_path).success:
+        import logging
+        _vlog = logging.getLogger("strataswarm.cycle")
+        cr = tools.check_compiles(temp_path)
+        _vlog.info(f"  verify_ancestor: compiles={cr.success}, temp_path={temp_path}")
+        if not success or not cr.success:
+            _vlog.info(f"  verify_ancestor: FAILED (success={success}, compiles={cr.success})")
             return False
         sorry_by_thm = tools.get_sorries_by_theorem(temp_path)
-        return variant_name not in sorry_by_thm
+        _vlog.info(f"  verify_ancestor: sorry_by_thm={sorry_by_thm}, variant_name={variant_name}")
+        result = variant_name not in sorry_by_thm
+        _vlog.info(f"  verify_ancestor: returning {result}")
+        return result
     finally:
         (cwd / temp_path).unlink(missing_ok=True)
 
@@ -253,6 +260,42 @@ def _merge_imports(*file_paths: str) -> list[str]:
     return sorted(all_imports)
 
 
+async def _build_equivalence_file(agent, our_file: str, ancestor_file: str,
+                                   our_statement: str, ancestor_statement: str) -> str:
+    """Use a file_merger agent to combine two files' preambles into one equivalence check file."""
+    from .._helpers import swarm_agent
+
+    @dataclass
+    class MergedFile:
+        content: str = ""
+
+    async with swarm_agent(
+        "file_merger",
+        swarm=agent.swarm,
+        cwd=agent._cwd,
+    ) as merger:
+        result = await merger.run_ai(
+            inp=(
+                f"Merge these two Lean 4 files into a single file.\n\n"
+                f"File A: {our_file}\n"
+                f"File B: {ancestor_file}\n\n"
+                f"Read both files. Produce ONE file containing:\n"
+                f"1. Merged imports (deduplicated)\n"
+                f"2. Merged open/variable/namespace/set_option declarations (deduplicated)\n"
+                f"3. These two theorem statements exactly as given:\n\n"
+                f"-- Theorem 1:\n{ancestor_statement}\n\n"
+                f"-- Theorem 2:\n{our_statement}\n\n"
+                f"Output the full file content. It must compile (sorry is fine)."
+            ),
+            result_type=MergedFile,
+            max_turns=10,
+        )
+
+    if result.output and result.output.content:
+        return result.output.content
+    return ""
+
+
 
 
 # ─── Full pipeline ───────────────────────────────────────────────────────────
@@ -278,21 +321,30 @@ async def detect(
     # 2. Soft: agent searches ledger
     matches = await check_soft(agent, file_path, ledger)
     if not matches:
+        import logging
+        logging.getLogger("strataswarm.cycle").warning("check_soft returned empty matches")
         return DetectionResult(match_type=MatchType.NO_MATCH)
 
     # 3. Hard: verify each match (strategy depends on status + ancestry)
     ancestry_ids = set(ledger.get_ancestry(parent_id))
     ancestry_ids.add(parent_id)
 
+    import logging
+    _log = logging.getLogger("strataswarm.cycle")
+    _log.info(f"check_soft returned {len(matches)} matches: {[m.get('entry_id','?')[:8] for m in matches]}")
+    _log.info(f"ancestry_ids: {[x[:8] for x in ancestry_ids]}")
+
     for m in matches:
         entry_id = m["entry_id"]
         match_entry = ledger.get(entry_id)
         if not match_entry:
+            _log.warning(f"  match entry_id={entry_id[:8]} not found in ledger")
             continue
         match_name = match_entry.name
         match_file = match_entry.file_path
         match_status = match_entry.status.value
         is_ancestor = entry_id in ancestry_ids
+        _log.info(f"  match: {match_name} (id={entry_id[:8]}, status={match_status}, is_ancestor={is_ancestor})")
 
         if is_ancestor:
             # Can't import ancestor (circular). Use temp file with both statements.

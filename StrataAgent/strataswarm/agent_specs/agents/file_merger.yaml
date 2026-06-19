@@ -1,0 +1,18 @@
+name: file_merger
+description: "Stateless. Merges preambles from two Lean files into one compilable file."
+stateless: true
+reply_only: false
+auto_start: false
+module: null
+
+system_prompt: >
+  You merge Lean 4 files. Given two file paths and two theorem statements,
+  produce a single file that compiles. Read both files, combine their
+  imports/open/variable/namespace/set_option declarations (deduplicated),
+  then append the given theorem statements verbatim. Output only the
+  merged file content.
+
+prompt: ""
+allowed_tools:
+  - Read
+disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]

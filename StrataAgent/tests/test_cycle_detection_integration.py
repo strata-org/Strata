@@ -232,6 +232,191 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasV
     return success
 
 
+async def test_full_detect_pipeline():
+    """End-to-end: full detect() pipeline with cycle_checker agent + proof_writer.
+
+    Tests the complete flow:
+    1. Fast hash check (miss — different variable names)
+    2. check_soft → cycle_checker agent searches ledger via MCP → finds ancestor
+    3. verify_ancestor_match → proof_writer proves variant from ancestor
+    4. Returns CYCLE
+    """
+    from strataswarm.modules.cycle_detection import detect, MatchType
+    from strataswarm._ledger_mcp import create_ledger_mcp_server
+
+    log("")
+    log("=" * 70)
+    log("END-TO-END TEST: full detect() pipeline")
+    log("  cycle_checker agent (BM25 search) + proof_writer (hard verify)")
+    log("=" * 70)
+    log("")
+
+    # Setup workspace
+    E2E_DIR = PROJECT_ROOT / "StrataAgent" / "tests" / "Lean" / "cycle_e2e_test"
+    if E2E_DIR.exists():
+        shutil.rmtree(E2E_DIR)
+    E2E_DIR.mkdir(parents=True, exist_ok=True)
+
+    tools = get_lean_tools()
+
+    imports = """\
+import Strata.Transform.DetToKleene
+import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.StmtSemantics
+import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Imperative.KleeneStmt
+import Strata.DL.Imperative.KleeneStmtSemantics
+import Strata.DL.Imperative.KleeneSemanticsProps
+
+open Imperative
+
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasIntOrder P] [HasVal P] [HasBoolVal P]
+"""
+
+    ancestor_statement = """\
+theorem sim_terminal_stmt
+    (extendEval : ExtendEval P)
+    (s : Stmt P (Cmd P)) (s' : KleeneStmt P (Cmd P))
+    (hT : StmtToKleeneStmt s = some s')
+    (ρ₀ ρ₁ : Env P)
+    (hWF : WellFormedSemanticEvalBool ρ₀.eval ∧
+           WellFormedSemanticEvalVal ρ₀.eval ∧
+           WellFormedSemanticEvalVar ρ₀.eval)
+    (hNotFail : ρ₀.hasFailure = false)
+    (hStar : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ₁))
+    (hNotFail₁ : ρ₁.hasFailure = false) :
+    StepKleeneStar P (EvalCmd P) (.stmt s' ρ₀) (.terminal ρ₁) := by
+  sorry"""
+
+    variant_statement = """\
+theorem helper_sim_terminal_stmt_renamed
+    (extendEval : ExtendEval P)
+    (stmt : Stmt P (Cmd P)) (kstmt : KleeneStmt P (Cmd P))
+    (hConvert : StmtToKleeneStmt stmt = some kstmt)
+    (env_init env_final : Env P)
+    (hWF : WellFormedSemanticEvalBool env_init.eval ∧
+           WellFormedSemanticEvalVal env_init.eval ∧
+           WellFormedSemanticEvalVar env_init.eval)
+    (hNotFail : env_init.hasFailure = false)
+    (hStar : StepStmtStar P (EvalCmd P) extendEval (.stmt stmt env_init) (.terminal env_final))
+    (hNotFail₁ : env_final.hasFailure = false) :
+    StepKleeneStar P (EvalCmd P) (.stmt kstmt env_init) (.terminal env_final) := by
+  sorry"""
+
+    # Write ancestor file
+    ancestor_file = E2E_DIR / "ancestor.lean"
+    ancestor_file.write_text(imports + "\n" + ancestor_statement + "\n")
+    ancestor_rel = str(ancestor_file.relative_to(PROJECT_ROOT))
+
+    # Write variant file
+    variant_file = E2E_DIR / "variant.lean"
+    variant_file.write_text(imports + "\n" + variant_statement + "\n")
+    variant_rel = str(variant_file.relative_to(PROJECT_ROOT))
+
+    # Build ledger with the ancestor registered
+    ledger_path = E2E_DIR / "lemma_ledger.json"
+    ledger = LemmaLedger(ledger_path)
+
+    h_ancestor = LemmaLedger.compute_signature_hash(ancestor_statement)
+    h_variant = LemmaLedger.compute_signature_hash(variant_statement)
+
+    root = ledger.add_lemma("root_thm", "root.lean", "ws", "h_root",
+                            statement="theorem root_thm : True := by sorry")
+    ancestor_entry = ledger.add_lemma(
+        "sim_terminal_stmt", ancestor_rel, str(E2E_DIR.relative_to(PROJECT_ROOT)),
+        h_ancestor, statement=ancestor_statement, parent_id=root.id)
+    mid = ledger.add_lemma("mid_child", "mid.lean", "ws/m", "h_mid",
+                           statement="theorem mid_child : True := by sorry",
+                           parent_id=ancestor_entry.id)
+    ledger.save()
+
+    log(f"Ledger created with ancestor: {ancestor_entry.name} (hash={h_ancestor[:8]})")
+    log(f"Variant hash: {h_variant[:8]} (different — fast check will miss)")
+    log(f"Variant file: {variant_rel}")
+    log("")
+
+    # Create swarm + parent agent
+    swarm = Swarm(
+        backend_factory=ClaudeBackend,
+        name="e2e_cycle_test",
+        cwd=str(PROJECT_ROOT),
+    )
+
+    parent_spec = AgentSpec(
+        name="test_parent",
+        prompt="You are a test harness.",
+        tools=ToolSet(),
+        max_turns=1,
+    )
+    parent_agent = SwarmAgent(
+        spec=parent_spec,
+        backend=ClaudeBackend(),
+        channel_bus=swarm._channel_bus,
+        cancellation=CancellationToken(),
+        pause=PauseToken(),
+    )
+    parent_agent.swarm = swarm
+    parent_agent._cwd = str(PROJECT_ROOT)
+
+    # Run full detect() pipeline
+    log("--- Running detect() ---")
+    log("  Layer 1: Fast hash check")
+    log("  Layer 2: check_soft → cycle_checker agent (BM25 via ledger MCP)")
+    log("  Layer 3: verify_ancestor_match → proof_writer (10 turns)")
+    log("")
+
+    result = await detect(
+        agent=parent_agent,
+        ledger=ledger,
+        name="helper_sim_terminal_stmt_renamed",
+        file_path=variant_rel,
+        signature_hash=h_variant,
+        parent_id=mid.id,
+        cwd=PROJECT_ROOT,
+    )
+
+    log(f"--- detect() result ---")
+    log(f"  match_type: {result.match_type}")
+    log(f"  matched_id: {result.matched_id[:8] if result.matched_id else 'none'}")
+    log(f"  matched_name: {result.matched_name}")
+    log(f"  reason: {result.reason}")
+    log(f"  import_path: {result.import_path}")
+    log("")
+
+    if result.match_type == MatchType.CYCLE:
+        log("✅ PASSED: Full pipeline detected CYCLE!")
+        log("   Fast check missed → cycle_checker found it → proof_writer confirmed it.")
+        success = True
+    elif result.match_type == MatchType.NO_MATCH:
+        log("❌ FAILED: detect() returned NO_MATCH.")
+        log("   The cycle_checker agent did not find the ancestor, or proof_writer couldn't prove it.")
+        success = False
+    else:
+        log(f"⚠️  UNEXPECTED: detect() returned {result.match_type}")
+        success = False
+
+    log("")
+    log("=" * 70)
+    log(f"Files preserved in: {E2E_DIR}")
+    log(f"  ancestor.lean — the original theorem")
+    log(f"  variant.lean  — the renamed variant")
+    log(f"  lemma_ledger.json — the ledger state")
+    log("=" * 70)
+
+    # Write log
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    (LOG_DIR / "cycle_e2e_test_log.txt").write_text("\n".join(log_lines))
+
+    return success
+
+
 if __name__ == "__main__":
-    result = asyncio.run(test_verify_ancestor_match_with_writer())
-    sys.exit(0 if result else 1)
+    success1 = asyncio.run(test_verify_ancestor_match_with_writer())
+    success2 = asyncio.run(test_full_detect_pipeline())
+
+    print("\n" + "=" * 40)
+    print(f"test_verify_ancestor_match_with_writer: {'✅' if success1 else '❌'}")
+    print(f"test_full_detect_pipeline:              {'✅' if success2 else '❌'}")
+    print("=" * 40)
+
+    sys.exit(0 if (success1 and success2) else 1)
