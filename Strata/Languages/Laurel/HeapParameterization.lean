@@ -477,27 +477,33 @@ private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
   | .UserDefined name => !isDatatype model name
   | _ => false
 
+/-- Wrap a `StmtExpr` with a source location for downstream VC labeling. -/
+private def mkMdAt (source : Option FileRange) (e : StmtExpr) : StmtExprMd :=
+  { val := e, source }
+
 /-- For each composite parameter `p`, the precondition
     `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
 private def heapWellFormednessPreconds (model : SemanticModel)
     (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
   inputs.filterMap fun p =>
     if isCompositeParam model p then
-      let pRead   := mkMd (.Var (.Local p.name))
-      let pRef    := mkMd (.StaticCall "Composite..ref!" [pRead])
-      let heapRead := mkMd (.Var (.Local heapVar))
-      let counter := mkMd (.StaticCall "Heap..nextReference!" [heapRead])
-      let allocated := mkMd (.PrimitiveOp .Lt [pRef, counter])
+      let src := p.name.source
+      let pRead   := mkMdAt src (.Var (.Local p.name))
+      let pRef    := mkMdAt src (.StaticCall "Composite..ref!" [pRead])
+      let heapRead := mkMdAt src (.Var (.Local heapVar))
+      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [heapRead])
+      let allocated := mkMdAt src (.PrimitiveOp .Lt [pRef, counter])
       some { condition := allocated, summary := some "input is allocated in the heap" }
     else none
 
 /-- The postcondition
     `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
     the top of heap pointer never decreases. -/
-private def heapMonotonicityPostcond (heapInVar heapOutVar : Identifier) : Condition :=
-  let inCounter  := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapInVar))])
-  let outCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapOutVar))])
-  { condition := mkMd (.PrimitiveOp .Leq [inCounter, outCounter]),
+private def heapMonotonicityPostcond (source : Option FileRange)
+    (heapInVar heapOutVar : Identifier) : Condition :=
+  let inCounter  := mkMdAt source (.StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapInVar))])
+  let outCounter := mkMdAt source (.StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapOutVar))])
+  { condition := mkMdAt source (.PrimitiveOp .Leq [inCounter, outCounter]),
     summary := some "monotonic heap pointer" }
 
 /-- For each composite output `o`, the postcondition
@@ -507,9 +513,10 @@ private def heapOutputAllocationPostconds (model : SemanticModel)
     (outputs : List Parameter) (heapOutVar : Identifier) : List Condition :=
   outputs.filterMap fun o =>
     if isCompositeParam model o then
-      let oRef    := mkMd (.StaticCall "Composite..ref!" [mkMd (.Var (.Local o.name))])
-      let counter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapOutVar))])
-      some { condition := mkMd (.PrimitiveOp .Lt [oRef, counter]),
+      let src := o.name.source
+      let oRef    := mkMdAt src (.StaticCall "Composite..ref!" [mkMdAt src (.Var (.Local o.name))])
+      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [mkMdAt src (.Var (.Local heapOutVar))])
+      some { condition := mkMdAt src (.PrimitiveOp .Lt [oRef, counter]),
              summary := some "output is allocated in the heap" }
     else none
 
@@ -538,7 +545,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Synthesized postconditions: allocation counter is monotone, and every
     -- composite output is allocated in the output heap.
     let wfPostconditions :=
-      heapMonotonicityPostcond heapInName heapName
+      heapMonotonicityPostcond proc.name.source heapInName heapName
         :: heapOutputAllocationPostconds model proc.outputs heapName
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
