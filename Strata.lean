@@ -101,4 +101,3 @@ import Strata.Util.Random
 
 
 -- noimport: Strata.Util.IOTests (used for tests)
--- noimport: Strata.Languages.Laurel.PushOldInwardInvariant (broken after the main2 merge; stubbed with `sorry` and kept as a copy — see the disclaimer at the top of that file. Switch this to a real `import` once it is regenerated/repaired.)

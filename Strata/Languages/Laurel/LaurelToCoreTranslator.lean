@@ -303,13 +303,12 @@ def translateExpr (expr : StmtExprMd)
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
   | .Old value =>
-      -- `pushOldInward` guarantees every `Old` wraps `Var (Local n)` with
-      -- `n` an inout parameter of the enclosing procedure. The static
-      -- guarantee is `pushOldInward_old_normalized` in
-      -- `PushOldInwardInvariant.lean`. We additionally defend at translate
-      -- time: if PushOldInward has a bug or a later pass mutates the AST,
-      -- we emit a StrataBug diagnostic instead of silently producing a
-      -- dangling `mkOld n` name.
+      -- `pushOldInward` is expected to leave every `Old` wrapping `Var (Local n)`
+      -- with `n` an inout parameter of the enclosing procedure. We do not rely on
+      -- a static proof of this; the guarantee is enforced at translate time: if
+      -- PushOldInward has a bug or a later pass mutates the AST, we emit a
+      -- StrataBug diagnostic instead of silently producing a dangling `mkOld n`
+      -- name.
       match value.val with
       | .Var (.Local name) =>
           let inouts := s.currentProcInouts
@@ -317,7 +316,7 @@ def translateExpr (expr : StmtExprMd)
             throwExprDiagnostic $ diagnosticFromSource expr.source
               s!"old({name.text}) refers to a name that is not an inout parameter \
                  of the enclosing procedure (inouts: {inouts}). This violates the \
-                 `pushOldInward_old_normalized` invariant."
+                 pushOldInward normalization invariant."
               DiagnosticType.StrataBug
           else
             let coreTy ← translateType (model.get name).getType
@@ -325,7 +324,7 @@ def translateExpr (expr : StmtExprMd)
       | _ =>
           throwExprDiagnostic $ diagnosticFromSource expr.source
             "old(...) should have been pushed inward to a variable reference. \
-             This violates the `pushOldInward_old_normalized` invariant."
+             This violates the pushOldInward normalization invariant."
             DiagnosticType.StrataBug
   | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
   | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
