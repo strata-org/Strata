@@ -188,8 +188,8 @@ procedure hasMultipleOutputs() returns (x: int, y: int) opaque {
   y := 2
 };
 
-//procedure liftWithMultipleOutputs() opaque {
-//  var x: int := (assign var y: int, var z: int := hasMultipleOutputs()); y + z
-//};
+procedure liftWithMultipleOutputs() opaque {
+  var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
+};
 
 #end
