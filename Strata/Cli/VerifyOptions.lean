@@ -173,7 +173,8 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with
       keepAllFilesPrefix
-      overflowChecks := verifyOptions.overflowChecks }
+      overflowChecks := verifyOptions.overflowChecks
+      useArrayTheory := verifyOptions.useArrayTheory }
   return { translateOptions, verifyOptions }
 
 end -- public section
