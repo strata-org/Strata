@@ -96,8 +96,8 @@ def laurelPipeline : Array LaurelPass := #[
   typeAliasElimPass,
   constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
-  eliminateValueInReturnsPass,
   liftInstanceProceduresPass,
+  eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -232,8 +232,36 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
   let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
+/-- Run `Core.verify` on a translated Core program, returning the verify-phase
+    failure as a **structured** `DiagnosticModel` value (via `.toBaseIO`) rather
+    than throwing it.
+
+    `Core.verify : EIO DiagnosticModel VCResults` carries its error as a
+    `DiagnosticModel` (with byte-offset `fileRange`). Capturing it as an
+    `Except` here is the single point where that structure is preserved, so the
+    throwing (`verifyToVcResults`) and capturing
+    (`verifyToDiagnosticModelsCapturing`) entry points can't drift apart: both
+    share this verify setup (the `removeIrrelevantAxioms := .Precise` option and
+    the `vcDirectory` temp-dir handling) and only differ in how they treat the
+    `.error` case. -/
+private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
+    : IO (Except DiagnosticModel VCResults) := do
+  let verifyOptions := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
+  let runner tempDir : IO (Except DiagnosticModel VCResults) :=
+    (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
+  match verifyOptions.vcDirectory with
+  | .none => IO.FS.withTempDir runner
+  | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
+
 /--
 Verify a Laurel program using an SMT solver.
+
+A verify-phase failure (a type-checking / symbolic-evaluation error) is
+**thrown** as an `IO` exception, exactly as before file-relative reporting was
+introduced: the structured error is intercepted at the `runVerify` boundary and
+re-thrown via `toString`, so the CLI's control flow and exit codes are
+unchanged. Tests that need the structured error as a value (to render it to
+`line:col`) call `verifyToDiagnosticModelsCapturing` instead.
 -/
 def verifyToVcResults (program : Program)
     (options : LaurelVerifyOptions := default)
@@ -242,14 +270,11 @@ def verifyToVcResults (program : Program)
 
   match coreProgramOption with
   | some coreProgram =>
-    let options := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
-    let runner tempDir :=
-      EIO.toIO (fun f => IO.Error.userError (toString f))
-          (_root_.Core.verify coreProgram tempDir .none options)
-    let ioResult ← match options.vcDirectory with
-      | .none => IO.FS.withTempDir runner
-      | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
-    return (some ioResult, translateDiags)
+    match ← runVerify coreProgram options with
+    | .ok ioResult => return (some ioResult, translateDiags)
+    -- Reconstruct the throwing path: stringify the structured error exactly as
+    -- the previous `EIO.toIO (fun f => .userError (toString f))` did.
+    | .error dm => throw (IO.userError (toString dm))
   | none => return (none, translateDiags)
 
 /--
@@ -280,6 +305,32 @@ def verifyToDiagnosticModels (program : Program) (options : LaurelVerifyOptions 
   | none => []
   | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => toDiagnosticModel vcr phases)
   return (results.snd ++ vcDiags).toArray
+
+/-- Like `verifyToDiagnosticModels`, but a verify-phase failure is **captured**
+    as a structured `DiagnosticModel` (the same value `verifyToVcResults` would
+    have thrown via `toString`) and returned in the list, rather than thrown.
+
+    This is the test-framework entry point: the structured error still carries
+    its byte-offset `fileRange`, so the caller can render it to snippet-local /
+    file-relative `line:col` like every other diagnostic — instead of the raw
+    byte offset that a stringified exception would leave in its message text.
+    Production code keeps using the throwing `verifyTo*` functions above.
+
+    Shares the `runVerify` boundary with `verifyToVcResults`, differing only in
+    that it returns the captured `.error` as a value instead of re-throwing it —
+    so the two can't drift apart on verify options or temp-dir handling. -/
+def verifyToDiagnosticModelsCapturing (program : Program)
+    (options : LaurelVerifyOptions := default) : IO (Array DiagnosticModel) := do
+  let (coreProgramOption, translateDiags) ← translate options.translateOptions program
+  match coreProgramOption with
+  | none => return translateDiags.toArray
+  | some coreProgram =>
+    match ← runVerify coreProgram options with
+    | .error dm => return (translateDiags ++ [dm]).toArray
+    | .ok results =>
+      let phases := Core.coreAbstractedPhases
+      let vcDiags := results.mergeByAssertion.toList.filterMap (toDiagnosticModel · phases)
+      return (translateDiags ++ vcDiags).toArray
 
 end -- public section
 end Laurel
