@@ -26,6 +26,7 @@ import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.MonomorphizeComposites
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -98,13 +99,21 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
+  -- Polymorphism: lift instance procedures, then monomorphize, BEFORE everything else
+  -- (the lift must precede monomorphization, and both must precede heap parameterization).
+  liftInstanceProceduresPass,
+  monomorphizeCompositesPass,
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
   typeAliasElimPass,
   constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
-  liftInstanceProceduresPass,
+  -- NOTE (merge of #1381): #1381 inserted `liftInstanceProceduresPass` here so it runs
+  -- before `eliminateValueInReturnsPass` (so value-returning instance methods get lowered).
+  -- The instance-procedure lift already moved that pass to position 0 (it must precede monomorphization),
+  -- which ALSO satisfies #1381's before-eliminateValueInReturns requirement — so the single
+  -- pos-0 entry is correct for both; #1381's duplicate insertion is dropped.
   eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
@@ -163,6 +172,15 @@ private def runLaurelPasses
                 s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d}. Existing diagnostics were: {resolutionErrors.toList}"
               type := .StrataBug }
         emit pass.name "laurel.st" program
+        -- Re-resolution fires after each `needsResolves := true` pass (lift at pos 0,
+        -- monomorphize at pos 1, and the elim/lift passes later) and a NEW error there is
+        -- a genuine post-transform failure (dangling monomorph ref, unresolved inherited
+        -- field) — folded in as a StrataBug so it fails loud (translated=false). HeapParam
+        -- and TypeHierarchy deliberately set `needsResolves := false` because they are one
+        -- logical pass whose intermediate states are not independently re-resolvable.
+        -- (This supersedes an earlier polymorphism-branch workaround that SUPPRESSED these
+        -- diagnostics — #1389 fixed the spurious-error sources so folding is safe; the
+        -- monomorphization re-resolution path is exercised by the polymorphism corpus.)
         return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
@@ -245,26 +263,38 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
   let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
+/-- The canonical Core `VerifyOptions` used by *every* Laurel verify path.
+    Single source of truth so the differential harness (`verifyToMetrics`) and
+    the production path (`verifyToVcResults`) cannot silently diverge — they must
+    measure the same verification. -/
+def coreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+  { options.verifyOptions with removeIrrelevantAxioms := .Precise }
+
+/-- Run `act` with the VC directory dictated by `verifyOpts`: a fresh temp dir
+    (auto-cleaned) when none is configured, else the caller's directory. Shared
+    by all verify entry points (incl. `verifyToMetrics`, which needs the dir to
+    hold its metrics JSONL file). -/
+def withVcDir {α} (verifyOpts : Core.VerifyOptions) (act : System.FilePath → IO α) : IO α :=
+  match verifyOpts.vcDirectory with
+  | .none => IO.FS.withTempDir act
+  | .some p => do IO.FS.createDirAll ⟨p.toString⟩; act ⟨p.toString⟩
+
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase
     failure as a **structured** `DiagnosticModel` value (via `.toBaseIO`) rather
-    than throwing it.
+    than throwing it (file-relative reporting, #1367).
 
     `Core.verify : EIO DiagnosticModel VCResults` carries its error as a
     `DiagnosticModel` (with byte-offset `fileRange`). Capturing it as an
     `Except` here is the single point where that structure is preserved, so the
     throwing (`verifyToVcResults`) and capturing
     (`verifyToDiagnosticModelsCapturing`) entry points can't drift apart: both
-    share this verify setup (the `removeIrrelevantAxioms := .Precise` option and
-    the `vcDirectory` temp-dir handling) and only differ in how they treat the
-    `.error` case. -/
+    share this verify setup (`coreVerifyOptions` + `withVcDir`) and only differ in
+    how they treat the `.error` case. -/
 private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
     : IO (Except DiagnosticModel VCResults) := do
-  let verifyOptions := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
-  let runner tempDir : IO (Except DiagnosticModel VCResults) :=
+  let verifyOptions := coreVerifyOptions options
+  withVcDir verifyOptions fun tempDir =>
     (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
-  match verifyOptions.vcDirectory with
-  | .none => IO.FS.withTempDir runner
-  | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
 
 /--
 Verify a Laurel program using an SMT solver.
@@ -286,19 +316,159 @@ def verifyToVcResults (program : Program)
     match ← runVerify coreProgram options with
     | .ok ioResult => return (some ioResult, translateDiags)
     -- Reconstruct the throwing path: stringify the structured error exactly as
-    -- the previous `EIO.toIO (fun f => .userError (toString f))` did.
+    -- the previous `EIO.toIO (fun f => .userError (toString f))` did (#1367).
+    -- NOTE (merge): our polymorphism work needs Core errors FOLDED, not thrown
+    -- (a poly fn whose body mismatches its signature must surface as
+    -- `translated=false`, not a Lean exception). That fold lives in the CAPTURING
+    -- entry points our consumers use — `verifyToMetrics` and
+    -- `verifyToDiagnosticModelsCapturing` — both of which route through the same
+    -- `runVerify` boundary and return `.error` as a value. `verifyToVcResults`
+    -- keeps #1367's throwing behavior for the production CLI path (its only
+    -- external caller, `Languages/Laurel.lean`).
     | .error dm => throw (IO.userError (toString dm))
   | none => return (none, translateDiags)
 
 /--
 Verify a Laurel program using an SMT solver, returning results with
 duplicated assertions merged at the VCOutcome level.
+
+Unlike `verifyToVcResults` (which THROWS a verify-phase error to preserve the
+CLI's exit-code behavior, #1367), this CAPTURES a Core-side `DiagnosticModel`
+failure and folds it into the returned diagnostics: a polymorphic
+function whose body is incompatible with its signature is a Core type error that
+must surface as a diagnostic (`translated=false`), not a thrown exception. This
+is the path the non-throwing consumers (`verifyToDiagnostics`,
+`verifyToDiagnosticModels`) build on, so they agree with `verifyToMetrics`. Both
+fold-capturing paths share the `runVerify` boundary, so they can't drift from the
+throwing path on verify options or temp-dir handling.
 -/
 def verifyToMergedResults (program : Program)
     (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
-  return (vcOpt.map (·.mergeByAssertion), diags)
+  let (coreProgramOption, translateDiags) ← translate options.translateOptions program
+  match coreProgramOption with
+  | none => return (none, translateDiags)
+  | some coreProgram =>
+    match ← runVerify coreProgram options with
+    | .ok results => return (some results.mergeByAssertion, translateDiags)
+    | .error coreDiag => return (none, translateDiags ++ [coreDiag])
+
+/--
+Differential-harness metrics for one verification run (harness plan,
+Component 1.1). Re-exposes data the pipeline already computes but the existing
+verify wrappers discard: the pass-side `Statistics` (dropped by the thin
+`translate` wrapper via `(core, diags, _, _)`) and the per-obligation verdicts.
+
+Scope:
+- `passStats` is the `Statistics` surfaced by `translateWithLaurel`.
+- `coreStats` is the Core-evaluator `Statistics` surfaced via `Core.verifyWithStats`
+  (Component 1.2 — carries `verify_numObligations`, `processIteBranches_diverged`,
+  etc., the structural-cost proxy for the U-vs-G / C1 comparison).
+- `vcDischargeMs` is the SMT-discharge wall-clock, **consumed** from the pipeline's
+  existing per-phase timing (Component 3 — a `metricsHandle`-backed
+  `PipelineContext` threaded into `Core.verifyWithStats`, then the `vcDischarge`
+  record read back). Not a new measurement primitive. `none` if no record found.
+- Verdicts are keyed on `"<index>:<obligation.label>"` (the index makes the key
+  unique — bare labels collide across procedures) and carry the raw
+  `Except VCError VCOutcome` so the `.error` case is preserved.
+-/
+structure VerifyMetrics where
+  verdicts      : Array (String × Except Core.VCError Core.VCOutcome)
+  passStats     : Statistics
+  coreStats     : Statistics
+  numVCs        : Nat
+  /-- Count of obligations that did NOT verify successfully, via
+      `VCResult.isNotSuccess` (= `!isPass`). This lumps together genuine
+      `fail` AND `error`/`unknown` outcomes — coarser than `verdicts`, which
+      distinguishes `fail` from `error`. Use `numFailures == 0` for the
+      all-verified gate; inspect `verdicts` to tell *why* an obligation didn't
+      pass. The two are consistent (both treat non-pass as non-success), just at
+      different granularity. -/
+  numFailures   : Nat
+  translated    : Bool
+  /-- SMT discharge wall-clock in ms, from the `vcDischarge` timing record.
+      `none` when the metrics file had no such record (e.g. `checkOnly`). -/
+  vcDischargeMs : Option Nat
+
+/-- Parse a metrics-JSONL file and extract the `end_ms - start_ms` of the
+    `vcDischarge` timing record (Component 3). Each line is a JSON object; we
+    scan for `{"type":"timing","phase":"vcDischarge",…}`. Best-effort: returns
+    `none` if absent or unparseable.
+
+    Relies on two invariants of `Core.verify`'s current pipeline
+    (`Verifier.lean`): (1) there is exactly ONE top-level `withPhase
+    "vcDischarge"`, so exactly one matching record — first/last/sum are
+    equivalent and we take the first; (2) nested sub-phases serialize as dotted
+    `phase` names (`Phase.display`, e.g. `"vcDischarge.encodeSMT"`), which the
+    exact `"vcDischarge"` match deliberately excludes. If discharge ever runs in
+    a loop, this would report only the first slice — revisit then. `e - s` is
+    `Nat`-saturating; both come from one monotonic clock with `e` after `s`, and
+    sub-ms spans may round to `some 0` (present-but-zero, not `none`). -/
+def parseVcDischargeMs (contents : String) : Option Nat := Id.run do
+  for line in contents.splitOn "\n" do
+    match Lean.Json.parse line with
+    | .error _ => continue
+    | .ok j =>
+      match j.getObjValAs? String "type", j.getObjValAs? String "phase" with
+      | .ok "timing", .ok "vcDischarge" =>
+        match j.getObjValAs? Nat "start_ms", j.getObjValAs? Nat "end_ms" with
+        | .ok s, .ok e => return some (e - s)
+        | _, _ => continue
+      | _, _ => continue
+  return none
+
+/--
+Verify a Laurel program and return `VerifyMetrics`, keeping the pass-side
+`Statistics` (which `translate`/`verifyToVcResults` discard), the Core-evaluator
+`Statistics` (via `Core.verifyWithStats`), and the `vcDischarge` wall-clock
+(consumed from the pipeline's existing per-phase metrics). Does not change any
+existing diagnostic-asserting path.
+-/
+def verifyToMetrics (program : Program) (options : LaurelVerifyOptions := default)
+    : IO VerifyMetrics := do
+  let (coreProgramOption, _diags, _program, passStats) ←
+    translateWithLaurel options.translateOptions program
+  match coreProgramOption with
+  | some coreProgram =>
+    let verifyOpts := coreVerifyOptions options
+    -- Run inside a temp/VC dir holding a metrics JSONL file. A `metricsHandle`-
+    -- backed PipelineContext makes `Core.verify`'s existing `withPhase
+    -- "vcDischarge"` emit a timing record we read back (Component 3).
+    let run (dir : System.FilePath) : IO (Except DiagnosticModel (VCResults × Statistics × Option Nat)) := do
+      let metricsPath := dir / "metrics.jsonl"
+      -- `emitMetric` opens nothing and flushes after every record, so the handle
+      -- needs no explicit lifecycle management (Lean has no `Handle.close`;
+      -- handles are GC-finalized, and `withVcDir`'s temp dir is auto-removed).
+      let h ← IO.FS.Handle.mk metricsPath .write
+      let pctx ← (Strata.Pipeline.PipelineContext.create
+        (outputMode := .quiet) (metricsHandle := some h) : BaseIO _)
+      -- Catch a Core-side DiagnosticModel failure rather than throwing (mirroring
+      -- verifyToMergedResults): a Core type error means the program did not verify,
+      -- so it surfaces as `translated := false`, not a Lean exception.
+      match ← (_root_.Core.verifyWithStats coreProgram dir .none verifyOpts
+            (pipelineCtx := some pctx)).toBaseIO with
+      | .error coreDiag => pure (.error coreDiag)
+      | .ok (merged, coreStats) =>
+        let contents ← IO.FS.readFile metricsPath
+        pure (.ok (merged, coreStats, parseVcDischargeMs contents))
+    match ← withVcDir verifyOpts run with
+    | .error _coreDiag =>
+      -- Core rejected the (translated) program — report as not-translated for the
+      -- metrics view, with no obligations.
+      return { verdicts := #[], passStats, coreStats := {}, numVCs := 0,
+               numFailures := 0, translated := false, vcDischargeMs := none }
+    | .ok (merged, coreStats, vcDischargeMs) =>
+    -- Key verdicts on (index, label): `mergeByAssertion` preserves first-occurrence
+    -- order, but bare `obligation.label` is NOT unique (two procedures can both emit
+    -- `postcondition_0`), so the index disambiguates for stable serialization/diff.
+    let verdicts := merged.mapIdx (fun i (vcr : VCResult) =>
+      (s!"{i}:{vcr.obligation.label}", vcr.outcome))
+    let numFailures := merged.foldl (fun acc vcr => if vcr.isNotSuccess then acc + 1 else acc) 0
+    return { verdicts, passStats, coreStats, numVCs := merged.size, numFailures,
+             translated := true, vcDischargeMs }
+  | none =>
+    return { verdicts := #[], passStats, coreStats := {}, numVCs := 0, numFailures := 0,
+             translated := false, vcDischargeMs := none }
 
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
     (options : LaurelVerifyOptions := default) : IO (Array Diagnostic) := do

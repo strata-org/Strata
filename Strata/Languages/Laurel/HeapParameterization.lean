@@ -80,11 +80,19 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args _ => for a in args do collectExprMd a
-  | .New _ => modify fun s => { s with writesHeapDirectly := true }
+  | .New .. => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
-  | .Quantifier _ _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
+  | .Quantifier _ _ trigger b => do
+    -- Always collect the body `b`; collect the trigger too if present. (The body
+    -- collect must NOT be nested under the `if`: a triggerless quantifier whose
+    -- body reads a composite field would otherwise skip heap-read analysis, and
+    -- the surviving field-select fails loud at translation.)
+    match trigger with
+    | some t => collectExprMd t
+    | none => pure ()
+    collectExprMd b
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
@@ -173,6 +181,18 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
+/-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation.
+    `Bx<int>` → `Bx$a1$int`, distinct from `Bx<bool>` → `Bx$a1$bool`, so each
+    instantiation gets its OWN box constructor/destructor — preserving the type
+    distinctness that the native parametric datatype gives us (no cross-instantiation
+    confusion). Mirrors `MonomorphizeComposites.tyTag`'s `$`-delimited rendering (inlined
+    here rather than imported, to avoid a pass↔pass import cycle). Returns `none` for a
+    shape that can't be rendered (e.g. an `.Applied` over a non-datatype, a `.TVar` arg),
+    which keeps the caller on its loud-failure fallback. -/
+private partial def appliedBoxTag : HighType → Option String
+  | .TCore n => some n                       -- heap-box naming accepts `Core` types; `.TVoid` it does NOT
+  | ty => instTagCommon appliedBoxTag ty     -- shared arms; `none` on TVar/Pure/TMap/TVoid/… (unsupported)
+
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
     for Composite types, uses "Box..compositeVal!".
@@ -193,6 +213,11 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "Box..compositeVal!"
   | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
+  -- Generic datatype instantiation `Bx<int>`: one box variant per instantiation.
+  | .Applied .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}Val!"
+    | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -210,6 +235,11 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
+  -- Generic datatype instantiation `Bx<int>`: one box variant per instantiation.
+  | .Applied .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}"
+    | none => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
@@ -229,6 +259,13 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
+  -- Generic datatype instantiation `Bx<int>`: the box variant carries the FULL
+  -- `.Applied` type, so `translateType` lowers it to the right parametric Core sort
+  -- (`.tcons "Bx" [int]`) — keeping `Bx<int>` and `Bx<bool>` boxes distinct.
+  | .Applied .. =>
+    match appliedBoxTag ty with
+    | some tag => some { name := s!"Box..{tag}", args := [{ name := s!"{tag}Val", type := ⟨ty, none⟩ }] }
+    | none => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -437,7 +474,7 @@ where
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
-    | .New _ => return [exprMd]
+    | .New .. => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
     | .AsType t ty =>
         let t' ← recurseOne t valueUsed

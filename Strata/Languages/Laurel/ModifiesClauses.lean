@@ -139,7 +139,7 @@ Check whether a procedure has a `$heap` output parameter,
 indicating it mutates the heap.
 -/
 def hasHeapOut (proc : Procedure) : Bool :=
-  proc.outputs.any (fun p => p.name.text == "$heap")
+  proc.outputs.any (fun p => p.name.text == heapVarName.text)
 
 /-- Build and attach `proc`'s modifies frame, then clear the clause. -/
 def transformModifiesClauses (model: SemanticModel)

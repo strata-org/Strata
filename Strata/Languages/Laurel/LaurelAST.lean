@@ -158,6 +158,11 @@ inductive HighType : Type where
   | TMap (keyType : AstNode HighType) (valueType : AstNode HighType)
   /-- A Identifier to a user-defined composite or constrained type by name. -/
   | UserDefined (name : Identifier)
+  /-- A bound type variable, e.g. `T` in `procedure f<T>(x: T)`. Introduced by
+  resolution when a name in type position matches an in-scope type parameter
+  (declared on a procedure, composite, or datatype). Distinct from `UserDefined`,
+  which names a concrete type. -/
+  | TVar (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : AstNode HighType) (typeArguments : List (AstNode HighType))
   /-- A pure (value) variant of a composite type that uses structural equality instead of reference equality. -/
@@ -213,6 +218,10 @@ general concept that covers both.
 structure Procedure : Type where
   /-- The procedure's name. -/
   name : Identifier
+  /-- Type parameters, e.g. `T` in `procedure f<T>(...)`. Empty for monomorphic
+      procedures (the default keeps every existing construction site compiling).
+      Brought into scope by resolution so `T` in a signature resolves to `.TVar`. -/
+  typeArgs : List Identifier := []
   /-- Input parameters with their types. -/
   inputs : List Parameter
   /-- Output parameters with their types. Multiple outputs are supported. -/
@@ -351,8 +360,13 @@ inductive StmtExpr : Type where
       It means that any precondition of the operator, such as division has, should be ignored. -/
   | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
     (skipProof: Bool := false)
-  /-- Create new object (`new`). -/
-  | New (ref : Identifier)
+  /-- Create new object (`new`). `typeArgs` carries explicit instantiation
+      arguments for a generic composite, e.g. `new Box<int>` → `ref = Box`,
+      `typeArgs = [int]`. Empty for a non-generic `new C` (the common case and the
+      pre-existing surface syntax), so the monomorphizer can read the concrete
+      instantiation directly off the allocation site rather than recovering it
+      from surrounding context. -/
+  | New (ref : Identifier) (typeArgs : List (AstNode HighType) := [])
   /-- Reference to the current object (`this`/`self`). -/
   | This
   /-- Reference equality test between two expressions. -/
@@ -440,6 +454,55 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
+
+/-- The base composite NAME of a type reference, for consumers that need the parent
+    name rather than its instantiation: `.UserDefined Base` and `.Applied (UserDefined
+    Base) args` both peel to `Base`. `none` for a type with no nameable base (a bare
+    `.TVar`, a primitive, etc.) — callers treat that as "no inheritable parent". Used by
+    the `extending`-list consumers after `extending` became `List HighTypeMd`:
+    field-scope inheritance, the subtype `extendingMap`/`ancestors`, and diamond checks
+    all key on the parent NAME (field names are instantiation-independent), so peeling to
+    the base is correct for them; only prelude dependency-collection needs the full type
+    (it recurses the args separately). -/
+def highBaseName? : HighType → Option Identifier
+  | .UserDefined n => some n
+  | .Applied base _ => highBaseName? base.val
+  | .TVar n => some n   -- an inherited type-var parent (pre-monomorphization); name-keyed lookups still want it
+  | _ => none
+
+/-- Recurse a `HighType`'s structural constructors (`TSet`/`TMap`/`Applied`/`Pure`/
+    `Intersection`/`MultiValuedExpr`), rewriting each NAMED leaf via `f` — which receives
+    the leaf's constructor (`.UserDefined` or `.TVar`) and its name, and returns the
+    replacement. Source metadata is preserved per node. The shared traversal skeleton for
+    `substTypeVars` (here) and `tvarizeType` (Resolution); they differ only in `f`.
+
+    Lives here (not in MonomorphizeComposites, where the substitution originated) so the
+    subtype checker can reuse `substTypeVars` for remap-aware generic upcast without an
+    import cycle — it depends only on `HighType`/`HighTypeMd`/`Std.HashMap`, all above. -/
+partial def mapHighTypeNames (f : (Identifier → HighType) → Identifier → HighType)
+    (ty : HighTypeMd) : HighTypeMd :=
+  let rec go (ty : HighTypeMd) : HighTypeMd :=
+    let v := match ty.val with
+      | .UserDefined name => f .UserDefined name
+      | .TVar name => f .TVar name
+      | .TSet et => .TSet (go et)
+      | .TMap kt vt => .TMap (go kt) (go vt)
+      | .Applied base args => .Applied (go base) (args.map go)
+      | .Pure base => .Pure (go base)
+      | .Intersection ts => .Intersection (ts.map go)
+      | .MultiValuedExpr ts => .MultiValuedExpr (ts.map go)
+      | other => other
+    { val := v, source := ty.source }
+  go ty
+
+/-- Substitute type variables (by name) throughout a `HighType`. A parameter may appear as
+    `.TVar name` (when resolution scoped it) or `.UserDefined name` (if it didn't); either
+    is replaced by its `subst` entry (by name), or left as-is. -/
+partial def substTypeVars (subst : Std.HashMap String HighTypeMd) (ty : HighTypeMd) : HighTypeMd :=
+  mapHighTypeNames (fun ctor name =>
+    match subst.get? name.text with
+    | some replacement => replacement.val
+    | none => ctor name) ty
 
 /-- The label of the implicit block that wraps every procedure body.
 
@@ -541,6 +604,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
+  | HighType.TVar r1, HighType.TVar r2 => r1.text == r2.text
   | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
@@ -583,6 +647,11 @@ deriving instance BEq for HighType
 structure TypeLattice where
   unfoldMap : Std.HashMap String HighTypeMd := {}
   extendingMap : Std.HashMap String (List String) := {}
+  -- Per composite NAME: its type-param names + its parent type
+  -- EXPRESSIONS (verbatim, e.g. `Pair<B,A>`). Carries the remap that `extendingMap`
+  -- (name-only) discards, so `substitutedAncestors` can compute the TRUE supertypes of
+  -- an instantiation. `extendingMap` is kept unchanged for its name-only consumers.
+  parentExprMap : Std.HashMap String (List Identifier × List HighTypeMd) := {}
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
@@ -617,6 +686,89 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
         go acc' (parents ++ rest)
   go {} [name]
 
+/-- The instantiation-tag arms COMMON to both monomorphization (`tyTag`) and heap-box
+    naming (`appliedBoxTag`): identifier-legal, `$`-delimited, `none` on any type the
+    caller doesn't explicitly handle. `recurse` is the caller's own tagger, threaded so
+    nested `.Applied` args use the CALLER's accepted-type-set (the two callers differ only
+    in one extra leaf arm — `tyTag` allows `.TVoid`, `appliedBoxTag` allows `.TCore` — and
+    each keeps that arm local, so neither caller's accepted set changes). Returning `none`
+    (not a catch-all) is load-bearing: a collision would coalesce distinct instantiations.
+    E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`. A type this renderer can't tag
+    injectively yields `none` (e.g. an arg of `.TMap`/`.TVar`/`.Pure` has no arm here), so a
+    `Box<Map int int>` argument is untaggable → the whole tag is `none` (fail loud, never
+    coalesced). -/
+partial def instTagCommon (recurse : HighType → Option String) : HighType → Option String
+  | .TInt => some "int" | .TBool => some "bool" | .TReal => some "real"
+  | .TString => some "string" | .TFloat64 => some "float64"
+  | .TBv n => some s!"bv{n}"
+  | .UserDefined n => some n.text
+  | .Applied b as =>
+    match b.val with
+    | .UserDefined n => do
+      let argTags ← as.mapM (fun a => recurse a.val)
+      some s!"{n.text}$a{argTags.length}${String.intercalate "$" argTags}"
+    | _ => none
+  | _ => none
+
+/-- A canonical, source-free string key for a `HighType`, for deduping the
+    `substitutedAncestors` worklist (structurally-equal `.Applied` types must share a key,
+    and metadata must not split them). -/
+partial def highTypeKey : HighType → String
+  | .TVoid => "void" | .TBool => "bool" | .TInt => "int" | .TReal => "real"
+  | .TString => "string" | .TFloat64 => "f64" | .Unknown => "?"
+  | .TBv n => s!"bv{n}" | .TCore s => s!"core·{s}"
+  | .UserDefined n => n.text | .TVar n => s!"'{n.text}"
+  | .TSet v => s!"set<{highTypeKey v.val}>"
+  | .Pure v => s!"pure<{highTypeKey v.val}>"
+  | .TMap k v => s!"map<{highTypeKey k.val},{highTypeKey v.val}>"
+  | .Applied b args => s!"{highTypeKey b.val}<{String.intercalate "," (args.map (fun a => highTypeKey a.val))}>"
+  | .Intersection ts => s!"&<{String.intercalate "," (ts.map (fun t => highTypeKey t.val))}>"
+  | .MultiValuedExpr ts => s!"mv<{String.intercalate "," (ts.map (fun t => highTypeKey t.val))}>"
+
+/-- The fully-SUBSTITUTED ancestor TYPES of `C<args>`. Starting from the
+    given composite `name` instantiated at `args`, look up `(params, parentExprs)` in
+    `parentExprMap`, substitute `{params := args}` into each parent EXPRESSION, and recurse
+    on each substituted parent — so `extends Pair<B,A>` at `P2<int,bool>` yields the TRUE
+    supertype `Pair<bool,int>` (NOT `Pair<int,bool>`), and `extends Base<int>` yields
+    `Base<int>` regardless of the child's own args (concretization). This is the remap the
+    reverted upcast arm ignored. Returns the parent types (NOT including `C<args>` itself);
+    `isSubtype` checks the target against this set with INVARIANT args.
+    Termination: `visited` keyed on `highTypeKey` (dedupes structural repeats; a malformed
+    cyclic `extends` terminates) + `fuel` backstop. -/
+partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
+    (name : String) (args : List HighTypeMd) : List HighTypeMd := Id.run do
+  let mut out : List HighTypeMd := []
+  let mut visited : Std.HashSet String := {}
+  -- worklist of (composite name, its concrete args) to expand
+  let mut work : List (String × List HighTypeMd) := [(name, args)]
+  let mut fuel : Nat := 1024
+  while !work.isEmpty && fuel > 0 do
+    fuel := fuel - 1
+    match work with
+    | [] => pure ()
+    | (curName, curArgs) :: rest =>
+      work := rest
+      match ctx.parentExprMap.get? curName with
+      | none => pure ()  -- no parents (or not a known composite)
+      | some (params, parentExprs) =>
+        let subst : Std.HashMap String HighTypeMd :=
+          (params.zip curArgs).foldl (fun m (p, a) => m.insert p.text a) {}
+        for pe in parentExprs do
+          let pe' := substTypeVars subst pe
+          let key := highTypeKey pe'.val
+          unless visited.contains key do
+            visited := visited.insert key
+            out := out ++ [pe']
+            -- enqueue the substituted parent for transitive ancestors
+            match pe'.val with
+            | .UserDefined pn => work := work ++ [(pn.text, [])]
+            | .Applied pb pargs =>
+              match highBaseName? pb.val with
+              | some pn => work := work ++ [(pn.text, pargs)]
+              | none => pure ()
+            | _ => pure ()
+  return out
+
 /-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
     (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
     unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
@@ -633,10 +785,25 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     -- After unfolding, both sides are composites (or unresolved). A composite
     -- is a subtype of any type in its extending chain.
     (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
+  -- GENERIC UPCAST, REMAP-AWARE and SOUND. `C<args> <: P<pargs>` iff some
+  -- fully-SUBSTITUTED ancestor type of `C<args>` equals the target `sup`. Critically, the
+  -- comparison is against an ALREADY-SUBSTITUTED ancestor (`substitutedAncestors` applies
+  -- the `extends` remap/concretization), so:
+  --   • `P2<int,bool> extends Pair<B,A>` ⇒ ancestor `Pair<bool,int>`; `<: Pair<bool,int>`
+  --     succeeds, `<: Pair<int,bool>` (the reverted bug) FAILS.
+  --   • `Box<bool> extends Base<int>` ⇒ ancestor `Base<int>`; `<: Base<bool>` FAILS.
+  -- Args are INVARIANT — `highEq` against the substituted ancestor is exact, so a wrong
+  -- instantiation (`Box<int> <: Base<bool>`) and an unrelated type both fail. This is the
+  -- arm whose earlier non-substituting version was unsound; the substitution closes it.
+  | .Applied subBase subArgs, _ =>
+    (match highBaseName? subBase.val with
+     | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => highEq anc sup')
+     | none => false)
+    || highEq sub' sup'
   | _, _ => highEq sub' sup'
 
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
-   All child-carrying constructors are INVARIANT by design: `isConsistent`
+   The MUTABLE-collection constructors are INVARIANT by design: `isConsistent`
    bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
    `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
    TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
@@ -644,19 +811,25 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    collections, where covariance would be unsound; if you don't know the
    element type, write a bare `Unknown`, not `TSet Unknown`.
 
-   `MultiValuedExpr` is the SOLE exception that recurses (element-wise
-   consistency, not equality). It is not a mutable container: it is a transient
-   tuple of independent procedure-output values matched against multi-assignment
-   targets, so per-element consistency (letting an `Unknown` output flow into
-   one slot) is correct rather than unsound.
+   `MultiValuedExpr` and `Applied` RECURSE element-wise (consistency, not
+   equality) rather than bottoming out in `highEq`:
+   - `MultiValuedExpr` is a transient tuple of independent procedure-output
+     values matched against multi-assignment targets, so per-element consistency
+     (letting an `Unknown` output flow into one slot) is correct, not unsound.
+   - `Applied` (generics) recurses element-wise in `isConsistent` so a concrete
+     `Box<int>` argument can satisfy a `Box<T>` parameter (the inner `int`/`.TVar T`
+     pairing reaches the `.TVar` wildcard). The args stay INVARIANT between two
+     CONCRETE instantiations — `Box<int> ~ Box<bool>` still FAILS on `int`/`bool`,
+     so this is not covariance, just wildcard-penetration for `.TVar`/`Unknown`.
+     For SUBTYPING, `isSubtype` additionally relates `C<args> <: P<pargs>` via
+     `substitutedAncestors` (the `extends` chain with the type-arg remap applied);
+     args there are likewise invariant (compared against the already-substituted
+     ancestor). True per-constructor parametric variance remains deferred.
 
    `Pure b` is invariant today, but it is the one constructor where covariance
    would be SOUND and desirable — it is the immutable value-view of a composite,
    and immutability is exactly the condition that makes covariance safe.
    TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
-
-   `Applied` (generics) is invariant as the safe default for not-yet-designed
-   parametric types; real variance is per-constructor and deliberately deferred.
 
    `Intersection` is NOT a variance question: `A & B` has lattice structure
    (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
@@ -683,17 +856,57 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
     ts1.length == ts2.length &&
       (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  -- A generic application `C<τ…>` is checked element-wise *before* unfolding (like
+  -- `MultiValuedExpr`), so the args remain demonstrable subterms for termination and
+  -- `unfold` (identity on `.Applied`) loses no precision. This is what lets a concrete
+  -- `Box<int>` argument satisfy a `Box<T>` parameter: the bases match by consistency and
+  -- the inner `int`/`.TVar T` pairing hits the `.TVar` wildcard below. Without this arm
+  -- `.Applied` falls to the invariant structural `highEq`, where `int` vs `T` is false —
+  -- so the `.TVar` wildcard (which only fires at the TOP of a type) never reaches the
+  -- nested type var and every generic-composite-param call is spuriously rejected. (The
+  -- recursion keeps full strictness between two CONCRETE instantiations: `Box<int>` vs
+  -- `Box<bool>` still fails on the inner `int`/`bool`.)
+  | .Applied base1 args1, .Applied base2 args2 =>
+    args1.length == args2.length && isConsistent ctx base1 base2 &&
+      (args1.attach.zip args2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  -- Collection types recurse element-wise *before* unfolding, for the same reason as
+  -- `.Applied`: so the `.TVar` wildcard reaches a nested type var (a `Map K V` parameter
+  -- satisfied by a concrete `Map int bool` argument). Recursion only — concrete-vs-concrete
+  -- stays strict (`Map int bool` vs `Map int int` fails on the value leaf). `.TSet` mirrors
+  -- `.TMap` for symmetry with the other type traversals (`highEq`, `substTypeVars`), though
+  -- `Set` has no surface-Laurel production today, so only the `.TMap` arm is exercised.
+  | .TMap k1 v1, .TMap k2 v2 => isConsistent ctx k1 k2 && isConsistent ctx v1 v2
+  | .TSet e1, .TSet e2 => isConsistent ctx e1 e2
+  -- A BARE composite name and its INSTANTIATION are consistent when the base names
+  -- match: `Box ~ Box<int>`. This is the legacy `new C` correlation form — `var b:
+  -- Box<int> := new Box` synthesizes the allocation as `.UserDefined "Box"` (no args;
+  -- the monomorphizer recovers `int` from the declared `Box<int>` type), so the
+  -- assignment check sees `.UserDefined Box` vs `.Applied Box [int]`. All instantiations
+  -- of a generic composite erase to the SAME Core `Composite` type, so distinguishing
+  -- them by arity here would reject sound legacy programs ("expected 'Box', got 'Box'").
+  | .UserDefined n1, .Applied b2 _ | .Applied b2 _, .UserDefined n1 =>
+    (match b2.val with | .UserDefined n2 => n1.text == n2.text | _ => false)
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
     match a'.val, b'.val with
     | .Unknown, _ | _, .Unknown => true
     | .TCore _, _ | _, .TCore _ => true
+    -- A type VARIABLE is consistent with everything (like `Unknown`): an
+    -- un-monomorphized `T` is a not-yet-known concrete type. Polymorphic code
+    -- (`idp<T>(x:T)` called at `int`; a generic composite field `val:T` written
+    -- with an `int`) is type-checked at the INITIAL resolution where `T` is still
+    -- `.TVar` — before monomorphization erases it or CallElim freshens it. Without
+    -- this arm the gradual checker would reject every polymorphic use with a
+    -- spurious "expected 'T', got 'int'" and (since any non-warning resolution
+    -- diagnostic gates translation) block ALL polymorphic programs. This is the
+    -- gradual-typing-correct treatment, mirroring the `Unknown` wildcard.
+    | .TVar _, _ | _, .TVar _ => true
     | _, _ => highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)
-    cases t1; term_by_mem
+    all_goals (first | (cases base1; term_by_mem) | (cases t1; term_by_mem))
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
     this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
@@ -809,8 +1022,15 @@ that affects the results of `IsType` and `AsType` operations.
 structure CompositeType where
   /-- The type name. -/
   name : Identifier
-  /-- Names of composite types this type extends. The type hierarchy affects `IsType` and `AsType` results. -/
-  extending : List Identifier
+  /-- Type parameters, e.g. `T` in `composite Box<T> { ... }`. Empty for
+      monomorphic composites (default keeps existing sites compiling). -/
+  typeArgs : List Identifier := []
+  /-- Composite types this type extends, as type references. Usually a bare name
+      (`.UserDefined Base`), but a generic composite may extend a generic parent at an
+      instantiation (`Box<T> extends Base<T>` → `.Applied (UserDefined Base) [TVar T]`).
+      Consumers that only need the parent NAME peel the base via `highBaseName?`.
+      The type hierarchy affects `IsType`/`AsType` results. -/
+  extending : List HighTypeMd
   /-- The fields of this type. -/
   fields : List Field
   /-- Instance procedures (methods) defined on this type. -/
@@ -917,7 +1137,16 @@ def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
     | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
     | .Composite c =>
-      { ctx with extendingMap := ctx.extendingMap.insert c.name.text (c.extending.map (·.text)) }
+      -- `extending` is now `List HighTypeMd`; the subtype lattice keys on parent NAME
+      -- (an instantiation `Base<T>` and `Base` share the same ancestor chain), so peel
+      -- the base name. A parent with no nameable base (shouldn't occur for `extends`)
+      -- is dropped from the chain rather than crashing.
+      -- ALSO record the child's params + verbatim parent EXPRESSIONS so the remap survives
+      -- for `substitutedAncestors`. `extendingMap` (name-only) is kept for
+      -- the name-walk consumers.
+      { ctx with
+        extendingMap := ctx.extendingMap.insert c.name.text (c.extending.filterMap (fun e => (highBaseName? e.val).map (·.text))),
+        parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
     | .Datatype _ => ctx
 
 structure Constant where

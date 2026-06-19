@@ -70,6 +70,8 @@ private def addTypeName (name : String) : CollectM Unit :=
 private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   match ty.val with
   | .UserDefined name => addTypeName name.text
+  -- A type variable references no prelude type name.
+  | .TVar _ => pure ()
   | .TCore _ => pure ()
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
@@ -85,7 +87,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   match expr.val with
   | .StaticCall callee args =>
     addProcName callee.text; args.forM collectExprNames
-  | .New ref => addTypeName ref.text
+  | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames
   | .InstanceCall target callee args =>
     addProcName callee.text; collectExprNames target; args.forM collectExprNames
   | .IfThenElse cond thenB elseB =>
@@ -155,7 +157,10 @@ private def collectTypeDefDeps (td : TypeDefinition) : CollectM Unit := do
   match td with
   | .Composite ct =>
     ct.fields.forM fun f => collectHighTypeNames f.type
-    for e in ct.extending do addTypeName e.text
+    -- `extending` is `List HighTypeMd`; prelude dep-collection needs the FULL type
+    -- (both the parent base AND any concrete arg, e.g. `Base<int>` → Base AND int),
+    -- so recurse via `collectHighTypeNames` rather than peeling to the base name.
+    ct.extending.forM collectHighTypeNames
     ct.instanceProcedures.forM collectProcDeps
   | .Constrained ct =>
     collectHighTypeNames ct.base

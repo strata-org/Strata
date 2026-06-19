@@ -92,7 +92,11 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  | .New name => ⟨ .UserDefined name, source ⟩
+  -- `new C` has type `C`; `new C<τ…>` has the applied type `C<τ…>` so downstream
+  -- (e.g. monomorphization) sees the concrete instantiation.
+  | .New name typeArgs =>
+    if typeArgs.isEmpty then ⟨ .UserDefined name, source ⟩
+    else ⟨ .Applied ⟨ .UserDefined name, source ⟩ typeArgs, source ⟩
   | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty

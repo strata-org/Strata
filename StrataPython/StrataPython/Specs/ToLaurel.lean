@@ -577,8 +577,11 @@ def classDefToLaurel (cls : ClassDef) : ToLaurelM Unit := do
   let laurelFields ← cls.fields.toList.mapM fun f => do
     let ty ← specTypeToLaurelType f.type
     pure { name := f.name, isMutable := true, type := ty : Laurel.Field }
+  -- `CompositeType.extending` is now `List HighTypeMd` (a composite may
+  -- extend a generic parent `Base<T>`). A Python base class is a plain nominal parent, so
+  -- wrap each prefixed base name as a `.UserDefined` type.
   let prefixedBases := cls.bases.toList.map fun cd =>
-    mkId cd.toLaurelName
+    (⟨.UserDefined (mkId cd.toLaurelName), none⟩ : Laurel.HighTypeMd)
   pushType (.Composite {
     name := prefixedName
     extending := prefixedBases

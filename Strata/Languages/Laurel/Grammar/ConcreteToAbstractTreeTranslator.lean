@@ -111,6 +111,12 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) src
+    | q`Laurel.appliedType, #[nameArg, argsArg] =>
+      let name ← translateIdent nameArg
+      let args ← match argsArg with
+        | .seq _ .comma args => args.toList.mapM translateHighType
+        | single => do let a ← translateHighType single; pure [a]
+      return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined name) src) args) src
     | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
@@ -142,6 +148,51 @@ def translateParameters (arg : Arg) : TransM (List Parameter) := do
   | .seq _ .comma args =>
     args.toList.mapM translateParameter
   | _ => pure []
+
+/-- Parse an `Option TypeParams` arg (`<T, U>`) into the list of type-parameter
+    identifiers. Absent (monomorphic) yields `[]`. -/
+def translateTypeParams (arg : Arg) : TransM (List Identifier) := do
+  match arg with
+  | .option _ (some (.op op)) =>
+    match op.name, op.args with
+    | q`Laurel.typeParams, #[paramsArg] =>
+      match paramsArg with
+      | .seq _ .comma args => args.toList.mapM translateIdent
+      | single => do let i ← translateIdent single; pure [i]
+    | _, _ => TransM.error s!"Expected typeParams operation, got {repr op.name}"
+  | _ => pure []
+
+/-- Parse an `Option NewTypeArgs` arg (`<int, bool>` on a `new`) into the list of
+    type arguments. Absent (bare `new C`) yields `[]`. Mirrors `appliedType`. -/
+def translateNewTypeArgs (arg : Arg) : TransM (List HighTypeMd) := do
+  match arg with
+  | .option _ (some (.op op)) =>
+    match op.name, op.args with
+    | q`Laurel.newTypeArgs, #[argsArg] =>
+      match argsArg with
+      | .seq _ .comma args => args.toList.mapM translateHighType
+      | single => do let a ← translateHighType single; pure [a]
+    | _, _ => TransM.error s!"Expected newTypeArgs operation, got {repr op.name}"
+  | _ => pure []
+
+/-- Translate a `FieldPath` (the chained-field-write target object,) into a
+    `StmtExprMd`. `fieldPathRoot name` → `.Var (.Local name)`; `fieldPathStep obj field`
+    → `.Var (.Field <obj> field)`, recursively. A dedicated category (not `StmtExpr`)
+    so it can't collide with a `multiAssign` value; this builds the same `.Var (.Field …)`
+    chain a field READ produces, so downstream lowering is uniform. -/
+partial def translateFieldPath (arg : Arg) : TransM StmtExprMd := do
+  let src ← getArgFileRange arg
+  let .op op := arg
+    | TransM.error s!"translateFieldPath expects operation, got {repr arg}"
+  match op.name, op.args with
+  | q`Laurel.fieldPathRoot, #[nameArg] =>
+    let name ← translateIdent nameArg
+    return mkStmtExprMd (.Var (.Local name)) src
+  | q`Laurel.fieldPathStep, #[objArg, fieldArg] =>
+    let obj ← translateFieldPath objArg
+    let field ← translateIdent fieldArg
+    return mkStmtExprMd (.Var (.Field obj field)) src
+  | _, _ => TransM.error s!"translateFieldPath: unexpected {repr op.name}"
 
 instance : Inhabited Procedure where
   default := {
@@ -297,16 +348,20 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetField, #[objArg, fieldArg] =>
-            let obj ← translateIdent objArg
+            -- `obj` is a `FieldPath` (chained writes `w#b#val := …`); translate
+            -- it to the `.Var (.Field …)` chain. The common single-level `x#f :=` is a
+            -- `fieldPathRoot` → `.Var (.Local x)`, exactly as before the chained form.
+            let obj ← translateFieldPath objArg
             let field ← translateIdent fieldArg
-            pure (⟨.Field ⟨.Var (.Local obj), tSrc⟩ field, tSrc⟩ : VariableMd)
+            pure (⟨.Field obj field, tSrc⟩ : VariableMd)
           | _, _ => TransM.error s!"multiAssign: unexpected target {repr top.name}"
         | _ => pure []
       let value ← translateStmtExpr valueArg
       return mkStmtExprMd (.Assign targets value) src
-    | q`Laurel.new, #[nameArg] =>
+    | q`Laurel.new, #[nameArg, typeArgsArg] =>
       let name ← translateIdent nameArg
-      return mkStmtExprMd (.New name) src
+      let typeArgs ← translateNewTypeArgs typeArgsArg
+      return mkStmtExprMd (.New name typeArgs) src
     | q`Laurel.isType, #[targetArg, typeNameArg] =>
       let target ← translateStmtExpr targetArg
       let typeName ← translateIdent typeNameArg
@@ -512,11 +567,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | TransM.error s!"parseProcedure expects operation"
 
   match op.name, op.args with
-  | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+  | q`Laurel.procedure, #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, invokeOnArg, opaqueSpecArg, bodyArg]
-  | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+  | q`Laurel.function, #[nameArg, typeParamsArg, paramArg, returnTypeArg, returnParamsArg,
       requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← translateTypeParams typeParamsArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
@@ -582,6 +638,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | none => Body.Opaque [] none modifies
     return {
       name := name
+      typeArgs := typeArgs
       inputs := parameters
       outputs := returnParameters
       preconditions := preconditions
@@ -592,7 +649,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 9 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 
@@ -615,14 +672,18 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseComposite expects operation"
   match op.name, op.args with
-  | q`Laurel.composite, #[nameArg, extendsArg, fieldsArg, procsArg] =>
+  | q`Laurel.composite, #[nameArg, typeParamsArg, extendsArg, fieldsArg, procsArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← translateTypeParams typeParamsArg
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
         | q`Laurel.extends, #[parentsArg] =>
+          -- Parents are now `CommaSepBy LaurelType`: each is a full type
+          -- (`Base` or generic `Base<T>`), translated via `translateHighType` — the same
+          -- path `appliedType` args already use. (Was `translateIdent`, bare names only.)
           match parentsArg with
-          | .seq _ .comma args => args.toList.mapM translateIdent
-          | singleArg => do let parent ← translateIdent singleArg; pure [parent]
+          | .seq _ .comma args => args.toList.mapM translateHighType
+          | singleArg => do let parent ← translateHighType singleArg; pure [parent]
         | _, _ => TransM.error s!"Expected optionalExtends operation, got {repr extendsOp.name}"
       | .option _ none => pure []
       | _ => TransM.error s!"Expected optionalExtends, got {repr extendsArg}"
@@ -632,7 +693,7 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let instanceProcedures ← match procsArg with
       | .seq _ _ args => args.toList.mapM parseProcedure
       | _ => pure []
-    return .Composite { name := name, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
+    return .Composite { name := name, typeArgs := typeArgs, extending := extending, fields := fields, instanceProcedures := instanceProcedures }
   | _, _ =>
     TransM.error s!"parseComposite expects composite, got {repr op.name}"
 
@@ -667,8 +728,9 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseDatatype expects operation"
   match op.name, op.args with
-  | q`Laurel.datatype, #[nameArg, constructorsArg] =>
+  | q`Laurel.datatype, #[nameArg, typeParamsArg, constructorsArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← translateTypeParams typeParamsArg
     let constructors ← match constructorsArg with
       | .op listOp => match listOp.name, listOp.args with
         | q`Laurel.datatypeConstructorList, #[csArg] =>
@@ -677,7 +739,7 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
           | singleArg => do let c ← parseDatatypeConstructor singleArg; pure [c]
         | _, _ => TransM.error s!"Expected datatypeConstructorList, got {repr listOp.name}"
       | _ => TransM.error s!"Expected datatypeConstructorList operation"
-    return .Datatype { name := name, typeArgs := [], constructors := constructors }
+    return .Datatype { name := name, typeArgs := typeArgs, constructors := constructors }
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 

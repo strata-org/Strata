@@ -75,6 +75,12 @@ private def invalidCoreType (source : Option FileRange) (reason : String) : Tran
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
+/-- Shared message for a generic application that reaches Core translation un-monomorphized
+    (a generic composite the monomorphizer should have rewritten, or an unsupported generic). -/
+private def genericReachedCoreMsg : String :=
+  "generic type application reached Core translation (not monomorphized): \
+   unsupported generic type, or a type position missing from MonomorphizeComposites"
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -95,15 +101,56 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | _ => do -- resolution should have already emitted a diagnostic
       emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
+  -- A value-kinded type variable lowers to a Core free type variable (which Core's
+  -- HM instantiates at each call site). Reference-kinded `T` is erased to a
+  -- composite by an earlier pass, so it never reaches this arm as `.TVar`.
+  | .TVar name => return .ftvar name.text
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  -- (TFloat64 has no Core type today; it fell through the old catch-all to this
+  -- same error. Kept explicit so the exhaustiveness checker stays armed.)
+  | .TFloat64 => invalidCoreType ty.source "Float64 type not yet supported in Core translation"
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
-  | _ => do
-    invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
+  -- Explicit (rather than a catch-all) so adding a new `HighType` constructor is a
+  -- compile error here, not a silent fall-through to "not supported yet".
+  -- A generic type application reaching Core translation means the
+  -- `MonomorphizeComposites` pass did not rewrite this position (it monomorphizes
+  -- generic *composites* in every type position it visits). If you hit this for a
+  -- generic composite, a type position is missing from that pass's traversal;
+  -- non-composite applications (e.g. an as-yet-unsupported generic) are genuinely
+  -- not translatable. Either way this is a loud failure, never a silent miscompile.
+  -- A generic *datatype* application `List<int>` lowers to a native Core parametric
+  -- datatype instance `(.tcons "List" [int])` — datatypes do NOT monomorphize,
+  -- so this position is REACHED, not an error. A generic *composite* application, by
+  -- contrast, is rewritten away by `MonomorphizeComposites` before translation; if one
+  -- reaches here it is the loud failure described below.
+  | .Applied base args =>
+    -- ONLY a generic DATATYPE application reaches here legitimately (→ native parametric
+    -- Core sort); anything else (a generic composite that should have been monomorphized
+    -- away, or an unsupported application) is the single loud failure below.
+    match base.val with
+    | .UserDefined name =>
+      match model.get? name with
+      | some (.datatypeDefinition dt) => return .tcons dt.name.text (← args.mapM translateType)
+      | _ => invalidCoreType ty.source genericReachedCoreMsg
+    | _ => invalidCoreType ty.source genericReachedCoreMsg
+  | .Pure _ => invalidCoreType ty.source "Pure type not yet supported in Core translation"
+  | .Intersection _ => invalidCoreType ty.source "Intersection type not yet supported in Core translation"
 
 termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
+decreasing_by
+  all_goals (first
+    | (cases elementType; term_by_mem)
+    | (cases keyType; term_by_mem)
+    | (cases valueType; term_by_mem)
+    -- `.Applied base args`: each `arg ∈ args` is a strict subterm of `ty.val`.
+    -- `term_by_mem` gives `sizeOf arg < sizeOf args`; `AstNode.sizeOf_val_lt`
+    -- bridges `arg.val` to `arg`, and the goal `sizeOf arg.val < 1 + sizeOf base
+    -- + sizeOf args` then closes by `omega`.
+    | (cases ty
+       have := AstNode.sizeOf_val_lt ‹HighTypeMd›
+       add_mem_size_lemmas; simp_all; omega))
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
@@ -629,9 +676,15 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
+  -- Propagate the procedure's type parameters to Core. `translateType` lowers
+  -- each `.TVar` to an `.ftvar`, so the procedure's signature and spec carry the
+  -- source type variables. These are instantiated per call site during call
+  -- elimination (see `CallElim.callElimCmd` / `freshenTypeArgsSubst`), which
+  -- renames them to globally-fresh names at each call so the same procedure can
+  -- be called at different concrete types in one body.
   let header : Core.Procedure.Header := {
     name := proc.name.text
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     outputs := outputs
   }
@@ -724,7 +777,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     output := outputTy
     body := body
