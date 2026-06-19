@@ -450,7 +450,7 @@ class LemmaLedger:
 
     def _prune_recursive(self, entry_id: str, reason: str, acc: list[str]):
         entry = self._entries.get(entry_id)
-        if not entry or entry.status == LemmaStatus.PRUNED:
+        if not entry or entry.status in (LemmaStatus.PRUNED, LemmaStatus.PROVED):
             return
         entry.status = LemmaStatus.PRUNED
         entry.pruned_reason = reason
@@ -553,26 +553,28 @@ class LemmaLedger:
 
             lines = ["```mermaid", "flowchart TD"]
 
-            # Define nodes
-            status_emoji = {
-                LemmaStatus.PROVED: "✅", LemmaStatus.PROVING: "🔨",
-                LemmaStatus.PENDING: "⏳", LemmaStatus.FAILED: "❌",
-                LemmaStatus.PRUNED: "✗", LemmaStatus.CYCLE: "⟳",
+            # Define nodes — use text status markers (emojis break some renderers)
+            status_marker = {
+                LemmaStatus.PROVED: "PROVED", LemmaStatus.PROVING: "ACTIVE",
+                LemmaStatus.PENDING: "pending", LemmaStatus.FAILED: "FAILED",
+                LemmaStatus.PRUNED: "pruned", LemmaStatus.CYCLE: "CYCLE",
             }
+            # Node shapes: proved=stadium, active=hexagon, others=rectangle
             for entry in self._entries.values():
                 node_id = entry.id[:8]
                 indeg = self._indegree.get(entry.id, 0)
                 sig_snippet = self._sig_snippet(entry.statement, max_len=40)
-                indeg_label = f" [in:{indeg}]" if indeg > 1 else ""
-                emoji = status_emoji.get(entry.status, "")
-                label = f"{emoji} {entry.name}{indeg_label}\\n({node_id})\\n{sig_snippet}"
-                lines.append(f"    {entry.id}[\"{label}\"]")
+                indeg_label = f" in:{indeg}" if indeg > 1 else ""
+                marker = status_marker.get(entry.status, "")
+                label = f"{entry.name}{indeg_label}<br/>{sig_snippet}<br/>[{marker}]"
+                mid = f"n{entry.id}"
+                lines.append(f"    {mid}[\"{label}\"]")
 
             # Define edges
             for entry in self._entries.values():
                 for child_id in entry.children:
                     if child_id in self._entries:
-                        lines.append(f"    {entry.id} --> {child_id}")
+                        lines.append(f"    n{entry.id} --> n{child_id}")
 
             # Style nodes by status
             style_map = {
@@ -584,17 +586,9 @@ class LemmaLedger:
                 LemmaStatus.CYCLE: "fill:#f90,stroke:#c60,color:#fff",
             }
             for status, style in style_map.items():
-                ids = [e.id for e in self._entries.values() if e.status == status]
+                ids = [f"n{e.id}" for e in self._entries.values() if e.status == status]
                 if ids:
                     lines.append(f"    style {','.join(ids)} {style}")
-
-            # Add indegree annotations as comments for reference
-            lines.append("")
-            lines.append("    %% Indegree counts")
-            for entry in self._entries.values():
-                indeg = self._indegree.get(entry.id, 0)
-                if indeg > 1:
-                    lines.append(f"    %% {entry.name}: indegree={indeg}")
 
             lines.append("```")
             return "\n".join(lines) + "\n"
@@ -680,7 +674,23 @@ class LemmaLedger:
     # ─── Signature utilities ─────────────────────────────────────────────────
 
     @staticmethod
-    def compute_signature_hash(signature: str) -> str:
-        """Compute hash from a signature string (obtained externally via Lean tools)."""
-        normalized = re.sub(r'\s+', ' ', signature).strip()
+    def compute_signature_hash(text: str) -> str:
+        """Compute hash from a theorem's type signature (name-independent).
+
+        Strips the declaration keyword + name so that two theorems with the
+        same parameters and return type but different names produce the same hash.
+        """
+        stripped = text.strip()
+        # Remove "theorem <name>" / "def <name>" / "lemma <name>" prefix
+        match = re.match(
+            r'(?:private\s+)?(?:noncomputable\s+)?(?:theorem|def|lemma)\s+\S+', stripped)
+        if match:
+            stripped = stripped[match.end():]
+        # Remove body (everything from ':= by' onwards)
+        for marker in [':= by', ':= fun', ':= ⟨', ':=']:
+            idx = stripped.rfind(marker)
+            if idx != -1:
+                stripped = stripped[:idx]
+                break
+        normalized = re.sub(r'\s+', ' ', stripped).strip()
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
