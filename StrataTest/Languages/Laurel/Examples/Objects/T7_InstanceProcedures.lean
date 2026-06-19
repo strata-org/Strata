@@ -219,6 +219,7 @@ procedure useOuter()
   opaque
 {
   var o: Outer := new Outer;
+  o#inner := new Inner;
   var b: bool := o#inner#isOne()
 };
 #end

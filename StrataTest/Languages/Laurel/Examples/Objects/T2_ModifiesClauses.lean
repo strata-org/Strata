@@ -67,7 +67,7 @@ procedure modifyContainerWildcard(c: Container) returns (i: int)
 };
 
 procedure modifyContainerWithoutPermission1(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
 {
     var i: int := modifyContainerWildcard(c)

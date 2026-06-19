@@ -471,6 +471,48 @@ where
       simp_all
       omega)
 
+/-- Check if `p` is a composite (heap-reference) parameter. -/
+private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
+  match p.type.val with
+  | .UserDefined name => !isDatatype model name
+  | _ => false
+
+/-- For each composite parameter `p`, the precondition
+    `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
+private def heapWellFormednessPreconds (model : SemanticModel)
+    (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
+  inputs.filterMap fun p =>
+    if isCompositeParam model p then
+      let pRead   := mkMd (.Var (.Local p.name))
+      let pRef    := mkMd (.StaticCall "Composite..ref!" [pRead])
+      let heapRead := mkMd (.Var (.Local heapVar))
+      let counter := mkMd (.StaticCall "Heap..nextReference!" [heapRead])
+      let allocated := mkMd (.PrimitiveOp .Lt [pRef, counter])
+      some { condition := allocated, summary := some "input is allocated in the heap" }
+    else none
+
+/-- The postcondition
+    `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
+    the top of heap pointer never decreases. -/
+private def heapMonotonicityPostcond (heapInVar heapOutVar : Identifier) : Condition :=
+  let inCounter  := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapInVar))])
+  let outCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapOutVar))])
+  { condition := mkMd (.PrimitiveOp .Leq [inCounter, outCounter]),
+    summary := some "monotonic heap pointer" }
+
+/-- For each composite output `o`, the postcondition
+    `Composite..ref!(o) < Heap..nextReference!($heap)` - a returned
+    composite is allocated in the output heap. -/
+private def heapOutputAllocationPostconds (model : SemanticModel)
+    (outputs : List Parameter) (heapOutVar : Identifier) : List Condition :=
+  outputs.filterMap fun o =>
+    if isCompositeParam model o then
+      let oRef    := mkMd (.StaticCall "Composite..ref!" [mkMd (.Var (.Local o.name))])
+      let counter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapOutVar))])
+      some { condition := mkMd (.PrimitiveOp .Lt [oRef, counter]),
+             summary := some "output is allocated in the heap" }
+    else none
+
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
   let heapInName := heapInVarName
@@ -486,10 +528,16 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let inputs' := heapInParam :: proc.inputs
     let outputs' := heapOutParam :: proc.outputs
 
-    -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
+    let userPreconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapInName ++ userPreconditions'
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
+    -- Synthesized postconditions: allocation counter is monotone, and every
+    -- composite output is allocated in the output heap. Both reference Core
+    -- heap intrinsics directly and need no field-access transform.
+    let wfPostconditions :=
+      heapMonotonicityPostcond heapInName heapName
+        :: heapOutputAllocationPostconds model proc.outputs heapName
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           -- First assign $heap_in to $heap, then transform body using $heap
@@ -506,10 +554,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
-          pure (.Opaque postconds' impl' modif')
+          pure (.Opaque (wfPostconditions ++ postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
-          pure (.Abstract postconds')
+          pure (.Abstract (wfPostconditions ++ postconds'))
       | .External => pure .External
 
     return { proc with
@@ -523,7 +571,8 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
+    let userPreconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ userPreconditions'
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
