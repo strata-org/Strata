@@ -213,6 +213,26 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
 termination_by ty.val
 decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
+/--
+Translate a Laurel type for use in an object-type *schema*, preserving composite
+type names (`.tcons "Node"`) rather than erasing them to `.tcons "Composite"` as
+`translateType` does. A schema field `next : Node` must record `Node`, not the
+opaque reference type. Recurses through `Set`/`Map` so a `Set Node` keeps `Node`.
+Non-composite leaves delegate to `translateType`.
+-/
+def translateSchemaType (ty : HighTypeMd) : TranslateM LMonoTy := do
+  let model := (← get).model
+  match _h : ty.val with
+  | .UserDefined name =>
+    match model.get? name with
+    | some (.compositeType ct) => return .tcons ct.name.text []
+    | _ => translateType ty
+  | .TSet elementType => return Core.mapTy (← translateSchemaType elementType) LMonoTy.bool
+  | .TMap keyType valueType => return Core.mapTy (← translateSchemaType keyType) (← translateSchemaType valueType)
+  | _ => translateType ty
+termination_by ty.val
+decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
+
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
 
@@ -1095,6 +1115,18 @@ private def coreDeclToImplicitDecl (d : Core.Decl) : TranslateM Core.Implicit.De
     emitCoreDiagnostic (md.toDiagnostic "unexpected procedure declaration in non-procedure position" DiagnosticType.StrataBug)
     return .distinct ⟨"$bug", ()⟩ [] md
 
+/-- Build a Core-implicit object-type schema declaration from a Laurel composite:
+its declared fields (with Core types) and immediate parent types. The hierarchy
+is the immediate `extending` list — a backend recovers the transitive closure. -/
+def translateCompositeSchema (ct : CompositeType) : TranslateM Core.Implicit.Decl := do
+  let fields ← ct.fields.mapM fun f => do
+    return (f.name.text, LTy.forAll [] (← translateSchemaType f.type))
+  let objType : Core.Implicit.ObjectType :=
+    { name := ct.name.text
+      fields := fields
+      extending := ct.extending.map (·.text) }
+  return .objectType objType mdWithUnknownLoc
+
 /--
 Translate a `CoreWithLaurelTypes` program to a Core-implicit `Program`,
 emitting heap commands directly. Mirrors `translateLaurelToCore`; procedures
@@ -1105,8 +1137,11 @@ no explicit encoding to preserve.
 Field reads and allocations must already sit in canonical position; run
 `liftHeapExpressions` first.
 -/
-def translateLaurelToCoreImplicit (options : LaurelTranslateOptions) (ordered : CoreWithLaurelTypes)
+def translateLaurelToCoreImplicit (options : LaurelTranslateOptions)
+    (composites : List CompositeType) (ordered : CoreWithLaurelTypes)
     : TranslateM Core.Implicit.Program := do
+  -- Object-type schema declarations come first so a backend sees types before use.
+  let schemaDecls ← composites.mapM translateCompositeSchema
   let decls ← ordered.decls.flatMapM fun
     | .funcs funcs isRecursive => do
       let nonExternal := funcs.filter (fun p => !p.body.isExternal)
@@ -1139,7 +1174,7 @@ def translateLaurelToCoreImplicit (options : LaurelTranslateOptions) (ordered : 
         output := coreTy
         body := body
       } mdWithUnknownLoc]
-  pure { decls := decls }
+  pure { decls := schemaDecls ++ decls }
 
 end -- public section
 end Laurel

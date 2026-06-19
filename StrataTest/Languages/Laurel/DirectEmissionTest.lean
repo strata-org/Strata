@@ -32,10 +32,11 @@ private def runImplicit (program : StrataDDM.Program)
   let lifted := liftHeapExpressions result.model result.program
   let unordered := transparencyPass lifted
   let compositeTypes := lifted.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+  let composites := lifted.types.filterMap (fun t => match t with | .Composite ct => some ct | _ => none)
   let (unordered, model) := resolveUnorderedCore unordered (existingModel := some result.model) (additionalTypes := compositeTypes)
   let ordered := orderFunctionsAndProcedures unordered
   let initState : TranslateState := { model := model }
-  let (prog?, st) := runTranslateM initState (translateLaurelToCoreImplicit {} ordered)
+  let (prog?, st) := runTranslateM initState (translateLaurelToCoreImplicit {} composites ordered)
   return (prog?, st.coreDiagnostics)
 
 private def printImplicit (program : StrataDDM.Program) : IO Unit := do
@@ -53,6 +54,8 @@ private def printImplicitDiagnostics (program : StrataDDM.Program) : IO Unit := 
 
 /--
 info: program CoreImplicit;
+class Account { balance : int }
+
 
 
 procedure manipulate [heap: writes]
@@ -89,6 +92,8 @@ opaque {
 -- read target is itself a field access.
 /--
 info: program CoreImplicit;
+class Node { balance : int; next : Node }
+
 
 
 procedure nested [heap: writes]
@@ -137,6 +142,8 @@ opaque {
 -- before the loop and refreshed on the back-edge (end of body).
 /--
 info: program CoreImplicit;
+class Account { balance : int }
+
 
 
 procedure consume [heap: writes]
@@ -171,6 +178,8 @@ opaque {
 -- lifted unconditionally (eager) — sound for total heap reads.
 /--
 info: program CoreImplicit;
+class Account { balance : int; ok : bool }
+
 
 
 procedure shortCircuit [heap: reads]
@@ -199,6 +208,8 @@ opaque {
 -- Compound while-guard with two reads: both are duplicated on the back-edge.
 /--
 info: program CoreImplicit;
+class Account { balance : int; limit : int }
+
 
 
 procedure compoundGuard [heap: writes]
@@ -235,6 +246,8 @@ opaque {
 -- A read assigned to an output parameter.
 /--
 info: program CoreImplicit;
+class Account { balance : int }
+
 
 
 procedure retRead [heap: reads]
@@ -259,6 +272,8 @@ opaque {
 -- Three-deep nested read `((a#next)#next)#value` lifts inner-to-outer.
 /--
 info: program CoreImplicit;
+class Node { value : int; next : Node }
+
 
 
 procedure deep [heap: reads]
@@ -288,6 +303,8 @@ opaque {
 -- `new Account` as a call argument lifts to a temp, then the call uses it.
 /--
 info: program CoreImplicit;
+class Account { balance : int }
+
 
 
 
@@ -345,6 +362,10 @@ opaque
 -- Type test `a is Dog` becomes a heapInstanceOf; the procedure reads the heap.
 /--
 info: program CoreImplicit;
+class Animal { legs : int }
+
+class Dog extends Animal { name : int }
+
 
 
 procedure classify [heap: reads]
@@ -373,6 +394,10 @@ opaque {
 -- the type test to a bool temp, assert it, then yield the value.
 /--
 info: program CoreImplicit;
+class Animal { legs : int }
+
+class Dog extends Animal { name : int }
+
 
 
 procedure downcast [heap: reads]
@@ -381,7 +406,7 @@ block $body {
   var $h_0 : Composite := a;
   var $h_1 : bool;
   $h_1 := heapInstanceOf($h_0, Dog)
-  assert [|assert(9283)|]: $h_1;
+  assert [|assert(9846)|]: $h_1;
   d := $h_0;
 }
 -/
@@ -407,6 +432,8 @@ opaque {
 -- structure, `==` would silently become structural equality and this fails.
 /--
 info: program CoreImplicit;
+class Account { balance : int }
+
 
 
 procedure sameObj [heap: none]

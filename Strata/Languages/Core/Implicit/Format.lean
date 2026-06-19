@@ -95,12 +95,21 @@ def formatProcedure (extraFreeVars : Array String) (p : Procedure) : Format :=
   "procedure " ++ p.header.name.name ++ " [heap: " ++ effectStr ++ "]" ++ Format.line ++
     specF ++ Format.joinSep (p.body.map (formatStatement extraFreeVars)) Format.line
 
+/-- Format an object-type schema: `class Name extends … { field : ty; … }`. -/
+def formatObjectType (t : ObjectType) : Format :=
+  let extendsF := if t.extending.isEmpty then Format.nil
+    else " extends " ++ Format.joinSep (t.extending.map Format.text) ", "
+  let fieldsF := Format.joinSep
+    (t.fields.map (fun (n, ty) => n ++ " : " ++ format ty)) "; "
+  "class " ++ t.name ++ extendsF ++ " { " ++ fieldsF ++ " }"
+
 /-- Names a declaration contributes to the formatting context. -/
 private def declNames : Decl → List String
   | .proc p _ => [p.header.name.name]
   | .func f _ => [f.name.name]
   | .recFuncBlock fs _ => fs.map (·.name.name)
   | .distinct name _ _ => [name.name]
+  | .objectType t _ => [t.name]
   | .type _ _ | .ax _ _ => []
 
 /-- Gather the free-var names a program's declarations need registered. Includes
@@ -114,6 +123,7 @@ def formatProgram (prog : Program) : Format :=
   let extra := programFreeVars prog
   let formatDecl : Decl → Format
     | .proc p _ => formatProcedure extra p
+    | .objectType t _ => formatObjectType t
     | _ => Format.nil
   "program CoreImplicit;" ++ Format.line ++
     Format.joinSep (prog.decls.map formatDecl) (Format.line ++ Format.line)
