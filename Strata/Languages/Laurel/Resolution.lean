@@ -780,8 +780,8 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
   | .Var (.Declare param) => Check.varDeclare param source
-  | .While cond invs dec body =>
-    Check.while exprMd cond invs dec body source (by rw [h_node])
+  | .While cond invs dec body postTest =>
+    Check.while exprMd cond invs dec body postTest source (by rw [h_node])
   | .Exit target => Check.exit target source
   | .Return val =>
     Check.return exprMd val source (by rw [h_node])
@@ -959,9 +959,9 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     check mode. -/
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
-    (dec : Option StmtExprMd) (body : StmtExprMd)
+    (dec : Option StmtExprMd) (body : StmtExprMd) (postTest : Bool)
     (source : Option FileRange)
-    (h : exprMd.val = .While cond invs dec body) :
+    (h : exprMd.val = .While cond invs dec body postTest) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let invs' ← invs.attach.mapM (fun a => have := a.property; do
@@ -973,7 +973,9 @@ def Check.while (exprMd : StmtExprMd)
       typeMismatch a.val.source none "expected a numeric type" decTy
     pure e')
   let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
-  pure { val := .While cond' invs' dec' body', source := source }
+  -- `postTest` (the `do … while` variant) resolves identically and is carried
+  -- through unchanged for the `EliminateDoWhile` pass to lower afterwards.
+  pure { val := .While cond' invs' dec' body' postTest, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     all_goals
@@ -2840,7 +2842,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
     let map := match dec with | some d => collectStmtExpr map d | none => map
@@ -3040,7 +3042,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     match e with
     | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
     | none => errs
-  | .While c invs _ b =>
+  | .While c invs _ b _ =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs

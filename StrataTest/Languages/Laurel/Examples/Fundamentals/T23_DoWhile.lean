@@ -9,16 +9,16 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! ## Body-tested `do-while`
+/-! ## Post-test `do-while`
 
-`do BODY while(COND) invariant I` is a body-tested loop: BODY runs once before
-COND is first tested. It is desugared (in `ConcreteToAbstractTreeTranslator`) to a
-head-tested `while(true)` whose body ends with `if (!COND) exit`, so the invariant
-`I` is checked at the loop HEAD — i.e. *before* each BODY runs (head-tested
-placement, matching `while`). Gotcha: because the guard is re-tested only after
-BODY, an invariant must hold of the *pre-body* state. For `do { x := x+1 } while(x<3)`
-the loop exits at x==3, but the head invariant sees the pre-increment value, so the
-bound is `x <= 2` (not `x <= 3`). -/
+`do BODY while(COND) invariant I` is a post-test loop: BODY runs once before
+COND is first tested. It parses to a post-test `While` (`postTest := true`),
+desugared by the `EliminateDoWhile` pass to a pre-test `while(true)` whose body
+ends with `if (!COND) exit`. The invariant `I` is checked at the loop head —
+*before* each BODY runs, matching `while`. Gotcha: because the guard is re-tested
+only after BODY, an invariant must hold of the *pre-body* state. For
+`do { x := x+1 } while(x<3)` the loop exits at x==3, but the head invariant sees
+the pre-increment value, so the bound is `x <= 2` (not `x <= 3`). -/
 
 #eval testLaurel
 #strata

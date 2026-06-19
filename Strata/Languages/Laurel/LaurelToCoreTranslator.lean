@@ -257,7 +257,7 @@ def translateExpr (expr : StmtExprMd)
   | .IncrDecr _ _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source
         "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
-  | .While _ _ _ _ =>
+  | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
@@ -497,7 +497,10 @@ def translateStmt (stmt : StmtExprMd)
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
           return [.exit bodyLabel md]
-  | .While cond invariants decreasesExpr body =>
+  | .While cond invariants decreasesExpr body postTest =>
+      if postTest then
+        return ← throwStmtDiagnostic (diagnosticFromSource cond.source
+          "post-test while (do-while) should have been eliminated by EliminateDoWhile pass" DiagnosticType.StrataBug)
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)

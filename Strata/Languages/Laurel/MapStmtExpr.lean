@@ -38,11 +38,11 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Block stmts label =>
     pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprM f cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source⟩
+      (← mapStmtExprM f body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Assign targets value =>

@@ -158,9 +158,13 @@ where
     | .IfThenElse cond thenBr elseBr =>
       let elseOpt := optionArg (elseBr.map fun e => laurelOp "elseBranch" #[stmtExprToArg e])
       laurelOp "ifThenElse" #[stmtExprToArg cond, stmtExprToArg thenBr, elseOpt]
-    | .While cond invs _decreases body =>
+    | .While cond invs _decreases body postTest =>
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
-      laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
+      if postTest then
+        -- `do … while`; grammar op order is `doWhile(body, cond, invariants)`.
+        laurelOp "doWhile" #[stmtExprToArg body, stmtExprToArg cond, seqArg invArgs]
+      else
+        laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
     | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
     | .Return none => laurelOp "return" #[optionArg none]
     | .Exit label => laurelOp "exit" #[ident label]

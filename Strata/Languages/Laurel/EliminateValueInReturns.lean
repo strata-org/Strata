@@ -45,7 +45,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
   | .IfThenElse _ thenBr (some elseBr) =>
     hasValuedReturn thenBr || hasValuedReturn elseBr
   | .IfThenElse _ thenBr none => hasValuedReturn thenBr
-  | .While _ _ _ body => hasValuedReturn body
+  | .While _ _ _ body _ => hasValuedReturn body
   | _ => false
   termination_by sizeOf stmt
   decreasing_by

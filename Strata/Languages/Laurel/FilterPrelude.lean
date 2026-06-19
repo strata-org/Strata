@@ -93,7 +93,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames cond; collectExprNames thenB
     elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     collectExprNames cond; invs.forM collectExprNames
     dec.forM collectExprNames
     collectExprNames body
