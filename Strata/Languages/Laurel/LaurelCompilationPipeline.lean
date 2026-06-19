@@ -145,12 +145,12 @@ private def runLaurelPasses
 
   -- Initial resolution
   let result := resolve program
-  let resolutionErrors : List DiagnosticModel := result.errors.toList
+  let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := resolutionErrors
+  let mut allDiags : List DiagnosticModel := result.errors.toList
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
@@ -163,7 +163,13 @@ private def runLaurelPasses
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
+        let newDiags := newErrors.toList.map fun d =>
+          { d with
+              message :=
+                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
+              type := .StrataBug }
         emit pass.name "laurel.st" program
+        return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
