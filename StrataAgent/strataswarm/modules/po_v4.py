@@ -220,6 +220,13 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         if not state.root_theorem_name:
             state.root_theorem_name = root_block.name
 
+        # Clean up theorem name (TM sometimes passes "Theorems: ['name']" format)
+        import re as _re
+        if state.root_theorem_name and "'" in state.root_theorem_name:
+            _match = _re.search(r"'([^']+)'", state.root_theorem_name)
+            if _match:
+                state.root_theorem_name = _match.group(1)
+
         sig_hash = LemmaLedger.compute_signature_hash(root_block.text)
         root_entry = ledger.add_lemma(
             name=state.root_theorem_name, file_path=stub_rel,
@@ -471,7 +478,10 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 (cwd / stub_rel).write_text(original_content)
                 continue
 
-        # Consult guide between attempts (same pattern as v3)
+        # Consult guide between attempts — skip on last iteration (no next attempt)
+        if attempt_idx >= len(WRITER_TURNS) - 1:
+            break
+
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         sorry_count = sum(len(v) for v in sorry_info.values())
         await agent._emit("message", f"[PO4] Still has {sorry_count} sorry. Consulting guide...")
