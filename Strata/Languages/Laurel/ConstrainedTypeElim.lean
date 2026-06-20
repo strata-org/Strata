@@ -138,13 +138,9 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
     model lookup reliably returns their declared type. -/
 def constrainedTargetReadback (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     (target : VariableMd) : Option (HighType × StmtExprMd) :=
-  let src := target.source
-  let check (ty : HighType) (ref : StmtExprMd) : Option (HighType × StmtExprMd) :=
-    if isConstrainedType ptMap ty then some (ty, ref) else none
-  match target.val with
-  | .Local name => check (model.get name).getType.val ⟨.Var (.Local name), src⟩
-  | .Declare param => check param.type.val ⟨.Var (.Local param.name), src⟩
-  | .Field tgt fieldName => check (model.get fieldName).getType.val ⟨.Var (.Field tgt fieldName), src⟩
+  let ref : StmtExprMd := VariableMd.toReadbackExpr target
+  let ty : HighType := (computeExprType model ref).val
+  if isConstrainedType ptMap ty then some (ty, ref) else none
 
 /-- Build `assert T$constraint(<read-back of target>)` for an assignment
     `target` of constrained type `T`, or `none` if the target's type is not
