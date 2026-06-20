@@ -15,4 +15,5 @@ system_prompt: >
 prompt: ""
 allowed_tools:
   - Read
-disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
+  - Write(StrataAgent/**)
+disallowed_tools: [Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]

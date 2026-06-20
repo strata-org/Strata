@@ -15,18 +15,22 @@ from typing import Any
 
 # ─── Import rewriting ────────────────────────────────────────────────────────
 
-def rewrite_imports_for_child(child_stub: Path, parent_workspace: str, child_workspace: str):
-    """Rewrite imports so child workspace is self-contained.
+def rewrite_imports_for_child(child_stub: Path, parent_workspace: str, child_workspace: str,
+                              root_workspace: str = ""):
+    """Rewrite imports so child workspace compiles correctly.
 
-    - Parent's Stub.Def → child's Stub.Def
-    - Sibling decomposed imports → removed
+    - Keep the ROOT's Stub.Def import (all files at any depth use the same Def)
+    - Remove sibling decomposed imports (not available in child context)
     """
     if not child_stub.exists():
         return
 
     parent_module = parent_workspace.replace("/", ".")
-    child_module = child_workspace.replace("/", ".")
     decomposed_prefix = f"{parent_module}.decomposed."
+
+    # Find the root Stub.Def module (walk up to find the top-level workspace)
+    root_ws = root_workspace or parent_workspace.split("/decomposed/")[0]
+    root_module = root_ws.replace("/", ".")
 
     content = child_stub.read_text()
     new_lines = []
@@ -34,11 +38,12 @@ def rewrite_imports_for_child(child_stub: Path, parent_workspace: str, child_wor
         stripped = line.strip()
         if stripped.startswith("import "):
             module = stripped.removeprefix("import ").strip()
+            # Remove sibling decomposed imports
             if module.startswith(decomposed_prefix):
                 continue
-            if module.startswith(f"{parent_module}.Stub"):
-                module = module.replace(parent_module, child_module, 1)
-                new_lines.append(f"import {module}")
+            # Rewrite any child/parent Stub.Def to ROOT's Stub.Def
+            if ".Stub.Def" in module and module != f"{root_module}.Stub.Def":
+                new_lines.append(f"import {root_module}.Stub.Def")
                 continue
         new_lines.append(line)
 
@@ -197,15 +202,13 @@ def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> 
     # Copy as child's Stub.lean
     shutil.copy2(cwd / lemma_file, child_ws_path / "Stub.lean")
 
-    # Inherit Def.lean
-    parent_def = cwd / parent_workspace / "Stub" / "Def.lean"
-    if parent_def.exists():
-        child_def_dir = child_ws_path / "Stub"
-        child_def_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(parent_def, child_def_dir / "Def.lean")
+    # Do NOT copy Def.lean — all files import the root's Stub.Def directly
+    # This avoids duplicate declaration conflicts in Lean
 
-    # Import isolation
+    # Rewrite imports: point to root Stub.Def, remove sibling imports
     child_stub = child_ws_path / "Stub.lean"
-    rewrite_imports_for_child(child_stub, parent_workspace, child_workspace)
+    root_workspace = parent_workspace.split("/decomposed/")[0]
+    rewrite_imports_for_child(child_stub, parent_workspace, child_workspace,
+                              root_workspace=root_workspace)
 
     return child_workspace

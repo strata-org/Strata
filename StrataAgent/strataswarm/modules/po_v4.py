@@ -456,8 +456,9 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             use_run_ai=True,
         )
 
-        # Fully proved — no sorry anywhere
-        if not tools.has_sorry(stub_rel):
+        # Fully proved — no sorry (checks transitively through imports via lake build)
+        cr = tools.check_compiles(stub_rel)
+        if cr.success and not cr.has_sorry:
             ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
             return "proved"
 
@@ -541,8 +542,9 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             use_run_ai=True,
         )
 
-        # Check if main is now sorry-free
-        if not tools.has_sorry(stub_rel):
+        # Check if fully proved (transitively — no sorry in imports either)
+        cr = tools.check_compiles(stub_rel)
+        if cr.success and not cr.has_sorry:
             ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
             return "proved"
 
@@ -727,7 +729,7 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
             if v.match_type == "cycle":
                 cycle_entry = ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
-                    workspace=str(Path(v.file_path).parent),
+                    workspace=v.file_path.removesuffix(".lean"),
                     signature_hash=v.signature_hash, statement=v.statement,
                     parent_id=entry.id,
                 )
@@ -738,7 +740,7 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
             elif v.match_type == "reuse":
                 new_entry = ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
-                    workspace=str(Path(v.file_path).parent),
+                    workspace=v.file_path.removesuffix(".lean"),
                     signature_hash=v.signature_hash, statement=v.statement,
                     parent_id=entry.id,
                 )
@@ -749,7 +751,7 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
             elif v.match_type == "shared":
                 new_entry = ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
-                    workspace=str(Path(v.file_path).parent),
+                    workspace=v.file_path.removesuffix(".lean"),
                     signature_hash=v.signature_hash, statement=v.statement,
                     parent_id=entry.id,
                 )
@@ -759,16 +761,16 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
             else:
                 ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
-                    workspace=str(Path(v.file_path).parent),
+                    workspace=v.file_path.removesuffix(".lean"),
                     signature_hash=v.signature_hash, statement=v.statement,
                     parent_id=entry.id,
                 )
 
         state._detect_verdicts = None
 
-    # 2. Prune siblings of dead nodes (FAILED/CYCLE) + re-activate their parents
+    # 2. Prune all children of parents with dead nodes + re-activate parents + restore Stub
     from .cycle_detection import prune_siblings_of_dead
-    prune_siblings_of_dead(ledger)
+    prune_siblings_of_dead(ledger, cwd)
 
 
 # ─── Assembly ─────────────────────────────────────────────────────────────────
@@ -829,9 +831,10 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
             await agent._emit("message", f"[PO4] Assembly error at {entry.name}: {output[-200:]}")
             return False
 
-    # Final check: root sorry-free
+    # Final check: root sorry-free (transitive — lake build catches sorry in imports)
     root_stub = f"{state.root_workspace}/Stub.lean"
-    if tools.check_compiles(root_stub).success and not tools.has_sorry(root_stub):
+    cr = tools.check_compiles(root_stub)
+    if cr.success and not cr.has_sorry:
         await agent._emit("message", "[PO4] Assembly complete: root sorry-free ✅")
         ledger.mark_proved(state.root_id, root_stub.replace("/", ".").removesuffix(".lean"))
         return True

@@ -165,52 +165,120 @@ async def verify_ancestor_match(
     ancestor_file: str, ancestor_statement: str, ancestor_name: str,
 ) -> bool:
     """Match is ANCESTOR: can't import (circular). Create temp file with both
-    statements and give a proof_writer 5 turns to prove ours from ancestor.
+    statements and give a proof_writer 10 turns to prove ours from ancestor.
+
+    Uses verified_loop for the file_merger: merge → check compile → if error,
+    feed error back to merger for retry.
     """
     from .po_lean import get_lean_tools
+    from .po_agents import verified_loop
+    import logging
+    _vlog = logging.getLogger("strataswarm.cycle")
     tools = get_lean_tools()
 
     if not our_statement or not ancestor_statement:
-        return False
-
-    temp_content = await _build_equivalence_file(agent, our_file, ancestor_file, our_statement, ancestor_statement)
-    if not temp_content:
         return False
 
     temp_path = str(Path(our_file).parent / "_cycle_check_temp.lean")
     (cwd / temp_path).parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        (cwd / temp_path).write_text(temp_content)
+        # Step 1: Build a compilable equivalence file via verified_loop on file_merger
+        from .._helpers import swarm_agent
 
-        # Extract the variant theorem name from its statement
+        def _verify_merge() -> str | None:
+            """Check that the merged file compiles (sorry is OK)."""
+            if not (cwd / temp_path).exists():
+                return "File not written yet"
+            cr = tools.check_compiles(temp_path)
+            if not cr.success:
+                return f"Merged file doesn't compile: check imports for conflicts"
+            return None
+
+        async with swarm_agent(
+            "file_merger", swarm=agent.swarm, cwd=agent._cwd,
+        ) as merger:
+            outcome = await verified_loop(
+                agent_ctx=merger,
+                initial_input=(
+                    f"Merge these two Lean 4 files into ONE compilable file.\n\n"
+                    f"File A: {our_file}\n"
+                    f"File B: {ancestor_file}\n\n"
+                    f"Read both files. Produce ONE file at: {temp_path}\n"
+                    f"It must contain:\n"
+                    f"1. Merged imports (deduplicated — avoid importing both Stub.Def files if they conflict)\n"
+                    f"2. Merged open/variable/namespace declarations\n"
+                    f"3. These two theorem statements exactly:\n\n"
+                    f"-- Theorem 1:\n{ancestor_statement}\n\n"
+                    f"-- Theorem 2:\n{our_statement}\n\n"
+                    f"Write the file. It must compile (sorry is fine)."
+                ),
+                verify=_verify_merge,
+                max_rounds=3,
+                max_turns=15,
+                use_run_ai=False,
+            )
+
+        if not outcome.success:
+            _vlog.info(f"  verify_ancestor: FAILED — merger couldn't produce compilable file")
+            return False
+
+        # Step 2: Extract variant name
         import re as _re
         variant_name_match = _re.match(
             r'(?:private\s+)?(?:noncomputable\s+)?(?:theorem|def|lemma)\s+(\S+)', our_statement.strip())
         variant_name = variant_name_match.group(1) if variant_name_match else ""
 
-        success = await _run_short_writer(
+        # Step 3: Prove BOTH directions — true cycle means they're equivalent
+        # Direction 1: prove variant from ancestor (ancestor has sorry, variant uses it)
+        await _run_short_writer(
             agent, temp_path,
             f"This file has two theorems. The first (`{ancestor_name}`) has sorry. "
             f"Prove the SECOND theorem (`{variant_name}`) using the first. "
             f"Try: exact {ancestor_name}, apply {ancestor_name}, or simple rewrites. "
-            f"You have 5 turns. Just close the second sorry."
+            f"You have 10 turns. Just close the second sorry."
         )
 
-        # Check: file compiles AND the variant theorem specifically has no sorry
-        # (ancestor is allowed to keep sorry — it's the "given")
-        import logging
-        _vlog = logging.getLogger("strataswarm.cycle")
         cr = tools.check_compiles(temp_path)
-        _vlog.info(f"  verify_ancestor: compiles={cr.success}, temp_path={temp_path}")
-        if not success or not cr.success:
-            _vlog.info(f"  verify_ancestor: FAILED (success={success}, compiles={cr.success})")
-            return False
         sorry_by_thm = tools.get_sorries_by_theorem(temp_path)
-        _vlog.info(f"  verify_ancestor: sorry_by_thm={sorry_by_thm}, variant_name={variant_name}")
-        result = variant_name not in sorry_by_thm
-        _vlog.info(f"  verify_ancestor: returning {result}")
-        return result
+        direction1 = cr.success and variant_name not in sorry_by_thm
+        _vlog.info(f"  verify_ancestor: direction1 (variant from ancestor) = {direction1}")
+
+        if not direction1:
+            return False
+
+        # Direction 2: prove ancestor from variant (swap who has sorry)
+        # Rewrite temp file: variant proved (remove sorry), ancestor gets sorry
+        content = (cwd / temp_path).read_text()
+        # The variant is now proved (direction 1 succeeded). Put sorry back on ancestor.
+        # Actually we need a fresh file with roles reversed.
+        temp_content_rev = await _build_equivalence_file(
+            agent, ancestor_file, our_file, ancestor_statement, our_statement)
+        if not temp_content_rev:
+            _vlog.info(f"  verify_ancestor: couldn't build reverse file")
+            return False
+
+        (cwd / temp_path).write_text(temp_content_rev)
+        cr = tools.check_compiles(temp_path)
+        if not cr.success:
+            _vlog.info(f"  verify_ancestor: reverse file doesn't compile — not a true cycle")
+            return False
+
+        await _run_short_writer(
+            agent, temp_path,
+            f"This file has two theorems. The first (`{variant_name}`) has sorry. "
+            f"Prove the SECOND theorem (`{ancestor_name}`) using the first. "
+            f"Try: exact {variant_name}, apply {variant_name}, or simple rewrites. "
+            f"You have 10 turns. Just close the second sorry."
+        )
+
+        cr = tools.check_compiles(temp_path)
+        sorry_by_thm = tools.get_sorries_by_theorem(temp_path)
+        direction2 = cr.success and ancestor_name not in sorry_by_thm
+        _vlog.info(f"  verify_ancestor: direction2 (ancestor from variant) = {direction2}")
+
+        # True cycle only if BOTH directions work
+        return direction1 and direction2
     finally:
         (cwd / temp_path).unlink(missing_ok=True)
 
@@ -264,18 +332,25 @@ def propagate_cycles(ledger) -> int:
     return marked
 
 
-def prune_siblings_of_dead(ledger) -> int:
-    """Pass 3: For each FAILED/CYCLE node, prune its pending siblings.
+def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
+    """For each FAILED/CYCLE node, prune ALL children of its parent + re-activate parent.
 
-    A sibling is another child of the same parent. If one child is dead,
-    the parent's decomposition is broken — pending siblings are invalid.
-    The parent itself gets re-activated (set to PENDING) for retry.
+    When one child fails, the parent's decomposition is broken — it needs
+    a full re-decomposition. ALL children (including the failed one, and even
+    proved ones from this batch) get pruned. The parent goes back to PENDING
+    with its Stub.lean restored from clean backup.
 
-    Proved siblings are never pruned. Root is never pruned.
+    Proved siblings' work is NOT lost — their file_path still exists on disk.
+    If the new decomposition produces the same lemma, cycle detection finds it
+    via REUSE and short-circuits.
+
+    Root is never pruned.
 
     Returns number of newly pruned nodes.
     """
     from .lemma_ledger import LemmaStatus
+    import shutil
+
     pruned_count = 0
     parents_reactivated = set()
 
@@ -284,25 +359,81 @@ def prune_siblings_of_dead(ledger) -> int:
             continue
         if not entry.parent_id:
             continue
+        if entry.parent_id in parents_reactivated:
+            continue  # already handled this parent
 
         parent = ledger.get(entry.parent_id)
         if not parent or parent.status in (LemmaStatus.PROVED, LemmaStatus.PRUNED):
             continue
 
-        # Prune pending siblings
-        for sibling_id in parent.children:
-            if sibling_id == entry.id:
-                continue
-            sibling = ledger.get(sibling_id)
-            if sibling and sibling.status in (LemmaStatus.PENDING, LemmaStatus.PROVING):
-                pruned = ledger.prune_branch(sibling_id, f"sibling '{entry.name}' is {entry.status.value}")
-                pruned_count += len(pruned)
+        if entry.status == LemmaStatus.FAILED:
+            # FAILED: the writer's approach was wrong. Prune ALL children,
+            # parent re-decomposes from scratch.
+            for child_id in parent.children:
+                child = ledger.get(child_id)
+                if child and child.status != LemmaStatus.PRUNED:
+                    pruned = ledger.prune_branch(child_id,
+                        f"parent '{parent.name}' re-decomposing (child '{entry.name}' failed)")
+                    pruned_count += len(pruned)
 
-        # Re-activate parent (if not already done this round)
-        if parent.id not in parents_reactivated:
-            if parent.status not in (LemmaStatus.PROVED, LemmaStatus.PRUNED):
-                parent.status = LemmaStatus.PENDING
-                parents_reactivated.add(parent.id)
+            # Re-activate parent + restore clean Stub
+            parent.status = LemmaStatus.PENDING
+            parents_reactivated.add(parent.id)
+            if cwd:
+                clean = cwd / parent.workspace / "Stub.clean.lean"
+                stub = cwd / parent.workspace / "Stub.lean"
+                if clean.exists():
+                    shutil.copy2(clean, stub)
+
+        elif entry.status == LemmaStatus.CYCLE:
+            # CYCLE: node X recreates ancestor A. The entire sub-graph under A
+            # is from the same bad decomposition.
+            # - Path A → X: mark as CYCLE (the tainted chain)
+            # - Everything else under A: mark as PRUNED (collateral)
+            # - A itself: back to PENDING (retry with induction)
+            ancestor_id = entry.cycle_ancestor_id
+            ancestor = ledger.get(ancestor_id) if ancestor_id else parent
+            if not ancestor:
+                ancestor = parent
+
+            # Mark the path from entry up to ancestor as CYCLE
+            path_ids = set()
+            current_id = entry.id
+            while current_id and current_id != ancestor.id:
+                path_ids.add(current_id)
+                node = ledger.get(current_id)
+                if node and node.status not in (LemmaStatus.CYCLE,):
+                    node.status = LemmaStatus.CYCLE
+                    node.cycle_ancestor_id = ancestor.id
+                current_id = node.parent_id if node else None
+
+            # Prune everything else under ancestor (not on the path, not already pruned)
+            def _prune_subtree_except_path(node_id):
+                node = ledger.get(node_id)
+                if not node:
+                    return
+                for child_id in node.children:
+                    if child_id in path_ids:
+                        _prune_subtree_except_path(child_id)
+                    else:
+                        child = ledger.get(child_id)
+                        if child and child.status not in (LemmaStatus.PRUNED, LemmaStatus.CYCLE):
+                            ledger.prune_branch(child_id,
+                                f"cycle detected: '{entry.name}' → ancestor '{ancestor.name}'")
+                            nonlocal pruned_count
+                            pruned_count += 1
+
+            _prune_subtree_except_path(ancestor.id)
+
+            # Re-activate ancestor
+            if ancestor.id not in parents_reactivated:
+                ancestor.status = LemmaStatus.PENDING
+                parents_reactivated.add(ancestor.id)
+                if cwd:
+                    clean = cwd / ancestor.workspace / "Stub.clean.lean"
+                    stub = cwd / ancestor.workspace / "Stub.lean"
+                    if clean.exists():
+                        shutil.copy2(clean, stub)
 
     return pruned_count
 
