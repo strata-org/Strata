@@ -33,7 +33,7 @@ from .._lean_tools_mcp import create_extractor_mcp_server
 
 T = TypeVar("T")
 
-MAX_DEPTH = 4
+MAX_DEPTH = 3
 
 
 # ─── State machine (for gen_mermaid.py + frontend visualization) ──────────────
@@ -396,7 +396,7 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-WRITER_TURNS = [100, 75, 50, 25, 12]
+WRITER_TURNS = [75, 50, 25, 12]
 GRACE_TURNS = 20
 WRITER_CLEANUP_TURNS = 10
 
@@ -521,12 +521,64 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
         advice = advice_result.raw_result or "Try a different approach."
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
-    # ── Phase 2: Grace — factor remaining sorry into helpers ──
+    # ── At max depth: no extraction, prove everything in one file ──
+    if entry.depth >= MAX_DEPTH:
+        await agent._emit("message",
+            f"[PO4] MAX DEPTH — no extraction. Must prove all sorry in-file.")
+
+        prev_sorry = sum(len(v) for v in tools.get_sorries_by_theorem(stub_rel).values())
+        deep_attempt = 0
+        while True:
+            deep_attempt += 1
+            turns = 50
+            await agent._emit("message",
+                f"[PO4] Deep attempt {deep_attempt} ({turns} turns)")
+
+            deep_action = (
+                f"You are at MAX RECURSION DEPTH. There will be NO further decomposition.\n"
+                f"You MUST close ALL sorry in this file: {stub_rel}\n\n"
+                f"You CAN create helper theorems within the same file (above the main theorem).\n"
+                f"But ALL of them must be fully proved — no sorry anywhere.\n\n"
+                f"Use induction, structural recursion, mutual recursion, or any tactic.\n"
+                f"Ask SearchAgent for relevant lemmas. Use lean_goal to inspect goals.\n"
+                f"The file must compile with ZERO sorry when you are done."
+            )
+
+            outcome = await verified_loop(
+                agent_ctx=writer,
+                initial_input=f"{deep_action}\n\nYou have {turns} turns.",
+                verify=verify_fn,
+                max_rounds=2,
+                max_turns=turns,
+                use_run_ai=True,
+            )
+
+            if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
+                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+                return "proved"
+
+            cur_sorry = sum(len(v) for v in tools.get_sorries_by_theorem(stub_rel).values())
+            if cur_sorry >= prev_sorry:
+                await agent._emit("message", f"[PO4] No progress ({cur_sorry} sorry) — consulting guide")
+                advice_result = await guide.run_ai(
+                    inp=f"Writer stuck at max depth. File: {stub_rel}\n"
+                        f"Sorry count: {cur_sorry}. Advise a different approach.",
+                )
+                advice = advice_result.raw_result or ""
+                deep_action = f"STRATEGY ADVICE:\n{advice}\n\n{deep_action}"
+                # If no progress for 3 consecutive attempts, give up
+                if deep_attempt >= 10 and cur_sorry >= prev_sorry:
+                    ledger.mark_failed(entry.id, f"Max depth, no progress after {deep_attempt} attempts")
+                    return "failed"
+            else:
+                await agent._emit("message", f"[PO4] Sorry: {prev_sorry} → {cur_sorry}")
+            prev_sorry = cur_sorry
+
+    # ── Phase 2: Grace — factor remaining sorry into helpers (for extraction) ──
     sorry_info = tools.get_sorries_by_theorem(stub_rel)
     main_sorry_count = len(sorry_info.get(entry.name, []))
 
     if main_sorry_count == 0:
-        # Main theorem already sorry-free, helpers have sorry → ready to extract
         await agent._emit("message", "[PO4] Main theorem sorry-free → ready to extract")
         return "has_sorry"
 
@@ -557,9 +609,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             use_run_ai=True,
         )
 
-        # Check if fully proved (transitively — no sorry in imports either)
-        cr = tools.check_compiles(stub_rel)
-        if cr.success and not cr.has_sorry:
+        if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
             ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
             return "proved"
 
