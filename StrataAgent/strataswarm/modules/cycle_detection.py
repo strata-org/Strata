@@ -438,6 +438,32 @@ def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
     return pruned_count
 
 
+def _can_reach(ledger, from_id: str, target_id: str) -> bool:
+    """BFS: can we reach target_id by walking DOWN (through children) from from_id?
+
+    This checks if from_id is an ancestor of target_id in the full DAG
+    (considering ALL parent-child edges, not just the primary parent_id chain).
+    """
+    if from_id == target_id:
+        return True
+    visited = set()
+    queue = [from_id]
+    while queue:
+        current = queue.pop(0)
+        if current in visited:
+            continue
+        visited.add(current)
+        entry = ledger.get(current)
+        if not entry:
+            continue
+        for child_id in entry.children:
+            if child_id == target_id:
+                return True
+            if child_id not in visited:
+                queue.append(child_id)
+    return False
+
+
 def _get_statement(file_path: str) -> str:
     """Get the theorem statement from a file using split_theorems (precise, itp-interface)."""
     from .po_lean import get_lean_tools
@@ -530,13 +556,11 @@ async def detect(
         return DetectionResult(match_type=MatchType.NO_MATCH)
 
     # 3. Hard: verify each match (strategy depends on status + ancestry)
-    ancestry_ids = set(ledger.get_ancestry(parent_id))
-    ancestry_ids.add(parent_id)
-
+    # Use full BFS to determine if adding new node under parent_id would create
+    # a cycle with the matched entry (checks ALL edges, not just parent_id chain)
     import logging
     _log = logging.getLogger("strataswarm.cycle")
     _log.info(f"check_soft returned {len(matches)} matches: {[m.get('entry_id','?')[:8] for m in matches]}")
-    _log.info(f"ancestry_ids: {[x[:8] for x in ancestry_ids]}")
 
     for m in matches:
         entry_id = m["entry_id"]
@@ -547,7 +571,10 @@ async def detect(
         match_name = match_entry.name
         match_file = match_entry.file_path
         match_status = match_entry.status.value
-        is_ancestor = entry_id in ancestry_ids
+
+        # BFS: can we reach parent_id by walking DOWN from match_entry?
+        # If yes → the match is an ancestor of our new node → adding would create cycle
+        is_ancestor = _can_reach(ledger, entry_id, parent_id)
         _log.info(f"  match: {match_name} (id={entry_id[:8]}, status={match_status}, is_ancestor={is_ancestor})")
 
         if is_ancestor:

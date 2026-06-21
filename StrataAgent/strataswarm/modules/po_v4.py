@@ -33,7 +33,7 @@ from .._lean_tools_mcp import create_extractor_mcp_server
 
 T = TypeVar("T")
 
-MAX_DEPTH = 8
+MAX_DEPTH = 4
 
 
 # ─── State machine (for gen_mermaid.py + frontend visualization) ──────────────
@@ -456,9 +456,8 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             use_run_ai=True,
         )
 
-        # Fully proved — no sorry (checks transitively through imports via lake build)
-        cr = tools.check_compiles(stub_rel)
-        if cr.success and not cr.has_sorry:
+        # Proved: this file has no sorry (text check — transitive check is for assembly only)
+        if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
             ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
             return "proved"
 
