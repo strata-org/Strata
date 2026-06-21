@@ -303,7 +303,23 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 # ─── Phase handlers (each returns a Trans value) ─────────────────────────────
 
 async def _do_select(agent, state: PO4State, ledger: LemmaLedger) -> Trans:
-    """Pick the most pressing pending lemma from the DAG."""
+    """Pick the most pressing pending lemma from the DAG.
+
+    Before picking, check if any pending lemmas are already sorry-free
+    (e.g. fully proved during extraction but not yet marked).
+    """
+    from .po_lean import get_lean_tools
+    tools = get_lean_tools()
+
+    # Auto-prove pending entries whose files have no sorry
+    for e in ledger.entries():
+        if e.status == LemmaStatus.PENDING and e.file_path:
+            if (Path(tools._root / e.file_path).exists()
+                    and not tools.has_sorry(e.file_path)
+                    and tools.check_compiles(e.file_path).success):
+                ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"))
+                await agent._emit("message", f"[PO4] Auto-proved: {e.name} (no sorry in file)")
+
     lemma = ledger.pick_next()
     if lemma is None:
         return Trans.BLOCKED
@@ -380,7 +396,7 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-WRITER_TURNS = [25, 12, 6]
+WRITER_TURNS = [100, 75, 50, 25, 12]
 GRACE_TURNS = 20
 WRITER_CLEANUP_TURNS = 10
 

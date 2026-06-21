@@ -210,6 +210,9 @@ class MoveSession:
         # If part of a mutual group, all members must be moved together
         if block.mutual_group is not None:
             group_names = self._split.mutual_groups.get(block.mutual_group, [])
+            # If the main theorem is in this mutual group, NONE of them can be moved
+            if self._main_theorem in group_names:
+                return f"Error: cannot move '{decl_name}' — it is in a mutual block with main theorem '{self._main_theorem}'"
             # Check if any group member is already registered
             already = [m for m in self._moves if m.decl_name in group_names]
             if already:
