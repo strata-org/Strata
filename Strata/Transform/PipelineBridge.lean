@@ -1519,6 +1519,37 @@ variable {P : PureExpr}
     CFG String (DetBlock String (Cmd P) P) :=
   (stmtsToCFG ∘ Block.hoistLoopPrefixInits ∘ Block.nondetElim) ss
 
+/-- The target (unstructured CFG) `Lang` for pipeline refinement, mirroring the
+proven `Lang.kleene` template.
+
+The statement type is the deterministic CFG produced by `pipeline`.  A
+configuration pairs the CFG being executed with a `CFGConfig` execution state;
+`star` runs the deterministic CFG semantics from the *left* (start) endpoint's
+CFG (`c.1`), reading only the two `CFGConfig` states (`c.2`, `d.2`).  The
+right-endpoint CFG (`d.1`) is therefore irrelevant, so `terminalCfg` /
+`exitingCfg` use a trivial placeholder CFG.
+
+`exitingCfg` collapses into a terminal state (as `Lang.kleene` does): the
+pipeline produces no top-level escaping run to model, so the exiting endpoint
+carries the same `CFGConfig.terminal` shape as `terminalCfg`.
+
+`isAtAssert` / `getEnv` are total placeholders.  The refinement predicate
+`OverapproximatesRel` references only `star` / `stmtCfg` / `terminalCfg` /
+`exitingCfg`; it never reads `isAtAssert` or `getEnv`, so any total value for
+those two fields is sound.  `getEnv` projects the running store and failure
+flag faithfully and uses a fixed placeholder evaluator (the configuration
+carries no evaluator). -/
+abbrev Lang.cfg [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P) : Specification.Lang P where
+  StmtT := CFG String (DetBlock String (Cmd P) P)
+  CfgT := (CFG String (DetBlock String (Cmd P) P)) × (CFGConfig String (Cmd P) P)
+  star := fun c d => StructuredToUnstructuredCorrect.StepDetCFGStar extendEval c.1 c.2 d.2
+  stmtCfg := fun cfg ρ => (cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
+  terminalCfg := fun ρ => (⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
+  exitingCfg := fun _ ρ => (⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
+  isAtAssert := fun _ _ => False
+  getEnv := fun c => { store := c.2.getStore, eval := fun _ _ => none, hasFailure := c.2.getFailure }
+
 /-- **Pipeline soundness.** Every terminating source run of `ss` from a clean
 initial store `ρ₀` is matched by a terminating run of the unstructured CFG
 `pipeline ss` whose final store agrees with the source's (source on the left).
