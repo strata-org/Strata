@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.DL.Imperative.CFGSemantics
 public import Strata.DL.Imperative.KleeneSemanticsProps
 public import Strata.Transform.StructuredToUnstructured
+public import Strata.Transform.GenSuffix
 public import Strata.Transform.SpecificationProps
 public import Strata.DL.Util.StringGen
 public import Strata.Languages.Core.StatementSemantics
@@ -68,18 +69,11 @@ theorem StepDetCFGStar_trans {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [
     StepDetCFGStar extendEval cfg a c :=
   ReflTrans_Transitive _ _ _ _ h₁ h₂
 
-/-- `NoGenSuffix Q xs` says every ident in `xs` was supplied by user source —
-i.e. is `HasIdent.ident s` only for strings `s` that do *not* satisfy the
-label-kind predicate `Q` (the kind of label this pass mints). Instantiating
-`Q := HasUnderscoreDigitSuffix` recovers the blanket "no statement writes a
-gen-shaped variable" condition; a per-kind `Q` lets a composition partner
-satisfy the obligation by minting under a disjoint prefix. Abbreviates a
-1-line predicate that appears throughout the proofs below. -/
-abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
-    (Q : String → Prop)
-    (xs : List P.Ident) : Prop :=
-  ∀ x ∈ xs, ∀ s : String,
-    x = HasIdent.ident (P := P) s → ¬ Q s
+-- `NoGenSuffix` is defined in `Strata.Transform.GenSuffix` (a low base module
+-- so multiple correctness passes can reuse it). Re-exported here so all in-file
+-- and downstream `open StructuredToUnstructuredCorrect` references resolve
+-- unchanged.
+export Strata.Transform.GenSuffix (NoGenSuffix)
 
 /-! ## Bridge: EvalCmds and connector to per-command StepCFG
 

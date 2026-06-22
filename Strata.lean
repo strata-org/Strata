@@ -61,6 +61,7 @@ import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
 
 /- Code Transforms — additional -/
+import Strata.Transform.GenSuffix
 import Strata.Transform.StructuredToUnstructured
 
 /- Other -/
