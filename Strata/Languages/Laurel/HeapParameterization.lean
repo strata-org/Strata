@@ -471,30 +471,18 @@ where
       simp_all
       omega)
 
-/-- Check if `p` is a composite (heap-reference) parameter. -/
-private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
-  match p.type.val with
-  | .UserDefined name => !isDatatype model name
-  | _ => false
-
 /-- Wrap a `StmtExpr` with a source location for downstream VC labeling. -/
 private def mkMdAt (source : Option FileRange) (e : StmtExpr) : StmtExprMd :=
   { val := e, source }
 
-/-- For each composite parameter `p`, the precondition
-    `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
-private def heapWellFormednessPreconds (model : SemanticModel)
-    (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
-  inputs.filterMap fun p =>
-    if isCompositeParam model p then
-      let src := p.name.source
-      let pRead   := mkMdAt src (.Var (.Local p.name))
-      let pRef    := mkMdAt src (.StaticCall "Composite..ref!" [pRead])
-      let heapRead := mkMdAt src (.Var (.Local heapVar))
-      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [heapRead])
-      let allocated := mkMdAt src (.PrimitiveOp .Lt [pRef, counter])
-      some { condition := allocated, summary := some "input is allocated in the heap" }
-    else none
+/-- A single free precondition asserting that the input heap is valid:
+    `heapIsValid(heapVar)`. Free: assumed by the implementation, not
+    checked at call sites. -/
+private def heapValidPrecond (source : Option FileRange)
+    (heapVar : Identifier) : Condition :=
+  let heapRead := mkMdAt source (.Var (.Local heapVar))
+  let valid := mkMdAt source (.StaticCall "heapIsValid" [heapRead])
+  { condition := valid, summary := some "input heap is valid", free := true }
 
 /-- The postcondition
     `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
@@ -506,19 +494,14 @@ private def heapMonotonicityPostcond (source : Option FileRange)
   { condition := mkMdAt source (.PrimitiveOp .Leq [inCounter, outCounter]),
     summary := some "monotonic heap pointer" }
 
-/-- For each composite output `o`, the postcondition
-    `Composite..ref!(o) < Heap..nextReference!($heap)` - a returned
-    composite is allocated in the output heap. -/
-private def heapOutputAllocationPostconds (model : SemanticModel)
-    (outputs : List Parameter) (heapOutVar : Identifier) : List Condition :=
-  outputs.filterMap fun o =>
-    if isCompositeParam model o then
-      let src := o.name.source
-      let oRef    := mkMdAt src (.StaticCall "Composite..ref!" [mkMdAt src (.Var (.Local o.name))])
-      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [mkMdAt src (.Var (.Local heapOutVar))])
-      some { condition := mkMdAt src (.PrimitiveOp .Lt [oRef, counter]),
-             summary := some "output is allocated in the heap" }
-    else none
+/-- A single free postcondition asserting that the output heap is valid:
+    `heapIsValid($heap)`. Free: assumed upon return at call sites, not
+    checked on exit from the implementation. -/
+private def heapValidPostcond (source : Option FileRange)
+    (heapOutVar : Identifier) : Condition :=
+  let heapRead := mkMdAt source (.Var (.Local heapOutVar))
+  let valid := mkMdAt source (.StaticCall "heapIsValid" [heapRead])
+  { condition := valid, summary := some "output heap is valid", free := true }
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
@@ -534,14 +517,14 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let outputs' := heapParam :: proc.outputs
 
     let userPreconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ userPreconditions'
+    let preconditions' := heapValidPrecond proc.name.source heapName :: userPreconditions'
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
-    -- Synthesized postconditions: allocation counter is monotone, and every
-    -- composite output is allocated in the output heap.
+    -- Synthesized postconditions: allocation counter is monotone, and the
+    -- output heap is valid.
     let wfPostconditions :=
-      heapMonotonicityPostcond proc.name.source heapName
-        :: heapOutputAllocationPostconds model proc.outputs heapName
+      [ heapMonotonicityPostcond proc.name.source heapName,
+        heapValidPostcond proc.name.source heapName ]
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
@@ -574,7 +557,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let inputs' := heapParam :: proc.inputs
 
     let userPreconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ userPreconditions'
+    let preconditions' := heapValidPrecond proc.name.source heapName :: userPreconditions'
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
