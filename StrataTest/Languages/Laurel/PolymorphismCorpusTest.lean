@@ -363,8 +363,9 @@ def genericCompositeCorpus : List Case := [
     src := genericBoxMultiProgram },
   -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type. Since
   -- `instTagCommon` now tags `.TMap` (`Map$a2$int$int`), this monomorphizes and verifies
-  -- (previously an un-taggable fail-loud limitation). SOUND, not coalescing — see the
-  -- `untaggable_*` twins below: distinct Map instantiations stay distinct, false reads fail.
+  -- (previously an un-taggable fail-loud limitation). SOUND, not coalescing — the
+  -- `map_fields_distinct` twin below pins that distinct `(K,V)` Map fields stay distinct
+  -- boxes, and the `*_wrong` cases pin that false reads fail.
   { name := "generic_box_map_arg", outcome := .verifies,
     why := "`Box<Map int int>` monomorphizes via the `.TMap` tag; field round-trips"
     src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 2 };" },
@@ -383,7 +384,7 @@ def genericCompositeCorpus : List Case := [
     why := "two DIFFERENT-(K,V) Map fields in one composite both round-trip — distinct instantiations stay distinct boxes (no coalescing)"
     src := "composite H { var mib: Map int bool\n  var mii: Map int int }\nprocedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mib, 1) == true; assert select(h#mii, 1) == 9 };" },
   { name := "map_fields_distinct_wrong", outcome := .failsExactly 1,
-    why := "a false cross-claim on the two distinct Map fields must FAIL — proves the boxes don't coalesce"
+    why := "a FALSE read of the second distinct Map field (mii) must FAIL — the per-(K,V) boxes are sound, not vacuous (non-coalescing itself is pinned by the verifying `map_fields_distinct` twin)"
     src := "composite H { var mib: Map int bool\n  var mii: Map int int }\nprocedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mii, 1) == 8 };" },
   -- A generic over a COLLECTION type (`Map K V`): the consistency relation recurses into
   -- `.TMap` element-wise (like `.Applied`) so a concrete `Map int bool` argument satisfies a
@@ -501,7 +502,7 @@ def genericCompositeCorpus : List Case := [
   -- `!translated`. This case therefore pins ONLY "a user `$heap` output never translates", not a
   -- wrong-accept ablation. The sanity twin pins that the legit single synth `$heap` inout still merges.
   { name := "user_heap_output_rejected", outcome := .rejected (some .StrataBug),
-    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; the item-5 dup-check makes it a `Duplicate definition '$heap'` StrataBug (tagged so the cosmetic dup-check effect is machine-checked)"
+    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution internal-error net (.StrataBug — `Duplicate definition '$heap'` and/or the `expected 'Heap', got 'int'` type-mismatch). The .StrataBug tag pins that it rejects via that net, NOT which specific diagnostic (the dup-check's effect is cosmetic — cleaner message — not separately machine-checked here)"
     src := "composite Inner { var v: int }\nprocedure u() returns ($heap: int) opaque { var o: Inner := new Inner; o#v := 5; $heap := 0 };" },
   { name := "ordinary_heap_writer_verifies", outcome := .verifies,
     why := "the same heap-writer WITHOUT a user `$heap` output still verifies (the single synth `$heap` inout merge must not regress)"

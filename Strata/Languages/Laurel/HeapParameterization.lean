@@ -191,7 +191,7 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
     which keeps the caller on its loud-failure fallback. -/
 private partial def appliedBoxTag : HighType → Option String
   | .TCore n => some n                       -- heap-box naming accepts `Core` types; `.TVoid` it does NOT
-  | ty => instTagCommon appliedBoxTag ty     -- shared arms; `none` on TVar/Pure/TMap/TVoid/… (unsupported)
+  | ty => instTagCommon appliedBoxTag ty     -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TVoid/… (unsupported)
 
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";

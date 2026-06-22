@@ -44,7 +44,7 @@ public section
     confused with sibling args. -/
 partial def tyTag : HighType → Option String
   | .TVoid => some "void"           -- monomorphization accepts `void`; `.TCore` it does NOT
-  | ty => instTagCommon tyTag ty    -- shared arms; `none` on TVar/Pure/TMap/TCore/… (unsupported)
+  | ty => instTagCommon tyTag ty    -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TCore/… (unsupported)
 
 /-- Max nesting depth of a `HighType` (a flat type is depth 1; `Box<int>` is 2;
     `Box<Box<int>>` is 3). Used to detect a DIVERGENT recursive generic

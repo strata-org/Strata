@@ -728,10 +728,11 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
     in one extra leaf arm — `tyTag` allows `.TVoid`, `appliedBoxTag` allows `.TCore` — and
     each keeps that arm local, so neither caller's accepted set changes). Returning `none`
     (not a catch-all) is load-bearing: a collision would coalesce distinct instantiations.
-    E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`. A type this renderer can't tag
-    injectively yields `none` (e.g. an arg of `.TMap`/`.TVar`/`.Pure` has no arm here), so a
-    `Box<Map int int>` argument is untaggable → the whole tag is `none` (fail loud, never
-    coalesced). -/
+    E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`, and `Box<Map int int>` →
+    `Box$a1$Map$a2$int$int` (the `.TMap`/`.TSet` arms below tag collections too). A type this
+    renderer can't tag injectively yields `none` (e.g. an arg of `.TVar`/`.Pure` has no arm
+    here), so a `Box<T>` (unbound `T`) argument is untaggable → the whole tag is `none` (fail
+    loud, never coalesced). -/
 partial def instTagCommon (recurse : HighType → Option String) : HighType → Option String
   | .TInt => some "int" | .TBool => some "bool" | .TReal => some "real"
   | .TString => some "string" | .TFloat64 => some "float64"
@@ -908,7 +909,8 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
       (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
   -- A generic application `C<τ…>` is checked element-wise *before* unfolding (like
   -- `MultiValuedExpr`), so the args remain demonstrable subterms for termination and
-  -- `unfold` (identity on `.Applied`) loses no precision. This is what lets a concrete
+  -- `unfold` (identity on a generic-COMPOSITE `.Applied` — composites aren't in `unfoldMap`;
+  -- only alias applications unfold) loses no precision here. This is what lets a concrete
   -- `Box<int>` argument satisfy a `Box<T>` parameter: the bases match by consistency and
   -- the inner `int`/`.TVar T` pairing hits the `.TVar` wildcard below. Without this arm
   -- `.Applied` falls to the invariant structural `highEq`, where `int` vs `T` is false —
