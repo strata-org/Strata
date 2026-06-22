@@ -504,6 +504,21 @@ partial def substTypeVars (subst : Std.HashMap String HighTypeMd) (ty : HighType
     | some replacement => replacement.val
     | none => ctor name) ty
 
+/-- Apply a generic alias's type arguments to its target: bind `params ↦ args` and substitute
+    into `target` (via `substTypeVars`). Returns `none` when `params` is empty (a monomorphic
+    alias erroneously reaching an `.Applied` position) or the arity doesn't match — the caller
+    then leaves the application unfolded for an upstream arity error. Does NOT recurse: each
+    caller (`TypeAliasElim.resolveAliasType`, `TypeLattice.unfold`) recurses with its own
+    recursor. Single source of truth for the alias-arg substitution so the consistency relation
+    (`unfold`) and the elimination pass cannot drift — the lockstep the false-twin tests pin. -/
+def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target : HighTypeMd) :
+    Option HighTypeMd :=
+  if !params.isEmpty && params.length == args.length then
+    let subst : Std.HashMap String HighTypeMd :=
+      (params.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
+    some (substTypeVars subst target)
+  else none
+
 /-- The label of the implicit block that wraps every procedure body.
 
     `LaurelToCoreTranslator` lowers each procedure body to a single
@@ -681,11 +696,9 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
       if visited.contains name.text then ty
       else match ctx.unfoldMap.get? name.text with
         | some (params, target) =>
-          if !params.isEmpty && params.length == args.length then
-            let subst : Std.HashMap String HighTypeMd :=
-              (params.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
-            ctx.unfold (substTypeVars subst target) (visited.insert name.text)
-          else ty
+          match applyAliasArgs params args target with
+          | some t => ctx.unfold t (visited.insert name.text)
+          | none => ty
         | none => ty
     | _ => ty
   | _ => ty

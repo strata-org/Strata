@@ -55,11 +55,11 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     | .UserDefined name =>
       match (if visited.contains name.text then none else amap.get? name.text) with
       | some (params, target) =>
-        if params.length == args'.length then
-          let subst : Std.HashMap String HighTypeMd :=
-            (params.zip args').foldl (fun m (p, a) => m.insert p.text a) {}
-          resolveAliasType amap (substTypeVars subst target) (visited.insert name.text)
-        else { val := .Applied base args', source := ty.source }   -- arity mismatch → upstream error
+        -- Shared `applyAliasArgs` (LaurelAST) binds params↦args + substitutes — the SAME kernel
+        -- `TypeLattice.unfold` uses, so the consistency relation agrees with elimination.
+        match applyAliasArgs params args' target with
+        | some t => resolveAliasType amap t (visited.insert name.text)
+        | none => { val := .Applied base args', source := ty.source }   -- arity mismatch → upstream error
       | none => { val := .Applied base args', source := ty.source }
     | _ => { val := .Applied (resolveAliasType amap base visited) args', source := ty.source }
   | .Pure base => { val := .Pure (resolveAliasType amap base visited), source := ty.source }
