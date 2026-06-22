@@ -92,7 +92,7 @@ composite ContainerContainer {
   var c: Container
 }
 
-procedure existingObjectsAreAllocated(cc: ContainerContainer) opaque {
+procedure wrappedExistingObjectsAreAllocated(cc: ContainerContainer) opaque {
   var c: Container := new Container;
   assert c != cc#c
 };
