@@ -472,6 +472,7 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   omega
 
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
+@[expose]
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
   return { c with condition := ← f c.condition }
 
