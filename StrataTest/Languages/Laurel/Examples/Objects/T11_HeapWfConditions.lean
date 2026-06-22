@@ -14,8 +14,9 @@ input heap and distinct from `c`, so two facts must reach the caller
 for the assertions to discharge:
 
   * `Composite..ref!(d) < Heap..nextReference!($heap_in)` — every
-    composite parameter is allocated in the input heap. Supplied as a
-    synthesized precondition by `HeapParameterization`.
+    composite is allocated in the input heap. This follows from the
+    synthesized `heapIsValid($heap)` precondition supplied by
+    `HeapParameterization` (a `forall` over composites).
   * the allocation counter is monotone across each call, so the
     allocation fact carries through a chain of calls. Supplied as a
     synthesized postcondition on every heap-writer.
@@ -86,4 +87,14 @@ procedure staleClaimRejected(c: Container)
   assert c#value == 10
 //^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
+
+composite ContainerContainer {
+  var c: Container
+}
+
+procedure existingObjectsAreAllocated(cc: ContainerContainer) opaque {
+  var c: Container := new Container;
+  assert c != cc#c
+};
+
 #end
