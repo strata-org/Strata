@@ -59,7 +59,7 @@ private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
   params.map fun p => mkMd (.Var (.Local p.name))
 
 /-- Build a helper function for a single condition over the given parameters.
-    Preconditions pass `proc.inputs`; postconditions pass `proc.inputs ++ proc.outputs`. -/
+    Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
   { name := mkId name
@@ -69,6 +69,62 @@ private def mkConditionProc (name : String) (params : List Parameter)
     decreases := none
     isFunctional := true
     body := .Transparent condition.condition }
+
+/-- Suffix appended to a procedure's output-parameter names when they are lowered
+    into a postcondition helper *function*.
+
+    A postcondition helper takes both the procedure's inputs and outputs as plain
+    function parameters. When an output shares a name with an input (e.g. an inout
+    `$heap`, which the heap-parameterization pass lists in both `inputs` and
+    `outputs`), the two would collide in the helper's single parameter scope and
+    produce "Duplicate definition '…' is already defined in this scope". Suffixing
+    every output keeps the two distinct. The choice is heap-agnostic: it applies to
+    all outputs, not just `$heap`. -/
+public def outParamSuffix : String := "$out"
+
+/-- Rewrite a postcondition body so it refers to the renamed output parameters.
+
+    In a postcondition, a bare reference to an output parameter denotes its
+    post-state value, while `old(x)` denotes the pre-state value of an inout
+    parameter (the corresponding *input*). The helper is a pure function with two
+    distinct parameters, so:
+    - bare `Var (Local n)` where `n` is an output → suffixed name (`n ++ outParamSuffix`)
+    - `old(Var (Local n))` → `Var (Local n)`, i.e. strip `old` and keep the
+      un-suffixed name so it resolves to the input parameter (functions have no
+      two-state semantics, so an unstripped `old` would later be rejected).
+
+    `pushOldInward` guarantees every `old` immediately wraps a local variable. -/
+private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExprMd) : StmtExprMd :=
+  let suffixIfOutput (n : Identifier) : Identifier :=
+    if outputNames.contains n.text then mkId (n.text ++ outParamSuffix) else n
+  mapStmtExprPrePostM (m := Id)
+    (fun e =>
+      match e.val with
+      | .Old value =>
+        match value.val with
+        | .Var (.Local _) => some value
+        | _ => none
+      | _ => none)
+    (fun e =>
+      match e.val with
+      | .Var (.Local n) => ⟨.Var (.Local (suffixIfOutput n)), e.source⟩
+      | _ => e)
+    expr
+
+/-- Build a postcondition helper function over the procedure's inputs and outputs.
+    Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
+    identically-named inputs, and the condition body is rewritten to match. -/
+private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
+    (condition : Condition) : Procedure :=
+  let outputNames := outputs.map (·.name.text)
+  let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
+  { name := mkId name
+    inputs := inputs ++ renamedOutputs
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
@@ -336,7 +392,7 @@ def lowerContracts (program : Program) : Program × List DiagnosticModel :=
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkConditionProc (postCondProcName proc.name.text i) (proc.inputs ++ proc.outputs) c
+      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
