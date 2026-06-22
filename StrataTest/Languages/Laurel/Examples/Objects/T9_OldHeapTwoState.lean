@@ -210,7 +210,7 @@ procedure bumpUnderWildcard(c: Cell)
 procedure wrongOldRelation(c: Cell)
   opaque
   ensures c#value == old(c#value) - 1
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
   modifies c
 {
   c#value := c#value + 1

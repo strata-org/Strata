@@ -223,6 +223,30 @@ private def mkPostAssumes (info : ContractInfo)
   else info.postNames.map fun (name, _) =>
     ⟨.Assume (mkCall name (tempRefs ++ outputArgs)), src⟩
 
+/-- Names of the callee's inout parameters: those appearing in both the input and
+    output lists. By the Laurel inout convention an inout is declared by giving the
+    input and output the same name, so at a call site the inout argument is the same
+    variable as the corresponding output target — and the Core lowering relies on
+    that identity. -/
+private def ContractInfo.inoutNames (info : ContractInfo) : List String :=
+  info.inputParams.filterMap fun p =>
+    if info.outputParams.any (·.name.text == p.name.text) then some p.name.text else none
+
+/-- Build the positional argument list for the rewritten call.
+
+    Ordinary inputs are passed via their snapshot temp (so pre/postconditions can
+    reference the pre-call value). Inout inputs, however, are passed as the
+    *original* argument variable rather than the temp: the call mutates that
+    variable in place, so it must coincide with the corresponding output target
+    (the Laurel inout invariant). The temp is still created and used by
+    `mkPostAssumes` to supply the inout's pre-state to `$post*`. -/
+private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprMd) : List StmtExprMd :=
+  let inout := info.inoutNames
+  tempRefs.zipIdx.map fun (tempRef, i) =>
+    match info.inputParams[i]? with
+    | some p => if inout.contains p.name.text then origArgs[i]?.getD tempRef else tempRef
+    | none => tempRef
+
 /-- Rewrite call sites in a statement/expression tree. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     (isFunctional : Bool) (expr : StmtExprMd) : ContractM StmtExprMd := do
@@ -269,7 +293,8 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
                 | none => return e'
               | _ => return e'))
             let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
-            let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee tempRefs, callSrc⟩, src⟩
+            let callArgs := mkCallArgs info args' tempRefs
+            let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
             let preCheck := mkPreChecks info isFunctional tempRefs src
             let outputArgs := targets.filterMap fun t =>
               match t.val with
