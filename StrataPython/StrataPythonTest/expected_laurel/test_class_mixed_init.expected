@@ -3,4 +3,4 @@ test_class_mixed_init.py(19, 0): ✔️ always true if reached - class with init
 test_class_mixed_init.py(19, 0): ✔️ always true if reached - precondition
 test_class_mixed_init.py(19, 0): ✔️ always true if reached - class with init
 DETAIL: 4 passed, 0 failed, 0 inconclusive
-RESULT: Inconclusive
+RESULT: Analysis success
