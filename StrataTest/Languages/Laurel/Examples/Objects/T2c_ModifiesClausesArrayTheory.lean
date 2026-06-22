@@ -109,4 +109,18 @@ procedure modifyContainerWithoutPermission3(c: Container, d: Container)
 {
     var i: bool := modifyContainerOpaque(c)
 };
+
+// Soundness: an illegal write on an EARLY-RETURN path is rejected. Exercises the
+// frame assert inserted before each exit, not just the fall-through tail.
+procedure modifyOnEarlyReturnPath(c: Container, d: Container) returns (b: bool)
+//        ^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
+  opaque
+  modifies d
+{
+  if c#value > 0 then {
+    c#value := 1;
+    return true
+  };
+  return false
+};
 #end
