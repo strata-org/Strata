@@ -223,9 +223,20 @@ async def run_splitter(agent, workspace: str, file: str,
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
 
     def _default_verify() -> str | None:
-        if verify_split_complete(cwd, workspace):
-            return None
-        return "Split incomplete: Stub/Def.lean missing or Stub.lean doesn't import it."
+        if not verify_split_complete(cwd, workspace):
+            return "Split incomplete: Stub/Def.lean missing or Stub.lean doesn't import it."
+        # Check both files compile
+        from .po_lean import get_lean_tools
+        tools = get_lean_tools()
+        def_rel = f"{workspace}/Stub/Def.lean"
+        stub_rel = f"{workspace}/Stub.lean"
+        cr_def = tools.check_compiles(def_rel)
+        if not cr_def.success:
+            return f"Stub/Def.lean doesn't compile. Fix compilation errors."
+        cr_stub = tools.check_compiles(stub_rel)
+        if cr_stub.has_error:
+            return f"Stub.lean has compilation errors (not sorry). Fix them."
+        return None
 
     async with swarm_agent("po_splitter", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace) as splitter:
         outcome = await verified_loop(

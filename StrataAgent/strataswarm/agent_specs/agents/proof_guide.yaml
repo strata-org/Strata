@@ -101,6 +101,6 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_diagnostic_messages, mcp__lean_lsp__lean_file_outline]
+disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_diagnostic_messages, mcp__lean_lsp__lean_file_outline]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }
