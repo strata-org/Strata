@@ -277,17 +277,21 @@ private def formatAnnotation (block : SourcedProgram) (a : DiagnosticAnnotation)
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
     (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
-    (showSnippet : Bool := false) : IO Unit := do
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
-  -- Echo each diagnostic's file-relative `line:col` (computed from the snippet's
-  -- `baseLine`, no manual offsets) so the localization is always visible — and a
-  -- `#guard_msgs` golden can pin it. The annotation matching below still runs, so
-  -- the test asserts correctness rather than just printing. `showSnippet` adds
-  -- the snippet-relative range for correlating against inline `// ^^^` markers.
-  for d in actual do
-    IO.println (formatDiagnostic block d showSnippet)
+  -- By default the suite stays silent on success — the inline `// ^^^`
+  -- annotations (matched below) are what assert correctness. `showLocations`
+  -- opts a test into echoing each diagnostic's file-relative `line:col`
+  -- (computed from the snippet's `baseLine`, no manual offsets) so a
+  -- `#guard_msgs` golden can pin it; `showSnippet` further appends the
+  -- snippet-relative range for correlating against the inline markers. Note the
+  -- *failure* reports below always use this same file-relative format, so a
+  -- mismatch points straight at the offending `.lean` line regardless.
+  if showLocations then
+    for d in actual do
+      IO.println (formatDiagnostic block d showSnippet)
   if annotations.isEmpty then
     unless actual.isEmpty do
       let mut report := s!"expected no diagnostics, got {actual.size}:\n"
@@ -333,14 +337,15 @@ private def runAndCheck (block : SourcedProgram)
     solver). Pass an explicit value to override the solver, timeout, etc. — for
     example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`.
 
-    Each diagnostic's file-relative `line:col` range is always printed. Set
-    `showSnippet := true` to also append the snippet-relative range — useful for
-    correlating against the inline `// ^^^` annotations, which are
-    snippet-local. -/
+    Succeeds silently by default; the inline `// ^^^` annotations assert
+    correctness. Set `showLocations := true` to echo each diagnostic's
+    file-relative `line:col` range (so a `#guard_msgs` golden can pin the
+    localization), and `showSnippet := true` to also append the snippet-relative
+    range. (Failure reports always use the file-relative format regardless.) -/
 def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
-    (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block (runLaurelPipelineRaw · options) showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options) showLocations showSnippet
 
 /-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
@@ -357,10 +362,11 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     "shadowing in nested blocks is OK", or asserting a specific resolution
     error without the verifier surfacing unrelated noise.
 
-    As with `testLaurel`, each diagnostic's file-relative `line:col` range is
-    printed; `showSnippet := true` appends the snippet-relative range. -/
+    As with `testLaurel`, succeeds silently by default; `showLocations := true`
+    echoes each diagnostic's file-relative `line:col` range and
+    `showSnippet := true` appends the snippet-relative range. -/
 def testLaurelResolution (block : SourcedProgram)
-    (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block runLaurelResolutionRaw showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block runLaurelResolutionRaw showLocations showSnippet
 
 end StrataTest.Util
