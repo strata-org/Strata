@@ -2291,7 +2291,13 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
     (_h_Bs_notB : ∀ b ∈ targetsOf' entries, b ∉ B)
     (h_g_A_fresh : ∀ x ∈ A, x ∉ HasVarsPure.getVars g)
     (h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g)
-    (h_g_As_fresh : ∀ x ∈ sourcesOf' entries, x ∉ HasVarsPure.getVars g)
+    -- EXPERIMENT: the *source-name* guard freshness is needed ONLY for sources
+    -- that are NOT in `Vs` (the loop's own body-inits): an original-source
+    -- (`∈ Vs`) cannot read the guard since it is undefined at every loop head
+    -- (eval-def contradiction), so guard freshness is derived from `Vs`-undef.
+    -- The residual non-`Vs` sources (fresh names synthesised by an inner hoist)
+    -- still need a static freshness witness (shape-freedom at the caller).
+    (h_g_As_minus_Vs_fresh : ∀ x ∈ sourcesOf' entries, x ∉ Vs → x ∉ HasVarsPure.getVars g)
     (h_g_Bs_fresh : ∀ x ∈ targetsOf' entries, x ∉ HasVarsPure.getVars g)
     (h_src_As_undef : ∀ a ∈ sourcesOf' entries, ρ_src.store a = none)
     (h_nofd_src : Block.noFuncDecl body = true)
@@ -2370,18 +2376,26 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
     · have : ρ_pre.store y = ρ_hoist.store y := h_pre_frame y (h_B_notBs y hyB)
       rw [this]; exact h_bound y hyB
     · exact h_pre_bnd y hyBs
+  -- EXPERIMENT: drop `h_g_As_fresh`; derive sourcesOf' disjointness from
+  -- `Vs`-undef on ρ_s + eval-def contradiction (sourcesOf' ⊆ Vs).
   have h_guard_agree : ∀ (ρ_s ρ_h : Env P),
       HoistInv (P := P) (A ++ sourcesOf' entries) (B ++ targetsOf' entries)
         (subst ++ substOf' entries) ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+      (∀ y ∈ Vs, ρ_s.store y = none) →
       (∀ x ∈ HasVarsPure.getVars g, ρ_s.store x ≠ none) →
       ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store g := by
-    intro ρ_s ρ_h hi he h_read_def
+    intro ρ_s ρ_h hi he h_Vs_undef h_read_def
     have h_store_agree : ∀ x ∈ HasVarsPure.getVars g, ρ_s.store x = ρ_h.store x := by
       intro x hx
       refine hi.1 x ?_ ?_ (h_read_def x hx)
       · intro h; rcases List.mem_append.mp h with h | h
         · exact h_g_A_fresh x h hx
-        · exact h_g_As_fresh x h hx
+        · -- A source body-init in `Vs` is undefined at this loop head, so it
+          -- cannot be read by an evaluating guard (eval-def contradiction);
+          -- a non-`Vs` source is fresh and discharged statically.
+          by_cases hxVs : x ∈ Vs
+          · exact absurd (h_Vs_undef x hxVs) (h_read_def x hx)
+          · exact h_g_As_minus_Vs_fresh x h hxVs hx
       · intro h; rcases List.mem_append.mp h with h | h
         · exact h_g_B_fresh x h hx
         · exact h_g_Bs_fresh x h hx
@@ -2389,15 +2403,17 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
   have h_guard_tt : ∀ (ρ_s ρ_h : Env P),
       HoistInv (P := P) (A ++ sourcesOf' entries) (B ++ targetsOf' entries)
         (subst ++ substOf' entries) ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+      (∀ y ∈ Vs, ρ_s.store y = none) →
       ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt := by
-    intro ρ_s ρ_h hi he ht
-    rw [← h_guard_agree ρ_s ρ_h hi he (read_vars_def_of_eval (h_wfdef ρ_s) ht)]; exact ht
+    intro ρ_s ρ_h hi he hVs ht
+    rw [← h_guard_agree ρ_s ρ_h hi he hVs (read_vars_def_of_eval (h_wfdef ρ_s) ht)]; exact ht
   have h_guard_ff : ∀ (ρ_s ρ_h : Env P),
       HoistInv (P := P) (A ++ sourcesOf' entries) (B ++ targetsOf' entries)
         (subst ++ substOf' entries) ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+      (∀ y ∈ Vs, ρ_s.store y = none) →
       ρ_s.eval ρ_s.store g = .some HasBool.ff → ρ_h.eval ρ_h.store g = .some HasBool.ff := by
-    intro ρ_s ρ_h hi he hf
-    rw [← h_guard_agree ρ_s ρ_h hi he (read_vars_def_of_eval (h_wfdef ρ_s) hf)]; exact hf
+    intro ρ_s ρ_h hi he hVs hf
+    rw [← h_guard_agree ρ_s ρ_h hi he hVs (read_vars_def_of_eval (h_wfdef ρ_s) hf)]; exact hf
   -- The driver's hoist env is the prelude post env `ρ_pre`; transport the
   -- hoist-side `Vs`-undef seed from `ρ_hoist` to `ρ_pre` (they agree off the
   -- fresh targets, and `Vs` is disjoint from the targets).

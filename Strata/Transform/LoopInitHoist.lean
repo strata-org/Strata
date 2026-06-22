@@ -1117,7 +1117,7 @@ theorem Block.liftInitsInLoopBody_no_inits_eq [HasIdent P]
 `simp only [Stmt.liftInitsInLoopBody]` unfold no longer reduces `.snd` to the
 constructor shape. These name-agnostic equations re-expose the per-constructor
 residual shape on the wrapper, so the shape-only `_snd_*` postcondition proofs
-(`namesFreshInExprs`, `hoistedNamesFreshInGuards`, `initVars_subset`, …) in
+(`namesFreshInExprs`, `namesFreshInRhsExprs`, `initVars_subset`, …) in
 `LoopInitHoistRewrite.lean` / `LoopInitHoistFreshness.lean` can drive the
 structural recursion exactly as before — just `rw`/`simp` with these instead
 of the old definitional unfold. The init→set conversion is name-preserving

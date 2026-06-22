@@ -1872,6 +1872,7 @@ public theorem loopDet_lift_sf_2g_undef_E_fuel [HasFvar P] [HasBool P] [HasNot P
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
     (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
        ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
@@ -1950,7 +1951,7 @@ public theorem loopDet_lift_sf_2g_undef_E_fuel [HasFvar P] [HasBool P] [HasNot P
             str ∉ StringGenState.stringGens σ_sf →
             ρ_src_body.store (HasIdent.ident (P := P) str) = none := h_src_sf
         have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
-          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval h_Vs ht
         have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
           h_wfb_transport ρ_src ρ_hoist h_eval hwf
         -- Decompose the seq run to `.exiting`: either this iteration's block exits
@@ -2076,6 +2077,7 @@ public theorem loopDet_lift_sf_undef_E_recovers_single [HasFvar P] [HasBool P] [
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt)
     (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
        ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
@@ -2141,9 +2143,11 @@ public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot 
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
     (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g_s = .some HasBool.ff → ρ_h.eval ρ_h.store g_h = .some HasBool.ff)
     (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
        ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
@@ -2210,7 +2214,7 @@ public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot 
         subst h_ρ_post_eq
         subst h_hif_false
         have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.ff :=
-          h_guard_transport_ff ρ_src ρ_hoist h_hinv h_eval ht
+          h_guard_transport_ff ρ_src ρ_hoist h_hinv h_eval h_Vs ht
         have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
           h_wfb_transport ρ_src ρ_hoist h_eval hwf
         refine ⟨{ ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }, ?_, ?_, ?_, ?_⟩
@@ -2259,7 +2263,7 @@ public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot 
             h_Vs_body h_Vh_body h_src_sf_body).1
             ρ_inner (reflTransT_to_prop h_body_src_T)
         have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
-          h_guard_transport ρ_src ρ_hoist h_hinv h_eval ht
+          h_guard_transport ρ_src ρ_hoist h_hinv h_eval h_Vs ht
         have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
           h_wfb_transport ρ_src ρ_hoist h_eval hwf
         have h_hoist_iter : StepStmtStar P (EvalCmd P) extendEval
@@ -2341,9 +2345,11 @@ public theorem loopDet_lift_sf_undef_TE_recovers_single [HasFvar P] [HasBool P] 
     {Vs Vh : List P.Ident} {σ_sf : StringGenState}
     (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt)
     (h_guard_transport_ff : ∀ (ρ_s ρ_h : Env P),
        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∀ y ∈ Vs, ρ_s.store y = none) →
        ρ_s.eval ρ_s.store g = .some HasBool.ff → ρ_h.eval ρ_h.store g = .some HasBool.ff)
     (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
        ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →

@@ -947,68 +947,6 @@ mutual
   termination_by (Block.sizeOf ss)
 end
 
-/-! ### HoistedNamesFreshInGuards
-
-A boolean predicate enforcing the freshness side-condition the
-hoisting pass needs. For every `.loop g m inv body _` in the program
-and every name `y` initialised somewhere in `body` (i.e.,
-`y ∈ Block.initVars body`), `y` must NOT appear free in `g`, `m`, or
-any element of `inv`.
-
-This is required because the hoisting pass binds `y` at function entry
-(via `init y .nondet`), which means at every iteration's `step_loop_enter`
-the store has `σ y = some _`. If `y` appeared free in the guard or
-invariants, the original semantics would evaluate them against
-`σ y = none` (because in the source `y` is body-local) but the hoisted
-semantics would evaluate them against `σ y = some _`. With
-`WellFormedSemanticEvalExprCongr`, the two evaluations would only agree
-if `y ∉ getVars(g/inv/m)`.
-
-For source-language-scoped programs (Boogie procedure prologue, Laurel
-`let`-in-loop), this condition holds vacuously: a body-local `y`
-introduced via `let y = e in body` cannot lexically appear in the
-loop's guard or invariant.
--/
-
-mutual
-/-- Returns true if every `.loop` in the statement satisfies the
-hoisted-names-fresh-in-guards condition. -/
-@[expose] def Stmt.hoistedNamesFreshInGuards
-    [HasVarsPure P P.Expr] (s : Stmt P (Cmd P)) : Bool :=
-  match s with
-  | .cmd _ => true
-  | .block _ bss _ => Block.hoistedNamesFreshInGuards bss
-  | .ite _ tss ess _ =>
-      Block.hoistedNamesFreshInGuards tss && Block.hoistedNamesFreshInGuards ess
-  | .loop guard measure invariants bss _ =>
-      let bodyInits := Block.initVars bss
-      let guardVars := guard.getVars
-      let invVars := invariants.flatMap (fun p => HasVarsPure.getVars p.snd)
-      let measureVars : List P.Ident :=
-        match measure with
-        | none => []
-        | some m => HasVarsPure.getVars m
-      let allEnclosingVars := guardVars ++ invVars ++ measureVars
-      -- Every body-init name is fresh w.r.t. guard/invariants/measure
-      bodyInits.all (fun y => allEnclosingVars.all (fun v => ¬ (P.EqIdent y v).decide)) &&
-      -- And the same condition holds recursively in the body
-      Block.hoistedNamesFreshInGuards bss
-  | .exit _ _ => true
-  | .funcDecl _ _ => true
-  | .typeDecl _ _ => true
-  termination_by (Stmt.sizeOf s)
-
-/-- Returns true if every `.loop` in `ss` (and any nested loops) has
-its body-init names fresh w.r.t. its guard, invariants, and measure. -/
-@[expose] def Block.hoistedNamesFreshInGuards
-    [HasVarsPure P P.Expr] (ss : List (Stmt P (Cmd P))) : Bool :=
-  match ss with
-  | [] => true
-  | s :: srest =>
-      Stmt.hoistedNamesFreshInGuards s && Block.hoistedNamesFreshInGuards srest
-  termination_by (Block.sizeOf ss)
-end
-
 theorem block_exitsCoveredByBlocks_append
     {P : PureExpr} {CmdT : Type}
     (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))

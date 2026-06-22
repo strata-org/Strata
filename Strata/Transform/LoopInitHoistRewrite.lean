@@ -128,8 +128,8 @@ the discharge below to lift each branch's `DisjointModuloRewrite`
 witness across the `.ite` union.
 
 The predicate is MONOTONE in `names`'s subset relation (smaller names
-list = weaker requirement). It generalises `hoistedNamesFreshInGuards`
-by adding the cmd-expression-freshness clause. -/
+list = weaker requirement). It checks freshness at every expression
+position — command RHS, loop/ite guard, invariant, and measure. -/
 
 /-- Helper: list-membership test using `P.EqIdent` (the only decidable
 equality available on `P.Ident`). Returns `true` iff `z ∉ vars`. -/
@@ -189,12 +189,13 @@ end
 A relaxation of `namesFreshInExprs` that checks freshness only against
 command *right-hand-side* expressions (`init`/`set` rhs, assertion / assume /
 cover conditions) at every depth, but NOT against `.ite`/`.loop` *guard*,
-invariant, or measure expressions.  This is the freshness role that
-`hoistedNamesFreshInRhsAndGuards` actually consumes for its `initVars`
-component: the hoisting proof only ever reads back the RHS / body-recursion
-parts of that conjunct — the guard-read clauses are always discarded (the
-load-bearing guard freshness comes instead from `hoistedNamesFreshInGuards`
-and from the hoist-accumulated-name `namesFreshInExprs A`/`B` instances).
+invariant, or measure expressions.  This is exactly what
+`hoistedNamesFreshInRhsAndGuards` requires for its `initVars` component: the
+hoisting proof only ever reads back the RHS / body-recursion parts — the
+guard-read clauses are always discarded.  Guard agreement for a loop's body
+inits is instead obtained from their undefinedness at the loop head (a
+body-init name is `none` there, so an evaluating guard cannot read it), and
+from the hoist-accumulated-name `namesFreshInExprs A`/`B` instances.
 
 Restricting to RHS positions makes the predicate satisfiable on a pass output
 that synthesises `.ite (.det (mkFvar g)) …` / `.loop (.det (mkFvar g)) …`
@@ -435,16 +436,18 @@ theorem Block.namesFreshInRhsExprs_of_forall_mem
     exact Block.namesFreshInRhsExprs_cons_names hd tl ss
       (h hd (List.mem_cons_self ..)) (ih (fun z hz => h z (List.mem_cons_of_mem _ hz)))
 
-/-- The strengthened freshness predicate: existing
-`hoistedNamesFreshInGuards` PLUS RHS-only freshness for the body's own
-init-vars.  The second conjunct uses `namesFreshInRhsExprs` (not the full
+/-- The freshness predicate the hoisting pass requires: RHS-only freshness
+for the body's own init-vars.  It uses `namesFreshInRhsExprs` (not the full
 `namesFreshInExprs`): the hoisting preservation proof reads back only the
 RHS / body-recursion parts of this conjunct, so the guard-read clauses would
 be dead weight — and dropping them lets a pass output that reads a fresh
-init-var only in a synthesised guard still satisfy the predicate. -/
+init-var only in a synthesised guard still satisfy the predicate.  Guard
+freshness for the body's own init-vars is no longer demanded statically: at
+every loop head a body-init name is undefined, so an evaluating guard cannot
+read it, and the loop driver discharges the guard agreement from that
+undefinedness invariant directly. -/
 @[expose] def Block.hoistedNamesFreshInRhsAndGuards [HasVarsPure P P.Expr]
     (ss : List (Stmt P (Cmd P))) : Bool :=
-  Block.hoistedNamesFreshInGuards ss &&
   Block.namesFreshInRhsExprs (Block.initVars ss) ss
 
 /-! ## Expression shape-freedom predicate `exprsShapeFree`
@@ -527,9 +530,9 @@ end
 
 /-! ## Shape-only freshness helpers
 
-Name-agnostic helpers over `namesFreshInExprs` retained after the Option E
-prune of the same-name rewrite engine. `freshFromIdents_not_mem` is the
-membership lemma decoding the `hoistedNamesFreshInGuards` enclosing-vars leaf. -/
+Name-agnostic helpers over `namesFreshInExprs`. `freshFromIdents_not_mem` is the
+membership lemma decoding a freshness predicate's per-name leaf
+(`freshFromIdents z vars`) into the negated-membership `z ∉ vars`. -/
 
 /-! ### Helper: `freshFromIdents` membership characterisation -/
 
@@ -561,8 +564,8 @@ private theorem freshFromIdents_of_not_mem
   decide
 
 /-- Public membership characterisation of `freshFromIdents` (both directions),
-re-exported (non-`private`) so cross-pass bridges can decode the
-`hoistedNamesFreshInGuards` enclosing-vars leaf. -/
+re-exported (non-`private`) so cross-pass bridges can decode a freshness
+predicate's per-name `freshFromIdents` leaf. -/
 theorem freshFromIdents_iff_not_mem
     {z : P.Ident} {vars : List P.Ident} :
     freshFromIdents z vars = true ↔ z ∉ vars :=
