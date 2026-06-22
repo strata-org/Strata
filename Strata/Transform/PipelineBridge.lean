@@ -1738,6 +1738,99 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   rw [h_hf] at h_run3
   exact ⟨σ_cfg, h_run3, StoreAgreement.trans h_agree1 (StoreAgreement.trans h_agree2 h_agree3)⟩
 
+/-- The bundled precondition under which `pipeline ss` refines `ss`.
+
+Its fields are exactly `pipeline_sound`'s hypothesis list — the well-formed
+evaluator bundle, the clean-initial-store conditions (`h_store_inits`,
+`h_store_mints`), the source shape restrictions, and the per-pass minted-name
+kind-freedom conditions — plus one front-end well-formedness condition
+`h_noesc`: every `exit` in `ss` is caught by an enclosing block (no top-level
+escaping exit).  `h_noesc` is the source's "exits are covered" property; it is
+what makes the source unable to reach an `.exiting` configuration, discharging
+the refinement's exiting clause vacuously.  It is net-new relative to
+`pipeline_sound` (which proves only the terminal arm) but is a clean,
+satisfiable well-formedness condition, not a hidden assumption. -/
+structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
+    [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasSubstFvar P]
+    [DecidableEq P.Ident] (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) : Prop where
+  hwfb : WellFormedSemanticEvalBool ρ₀.eval
+  hwfv : WellFormedSemanticEvalVal ρ₀.eval
+  hwfvar' : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval
+  hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval
+  hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval
+  hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval
+  h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none
+  h_store_mints : ∀ s : String,
+    (ndelimKind s ∨ hoistKind s ∨ StructuredToUnstructuredCorrect.s2uKind s) →
+    ρ₀.store (HasIdent.ident (P := P) s) = none
+  h_nofd : Block.noFuncDecl ss = true
+  h_lhni : Block.loopHasNoInvariants ss = true
+  h_nml : Block.noMeasureLoops ss = true
+  h_unique : Block.uniqueInits ss
+  h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true
+  h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
+    (Block.hoistLoopPrefixInits (Block.nondetElim ss))
+  h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss
+  h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss
+  h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss
+  h_disj_initVars : ∀ str : String,
+    (ndelimKind str ∨ hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+    HasIdent.ident (P := P) str ∉ Block.initVars ss
+  h_disj_modVars : ∀ str : String,
+    (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+    HasIdent.ident (P := P) str ∉ Block.modifiedVars ss
+  h_noesc : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks ([] : List String) ss
+
+/-- **Pipeline soundness, restated as a refinement.** Under the
+`PipelinePre` bundle, `fun ss => some (pipeline ss)` overapproximates the
+source statement-list language `Lang.imperativeBlock` by the unstructured CFG
+language `Lang.cfg`, allowing the target to introduce extra variables (the
+`StoreAgreement` store relation, source on the left).
+
+Both arms of the refinement are discharged:
+
+* **terminal** — directly from `pipeline_sound`: its `⟨σ_cfg, h_run, h_agree⟩`
+  supplies the target witness `ρ_t := { store := σ_cfg, eval := ρ'.eval,
+  hasFailure := ρ'.hasFailure }`.  `R ρ'.store ρ_t.store` is `h_agree`,
+  `ρ_t.hasFailure = ρ'.hasFailure` is `rfl`, and the target run definitionally
+  matches `h_run` (the placeholder CFG in `terminalCfg.1` is discarded by
+  `Lang.cfg.star`, which reads the cfg index from `stmtCfg.1 = pipeline ss`).
+* **exiting** — vacuously, from `h_noesc`: a source program whose exits are all
+  covered by enclosing blocks can never reach an `.exiting` configuration
+  (`block_exitsCoveredByBlocks_noEscape`), so the exiting hypothesis is
+  contradictory. -/
+theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
+    [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
+    (extendEval : ExtendEval P) :
+    Specification.Transform.OverapproximatesRelWhen
+      (Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P) (EvalCmd P) extendEval (isAtAssert P))
+      (Lang.cfg extendEval)
+      (fun ss ρ₀ => PipelinePre extendEval ss ρ₀)
+      StoreAgreement
+      (fun ss => some (pipeline ss)) := by
+  intro ss cfg ht ρ₀ ρ' hpre _ _ _
+  -- `ht : some (pipeline ss) = some cfg` identifies `cfg` with `pipeline ss`.
+  simp only [Option.some.injEq] at ht
+  subst ht
+  refine ⟨?_, ?_⟩
+  · -- terminal arm: discharged by `pipeline_sound`.
+    intro h_term
+    obtain ⟨σ_cfg, h_run, h_agree⟩ :=
+      pipeline_sound extendEval ss ρ₀ ρ'
+        hpre.hwfb hpre.hwfv hpre.hwfvar' hpre.hwfcongr' hpre.hwfsubst' hpre.hwfdef'
+        hpre.h_store_inits hpre.h_store_mints hpre.h_nofd hpre.h_lhni hpre.h_nml
+        hpre.h_unique hpre.h_fresh hpre.h_disj hpre.h_ndelim_writes hpre.h_ndelim_exprs
+        hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars h_term
+    exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
+      h_agree, rfl, h_run⟩
+  · -- exiting arm: vacuous, the source has no top-level escaping exit.
+    intro lbl hexit
+    exact absurd hexit
+      (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ss hpre.h_noesc ρ₀ lbl ρ')
+
 end PipelineSound
 
 end Imperative

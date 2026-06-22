@@ -260,6 +260,90 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
       (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
               L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ'))
 
+/-! ## Store-relaxed overapproximation
+
+`Overapproximates` forces the target's terminal/exiting env to be the *same*
+`ρ'` as the source's — i.e. full env equality (store, eval, and `hasFailure`
+all identical).  A refinement that introduces extra target variables (e.g. the
+pipeline's minted gen-suffix scratch names) cannot satisfy that: the target
+store is a *superset* of the source store, agreeing on every source binding but
+carrying additional ones.
+
+`OverapproximatesRel` generalizes the terminal/exiting clauses over a store
+relation `R : SemanticStore P → SemanticStore P → Prop`.  Instead of demanding
+the target reach `L₂.terminalCfg ρ'`, it asks for *some* target terminal env
+`ρ_t` whose store is related to the source's by `R` (and whose failure flag
+matches).  Plain equality `R := (· = ·)` recovers the exact-store discipline of
+`Overapproximates`; `R := StoreAgreement` (source on the left) recovers the
+pipeline's superset discipline. -/
+
+/-- Overapproximation parameterized by a target-vs-source store relation `R`
+    (source store on the left).  Every terminal/exiting env reachable from the
+    source is matched by a target run reaching a terminal/exiting env whose
+    store is `R`-related to the source's, with the same failure flag. -/
+def OverapproximatesRel (L₁ L₂ : Lang P)
+    (R : SemanticStore P → SemanticStore P → Prop)
+    (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
+    T st = some s' →
+    ∀ (ρ₀ ρ' : Env P),
+      WellFormedSemanticEvalBool ρ₀.eval →
+      WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalExprCongr ρ₀.eval →
+      (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        ∃ ρ_t : Env P, R ρ'.store ρ_t.store ∧ ρ_t.hasFailure = ρ'.hasFailure ∧
+          L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ_t))
+      ∧
+      (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        ∃ ρ_t : Env P, R ρ'.store ρ_t.store ∧ ρ_t.hasFailure = ρ'.hasFailure ∧
+          L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ_t))
+
+/-- Overapproximation allowing the target to introduce extra variables: the
+    `StoreAgreement` instance of `OverapproximatesRel`.  The target store is a
+    superset of the source store, agreeing on every source binding. -/
+def OverapproximatesAllowingExtraVars (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  OverapproximatesRel L₁ L₂ StoreAgreement T
+
+/-! ## Precondition-guarded overapproximation
+
+A transform whose soundness is conditional — valid only on source programs and
+initial environments meeting front-end well-formedness conditions — refines its
+source under those conditions, not unconditionally.  `OverapproximatesRelWhen`
+guards `OverapproximatesRel` with a precondition `pre : L₁.StmtT → Env P → Prop`
+on the source statement and the initial environment.  The body is otherwise
+identical to `OverapproximatesRel`: the guard sits between the `ρ₀ ρ'`
+quantifiers and the well-formed-evaluator hypotheses. -/
+
+/-- Overapproximation conditioned on a source-and-initial-environment
+    precondition `pre`.  Identical to `OverapproximatesRel` except every
+    obligation is discharged only when `pre st ρ₀` holds. -/
+def OverapproximatesRelWhen (L₁ L₂ : Lang P)
+    (pre : L₁.StmtT → Env P → Prop)
+    (R : SemanticStore P → SemanticStore P → Prop)
+    (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
+    T st = some s' →
+    ∀ (ρ₀ ρ' : Env P),
+      pre st ρ₀ →
+      WellFormedSemanticEvalBool ρ₀.eval →
+      WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalExprCongr ρ₀.eval →
+      (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        ∃ ρ_t : Env P, R ρ'.store ρ_t.store ∧ ρ_t.hasFailure = ρ'.hasFailure ∧
+          L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ_t))
+      ∧
+      (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        ∃ ρ_t : Env P, R ρ'.store ρ_t.store ∧ ρ_t.hasFailure = ρ'.hasFailure ∧
+          L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ_t))
+
+/-- The `StoreAgreement` instance of `OverapproximatesRelWhen`: precondition-
+    guarded overapproximation allowing the target to introduce extra variables. -/
+def OverapproximatesAllowingExtraVarsWhen (L₁ L₂ : Lang P)
+    (pre : L₁.StmtT → Env P → Prop)
+    (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+  OverapproximatesRelWhen L₁ L₂ pre StoreAgreement T
+
 /-! ## Statement-list overapproximation (Imperative-specific) -/
 
 section ImperativeStmts
