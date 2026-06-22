@@ -303,17 +303,131 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 # ─── Phase handlers (each returns a Trans value) ─────────────────────────────
 
 async def _do_select(agent, state: PO4State, ledger: LemmaLedger) -> Trans:
-    """Pick the most pressing pending lemma from the DAG."""
+    """DFS selection: ask the parent's guide to pick among its PENDING children.
 
-    lemma = ledger.pick_next()
-    if lemma is None:
+    Flow:
+    1. Find the nearest ancestor (starting from current) that has PENDING children
+    2. If only one child → pick it directly (no agent call needed)
+    3. If multiple → ask that ancestor's guide which child is hardest/most general
+    4. Fallback to mechanical pick_next() if guide can't decide
+    """
+    if not ledger.has_pending():
         return Trans.BLOCKED
-    state.current_lemma_id = lemma.id
-    ledger.mark_proving(lemma.id)
+
+    # Find nearest ancestor with PENDING children (DFS: stay in current subtree)
+    parent_entry, pending_kids = _find_dfs_candidates(ledger, state.current_lemma_id)
+
+    if not pending_kids:
+        # Nothing in current subtree — fall back to mechanical
+        lemma = ledger.pick_next()
+        if lemma is None:
+            return Trans.BLOCKED
+        state.current_lemma_id = lemma.id
+        ledger.mark_proving(lemma.id)
+        await agent._emit("message",
+            f"[PO4] Selected (fallback): {lemma.name} (depth={lemma.depth})")
+        return Trans.PICKED
+
+    # Single child — no need to ask
+    if len(pending_kids) == 1:
+        winner = pending_kids[0]
+        state.current_lemma_id = winner.id
+        ledger.mark_proving(winner.id)
+        await agent._emit("message",
+            f"[PO4] Selected (only child): {winner.name} (depth={winner.depth})")
+        return Trans.PICKED
+
+    # Multiple children — ask parent's guide which is hardest
+    selected = await _guide_pick_child(agent, state, ledger, parent_entry, pending_kids)
+    if selected:
+        state.current_lemma_id = selected.id
+        ledger.mark_proving(selected.id)
+        await agent._emit("message",
+            f"[PO4] Guide selected: {selected.name} (depth={selected.depth}, "
+            f"indegree={ledger.indegree(selected.id)})")
+        return Trans.PICKED
+
+    # Guide failed — pick first by depth (deepest = continue DFS)
+    pending_kids.sort(key=lambda e: (e.depth, -e.attempts), reverse=True)
+    winner = pending_kids[0]
+    state.current_lemma_id = winner.id
+    ledger.mark_proving(winner.id)
     await agent._emit("message",
-        f"[PO4] Selected: {lemma.name} (depth={lemma.depth}, "
-        f"indegree={ledger.indegree(lemma.id)}, budget={lemma.turn_budget})")
+        f"[PO4] Selected (depth fallback): {winner.name} (depth={winner.depth})")
     return Trans.PICKED
+
+
+def _find_dfs_candidates(
+    ledger: LemmaLedger, start_id: str
+) -> tuple[LemmaEntry | None, list[LemmaEntry]]:
+    """Walk up from start_id to find nearest ancestor with PENDING children.
+
+    Returns (parent_entry, pending_children). DFS: we stay in the current
+    subtree as long as there's work there.
+    """
+    if not start_id:
+        pending = [e for e in ledger.entries() if e.status == LemmaStatus.PENDING]
+        return (None, pending[:8])
+
+    current = ledger.get(start_id)
+    visited = set()
+    while current:
+        if current.id in visited:
+            break
+        visited.add(current.id)
+        pending_kids = ledger.pending_children(current.id)
+        if pending_kids:
+            return (current, pending_kids)
+        current = ledger.get_parent(current.id)
+
+    # Nothing in ancestry — return all pending
+    pending = [e for e in ledger.entries() if e.status == LemmaStatus.PENDING]
+    return (None, pending[:8])
+
+
+async def _guide_pick_child(
+    agent, state: PO4State, ledger: LemmaLedger,
+    parent_entry: LemmaEntry | None, candidates: list[LemmaEntry]
+) -> LemmaEntry | None:
+    """Ask the parent's guide to pick the hardest/most general child."""
+    import re
+
+    if not parent_entry:
+        return None
+
+    guide = await _get_guide(agent, parent_entry, state, ledger)
+
+    children_desc = ""
+    for i, c in enumerate(candidates):
+        snippet = (c.statement or "")[:150].replace("\n", " ")
+        children_desc += f"  {i+1}. ID={c.id} | {c.name} | depth={c.depth} | {snippet}\n"
+
+    prompt = (
+        f"Your lemma '{parent_entry.name}' was decomposed into sub-lemmas.\n"
+        f"These children are PENDING (not yet attempted):\n"
+        f"{children_desc}\n"
+        f"Which one should we prove NEXT?\n\n"
+        f"Pick the MOST GENERAL / HARDEST one — it will likely produce reusable "
+        f"sub-results that help prove the others. The easier/more specific ones "
+        f"can often be closed trivially once the hard one is done.\n\n"
+        f"Consider:\n"
+        f"- Which has the most complex conclusion type?\n"
+        f"- Which involves recursion or induction?\n"
+        f"- Which is most likely to need further decomposition?\n\n"
+        f"Reply with: PICK: <id>"
+    )
+
+    result = await guide.run_ai(inp=prompt)
+    raw = result.raw_result or ""
+
+    match = re.search(r'PICK:\s*([a-f0-9]+)', raw)
+    if match:
+        picked_id = match.group(1)
+        for c in candidates:
+            if c.id == picked_id or c.id.startswith(picked_id):
+                return c
+
+    return None
 
 
 async def _do_prove(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> Trans:
