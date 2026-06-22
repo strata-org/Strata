@@ -88,13 +88,4 @@ procedure staleClaimRejected(c: Container)
 //^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
-composite ContainerContainer {
-  var c: Container
-}
-
-procedure wrappedExistingObjectsAreAllocated(cc: ContainerContainer) opaque {
-  var c: Container := new Container;
-  assert c != cc#c
-};
-
 #end

@@ -481,7 +481,12 @@ private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
 private def mkMdAt (source : Option FileRange) (e : StmtExpr) : StmtExprMd :=
   { val := e, source }
 
-/-- For each composite parameter `p`, the precondition
+/-! Heap well-formedness conditions below are emitted `free`:
+    assumed for reference values appearing *directly* as  parameters/outputs,
+    but not for indirectly reachable references (composite fields, set elements).
+    Closing that gap needs axioms over custom types. -/
+
+/-- For each composite parameter `p`, the free precondition
     `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
 private def heapWellFormednessPreconds (model : SemanticModel)
     (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
@@ -493,20 +498,21 @@ private def heapWellFormednessPreconds (model : SemanticModel)
       let heapRead := mkMdAt src (.Var (.Local heapVar))
       let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [heapRead])
       let allocated := mkMdAt src (.PrimitiveOp .Lt [pRef, counter])
-      some { condition := allocated, summary := some "input is allocated in the heap" }
+      some { condition := allocated, summary := some "input is allocated in the heap", free := true }
     else none
 
-/-- The postcondition
+/-- The free postcondition
     `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
     the top of heap pointer never decreases. -/
 private def heapMonotonicityPostcond (source : Option FileRange)
     (heapVar : Identifier) : Condition :=
-  let inCounter  := ⟨ .Old ⟨ .StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapVar))], source⟩,  source ⟩
-  let outCounter := ⟨ .StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapVar))], source ⟩
+  let nextRef := mkMdAt source (.StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapVar))])
+  let inCounter := mkMdAt source (.Old nextRef)
+  let outCounter := nextRef
   { condition := mkMdAt source (.PrimitiveOp .Leq [inCounter, outCounter]),
-    summary := some "monotonic heap pointer" }
+    summary := some "monotonic heap pointer", free := true }
 
-/-- For each composite output `o`, the postcondition
+/-- For each composite output `o`, the free postcondition
     `Composite..ref!(o) < Heap..nextReference!($heap)` - a returned
     composite is allocated in the output heap. -/
 private def heapOutputAllocationPostconds (model : SemanticModel)
@@ -517,7 +523,7 @@ private def heapOutputAllocationPostconds (model : SemanticModel)
       let oRef    := mkMdAt src (.StaticCall "Composite..ref!" [mkMdAt src (.Var (.Local o.name))])
       let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [mkMdAt src (.Var (.Local heapOutVar))])
       some { condition := mkMdAt src (.PrimitiveOp .Lt [oRef, counter]),
-             summary := some "output is allocated in the heap" }
+             summary := some "output is allocated in the heap", free := true }
     else none
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
