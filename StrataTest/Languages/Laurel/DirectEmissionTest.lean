@@ -455,4 +455,43 @@ opaque {
 };
 #end
 
+-- Nested classes: a composite field whose type is another composite. The schema
+-- preserves the cross-reference (`home : Address`), a field write stores the
+-- reference, and a nested read `(p#home)#zip` decomposes through a lifted opaque
+-- temp into two heapReads.
+/--
+info: program CoreImplicit;
+class Address { zip : int }
+
+class Person { age : int; home : Address }
+
+
+
+procedure relocate [heap: writes]
+ensures z == relocate$asFunction(p, a)
+block $body {
+  heapWrite(p, Person.home, a)
+  var $h_0 : Composite;
+  $h_0 := heapRead(p, Person.home)
+  z := heapRead($h_0, Address.zip)
+}
+-/
+#guard_msgs in
+#eval printImplicit
+#strata
+program Laurel;
+composite Address {
+  var zip: int
+}
+composite Person {
+  var age: int
+  var home: Address
+}
+procedure relocate(p: Person, a: Address) returns (z: int)
+opaque {
+  p#home := a;
+  z := (p#home)#zip
+};
+#end
+
 end Laurel
