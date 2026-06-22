@@ -223,9 +223,21 @@ private def matchesAnnotation (d : Strata.Diagnostic) (a : DiagnosticAnnotation)
     && diagnosticKindString d.type == a.kind
     && isSubstrOf a.message d.message
 
-/-- Format a single annotation for error reporting. -/
-private def formatAnnotation (a : DiagnosticAnnotation) : String :=
-  s!"{a.line}:{a.colStart}-{a.colEnd}  {a.kind}: {a.message}"
+/-- Format a single annotation for error reporting, in the **same**
+    file-relative `<fileLine>:<colStart>-<colEnd>` coordinate system as
+    `formatDiagnostic` — so the "expected (annotated)" and "actual diagnostic"
+    halves of a mismatch report line up and can be compared directly. The
+    annotation's `line` is snippet-local, so the file line is
+    `block.baseLine + a.line - 1` (same conversion as `formatDiagnostic`).
+    `showSnippet` appends the snippet-relative range, mirroring
+    `formatDiagnostic`. -/
+private def formatAnnotation (block : SourcedProgram) (a : DiagnosticAnnotation)
+    (showSnippet : Bool := false) : String :=
+  let fileLine := block.baseLine + a.line - 1
+  let snippet := if showSnippet then
+      s!" (snippet {a.line}:{a.colStart}-{a.colEnd})"
+    else ""
+  s!"{fileLine}:{a.colStart}-{a.colEnd}{snippet}  {a.kind}: {a.message}"
 
 /-- Drive a `SourcedProgram` against its inline annotations.
 
@@ -275,11 +287,11 @@ private def runAndCheck (block : SourcedProgram)
   if !unmatchedAnnotations.isEmpty then
     report := report ++ s!"\nExpected (annotated) but never fired:\n"
     for a in unmatchedAnnotations do
-      report := report ++ s!"  {formatAnnotation a}\n"
+      report := report ++ s!"  {formatAnnotation block a showSnippet}\n"
   if !unmatchedDiags.isEmpty then
     report := report ++ s!"\nActual diagnostics with no matching annotation:\n"
     for d in unmatchedDiags do
-      report := report ++ s!"  {formatDiagnostic block d}\n"
+      report := report ++ s!"  {formatDiagnostic block d showSnippet}\n"
   throw <| IO.userError report
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
