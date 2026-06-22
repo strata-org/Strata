@@ -116,7 +116,7 @@ the failure message; longer design rationale stays as comments above the relevan
 
 /-- Expected verification outcome of a corpus program. -/
 inductive Expect
-  | verifies                 -- translated, numFailures == 0
+  | verifies                 -- translated, numFailures == 0, numVCs > 0 (non-vacuous)
   | failsExactly (n : Nat)   -- translated, numFailures == n (n ≥ 1; the false-twins)
   | failsAtLeast (n : Nat)   -- translated, numFailures ≥ n (e.g. a gated precondition)
   | rejected                 -- !translated (a type error / unsupported shape: fails loud).
@@ -145,13 +145,13 @@ structure Case where
 def checkCase (c : Case) : IO Unit := do
   let m ← corpusMetricsOf c.name c.src
   let ok := match c.outcome with
-    | .verifies       => m.translated && m.numFailures == 0
+    | .verifies       => m.translated && m.numFailures == 0 && m.numVCs > 0
     | .failsExactly n => m.translated && m.numFailures == n
     | .failsAtLeast n => m.translated && m.numFailures >= n
     | .rejected       => !m.translated
   unless ok do
     throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
-      got translated={m.translated} numFailures={m.numFailures}")
+      got translated={m.translated} numVCs={m.numVCs} numFailures={m.numFailures}")
 
 /-- Run every case in a feature table. -/
 def checkCases (cases : List Case) : IO Unit := cases.forM checkCase

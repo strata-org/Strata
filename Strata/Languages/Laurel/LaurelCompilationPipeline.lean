@@ -102,7 +102,7 @@ def laurelPipeline : Array LoweringPass := #[
   -- Polymorphism: lift instance procedures, then monomorphize, BEFORE everything else
   -- (the lift must precede monomorphization, and both must precede heap parameterization).
   liftInstanceProceduresPass,
-  monomorphizeCompositesPass,
+  { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
   typeAliasElimPass,

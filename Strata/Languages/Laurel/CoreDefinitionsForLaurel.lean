@@ -17,9 +17,13 @@ public section
 
 /--
 Core map operations (`select`, `update`, `const`) expressed in Laurel syntax.
-These are polymorphic map primitives used by the Laurel-to-Core translator.
-Since Laurel doesn't have polymorphic types, `int` is used as a placeholder type
-for all parameters — the actual types are inferred during Core translation.
+These are internal stand-ins for Core's native, already-polymorphic map
+primitives (the real `∀ k v` signatures live in `Core.Factory`). Declared
+`external`, they are filtered out before Core translation and never reach Core
+themselves; calls resolve to the Core primitives by name. Their parameters use a
+concrete `int` placeholder ON PURPOSE: although Laurel now supports user-level
+polymorphism, parameterizing these internal built-ins would buy nothing, since the
+polymorphic behavior comes from the Core primitives they map to.
 -/
 def coreDefinitionsForLaurelDDM :=
 #strata
@@ -29,19 +33,15 @@ datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 datatype LaurelUnit { MkLaurelUnit() }
 
-// The types for these Map functions are incorrect.
-// We'll fix them when Laurel supports polymorphism
-// And then we can remove the datatype Box as well
-// And remove the hacky filter in HeapParameterization
-datatype Box { MkBox() }
-
-function select(map: int, key: int) : Box
+// Concrete `int` placeholders ON PURPOSE: these `external` stand-ins are filtered
+// out before Core, where the real polymorphic select/update/const live.
+function select(map: int, key: int) : int
   external;
 
-function update(map: int, key: int, value: int) : Box
+function update(map: int, key: int, value: int) : int
   external;
 
-function const(value: int) : Box
+function const(value: int) : int
   external;
 
 #end

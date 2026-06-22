@@ -1719,11 +1719,12 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
-  -- Hack because we use these polymorphic map primitives but Laurel does not
-  -- support polymorphism yet, so they cannot be type-checked against their
-  -- placeholder `int` signatures. Instead we resolve the arguments and infer the
-  -- result type structurally from them, keeping a concrete `HighType` flowing into
-  -- Core translation:
+  -- These map primitives (`select`/`update`/`const`) are internal stand-ins for
+  -- Core-native polymorphic map ops; they carry concrete `int` placeholder
+  -- signatures (see `CoreDefinitionsForLaurel`) rather than type parameters, so
+  -- they cannot be type-checked against those signatures. Instead we resolve the
+  -- arguments and infer the result type structurally from them, keeping a concrete
+  -- `HighType` flowing into Core translation:
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
   --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
@@ -2676,18 +2677,25 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   return ⟨name', ty'⟩
 
 /-- Resolve a procedure output parameter, given the names of the inputs already
-    in scope. A parameter whose name also appears in the inputs is a true inout
-    parameter (e.g. the `$heap` synthesized by heap parameterization): it denotes
-    the *same* variable as the input, so we resolve its name as a reference to the
-    existing input definition rather than re-defining it (which
-    `defineNameCheckDup` would otherwise flag as a duplicate). -/
-def resolveOutputParameter (inputNames : List String) (param : Parameter) : ResolveM Parameter := do
-  if inputNames.contains param.name.text then
+    in scope and the output names already resolved (`seenOutputs`). The FIRST
+    output whose name also appears in the inputs is a true inout parameter (e.g.
+    the single `$heap` synthesized by heap parameterization, which is prepended to
+    both inputs and outputs): it denotes the *same* variable as the input, so we
+    resolve its name as a reference to the existing input definition rather than
+    re-defining it. A SECOND output of that same name is a genuine duplicate (e.g.
+    a user output literally named `$heap` colliding with the synth inout): it must
+    NOT silently merge — route it through `resolveParameter` so `defineNameCheckDup`
+    flags it (otherwise two Core outputs share a name and the program mis-verifies).
+    Returns the resolved param and the name added to the seen set. -/
+def resolveOutputParameter (inputNames : List String) (seenOutputs : List String)
+    (param : Parameter) : ResolveM (Parameter × List String) := do
+  if inputNames.contains param.name.text && !seenOutputs.contains param.name.text then
     let ty' ← resolveHighType param.type
     let name' ← resolveRef param.name
-    return ⟨name', ty'⟩
+    return (⟨name', ty'⟩, param.name.text :: seenOutputs)
   else
-    resolveParameter param
+    let p ← resolveParameter param
+    return (p, param.name.text :: seenOutputs)
 
 /-- Resolve a procedure body by synthesizing its body (if any).
     Bodies without an body (`Abstract`, `External`) resolve
@@ -2732,7 +2740,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- monomorphization in `MonomorphizeComposites` (an earlier guard rejecting it here was
     -- removed). An instantiation the monomorphizer still can't handle fails loud later (its
     -- depth bound / translation), not pre-rejected here.
-    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
+    let (outputsRev, _) ← proc.outputs.foldlM
+      (fun (acc : List Parameter × List String) p => do
+        let (p', seen') ← resolveOutputParameter inputNames acc.2 p
+        return (p' :: acc.1, seen'))
+      ([], [])
+    let outputs' := outputsRev.reverse
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2784,7 +2797,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let typeArgs' ← proc.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
-    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
+    let (outputsRev, _) ← proc.outputs.foldlM
+      (fun (acc : List Parameter × List String) p => do
+        let (p', seen') ← resolveOutputParameter inputNames acc.2 p
+        return (p' :: acc.1, seen'))
+      ([], [])
+    let outputs' := outputsRev.reverse
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
