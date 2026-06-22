@@ -49,9 +49,7 @@ partial def highTypeValToArg : HighType → Arg
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   | .TCore s => laurelOp "coreType" #[ident s]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
-  | .THeap => laurelOp "compositeType" #[ident "Heap"]
-  -- Type parameters discarded; the grammar cannot represent Field[T] or Set[T]
-  | .TTypedField _vt => laurelOp "compositeType" #[ident "Field"]
+  -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base _args =>
     -- Applied types are not directly representable in the grammar;
@@ -191,7 +189,7 @@ where
     | .ReferenceEquals lhs rhs =>
       laurelOp "eq" #[stmtExprToArg lhs, stmtExprToArg rhs]
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
-    | .Old value => laurelOp "call" #[laurelOp "identifier" #[ident "old"], commaSep #[stmtExprToArg value]]
+    | .Old value => laurelOp "old" #[stmtExprToArg value]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
     | .ProveBy value _proof => stmtExprValToArg value.val
     | .ContractOf _type fn => stmtExprValToArg fn.val

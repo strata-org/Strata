@@ -19,7 +19,7 @@ and conjoining it with the postcondition. After this pass, the modifies list
 is cleared since its semantics have been absorbed into the postcondition.
 
 This pass should run after heap parameterization, which has already:
-- Added explicit heap parameters ($heap_in, $heap)
+- Added explicit heap parameter ($heap as inout)
 - Transformed field accesses to readField/updateField calls
 - Collected field constants
 
@@ -28,7 +28,7 @@ all field values are preserved between the input and output heaps.
 
 Generates:
   forall $obj: Composite, $fld: Field =>
-    $obj < $heap_in.nextReference && notModified($obj) ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
+    $obj < old($heap).nextReference && notModified($obj) ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
 where `notModified($obj)` is the conjunction of `$obj != e` for each single entry `e`,
 and `!(select(s, $obj))` for each set entry `s`.
@@ -95,20 +95,20 @@ Build the modifies frame condition as a Laurel StmtExpr.
 Generates a single quantified formula:
 
   forall $obj: Composite, $fld: Field =>
-    notModified($obj) && $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
+    notModified($obj) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
 Returns `none` if there are no entries.
 -/
 def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs : List StmtExprMd)
-    (heapInName heapOutName : Identifier) : Option StmtExprMd :=
+    (heapName : Identifier) : Option StmtExprMd :=
   let entries := extractModifiesEntries model modifiesExprs
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
   let obj := mkMd <| .Var (.Local objName)
   let fld := mkMd <| .Var (.Local fldName)
-  let heapIn := mkMd <| .Var (.Local heapInName)
-  let heapOut := mkMd <| .Var (.Local heapOutName)
-      -- Build the "obj is allocated" condition: Composite..ref($obj) < $heap_in.nextReference
+  let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapName)))
+  let heapOut := mkMd <| .Var (.Local heapName)
+      -- Build the "obj is allocated" condition: Composite..ref($obj) < old($heap).nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
   let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
@@ -116,17 +116,17 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
     then objAllocated
     else
       -- Build the "not modified" precondition from all entries
-      -- Combine: $obj < $heap_in.nextReference && notModified($obj)
+      -- Combine: $obj < old($heap).nextReference && notModified($obj)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
-  -- Build: readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)
+  -- Build: readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
   let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
   let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
   let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
   -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
   -- Build: forall $obj: Composite, $fld: Field => ...
-  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .TTypedField { val := .TInt, source := none }, source := none } ⟩ none implBody
+  let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := none } ⟩ none implBody
   let outerForall : StmtExprMd := { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
   some outerForall
 
@@ -146,7 +146,7 @@ may modify anything on the heap), and the modifies list is simply cleared.
 
 If the procedure has a `$heap` but no modifies clause, adds a postcondition
 that all allocated objects are preserved between heaps:
-  `forall $obj: Composite, $fld: Field => $obj < $heap_in.nextReference ==> readField($heap_in, $obj, $fld) == readField($heap, $obj, $fld)`
+  `forall $obj: Composite, $fld: Field => $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)`
 
 If the modifies clause uses a wildcard (`*`), the frame condition is skipped
 entirely — the procedure may modify anything.
@@ -160,9 +160,8 @@ def transformModifiesClauses (model: SemanticModel)
         -- modifies * means the procedure can modify anything; no frame condition
         .ok { proc with body := .Opaque postconds impl [] }
       else if hasHeapOut proc then
-        let heapInName := heapInVarName
         let heapName := heapVarName
-        let frameCondition := buildModifiesEnsures proc model modifiesExprs heapInName heapName
+        let frameCondition := buildModifiesEnsures proc model modifiesExprs heapName
         let postconds' := match frameCondition with
           | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]
           | none => postconds
