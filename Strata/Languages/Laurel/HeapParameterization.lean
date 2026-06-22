@@ -25,12 +25,12 @@ and a `nextReference: int` for allocating new objects. Box is a sum type with co
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
-   - Input: `heap : THeap`
-   - Output: `heap : THeap`
+   - Input: `heap : Heap`
+   - Output: `heap : Heap`
    - Field writes become: `heap := updateField(heap, obj, field, BoxT(value))`
 
 2. Procedures that only read the heap get an in heap parameter
-   - Input: `heap : THeap`
+   - Input: `heap : Heap`
    - Field reads become: `Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
@@ -187,6 +187,7 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
+  | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
@@ -203,6 +204,7 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .UserDefined name =>
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
+  | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
@@ -219,6 +221,8 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none⟩ }] }
       else
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
+  | .TBv n =>
+        some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
@@ -282,7 +286,8 @@ where
           | return [⟨ .Hole, source ⟩]
 
         let valTy := (model.get fieldName).getType
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget, mkMd (.StaticCall qualifiedName [])], source ⟩
+        let selectTarget' ← recurseOne selectTarget
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
@@ -405,20 +410,24 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .PrimitiveOp op args _ =>
       let args' ← args.mapM (recurseOne ·)
-      -- For == and != on Composite types, compare refs instead
+      -- For == and != on Composite types, compare refs instead. Note
+      -- `.UserDefined` covers BOTH composites (heap references — `ref!` is
+      -- correct) and datatypes (values — `ref!` is wrong and would unify a
+      -- datatype value against `Composite`). Only ref-compare composites;
+      -- datatype equality falls through to structural comparison.
       match op, args with
       | .Eq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
-        let ty := (computeExprType model e1).val
-        match ty with
-        | .UserDefined _ =>
+        match (computeExprType model e1).val with
+        | .UserDefined name =>
+          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
           let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
           let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
@@ -464,37 +473,31 @@ where
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
-  let heapInName := heapInVarName
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
   if writesHeap then
-    -- This procedure writes the heap - add $heap_in as input and $heap as output
-    -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure writes the heap — $heap appears in both inputs and outputs
+    -- (true inout). Core's two-state semantics provide `old $heap` automatically.
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
-    let inputs' := heapInParam :: proc.inputs
-    let outputs' := heapOutParam :: proc.outputs
+    let inputs' := heapParam :: proc.inputs
+    let outputs' := heapParam :: proc.outputs
 
-    -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
+    -- Preconditions reference $heap (evaluated at entry before any mutation)
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          -- First assign $heap_in to $heap, then transform body using $heap
-          let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
-                pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
+                pure (some implExpr')
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
@@ -510,8 +513,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add $heap as input only
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure only reads the heap - add $heap as input only.
+    -- Use the prelude `Heap` datatype for the parameter type (see the
+    -- writes-heap branch above for rationale).
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
@@ -540,16 +545,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return proc
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
-  let program := { program with
-    types := program.types
-    staticProcedures := program.staticProcedures }
-  let instanceProcs := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => acc ++ ct.instanceProcedures
-    | _ => acc) ([] : List Procedure)
-  let allProcs := program.staticProcedures ++ instanceProcs
-  let heapReaders := computeReadsHeap allProcs
-  let heapWriters := computeWritesHeap allProcs
+  -- Instance procedures are already lifted to `staticProcedures` by an earlier
+  -- pass, so they're covered by the calls below.
+  let heapReaders := computeReadsHeap program.staticProcedures
+  let heapWriters := computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
   let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
   -- Collect all qualified field names and generate a Field datatype
@@ -559,18 +558,14 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     | _ => acc) ([] : List Identifier)
   let fieldDatatype : TypeDefinition :=
     .Datatype { name := "Field", typeArgs := [], constructors := fieldNames.map fun n => { name := n, args := [] } }
-  -- Remove fields from composite types since they are now stored in the heap
-  -- Also transform instance procedures, accumulating used Box constructors
-  let (types', state2) := program.types.foldl (fun (accTypes, accState) td =>
+  -- Remove fields from composite types since they are now stored in the heap.
+  let types' := program.types.map fun td =>
     match td with
-    | .Composite ct =>
-      let (instProcs', s') := (ct.instanceProcedures.mapM (heapTransformProcedure model)).run accState
-      (accTypes ++ [.Composite { ct with fields := [], instanceProcedures := instProcs' }], s')
-    | other => (accTypes ++ [other], accState))
-    ([], state1)
+    | .Composite ct => .Composite { ct with fields := [] }
+    | other => other
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state2.usedBoxConstructors }
+    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
@@ -579,7 +574,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
 public def heapParameterizationPass : LaurelPass where
   name := "HeapParameterization"
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
-  needsResolves := true
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     (heapParameterization m p, [], {})
   comesBefore := [

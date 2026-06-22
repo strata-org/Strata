@@ -49,9 +49,7 @@ partial def highTypeValToArg : HighType → Arg
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
   | .TCore s => laurelOp "coreType" #[ident s]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
-  | .THeap => laurelOp "compositeType" #[ident "Heap"]
-  -- Type parameters discarded; the grammar cannot represent Field[T] or Set[T]
-  | .TTypedField _vt => laurelOp "compositeType" #[ident "Field"]
+  -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base _args =>
     -- Applied types are not directly representable in the grammar;
@@ -96,6 +94,7 @@ where
       | .negSucc n => laurelOp "neg" #[laurelOp "int" #[.num sr (n + 1)]]
     | .LiteralDecimal d => laurelOp "real" #[.decimal sr d]
     | .LiteralString s => laurelOp "string" #[.strlit sr s]
+    | .LiteralBv value width => laurelOp "bvLiteral" #[.num sr value, .num sr width]
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
     | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
@@ -130,6 +129,18 @@ where
         laurelOp "assign" #[targetArg, stmtExprToArg value]
     | .Var (.Field target field) =>
       laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
+    | .IncrDecr mode op target =>
+      let opName := match mode, op with
+        | .Pre,  .Incr => "preIncr"
+        | .Pre,  .Decr => "preDecr"
+        | .Post, .Incr => "postIncr"
+        | .Post, .Decr => "postDecr"
+      let targetArg := match target.val with
+        | .Field obj fieldName =>
+          laurelOp "fieldAccess" #[stmtExprToArg obj, ident fieldName.text]
+        | .Local name => laurelOp "identifier" #[ident name.text]
+        | .Declare param => laurelOp "identifier" #[ident param.name.text]
+      laurelOp opName #[targetArg]
     | .StaticCall callee args =>
       let calleeArg := laurelOp "identifier" #[ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray
@@ -178,7 +189,7 @@ where
     | .ReferenceEquals lhs rhs =>
       laurelOp "eq" #[stmtExprToArg lhs, stmtExprToArg rhs]
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
-    | .Old value => laurelOp "call" #[laurelOp "identifier" #[ident "old"], commaSep #[stmtExprToArg value]]
+    | .Old value => laurelOp "old" #[stmtExprToArg value]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
     | .ProveBy value _proof => stmtExprValToArg value.val
     | .ContractOf _type fn => stmtExprValToArg fn.val

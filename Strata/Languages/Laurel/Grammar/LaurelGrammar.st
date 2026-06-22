@@ -20,6 +20,7 @@ op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
 op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
+op bvLiteral(value: Num, width: Num): StmtExpr => value "bv" width;
 op hole: StmtExpr => "<?>";
 op nondetHole: StmtExpr => "<??>";
 
@@ -33,13 +34,14 @@ op initializer(value: StmtExpr): Initializer => " := " value:0;
 op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
   => @[prec(0)] "var " name varType assignment;
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
+  @[prec(95)] callee:89 "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access. `leftassoc` so chained access (`a#b#c`) parses as `(a#b)#c`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
@@ -77,11 +79,24 @@ op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " |
 op andThen (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
 op orElse (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
-op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ++ " rhs;
+// String concatenation. Uses `^` (OCaml-style) so that `++` is reserved for the
+// Java-style increment operator below.
+op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ^ " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
+
+// Refer to the pre-state value of an expression (for use in postconditions, modifies clauses).
+op old (inner: StmtExpr): StmtExpr => "old(" inner ")";
+
+// Java-style increment / decrement.
+// Prefix forms (leading parsers): yield the new value.
+op preIncr (target: StmtExpr): StmtExpr => @[prec(80)] "++" target;
+op preDecr (target: StmtExpr): StmtExpr => @[prec(80)] "--" target;
+// Postfix forms (trailing parsers): yield the old value.
+op postIncr (target: StmtExpr): StmtExpr => @[prec(90)] target "++";
+op postDecr (target: StmtExpr): StmtExpr => @[prec(90)] target "--";
 
 // Quantifiers
 category Trigger;

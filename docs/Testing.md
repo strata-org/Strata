@@ -88,6 +88,18 @@ the message and the test stays robust as messages are reworded.
 
 `kind` is one of `error`, `warning`, `not-yet-implemented`, `strata-bug`.
 
+#### Reported locations
+
+Each diagnostic is printed as `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`,
+where `fileLine` is the line in the enclosing `.lean` file (computed from the
+snippet's base line — no manual offsets). The filename is omitted: the Lean
+test runner already reports which file a diagnostic came from. This line is
+always printed; pin it with `#guard_msgs` when you want to assert the
+localization itself. Pass `showSnippet := true` to also append the
+snippet-relative range — `… (snippet <line>:<colStart>-<colEnd>)` — which is
+handy when correlating against the inline `// ^^^` annotations (those are
+snippet-local, so their `line` differs from the file line).
+
 ### 3. Resolution-only tests — skip the verifier
 
 When the test is about resolution (kind mismatches, duplicate names, scope

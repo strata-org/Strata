@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
+public import Strata.Languages.Laurel.PushOldInward
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -48,6 +49,12 @@ structure TranslateState where
   model : SemanticModel
   /-- Overflow check configuration -/
   overflowChecks : Core.OverflowChecks := {}
+  /-- Do not process the produces Core program, since it has superfluous errors -/
+  coreProgramHasSuperfluousErrors: Bool := false
+  /-- Inout parameter names of the procedure currently being translated.
+      Used by the `.Old (Var (Local n))` arm to defensively check `n` against
+      the procedure's inout list. Empty when not translating a procedure body. -/
+  currentProcInouts : List String := []
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -80,13 +87,10 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TString => return LMonoTy.string
   | .TBv n => return LMonoTy.bitvec n
   | .TVoid => return LMonoTy.bool -- Using bool as placeholder for void
-  | .THeap => return .tcons "Heap" []
-  | .TTypedField _ => return .tcons "Field" []
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
     match model.get? name with
-    | some (.compositeType _) => return .tcons "Composite" []
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
@@ -152,6 +156,7 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralInt i => return .const () (.intConst i)
   | .LiteralString s => return .const () (.strConst s)
   | .LiteralDecimal d => return .const () (.realConst (StrataDDM.Decimal.toRat d))
+  | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       match boundVars.findIdx? (· == name) with
@@ -254,6 +259,9 @@ def translateExpr (expr : StmtExprMd)
       return .eq () re1 re2
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
+  | .IncrDecr _ _ _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source
+        "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
   | .While _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
@@ -284,6 +292,8 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
+  | .Block (⟨ .While _ _ _ _, whileSource⟩ :: tail) _ =>
+      disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>
@@ -292,7 +302,30 @@ def translateExpr (expr : StmtExprMd)
 
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
-  | .Old value => throwExprDiagnostic $ diagnosticFromSource expr.source "old expression translation" DiagnosticType.NotYetImplemented
+  | .Old value =>
+      -- `pushOldInward` is expected to leave every `Old` wrapping `Var (Local n)`
+      -- with `n` an inout parameter of the enclosing procedure. We do not rely on
+      -- a static proof of this; the guarantee is enforced at translate time: if
+      -- PushOldInward has a bug or a later pass mutates the AST, we emit a
+      -- StrataBug diagnostic instead of silently producing a dangling `mkOld n`
+      -- name.
+      match value.val with
+      | .Var (.Local name) =>
+          let inouts := s.currentProcInouts
+          if !inouts.contains name.text then
+            throwExprDiagnostic $ diagnosticFromSource expr.source
+              s!"old({name.text}) refers to a name that is not an inout parameter \
+                 of the enclosing procedure (inouts: {inouts}). This violates the \
+                 pushOldInward normalization invariant."
+              DiagnosticType.StrataBug
+          else
+            let coreTy ← translateType (model.get name).getType
+            return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
+      | _ =>
+          throwExprDiagnostic $ diagnosticFromSource expr.source
+            "old(...) should have been pushed inward to a variable reference. \
+             This violates the pushOldInward normalization invariant."
+            DiagnosticType.StrataBug
   | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
   | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
   | .Assume _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
@@ -345,6 +378,45 @@ def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) 
   emitDiagnostic d
   emitCoreDiagnostic d
   return []
+
+/--
+Look up the callee's signature and convert positional `coreArgs` into Core
+`CallArg`s, emitting `.inoutArg ident` for parameters that appear in both
+inputs and outputs (true inout) and `.inArg` otherwise. Returns the call args
+along with the callee's outputs and inout names so the caller can build the
+matching `.outArg` list. `md` locates the StrataBug diagnostic emitted when
+an inout argument is not a variable reference.
+-/
+private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expression.Expr)
+    (md : Imperative.MetaData Core.Expression)
+    : TranslateM (List (Core.CallArg Core.Expression) × List Parameter × List String) := do
+  let s ← get
+  let (calleeInputs, calleeOutputs) := match s.model.get calleeId with
+    | .staticProcedure proc => (proc.inputs, proc.outputs)
+    | .instanceProcedure _ proc => (proc.inputs, proc.outputs)
+    | _ => ([], [])
+  let calleeInputNames := calleeInputs.map (·.name.text)
+  let calleeOutputNames := calleeOutputs.map (·.name.text)
+  let calleeInoutNames := calleeInputNames.filter (calleeOutputNames.contains ·)
+  let inoutInputIndices := calleeInputNames.zipIdx.filterMap fun (name, i) =>
+    if calleeInoutNames.contains name then some i else none
+  let mut callArgs : List (Core.CallArg Core.Expression) := []
+  for (arg, i) in coreArgs.zipIdx do
+    if inoutInputIndices.contains i then
+      match arg with
+      | .fvar _ ident _ => callArgs := callArgs ++ [.inoutArg ident]
+      | _ =>
+        -- Non-fvar inout arg can't be wired as `.inoutArg`; flag it.
+        emitDiagnostic $ md.toDiagnostic
+          s!"inout argument at index {i} of call to '{calleeId.text}' is not a \
+             variable reference, so the output side of the inout cannot be \
+             wired through. This should not happen after the preceding passes."
+          DiagnosticType.StrataBug
+        modify fun st => { st with coreProgramHasSuperfluousErrors := true }
+        callArgs := callArgs ++ [.inArg arg]
+    else
+      callArgs := callArgs ++ [.inArg arg]
+  return (callArgs, calleeOutputs, calleeInoutNames)
 
 /--
 Translate Laurel StmtExpr to Core Statements using the `TranslateM` monad.
@@ -415,12 +487,14 @@ def translateStmt (stmt : StmtExprMd)
             lhs := lhs ++ [ident]
           | .Field _ _ => pure () -- already handled above
         return (inits, lhs)
-      -- Translate a procedure/instance call: init Declare targets with nondet, then emit call
-      let translateCallTargets (calleeName : String) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
+      -- Translate a procedure/instance call: init Declare targets with nondet, then emit call.
+      let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
         let coreArgs ← args.mapM (fun a => translateExpr a)
         let (inits, lhs) ← initTargetsNondet
-        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-        return inits ++ [Core.Statement.call calleeName (coreArgs.map .inArg ++ outArgs) md]
+        let (callArgs, _, calleeInoutNames) ← buildCallArgs calleeId coreArgs md
+        let outArgs : List (Core.CallArg Core.Expression) :=
+          lhs.filter (fun id => !calleeInoutNames.contains id.name) |>.map .outArg
+        return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
@@ -436,9 +510,9 @@ def translateStmt (stmt : StmtExprMd)
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
         else
-          translateCallTargets callee.text args
+          translateCallTargets callee args
       | .InstanceCall _target callee args =>
-          translateCallTargets callee.text args
+          translateCallTargets callee args
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -467,39 +541,43 @@ def translateStmt (stmt : StmtExprMd)
         exprAsUnusedInit stmt md
       else
         let coreArgs ← args.mapM (fun a => translateExpr a)
-        -- Generate throwaway LHS variables for all outputs so Core arity
-        -- checking passes (lhs.length == outputs.length).
-        let outputs := match model.get callee with
-          | .staticProcedure proc => proc.outputs
-          | .instanceProcedure _ proc => proc.outputs
-          | _ => []
+        let (callArgs, calleeOutputs, calleeInoutNames) ← buildCallArgs callee coreArgs md
+        -- Generate throwaway LHS for output-only params so Core arity checking passes.
         let mut inits : List Core.Statement := []
-        let mut lhs : List Core.CoreIdent := []
-        for out in outputs do
+        let mut outArgs : List (Core.CallArg Core.Expression) := []
+        for out in calleeOutputs do
+          if calleeInoutNames.contains out.name.text then continue
           let id ← freshId
           let ident : Core.CoreIdent := ⟨s!"$unused_{id}", ()⟩
           let coreType := LTy.forAll [] (← translateType out.type)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
-          lhs := lhs ++ [ident]
-        let outArgs : List (Core.CallArg Core.Expression) := lhs.map .outArg
-        return inits ++ [Core.Statement.call callee.text (coreArgs.map .inArg ++ outArgs) md]
+          outArgs := outArgs ++ [.outArg ident]
+        return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
   | .Return valueOpt =>
       match valueOpt with
       | none =>
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
-          return [.exit "$body" md]
+          return [.exit bodyLabel md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
       let bodyStmts ← translateStmt body
-      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts md]
+      -- Attach each invariant's source provenance to the loop metadata, in
+      -- invariant order, so loop elimination can point an invariant's
+      -- verification condition at the specific invariant rather than the whole
+      -- loop. (The Core loop IR stores invariants as `(label, expr)` pairs with
+      -- no per-invariant metadata slot, and Core expressions carry no source
+      -- range, so we thread the ranges through the loop metadata instead.)
+      let mdWithInvs := invariants.foldl
+        (fun acc i => acc.pushInvariantProvenance (fileRangeToProvenance i.source)) md
+      return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts mdWithInvs]
   | .Exit target =>
       return [Imperative.Stmt.exit target md]
   | .Hole _ _ =>
@@ -546,6 +624,9 @@ Diagnostics from disallowed constructs in preconditions, postconditions, and bod
 are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
+  -- Track inout parameter names for the `.Old (Var (Local n))` defensive check.
+  -- Reset to [] after the procedure so siblings start fresh.
+  modify fun s => { s with currentProcInouts := procInoutNames proc }
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
@@ -569,14 +650,17 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
-  -- Translate postconditions for Opaque and Abstract bodies
+  -- Translate postconditions for Opaque and Abstract bodies. A bodiless
+  -- procedure (bodyStmts = none) gets its postconditions marked `free`
+  -- (overrideFree) so they are assumed, not checked — and an empty body.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
         translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
-
-  let body : List Core.Statement := [.block "$body" (bodyStmts.getD []) mdWithUnknownLoc]
+  -- Wrap body in a labeled block so early returns (exit) work correctly.
+  -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
+  let body : List Core.Statement := [.block bodyLabel (bodyStmts.getD []) mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
@@ -628,6 +712,9 @@ Translate a Laurel Procedure to a Core Function (when applicable) using `Transla
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
 -/
 def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive: Bool) (proc : Procedure) : TranslateM Core.Decl := do
+  -- Functions are pure: no inout parameters, so the `.Old` defensive check
+  -- will reject any old(...) reference (which is the correct behavior here).
+  modify fun s => { s with currentProcInouts := [] }
   let inputs ← proc.inputs.mapM translateParameterToCore
   let outputTy ← match proc.outputs.head? with
     | some p => translateType p.type
@@ -703,7 +790,6 @@ abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
 
 /--
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
-The `program` parameter is the lowered Laurel program, used for type definitions.
 -/
 def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithLaurelTypes): TranslateM Core.Program := do
 
