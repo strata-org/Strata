@@ -197,12 +197,11 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
 
 mutual
 
-
 def asLifted { t: Type } (runner: LiftM t) : LiftM t := do
   let savedState ← get
   modify fun s => { s with prependedStmts := [], subst := []}
   let result ← runner
-  modify fun s => savedState
+  modify fun _ => savedState
   return result
 
 /--
@@ -292,22 +291,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.PrimitiveOp op seqArgs.reverse, source⟩
 
   | .StaticCall callee args =>
-    let model := (← get).model
     let imperativeCallees := (← get).imperativeCallees
     if !imperativeCallees.contains callee.text then
       let seqArgs ← args.reverse.mapM transformExpr
       let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       return seqCall
     else
-      -- Imperative call in expression position: lift to an assignment.
-      -- Only valid for single-output procedures (or unresolved ones where we
-      -- fall back to a single target). Multi-output procedures in expression
-      -- position are a bug in the upstream translation — Resolution should
-      -- emit a diagnostic for that case.
-      let outputs := match model.get callee with
-        | .staticProcedure proc => proc.outputs
-        | .instanceProcedure _ proc => proc.outputs
-        | _ => []
       let callResultVar ← freshTempVar
       let callResultType ← computeType expr
 

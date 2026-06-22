@@ -106,11 +106,7 @@ def laurelPipeline : Array LoweringPass := #[
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
-  { name := "PushOldInward"
-    documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. Warns on `old(e)` where `e` mentions no inout parameter and on nested `old(old(...))`."
-    run := fun p _m =>
-      let (p', diags) := pushOldInward p
-      (p', diags, {}) },
+  pushOldInwardPass,
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
