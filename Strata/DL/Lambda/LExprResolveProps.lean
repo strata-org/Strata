@@ -482,6 +482,137 @@ theorem varCloseT_unresolved_HasTypeA_nil [DecidableEq T.IDMeta] (xv : T.Identif
   exact varCloseT_unresolved_HasTypeA 0 [] rfl xv t et h_typed h_annot
 
 
+/-- Well-formedness of `abs` metadata: every `abs` subnode carries arrow-typed
+    metadata. `resolve` establishes this invariant. It is needed because
+    `unresolved` reads the bound-variable annotation from the metadata arrow's
+    domain when `m.type.isArrow = some _`, and from the user-annotation field
+    otherwise; only under `AbsWF` does `applySubstT` (which rewrites metadata)
+    commute with `applySubst` (which rewrites annotation fields). -/
+def LExprT.AbsWF {T : LExprParamsT} : LExprT T → Prop
+  | .abs m _ _ e => m.type.isArrow.isSome = true ∧ LExprT.AbsWF e
+  | .app _ f a => LExprT.AbsWF f ∧ LExprT.AbsWF a
+  | .quant _ _ _ _ tr e => LExprT.AbsWF tr ∧ LExprT.AbsWF e
+  | .ite _ c t e => LExprT.AbsWF c ∧ LExprT.AbsWF t ∧ LExprT.AbsWF e
+  | .eq _ a b => LExprT.AbsWF a ∧ LExprT.AbsWF b
+  | _ => True
+
+omit [Std.ToFormat T.IDMeta] in
+/-- Under `AbsWF`, applying a metadata substitution and unresolving equals
+    unresolving and applying the substitution to user-annotation fields. -/
+theorem applySubstT_unresolved_eq_applySubst [DecidableEq T.IDMeta]
+    (et : LExprT T.mono) (S : Subst) (h : LExprT.AbsWF et) :
+    (applySubstT et S).unresolved = (et.unresolved).applySubst S := by
+  rw [LExpr.applySubst_eq_replaceUserProvidedType]
+  induction et with
+  | const m c =>
+    simp [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType]
+  | op m o ty =>
+    simp [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType,
+      Option.map]
+  | bvar m i =>
+    simp [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType]
+  | fvar m x fty =>
+    simp [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType,
+      Option.map]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF] at h
+    simp only [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType]
+    exact congr (congrArg (LExpr.app m.underlying) (ih1 h.1)) (ih2 h.2)
+  | abs m name bty body ih =>
+    simp only [LExprT.AbsWF] at h
+    obtain ⟨h_arrow, h_body⟩ := h
+    simp only [applySubstT, LExpr.replaceMetadata, unresolved]
+    -- m.type is an arrow; both sides read its (substituted) domain
+    obtain ⟨⟨dom, cod⟩, h_eq⟩ := Option.isSome_iff_exists.mp h_arrow
+    have h_mtype : m.type = LMonoTy.arrow dom cod := LMonoTy.isArrow_some h_eq
+    have h_subst_arrow : LMonoTy.subst S m.type = LMonoTy.arrow (LMonoTy.subst S dom) (LMonoTy.subst S cod) := by
+      rw [h_mtype]; simp only [LMonoTy.arrow]; exact LMonoTy.subst_tcons_pair S "arrow" dom cod
+    have h_lhs : (LMonoTy.subst S m.type).isArrow = some (LMonoTy.subst S dom, LMonoTy.subst S cod) := by
+      rw [h_subst_arrow]; exact LMonoTy.isArrow_arrow _ _
+    rw [h_lhs, h_eq]
+    exact congrArg (LExpr.abs m.underlying name (some (LMonoTy.subst S dom))) (ih h_body)
+  | quant m qk name bty tr body ih_tr ih_body =>
+    simp only [LExprT.AbsWF] at h
+    simp only [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType,
+      Option.map]
+    exact congr (congrArg (LExpr.quant m.underlying qk name (some (LMonoTy.subst S m.type)))
+      (ih_tr h.1)) (ih_body h.2)
+  | ite m c t f ih_c ih_t ih_f =>
+    simp only [LExprT.AbsWF] at h
+    simp only [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType]
+    exact congr (congr (congrArg (LExpr.ite m.underlying) (ih_c h.1)) (ih_t h.2.1)) (ih_f h.2.2)
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF] at h
+    simp only [applySubstT, LExpr.replaceMetadata, unresolved, LExpr.replaceUserProvidedType]
+    exact congr (congrArg (LExpr.eq m.underlying) (ih1 h.1)) (ih2 h.2)
+
+omit [Std.ToFormat T.IDMeta] in
+/-- `AbsWF` is preserved by metadata substitution: substituting an arrow type
+    keeps it an arrow, so every abs subnode's metadata remains arrow-typed. -/
+theorem applySubstT_AbsWF [DecidableEq T.IDMeta]
+    (et : LExprT T.mono) (S : Subst) (h : LExprT.AbsWF et) :
+    LExprT.AbsWF (applySubstT et S) := by
+  induction et with
+  | const m c => trivial
+  | op m o ty => trivial
+  | bvar m i => trivial
+  | fvar m x fty => trivial
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF] at h ⊢
+    simp only [applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs m name bty body ih =>
+    simp only [LExprT.AbsWF] at h ⊢
+    obtain ⟨h_arrow, h_body⟩ := h
+    simp only [applySubstT, LExpr.replaceMetadata] at *
+    refine ⟨?_, ih h_body⟩
+    obtain ⟨⟨dom, cod⟩, h_eq⟩ := Option.isSome_iff_exists.mp h_arrow
+    have h_mtype : m.type = LMonoTy.arrow dom cod := LMonoTy.isArrow_some h_eq
+    have h_subst_arrow : LMonoTy.subst S m.type = LMonoTy.arrow (LMonoTy.subst S dom) (LMonoTy.subst S cod) := by
+      rw [h_mtype]; simp only [LMonoTy.arrow]; exact LMonoTy.subst_tcons_pair S "arrow" dom cod
+    rw [h_subst_arrow, LMonoTy.isArrow_arrow]; rfl
+  | quant m qk name bty tr body ih_tr ih_body =>
+    simp only [LExprT.AbsWF] at h ⊢
+    simp only [applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_tr h.1, ih_body h.2⟩
+  | ite m c t f ih_c ih_t ih_f =>
+    simp only [LExprT.AbsWF] at h ⊢
+    simp only [applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih_c h.1, ih_t h.2.1, ih_f h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF] at h ⊢
+    simp only [applySubstT, LExpr.replaceMetadata] at *
+    exact ⟨ih1 h.1, ih2 h.2⟩
+
+omit [Std.ToFormat T.IDMeta] in
+/-- `AbsWF` is preserved by `varCloseT`: closing a free variable only rewrites
+    `fvar`/`bvar` nodes, leaving every abs node's metadata unchanged. -/
+theorem varCloseT_AbsWF [DecidableEq T.IDMeta]
+    (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (h : LExprT.AbsWF et) :
+    LExprT.AbsWF (LExpr.varCloseT k xv et) := by
+  induction et generalizing k with
+  | const m c => trivial
+  | op m o ty => trivial
+  | bvar m i => trivial
+  | fvar m y yty =>
+    simp only [LExpr.varCloseT]
+    split <;> trivial
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF, LExpr.varCloseT] at h ⊢
+    exact ⟨ih1 k h.1, ih2 k h.2⟩
+  | abs m name bty body ih =>
+    simp only [LExprT.AbsWF, LExpr.varCloseT] at h ⊢
+    exact ⟨h.1, ih (k + 1) h.2⟩
+  | quant m qk name bty tr body ih_tr ih_body =>
+    simp only [LExprT.AbsWF, LExpr.varCloseT] at h ⊢
+    exact ⟨ih_tr (k + 1) h.1, ih_body (k + 1) h.2⟩
+  | ite m c t f ih_c ih_t ih_f =>
+    simp only [LExprT.AbsWF, LExpr.varCloseT] at h ⊢
+    exact ⟨ih_c k h.1, ih_t k h.2.1, ih_f k h.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExprT.AbsWF, LExpr.varCloseT] at h ⊢
+    exact ⟨ih1 k h.1, ih2 k h.2⟩
+
 omit [Std.ToFormat T.IDMeta] in
 /-- The context initialization in `resolve` (pushing an empty scope if types is
     empty) preserves `TEnvWF`. -/
@@ -548,6 +679,68 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       · exact List.cons_ne_nil _ _
       · rename_i h_not_empty; intro h_abs; simp_all; contradiction
     exact resolveAux_TEnvWF e et C Env0 Env_out h_res h_envwf0 h_ne0 h_fwf
+
+/-- Bundle of `resolve`-level preservation facts (companion to `resolve_TEnvWF`),
+    lifted from `resolveAux_properties` through the initial-context guard:
+    the generator counter is monotone, the context's aliases stay resolved, and
+    every free variable of the resolved output type is gen-fresh for the output
+    state. The last fact is needed to discharge the constraint-freshness
+    precondition of `unify_preserves_SubstFreshForGen` for the body's inferred
+    type. -/
+theorem resolve_properties [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok (e_typed, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen ∧
+    TContext.AliasesResolved Env'.context ∧
+    (∀ v, v ∈ LMonoTy.freeVars e_typed.toLMonoTy →
+      ∀ k, k ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString k) := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+    else Env) = Env0 at h
+  -- `Env0` keeps `Env`'s generator state and (after init) keeps aliases resolved.
+  have h_gen0 : Env0.genEnv.genState = Env.genEnv.genState := by
+    subst h_init; split <;> rfl
+  have h_envwf0 : TEnvWF Env0 := h_init ▸ TEnvWF_resolve_init Env h_envwf
+  have h_ne0 : Env0.context.types ≠ [] := by
+    subst h_init
+    split
+    · exact List.cons_ne_nil _ _
+    · rename_i h_not_empty; intro h_abs; simp_all; contradiction
+  have h_resolved0 : TContext.AliasesResolved Env0.context := by
+    subst h_init
+    split
+    · simp [TEnv.updateContext, TEnv.context, TContext.AliasesResolved] at h_resolved ⊢
+      exact h_resolved
+    · exact h_resolved
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h
+  | .ok (et, Env_out) =>
+    simp [h_res] at h
+    obtain ⟨h_et, h_env'⟩ := h
+    subst h_et h_env'
+    have h_props := resolveAux_properties e et C Env0 Env_out h_res h_ne0
+      h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
+      h_envwf0.boundVarsFresh
+    refine ⟨?_, ?_, ?_⟩
+    · rw [← h_gen0]; exact h_props.genState_mono
+    · rw [h_props.context]; exact h_resolved0
+    · -- The output type is `subst Env_out.subst et.toLMonoTy`; its free vars come
+      -- from `et.toLMonoTy` (fresh by `preserves.2`) or from the output
+      -- substitution's values (fresh by `preserves.1`).
+      intro v hv k hk
+      rw [applySubstT_toLMonoTy] at hv
+      have h_sub := LMonoTy.freeVars_of_subst_subset Env_out.stateSubstInfo.subst
+        et.toLMonoTy hv
+      rw [List.mem_append] at h_sub
+      cases h_sub with
+      | inl h_orig => exact h_props.preserves.2 v h_orig k hk
+      | inr h_val => exact h_props.preserves.1 v (Or.inr h_val) k hk
 
 /-! ### Layer 3: Main induction -/
 
@@ -858,6 +1051,109 @@ theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [HasGen T.IDMeta]
   have h_absorbs := Subst.absorbs_refl Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF
   exact resolveAux_HasTypeA_aux e et C Env Env' h h_envwf h_ne h_fwf h_resolved
     Env'.stateSubstInfo.subst h_absorbs
+
+/-- `resolveAux` produces an `AbsWF` expression: every abs subnode in the result
+    carries arrow-typed metadata. Proved by `resolveAux_ind`; the abs case fixes
+    the metadata to `subst _ (.tcons "arrow" [xty, _])`, which is an arrow. -/
+theorem resolveAux_AbsWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta)
+    (e : LExpr T.mono) (et : LExprT T.mono)
+    (h_res : resolveAux C Env e = Except.ok (et, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactoryWF C.functions) :
+    LExprT.AbsWF et := by
+  apply resolveAux_ind
+    (P := fun _e et _C _Env _Env' => LExprT.AbsWF et)
+    (e := e) (et := et) (C := C) (Env := Env) (Env' := Env')
+    (h_res := h_res) (h_envwf := h_envwf) (h_ne := h_ne) (h_fwf := h_fwf)
+  case h_const =>
+    intro m c et C Env Env' h_res h_envwf h_ne h_fwf
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_err h_res
+    rename_i v1 h_ic; obtain ⟨ty, Env1⟩ := v1; simp at h_res
+    obtain ⟨h_et, _⟩ := h_res; subst h_et; trivial
+  case h_op =>
+    intro m o oty et C Env Env' h_res h_envwf h_ne h_fwf
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_errs h_res
+    split at h_res
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨h_et, _⟩ := h_res; subst h_et; trivial
+    · elim_errs h_res
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
+      obtain ⟨h_et, _⟩ := h_res; subst h_et; trivial
+  case h_fvar =>
+    intro m x fty et C Env Env' h_res h_envwf h_ne h_fwf
+    simp only [resolveAux, Bind.bind, Except.bind] at h_res
+    elim_err h_res
+    rename_i v1 h_infer
+    obtain ⟨ty_res, Env_res⟩ := v1
+    simp at h_res
+    obtain ⟨h_et, _⟩ := h_res; subst h_et; trivial
+  case h_app =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 fresh_name Env_gen substInfo
+      h_res h1 h2 h_gen h_unify h_et _ _ _ _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_ih1 h_ih2
+    subst h_et
+    exact ⟨h_ih1, h_ih2⟩
+  case h_abs =>
+    intro m name bty body et C Env Env' xv xty Env1 et_body Env2
+      h_res h_tbv h_res_body h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq h_ih
+    subst h_et
+    simp only [LExprT.AbsWF]
+    refine ⟨?_, varCloseT_AbsWF 0 xv et_body h_ih⟩
+    rw [LMonoTy.subst_tcons_pair]
+    simp only [LMonoTy.isArrow, Option.isSome_some]
+  case h_quant =>
+    intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3
+      h_res h_tbv h_res_body h_res_tr h_et h_env' _ h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+      h_envwf2 h_ctx2 h_ih_body h_ih_tr
+    subst h_et
+    exact ⟨varCloseT_AbsWF 0 xv et_tr h_ih_tr, varCloseT_AbsWF 0 xv et_body h_ih_body⟩
+  case h_eq =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo
+      h_res h1 h2 h_unify h_et _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_ih1 h_ih2
+    subst h_et
+    exact ⟨h_ih1, h_ih2⟩
+  case h_ite =>
+    intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
+      h_res hc ht he h_unify h_et _ _ _ h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2
+      h_envwf3 h_ctx3 h_ihc h_iht h_ihe
+    subst h_et
+    exact ⟨h_ihc, h_iht, h_ihe⟩
+
+/-- `resolve` produces an `AbsWF` expression. Public interface, peeling the
+    context-initialization wrapper before delegating to `resolveAux_AbsWF`. -/
+theorem resolve_AbsWF [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env : TEnv T.IDMeta) (Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = Except.ok (e_typed, Env'))
+    (h_envwf : TEnvWF Env) (h_fwf : FactoryWF C.functions) :
+    LExprT.AbsWF e_typed := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  have h_resolve := h
+  generalize h_res : resolveAux C _ e = res at h_resolve
+  cases res with
+  | error => simp at h_resolve
+  | ok val =>
+    simp at h_resolve
+    obtain ⟨h_et, h_env⟩ := h_resolve
+    subst h_et h_env
+    have h_envwf0 := TEnvWF_resolve_init Env h_envwf
+    have h_ne0 : (if Env.context.types.isEmpty then
+        Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      else Env).context.types ≠ [] := by
+      split
+      · exact List.cons_ne_nil _ _
+      · rename_i h_not_empty
+        intro h_abs
+        simp_all
+        contradiction
+    exact applySubstT_AbsWF val.fst val.snd.stateSubstInfo.subst
+      (resolveAux_AbsWF C _ val.snd e val.fst h_res h_envwf0 h_ne0 h_fwf)
 
 /-- Main soundness theorem: `LExpr.resolve` produces a well-typed and
     well-annotated `LExprT` according to `HasTypeA`. Unlike `resolve_HasType`,

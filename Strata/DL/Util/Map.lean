@@ -62,6 +62,10 @@ def Map.union (m1 m2 : Map α β) : Map α β :=
 
 abbrev Map.empty : Map α β := []
 
+theorem Map.append_nil (m : Map α β) :
+    (m ++ (Map.empty : Map α β) : Map α β) = m :=
+  List.append_nil m
+
 @[expose] def Map.find? [DecidableEq α] (m : Map α β) (a' : α) : Option β :=
   match m with
   | [] => none

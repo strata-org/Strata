@@ -1496,6 +1496,10 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
+    -- TODO: the original constraint `c` is recorded raw, without applying `S`, so
+    -- the "Impossible to unify ..." message can show stale type variables (e.g.
+    -- `$__ty1` for a var already solved to `int`). Apply `S` to `c` here before
+    -- `addOriginalConstraint` to report solved types.
     let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
     .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }

@@ -55,6 +55,11 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
   | none =>
+    -- A measure (decreases clause) is only meaningful for a function with a
+    -- body; reject one on a bodiless function so it is never left unvalidated.
+    if func.measure.isSome then
+      .error f!"Function '{func.name}': a decreases clause was supplied but the \
+                function has no body"
     let func := { func with
       typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
@@ -89,6 +94,18 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
         .error f!"Function '{func.name}': body constrains the type to '{displayInferred}', \
                   incompatible with declared polymorphic signature '{displayMono}'"
     let Env := TEnv.updateSubst Env S
+    -- Ambient type variables (e.g. an enclosing procedure's type parameters) are
+    -- rigid in the body: the function body may not refine them to concrete types.
+    -- This mirrors the var-initializer check in `CmdType.checkAnnotCompat`; without
+    -- it, a nested `function f() : int { y }` over an ambient `y : t` would silently
+    -- specialize the rigid `t := int`.
+    let Sb := Env.stateSubstInfo.subst
+    match C.rigidTypeVars.find? (fun v => LMonoTy.subst Sb (.ftvar v) != .ftvar v) with
+    | some v =>
+      let inferred := LMonoTy.subst Sb (.ftvar v)
+      .error f!"Function '{func.name}': rigid type variable '{v}' was refined to \
+                '{inferred}' by the body"
+    | none => pure ()
     -- Apply S to the body, then rename type variables to match the
     -- instantiated typeArgs so that body annotations are consistent.
     let bodya := LExpr.applySubstT bodya S.subst
@@ -99,16 +116,18 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck
     -- using the TypeFactory, which has ADT information).
-    match func.measure with
+    let measure' ← match func.measure with
     | some measure =>
       match measure with
-      | .fvar _ _ _ => pure ()
+      | .fvar _ _ _ => pure func.measure
       | _ =>
         let (measurea, _) ← LExpr.resolve C Env measure
         let measurety := measurea.toLMonoTy
         if measurety != .int then
           .error f!"recursive function '{func.name}': non-variable decreases expression must have type int, got '{measurety}'. For structural recursion, use a parameter name"
-    | none => pure ()
+        else
+          pure (some (LExpr.applySubstT measurea userSubst).unresolved)
+    | none => pure none
     let Env := TEnv.popContext Env
     -- Rename back to user type variable names.
     let bodya := LExpr.applySubstT bodya userSubst
@@ -116,7 +135,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
       output := LMonoTy.subst userSubst func.output,
-      body := some bodya.unresolved }
+      body := some bodya.unresolved,
+      measure := measure' }
     .ok (new_func, Env)
 
 end Function
