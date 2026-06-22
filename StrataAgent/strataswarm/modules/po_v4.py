@@ -451,8 +451,16 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
         stub_rel, original_content, entry.workspace, entry.name,
         ancestor_modules=ancestor_modules)
 
+    # Detect mutual block membership
+    init_split = tools.split_theorems(stub_rel)
+    protected_names = {entry.name}
+    for block in init_split.blocks:
+        if block.name == entry.name and block.mutual_group is not None:
+            protected_names = set(init_split.mutual_groups.get(block.mutual_group, [entry.name]))
+            break
+
     # Build initial action for writer (same pattern as v3 — explicit SearchAgent instructions)
-    action = _build_initial_action(entry, stub_rel, guide_advice)
+    action = _build_initial_action(entry, stub_rel, guide_advice, protected_names)
 
     # ── Phase 1: Initial attempts (try to close all sorry directly) ──
     for attempt_idx in range(len(WRITER_TURNS)):
@@ -615,29 +623,57 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             prev_sorry = cur_sorry
 
     # ── Phase 2: Grace — factor remaining sorry into helpers (for extraction) ──
-    sorry_info = tools.get_sorries_by_theorem(stub_rel)
-    main_sorry_count = len(sorry_info.get(entry.name, []))
+    #
+    # Rule: the "protected block" (main theorem, or entire mutual group) must be
+    # sorry-free. Only standalone helpers OUTSIDE the protected block can have sorry.
+    # Those get extracted as child obligations.
 
-    if main_sorry_count == 0:
-        await agent._emit("message", "[PO4] Main theorem sorry-free → ready to extract")
+    split = tools.split_theorems(stub_rel)
+    # Identify the protected names: main theorem + all its mutual partners
+    protected_names = {entry.name}
+    for block in split.blocks:
+        if block.name == entry.name and block.mutual_group is not None:
+            protected_names = set(split.mutual_groups.get(block.mutual_group, [entry.name]))
+            break
+
+    sorry_info = tools.get_sorries_by_theorem(stub_rel)
+    protected_sorry_count = sum(len(sorry_info.get(n, [])) for n in protected_names)
+
+    if protected_sorry_count == 0:
+        await agent._emit("message", "[PO4] Protected block sorry-free → ready to extract")
         return "has_sorry"
 
-    await agent._emit("message",
-        f"[PO4] Grace phase: {main_sorry_count} sorry in main, factoring into helpers...")
+    is_mutual = len(protected_names) > 1
+    mutual_note = ""
+    if is_mutual:
+        mutual_note = (
+            f"\n\nIMPORTANT — MUTUAL BLOCK RULE:\n"
+            f"The mutual block contains: {sorted(protected_names)}\n"
+            f"ALL theorems in this mutual block must be sorry-free.\n"
+            f"Helper lemmas MUST be placed OUTSIDE and ABOVE the `mutual` keyword.\n"
+            f"Helpers must be standalone (not `mutual`), public, and can have sorry.\n"
+            f"Do NOT put helper theorems inside the mutual...end block.\n"
+        )
 
-    prev_main_sorry = main_sorry_count
-    for grace in range(main_sorry_count):
-        await agent._emit("message", f"[PO4] Grace {grace + 1}/{main_sorry_count} ({GRACE_TURNS} turns)")
+    await agent._emit("message",
+        f"[PO4] Grace phase: {protected_sorry_count} sorry in protected block "
+        f"({'mutual: ' + str(sorted(protected_names)) if is_mutual else entry.name})")
+
+    prev_protected_sorry = protected_sorry_count
+    for grace in range(max(protected_sorry_count, 3)):
+        await agent._emit("message", f"[PO4] Grace {grace + 1} ({GRACE_TURNS} turns)")
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
+        protected_sorry_positions = {n: sorry_info.get(n, []) for n in protected_names if sorry_info.get(n)}
         grace_action = (
             f"WRAP UP — grace attempt {grace + 1}.\n\n"
-            f"Remaining sorry in main theorem '{entry.name}': {sorry_info.get(entry.name, [])}\n\n"
-            f"For each sorry you cannot close directly, factor it into a helper:\n"
+            f"Remaining sorry in protected block: {protected_sorry_positions}\n\n"
+            f"For each sorry you cannot close directly, factor it into a STANDALONE helper:\n"
             f"  theorem helper_<name> (<params>) : <goal_type> := by sorry\n"
-            f"Then use `exact helper_<name> ...` in the main proof.\n\n"
-            f"The MAIN theorem '{entry.name}' must be sorry-free when you're done.\n"
-            f"Helpers CAN have sorry. Keep everything in one file. Make it compile."
+            f"Then use `exact helper_<name> ...` in the proof.\n\n"
+            f"The protected block ({sorted(protected_names)}) must be sorry-free when you're done.\n"
+            f"Standalone helpers outside the block CAN have sorry — they will be extracted."
+            f"{mutual_note}"
         )
 
         outcome = await verified_loop(
@@ -659,28 +695,29 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 return "has_sorry"
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
-        current_main_sorry = len(sorry_info.get(entry.name, []))
+        current_protected_sorry = sum(len(sorry_info.get(n, [])) for n in protected_names)
 
-        if current_main_sorry == 0:
-            await agent._emit("message", "[PO4] Main theorem sorry-free → ready to extract")
+        if current_protected_sorry == 0:
+            await agent._emit("message", "[PO4] Protected block sorry-free → ready to extract")
             return "has_sorry"
 
-        if current_main_sorry >= prev_main_sorry:
+        if current_protected_sorry >= prev_protected_sorry:
             await agent._emit("message",
-                f"[PO4] No reduction in main sorry ({current_main_sorry} remaining) — stopping")
+                f"[PO4] No reduction in protected sorry ({current_protected_sorry} remaining) — stopping")
             break
 
-        await agent._emit("message", f"[PO4] Main sorry: {prev_main_sorry} → {current_main_sorry}")
-        prev_main_sorry = current_main_sorry
+        await agent._emit("message", f"[PO4] Protected sorry: {prev_protected_sorry} → {current_protected_sorry}")
+        prev_protected_sorry = current_protected_sorry
 
-    # Final check: is there anything to extract?
+    # Final check: are there standalone helpers outside the protected block to extract?
     if tools.check_compiles(stub_rel).success:
         split = tools.split_theorems(stub_rel)
-        helpers = [b for b in split.blocks if b.name != entry.name]
-        if helpers:
+        extractable = [b for b in split.blocks
+                       if b.name not in protected_names and b.mutual_group is None]
+        if extractable:
             return "has_sorry"
 
-    ledger.mark_failed(entry.id, "Exhausted attempts, sorry count not reducing")
+    ledger.mark_failed(entry.id, "Exhausted attempts, protected block still has sorry")
     return "failed"
 
 
@@ -705,8 +742,23 @@ async def _do_extract(agent, state: PO4State, ledger: LemmaLedger,
     extractor_mcp = create_extractor_mcp_server(session)
 
     split = tools.split_theorems(stub_rel)
-    helper_count = len([b for b in split.blocks if b.name != entry.name])
-    await agent._emit("message", f"[PO4] Extracting {helper_count} helpers from {stub_rel}...")
+    # Identify protected names (main + mutual partners) — these stay in Stub.lean
+    protected_names = {entry.name}
+    for block in split.blocks:
+        if block.name == entry.name and block.mutual_group is not None:
+            protected_names = set(split.mutual_groups.get(block.mutual_group, [entry.name]))
+            break
+
+    extractable = [b for b in split.blocks
+                   if b.name not in protected_names and b.mutual_group is None]
+    await agent._emit("message", f"[PO4] Extracting {len(extractable)} standalone helpers from {stub_rel}...")
+
+    do_not_move_note = ""
+    if len(protected_names) > 1:
+        do_not_move_note = (
+            f"\nDo NOT move any of these (they are in a mutual block): {sorted(protected_names)}\n"
+            f"Only move standalone helpers that are OUTSIDE the mutual...end block.\n"
+        )
 
     async with swarm_agent("decl_extractor", swarm=agent.swarm, cwd=agent._cwd,
                            workspace=entry.workspace,
@@ -714,9 +766,10 @@ async def _do_extract(agent, state: PO4State, ledger: LemmaLedger,
         outcome = await verified_loop(
             agent_ctx=extractor,
             initial_input=(
-                f"Extract all helper declarations from {stub_rel} into separate files.\n"
+                f"Extract standalone helper declarations from {stub_rel} into separate files.\n"
                 f"Main theorem: '{entry.name}' (do NOT move this).\n"
-                f"Call get_declarations first, then move_decl for each helper, then commit."
+                f"{do_not_move_note}"
+                f"Call get_declarations first, then move_decl for each eligible helper, then commit."
             ),
             verify=lambda: _verify_extraction(tools, stub_rel, entry),
             max_rounds=3,
@@ -761,13 +814,27 @@ def _rewrite_imports_after_rename(cwd: Path, workspace: str, old_name: str, new_
 
 
 def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry) -> str | None:
-    """Verify extraction succeeded: Stub compiles, no sorry in main theorem."""
+    """Verify extraction succeeded: Stub compiles, no sorry in protected block.
+
+    Protected block = main theorem + all mutual partners. After extraction,
+    only standalone helpers outside the mutual block should have been moved.
+    The protected block must remain sorry-free.
+    """
     cr = tools.check_compiles(stub_rel)
     if not cr.success:
         return "Stub.lean doesn't compile after extraction"
+
+    split = tools.split_theorems(stub_rel)
+    protected_names = {entry.name}
+    for block in split.blocks:
+        if block.name == entry.name and block.mutual_group is not None:
+            protected_names = set(split.mutual_groups.get(block.mutual_group, [entry.name]))
+            break
+
     sorry_info = tools.get_sorries_by_theorem(stub_rel)
-    if entry.name in sorry_info:
-        return f"Main theorem '{entry.name}' still has sorry"
+    sorry_in_protected = [n for n in protected_names if n in sorry_info]
+    if sorry_in_protected:
+        return f"Protected block still has sorry: {sorry_in_protected}"
     return None
 
 
@@ -1121,8 +1188,24 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
 
 # ─── Initial action for writer ─────────────────────────────────────────────────
 
-def _build_initial_action(entry: LemmaEntry, stub_rel: str, guide_advice: str) -> str:
+def _build_initial_action(entry: LemmaEntry, stub_rel: str, guide_advice: str,
+                          protected_names: set[str] | None = None) -> str:
     """Build the first action message for proof_writer (mirrors v3's pattern)."""
+    if protected_names is None:
+        protected_names = {entry.name}
+
+    is_mutual = len(protected_names) > 1
+    mutual_instruction = ""
+    if is_mutual:
+        mutual_instruction = (
+            f"\n\nMUTUAL BLOCK RULE:\n"
+            f"This file contains a mutual block: {sorted(protected_names)}\n"
+            f"The ENTIRE mutual block must be sorry-free.\n"
+            f"If you need helper lemmas, place them OUTSIDE and ABOVE the `mutual` keyword.\n"
+            f"Helpers must be standalone (not inside mutual...end) and can have sorry.\n"
+            f"Do NOT put new theorems inside the mutual block.\n"
+        )
+
     msg = (
         f"Prove the theorem in {stub_rel}.\n"
         f"Theorem name: {entry.name}\n\n"
@@ -1138,6 +1221,7 @@ def _build_initial_action(entry: LemmaEntry, stub_rel: str, guide_advice: str) -
         f"5. Factor hard sub-goals into helper theorems with sorry above the main theorem\n"
         f"6. The main theorem's proof body must be sorry-free (helpers can have sorry)\n"
         f"7. Verify with lean_verify after every change\n"
+        f"{mutual_instruction}"
     )
     if guide_advice:
         msg = f"STRATEGY ADVICE from your proof guide:\n{guide_advice}\n\n{msg}"
