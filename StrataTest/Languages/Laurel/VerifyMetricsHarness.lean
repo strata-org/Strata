@@ -119,17 +119,20 @@ inductive Expect
   | verifies                 -- translated, numFailures == 0, numVCs > 0 (non-vacuous)
   | failsExactly (n : Nat)   -- translated, numFailures == n (n ≥ 1; the false-twins)
   | failsAtLeast (n : Nat)   -- translated, numFailures ≥ n (e.g. a gated precondition)
-  | rejected                 -- !translated (a type error / unsupported shape: fails loud).
-                             -- COARSE: asserts only that the program does not translate, not
-                             -- WHICH diagnostic fired (VerifyMetrics carries no message). A
-                             -- `.rejected` case must be authored so its ONLY translation
-                             -- failure is the intended one — keep the program minimal.
+  -- !translated (a type error / unsupported shape: fails loud). The optional `kind` pins
+  -- WHICH diagnostic kind fired (checked via a 2nd `verifyToDiagnosticModelsCapturing` pass,
+  -- since `VerifyMetrics` carries no message). Tag `.UserError` for a clean user rejection,
+  -- `.StrataBug` for the re-resolution internal-error net — so any future move BETWEEN the
+  -- two fails loud. `none` (default) keeps the coarse `!translated`-only check; a `.rejected`
+  -- case left coarse must be authored so its ONLY translation failure is the intended one.
+  | rejected (kind : Option DiagnosticType := none)
 
 def Expect.descr : Expect → String
   | .verifies       => "verifies"
   | .failsExactly n => s!"fails ×{n}"
   | .failsAtLeast n => s!"fails ≥{n}"
-  | .rejected       => "rejected"
+  | .rejected none       => "rejected"
+  | .rejected (some k)   => s!"rejected ({repr k})"
 
 /-- One corpus case: a stable `name`, Laurel `src`, expected `outcome`, and a one-line
     `why` (the rationale, surfaced in the failure message). -/
@@ -148,10 +151,23 @@ def checkCase (c : Case) : IO Unit := do
     | .verifies       => m.translated && m.numFailures == 0 && m.numVCs > 0
     | .failsExactly n => m.translated && m.numFailures == n
     | .failsAtLeast n => m.translated && m.numFailures >= n
-    | .rejected       => !m.translated
+    | .rejected _     => !m.translated
   unless ok do
     throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
       got translated={m.translated} numVCs={m.numVCs} numFailures={m.numFailures}")
+  -- For a `.rejected` case with an expected diagnostic kind, re-run the capturing path
+  -- (which carries `.type`/`.message`, unlike `VerifyMetrics`) and assert that a diagnostic
+  -- of the expected kind fired. Distinguishes a clean `.UserError` reject from the
+  -- re-resolution `.StrataBug` internal-error net.
+  match c.outcome with
+  | .rejected (some expectedKind) =>
+    let prog ← corpusParse c.name c.src
+    let diags ← verifyToDiagnosticModelsCapturing prog
+    unless diags.any (·.type == expectedKind) do
+      let kinds := diags.map (fun d => s!"{repr d.type}")
+      throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
+        no diagnostic of kind {repr expectedKind}; got kinds {kinds}")
+  | _ => pure ()
 
 /-- Run every case in a feature table. -/
 def checkCases (cases : List Case) : IO Unit := cases.forM checkCase

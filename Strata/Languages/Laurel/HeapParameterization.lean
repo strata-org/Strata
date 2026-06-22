@@ -213,8 +213,9 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "Box..compositeVal!"
   | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
-  -- Generic datatype instantiation `Bx<int>`: one box variant per instantiation.
-  | .Applied .. =>
+  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`:
+  -- one box variant per instantiation, named via the shared injective tag.
+  | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"Box..{tag}Val!"
     | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
@@ -235,8 +236,8 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
-  -- Generic datatype instantiation `Bx<int>`: one box variant per instantiation.
-  | .Applied .. =>
+  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`.
+  | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"Box..{tag}"
     | none => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
@@ -259,10 +260,10 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
-  -- Generic datatype instantiation `Bx<int>`: the box variant carries the FULL
-  -- `.Applied` type, so `translateType` lowers it to the right parametric Core sort
-  -- (`.tcons "Bx" [int]`) — keeping `Bx<int>` and `Bx<bool>` boxes distinct.
-  | .Applied .. =>
+  -- `.Applied` generic datatypes + built-in `.TMap`/`.TSet`: the box variant carries the
+  -- FULL type, so `translateType` lowers it to the right Core sort (`.tcons "Bx" [int]` for a
+  -- datatype, `Core.mapTy k v` for Map) — keeping distinct instantiations in distinct boxes.
+  | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => some { name := s!"Box..{tag}", args := [{ name := s!"{tag}Val", type := ⟨ty, none⟩ }] }
     | none => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none

@@ -289,6 +289,24 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
   let s ← get
+  -- A type alias (`type P = Pt`) has no type-scope of its own — its fields live under the
+  -- target composite's name. The first resolution runs BEFORE `TypeAliasElim`, so `p : P`'s
+  -- field access reaches here with the alias name; unfold it to the target's base name
+  -- (transitively, fuel-guarded against cycles) before the lookup.
+  let rec unfoldAlias (name : String) (fuel : Nat) : String :=
+    match fuel with
+    | 0 => name
+    | fuel + 1 =>
+      match s.scope.get? name with
+      | some (_, (.typeAlias ta : ResolvedNode)) =>
+        match ta.target.val with
+        | .UserDefined tgt => unfoldAlias tgt.text fuel
+        | .Applied base _ => match base.val with
+          | .UserDefined tgt => unfoldAlias tgt.text fuel
+          | _ => name
+        | _ => name
+      | _ => name
+  let typeName := unfoldAlias typeName 16
   match s.typeScopes.get? typeName with
   | some typeScope =>
     match typeScope.get? fieldName.text with

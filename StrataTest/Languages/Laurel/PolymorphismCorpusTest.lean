@@ -206,8 +206,11 @@ def polyProcedureCorpus : List Case := [
     why := "a violated precondition on the generic field `b#val` must GATE — requires-clauses monomorphize + are checked"
     src := "composite Box<T> { var val: T }\nprocedure get7<T>(b: Box<T>) returns (r: T) requires b#val == 7 opaque ensures r == b#val { r := b#val };\nprocedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 5; var got: int := get7(bx); assert got == 7 };" },
   { name := "poly_proc_concrete_composite_param", outcome := .verifies,
-    why := "a CONCRETE `Box<int>` param (no type vars) must still work"
-    src := "composite Box<T> { var val: T }\nprocedure take(b: Box<int>) opaque { assert 1 == 1 };\nprocedure u() opaque { var x: Box<int> := new Box; assert 1 == 1 };" },
+    why := "a CONCRETE `Box<int>` param is actually PASSED (take(x)) and its field observed via ensures — pins arg-passing, not just declaration"
+    src := "composite Box<T> { var val: T }\nprocedure take(b: Box<int>) returns (r: int) opaque ensures r == b#val { r := b#val };\nprocedure u() opaque { var x: Box<int> := new Box; x#val := 7; var got: int := take(x); assert got == 7 };" },
+  { name := "poly_proc_concrete_composite_param_wrong", outcome := .failsExactly 1,
+    why := "a FALSE read of the passed `Box<int>`'s field must FAIL — concrete-composite arg passing is sound, not vacuous"
+    src := "composite Box<T> { var val: T }\nprocedure take(b: Box<int>) returns (r: int) opaque ensures r == b#val { r := b#val };\nprocedure u() opaque { var x: Box<int> := new Box; x#val := 7; var got: int := take(x); assert got == 8 };" },
   -- #1121 coexistence — REJECT side. The `.TVar`-aware consistency arms (tvarize at
   -- registration; recursive `.Applied` arm; bare-name~instantiation arm) must NOT weaken the
   -- checker. Each of these is a type-incorrect program that must still be REJECTED; a leak
@@ -358,11 +361,30 @@ def genericCompositeCorpus : List Case := [
   { name := "generic_box_multi", outcome := .verifies,
     why := "two instantiations (Box<int>+Box<bool>) monomorphize independently"
     src := genericBoxMultiProgram },
-  -- SOUNDNESS GUARD: an arg the mangler can't tag injectively (`Box<Map int int>`) must
-  -- FAIL LOUD, never silently coalesce with another instantiation under a collapsed name.
-  { name := "untaggable_arg", outcome := .rejected,
-    why := "`Box<Map int int>` (un-taggable arg) must fail loud, not coalesce"
-    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var a: Box<Map int int> := new Box; assert 1 == 1 };" },
+  -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type. Since
+  -- `instTagCommon` now tags `.TMap` (`Map$a2$int$int`), this monomorphizes and verifies
+  -- (previously an un-taggable fail-loud limitation). SOUND, not coalescing — see the
+  -- `untaggable_*` twins below: distinct Map instantiations stay distinct, false reads fail.
+  { name := "generic_box_map_arg", outcome := .verifies,
+    why := "`Box<Map int int>` monomorphizes via the `.TMap` tag; field round-trips"
+    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 2 };" },
+  { name := "generic_box_map_arg_wrong", outcome := .failsExactly 1,
+    why := "a FALSE read of the boxed `Map int int` field must FAIL — the Map-tag boxing is sound, not vacuous"
+    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 3 };" },
+  -- Item 1: READING/WRITING a `Map`-typed COMPOSITE FIELD heap-boxes via the `.TMap`
+  -- instTagCommon arm (previously `boxDestructorNameError`, fail-loud). Sound: false read fails.
+  { name := "map_field_read", outcome := .verifies,
+    why := "read/write a `Map`-typed composite field round-trips (heap-boxed via the `.TMap` tag)"
+    src := "composite H { var m: Map int bool }\nprocedure u() opaque { var h: H := new H; h#m := update(h#m, 3, true); assert select(h#m, 3) == true };" },
+  { name := "map_field_read_wrong", outcome := .failsExactly 1,
+    why := "a FALSE read of the Map-typed field must FAIL — the field boxing is sound, not vacuous"
+    src := "composite H { var m: Map int bool }\nprocedure u() opaque { var h: H := new H; h#m := update(h#m, 3, true); assert select(h#m, 3) == false };" },
+  { name := "map_fields_distinct", outcome := .verifies,
+    why := "two DIFFERENT-(K,V) Map fields in one composite both round-trip — distinct instantiations stay distinct boxes (no coalescing)"
+    src := "composite H { var mib: Map int bool\n  var mii: Map int int }\nprocedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mib, 1) == true; assert select(h#mii, 1) == 9 };" },
+  { name := "map_fields_distinct_wrong", outcome := .failsExactly 1,
+    why := "a false cross-claim on the two distinct Map fields must FAIL — proves the boxes don't coalesce"
+    src := "composite H { var mib: Map int bool\n  var mii: Map int int }\nprocedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mii, 1) == 8 };" },
   -- A generic over a COLLECTION type (`Map K V`): the consistency relation recurses into
   -- `.TMap` element-wise (like `.Applied`) so a concrete `Map int bool` argument satisfies a
   -- `Map K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. Without the
@@ -410,9 +432,9 @@ def genericCompositeCorpus : List Case := [
   { name := "quant_body_field_wrong", outcome := .failsExactly 1,
     why := "a FALSE field-read fact in a quantifier body must FAIL — sound, not vacuous"
     src := "composite C { var v: int }\nprocedure u() opaque { var p: bool := forall(c: C) => c#v == 5; assert p };" },
-  { name := "untaggable_in_datatype", outcome := .rejected,
-    why := "`Box<Map int int>` as a datatype ctor arg must fail loud in EVERY position, not just var-decls"
-    src := "composite Box<T> { var val: T }\ndatatype Wrap { MkWrap(b: Box<Map int int>) }\nprocedure u() opaque { assert 1 == 1 };" },
+  { name := "generic_box_map_in_datatype", outcome := .verifies,
+    why := "`Box<Map int int>` as a datatype ctor arg monomorphizes via the `.TMap` tag in this position too (was un-taggable fail-loud); construction round-trips by equality"
+    src := "composite Box<T> { var val: T }\ndatatype Wrap { MkWrap(b: Box<Map int int>) }\nprocedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; var w: Wrap := MkWrap(b); assert w == MkWrap(b) };" },
   -- NESTED GENERICS: a composite whose field is a generic instantiation of the same param
   -- (`Pair<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
   { name := "nested_generic", outcome := .verifies,
@@ -431,8 +453,8 @@ def genericCompositeCorpus : List Case := [
     src := "composite Box<T> { var val: T }\ncomposite Pair<T> { var b: Box<T> }\nprocedure u() opaque { var p: Pair<int> := new Pair; var inner: Box<int> := new Box; inner#val := 7; p#b := inner; var got: Box<int> := p#b; assert got#val == 8 };" },
   -- TERMINATION + clean rejection: a divergent recursive generic (`L<T>{ next: L<L<T>> }`)
   -- is cut off at the depth bound and rejected LOUD — not a hang, not dead monomorphs.
-  { name := "recursive_generic_rejected", outcome := .rejected,
-    why := "divergent `L<L<T>>` must be REJECTED with a clear diagnostic (the test completing proves termination)"
+  { name := "recursive_generic_rejected", outcome := .rejected (some .NotYetImplemented),
+    why := "divergent `L<L<T>>` must be REJECTED via the depth-cap NotYetImplemented diagnostic (the test completing proves termination)"
     src := "composite L<T> { var next: L<L<T>> }\nprocedure u() opaque { var x: L<int> := new L; assert 1 == 1 };" },
   -- EXPLICIT `new C<τ>` SYNTAX: allocation carries its instantiation, so it works in every
   -- position incl. field-write + call-arg (which previously crashed in Core on `C_TypeTag`).
@@ -450,8 +472,8 @@ def genericCompositeCorpus : List Case := [
     src := "composite Box<T> { var val: T }\nprocedure u() opaque { var a: Box<int> := new Box<int>; a#val := 5; var b: Box<bool> := new Box<bool>; b#val := true; assert a#val == 5 };" },
   -- ARITY: an explicit `new C<τ…>` must supply exactly the composite's declared type-arg
   -- count. Surplus args would otherwise be silently dropped by the monomorphizer's `zip`.
-  { name := "new_typeargs_wrong_arity", outcome := .rejected,
-    why := "`new Box<int,bool>` for a single-param `Box<T>` must be REJECTED (type-arg arity check)"
+  { name := "new_typeargs_wrong_arity", outcome := .rejected (some .UserError),
+    why := "`new Box<int,bool>` for a single-param `Box<T>` must be REJECTED with a clean UserError (type-arg arity check), not the StrataBug net"
     src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<int, bool> := new Box<int, bool>; b#val := 7; assert b#val == 7 };" },
   { name := "new_bare_legacy", outcome := .verifies,
     why := "bare `new Box` in the legacy `var x: C<τ> := new C` form still works (args from declared type)"
@@ -488,7 +510,42 @@ def genericCompositeCorpus : List Case := [
   -- category must NOT compete with it (an `obj: StmtExpr` form mis-parsed `f()` as a field obj).
   { name := "multiassign_call_value", outcome := .verifies,
     why := "`assign var x, var y := two()` parses + translates (FieldPath must not collide with the value)"
-    src := "procedure two() returns (a: int, b: int) opaque ensures a == 1 ensures b == 2 { a := 1; b := 2 };\nprocedure u() opaque { assign var x: int, var y: int := two(); assert x == 1 };" } ]
+    src := "procedure two() returns (a: int, b: int) opaque ensures a == 1 ensures b == 2 { a := 1; b := 2 };\nprocedure u() opaque { assign var x: int, var y: int := two(); assert x == 1 };" },
+  -- 7(B): `is`/`as` operands are now a full `LaurelType` (was a bare `Ident`), so a generic
+  -- instantiation can be the test/cast target. Baseline (monomorphic) first, then generic.
+  { name := "is_monomorphic_baseline", outcome := .verifies,
+    why := "`p is Plain` against a monomorphic composite verifies (the non-generic baseline)"
+    src := "composite Plain { var v: int }\nprocedure u() opaque { var p: Plain := new Plain; assert p is Plain };" },
+  { name := "is_generic_inst", outcome := .verifies,
+    why := "`b is Box<int>` (specific instantiation) verifies — operand monomorphizes to `Box$a1$int`, lowerIsType keys its `_TypeTag`"
+    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<int> := new Box<int>; assert b is Box<int> };" },
+  { name := "is_generic_wrong_inst", outcome := .rejected (some .UserError),
+    why := "`Box<int> is Box<bool>` — distinct instantiations are unrelated, rejected with a clean UserError (sound, no crash)"
+    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<int> := new Box<int>; assert b is Box<bool> };" },
+  { name := "as_generic_inst", outcome := .verifies,
+    why := "`b as Box<int>` (downcast to the matching instantiation) verifies — `as` lowers via the HeapParam is-guard"
+    src := "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<int> := new Box<int>; var c: Box<int> := b as Box<int>; assert c#val == c#val };" },
+  -- 7(C): type-alias surface form `type Name = Target`. Backend (`TypeAliasElim`) was wired;
+  -- this exercises the new grammar/parse + the `resolveFieldInTypeScope` alias-unfold for
+  -- composite-typed aliases. NOTE: no trailing `;` after the alias (next keyword delimits).
+  { name := "alias_primitive", outcome := .verifies,
+    why := "`type MyInt = int` resolves transitively; the alias really is `int`"
+    src := "type MyInt = int\nprocedure u() opaque { var x: MyInt := 5; assert x == 5 };" },
+  { name := "alias_primitive_wrong", outcome := .failsExactly 1,
+    why := "a false assert through the primitive alias must FAIL (alias genuinely resolves to int)"
+    src := "type MyInt = int\nprocedure u() opaque { var x: MyInt := 5; assert x == 6 };" },
+  { name := "alias_chained", outcome := .verifies,
+    why := "`type A = int; type B = A` resolves transitively"
+    src := "type A = int\ntype B = A\nprocedure u() opaque { var x: B := 7; assert x == 7 };" },
+  { name := "alias_map", outcome := .verifies,
+    why := "`type IM = Map int bool` — select/const work through the alias"
+    src := "type IM = Map int bool\nprocedure u() opaque { var m: IM := const(false); assert select(m, 9) == false };" },
+  { name := "alias_composite_field", outcome := .verifies,
+    why := "`type P = Pt` (composite) + field access `p#x` — the resolveFieldInTypeScope alias-unfold finds Pt's fields"
+    src := "composite Pt { var x: int }\ntype P = Pt\nprocedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 3 };" },
+  { name := "alias_composite_field_wrong", outcome := .failsExactly 1,
+    why := "a false read through a composite alias's field must FAIL (alias resolves to the real Pt field)"
+    src := "composite Pt { var x: int }\ntype P = Pt\nprocedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 4 };" } ]
 
 /-- Generic composites verify end-to-end via monomorphization — across every type position,
     nested generics (fixpoint worklist), explicit `new C<τ>`, and chained field writes. -/
@@ -521,8 +578,11 @@ def genericDatatypeCorpus : List Case := [
     why := "`Bx<int>` AND `Bx<bool>` in one program each hold their value (one shared datatype)"
     src := "datatype Bx<T> { MkBx(v: T) }\nprocedure u() opaque { var bi: Bx<int> := MkBx(5); var bb: Bx<bool> := MkBx(true); assert bi == MkBx(5) && bb == MkBx(true) };" },
   { name := "generic_datatype_recursive", outcome := .verifies,
-    why := "recursive generic datatype `Lst<int>` (Cons/Nil) round-trips"
-    src := "datatype Lst<T> { Nil(), Cons(head: T, tail: Lst<T>) }\nprocedure u() opaque { var xs: Lst<int> := Cons(1, Nil()); assert 1 == 1 };" },
+    why := "recursive generic datatype `Lst<int>` (Cons/Nil) round-trips — value observed via equality, not just constructed"
+    src := "datatype Lst<T> { Nil(), Cons(head: T, tail: Lst<T>) }\nprocedure u() opaque { var xs: Lst<int> := Cons(1, Nil()); assert xs == Cons(1, Nil()) };" },
+  { name := "generic_datatype_recursive_wrong", outcome := .failsExactly 1,
+    why := "a wrong-value equality on the recursive `Lst<int>` must FAIL — the recursive lowering is sound, not degenerate"
+    src := "datatype Lst<T> { Nil(), Cons(head: T, tail: Lst<T>) }\nprocedure u() opaque { var xs: Lst<int> := Cons(1, Nil()); assert xs == Cons(2, Nil()) };" },
   { name := "generic_datatype_monomorphic_unaffected", outcome := .verifies,
     why := "a datatype with NO type params still works after the grammar gained Option TypeParams"
     src := "datatype Pr { MkPr(a: int, b: int) }\nprocedure u() opaque { var p1: Pr := MkPr(1, 2); var p2: Pr := MkPr(1, 2); assert p1 == p2 };" },
@@ -724,5 +784,4 @@ def runPolyRefFunctionTest : IO Unit := do
 
 #guard_msgs (drop info, error) in
 #eval runPolyRefFunctionTest
-
 end Strata.Laurel

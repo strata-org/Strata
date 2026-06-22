@@ -5,6 +5,8 @@
 -/
 
 module
+-- Then: `is`/`as` operands widened from Ident to LaurelType (generic `x is Box<int>`);
+-- added a `type Name = Target` alias command (TypeAliasDecl).
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.

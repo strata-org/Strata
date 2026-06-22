@@ -197,13 +197,9 @@ where
       laurelOp "new" #[ident name.text, typeArgsArg]
     | .This => laurelOp "identifier" #[ident "this"]
     | .IsType target ty =>
-      match ty.val with
-      | .UserDefined name => laurelOp "isType" #[stmtExprToArg target, ident name.text]
-      | _ => laurelOp "isType" #[stmtExprToArg target, ident "Unknown"]
+      laurelOp "isType" #[stmtExprToArg target, highTypeToArg ty]
     | .AsType target ty =>
-      match ty.val with
-      | .UserDefined name => laurelOp "asType" #[stmtExprToArg target, ident name.text]
-      | _ => laurelOp "asType" #[stmtExprToArg target, ident "Unknown"]
+      laurelOp "asType" #[stmtExprToArg target, highTypeToArg ty]
     | .InstanceCall target callee args =>
       -- Emit as a static call on target.callee(args)
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]

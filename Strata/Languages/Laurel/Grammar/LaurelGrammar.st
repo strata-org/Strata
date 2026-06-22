@@ -165,8 +165,8 @@ op mutableField (name: Ident, fieldType: LaurelType): Field => " var " name ": "
 op immutableField (name: Ident, fieldType: LaurelType): Field => " " name ": " fieldType;
 
 // Type checking and casting
-op isType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " is " typeName;
-op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " as " typeName;
+op isType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] target " is " targetType;
+op asType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] target " as " targetType;
 
 // Composite types with optional extends. Parents are LaurelTypes (not bare Idents) so a
 // generic composite can extend a generic parent at an instantiation: `extends Base<T>`.
@@ -251,8 +251,15 @@ op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
+// Type alias `type Name = Target`. No trailing `;` — top-level decls don't share a
+// separator (each renders its own terminator; the next leading keyword delimits, like
+// composite/datatype/constrained).
+category TypeAliasDecl;
+op typeAlias (name: Ident, target: LaurelType): TypeAliasDecl => "type " name " = " target;
+
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
+op typeAliasCommand(alias: TypeAliasDecl): Command => alias;
 

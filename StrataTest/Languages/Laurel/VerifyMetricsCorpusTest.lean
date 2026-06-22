@@ -216,6 +216,17 @@ be equal, and a same-direction miscount is not caught here. The most likely regr
 from the `verifyWithStats` split is a flipped direction (translated↔not, fails↔passes),
 which this does catch; the exact counts are pinned per feature in `PolymorphismCorpusTest`
 via `.failsExactly n`. -/
+/-- Polymorphism programs for the cross-check. `baselineCorpus` is monomorphic, so on its
+    own it leaves the re-resolution-after-monomorphize fold (and the generic translate paths)
+    un-cross-checked. These exercise: a verifying generic composite, a failing generic-proc
+    obligation, and a fail-loud reject — covering all three failure directions through the
+    monomorphization/freshening machinery. -/
+def polyCrossCheckCorpus : List (String × String) := [
+  ("poly_box_ok", "composite Box<T> { var val: T }\nprocedure u() opaque { var b: Box<int> := new Box<int>; b#val := 7; assert b#val == 7 };"),
+  ("poly_proc_fail", "procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };\nprocedure u() opaque { var a: int := idp(5); assert a == 6 };"),
+  ("poly_reject", "composite Box<T> { var val: T }\nprocedure f<T>(p: Box<T>) returns (r: int) opaque { r := 0 };\nprocedure u() opaque { var b: bool := true; var r: int := f(b); assert r == 0 };")
+]
+
 def runCrossCheck : IO Unit := do
   for (name, source, _) in baselineCorpus do
     let prog ← corpusParse name source
@@ -228,6 +239,17 @@ def runCrossCheck : IO Unit := do
         s!"(numFailures={m.numFailures}, translated={m.translated}) but " ++
         s!"verifyToDiagnostics produced {diags.size} diagnostics"
       throw (IO.userError msg)
+    IO.println s!"{name}: paths agree (failed={metricsSaysFailed})"
+  -- Same direction-agreement check over polymorphism programs (closes the gap that the
+  -- post-monomorphize re-resolution fold was only exercised by the single-path corpus).
+  for (name, source) in polyCrossCheckCorpus do
+    let prog ← corpusParse name source
+    let m ← Laurel.verifyToMetrics prog default
+    let diags ← Laurel.verifyToDiagnostics ∅ prog default
+    let metricsSaysFailed := !m.translated || m.numFailures > 0
+    let diagsSayFailed := !diags.isEmpty
+    unless metricsSaysFailed == diagsSayFailed do
+      throw (IO.userError s!"{name}: PATH DISAGREEMENT (poly) — metrics failed={metricsSaysFailed} (numFailures={m.numFailures}, translated={m.translated}) vs diags={diags.size}")
     IO.println s!"{name}: paths agree (failed={metricsSaysFailed})"
 
 #guard_msgs (drop info, error) in

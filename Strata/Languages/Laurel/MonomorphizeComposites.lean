@@ -81,6 +81,16 @@ partial def matchTypeArg (declared actual : HighType)
     match actual with
     | .Applied ab aargs =>
       if dargs.length != aargs.length then none
+      -- SELF-GUARD: two `.UserDefined` heads with different base names must NOT match.
+      -- The head recursion below binds nothing for `.UserDefined`/`.UserDefined` (it hits
+      -- the catch-all), so without this `Box<T>` would structurally match `Pair<int>` on
+      -- arity alone (MatchTypeArgTest case 5). No live wrong-accept today — the earlier
+      -- gradual-assignability gate rejects such args — but this makes monomorphization
+      -- self-guarding rather than trusting an upstream pass. Only the both-named-mismatch
+      -- case is constrained; every other head shape keeps the prior behavior.
+      else if (match db.val, ab.val with
+               | .UserDefined dn, .UserDefined an => dn.text != an.text
+               | _, _ => false) then none
       else
         -- match the head, then each arg positionally, threading `acc`
         match matchTypeArg db.val ab.val acc with

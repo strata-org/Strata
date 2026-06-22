@@ -362,14 +362,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let name ← translateIdent nameArg
       let typeArgs ← translateNewTypeArgs typeArgsArg
       return mkStmtExprMd (.New name typeArgs) src
-    | q`Laurel.isType, #[targetArg, typeNameArg] =>
+    | q`Laurel.isType, #[targetArg, typeArg] =>
       let target ← translateStmtExpr targetArg
-      let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.IsType target (mkHighTypeMd (.UserDefined typeName) src)) src
-    | q`Laurel.asType, #[targetArg, typeNameArg] =>
+      let ty ← translateHighType typeArg
+      return mkStmtExprMd (.IsType target ty) src
+    | q`Laurel.asType, #[targetArg, typeArg] =>
       let target ← translateStmtExpr targetArg
-      let typeName ← translateIdent typeNameArg
-      return mkStmtExprMd (.AsType target (mkHighTypeMd (.UserDefined typeName) src)) src
+      let ty ← translateHighType typeArg
+      return mkStmtExprMd (.AsType target ty) src
     | q`Laurel.call, #[arg0, argsSeq] =>
       let callee ← translateStmtExpr arg0
       let argsList ← match argsSeq with
@@ -774,8 +774,17 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
   | q`Laurel.constrainedTypeCommand, #[ctArg] =>
     let ct ← parseConstrainedType ctArg
     return (none, some (.Constrained ct))
+  | q`Laurel.typeAliasCommand, #[aliasArg] =>
+    let .op aliasOp := aliasArg
+      | TransM.error s!"typeAliasCommand expects operation"
+    match aliasOp.name, aliasOp.args with
+    | q`Laurel.typeAlias, #[nameArg, targetArg] =>
+      let name ← translateIdent nameArg
+      let target ← translateHighType targetArg
+      return (none, some (.Alias { name := name, target := target }))
+    | _, _ => TransM.error s!"typeAliasCommand expects typeAlias op, got {repr aliasOp.name}"
   | _, _ =>
-    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got {repr op.name}"
+    TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, or typeAliasCommand, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax

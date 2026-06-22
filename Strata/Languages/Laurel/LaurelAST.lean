@@ -708,6 +708,19 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
       let argTags ← as.mapM (fun a => recurse a.val)
       some s!"{n.text}$a{argTags.length}${String.intercalate "$" argTags}"
     | _ => none
+  -- Built-in collection formers `Map`/`Set` tag like a 2-/1-ary applied type, so a
+  -- `Map`-/`Set`-typed composite FIELD can be heap-boxed (the box-name fns route through
+  -- this tagger). `Map`/`Set` are reserved keywords (no user `.Applied Map`), so `Map$a2$…`
+  -- cannot collide with a user generic. The `do`-block short-circuits to `none` on an
+  -- untaggable element (e.g. a nested `.TVar`), preserving injectivity / fail-loud exactly
+  -- like the `.Applied` arm above.
+  | .TMap k v => do
+    let kt ← recurse k.val
+    let vt ← recurse v.val
+    some s!"Map$a2${kt}${vt}"
+  | .TSet e => do
+    let et ← recurse e.val
+    some s!"Set$a1${et}"
   | _ => none
 
 /-- A canonical, source-free string key for a `HighType`, for deduping the
