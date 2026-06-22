@@ -25,6 +25,7 @@ from typing import Any
 class LemmaStatus(str, Enum):
     PENDING = "pending"
     PROVING = "proving"
+    CONTINGENT = "contingent"  # decomposed — proof depends on children being proved
     PROVED = "proved"
     FAILED = "failed"
     CYCLE = "cycle"
@@ -272,10 +273,11 @@ class LemmaLedger:
             if not pending:
                 return None
 
+
             def priority(e: LemmaEntry) -> tuple:
                 boost = 1 if e.priority_boost else 0
                 indeg = self._indegree.get(e.id, 0)
-                return (boost, indeg, e.depth, -e.attempts)
+                return (boost, indeg, -e.depth, -e.attempts)
 
             pending.sort(key=priority, reverse=True)
             winner = pending[0]
@@ -409,7 +411,7 @@ class LemmaLedger:
     def all_proved(self) -> bool:
         with self._lock:
             for e in self._entries.values():
-                if e.status in (LemmaStatus.PENDING, LemmaStatus.PROVING):
+                if e.status in (LemmaStatus.PENDING, LemmaStatus.PROVING, LemmaStatus.CONTINGENT):
                     return False
             return True
 
@@ -424,6 +426,13 @@ class LemmaLedger:
             entry = self._entries.get(entry_id)
             if entry:
                 entry.status = LemmaStatus.PROVING
+                entry.priority_boost = False
+
+    def mark_contingent(self, entry_id: str):
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if entry:
+                entry.status = LemmaStatus.CONTINGENT
                 entry.priority_boost = False
 
     def mark_proved(self, entry_id: str, import_path: str, proved_by: str = "direct"):
@@ -460,7 +469,7 @@ class LemmaLedger:
 
     def _prune_recursive(self, entry_id: str, reason: str, acc: list[str]):
         entry = self._entries.get(entry_id)
-        if not entry or entry.status in (LemmaStatus.PRUNED, LemmaStatus.PROVED):
+        if not entry or entry.status in (LemmaStatus.PRUNED, LemmaStatus.PROVED, LemmaStatus.FAILED):
             return
         entry.status = LemmaStatus.PRUNED
         entry.pruned_reason = reason
@@ -567,8 +576,9 @@ class LemmaLedger:
             # Define nodes — use text status markers (emojis break some renderers)
             status_marker = {
                 LemmaStatus.PROVED: "PROVED", LemmaStatus.PROVING: "ACTIVE",
-                LemmaStatus.PENDING: "pending", LemmaStatus.FAILED: "FAILED",
-                LemmaStatus.PRUNED: "pruned", LemmaStatus.CYCLE: "CYCLE",
+                LemmaStatus.CONTINGENT: "WAITING", LemmaStatus.PENDING: "pending",
+                LemmaStatus.FAILED: "FAILED", LemmaStatus.PRUNED: "pruned",
+                LemmaStatus.CYCLE: "CYCLE",
             }
             # Node shapes: proved=stadium, active=hexagon, others=rectangle
             for entry in self._entries.values():
@@ -591,6 +601,7 @@ class LemmaLedger:
             style_map = {
                 LemmaStatus.PROVED: "fill:#2d6,stroke:#1a4,color:#fff",
                 LemmaStatus.PROVING: "fill:#48f,stroke:#36c,color:#fff,stroke-width:4px",
+                LemmaStatus.CONTINGENT: "fill:#26c,stroke:#14a,color:#fff",
                 LemmaStatus.PENDING: "fill:#eee,stroke:#999",
                 LemmaStatus.FAILED: "fill:#e44,stroke:#a22,color:#fff",
                 LemmaStatus.PRUNED: "fill:#aaa,stroke:#666,color:#fff",
@@ -656,6 +667,7 @@ class LemmaLedger:
                 LemmaStatus.FAILED: "✗✗ failed",
                 LemmaStatus.PENDING: "⏳",
                 LemmaStatus.PROVING: "🔨",
+                LemmaStatus.CONTINGENT: "⏸ waiting",
             }[entry.status]
 
         prefix = "│   " * indent

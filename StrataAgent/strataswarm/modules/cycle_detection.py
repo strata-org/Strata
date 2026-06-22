@@ -591,7 +591,7 @@ async def detect(
                 )
 
         elif match_status == "proved":
-            # Already proved: give writer 5 turns to close our sorry using it
+            # Already proved: give writer 10 turns to close our sorry using it
             if await verify_proved_match(agent, cwd, file_path, match_file, match_name):
                 import_path = match_file.replace("/", ".").removesuffix(".lean")
                 return DetectionResult(
@@ -602,15 +602,7 @@ async def detect(
                     import_path=import_path,
                 )
 
-        else:
-            # Pending/proving: give writer 5 turns to prove THEIR sorry using our lemma
-            if await verify_pending_match(agent, cwd, match_file, file_path, name):
-                return DetectionResult(
-                    match_type=MatchType.SHARED,
-                    matched_id=entry_id,
-                    matched_name=match_name,
-                    reason=f"Our '{name}' can prove pending '{match_name}' → shared dependency",
-                    import_path=file_path.replace("/", ".").removesuffix(".lean"),
-                )
+        # Skip non-proved matches — don't create dependencies on unproved/contingent entries.
+        # They'll get proved on their own; we can reuse them later.
 
     return DetectionResult(match_type=MatchType.NO_MATCH)

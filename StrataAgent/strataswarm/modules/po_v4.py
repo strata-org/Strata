@@ -350,6 +350,10 @@ async def _do_detect_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Pat
     """Run cycle detection on extracted helpers."""
     lemma = ledger.get(state.current_lemma_id)
     result = await _do_detect(agent, state, ledger, lemma, cwd)
+    if result == "rejected":
+        # Decomposition identical to previous failed one — mark failed, guide retries
+        ledger.mark_failed(lemma.id, "Decomposition rejected: identical to previously failed attempt")
+        return Trans.EXTRACT_FAILED
     return Trans.CYCLE_FOUND if result == "cycle_found" else Trans.NO_CYCLE
 
 
@@ -466,10 +470,18 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             use_run_ai=True,
         )
 
-        # Proved: this file has no sorry (text check — transitive check is for assembly only)
+        # No local sorry + compiles → check transitive
         if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-            ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-            return "proved"
+            cr = tools.check_compiles(stub_rel)
+            if cr.has_sorry:
+                # No local sorry but transitive sorry from imports → contingent
+                ledger.mark_contingent(entry.id)
+                await agent._emit("message", f"[PO4] Contingent: no local sorry, waiting on dependencies")
+                return "has_sorry"
+            else:
+                # Fully proved — no sorry anywhere (locally or transitively)
+                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+                return "proved"
 
         # Check progress
         current = (cwd / stub_rel).read_text()
@@ -577,8 +589,13 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             )
 
             if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-                return "proved"
+                cr = tools.check_compiles(stub_rel)
+                if not cr.has_sorry:
+                    ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+                    return "proved"
+                else:
+                    ledger.mark_contingent(entry.id)
+                    return "has_sorry"
 
             cur_sorry = sum(len(v) for v in tools.get_sorries_by_theorem(stub_rel).values())
             if cur_sorry >= prev_sorry:
@@ -633,8 +650,13 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
         )
 
         if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-            ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-            return "proved"
+            cr = tools.check_compiles(stub_rel)
+            if not cr.has_sorry:
+                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+                return "proved"
+            else:
+                ledger.mark_contingent(entry.id)
+                return "has_sorry"
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         current_main_sorry = len(sorry_info.get(entry.name, []))
@@ -673,7 +695,13 @@ async def _do_extract(agent, state: PO4State, ledger: LemmaLedger,
     tools = get_lean_tools()
     stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
 
-    session = MoveSession(tools, stub_rel, entry.name, entry.workspace)
+    # Stage extraction into new_decomposition/ (not decomposed/ directly)
+    new_decomp_dir = cwd / entry.workspace / "new_decomposition"
+    if new_decomp_dir.exists():
+        shutil.rmtree(new_decomp_dir)
+
+    session = MoveSession(tools, stub_rel, entry.name, entry.workspace,
+                          output_subdir="new_decomposition")
     extractor_mcp = create_extractor_mcp_server(session)
 
     split = tools.split_theorems(stub_rel)
@@ -701,10 +729,35 @@ async def _do_extract(agent, state: PO4State, ledger: LemmaLedger,
         return "extract_failed"
 
     session.finalize()
-    decomposed_dir = cwd / entry.workspace / "decomposed"
-    new_files = list(decomposed_dir.glob("lemma_helper_*.lean")) if decomposed_dir.exists() else []
-    await agent._emit("message", f"[PO4] Extraction done: {len(new_files)} files created")
+    new_files = list(new_decomp_dir.glob("lemma_helper_*.lean")) if new_decomp_dir.exists() else []
+    await agent._emit("message", f"[PO4] Extraction done: {len(new_files)} files staged")
     return "extracted"
+
+
+def _rewrite_imports_after_rename(cwd: Path, workspace: str, old_name: str, new_name: str):
+    """After renaming a folder, rewrite imports in all .lean files in the workspace.
+
+    Replaces 'old_name' with 'new_name' in import statements of:
+    - Stub.lean (the main file that imports the helpers)
+    - All .lean files inside the renamed directory (cross-references)
+    """
+    old_module = old_name.replace("/", ".")
+    new_module = new_name.replace("/", ".")
+
+    # Rewrite Stub.lean
+    stub = cwd / workspace / "Stub.lean"
+    if stub.exists():
+        content = stub.read_text()
+        if old_module in content:
+            stub.write_text(content.replace(old_module, new_module))
+
+    # Rewrite all .lean files in the renamed directory
+    renamed_dir = cwd / workspace / new_name
+    if renamed_dir.exists():
+        for f in renamed_dir.rglob("*.lean"):
+            content = f.read_text()
+            if old_module in content:
+                f.write_text(content.replace(old_module, new_module))
 
 
 def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry) -> str | None:
@@ -735,22 +788,40 @@ class DetectVerdict:
 
 async def _do_detect(agent, state: PO4State, ledger: LemmaLedger,
                      entry: LemmaEntry, cwd: Path) -> str:
-    """Run cycle detection on each extracted helper. Produces verdicts stored in state.
+    """Run cycle detection on staged helpers in new_decomposition/.
 
-    Does NOT modify the ledger — that's _do_update's job.
-    Returns: 'no_cycle' | 'cycle_found'
+    Checks each helper against:
+    1. Ancestors (cycle detection via BFS)
+    2. Pruned siblings from same parent (repeated failed decomposition)
+
+    If ALL helpers match pruned siblings → REJECT decomposition entirely.
+    Otherwise: commit (rename new_decomposition/ → decomposed/) and produce verdicts.
+
+    Returns: 'no_cycle' | 'cycle_found' | 'rejected'
     """
     tools = get_lean_tools()
-    decomposed_dir = cwd / entry.workspace / "decomposed"
-    if not decomposed_dir.exists():
+    new_decomp_dir = cwd / entry.workspace / "new_decomposition"
+    if not new_decomp_dir.exists():
         state._detect_verdicts = []
         return "no_cycle"
 
-    new_files = sorted(decomposed_dir.glob("lemma_helper_*.lean"))
+    new_files = sorted(new_decomp_dir.glob("lemma_helper_*.lean"))
+    if not new_files:
+        state._detect_verdicts = []
+        return "no_cycle"
+
     await agent._emit("message", f"[PO4] Running cycle detection on {len(new_files)} helpers...")
+
+    # Gather pruned siblings' signature hashes for dedup check
+    pruned_hashes = set()
+    for child_id in entry.children:
+        child = ledger.get(child_id)
+        if child and child.status in (LemmaStatus.PRUNED, LemmaStatus.CYCLE, LemmaStatus.FAILED):
+            pruned_hashes.add(child.signature_hash)
 
     verdicts = []
     cycles_found = False
+    matched_pruned_count = 0
 
     for f in new_files:
         rel = str(f.relative_to(cwd))
@@ -760,12 +831,16 @@ async def _do_detect(agent, state: PO4State, ledger: LemmaLedger,
         block = split.blocks[0]
         sig_hash = LemmaLedger.compute_signature_hash(block.text)
 
+        # Check against pruned siblings (fast hash match)
+        if sig_hash in pruned_hashes:
+            matched_pruned_count += 1
+
         # Depth limit
         if entry.depth + 1 > MAX_DEPTH:
             await agent._emit("message", f"[PO4] Depth limit for {block.name}")
             continue
 
-        # Run detection
+        # Run cycle detection
         det_result = await detect(
             agent=agent, ledger=ledger, name=block.name,
             file_path=rel, signature_hash=sig_hash,
@@ -791,11 +866,44 @@ async def _do_detect(agent, state: PO4State, ledger: LemmaLedger,
         elif det_result.match_type == MatchType.REUSE:
             await agent._emit("message", f"[PO4] REUSE: {block.name} ← {det_result.matched_name}")
         elif det_result.match_type == MatchType.SHARED:
-            await agent._emit("message", f"[PO4] SHARED: {block.name} ↔ {det_result.matched_name}")
+            pass  # no longer create dependencies on unproved entries
 
-    # Store verdicts for _do_update to consume
+    # Check: if ALL new helpers match pruned siblings → reject decomposition
+    if matched_pruned_count > 0 and matched_pruned_count >= len(new_files):
+        await agent._emit("message",
+            f"[PO4] REJECTED: all {matched_pruned_count} helpers match previously failed decomposition")
+        # Delete staged files, restore Stub.lean from clean
+        shutil.rmtree(new_decomp_dir)
+        clean = cwd / entry.workspace / "Stub.clean.lean"
+        stub = cwd / entry.workspace / "Stub.lean"
+        if clean.exists():
+            shutil.copy2(clean, stub)
+        state._detect_verdicts = []
+        return "rejected"
+
+    # Accept: commit staged decomposition
+    # Archive old decomposed/ if exists
+    decomposed_dir = cwd / entry.workspace / "decomposed"
+    if decomposed_dir.exists():
+        idx = 0
+        while (cwd / entry.workspace / f"decomposed_old_{idx}").exists():
+            idx += 1
+        decomposed_dir.rename(cwd / entry.workspace / f"decomposed_old_{idx}")
+
+    # Rename new_decomposition/ → decomposed/
+    new_decomp_dir.rename(decomposed_dir)
+
+    # Rewrite imports: replace "new_decomposition" with "decomposed" in all affected files
+    _rewrite_imports_after_rename(cwd, entry.workspace, "new_decomposition", "decomposed")
+
+    # Update file paths in verdicts to point to decomposed/ (not new_decomposition/)
+    for v in verdicts:
+        v.file_path = v.file_path.replace("/new_decomposition/", "/decomposed/")
+
     state._detect_verdicts = verdicts
-    await agent._emit("message", f"[PO4] Detection done: {len(verdicts)} verdicts, cycles={'yes' if cycles_found else 'no'}")
+    await agent._emit("message",
+        f"[PO4] Detection done: {len(verdicts)} verdicts, cycles={'yes' if cycles_found else 'no'}, "
+        f"pruned_matches={matched_pruned_count}/{len(new_files)}")
     return "cycle_found" if cycles_found else "no_cycle"
 
 
@@ -805,7 +913,7 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
     """Apply all pending changes to the ledger.
 
     Handles:
-    1. Detect verdicts (if coming from DETECT phase) — register/cycle/reuse/shared
+    1. Detect verdicts (if coming from DETECT phase) — register/cycle/reuse
     2. Failed lemma propagation — if entry is FAILED, prune siblings + re-activate parent
 
     All DAG mutations happen here and only here.
@@ -836,16 +944,6 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
                     ledger.add_parent(new_entry.id, v.matched_id)
                     ledger.mark_proved(new_entry.id, v.import_path, proved_by="shortcut")
 
-            elif v.match_type == "shared":
-                new_entry = ledger.add_lemma(
-                    name=v.name, file_path=v.file_path,
-                    workspace=v.file_path.removesuffix(".lean"),
-                    signature_hash=v.signature_hash, statement=v.statement,
-                    parent_id=entry.id,
-                )
-                if not isinstance(new_entry, str):
-                    ledger.add_parent(v.matched_id, new_entry.id)
-
             else:
                 ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
@@ -856,16 +954,20 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
 
         state._detect_verdicts = None
 
+        # Entry just decomposed — mark as contingent (waiting for children)
+        if entry.status == LemmaStatus.PROVING:
+            ledger.mark_contingent(entry.id)
+
     # 2. Prune all children of parents with dead nodes + re-activate parents + restore Stub
     from .cycle_detection import prune_siblings_of_dead
     prune_siblings_of_dead(ledger, cwd)
 
-    # 3. Propagate proved upward: if all children of a node are proved, mark it proved too
+    # 3. Propagate proved upward: if all children of a CONTINGENT node are proved, mark it proved
     changed = True
     while changed:
         changed = False
         for e in ledger.entries():
-            if e.status != LemmaStatus.PENDING:
+            if e.status != LemmaStatus.CONTINGENT:
                 continue
             if not e.children:
                 continue
@@ -1049,33 +1151,124 @@ def _build_initial_action(entry: LemmaEntry, stub_rel: str, guide_advice: str) -
 
 # ─── Ledger summary for guide ─────────────────────────────────────────────────
 
+def _find_failure_paths(ledger: LemmaLedger, entry_id: str) -> str:
+    """Recursively find FAILED/CYCLE entries and show the path from entry to each failure.
+
+    Returns a formatted string showing the decomposition chain leading to failure:
+      immediate_child (statement snippet)
+        next_child (statement snippet)
+          ... (trimmed if deep)
+        failed_leaf [FAILED: reason]
+    """
+    lines = []
+
+    def _walk(node_id: str, depth: int):
+        node = ledger.get(node_id)
+        if not node:
+            return
+        indent = "  " * depth
+
+        if node.status == LemmaStatus.FAILED:
+            lines.append(f"{indent}{node.name} [FAILED: {node.failure_reason[:100]}]")
+            return
+        if node.status == LemmaStatus.CYCLE:
+            ancestor = ledger.get(node.cycle_ancestor_id)
+            anc_name = ancestor.name if ancestor else "?"
+            lines.append(f"{indent}{node.name} [CYCLE: ≈ {anc_name}]")
+            return
+
+        # Show this node in the path
+        snippet = (node.statement or "")[:60].replace("\n", " ")
+        lines.append(f"{indent}{node.name} ({snippet})")
+
+        # If too deep, trim
+        if depth >= 4:
+            lines.append(f"{indent}  ... (trimmed)")
+            # Jump to the leaf failure
+            _find_leaf_failure(node_id, depth + 1)
+            return
+
+        # Recurse into failed/cycle/pruned children only
+        for child_id in node.children:
+            child = ledger.get(child_id)
+            if child and child.status in (LemmaStatus.FAILED, LemmaStatus.CYCLE, LemmaStatus.PRUNED):
+                _walk(child_id, depth + 1)
+
+    def _find_leaf_failure(node_id: str, depth: int):
+        """Find the deepest FAILED/CYCLE node in this subtree."""
+        node = ledger.get(node_id)
+        if not node:
+            return
+        if node.status == LemmaStatus.FAILED:
+            indent = "  " * depth
+            lines.append(f"{indent}{node.name} [FAILED: {node.failure_reason[:100]}]")
+            return
+        if node.status == LemmaStatus.CYCLE:
+            indent = "  " * depth
+            ancestor = ledger.get(node.cycle_ancestor_id)
+            lines.append(f"{indent}{node.name} [CYCLE: ≈ {ancestor.name if ancestor else '?'}]")
+            return
+        for child_id in node.children:
+            child = ledger.get(child_id)
+            if child and child.status in (LemmaStatus.FAILED, LemmaStatus.CYCLE):
+                _find_leaf_failure(child_id, depth)
+                return
+            if child and child.status == LemmaStatus.PRUNED:
+                _find_leaf_failure(child_id, depth)
+                return
+
+    entry = ledger.get(entry_id)
+    if not entry:
+        return ""
+
+    for child_id in entry.children:
+        child = ledger.get(child_id)
+        if child and child.status in (LemmaStatus.FAILED, LemmaStatus.CYCLE, LemmaStatus.PRUNED):
+            _walk(child_id, 0)
+
+    return "\n".join(lines) if lines else ""
+
+
 def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
     """Build a targeted summary of ledger state for the proof guide.
 
     Called at prove time. Includes:
-    - What's proved (importable)
-    - Previous failed attempts on THIS lemma (pruned children = bad decompositions)
-    - Cycles detected in this lemma's history
-    - What depends on this lemma (motivation)
+    - Current status (normal vs contingent needing re-decomposition)
+    - Previous failed/pruned/cycle children (what decompositions failed)
+    - Active children still pending
+    - Ancestry (who depends on us)
     """
     proved_count = sum(1 for e in ledger.entries() if e.status == LemmaStatus.PROVED)
+    contingent_count = sum(1 for e in ledger.entries() if e.status == LemmaStatus.CONTINGENT)
     total_count = len(ledger.entries())
 
     lines = [
         f"You are proving: {entry.name} (depth={entry.depth}, indegree={ledger.indegree(entry.id)})",
-        f"DAG progress: {proved_count}/{total_count} proved",
+        f"DAG progress: {proved_count}/{total_count} proved, {contingent_count} contingent",
         f"\nTo find proved lemmas you can import, use: ledger_search(query=..., status_filter=['proved'])",
     ]
 
-    # THIS lemma's pruned children = previous decomposition attempts that FAILED
+    # If this entry was CONTINGENT (re-activated because child failed), tell guide
+    if entry.status == LemmaStatus.PENDING and entry.children:
+        failure_trace = _find_failure_paths(ledger, entry.id)
+        if failure_trace:
+            lines.append(f"\n⚠️  THIS LEMMA WAS PREVIOUSLY CONTINGENT (decomposed, waiting on children).")
+            lines.append(f"The decomposition FAILED. Decomposition path to failure:")
+            lines.append(failure_trace)
+            lines.append(f"\nYou need a DIFFERENT decomposition strategy.")
+            lines.append(f"Consider: mutual recursion, induction, or a completely different approach.")
+
+    # THIS lemma's pruned/failed children = previous decomposition attempts
     children = ledger.get_children(entry.id)
     pruned_children = [c for c in children if c.status == LemmaStatus.PRUNED]
     cycle_children = [c for c in children if c.status == LemmaStatus.CYCLE]
 
     if pruned_children:
         lines.append(f"\nYOUR PREVIOUS FAILED DECOMPOSITIONS ({len(pruned_children)}) — DO NOT repeat:")
-        for c in pruned_children:
+        for c in pruned_children[:5]:
             lines.append(f"  - {c.name}: {c.pruned_reason}")
+        if len(pruned_children) > 5:
+            lines.append(f"  ... and {len(pruned_children) - 5} more")
 
     if cycle_children:
         lines.append(f"\nCYCLES DETECTED ({len(cycle_children)}) — these helpers recreated an ancestor:")
@@ -1085,8 +1278,9 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
             lines.append(f"  - {c.name} ≈ {ancestor_name} — the lemma decomposes recursively to a "
                          f"very similar signature. Possibly INDUCTION will be more helpful here.")
 
-    # Active children still pending
-    active_children = [c for c in children if c.status in (LemmaStatus.PENDING, LemmaStatus.PROVING)]
+    # Active children still pending/contingent
+    active_children = [c for c in children
+                       if c.status in (LemmaStatus.PENDING, LemmaStatus.PROVING, LemmaStatus.CONTINGENT)]
     if active_children:
         lines.append(f"\nYour current sub-lemmas ({len(active_children)}):")
         for c in active_children:

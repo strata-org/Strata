@@ -164,11 +164,13 @@ class MoveSession:
             session.finalize()      # remove backup, extraction complete
     """
 
-    def __init__(self, tools: "SwarmLeanTools", file_path: str, main_theorem: str, workspace: str):
+    def __init__(self, tools: "SwarmLeanTools", file_path: str, main_theorem: str, workspace: str,
+                 output_subdir: str = "decomposed"):
         self._tools = tools
         self._file_path = file_path
         self._main_theorem = main_theorem
         self._workspace = workspace
+        self._output_subdir = output_subdir
         self._moves: list[MoveIntent] = []
         self._split: SplitResult | None = None
         self._backup: str | None = None  # original file content
@@ -256,7 +258,7 @@ class MoveSession:
         header = "\n".join(header_lines)
 
         # Output directory
-        out_path = root / self._workspace / "decomposed"
+        out_path = root / self._workspace / self._output_subdir
         out_path.mkdir(parents=True, exist_ok=True)
         out_rel = str(out_path.relative_to(root))
 
@@ -384,7 +386,7 @@ class MoveSession:
         source.write_text(self._backup)
 
         # Remove decomposed files we created
-        out_path = root / self._workspace / "decomposed"
+        out_path = root / self._workspace / self._output_subdir
         if out_path.exists():
             shutil.rmtree(out_path)
 
