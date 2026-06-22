@@ -499,9 +499,11 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-WRITER_TURNS = [75, 50, 25, 12]
+CHUNK_TURNS = 35           # turns per prove chunk
+CONTEXT_THRESHOLD = 65.0   # % — trigger extraction when writer hits this
 GRACE_TURNS = 20
 WRITER_CLEANUP_TURNS = 10
+STALL_CHUNKS = 2           # consult guide after this many no-progress chunks
 
 
 async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
@@ -576,41 +578,41 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
     # Build initial action for writer (same pattern as v3 — explicit SearchAgent instructions)
     action = _build_initial_action(entry, stub_rel, guide_advice, protected_names)
 
-    # ── Phase 1: Initial attempts (try to close all sorry directly) ──
-    for attempt_idx in range(len(WRITER_TURNS)):
-        turns = WRITER_TURNS[attempt_idx]
+    # ── Phase 1: Context-aware prove loop ──
+    # Run writer in chunks until: proved, context ≥65%, or hard backstop hit.
+    # Consult guide on stalls. This maximizes what the writer learns before decomposing.
+    total_turns_used = 0
+    stall_count = 0
+    prev_sorry_count = None
+
+    while True:
         ledger.increment_attempts(entry.id)
         await agent._emit("message",
-            f"[PO4] Attempt {entry.attempts}/{entry.max_attempts} ({turns} turns)")
+            f"[PO4] Chunk {entry.attempts} ({CHUNK_TURNS} turns, "
+            f"total={total_turns_used})")
 
         outcome = await verified_loop(
             agent_ctx=writer,
-            initial_input=f"{action}\n\nYou have {turns} turns.",
+            initial_input=f"{action}\n\nYou have {CHUNK_TURNS} turns.",
             verify=verify_fn,
             max_rounds=2,
-            max_turns=turns,
+            max_turns=CHUNK_TURNS,
             use_run_ai=True,
         )
+        total_turns_used += CHUNK_TURNS
 
-        # No local sorry + compiles → check transitive
+        # ── Check: proved? ──
         if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
             cr = tools.check_compiles(stub_rel)
             if cr.has_sorry:
-                # No local sorry but transitive sorry from imports → contingent
                 ledger.mark_contingent(entry.id)
-                await agent._emit("message", f"[PO4] Contingent: no local sorry, waiting on dependencies")
+                await agent._emit("message", "[PO4] Contingent: no local sorry, waiting on dependencies")
                 return "has_sorry"
             else:
-                # Fully proved — no sorry anywhere (locally or transitively)
                 ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                 return "proved"
 
-        # Check progress
-        current = (cwd / stub_rel).read_text()
-        if current.strip() == original_content.strip():
-            await agent._emit("message", "[PO4] No progress — file unchanged")
-            continue
-
+        # ── Check: file broken? ──
         if not tools.check_compiles(stub_rel).success:
             await agent._emit("message", "[PO4] File broken — cleanup round")
             await writer.run_ai(
@@ -620,63 +622,81 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             )
             if not tools.check_compiles(stub_rel).success:
                 (cwd / stub_rel).write_text(original_content)
-                continue
 
-        # Consult guide between attempts — skip on last iteration (no next attempt)
-        if attempt_idx >= len(WRITER_TURNS) - 1:
+        # ── Check: context % — should we stop and extract? ──
+        ctx_pct = await writer.get_context_percentage()
+        if ctx_pct is not None and ctx_pct >= CONTEXT_THRESHOLD:
+            await agent._emit("message",
+                f"[PO4] Writer context at {ctx_pct:.0f}% ≥ {CONTEXT_THRESHOLD}% — moving to extraction")
+            await _dump_guide_state(guide, entry, cwd)
             break
 
+        # ── Check: progress stall ──
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         sorry_count = sum(len(v) for v in sorry_info.values())
-        await agent._emit("message", f"[PO4] Still has {sorry_count} sorry. Consulting guide...")
 
-        first_thm = next(iter(sorry_info), None)
-        sorry_detail = ""
-        if first_thm and sorry_info[first_thm]:
-            pos = sorry_info[first_thm][0]
-            sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see the stuck goal."
+        current = (cwd / stub_rel).read_text()
+        if current.strip() == original_content.strip():
+            stall_count += 1
+        elif prev_sorry_count is not None and sorry_count >= prev_sorry_count:
+            stall_count += 1
+        else:
+            stall_count = 0
+        prev_sorry_count = sorry_count
 
-        advice_result = await guide.run_ai(
-            inp=(
-                f"Writer is stuck after attempt {entry.attempts}.\n"
-                f"File: {stub_rel}\n"
-                f"Goals with sorry: {sorry_info}\n"
-                f"{sorry_detail}\n"
-                f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
-                f"If a goal looks contradictory or not provable in isolation, say so clearly."
-            ),
-        )
-        advice = advice_result.raw_result or "Try a different approach."
+        # ── Stall: consult guide ──
+        if stall_count >= STALL_CHUNKS:
+            stall_count = 0
+            await agent._emit("message", f"[PO4] Stalled ({sorry_count} sorry). Consulting guide...")
 
-        # If guide explicitly says the statement itself is false/contradictory, ask confirmation
-        # (NOT triggered by structural issues like "needs mutual" — those are solvable in-file)
-        if any(phrase in advice.lower() for phrase in
-               ["contradictory", "statement is false", "not provable as stated",
-                "the theorem is false", "give up"]):
-            from .._helpers import ask
+            first_thm = next(iter(sorry_info), None)
+            sorry_detail = ""
+            if first_thm and sorry_info[first_thm]:
+                pos = sorry_info[first_thm][0]
+                sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see the stuck goal."
 
-            @dataclass
-            class GuideVerdict:
-                give_up: bool = False
-                reason: str = ""
-
-            verdict = await ask(
+            advice_result = await guide.run_ai(
                 inp=(
-                    f"The proof guide said: {advice}\n\n"
-                    f"DIRECT QUESTION: Should we GIVE UP on proving this lemma in isolation?\n"
-                    f"give_up=true means: this lemma cannot be proved standalone, "
-                    f"it needs restructuring at the parent level (e.g. mutual recursion).\n"
-                    f"give_up=false means: it's hard but still possible, keep trying."
+                    f"Writer is stuck after {total_turns_used} turns.\n"
+                    f"File: {stub_rel}\n"
+                    f"Goals with sorry: {sorry_info}\n"
+                    f"{sorry_detail}\n"
+                    f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
+                    f"If a goal looks contradictory or not provable in isolation, say so clearly."
                 ),
-                result_type=GuideVerdict,
-                system_prompt="You decide whether to abandon a proof attempt. Be conservative — only give up if truly impossible standalone.",
             )
-            if verdict.output and verdict.output.give_up:
-                await agent._emit("message", f"[PO4] Guide gives up: {verdict.output.reason}")
-                ledger.mark_failed(entry.id, f"Guide abandoned: {verdict.output.reason}")
-                return "failed"
+            advice = advice_result.raw_result or "Try a different approach."
 
-        action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
+            # Contradictory check
+            if any(phrase in advice.lower() for phrase in
+                   ["contradictory", "statement is false", "not provable as stated",
+                    "the theorem is false", "give up"]):
+                from .._helpers import ask
+
+                @dataclass
+                class GuideVerdict:
+                    give_up: bool = False
+                    reason: str = ""
+
+                verdict = await ask(
+                    inp=(
+                        f"The proof guide said: {advice}\n\n"
+                        f"DIRECT QUESTION: Should we GIVE UP on proving this lemma in isolation?\n"
+                        f"give_up=true means: this lemma cannot be proved standalone, "
+                        f"it needs restructuring at the parent level (e.g. mutual recursion).\n"
+                        f"give_up=false means: it's hard but still possible, keep trying."
+                    ),
+                    result_type=GuideVerdict,
+                    system_prompt="You decide whether to abandon a proof attempt. Be conservative — only give up if truly impossible standalone.",
+                )
+                if verdict.output and verdict.output.give_up:
+                    await agent._emit("message", f"[PO4] Guide gives up: {verdict.output.reason}")
+                    ledger.mark_failed(entry.id, f"Guide abandoned: {verdict.output.reason}")
+                    return "failed"
+
+            action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
+        else:
+            action = f"Continue the proof. {sorry_count} sorry remaining in {stub_rel}."
 
     # ── At max depth: no extraction, prove everything in one file ──
     if entry.depth >= MAX_DEPTH:
@@ -1279,7 +1299,12 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLe
 
 
 async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLedger):
-    """Get or create persistent proof_guide for this lemma."""
+    """Get or create persistent proof_guide for this lemma.
+
+    - Compaction disabled: guide accumulates full context across all consultations.
+    - Prior state: if a guide_state file exists from a previous session, it's
+      injected as the first message so the guide "remembers" past strategies.
+    """
     from .._ledger_mcp import create_ledger_mcp_server
     attr = f"_guide_{entry.id}"
     if getattr(agent, attr, None) is None:
@@ -1291,13 +1316,55 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
             template_vars={"cheat_sheet_path": cheat_rel},
             can_see=["SearchAgent"],
             extra_mcp_servers={"ledger": ledger_mcp},
+            disable_compaction=True,
         )
         internal = await ctx.__aenter__()
         setattr(agent, f"{attr}_ctx", ctx)
         setattr(agent, attr, internal)
         state.agent_registry[entry.id] = state.agent_registry.get(entry.id, {})
         state.agent_registry[entry.id]["guide"] = internal.spec.name
+
+        # Inject prior guide state if it exists (from a previous session/compaction dump)
+        cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+        guide_state_path = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
+        if guide_state_path.exists():
+            prior_state = guide_state_path.read_text()
+            await internal.run_ai(
+                inp=(
+                    f"PRIOR SESSION STATE (from your previous work on this lemma):\n\n"
+                    f"{prior_state}\n\n"
+                    f"Use this as context. You've seen this problem before."
+                ),
+                max_turns=1,
+            )
+
     return getattr(agent, attr)
+
+
+async def _dump_guide_state(guide, entry: LemmaEntry, cwd: Path):
+    """Ask guide to summarize its accumulated knowledge and save to disk.
+
+    Called when writer hits context threshold. The dump persists across sessions
+    so a fresh guide can reload it.
+    """
+    result = await guide.run_ai(
+        inp=(
+            "DUMP YOUR STATE: Summarize everything you've learned about this proof.\n"
+            "Include:\n"
+            "- What strategies were tried and their outcomes\n"
+            "- What proof techniques worked vs failed\n"
+            "- Key insights about the theorem structure\n"
+            "- What you would advise a fresh attempt to do differently\n"
+            "- Specific Lean tactics or lemmas that were useful\n\n"
+            "Be concise but complete. This will be your memory for next session."
+        ),
+        max_turns=3,
+    )
+    state_text = result.raw_result or ""
+    if state_text.strip():
+        guide_dir = cwd / entry.workspace / "guide_state"
+        guide_dir.mkdir(parents=True, exist_ok=True)
+        (guide_dir / f"{entry.name}.md").write_text(state_text)
 
 
 # ─── Initial action for writer ─────────────────────────────────────────────────

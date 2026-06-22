@@ -74,6 +74,7 @@ class AgentSpec(Generic[T]):
     module: str | None = None  # Python module path for custom workflow orchestration
     checkpointable: bool = False  # If True, appends handoff suffix to system prompt
     checkpoint_prompt: str | None = None  # Domain-specific handoff instructions (appended when checkpointable)
+    disable_compaction: bool = False  # If True, never auto-compact — context accumulates indefinitely
     auto_start: bool = True  # If False, agent is not started by the swarm — must be launched manually
     hooks: str | None = None  # dotted path to a hook factory in modules/hooks.py (e.g. "search_agent_hooks")
     tool_error_reminder: str | None = None  # Message injected when a tool call fails (permission/workspace errors)

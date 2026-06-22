@@ -259,13 +259,11 @@ class LemmaLedger:
         return self._root_id
 
     def pick_next(self) -> LemmaEntry | None:
-        """Return the most pressing pending lemma.
+        """Mechanical fallback for selecting next PENDING lemma.
 
-        Priority order:
-        1. priority_boost (re-activated after cycle/fail — must be proved first)
-        2. Highest indegree (most things depend on it)
-        3. Highest depth (deeper = closer to leaf = easier to close)
-        4. Fewest attempts (most recent / freshest)
+        Used only when the strategist agent is unavailable. Prefers:
+        1. Boosted entries (re-activated after cycle/fail)
+        2. Deeper nodes with higher indegree (DFS bias)
         """
         with self._lock:
             pending = [e for e in self._entries.values()
@@ -273,16 +271,32 @@ class LemmaLedger:
             if not pending:
                 return None
 
+            boosted = [e for e in pending if e.priority_boost]
+            if boosted:
+                boosted.sort(key=lambda e: (self._indegree.get(e.id, 0), e.depth), reverse=True)
+                winner = boosted[0]
+                winner.turn_budget = 25 + self._indegree.get(winner.id, 0) * 5
+                return winner
 
-            def priority(e: LemmaEntry) -> tuple:
-                boost = 1 if e.priority_boost else 0
-                indeg = self._indegree.get(e.id, 0)
-                return (boost, indeg, -e.depth, -e.attempts)
-
-            pending.sort(key=priority, reverse=True)
+            pending.sort(key=lambda e: (e.depth, self._indegree.get(e.id, 0), -e.attempts), reverse=True)
             winner = pending[0]
             winner.turn_budget = 25 + self._indegree.get(winner.id, 0) * 5
             return winner
+
+    def pending_children(self, entry_id: str) -> list[LemmaEntry]:
+        """Return PENDING children of an entry (for strategist to examine)."""
+        with self._lock:
+            parent = self._entries.get(entry_id)
+            if not parent:
+                return []
+            return [self._entries[cid] for cid in parent.children
+                    if cid in self._entries
+                    and self._entries[cid].status == LemmaStatus.PENDING]
+
+    def has_pending(self) -> bool:
+        """True if any entry is PENDING."""
+        with self._lock:
+            return any(e.status == LemmaStatus.PENDING for e in self._entries.values())
 
     # ─── Search (BM25) ───────────────────────────────────────────────────────
 

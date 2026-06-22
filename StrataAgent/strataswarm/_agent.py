@@ -416,6 +416,10 @@ class SwarmAgent:
             self._wait_after_completion = saved_wait
             self.spec.max_turns = saved_turns
 
+    async def get_context_percentage(self) -> float | None:
+        """Return context window usage as 0-100 percentage, or None if unavailable."""
+        return await self.backend.get_context_percentage()
+
     async def run_checkpoint(self) -> str:
         """Generate a checkpoint handoff note.
 
@@ -544,8 +548,8 @@ class SwarmAgent:
                 # Yield to event loop between cycles
                 await asyncio.sleep(0)
 
-                # Context management (stateful only)
-                if not self.spec.stateless:
+                # Context management (stateful only, unless disabled)
+                if not self.spec.stateless and not self.spec.disable_compaction:
                     ctx_pct = await self.backend.get_context_percentage()
                     if ctx_pct is not None and ctx_pct >= 70.0:
                         if self.spec.checkpointable:
