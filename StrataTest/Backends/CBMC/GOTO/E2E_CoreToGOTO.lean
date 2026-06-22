@@ -350,13 +350,20 @@ private def injectPropertySummary (stmts : List Core.Statement) (msg : String)
       .cmd (.cmd (.assert label b (md.withPropertySummary msg)))
     | other => other
 
+-- This helper is exercised only against structured Core programs because
+-- `injectPropertySummary` pattern-matches on `Core.Statement`. Adding CFG
+-- support would require an analogous injection over `DetCFG` block commands.
+-- The user-facing two-stage path (structured → CFG → GOTO) already exists as
+-- `procedureToGotoCtxViaCFG`; this helper deliberately uses the direct path
+-- to test summary propagation through the structured pipeline.
 private def coreToGotoJsonWithSummary (p : StrataDDM.Program) (summary : String) :
     Except Std.Format (Lean.Json × Lean.Json) := do
   let cprog := translateCore p
   let Env := Lambda.TEnv.default
   let procs := cprog.decls.filterMap fun d => d.getProc?
   let p := procs[0]!
-  let p' : Core.Procedure := { p with body := injectPropertySummary p.body summary }
+  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+  let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
   let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")

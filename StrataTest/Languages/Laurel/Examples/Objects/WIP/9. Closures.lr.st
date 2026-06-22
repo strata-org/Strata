@@ -100,17 +100,19 @@ procedure hasClosure() returns (r: int)
 
 // Option B: type closures
 composite ATrait {
-  procedure foo() returns (r: int) ensures r > 0 {
+  procedure foo() returns (r: int) ensures r > 0
+  {
     abstract
   };
 }
 
 procedure hasClosure() returns (r: int)
+  opaque
   ensures r == 7
 {
   var x = 3;
   var aClosure := closure extends ATrait {
-    procedure foo() returns (r: int) 
+    procedure foo() returns (r: int)
     {
       r = x + 4;
     };

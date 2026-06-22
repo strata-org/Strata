@@ -48,17 +48,23 @@ Declarative typing for imperative commands, parameterized over `ExprTypingSpec`.
 inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
-  /-- `var x : T := e` — `x` must be fresh, `e` must have a type unifiable with `T`. -/
-  | init_det : ∀ Γ x (xty : LTy) e mty md,
+  /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
+      an instantiation of `T` up to `RigidAnnotCompat` (see `Cmd.typeCheck_sound`). -/
+  | init_det : ∀ Γ x (xty : LTy) e mty tys md,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
+      tys.length = xty.boundVars.length →
+      RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       S.exprTyped C Γ e (S.embed mty) →
       CmdHasType' C Γ (.init x xty (.det e) md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
-  /-- `var x : T := *` — `x` must be fresh. -/
-  | init_nondet : ∀ Γ x (xty : LTy) mty md,
+  /-- `var x : T := *` — `x` must be fresh, and `mty` must be an instantiation of
+      `T` up to `RigidAnnotCompat` (as in `init_det`). -/
+  | init_nondet : ∀ Γ x (xty : LTy) mty tys md,
       Γ.types.find? x = none →
+      tys.length = xty.boundVars.length →
+      RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       CmdHasType' C Γ (.init x xty .nondet md)
         { Γ with types := Γ.types.insert x (.forAll [] mty) }
 
@@ -95,12 +101,6 @@ abbrev CmdHasType (C : LContext CoreLParams) :=
 /-- `CmdHasType'` instantiated with the annotated `HasTypeA` relation. -/
 abbrev CmdHasTypeA (C : LContext CoreLParams) :=
   @CmdHasType' LMonoTy C instHasTypeA
-
-/-- All context types are monomorphic (have empty bound variables).
-In Core this always holds: `preprocess` instantiates poly annotations, and
-`update`/`postprocess` stores only `forAll [] _`. -/
-@[expose] def ContextMono (Γ : TContext Unit) : Prop :=
-  ∀ x ty, Γ.types.find? x = some ty → LTy.boundVars ty = []
 
 end -- public section
 

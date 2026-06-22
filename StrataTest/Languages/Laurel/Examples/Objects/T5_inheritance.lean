@@ -3,19 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 composite Base {
   var xValue: int
 }
@@ -92,14 +88,11 @@ procedure diamondInheritance()
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.
-//procedure typedParameter(b: Bottom) {
+//procedure typedParameter(b: Bottom) opaque {
 //  var b: Bottom := b;
 //  assert b is Left;
 //  assert b is Right;
 //  assert b is Top;
 //  assert b is Bottom;
 //}
-"
-
-#guard_msgs (drop info) in
-#eval testInputWithOffset "Inheritance" program 14 processLaurelFile
+#end

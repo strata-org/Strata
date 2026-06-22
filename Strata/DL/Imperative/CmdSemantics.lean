@@ -56,82 +56,6 @@ def isDefinedOver {P : PureExpr}
   (getVars : α → List P.Ident) (σ : SemanticStore P) (s : α) : Prop :=
   isDefined σ (getVars s)
 
-theorem isDefinedCons :
-  isDefined σ [v] →
-  isDefined σ vs2 →
-  isDefined σ (v :: vs2) := by
-  intros Hd1 Hd2
-  simp [isDefined] at *
-  simp [Option.isSome] at *
-  split <;> simp_all
-
-theorem isDefinedApp :
-  isDefined σ vs1 →
-  isDefined σ vs2 →
-  isDefined σ (vs1 ++ vs2) := by
-  intros Hd1 Hd2
-  simp [isDefined] at *
-  intros id Hin
-  simp [Option.isSome] at *
-  cases Hin with
-  | inl Hin =>
-    split <;> simp
-    specialize Hd1 id Hin; simp_all
-  | inr Hin =>
-    split <;> simp
-    specialize Hd2 id Hin; simp_all
-
-theorem isDefinedCons' :
-  isDefined σ (h :: t) →
-  isDefined σ [h] ∧ isDefined σ t := by simp [isDefined] at *
-
-theorem isDefinedApp' :
-  isDefined σ (t1 ++ t2) →
-  isDefined σ t1 ∧ isDefined σ t2 := by
-  intros Hd
-  simp [isDefined] at *
-  apply And.intro
-  . intros x Hin
-    apply Hd; left; assumption
-  . intros x Hin
-    apply Hd; right; assumption
-
-theorem isNotDefinedCons :
-  isNotDefined σ [v] →
-  isNotDefined σ vs2 →
-  isNotDefined σ (v :: vs2) := by
-  intros Hd1 Hd2
-  simp [isNotDefined] at *
-  simp_all
-
-theorem isNotDefinedApp :
-  isNotDefined σ vs1 →
-  isNotDefined σ vs2 →
-  isNotDefined σ (vs1 ++ vs2) := by
-  intros Hd1 Hd2
-  simp [isNotDefined] at *
-  intros id Hin
-  cases Hin with
-  | inl Hin =>
-    specialize Hd1 id Hin; simp_all
-  | inr Hin =>
-    specialize Hd2 id Hin; simp_all
-
-theorem isNotDefinedCons' :
-  isNotDefined σ (h :: t) →
-  isNotDefined σ [h] ∧ isNotDefined σ t := by simp [isNotDefined] at *
-
-theorem isNotDefinedApp' :
-  isNotDefined σ (t1 ++ t2) →
-  isNotDefined σ t1 ∧ isNotDefined σ t2 := by
-  intros Hd
-  simp [isNotDefined] at *
-  apply And.intro
-  . intros x Hin
-    apply Hd; left; assumption
-  . intros x Hin
-    apply Hd; right; assumption
-
 /-! ### Store Substitution -/
 
 /-- Substitution relation between stores.  -/
@@ -157,74 +81,13 @@ def invStoresExcept {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.
 def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
   : List (P.Ident × P.Ident) := substs.map Prod.swap
 
-theorem substSwapId (substs : List (P.Ident × P.Ident)) :
-  (substSwap (substSwap substs)) = substs := by
-  simp [substSwap]
-
-theorem substStoresFlip :
-  substStores σ₁ σ₂ substs →
-  substStores σ₂ σ₁ (substSwap substs) := by
-  intros Hsub
-  simp [substStores, substSwap] at *
-  intros k1 k2 x2 x1 Hin Heq1 Heq2
-  simp_all
-  apply Eq.symm
-  apply Hsub
-  exact Hin
-
-theorem substStoresFlip' :
-  substStores σ₂ σ₁ (substSwap substs) →
-  substStores σ₁ σ₂ substs := by
-  intros Hsub
-  have Hsub' := substStoresFlip Hsub
-  simp [substSwapId] at Hsub'
-  exact Hsub'
-
-theorem substDefinedFlip :
-  substDefined σ₁ σ₂ substs →
-  substDefined σ₂ σ₁ (substSwap substs) := by
-  intros Hsub
-  simp [substDefined, substSwap] at *
-  intros k1 k2 x2 x1 Hin Heq1 Heq2
-  simp_all
-  exact And.comm.mp (Hsub k2 k1 Hin)
-
-theorem substDefinedFlip' :
-  substDefined σ₂ σ₁ (substSwap substs) →
-  substDefined σ₁ σ₂ substs := by
-  intros Hsub
-  have Hsub' := substDefinedFlip Hsub
-  simp [substSwapId] at Hsub'
-  exact Hsub'
-
-theorem invStoresComm :
-  invStores σ₁ σ₂ ks →
-  invStores σ₂ σ₁ ks := by
-  intros Hinv
-  simp [invStores] at *
-  apply substStoresFlip'
-  simp [substSwap]
-  assumption
-
-theorem invStoresExceptComm :
-  invStoresExcept σ₁ σ₂ ks →
-  invStoresExcept σ₂ σ₁ ks := by
-  intros Hinv ks' Hdisj
-  simp [invStoresExcept] at *
-  exact invStoresComm (Hinv ks' Hdisj)
-
 /-! ### Well-Formedness of `SemanticEval`s -/
 
-/-- The boolean evaluator and the general evaluator are in agreement
--- only defined conservatively,
--- since there could be coercions like [1 >>= True] and [0 >>= False]
--- or that when δ evaluates to none, δP evaluates to False
-  -/
-def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasNot P]
+@[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
     (δ : SemanticEval P) : Prop :=
     ∀ σ e,
-      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.ff)) ∧
-      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasNot.not e) = (some HasBool.tt))
+      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
+      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
 def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
@@ -236,8 +99,8 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
 
-@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
-    : Prop := ∀ e σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ e = δ σ' e
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
+    : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
 
 /--
 Abstract variable update.
@@ -281,7 +144,7 @@ sets it to `true`; all other constructors report `false`.
 The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
+inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
   SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
@@ -343,99 +206,5 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     EvalCmd δ σ (.cover _ e _) σ false
 
 end section
-
-theorem InitStateDefCons
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  InitState P σ v e σ' →
-  isDefined σ' (v::vs) := by
-  intros Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined, HH] at *
-  intros v' Hv'
-  have Heq: ¬ v = v' :=by
-    false_or_by_contra; rename_i Heq
-    specialize Hdef v' Hv'
-    simp_all
-  specialize Hsome v' Heq
-  specialize Hdef v'
-  simp_all
-
-theorem InitStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  InitState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  exact (isDefinedCons' (InitStateDefCons Hdef Heval)).right
-
-theorem UpdateStateDef
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
-  UpdateState P σ v e σ' →
-  isDefined σ [v] ∧ isDefined σ' [v] := by
-  intro Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp_all [isDefined]
-
-theorem UpdateStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  UpdateState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStateUniqueResult
-  {P : PureExpr} {σ σ' σ'': SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
-  UpdateState P σ v e σ' →
-  UpdateState P σ v e σ'' →
-  σ' = σ'' := by
-  intro Hu1 Hu2
-  cases Hu1; cases Hu2
-  rename_i Hfa1 _ _ _ Hfa2 _
-  ext v' e'
-  by_cases h: v' = v
-  simp_all
-  rw[eq_comm] at h
-  specialize Hfa1 v' h
-  specialize Hfa2 v' h
-  simp_all
-
-theorem InitStateUniqueResult
-  {P : PureExpr} {σ σ' σ'': SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
-  InitState P σ v e σ' →
-  InitState P σ v e σ'' →
-  σ' = σ'' := by
-  intro Hu1 Hu2
-  cases Hu1; cases Hu2
-  rename_i Hfa1 _ _ Hfa2 _
-  ext v' e'
-  by_cases h: v' = v
-  simp_all
-  rw[eq_comm] at h
-  specialize Hfa1 v' h
-  specialize Hfa2 v' h
-  simp_all
 
 end -- public section

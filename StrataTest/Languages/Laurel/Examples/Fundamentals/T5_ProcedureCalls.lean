@@ -3,21 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-module
 
-meta import all StrataTest.Util.TestDiagnostics
-meta import all StrataTest.Languages.Laurel.TestExamples
-
-meta section
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure fooReassign(): int
-  opaque
+  opaque // required because we don't yet support destructive assignment in transparent bodies
 {
   var x: int := 0;
   x := x + 1;
@@ -27,7 +23,6 @@ procedure fooReassign(): int
 };
 
 procedure fooSingleAssign(): int
-  opaque
 {
   var x: int := 0;
   var x2: int := x + 1;
@@ -41,7 +36,7 @@ procedure fooProof()
   var x: int := fooReassign();
   var y: int := fooSingleAssign()
 // The following assertions fails while it should succeed,
-// because Core does not yet support transparent procedures
+// because we don't yet support making fooReassign transparent
 //  assert x == y;
 };
 
@@ -56,7 +51,4 @@ procedure aFunctionCaller()
   var x: int := aFunction(3);
   assert x == 3
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "ProcedureCalls" program 14 processLaurelFile
+#end

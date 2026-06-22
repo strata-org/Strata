@@ -12,11 +12,12 @@ public import Strata.DL.Imperative.MetaData
 public import Strata.DL.Imperative.CmdEval
 public import Strata.DL.Imperative.CmdType
 public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.CmdSemanticsProps
+public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtSemanticsProps
 
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
-
-public import Strata.DL.Imperative.SemanticsProps
 
 public import Strata.DL.Imperative.SMTUtils

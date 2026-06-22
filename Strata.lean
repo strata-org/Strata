@@ -13,7 +13,7 @@ import StrataDDM.Ion
 
 /- Dialect Library -/
 import Strata.DL.SMT
-import Strata.DL.Lambda.Lambda
+import Strata.DL.Lambda
 import Strata.DL.Imperative
 
 /- Utilities -/
@@ -34,7 +34,6 @@ import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.ProcBodyVerifyCorrect
-import Strata.Transform.Specification
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
@@ -79,7 +78,6 @@ import Strata.Cli.VerifyOptions
 
 -- noimport:
 import Strata.DL.Imperative.CFGSemantics
-import Strata.DL.Imperative.SemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
@@ -95,6 +93,7 @@ import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Util.HList
+import Strata.Languages.Core.CommandTypeSpecProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
