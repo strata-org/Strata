@@ -2603,8 +2603,22 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
+/-- Resolve a procedure output parameter, given the names of the inputs already
+    in scope. A parameter whose name also appears in the inputs is a true inout
+    parameter (e.g. the `$heap` synthesized by heap parameterization): it denotes
+    the *same* variable as the input, so we resolve its name as a reference to the
+    existing input definition rather than re-defining it (which
+    `defineNameCheckDup` would otherwise flag as a duplicate). -/
+def resolveOutputParameter (inputNames : List String) (param : Parameter) : ResolveM Parameter := do
+  if inputNames.contains param.name.text then
+    let ty' ← resolveHighType param.type
+    let name' ← resolveRef param.name
+    return ⟨name', ty'⟩
+  else
+    resolveParameter param
+
 /-- Resolve a procedure body by synthesizing its body (if any).
-    Bodies without a body (`Abstract`, `External`) resolve
+    Bodies without an body (`Abstract`, `External`) resolve
     postconditions only. -/
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
@@ -2638,7 +2652,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← resolveRef proc.name
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
-    let outputs' ← proc.outputs.mapM resolveParameter
+    let inputNames := inputs'.map (·.name.text)
+    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2683,7 +2698,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
     let inputs' ← proc.inputs.mapM resolveParameter
-    let outputs' ← proc.outputs.mapM resolveParameter
+    let inputNames := inputs'.map (·.name.text)
+    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType

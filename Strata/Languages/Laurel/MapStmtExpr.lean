@@ -220,6 +220,7 @@ def mapStmtExprFlattenM [Monad m] (pre : StmtExprMd → m (Option (List StmtExpr
   go expr
 
 /-- Apply a monadic transformation to all procedure bodies. -/
+@[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }

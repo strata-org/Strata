@@ -22,6 +22,7 @@ import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
@@ -105,6 +106,11 @@ def laurelPipeline : Array LoweringPass := #[
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
+  { name := "PushOldInward"
+    documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. Warns on `old(e)` where `e` mentions no inout parameter and on nested `old(old(...))`."
+    run := fun p _m =>
+      let (p', diags) := pushOldInward p
+      (p', diags, {}) },
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
