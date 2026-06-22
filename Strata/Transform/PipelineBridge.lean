@@ -1964,7 +1964,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (nondetElim_loopHasNoInvariants ss h_lhni)
       (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
       h_out_exprs_sf h_out_unique h_out_fresh
-      h_out_iv_sf h_out_mv_sf
+      (fun x hmem s heq hq => h_out_iv_sf s hq (heq ▸ hmem))
+      (fun x hmem s heq hq => h_out_mv_sf s hq (heq ▸ hmem))
       h_out_undef
       (fun str hk => h_store_mints str (Or.inr (Or.inl hk)))
       h_run1

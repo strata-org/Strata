@@ -3188,11 +3188,9 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
     (h_unique     : Block.uniqueInits ss)
     (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
     (h_src_initVars_shapefree :
-      ∀ str : String, Q str →
-        HasIdent.ident (P := P) str ∉ Block.initVars ss)
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.initVars ss))
     (h_src_modifiedVars_shapefree :
-      ∀ str : String, Q str →
-        HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.modifiedVars ss))
     (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
     (h_src_store_shapefree :
       ∀ str : String, Q str →
@@ -3241,8 +3239,9 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
         HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss ∧
         HasIdent.ident (P := P) str ∉ Block.modifiedVars (P := P) ss :=
     fun str h_shape =>
-      ⟨List.not_mem_nil, List.not_mem_nil, h_src_initVars_shapefree str h_shape,
-        h_src_modifiedVars_shapefree str h_shape⟩
+      ⟨List.not_mem_nil, List.not_mem_nil,
+        fun hmem => h_src_initVars_shapefree _ hmem str rfl h_shape,
+        fun hmem => h_src_modifiedVars_shapefree _ hmem str rfl h_shape⟩
   have h_subst_wf_nil :
       ∀ a b : P.Ident, (a, b) ∈ ([] : List (P.Ident × P.Ident)) → a ∈ ([] : List P.Ident) ∧ b ∈ ([] : List P.Ident) :=
     fun _ _ h => absurd h List.not_mem_nil
@@ -3373,7 +3372,9 @@ theorem hoistLoopPrefixInits_preserves
     (fun sg => StringGenState.gen_hasUnderscoreDigitSuffix hoistFreshPrefix sg)
     ss
     h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
-    h_src_initVars_shapefree h_src_modifiedVars_shapefree h_hoist_undef
+    (fun x hmem s heq hq => h_src_initVars_shapefree s hq (heq ▸ hmem))
+    (fun x hmem s heq hq => h_src_modifiedVars_shapefree s hq (heq ▸ hmem))
+    h_hoist_undef
     h_src_store_shapefree h_run_src h_wfvar h_wfcongr h_wfsubst h_wfdef
 
 -- NOTE: the former `hoistLoopPrefixInits_preserves_funext` corollary (extensional
