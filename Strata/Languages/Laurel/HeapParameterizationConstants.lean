@@ -70,10 +70,6 @@ function increment(heap: Heap): Heap {
   MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1)
 };
 
-function heapIsValid(heap: Heap): bool {
-  forall(c: Composite) { Composite..ref!(c) } => Composite..ref!(c) < Heap..nextReference!(heap)
-};
-
 #end
 
 /-- The Laurel Core prelude as a Laurel Program. -/

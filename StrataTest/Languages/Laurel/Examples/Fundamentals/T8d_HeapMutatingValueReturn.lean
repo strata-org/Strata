@@ -40,7 +40,7 @@ composite Container {
 procedure setAndReturnBuggy(c: Container, x: int) returns (r: int)
   opaque
   ensures r == x + 1
-//        ^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^ error: assertion does not hold
   modifies c
 {
   c#value := x;
