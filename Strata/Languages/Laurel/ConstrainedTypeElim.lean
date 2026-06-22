@@ -124,36 +124,6 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
   | _ => expr
 
-/-- If `target` is an assignment target of a constrained type, return that
-    constrained type together with an expression that reads the target back.
-    The declared type is taken from the `Declare` parameter or, for
-    `Local`/`Field` targets, from the semantic model.
-
-    Both `Local` and `Field` targets are resolved (they carry a `uniqueId`
-    after the resolution pass, which `constrainedTypeElimPass` requires), so the
-    model lookup reliably returns their declared type. -/
-def constrainedTargetReadback (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (target : VariableMd) : Option (HighType × StmtExprMd) :=
-  let ref : StmtExprMd := VariableMd.toReadbackExpr target
-  let ty : HighType := (computeExprType model ref).val
-  if isConstrainedType ptMap ty then some (ty, ref) else none
-
-/-- Build `assert T$constraint(<read-back of target>)` for an assignment
-    `target` of constrained type `T`, or `none` if the target's type is not
-    constrained. This is the single point that turns any assignment target
-    (`Local`, `Declare`, or `Field`) into its constraint check, used by the
-    per-node handler `elimNode`.
-
-    `src` is the source range reported on the generated assertion (and its
-    constraint call); it defaults to the target's own source but callers pass
-    the enclosing assignment's source so a failed check points at the whole
-    assignment. -/
-def constrainedTargetAssert (ptMap : ConstrainedTypeMap) (model : SemanticModel)
-    (target : VariableMd) (src : Option FileRange := target.source) : Option StmtExprMd :=
-  (constrainedTargetReadback ptMap model target).bind fun (ty, ref) =>
-    (constraintCallForExpr ptMap ty ref (src := src)).map fun c =>
-      ⟨.Assert { condition := c }, src⟩
-
 /-- Per-node constrained-type elimination, applied bottom-up (with flattening)
     by `mapStmtExprFlattenM`. `resultUsed` is `true` when the node occupies a
     value position.
@@ -176,12 +146,14 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
       fun c => ⟨.Assume c, source⟩
     [node] ++ check
   | .Assign targets _value =>
-    match targets.filterMap (constrainedTargetReadback ptMap model) with
-    | [] => [node]
-    | (_, resultRef) :: _ =>
-      let asserts := targets.filterMap (constrainedTargetAssert ptMap model · (src := source))
-      if resultUsed then [node] ++ asserts ++ [resultRef]
-      else [node] ++ asserts
+    let asserts: List StmtExprMd := targets.filterMap (fun target =>
+      let ref : StmtExprMd := VariableMd.toReadbackExpr target
+      let ty : HighType := (computeExprType model ref).val
+      (constraintCallForExpr ptMap ty ref (src := source)).map (⟨.Assert { condition := · }, source⟩))
+    let suffix := match targets with
+      | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
+      | _ => []
+    [node] ++ asserts ++ suffix
   | _ => [node]
 
 /-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
