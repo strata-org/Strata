@@ -376,8 +376,9 @@ def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
                         f"parent '{parent.name}' re-decomposing (child '{entry.name}' failed)")
                     pruned_count += len(pruned)
 
-            # Re-activate parent + restore clean Stub
+            # Re-activate parent with priority boost + restore clean Stub
             parent.status = LemmaStatus.PENDING
+            parent.priority_boost = True
             parents_reactivated.add(parent.id)
             if cwd:
                 clean = cwd / parent.workspace / "Stub.clean.lean"
@@ -425,9 +426,10 @@ def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
 
             _prune_subtree_except_path(ancestor.id)
 
-            # Re-activate ancestor
+            # Re-activate ancestor with priority boost
             if ancestor.id not in parents_reactivated:
                 ancestor.status = LemmaStatus.PENDING
+                ancestor.priority_boost = True
                 parents_reactivated.add(ancestor.id)
                 if cwd:
                     clean = cwd / ancestor.workspace / "Stub.clean.lean"

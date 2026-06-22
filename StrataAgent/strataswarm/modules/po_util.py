@@ -199,8 +199,9 @@ def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> 
 
     child_ws_path.mkdir(parents=True, exist_ok=True)
 
-    # Copy as child's Stub.lean
+    # Copy as child's Stub.lean + clean backup for retry restoration
     shutil.copy2(cwd / lemma_file, child_ws_path / "Stub.lean")
+    shutil.copy2(cwd / lemma_file, child_ws_path / "Stub.clean.lean")
 
     # Do NOT copy Def.lean — all files import the root's Stub.Def directly
     # This avoids duplicate declaration conflicts in Lean

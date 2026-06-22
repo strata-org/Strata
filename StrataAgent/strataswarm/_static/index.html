@@ -813,7 +813,7 @@ async function refreshLemmaDag() {
       <span style="color:#888;">Pruned: <b>${s.pruned}</b></span>
     </div>`;
 
-    // Mermaid graph
+    // Mermaid graph — zoomable and scrollable
     const mermaidCode = data.mermaid.replace(/```mermaid\n?/, '').replace(/```\n?$/, '');
     let svgHtml = '';
     try {
@@ -823,7 +823,15 @@ async function refreshLemmaDag() {
     } catch (e) {
       svgHtml = `<div style="color:#f44336;font-size:11px;">Mermaid render error: ${e.message}<br><pre style="color:#888;font-size:10px;">${mermaidCode.slice(0,500)}</pre></div>`;
     }
-    html += `<div style="background:#111;border-radius:8px;padding:16px;margin-bottom:16px;overflow-x:auto;">${svgHtml}</div>`;
+    html += `<div id="dag-viewport" style="background:#111;border-radius:8px;padding:16px;margin-bottom:16px;overflow:auto;max-height:500px;position:relative;cursor:grab;">
+      <div id="dag-inner" style="transform-origin:top left;transition:transform 0.1s;">${svgHtml}</div>
+    </div>
+    <div style="margin-bottom:12px;font-size:11px;color:#666;">
+      Scroll to zoom • Drag to pan •
+      <button onclick="dagZoom(1.2)" style="background:#333;color:#ccc;border:1px solid #555;border-radius:3px;padding:2px 8px;cursor:pointer;">+</button>
+      <button onclick="dagZoom(0.8)" style="background:#333;color:#ccc;border:1px solid #555;border-radius:3px;padding:2px 8px;cursor:pointer;">−</button>
+      <button onclick="dagZoom(0)" style="background:#333;color:#ccc;border:1px solid #555;border-radius:3px;padding:2px 8px;cursor:pointer;">Reset</button>
+    </div>`;
 
     // Current lemma highlight
     const current = data.nodes.find(n => n.is_current);
@@ -860,6 +868,46 @@ async function refreshLemmaDag() {
     el.innerHTML = `<div class="empty">Error loading DAG: ${e.message}</div>`;
   }
 }
+
+// DAG zoom and pan
+let dagScale = 1, dagPanX = 0, dagPanY = 0, dagDragging = false, dagStartX = 0, dagStartY = 0;
+function dagZoom(factor) {
+  if (factor === 0) { dagScale = 1; dagPanX = 0; dagPanY = 0; }
+  else { dagScale *= factor; }
+  dagScale = Math.max(0.3, Math.min(dagScale, 5));
+  dagApplyTransform();
+}
+function dagApplyTransform() {
+  const inner = document.getElementById('dag-inner');
+  if (inner) inner.style.transform = `translate(${dagPanX}px, ${dagPanY}px) scale(${dagScale})`;
+}
+document.addEventListener('wheel', function(e) {
+  const vp = document.getElementById('dag-viewport');
+  if (vp && vp.contains(e.target)) {
+    e.preventDefault();
+    dagZoom(e.deltaY < 0 ? 1.1 : 0.9);
+  }
+}, {passive: false});
+document.addEventListener('mousedown', function(e) {
+  const vp = document.getElementById('dag-viewport');
+  if (vp && vp.contains(e.target)) {
+    dagDragging = true; dagStartX = e.clientX - dagPanX; dagStartY = e.clientY - dagPanY;
+    vp.style.cursor = 'grabbing';
+  }
+});
+document.addEventListener('mousemove', function(e) {
+  if (dagDragging) {
+    dagPanX = e.clientX - dagStartX; dagPanY = e.clientY - dagStartY;
+    dagApplyTransform();
+  }
+});
+document.addEventListener('mouseup', function() {
+  if (dagDragging) {
+    dagDragging = false;
+    const vp = document.getElementById('dag-viewport');
+    if (vp) vp.style.cursor = 'grab';
+  }
+});
 
 // Budget control
 function increaseBudget(agentName) {

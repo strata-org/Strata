@@ -51,6 +51,7 @@ class LemmaEntry:
     attempts: int = 0
     max_attempts: int = 3
     turn_budget: int = 25
+    priority_boost: bool = False   # set when re-activated after cycle/fail — must be proved first
     guide_name: str = ""
     writer_name: str = ""
     import_path: str = ""        # lean import path (set when proved)
@@ -257,19 +258,24 @@ class LemmaLedger:
         return self._root_id
 
     def pick_next(self) -> LemmaEntry | None:
-        """Return the most pressing pending lemma."""
+        """Return the most pressing pending lemma.
+
+        Priority order:
+        1. priority_boost (re-activated after cycle/fail — must be proved first)
+        2. Highest indegree (most things depend on it)
+        3. Highest depth (deeper = closer to leaf = easier to close)
+        4. Fewest attempts (most recent / freshest)
+        """
         with self._lock:
             pending = [e for e in self._entries.values()
                        if e.status == LemmaStatus.PENDING]
             if not pending:
                 return None
 
-            def priority(e: LemmaEntry) -> float:
+            def priority(e: LemmaEntry) -> tuple:
+                boost = 1 if e.priority_boost else 0
                 indeg = self._indegree.get(e.id, 0)
-                depth_penalty = e.depth * 2
-                attempt_penalty = e.attempts * 3
-                sibling_bonus = 3 if self._has_proved_sibling(e) else 0
-                return indeg * 5 - depth_penalty - attempt_penalty + sibling_bonus
+                return (boost, indeg, e.depth, -e.attempts)
 
             pending.sort(key=priority, reverse=True)
             winner = pending[0]
@@ -418,6 +424,7 @@ class LemmaLedger:
             entry = self._entries.get(entry_id)
             if entry:
                 entry.status = LemmaStatus.PROVING
+                entry.priority_boost = False
 
     def mark_proved(self, entry_id: str, import_path: str, proved_by: str = "direct"):
         with self._lock:
@@ -426,6 +433,7 @@ class LemmaLedger:
                 entry.status = LemmaStatus.PROVED
                 entry.import_path = import_path
                 entry.proved_by = proved_by
+                entry.priority_boost = False
 
     def mark_failed(self, entry_id: str, reason: str):
         with self._lock:
@@ -433,6 +441,7 @@ class LemmaLedger:
             if entry:
                 entry.status = LemmaStatus.FAILED
                 entry.failure_reason = reason
+                entry.priority_boost = False
 
     def mark_cycle(self, entry_id: str, ancestor_id: str):
         with self._lock:
@@ -440,6 +449,7 @@ class LemmaLedger:
             if entry:
                 entry.status = LemmaStatus.CYCLE
                 entry.cycle_ancestor_id = ancestor_id
+                entry.priority_boost = False
 
     def prune_branch(self, entry_id: str, reason: str) -> list[str]:
         """Mark entry + all descendants as pruned. Returns list of pruned IDs."""
@@ -454,6 +464,7 @@ class LemmaLedger:
             return
         entry.status = LemmaStatus.PRUNED
         entry.pruned_reason = reason
+        entry.priority_boost = False
         acc.append(entry_id)
         for child_id in entry.children:
             self._prune_recursive(child_id, f"ancestor '{entry.name}' pruned: {reason}", acc)
@@ -586,9 +597,9 @@ class LemmaLedger:
                 LemmaStatus.CYCLE: "fill:#f90,stroke:#c60,color:#fff",
             }
             for status, style in style_map.items():
-                ids = [f"n{e.id}" for e in self._entries.values() if e.status == status]
-                if ids:
-                    lines.append(f"    style {','.join(ids)} {style}")
+                for e in self._entries.values():
+                    if e.status == status:
+                        lines.append(f"    style n{e.id} {style}")
 
             lines.append("```")
             return "\n".join(lines) + "\n"

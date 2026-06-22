@@ -303,22 +303,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 # ─── Phase handlers (each returns a Trans value) ─────────────────────────────
 
 async def _do_select(agent, state: PO4State, ledger: LemmaLedger) -> Trans:
-    """Pick the most pressing pending lemma from the DAG.
-
-    Before picking, check if any pending lemmas are already sorry-free
-    (e.g. fully proved during extraction but not yet marked).
-    """
-    from .po_lean import get_lean_tools
-    tools = get_lean_tools()
-
-    # Auto-prove pending entries whose files have no sorry
-    for e in ledger.entries():
-        if e.status == LemmaStatus.PENDING and e.file_path:
-            if (Path(tools._root / e.file_path).exists()
-                    and not tools.has_sorry(e.file_path)
-                    and tools.check_compiles(e.file_path).success):
-                ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"))
-                await agent._emit("message", f"[PO4] Auto-proved: {e.name} (no sorry in file)")
+    """Pick the most pressing pending lemma from the DAG."""
 
     lemma = ledger.pick_next()
     if lemma is None:
@@ -836,6 +821,21 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
     # 2. Prune all children of parents with dead nodes + re-activate parents + restore Stub
     from .cycle_detection import prune_siblings_of_dead
     prune_siblings_of_dead(ledger, cwd)
+
+    # 3. Propagate proved upward: if all children of a node are proved, mark it proved too
+    changed = True
+    while changed:
+        changed = False
+        for e in ledger.entries():
+            if e.status != LemmaStatus.PENDING:
+                continue
+            if not e.children:
+                continue
+            children = ledger.get_children(e.id)
+            if children and all(c.status == LemmaStatus.PROVED for c in children):
+                ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"),
+                                   proved_by="assembly")
+                changed = True
 
 
 # ─── Assembly ─────────────────────────────────────────────────────────────────
