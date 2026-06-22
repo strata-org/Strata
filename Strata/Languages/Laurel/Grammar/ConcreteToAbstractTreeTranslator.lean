@@ -778,10 +778,11 @@ def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinitio
     let .op aliasOp := aliasArg
       | TransM.error s!"typeAliasCommand expects operation"
     match aliasOp.name, aliasOp.args with
-    | q`Laurel.typeAlias, #[nameArg, targetArg] =>
+    | q`Laurel.typeAlias, #[nameArg, typeParamsArg, targetArg] =>
       let name ← translateIdent nameArg
+      let typeArgs ← translateTypeParams typeParamsArg
       let target ← translateHighType targetArg
-      return (none, some (.Alias { name := name, target := target }))
+      return (none, some (.Alias { name := name, typeArgs := typeArgs, target := target }))
     | _, _ => TransM.error s!"typeAliasCommand expects typeAlias op, got {repr aliasOp.name}"
   | _, _ =>
     TransM.error s!"parseTopLevel expects procedureCommand, compositeCommand, datatypeCommand, constrainedTypeCommand, or typeAliasCommand, got {repr op.name}"

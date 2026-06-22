@@ -102,10 +102,15 @@ def laurelPipeline : Array LoweringPass := #[
   -- Polymorphism: lift instance procedures, then monomorphize, BEFORE everything else
   -- (the lift must precede monomorphization, and both must precede heap parameterization).
   liftInstanceProceduresPass,
+  -- TypeAliasElim runs BEFORE monomorphization: an alias of a generic-composite instantiation
+  -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
+  -- to `Box<int>` so the monomorphizer sees the real `.Applied` and rewrites it to `Box$a1$int`.
+  -- Mono is alias-agnostic (no `.Alias` refs); alias-elim only needs the first resolve, which
+  -- precedes the whole pipeline. No `comesBefore` pins their relative order.
+  typeAliasElimPass,
   { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
-  typeAliasElimPass,
   constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,

@@ -545,7 +545,39 @@ def genericCompositeCorpus : List Case := [
     src := "composite Pt { var x: int }\ntype P = Pt\nprocedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 3 };" },
   { name := "alias_composite_field_wrong", outcome := .failsExactly 1,
     why := "a false read through a composite alias's field must FAIL (alias resolves to the real Pt field)"
-    src := "composite Pt { var x: int }\ntype P = Pt\nprocedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 4 };" } ]
+    src := "composite Pt { var x: int }\ntype P = Pt\nprocedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 4 };" },
+  -- GENERIC type aliases (`type Foo<T> = …`). The alias's `<T>` binders substitute into the target
+  -- at the instantiation; `TypeAliasElim` (now before monomorphize) and `TypeLattice.unfold` (the
+  -- `.Applied`-alias arm) both perform the param substitution, so the consistency relation agrees
+  -- with elimination. Aliases to Map/primitive and to generic composites are covered, with twins.
+  { name := "generic_alias_map", outcome := .verifies,
+    why := "`type MyPair<A,B> = Map A B` at <int,bool> substitutes to `Map int bool`; select works through it"
+    src := "type MyPair<A,B> = Map A B\nprocedure u() opaque { var m: MyPair<int, bool> := const(false); assert select(m, 9) == false };" },
+  { name := "generic_alias_map_wrong", outcome := .failsExactly 1,
+    why := "a false read through the generic Map alias must FAIL (substitution is sound, not vacuous)"
+    src := "type MyPair<A,B> = Map A B\nprocedure u() opaque { var m: MyPair<int, bool> := const(false); assert select(m, 9) == true };" },
+  { name := "generic_alias_order", outcome := .verifies,
+    why := "`type Swapped<A,B> = Map B A` at <int,bool> must substitute to `Map bool int` (param ORDER preserved)"
+    src := "type Swapped<A,B> = Map B A\nprocedure u() opaque { var m: Swapped<int, bool> := const(5); assert select(m, true) == 5 };" },
+  { name := "generic_alias_arity_wrong", outcome := .rejected,
+    why := "a generic alias applied at the wrong arity (`MyPair<int>`) must fail loud"
+    src := "type MyPair<A,B> = Map A B\nprocedure u() opaque { var m: MyPair<int> := const(false); assert true };" },
+  -- Generic alias of a generic COMPOSITE — the gap-(ii) case (unfold `.Applied`-alias + reorder).
+  { name := "generic_alias_composite", outcome := .verifies,
+    why := "`type Foo<T> = Box<T>`; `var b: Foo<int> := new Box<int>` cross-spelling assignment verifies, field round-trips"
+    src := "composite Box<T> { var val: T }\ntype Foo<T> = Box<T>\nprocedure u() opaque { var b: Foo<int> := new Box<int>; b#val := 7; assert b#val == 7 };" },
+  { name := "generic_alias_composite_wrong", outcome := .failsExactly 1,
+    why := "a false read through the generic-composite alias must FAIL"
+    src := "composite Box<T> { var val: T }\ntype Foo<T> = Box<T>\nprocedure u() opaque { var b: Foo<int> := new Box<int>; b#val := 7; assert b#val == 8 };" },
+  { name := "generic_alias_composite_param", outcome := .verifies,
+    why := "pass a concrete `Box<int>` to a `Foo<int>` (= alias of Box<T>) param — cross-spelling consistency unfolds the alias; round-trips"
+    src := "composite Box<T> { var val: T }\ntype Foo<T> = Box<T>\nprocedure take(b: Foo<int>) returns (r: int) opaque ensures r == b#val { r := b#val };\nprocedure u() opaque { var x: Box<int> := new Box<int>; x#val := 9; var g: int := take(x); assert g == 9 };" },
+  { name := "generic_alias_wrong_arg", outcome := .rejected,
+    why := "SOUNDNESS: a `Box<bool>` value must NOT satisfy a `Foo<int>` (= Box<int>) param — unfold-then-compare stays strict on the arg"
+    src := "composite Box<T> { var val: T }\ntype Foo<T> = Box<T>\nprocedure take(b: Foo<int>) returns (r: int) opaque { r := 0 };\nprocedure u() opaque { var x: Box<bool> := new Box<bool>; var g: int := take(x); assert g == 0 };" },
+  { name := "generic_alias_chained", outcome := .verifies,
+    why := "chained generic aliases `type A<T> = Box<T>; type B<U> = A<U>` resolve transitively at B<int>"
+    src := "composite Box<T> { var val: T }\ntype A<T> = Box<T>\ntype B<U> = A<U>\nprocedure u() opaque { var b: B<int> := new Box<int>; b#val := 5; assert b#val == 5 };" } ]
 
 /-- Generic composites verify end-to-end via monomorphization — across every type position,
     nested generics (fixpoint worklist), explicit `new C<τ>`, and chained field writes. -/

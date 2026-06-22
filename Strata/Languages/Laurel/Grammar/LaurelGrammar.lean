@@ -5,6 +5,7 @@
 -/
 
 module
+-- Then: type aliases gained Option TypeParams (generic aliases, e.g. type Pair<A,B> = Map A B); target:0 so it re-parses.
 -- Then: `is`/`as` operands widened from Ident to LaurelType (generic `x is Box<int>`);
 -- added a `type Name = Target` alias command (TypeAliasDecl).
 -- Laurel dialect definition, loaded from LaurelGrammar.st

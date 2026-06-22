@@ -2938,9 +2938,14 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
-    let target' ← resolveHighType ta.target
+    -- Scope the alias's own type params (`type Pair<A,B> = …`) as `.typeVar` so `A`/`B` in the
+    -- target resolve to `.TVar` (mirrors `.Datatype`/`.Composite`); `TypeAliasElim`/`unfold` then
+    -- bind them to the instantiation args. Monomorphic aliases have an empty list (no-op scope).
+    let target' ← withScope do
+      let _ ← ta.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+      resolveHighType ta.target
     let taName' ← resolveRef ta.name
-    return .Alias { name := taName', target := target' }
+    return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do

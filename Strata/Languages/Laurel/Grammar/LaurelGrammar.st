@@ -255,7 +255,7 @@ op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
 // separator (each renders its own terminator; the next leading keyword delimits, like
 // composite/datatype/constrained).
 category TypeAliasDecl;
-op typeAlias (name: Ident, target: LaurelType): TypeAliasDecl => "type " name " = " target;
+op typeAlias (name: Ident, typeParams: Option TypeParams, target: LaurelType): TypeAliasDecl => "type " name typeParams " = " target:0;
 
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;

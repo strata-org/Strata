@@ -645,7 +645,10 @@ deriving instance BEq for HighType
     land, since two distinct same-named types would otherwise share an
     inheritance chain. -/
 structure TypeLattice where
-  unfoldMap : Std.HashMap String HighTypeMd := {}
+  -- Per alias/constrained NAME: its type-param names (empty for monomorphic) + the target/base
+  -- type. The params let `unfold` substitute a generic alias's args (`Foo<int>` ⇒ target[T↦int])
+  -- so the consistency relation agrees with what `TypeAliasElim` produces.
+  unfoldMap : Std.HashMap String (List Identifier × HighTypeMd) := {}
   extendingMap : Std.HashMap String (List String) := {}
   -- Per composite NAME: its type-param names + its parent type
   -- EXPRESSIONS (verbatim, e.g. `Pair<B,A>`). Carries the remap that `extendingMap`
@@ -664,8 +667,27 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
   | .UserDefined name =>
     if visited.contains name.text then ty
     else match ctx.unfoldMap.get? name.text with
-      | some target => ctx.unfold target (visited.insert name.text)
-      | none => ty
+      -- Monomorphic alias / constrained-type base: splice the target.
+      | some ([], target) => ctx.unfold target (visited.insert name.text)
+      | _ => ty
+  -- A generic-alias application `Foo<τ…>` where `Foo` is an alias with params: bind
+  -- `params ↦ τ…`, substitute into the target, and recurse. (Mirrors `TypeAliasElim`'s
+  -- `resolveAliasType`, so the consistency relation agrees with what elimination produces.)
+  -- A non-alias `.Applied` (a real generic composite/datatype) is not in `unfoldMap` ⇒ returned
+  -- unchanged, so this only affects alias applications.
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined name =>
+      if visited.contains name.text then ty
+      else match ctx.unfoldMap.get? name.text with
+        | some (params, target) =>
+          if !params.isEmpty && params.length == args.length then
+            let subst : Std.HashMap String HighTypeMd :=
+              (params.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
+            ctx.unfold (substTypeVars subst target) (visited.insert name.text)
+          else ty
+        | none => ty
+    | _ => ty
   | _ => ty
 
 /-- All ancestors of a composite type (including itself), reachable via
@@ -1106,6 +1128,10 @@ def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : P
     `TypeAliasElim` pass after the first resolution. -/
 structure TypeAlias where
   name : Identifier
+  /-- Type parameters for a generic alias (`type Pair<A,B> = …`); empty for a monomorphic alias.
+      `TypeAliasElim` binds these to the instantiation args; `TypeLattice.unfold` does the same
+      so the consistency relation agrees with elimination. -/
+  typeArgs : List Identifier := []
   target : HighTypeMd
   deriving Repr
 
@@ -1147,8 +1173,8 @@ def TypeDefinition.name : TypeDefinition → Identifier
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
-    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
-    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
+    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text (ta.typeArgs, ta.target) }
+    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ([], ct.base) }
     | .Composite c =>
       -- `extending` is now `List HighTypeMd`; the subtype lattice keys on parent NAME
       -- (an instantiation `Base<T>` and `Base` share the same ancestor chain), so peel

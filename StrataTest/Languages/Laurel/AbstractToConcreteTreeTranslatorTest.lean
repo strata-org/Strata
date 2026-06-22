@@ -496,4 +496,22 @@ procedure idp<T>(x: T): T
 >>>>>>> 0f75fea51 (feat(laurel): user-level polymorphism — generic composites, procedures, and datatypes)
 #end)
 
+-- Generic type aliases round-trip: `<T>` binders + a Map/composite target emit without
+-- parens (grammar `target:0`) and re-parse identically.
+/--
+info: composite Box<T> { var val: T }
+
+type MyPair<A, B> = Map A B
+
+type Foo<T> = Box<T>
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+type MyPair<A, B> = Map A B
+type Foo<T> = Box<T>
+#end)
+
 end Strata.Laurel

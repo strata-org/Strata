@@ -371,8 +371,14 @@ private def typeDefinitionToOp : TypeDefinition → StrataDDM.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
-  -- Placeholder: aliases are eliminated before CST serialization
-  | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
+  | .Alias ta =>
+    let aliasOp : StrataDDM.Operation :=
+      { ann := sr
+        name := { dialect := "Laurel", name := "typeAlias" }
+        args := #[ident ta.name.text, typeParamsToArg ta.typeArgs, highTypeToArg ta.target] }
+    { ann := sr
+      name := { dialect := "Laurel", name := "typeAliasCommand" }
+      args := #[.op aliasOp] }
 
 private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
   { ann := sr
@@ -429,7 +435,9 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
-  | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
+  -- Emit via the op path (like the other type defs) so the target type uses the grammar's
+  -- `typeAlias` arg slot — re-parseable — rather than `formatHighType`'s parenthesized form.
+  | .Alias ta => formatOp (typeDefinitionToOp (.Alias ta))
 
 def formatVariable (v : Variable) : Format :=
   formatArg (stmtExprToArg ⟨.Var v, none⟩)
