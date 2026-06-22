@@ -1831,6 +1831,26 @@ theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal 
     exact absurd hexit
       (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ss hpre.h_noesc ρ₀ lbl ρ')
 
+/-- **Covered-exit no-escape (soundness-by-construction for the omitted exiting
+disjunct).** When every `.exit` in the source `ss` is caught by an enclosing
+labeled block (`Block.exitsCoveredByBlocks [] ss`), no source run reaches a
+top-level `.exiting` configuration — it can only terminate (or diverge).
+
+This is why `pipeline_sound`'s terminal-only conclusion is sound *by
+construction* for the covered-exit fragment: the exiting outcome it omits is
+empty, not merely unstated.  The unstructured target IR (`CFGConfig`) has no
+`.exiting` constructor, so an *escaping* top-level exit cannot even be stated as
+a forward-simulation target; the covered-exit precondition rules that case out
+exactly as `detToKleene_overapproximates` discharges its exiting clause. -/
+theorem pipeline_no_escaping_exit
+    [HasFvar P] [HasNot P] [HasBool P] [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P) (ss : List (Stmt P (Cmd P)))
+    (h_covered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss) :
+    ∀ (ρ₀ : Env P) (lbl : String) (ρ' : Env P),
+      ¬ StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.exiting lbl ρ') := by
+  intro ρ₀ lbl ρ'
+  exact block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ss h_covered ρ₀ lbl ρ'
+
 end PipelineSound
 
 end Imperative
