@@ -500,8 +500,8 @@ def genericCompositeCorpus : List Case := [
   -- is a cleaner diagnostic (`Duplicate definition '$heap'`) instead of the type mismatch — both
   -- `!translated`. This case therefore pins ONLY "a user `$heap` output never translates", not a
   -- wrong-accept ablation. The sanity twin pins that the legit single synth `$heap` inout still merges.
-  { name := "user_heap_output_rejected", outcome := .rejected,
-    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate (fail-loud; cleaner duplicate-def diagnostic after the dup-check fix)"
+  { name := "user_heap_output_rejected", outcome := .rejected (some .StrataBug),
+    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; the item-5 dup-check makes it a `Duplicate definition '$heap'` StrataBug (tagged so the cosmetic dup-check effect is machine-checked)"
     src := "composite Inner { var v: int }\nprocedure u() returns ($heap: int) opaque { var o: Inner := new Inner; o#v := 5; $heap := 0 };" },
   { name := "ordinary_heap_writer_verifies", outcome := .verifies,
     why := "the same heap-writer WITHOUT a user `$heap` output still verifies (the single synth `$heap` inout merge must not regress)"
@@ -577,7 +577,27 @@ def genericCompositeCorpus : List Case := [
     src := "composite Box<T> { var val: T }\ntype Foo<T> = Box<T>\nprocedure take(b: Foo<int>) returns (r: int) opaque { r := 0 };\nprocedure u() opaque { var x: Box<bool> := new Box<bool>; var g: int := take(x); assert g == 0 };" },
   { name := "generic_alias_chained", outcome := .verifies,
     why := "chained generic aliases `type A<T> = Box<T>; type B<U> = A<U>` resolve transitively at B<int>"
-    src := "composite Box<T> { var val: T }\ntype A<T> = Box<T>\ntype B<U> = A<U>\nprocedure u() opaque { var b: B<int> := new Box<int>; b#val := 5; assert b#val == 5 };" } ]
+    src := "composite Box<T> { var val: T }\ntype A<T> = Box<T>\ntype B<U> = A<U>\nprocedure u() opaque { var b: B<int> := new Box<int>; b#val := 5; assert b#val == 5 };" },
+  -- CYCLIC generic alias must fail loud, NOT hang — pins the fuel/visited guards in
+  -- resolveAliasType / TypeLattice.unfold / resolveFieldInTypeScope.unfoldAlias.
+  { name := "generic_alias_cyclic", outcome := .rejected,
+    why := "a cyclic generic alias `type A<T> = B<T>; type B<U> = A<U>` must fail loud (guards terminate), not loop"
+    src := "type A<T> = B<T>\ntype B<U> = A<U>\nprocedure u() opaque { var x: A<int> := 0; assert true };" },
+  -- NESTED Map-typed field (`Map int Map int int`, no-paren grammar): exercises the RECURSIVE
+  -- `.TMap` arm of instTagCommon + the box fns (tag `Map$a2$int$Map$a2$int$int`). Read/write round-trips.
+  { name := "nested_map_field", outcome := .verifies,
+    why := "a nested-Map composite field round-trips — the recursive `.TMap` box-tag handles `Map int (Map int int)`"
+    src := "composite H { var m: Map int Map int int }\nprocedure u() opaque { var h: H := new H; var inner: Map int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 3 };" },
+  { name := "nested_map_field_wrong", outcome := .failsExactly 1,
+    why := "a false read of the nested-Map field must FAIL — the recursive tag is sound, not vacuous"
+    src := "composite H { var m: Map int Map int int }\nprocedure u() opaque { var h: H := new H; var inner: Map int int := update(select(h#m, 1), 2, 3); h#m := update(h#m, 1, inner); assert select(select(h#m, 1), 2) == 4 };" },
+  -- NESTED generic operand in `is` (`Box<Pair<int,bool>>`): the monomorph tag nests (`Box$a1$Pair$a2$int$bool`).
+  { name := "is_nested_generic_operand", outcome := .verifies,
+    why := "`b is Box<Pair<int,bool>>` against the matching instantiation verifies (nested `>>` operand)"
+    src := "composite Box<T> { var val: T }\ncomposite Pair<A,B> { var a: A }\nprocedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<int,bool>> };" },
+  { name := "is_nested_generic_operand_wrong", outcome := .rejected (some .UserError),
+    why := "`Box<Pair<int,bool>> is Box<Pair<bool,int>>` — wrong inner instantiation is unrelated, rejected (param order matters)"
+    src := "composite Box<T> { var val: T }\ncomposite Pair<A,B> { var a: A }\nprocedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<bool,int>> };" } ]
 
 /-- Generic composites verify end-to-end via monomorphization — across every type position,
     nested generics (fixpoint worklist), explicit `new C<τ>`, and chained field writes. -/

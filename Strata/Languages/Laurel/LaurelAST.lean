@@ -753,6 +753,8 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
     let kt ← recurse k.val
     let vt ← recurse v.val
     some s!"Map$a2${kt}${vt}"
+  -- `.TSet` is unreachable today (no Set surface production — LaurelGrammar.st has only `mapType`);
+  -- kept for symmetry with `.TMap` / the `.TSet` arm in `isConsistent`.
   | .TSet e => do
     let et ← recurse e.val
     some s!"Set$a1${et}"

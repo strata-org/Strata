@@ -215,6 +215,8 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TCore name => s!"Box..{name}Val!"
   -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`:
   -- one box variant per instantiation, named via the shared injective tag.
+  -- (`.TSet` is unreachable — no Set surface production yet, LaurelGrammar.st has only `mapType`
+  -- — kept for symmetry with `.TMap`, like the `.TSet` arm in `isConsistent`.)
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"Box..{tag}Val!"
