@@ -436,7 +436,16 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
         # TODO: structured contradictory confirmation
 
     # Build verifier
-    verify_fn = make_proof_writer_verifier(stub_rel, original_content, entry.workspace, entry.name)
+    # Build list of ancestor modules to detect circular imports
+    ancestor_modules = []
+    for anc_id in ledger.get_ancestry(entry.id):
+        anc = ledger.get(anc_id)
+        if anc:
+            ancestor_modules.append(anc.workspace.replace("/", "."))
+
+    verify_fn = make_proof_writer_verifier(
+        stub_rel, original_content, entry.workspace, entry.name,
+        ancestor_modules=ancestor_modules)
 
     # Build initial action for writer (same pattern as v3 — explicit SearchAgent instructions)
     action = _build_initial_action(entry, stub_rel, guide_advice)
@@ -500,10 +509,39 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 f"Goals with sorry: {sorry_info}\n"
                 f"{sorry_detail}\n"
                 f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
-                f"If a goal looks contradictory or needs strengthening, say so clearly."
+                f"If a goal looks contradictory or not provable in isolation, say so clearly."
             ),
         )
         advice = advice_result.raw_result or "Try a different approach."
+
+        # If guide explicitly says the statement itself is false/contradictory, ask confirmation
+        # (NOT triggered by structural issues like "needs mutual" — those are solvable in-file)
+        if any(phrase in advice.lower() for phrase in
+               ["contradictory", "statement is false", "not provable as stated",
+                "the theorem is false", "give up"]):
+            from .._helpers import ask
+
+            @dataclass
+            class GuideVerdict:
+                give_up: bool = False
+                reason: str = ""
+
+            verdict = await ask(
+                inp=(
+                    f"The proof guide said: {advice}\n\n"
+                    f"DIRECT QUESTION: Should we GIVE UP on proving this lemma in isolation?\n"
+                    f"give_up=true means: this lemma cannot be proved standalone, "
+                    f"it needs restructuring at the parent level (e.g. mutual recursion).\n"
+                    f"give_up=false means: it's hard but still possible, keep trying."
+                ),
+                result_type=GuideVerdict,
+                system_prompt="You decide whether to abandon a proof attempt. Be conservative — only give up if truly impossible standalone.",
+            )
+            if verdict.output and verdict.output.give_up:
+                await agent._emit("message", f"[PO4] Guide gives up: {verdict.output.reason}")
+                ledger.mark_failed(entry.id, f"Guide abandoned: {verdict.output.reason}")
+                return "failed"
+
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
     # ── At max depth: no extraction, prove everything in one file ──

@@ -31,6 +31,7 @@ def make_proof_writer_verifier(
     original_content: str,
     workspace: str,
     main_theorem: str = "",
+    ancestor_modules: list[str] | None = None,
 ) -> callable:
     """Create a verify function for proof_writer's verified_loop.
 
@@ -39,6 +40,8 @@ def make_proof_writer_verifier(
         original_content: Content of the file BEFORE proof_writer touched it
         workspace: Workspace relative path
         main_theorem: Name of the main theorem (optional, for structure check)
+        ancestor_modules: Module paths of ancestors in the DAG. If the writer
+            imports any of these, it's a circular dependency (not a real proof).
 
     Returns:
         Callable that returns None (pass) or error string (fed back to writer).
@@ -64,11 +67,26 @@ def make_proof_writer_verifier(
                 f"This is UNSOUND. Replace with `theorem ... := by sorry`."
             )
 
-        # 3. Check if sorry-free (success!)
+        # 3. No circular imports (importing an ancestor = delegating back, not proving)
+        if ancestor_modules:
+            imports = tools.check_imports(target_file)
+            if not imports.error:
+                for imp in imports.imports:
+                    for anc_mod in ancestor_modules:
+                        if anc_mod in imp and ".Stub.Def" not in imp:
+                            return (
+                                f"CIRCULAR IMPORT: You imported '{imp}' which is an ancestor "
+                                f"of this lemma in the proof DAG. This creates a circular dependency. "
+                                f"You MUST prove this theorem WITHOUT importing ancestors. "
+                                f"Use induction, structural recursion, or prove directly from "
+                                f"the hypotheses available in this file."
+                            )
+
+        # 4. Check if sorry-free (success!)
         if not tools.has_sorry(target_file):
             return None  # fully proved!
 
-        # 4. Check progress was made (file changed from original)
+        # 5. Check progress was made (file changed from original)
         root = tools._root
         current_content = (root / target_file).read_text()
         if current_content.strip() == original_content.strip():
@@ -79,18 +97,15 @@ def make_proof_writer_verifier(
                 "ask SearchAgent for relevant lemmas, then write the proof."
             )
 
-        # 5. Main theorem still exists (structure not broken)
+        # 6. Main theorem still exists (structure not broken)
         if main_theorem:
             split = tools.split_theorems(target_file)
             if not split.error:
                 names = [b.name for b in split.blocks]
                 if main_theorem not in names:
-                    # Don't error if we can't match — the name might be malformed
-                    # Just log it but don't block
                     pass
 
         # File compiles, has sorry but made progress — acceptable for now
-        # (the PO will handle extraction of remaining sorries)
         return None
 
     return verify
