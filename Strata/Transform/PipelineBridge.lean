@@ -1529,9 +1529,9 @@ CFG (`c.1`), reading only the two `CFGConfig` states (`c.2`, `d.2`).  The
 right-endpoint CFG (`d.1`) is therefore irrelevant, so `terminalCfg` /
 `exitingCfg` use a trivial placeholder CFG.
 
-`exitingCfg` collapses into a terminal state (as `Lang.kleene` does): the
-pipeline produces no top-level escaping run to model, so the exiting endpoint
-carries the same `CFGConfig.terminal` shape as `terminalCfg`.
+`exitingCfg lbl ρ` carries the real `CFGConfig.exiting lbl` shape (tagged with
+the escaping label `lbl`), so the exiting endpoint models a genuine top-level
+escaping CFG run, distinct from the `CFGConfig.terminal` shape of `terminalCfg`.
 
 `isAtAssert` / `getEnv` are total placeholders.  The refinement predicate
 `OverapproximatesRel` references only `star` / `stmtCfg` / `terminalCfg` /
@@ -1546,7 +1546,7 @@ abbrev Lang.cfg [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   star := fun c d => StructuredToUnstructuredCorrect.StepDetCFGStar extendEval c.1 c.2 d.2
   stmtCfg := fun cfg ρ => (cfg, .atBlock cfg.entry ρ.store ρ.hasFailure)
   terminalCfg := fun ρ => (⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
-  exitingCfg := fun _ ρ => (⟨"", []⟩, .terminal ρ.store ρ.hasFailure)
+  exitingCfg := fun lbl ρ => (⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
   isAtAssert := fun _ _ => False
   getEnv := fun c => { store := c.2.getStore, eval := fun _ _ => none, hasFailure := c.2.getFailure }
 
