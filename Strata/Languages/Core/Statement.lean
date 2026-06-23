@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.Stmt
+public import Strata.DL.Util.StringGen
 import Std.Tactic.BVDecide.Normalize.Prop
 
 namespace Core
@@ -516,3 +517,95 @@ def Statements.collectExprs
 
 end
 end Core
+
+namespace Imperative
+
+public section
+
+/-- All user-provided `Stmt.block` labels appearing in a list of statements.
+Uses a `where`-helper that recurses on the statement constructor; the helper
+calls back into the list-level recursion for nested statement lists. -/
+@[expose] def Block.userBlockLabels {P : PureExpr} :
+    List (Stmt P (Cmd P)) → List String
+  | [] => []
+  | s :: rest => stmtUserBlockLabels s ++ Block.userBlockLabels rest
+where
+  stmtUserBlockLabels : Stmt P (Cmd P) → List String
+    | .block l ss _ => l :: Block.userBlockLabels ss
+    | .ite _ tss ess _ => Block.userBlockLabels tss ++ Block.userBlockLabels ess
+    | .loop _ _ _ ss _ => Block.userBlockLabels ss
+    | _ => []
+
+/-! Equational lemmas for `userBlockLabels` (proved via `unfold`). -/
+
+theorem Block.userBlockLabels_block_cons {P : PureExpr}
+    (l : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.block l bss md :: rest) =
+      (l :: Block.userBlockLabels bss) ++ Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_ite_cons {P : PureExpr}
+    (c : Imperative.ExprOrNondet P) (tss ess : List (Stmt P (Cmd P)))
+    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.ite c tss ess md :: rest) =
+      (Block.userBlockLabels tss ++ Block.userBlockLabels ess)
+        ++ Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_loop_cons {P : PureExpr}
+    (c : Imperative.ExprOrNondet P) (m : Option P.Expr)
+    (is : List (String × P.Expr)) (bss : List (Stmt P (Cmd P)))
+    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.loop c m is bss md :: rest) =
+      Block.userBlockLabels bss ++ Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_cmd_cons {P : PureExpr}
+    (c : Cmd P) (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.cmd c :: rest) = Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_funcDecl_cons {P : PureExpr}
+    (decl : Imperative.PureFunc P) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.funcDecl decl md :: rest) =
+      Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_typeDecl_cons {P : PureExpr}
+    (tc : TypeConstructor) (md : MetaData P)
+    (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.typeDecl tc md :: rest) =
+      Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+theorem Block.userBlockLabels_exit_cons {P : PureExpr}
+    (l : String) (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+    Block.userBlockLabels (.exit l md :: rest) =
+      Block.userBlockLabels rest := by
+  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
+  rfl
+
+/-- The gen-free core of `userLabelsDisjoint`: user-provided block labels are
+shape-free (do not have the `_<digits>` generator suffix) and pairwise distinct.
+
+This is the structured-program well-formedness condition on user block labels:
+the shape-free conjunct prevents minted-vs-user label collisions, and the
+`Nodup` conjunct prevents user-vs-user duplicate CFG block keys.  The full
+`userLabelsDisjoint` (which additionally quantifies over generator states) is
+*derivable* from this together with well-formedness of the generator: a
+shape-free label is never in the `stringGens` of any WF state. -/
+@[expose] def Block.userLabelsShapeNodup {P : PureExpr}
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  (∀ l ∈ Block.userBlockLabels ss, ¬ String.HasUnderscoreDigitSuffix l) ∧
+  (Block.userBlockLabels ss).Nodup
+
+end -- public section
+end Imperative

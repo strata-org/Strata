@@ -1144,77 +1144,6 @@ private theorem GenInv.cons_user {P : PureExpr}
   · rw [List.map_cons, List.nodup_cons]
     exact ⟨h_l_notin_blocks, h_blocks.nodup⟩
 
-/-- All user-provided `Stmt.block` labels appearing in a list of statements.
-Uses a `where`-helper that recurses on the statement constructor; the helper
-calls back into the list-level recursion for nested statement lists. -/
-@[expose] def Block.userBlockLabels {P : PureExpr} :
-    List (Stmt P (Cmd P)) → List String
-  | [] => []
-  | s :: rest => stmtUserBlockLabels s ++ Block.userBlockLabels rest
-where
-  stmtUserBlockLabels : Stmt P (Cmd P) → List String
-    | .block l ss _ => l :: Block.userBlockLabels ss
-    | .ite _ tss ess _ => Block.userBlockLabels tss ++ Block.userBlockLabels ess
-    | .loop _ _ _ ss _ => Block.userBlockLabels ss
-    | _ => []
-
-/-! Equational lemmas for `userBlockLabels` (proved via `unfold`). -/
-
-theorem Block.userBlockLabels_block_cons {P : PureExpr}
-    (l : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.block l bss md :: rest) =
-      (l :: Block.userBlockLabels bss) ++ Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_ite_cons {P : PureExpr}
-    (c : Imperative.ExprOrNondet P) (tss ess : List (Stmt P (Cmd P)))
-    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.ite c tss ess md :: rest) =
-      (Block.userBlockLabels tss ++ Block.userBlockLabels ess)
-        ++ Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_loop_cons {P : PureExpr}
-    (c : Imperative.ExprOrNondet P) (m : Option P.Expr)
-    (is : List (String × P.Expr)) (bss : List (Stmt P (Cmd P)))
-    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.loop c m is bss md :: rest) =
-      Block.userBlockLabels bss ++ Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_cmd_cons {P : PureExpr}
-    (c : Cmd P) (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.cmd c :: rest) = Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_funcDecl_cons {P : PureExpr}
-    (decl : Imperative.PureFunc P) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.funcDecl decl md :: rest) =
-      Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_typeDecl_cons {P : PureExpr}
-    (tc : TypeConstructor) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.typeDecl tc md :: rest) =
-      Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
-theorem Block.userBlockLabels_exit_cons {P : PureExpr}
-    (l : String) (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
-    Block.userBlockLabels (.exit l md :: rest) =
-      Block.userBlockLabels rest := by
-  show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
-  rfl
-
 /-- A predicate stating that user-provided block labels:
 1. are shape-free (do not have the `_<digits>` generator suffix), and
 2. consequently do not collide with any label in any WF generator state, and
@@ -1230,18 +1159,10 @@ labels from generator output: client code chooses readable labels (e.g.
   (Block.userBlockLabels ss).Nodup ∧
   (∀ l ∈ Block.userBlockLabels ss, l ∉ StringGenState.stringGens gen')
 
-/-- The gen-free core of `userLabelsDisjoint`: user-provided block labels are
-shape-free (do not have the `_<digits>` generator suffix) and pairwise distinct.
-
-This drops `userLabelsDisjoint`'s third conjunct (the universal "no user label
-is in `gen'`'s `stringGens`"), which is *derivable* from the shape-free conjunct
-together with well-formedness of `gen'`: a shape-free label is never in the
-`stringGens` of any WF state.  Stating the precondition in this gen-free form lets
-callers discharge it without quantifying over generator states. -/
-@[expose] def Block.userLabelsShapeNodup {P : PureExpr}
-    (ss : List (Stmt P (Cmd P))) : Prop :=
-  (∀ l ∈ Block.userBlockLabels ss, ¬ String.HasUnderscoreDigitSuffix l) ∧
-  (Block.userBlockLabels ss).Nodup
+/- Re-export the relocated `Block.userBlockLabels` and `Block.userLabelsShapeNodup`
+(now defined in the base statement module) under this namespace, so existing
+fully-qualified references resolve unchanged. -/
+export Imperative (Block.userBlockLabels Block.userLabelsShapeNodup)
 
 /-- `userLabelsShapeNodup` recovers `userLabelsDisjoint` at any WF generator
 state: the third (disjointness) conjunct follows from the shape-free conjunct via
