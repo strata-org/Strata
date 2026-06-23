@@ -301,10 +301,21 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
+  /-- A while loop with a condition, invariants, optional termination measure, and body.
+      Only allowed in impure contexts.
+
+      `postTest` selects when the condition is tested relative to the body:
+      - `false` (default) — a *pre-test* loop (`while`): the condition is checked
+        before the body, so the body may run zero times.
+      - `true` — a *post-test* loop (`do … while`): the body runs once before the
+        condition is first checked, so it always runs at least once.
+
+      Invariants are checked at the loop head (before each body) in both cases.
+      A post-test loop is lowered to the pre-test form by the `EliminateDoWhile` pass. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
+    (postTest : Bool := false)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
@@ -744,6 +755,21 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .All => "All"
   | .Hole .. => "Hole"
   | .IncrDecr .. => "IncrDecr"
+
+/-- Build an expression that reads back the value of a variable reference.
+
+    The result is always a `Var` expression that evaluates to the variable's
+    value. A `Declare` is read back as a `Local` reference to the declared name
+    (so a declaration target reads back the variable it introduces). -/
+def Variable.toReadbackExpr : Variable → StmtExpr
+  | .Local name => .Var (.Local name)
+  | .Declare param => .Var (.Local param.name)
+  | .Field target fieldName => .Var (.Field target fieldName)
+
+/-- Source-preserving read-back expression for a `VariableMd`
+    (see `Variable.toReadbackExpr`). -/
+def VariableMd.toReadbackExpr (v : VariableMd) : StmtExprMd :=
+  ⟨ v.val.toReadbackExpr, v.source ⟩
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false

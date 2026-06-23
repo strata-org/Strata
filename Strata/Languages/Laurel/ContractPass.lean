@@ -276,7 +276,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
   let result ←
     mapStmtExprFlattenM (m := ContractM)
       -- Pre: intercept Assign targets (StaticCall ...) before recursion
-      (fun e => do
+      (fun _ e => do
         match e.val with
         | .Assign targets (.mk (.StaticCall callee args) callSrc) =>
           match contractInfoMap.get? callee.text with
@@ -306,7 +306,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
           | none => return none
         | _ => return none)
       -- Post: handle bare StaticCall
-      (fun e => do
+      (fun _ e => do
         match e.val with
         | .StaticCall callee args =>
           match contractInfoMap.get? callee.text with
@@ -314,7 +314,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
             let stmts ← rewriteStaticCall callee args info e.source
             return stmts
           | none => return [e]
-        | _ => return [e]) expr
+        | _ => return [e]) true expr
   return result
 
 /-- Rewrite call sites in all bodies of a procedure. -/

@@ -45,7 +45,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
   | .IfThenElse _ thenBr (some elseBr) =>
     hasValuedReturn thenBr || hasValuedReturn elseBr
   | .IfThenElse _ thenBr none => hasValuedReturn thenBr
-  | .While _ _ _ body => hasValuedReturn body
+  | .While _ _ _ body _ => hasValuedReturn body
   | _ => false
   termination_by sizeOf stmt
   decreasing_by
@@ -61,7 +61,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
 def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
   match proc.outputs with
   | [outParam] =>
-    let pre (stmt : StmtExprMd) : Id (Option (List StmtExprMd)) :=
+    let pre (_: Bool) (stmt : StmtExprMd) : Id (Option (List StmtExprMd)) :=
       match stmt.val with
       | .Return (some value) =>
         let target : VariableMd := { val := .Local outParam.name, source := stmt.source }
@@ -69,8 +69,8 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
         let ret : StmtExprMd := { val := .Return none, source := stmt.source }
         some [assign, ret]
       | _ => none
-    let post (stmt : StmtExprMd) : Id (List StmtExprMd) := pure [stmt]
-    let rewrite := mapStmtExprFlattenM (m := Id) pre post
+    let post (_: Bool) (stmt : StmtExprMd) : Id (List StmtExprMd) := pure [stmt]
+    let rewrite := mapStmtExprFlattenM (m := Id) pre post true
     match proc.body with
     | .Transparent body =>
       { proc with body := .Transparent (rewrite body) }

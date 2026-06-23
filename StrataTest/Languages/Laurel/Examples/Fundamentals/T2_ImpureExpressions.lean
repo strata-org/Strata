@@ -192,4 +192,31 @@ procedure liftWithMultipleOutputs() opaque {
   var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
 };
 
+// Regression test for a fresh-name collision in LiftImperativeExpressionsPass.
+//
+// `nameCollisionHelper` has no contract, so ContractPass leaves its calls in
+// place; the lift pass is what hoists them out of expression position via its
+// `asLifted` helper. In the first statement the call sits in expression position
+// (the `+ 1` keeps it from being a direct assignment RHS) and its argument is a
+// conditional containing another such call. Lifting that argument allocates a
+// fresh `$cndtn_` variable *inside* `asLifted`, and that declaration escapes into
+// the surrounding scope. Previously `asLifted` saved and restored the entire lift
+// state, rolling the fresh-name counter back even though the name had already
+// escaped. The conditional expression in the second statement then reused the
+// rolled-back number, producing a duplicate `$cndtn_` definition and a
+// "Duplicate definition" resolution error after the pass.
+procedure nameCollisionHelper(x: int) returns (r: int)
+  opaque
+{
+  r := x + 1;
+  r
+};
+
+procedure liftedCallArgDoesNotReuseCondName(b: bool)
+  opaque
+{
+  var y: int := nameCollisionHelper(if b then { nameCollisionHelper(0) } else { 1 }) + 1;
+  var z: int := (if b then { nameCollisionHelper(5) } else { 6 }) + 1
+};
+
 #end

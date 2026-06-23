@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnStatements
+import Strata.Languages.Laurel.EliminateDoWhile
 import Strata.Languages.Laurel.EliminateIncrDecr
 import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
@@ -97,8 +98,10 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
+  eliminateDoWhilePass,
   eliminateIncrDecrPass,
   typeAliasElimPass,
+  constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
   liftInstanceProceduresPass,
@@ -110,7 +113,6 @@ def laurelPipeline : Array LoweringPass := #[
   inferHoleTypesPass,
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
-  constrainedTypeElimPass,
   eliminateReturnStatementsPass,
   contractPass
 ]
@@ -172,12 +174,6 @@ private def runLaurelPasses
 private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
   liftImperativeExpressionsPass
 ]
-
-/-- All pipeline passes, projected to their parameter-free metadata. Combines
-    the differently-parameterized `laurelPipeline` and `unorderedCorePipeline`
-    into a single homogeneous list. -/
-def allPassMeta : List PassMeta :=
-  laurelPipeline.toList.map (·.meta) ++ unorderedCorePipeline.toList.map (·.meta)
 
 /--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
