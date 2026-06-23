@@ -205,7 +205,12 @@ private partial def highTypeTag : HighType → String
 
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
-    for Composite types, uses "Box..compositeVal!". -/
+    for Composite types, uses "Box..compositeVal!".
+
+    Constrained types do not need resolving here: `ConstrainedTypeElim` runs
+    before this pass and has already lowered every constrained type to its base
+    type (and removed the constrained type definitions), so `ty` is never a
+    constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "Box..intVal!"

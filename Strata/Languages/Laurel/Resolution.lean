@@ -237,7 +237,22 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
 private def containerScopedName (containerName memberName : Identifier) : Identifier :=
   mkId s!"{containerName.text}${memberName.text}"
 
-/-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
+/-- Declared type of `fieldName` in the scope of composite type `typeName`; `none` if
+    unknown. Shared by `targetTypeName` and `incrDecrTargetType`. (`resolveFieldInTypeScope`
+    below is the same walk returning the field's *id* instead of its type.) -/
+private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
+  let s ← get
+  match s.typeScopes.get? typeName with
+  | some typeScope =>
+    match typeScope.get? fieldName.text with
+    | some (_, node) => pure (some node.getType.val)
+    | none => pure none
+  | none => pure none
+
+/-- UserDefined type name of a resolved target: a local directly, or a chained field
+    access (`a#b#c`) by recursing on the inner target then `fieldTypeInScope`.
+    Self-recursive on `.Var (.Field inner _)`; the `decreasing_by` proof below holds
+    only because `inner` is a strict subterm of `target`, so recurse only on subterms. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
   match _h : target.val with
@@ -253,15 +268,9 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     match (← targetTypeName inner) with
     | none => pure none
     | some innerTy =>
-      match s.typeScopes.get? innerTy with
-      | none => pure none
-      | some typeScope =>
-        match typeScope.get? fieldName.text with
-        | some (_, node) =>
-          match node.getType.val with
-          | .UserDefined typRef => pure (some typRef.text)
-          | _ => pure none
-        | none => pure none
+      match (← fieldTypeInScope innerTy fieldName) with
+      | some (.UserDefined typRef) => pure (some typRef.text)
+      | _ => pure none
   | _ => pure none
   termination_by sizeOf target
   decreasing_by
@@ -539,13 +548,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     | none => pure none
   | .Field tgt fieldName =>
     match (← targetTypeName tgt) with
-    | some typeName =>
-      match s.typeScopes.get? typeName with
-      | some typeScope =>
-        match typeScope.get? fieldName.text with
-        | some (_, node) => pure (some node.getType.val)
-        | none => pure none
-      | none => pure none
+    | some typeName => fieldTypeInScope typeName fieldName
     | none => pure none
   | .Declare param => pure (some param.type.val)
 

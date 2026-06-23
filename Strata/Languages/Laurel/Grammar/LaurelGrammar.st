@@ -42,8 +42,10 @@ op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access. `leftassoc` so chained access (`a#b#c`) parses as `(a#b)#c`.
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90), leftassoc] obj "#" field;
+// Field access. prec coupled to `call` (also 95, via its `callee:89`): keep them
+// equal or `a#b(x)` parsing shifts. prec 95 > postfix `++`/`--` (90) is what lets
+// `c#n++` parse paren-free as `(c#n)++`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(95), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
