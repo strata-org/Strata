@@ -24,15 +24,19 @@ This pass should run after heap parameterization, which has already:
 - Transformed field accesses to readField/updateField calls
 - Collected field constants
 
-The frame condition states: for every object not mentioned in the modifies clause,
-all field values are preserved between the input and output heaps.
+The frame condition is field-granular: each allocated (object, field) pair not
+named in the modifies clause is preserved across the call. A clause may name a
+whole object (all its fields may change) or a single field `o#f` (only that
+field of `o` may change).
 
 Generates:
   forall $obj: Composite, $fld: Field =>
-    $obj < old($heap).nextReference && notModified($obj) ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
+    $obj < old($heap).nextReference && notModified($obj, $fld) ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
-where `notModified($obj)` is the conjunction of `$obj != e` for each single entry `e`,
-and `!(select(s, $obj))` for each set entry `s`.
+where notModified($obj, $fld) conjoins, per entry:
+- `$obj != e`                 single object `e`
+- `!(select(s, $obj))`        Set `s`
+- `!($obj == o && $fld == f)` field `(o, f)`
 -/
 
 namespace Strata.Laurel
@@ -42,12 +46,33 @@ public section
 private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
 
 /--
-A single entry in a modifies clause, either a single Composite expression
-or a Set of Composite expressions.
+A single entry in a modifies clause: a single Composite expression, a Set of
+Composite expressions, or a single `(object, field)` pair (field-granular).
 -/
 inductive ModifiesEntry where
   | single (expr : StmtExprMd)       -- a single Composite reference
   | set (expr : StmtExprMd)          -- a Set Composite expression
+  -- field-granular: only `fieldConst` of `objExpr` may change
+  | field (objExpr : StmtExprMd) (fieldConst : StmtExprMd)
+
+/--
+Recognize a heap-parameterized field read `readField($heap, obj, fieldConst)`
+(optionally under one Box destructor), as emitted for a field target like `o#f`.
+`fieldConst` is the per-declaring-type `Field` constructor (`A.x` ≠ `B.x`), the
+same one `readField` uses — so the soundness gate holds by construction.
+-/
+def matchModifiesFieldRead (e : StmtExpr) : Option (StmtExprMd × StmtExprMd) :=
+  let tryReadField : StmtExpr → Option (StmtExprMd × StmtExprMd) := fun
+    | .StaticCall callee [_heap, objExpr, fieldConst] =>
+        if callee.text == "readField" then some (objExpr, fieldConst) else none
+    | _ => none
+  match tryReadField e with
+  | some r => some r
+  | none =>
+    -- Unwrap one Box destructor; gate on `Box` so unrelated unary calls aren't matched.
+    match e with
+    | .StaticCall callee [arg] => if callee.text.startsWith "Box" then tryReadField arg.val else none
+    | _ => none
 
 /--
 Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
@@ -61,27 +86,38 @@ def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEn
   | none               => none
 
 /--
-Extract modifies entries from the list of modifies StmtExprs, using the type
-environment and type definitions to distinguish Composite from Set Composite.
-Non-composite types (e.g., global variables of primitive type) are filtered out
-since the frame condition only applies to heap objects.
+Extract modifies entries. A field-access target (lowered to a `readField`)
+yields a field-granular entry; otherwise it is classified by type. Non-composite
+types (e.g. primitive globals) are filtered out — the frame applies to heap objects.
 -/
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
-    classifyModifiesType expr (computeExprType model expr).val
+    -- Soundness: a `.field` entry is only built for a field read of a heap object.
+    -- Targets with a non-composite owner are dropped upstream by
+    -- filterBodyNonCompositeModifies before heap parameterization.
+    match matchModifiesFieldRead expr.val with
+    | some (objExpr, fieldConst) => some (.field objExpr fieldConst)
+    | none => classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`
 - For a Set Composite `e`: `!(select(e, $obj))` i.e. $obj is not in the set
+- For a field `(o, f)`: `!($obj == o && $fld == f)` i.e. the quantified
+  `($obj, $fld)` pair is not the modified `(object, field)` pair (field-granular)
 -/
-def buildNotModifiedForEntry (obj : StmtExprMd) (entry : ModifiesEntry) : StmtExprMd :=
+def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) : StmtExprMd :=
   match entry with
   | .single expr =>
     mkMd <| .PrimitiveOp .Neq [obj, expr]
   | .set expr =>
     let membership := mkMd <| .StaticCall "select" [expr, obj]
     mkMd <| .PrimitiveOp .Not [membership]
+  | .field objExpr fieldConst =>
+    let objEq := mkMd <| .PrimitiveOp .Eq [obj, objExpr]
+    let fldEq := mkMd <| .PrimitiveOp .Eq [fld, fieldConst]
+    let bothMatch := mkMd <| .PrimitiveOp .And [objEq, fldEq]
+    mkMd <| .PrimitiveOp .Not [bothMatch]
 
 /-- Conjoin a list of StmtExprs with `&&`. -/
 def conjoinAll (exprs : List StmtExprMd) : StmtExprMd :=
@@ -96,7 +132,7 @@ Build the modifies frame condition as a Laurel StmtExpr.
 Generates a single quantified formula:
 
   forall $obj: Composite, $fld: Field =>
-    notModified($obj) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
+    notModified($obj, $fld) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
 Returns `none` if there are no entries.
 -/
@@ -118,7 +154,7 @@ def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs
     else
       -- Build the "not modified" precondition from all entries
       -- Combine: $obj < old($heap).nextReference && notModified($obj)
-      let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
+      let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj fld))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
   -- Build: readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
   let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
@@ -184,6 +220,12 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
       match e.val with
       | .All => (acc ++ [e], ds)  -- wildcard is always kept
+      | .Var (.Field target _) =>
+        -- Field target `o#f`: keep when the owner is a heap object (the field's own type is irrelevant).
+        let ownerTy := (computeExprType model target).val
+        if isHeapRelevantType ownerTy then (acc ++ [e], ds)
+        else
+          (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause field target has non-composite owner type '{formatHighTypeVal ownerTy}' and will be ignored"])
       | _ =>
         let ty := (computeExprType model e).val
         if isHeapRelevantType ty then (acc ++ [e], ds)
