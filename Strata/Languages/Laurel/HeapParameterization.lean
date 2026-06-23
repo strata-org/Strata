@@ -131,33 +131,34 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
 
-def computeReadsHeap (procs : List Procedure) : List Identifier :=
-  let info := procs.map fun p => (p.name, analyzeProc p)
-  let direct := info.filterMap fun (n, r) => if r.readsHeapDirectly then some n else none
-  let rec fixpoint (fuel : Nat) (current : List Identifier) : List Identifier :=
+/--
+Transitive call-graph closure of a "has-effect" property. `info` gives, per
+procedure, its name, whether it has the effect *directly*, and its callees; the
+result is the set of procedure names that have the effect directly or reach one
+that does. The fuel bound is the procedure count (the set only grows, capped by
+the number of procedures). This is the generic engine shared by the explicit
+heap analysis (`computeReadsHeap`/`computeWritesHeap`) and the implicit
+heap-effect pass. -/
+def transitiveEffectClosure {α : Type} [BEq α] (info : List (α × Bool × List α)) : List α :=
+  let direct := info.filterMap fun (n, d, _) => if d then some n else none
+  let rec fixpoint (fuel : Nat) (current : List α) : List α :=
     match fuel with
     | 0 => current
     | fuel' + 1 =>
-      let next := info.filterMap fun (n, r) =>
+      let next := info.filterMap fun (n, _, callees) =>
         if current.contains n then some n
-        else if r.callees.any current.contains then some n
+        else if callees.any current.contains then some n
         else none
       if next.length == current.length then current else fixpoint fuel' next
-  fixpoint procs.length direct
+  fixpoint info.length direct
+
+def computeReadsHeap (procs : List Procedure) : List Identifier :=
+  transitiveEffectClosure (procs.map fun p =>
+    let r := analyzeProc p; (p.name, r.readsHeapDirectly, r.callees))
 
 def computeWritesHeap (procs : List Procedure) : List Identifier :=
-  let info := procs.map fun p => (p.name, analyzeProc p)
-  let direct := info.filterMap fun (n, r) => if r.writesHeapDirectly then some n else none
-  let rec fixpoint (fuel : Nat) (current : List Identifier) : List Identifier :=
-    match fuel with
-    | 0 => current
-    | fuel' + 1 =>
-      let next := info.filterMap fun (n, r) =>
-        if current.contains n then some n
-        else if r.callees.any current.contains then some n
-        else none
-      if next.length == current.length then current else fixpoint fuel' next
-  fixpoint procs.length direct
+  transitiveEffectClosure (procs.map fun p =>
+    let r := analyzeProc p; (p.name, r.writesHeapDirectly, r.callees))
 
 structure TransformState where
   heapReaders : List Identifier

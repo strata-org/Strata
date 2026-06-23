@@ -455,6 +455,43 @@ opaque {
 };
 #end
 
+-- Transitive heap effect: `caller` has no direct heap operation, but calls
+-- `setIt` which writes — so the call-graph closure marks `caller` as `writes`.
+/--
+info: program CoreImplicit;
+class Account { balance : int }
+
+
+
+
+
+procedure setIt(a : Composite) [heap: writes]
+block $body {
+  heapWrite(a, Account.balance, 1)
+}
+
+procedure caller(a : Composite) [heap: writes]
+block $body {
+  call setIt(a);
+}
+-/
+#guard_msgs in
+#eval printImplicit
+#strata
+program Laurel;
+composite Account {
+  var balance: int
+}
+procedure setIt(a: Account)
+opaque {
+  a#balance := 1
+};
+procedure caller(a: Account)
+opaque {
+  setIt(a)
+};
+#end
+
 -- Nested classes: a composite field whose type is another composite. The schema
 -- preserves the cross-reference (`home : Address`), a field write stores the
 -- reference, and a nested read `(p#home)#zip` decomposes through a lifted opaque

@@ -1027,31 +1027,58 @@ def containsHeapExpr (expr : StmtExprMd) : Bool :=
   termination_by expr
   decreasing_by all_goals ((try cases x); simp_all; try term_by_mem)
 
-/-- The heap effect of a single implicit command. `heapWrite` and `heapAlloc`
-modify the heap (allocation adds a fresh object); `heapRead`/`heapInstanceOf`
-only read it; standard Core commands do not touch it directly. -/
-private def cmdHeapEffect : Core.Implicit.ImplicitCmd → Core.Implicit.HeapEffect
-  | .heap (.heapWrite ..) | .heap (.heapAlloc ..) => .writes
-  | .heap (.heapRead ..) | .heap (.heapInstanceOf ..) => .reads
-  | .core _ => .none
+/-- The *direct* heap effect of an implicit body, plus the names it calls.
+`reads`/`writes` are the direct-effect bits (transitivity is added later by the
+call-graph closure); `callees` are the procedure names invoked. -/
+structure BodyHeapInfo where
+  reads   : Bool := false
+  writes  : Bool := false
+  callees : List String := []
+  deriving Inhabited
 
-/-- Join on the heap-effect lattice: `.writes` > `.reads` > `.none`. -/
-private def joinHeapEffect : Core.Implicit.HeapEffect → Core.Implicit.HeapEffect → Core.Implicit.HeapEffect
-  | .writes, _ | _, .writes => .writes
-  | .reads, _ | _, .reads => .reads
-  | .none, .none => .none
-
-/-- Infer a procedure's heap effect from its emitted body by joining the effect
-of every command. This captures the procedure's *direct* effect; a transitive
-(call-graph) effect is not yet computed. -/
-private partial def inferHeapEffect (stmts : Core.Implicit.Statements) : Core.Implicit.HeapEffect :=
-  stmts.foldl (init := .none) fun acc s =>
+/-- Scan an implicit statement list for direct heap effects and call targets.
+`heapWrite`/`heapAlloc` write; `heapRead`/`heapInstanceOf` read; a `.core` call
+contributes its callee name. -/
+private partial def scanBodyHeapInfo (stmts : Core.Implicit.Statements) : BodyHeapInfo :=
+  stmts.foldl (init := {}) fun acc s =>
     match s with
-    | .cmd c => joinHeapEffect acc (cmdHeapEffect c)
-    | .block _ b _ => joinHeapEffect acc (inferHeapEffect b)
-    | .ite _ t e _ => joinHeapEffect acc (joinHeapEffect (inferHeapEffect t) (inferHeapEffect e))
-    | .loop _ _ _ b _ => joinHeapEffect acc (inferHeapEffect b)
+    | .cmd (.heap (.heapWrite ..)) | .cmd (.heap (.heapAlloc ..)) => { acc with writes := true }
+    | .cmd (.heap (.heapRead ..)) | .cmd (.heap (.heapInstanceOf ..)) => { acc with reads := true }
+    | .cmd (.core (.call procName _ _)) => { acc with callees := procName :: acc.callees }
+    | .cmd (.core _) => acc
+    | .block _ b _ =>
+      let r := scanBodyHeapInfo b
+      { reads := acc.reads || r.reads, writes := acc.writes || r.writes, callees := acc.callees ++ r.callees }
+    | .ite _ t e _ =>
+      let r := scanBodyHeapInfo t; let r' := scanBodyHeapInfo e
+      { reads := acc.reads || r.reads || r'.reads, writes := acc.writes || r.writes || r'.writes,
+        callees := acc.callees ++ r.callees ++ r'.callees }
+    | .loop _ _ _ b _ =>
+      let r := scanBodyHeapInfo b
+      { reads := acc.reads || r.reads, writes := acc.writes || r.writes, callees := acc.callees ++ r.callees }
     | .exit .. | .funcDecl .. | .typeDecl .. => acc
+
+/-- Compute each procedure's `HeapEffect` transitively across the call graph and
+stamp it onto the procedure declarations. A procedure `writes` if it (directly or
+through a callee) writes/allocates, else `reads` if it (transitively) reads, else
+`none`. Reuses the generic `transitiveEffectClosure` shared with the explicit
+heap analysis. -/
+def annotateHeapEffects (prog : Core.Implicit.Program) : Core.Implicit.Program :=
+  -- (name, directBit, callees) per procedure, for the two closures.
+  let procInfo : List (String × BodyHeapInfo) := prog.decls.filterMap fun
+    | .proc p _ => some (p.header.name.name, scanBodyHeapInfo p.body)
+    | _ => none
+  let writeInfo := procInfo.map fun (n, i) => (n, i.writes, i.callees)
+  let readInfo  := procInfo.map fun (n, i) => (n, i.reads,  i.callees)
+  let writers := transitiveEffectClosure writeInfo
+  let readers := transitiveEffectClosure readInfo
+  let effectOf (name : String) : Core.Implicit.HeapEffect :=
+    if writers.contains name then .writes
+    else if readers.contains name then .reads
+    else .none
+  { prog with decls := prog.decls.map fun
+    | .proc p md => .proc { p with effect := effectOf p.header.name.name } md
+    | d => d }
 
 /--
 Translate a Laurel procedure to a Core-implicit procedure. Mirrors
@@ -1098,7 +1125,9 @@ def translateProcedureImplicit (proc : Procedure) : TranslateM Core.Implicit.Pro
   let body : Core.Implicit.Statements :=
     [Imperative.Stmt.block "$body" bodyList mdWithUnknownLoc]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
-  return { header, effect := inferHeapEffect bodyList, spec, body }
+  -- `effect` is left `.none` here and filled transitively by `annotateHeapEffects`
+  -- once the whole program (and thus the call graph) is available.
+  return { header, effect := .none, spec, body }
 
 /-- Convert a non-procedure Core declaration to the corresponding implicit
 declaration. Non-heap declarations (types, axioms, functions) are shared
@@ -1174,7 +1203,7 @@ def translateLaurelToCoreImplicit (options : LaurelTranslateOptions)
         output := coreTy
         body := body
       } mdWithUnknownLoc]
-  pure { decls := schemaDecls ++ decls }
+  pure (annotateHeapEffects { decls := schemaDecls ++ decls })
 
 end -- public section
 end Laurel
