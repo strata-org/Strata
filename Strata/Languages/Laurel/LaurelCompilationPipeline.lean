@@ -24,7 +24,6 @@ import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.SubscriptElim
-import Strata.Languages.Laurel.ValidateSubscriptUsage
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Verifier
@@ -159,20 +158,17 @@ private def runLaurelPasses
   let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
-  -- Subscript validation runs here (rather than folded into `resolve`, as
-  -- diamond-access validation is) because `ValidateSubscriptUsage` imports
-  -- `Resolution`, so calling it from inside `resolve` would be circular.
-  let subscriptErrors := validateSubscriptUsage model program
-
   let mut program := program
   let mut model := model
-  let mut allDiags : List DiagnosticModel := result.errors.toList ++ subscriptErrors
+  let mut allDiags : List DiagnosticModel := result.errors.toList
   let mut allStats : Statistics := {}
 
-  -- Whether the program was already rejected before lowering began. Its
-  -- diagnostics are collected into `allDiags` above; the flag additionally
-  -- disarms the StrataBug guard below (see there).
-  let programIsKnownInvalid := !subscriptErrors.isEmpty
+  -- Whether the program was already rejected before lowering began (any
+  -- non-verification error from `resolve`, which now includes subscript-usage
+  -- and diamond-access validation). Its diagnostics are collected into
+  -- `allDiags` above; the flag additionally disarms the StrataBug guard below
+  -- (see there).
+  let programIsKnownInvalid := !result.errors.isEmpty
 
   for pass in laurelPipeline do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model)
