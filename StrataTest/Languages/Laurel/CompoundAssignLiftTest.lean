@@ -16,7 +16,7 @@ meta import StrataDDM.Elab
 meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.LaurelToCoreTranslator
-meta import Strata.Languages.Laurel.EliminateIncrDecr
+meta import Strata.Languages.Laurel.EliminateIncrDecrAndCompoundAssign
 meta import Strata.Languages.Laurel.LiftImperativeExpressions
 
 meta section
@@ -37,7 +37,7 @@ def parseLowerCompoundAssign (input : String) : IO Program := do
   match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program =>
-    let program := eliminateIncrDecr program
+    let program := eliminateIncrDecrAndCompoundAssign program
     let result := resolve program
     let (program, model) := (result.program, result.model)
     pure (liftExpressionAssignments model program)

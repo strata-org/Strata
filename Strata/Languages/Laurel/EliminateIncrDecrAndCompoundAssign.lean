@@ -123,7 +123,7 @@ private def lowerProcedure (proc : Procedure) : Procedure :=
 Eliminate every `.IncrDecr` and `.CompoundAssign` node in a Laurel program by
 lowering it to existing constructs. After this pass, neither node remains.
 -/
-def eliminateIncrDecr (program : Program) : Program :=
+def eliminateIncrDecrAndCompoundAssign (program : Program) : Program :=
   let staticProcs := program.staticProcedures.map lowerProcedure
   let types := program.types.map fun td =>
     match td with
@@ -133,10 +133,10 @@ def eliminateIncrDecr (program : Program) : Program :=
   { program with staticProcedures := staticProcs, types := types }
 
 /-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
-public def eliminateIncrDecrPass : LaurelPass where
+public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
   name := "EliminateIncrDecrAndCompoundAssign"
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
-  run := fun p _m => (eliminateIncrDecr p, [], {})
+  run := fun p _m => (eliminateIncrDecrAndCompoundAssign p, [], {})
 
 end -- public section
 end Strata.Laurel

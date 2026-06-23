@@ -16,7 +16,7 @@ meta import StrataDDM.Elab
 meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar
 meta import Strata.Languages.Laurel.LaurelToCoreTranslator
-meta import Strata.Languages.Laurel.EliminateIncrDecr
+meta import Strata.Languages.Laurel.EliminateIncrDecrAndCompoundAssign
 meta import Strata.Languages.Laurel.LiftImperativeExpressions
 
 meta section
@@ -38,7 +38,7 @@ def parseLowerIncrDecr (input : String) : IO Program := do
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok program =>
     -- Step 1: eliminate IncrDecr
-    let program := eliminateIncrDecr program
+    let program := eliminateIncrDecrAndCompoundAssign program
     -- Step 2: resolve so liftExpressionAssignments has a valid SemanticModel
     let result := resolve program
     let (program, model) := (result.program, result.model)
