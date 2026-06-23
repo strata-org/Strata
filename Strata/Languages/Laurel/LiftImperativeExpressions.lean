@@ -197,6 +197,12 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
 
 mutual
 
+def asLifted { t: Type } (runner: LiftM t) : LiftM t := do
+  let savedState ← get
+  modify fun s => { s with prependedStmts := [], subst := []}
+  let result ← runner
+  modify fun _ => savedState
+  return result
 
 /--
 Process an expression in expression context, traversing arguments right to left.
@@ -210,6 +216,19 @@ def transformLiftedExpr (expr : StmtExprMd) : LiftM (List StmtExprMd × StmtExpr
   let newPrepends ← takePrepends
   modify fun s => { s with prependedStmts := savedPrepends, subst := savedSubst }
   return (newPrepends, result)
+  termination_by (sizeOf expr, 3)
+
+/--
+Process an expression in expression context, traversing arguments right to left.
+Assignments are lifted to prependedStmts and replaced with snapshot variable references.
+-/
+def transformLiftedStmt (expr : StmtExprMd) : LiftM Unit := do
+  let savedSubst := (← get).subst
+  let previousPrepends := (← get).prependedStmts
+  modify fun s => { s with subst := [], prependedStmts := [] }
+  let result ← transformStmt expr
+  modify fun s => { s with subst := savedSubst, prependedStmts := previousPrepends }
+  prependList result
   termination_by (sizeOf expr, 1)
 
 /--
@@ -217,9 +236,9 @@ Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
 -/
 def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
-  match expr with
+  match h_node : expr with
   | AstNode.mk val source =>
-  match val with
+  match h_val : val with
   | .Var (.Local name) =>
       return ⟨.Var (.Local (← getSubst name)), source⟩
 
@@ -251,9 +270,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           dbg_trace "Strata bug: non-identifier targets should have been removed before the lift expression phase";
           return expr
 
-      let (valuePrepends, newValue) ← transformLiftedExpr value
-
-      prepend (⟨.Assign targets newValue, source⟩)
+      transformLiftedStmt expr
 
       -- Create a before-snapshot for each target and update substitutions
       for target in targets do
@@ -266,8 +283,6 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             setSubst varName snapshotName
         | _ => pure ()
 
-      prependList valuePrepends
-
       return resultExpr
 
   | .PrimitiveOp op args _ =>
@@ -276,35 +291,18 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.PrimitiveOp op seqArgs.reverse, source⟩
 
   | .StaticCall callee args =>
-    let model := (← get).model
     let imperativeCallees := (← get).imperativeCallees
     if !imperativeCallees.contains callee.text then
       let seqArgs ← args.reverse.mapM transformExpr
       let seqCall := ⟨.StaticCall callee seqArgs.reverse, source⟩
       return seqCall
     else
-      let seqArgsAndPrepends ← args.reverse.mapM transformLiftedExpr
-      let seqArgs := seqArgsAndPrepends.map (fun t => t.2)
-      let seqCall: StmtExprMd := ⟨.StaticCall callee seqArgs.reverse, source⟩
-      -- Imperative call in expression position: lift to an assignment.
-      -- Only valid for single-output procedures (or unresolved ones where we
-      -- fall back to a single target). Multi-output procedures in expression
-      -- position are a bug in the upstream translation — Resolution should
-      -- emit a diagnostic for that case.
-      let outputs := match model.get callee with
-        | .staticProcedure proc => proc.outputs
-        | .instanceProcedure _ proc => proc.outputs
-        | _ => []
       let callResultVar ← freshTempVar
-      let callResultType ← match outputs with
-        | [single] => pure single.type
-        | _ => computeType expr
-      let liftedCall: List StmtExprMd := [
-        ⟨ (.Var (.Declare ⟨callResultVar, callResultType⟩)), source ⟩,
-        ⟨.Assign [⟨ .Local callResultVar, source⟩] seqCall, source⟩
-      ]
-      prependList liftedCall
-      prependList (seqArgsAndPrepends.map (fun t => t.1)).flatten
+      let callResultType ← computeType expr
+
+      let prepends ← asLifted (transformStmtAssignImperativeCall
+        [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)
+      prependList prepends
       return ⟨.Var (.Local callResultVar), source⟩
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -485,10 +483,28 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return ⟨.ContractOf ty seqFunc, source⟩
 
   | _ => return expr
-  termination_by (sizeOf expr, 0)
+  termination_by (sizeOf expr, 2)
   decreasing_by
-    all_goals (simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem; try omega)
+    all_goals first
+      | (apply Prod.Lex.left; (try have := Condition.sizeOf_condition_lt ‹_›); term_by_mem)
+      | (apply Prod.Lex.left; simp <;> omega)
+      | (try subst h_node; try subst h_val; apply Prod.Lex.right; omega)
+
+def transformStmtAssignImperativeCall
+    (targets : List (AstNode Variable))
+    (callee: Identifier)
+    (args: List StmtExprMd)
+    (source: Option FileRange)
+    (callSource: Option FileRange): LiftM (List StmtExprMd) := do
+  let seqArgs ← args.reverse.mapM transformExpr
+  let argPrepends ← takePrepends
+  modify fun s => { s with subst := [] }
+  return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
+  termination_by (sizeOf args, 0)
+  decreasing_by
+    all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
@@ -529,20 +545,17 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- If the RHS is a direct imperative StaticCall, don't lift it —
       -- translateStmt handles Assign + StaticCall directly as a call statement.
       match _: valueMd with
-      | AstNode.mk value _ =>
+      | AstNode.mk value callSource =>
       match _: value with
       | .StaticCall callee args =>
           let imperativeCallees := (← get).imperativeCallees
-          if !imperativeCallees.contains callee.text then
+          if imperativeCallees.contains callee.text then
+            transformStmtAssignImperativeCall targets callee args source callSource
+          else
             let seqValue ← transformExpr valueMd
             let prepends ← takePrepends
             modify fun s => { s with subst := [] }
             return prepends ++ [⟨.Assign targets seqValue, source⟩]
-          else
-            let seqArgs ← args.reverse.mapM transformExpr
-            let argPrepends ← takePrepends
-            modify fun s => { s with subst := [] }
-            return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, source⟩, source⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
@@ -583,7 +596,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
 
-  | .PrimitiveOp _ _ =>
+  | .PrimitiveOp _ args =>
       -- A `PrimitiveOp` in statement position. If it carries any side effects
       -- (an embedded assignment or imperative call — typically the result of
       -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
@@ -592,7 +605,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- `exprAsUnusedInit`.
       let imperativeCallees := (← get).imperativeCallees
       if containsAssignmentOrImperativeCall imperativeCallees stmt then
-        let _ ← transformExpr stmt
+        let _ ← args.reverse.mapM transformExpr
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
         return prepends
@@ -613,8 +626,9 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       return [stmt]
   termination_by (sizeOf stmt, 0)
   decreasing_by
-    all_goals (try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem)
+    all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end
 
 def transformProcedureBody (source: Option FileRange) (body : StmtExprMd) : LiftM StmtExprMd := do

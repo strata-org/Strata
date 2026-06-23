@@ -17,6 +17,8 @@ Rewrites `return expr` into `outParam := expr; return` for imperative
 (non-functional) procedures that have an output parameter.
 
 The pass is a Laurel-to-Laurel rewrite that runs before Core translation.
+It only applies to static procedures, hence LiftInstanceProcedures must
+be executed before it.
 -/
 
 namespace Strata.Laurel
@@ -52,10 +54,18 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
     all_goals (try term_by_mem)
     all_goals omega
 
+<<<<<<< HEAD
 /-- Apply value-return elimination to a single procedure. Only applies to
     procedures with exactly one output parameter.
     Emits an error if a valued return is used with multiple output parameters. -/
 def eliminateValuesInReturnsInProc (proc : Procedure) : Procedure × Array DiagnosticModel :=
+=======
+/-- Apply value-return elimination to a single procedure. Rewrites `return expr`
+    into `outParam := expr; return` for any procedure with exactly one output
+    parameter.
+    Emits an error if a valued return is used with zero or multiple output parameters. -/
+def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
+>>>>>>> issue-924-contract-and-proof-pass
   match proc.outputs with
   | [outParam] =>
     let pre (stmt : StmtExprMd) : Id (Option (List StmtExprMd)) :=
@@ -70,32 +80,21 @@ def eliminateValuesInReturnsInProc (proc : Procedure) : Procedure × Array Diagn
     let rewrite := mapStmtExprFlattenM (m := Id) pre post
     match proc.body with
     | .Transparent body =>
-      ({ proc with body := .Transparent (rewrite body) }, #[])
+      { proc with body := .Transparent (rewrite body) }
     | .Opaque postconds (some impl) modif =>
-      ({ proc with body := .Opaque postconds (some (rewrite impl)) modif }, #[])
-    | _ => (proc, #[])
-  | other =>
-    let bodyHasValuedReturn := match proc.body with
-      | .Transparent body => hasValuedReturn body
-      | .Opaque _ (some impl) _ => hasValuedReturn impl
-      | _ => false
-    if bodyHasValuedReturn then
-      let msg := if other.isEmpty then
-        "Valued return is not supported for procedures with no output parameters"
-      else
-        "Valued return is not supported for procedures with multiple output parameters"
-      (proc, #[diagnosticFromSource proc.name.source msg DiagnosticType.UserError])
-    else (proc, #[])
+      { proc with body := .Opaque postconds (some (rewrite impl)) modif }
+    | _ => proc
+  | _ =>
+  -- Procedures without any out param (void) or with multiple output
+  -- cannot have return statements. This raises a Resolution error
+  -- (see `Check.return` in Resolution.lean)
+    proc
 
 public section
 
 /-- Transform a program by eliminating value returns in all imperative procedures. -/
-def eliminateValueInReturnsTransform (program : Program) : Program × Array DiagnosticModel :=
-  let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
-    let (proc', procDiags) := eliminateValuesInReturnsInProc proc
-    (proc' :: ps, ds ++ procDiags)
-  ) ([], #[])
-  ({ program with staticProcedures := procs.reverse }, diags)
+def eliminateValueInReturnsTransform (program : Program) : Program  :=
+  { program with staticProcedures := program.staticProcedures.map eliminateValueReturnsInProc }
 
 end -- public section
 
@@ -103,8 +102,6 @@ end -- public section
 public def eliminateValueInReturnsPass : LoweringPass where
   name := "EliminateValueInReturns"
   documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
-  run := fun p _m _ =>
-    let (p', diags) := eliminateValueInReturnsTransform p
-    (p', diags.toList, {})
+  run := fun p _m _ => (eliminateValueInReturnsTransform p, [], {})
 
 end Laurel

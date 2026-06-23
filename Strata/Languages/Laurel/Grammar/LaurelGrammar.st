@@ -87,6 +87,9 @@ op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] 
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
+// Refer to the pre-state value of an expression (for use in postconditions, modifies clauses).
+op old (inner: StmtExpr): StmtExpr => "old(" inner ")";
+
 // Java-style increment / decrement.
 // Prefix forms (leading parsers): yield the new value.
 op preIncr (target: StmtExpr): StmtExpr => @[prec(80)] "++" target;

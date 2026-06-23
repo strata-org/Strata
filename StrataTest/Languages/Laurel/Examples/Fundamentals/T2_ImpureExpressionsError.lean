@@ -33,8 +33,14 @@ procedure transparentWithMutatingAssignment(x: int): int
   return 3
 };
 
+procedure functionWithWhile(x: int): int
+{
+  while(false) {};
+//^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
+  3
+};
+
 procedure callsHasMutatingAssignment(x: int): int
- opaque
 {
   hasMutatingAssignment()
 };

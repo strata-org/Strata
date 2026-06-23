@@ -18,10 +18,4 @@ procedure localVariableWithoutInitializer(): int {
 //^^^^^^^^^^ error: local variables must have initializers in transparent bodies or contracts
   return 3
 };
-
-procedure deadCodeAfterIfElse(x: int) returns (r: int) {
-  if x > 0 then { return 1 } else { return 2 };
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: in a transparent body, if-then-else is only supported as the last statement in a block
-  return 3
-};
 #end

@@ -40,8 +40,7 @@ info: procedure impure(): int
 };
 procedure test()
 {
-  var $cndtn_0: int;
-  $cndtn_0 := impure();
+  var $cndtn_0: int := impure();
   assert $cndtn_0 == 1
 };
 -/
@@ -91,8 +90,7 @@ info: procedure impure(): int
 };
 procedure test()
 {
-  var $cndtn_0: int;
-  $cndtn_0 := impure();
+  var $cndtn_0: int := impure();
   assume $cndtn_0 == 1
 };
 -/
@@ -123,8 +121,7 @@ info: procedure multi_out(x: int)
 };
 procedure test()
 {
-  var $cndtn_0: BUG_MultiValuedExpr;
-  $cndtn_0 := multi_out(5);
+  var $cndtn_0: BUG_MultiValuedExpr := multi_out(5);
   assert $cndtn_0 == 6
 };
 -/

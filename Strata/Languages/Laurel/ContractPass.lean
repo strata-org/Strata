@@ -59,7 +59,7 @@ private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
   params.map fun p => mkMd (.Var (.Local p.name))
 
 /-- Build a helper function for a single condition over the given parameters.
-    Preconditions pass `proc.inputs`; postconditions pass `proc.inputs ++ proc.outputs`. -/
+    Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
   { name := mkId name
@@ -68,6 +68,62 @@ private def mkConditionProc (name : String) (params : List Parameter)
     preconditions := []
     decreases := none
     body := .Transparent condition.condition }
+
+/-- Suffix appended to a procedure's output-parameter names when they are lowered
+    into a postcondition helper *function*.
+
+    A postcondition helper takes both the procedure's inputs and outputs as plain
+    function parameters. When an output shares a name with an input (e.g. an inout
+    `$heap`, which the heap-parameterization pass lists in both `inputs` and
+    `outputs`), the two would collide in the helper's single parameter scope and
+    produce "Duplicate definition '…' is already defined in this scope". Suffixing
+    every output keeps the two distinct. The choice is heap-agnostic: it applies to
+    all outputs, not just `$heap`. -/
+public def outParamSuffix : String := "$out"
+
+/-- Rewrite a postcondition body so it refers to the renamed output parameters.
+
+    In a postcondition, a bare reference to an output parameter denotes its
+    post-state value, while `old(x)` denotes the pre-state value of an inout
+    parameter (the corresponding *input*). The helper is a pure function with two
+    distinct parameters, so:
+    - bare `Var (Local n)` where `n` is an output → suffixed name (`n ++ outParamSuffix`)
+    - `old(Var (Local n))` → `Var (Local n)`, i.e. strip `old` and keep the
+      un-suffixed name so it resolves to the input parameter (functions have no
+      two-state semantics, so an unstripped `old` would later be rejected).
+
+    `pushOldInward` guarantees every `old` immediately wraps a local variable. -/
+private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExprMd) : StmtExprMd :=
+  let suffixIfOutput (n : Identifier) : Identifier :=
+    if outputNames.contains n.text then mkId (n.text ++ outParamSuffix) else n
+  mapStmtExprPrePostM (m := Id)
+    (fun e =>
+      match e.val with
+      | .Old value =>
+        match value.val with
+        | .Var (.Local _) => some value
+        | _ => none
+      | _ => none)
+    (fun e =>
+      match e.val with
+      | .Var (.Local n) => ⟨.Var (.Local (suffixIfOutput n)), e.source⟩
+      | _ => e)
+    expr
+
+/-- Build a postcondition helper function over the procedure's inputs and outputs.
+    Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
+    identically-named inputs, and the condition body is rewritten to match. -/
+private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
+    (condition : Condition) : Procedure :=
+  let outputNames := outputs.map (·.name.text)
+  let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
+  { name := mkId name
+    inputs := inputs ++ renamedOutputs
+    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
@@ -163,6 +219,30 @@ private def mkPostAssumes (info : ContractInfo)
   else info.postNames.map fun (name, _) =>
     ⟨.Assume (mkCall name (tempRefs ++ outputArgs)), src⟩
 
+/-- Names of the callee's inout parameters: those appearing in both the input and
+    output lists. By the Laurel inout convention an inout is declared by giving the
+    input and output the same name, so at a call site the inout argument is the same
+    variable as the corresponding output target — and the Core lowering relies on
+    that identity. -/
+private def ContractInfo.inoutNames (info : ContractInfo) : List String :=
+  info.inputParams.filterMap fun p =>
+    if info.outputParams.any (·.name.text == p.name.text) then some p.name.text else none
+
+/-- Build the positional argument list for the rewritten call.
+
+    Ordinary inputs are passed via their snapshot temp (so pre/postconditions can
+    reference the pre-call value). Inout inputs, however, are passed as the
+    *original* argument variable rather than the temp: the call mutates that
+    variable in place, so it must coincide with the corresponding output target
+    (the Laurel inout invariant). The temp is still created and used by
+    `mkPostAssumes` to supply the inout's pre-state to `$post*`. -/
+private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprMd) : List StmtExprMd :=
+  let inout := info.inoutNames
+  tempRefs.zipIdx.map fun (tempRef, i) =>
+    match info.inputParams[i]? with
+    | some p => if inout.contains p.name.text then origArgs[i]?.getD tempRef else tempRef
+    | none => tempRef
+
 /-- Rewrite call sites in a statement/expression tree. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     (expr : StmtExprMd) : ContractM StmtExprMd := do
@@ -209,8 +289,14 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
                 | none => return e'
               | _ => return e'))
             let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
+<<<<<<< HEAD
             let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee tempRefs, callSrc⟩, src⟩
             let preCheck := mkPreChecks info tempRefs src
+=======
+            let callArgs := mkCallArgs info args' tempRefs
+            let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
+            let preCheck := mkPreChecks info tempRefs src
+>>>>>>> issue-924-contract-and-proof-pass
             let outputArgs := targets.filterMap fun t =>
               match t.val with
               | .Local name => some (mkMd (.Var (.Local name)))
@@ -332,7 +418,7 @@ def lowerContracts (program : Program) : Program × List DiagnosticModel :=
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkConditionProc (postCondProcName proc.name.text i) (proc.inputs ++ proc.outputs) c
+      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites

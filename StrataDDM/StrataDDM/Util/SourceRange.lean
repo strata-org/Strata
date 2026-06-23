@@ -25,7 +25,7 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving DecidableEq, Inhabited, Repr
+deriving DecidableEq, Inhabited, Repr, Hashable
 
 namespace SourceRange
 

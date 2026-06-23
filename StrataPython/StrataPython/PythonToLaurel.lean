@@ -1815,7 +1815,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
 
-  -- Return statement: assign to the LaurelResult output parameter, then exit $body.
+  -- Return statement: assign to the LaurelResult output parameter, then exit the body block.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
@@ -1824,8 +1824,8 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
         -- Coerce Composite return values to Any for LaurelResult : Any
         let eRef ← coerceToAny ctx expr eRef
         let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] eRef) md
-        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
-      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit "$body") md]
+        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit bodyLabel) md]
+      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit bodyLabel) md]
     return (ctx, stmts)
 
   -- Assert statement
@@ -2729,8 +2729,6 @@ def getHighTypeName : Laurel.HighType → String
   | .TString => "string"
   | .TVoid => "void"
   | .TFloat64 => "real"
-  | .THeap => "Heap"
-  | .TTypedField _ => "Field"
   | .TCore s => s
   | .UserDefined name => name.text
   | .TSet _ => "Map"

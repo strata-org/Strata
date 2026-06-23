@@ -183,4 +183,13 @@ opaque {
   assert y == 3
 };
 
+procedure hasMultipleOutputs() returns (x: int, y: int) opaque {
+  x := 1;
+  y := 2
+};
+
+procedure liftWithMultipleOutputs() opaque {
+  var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
+};
+
 #end

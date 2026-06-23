@@ -29,15 +29,34 @@ public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := 
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
 
-/-- Pretty-print a `Diagnostic` for error reporting.
-    Format: `<line>:<colStart>-<colEnd>  <kind>: <message>` -/
-def formatDiagnostic (d : Strata.Diagnostic) : String :=
+/-- Pretty-print a `Diagnostic` for error reporting, prefixed with its
+    **file-relative** `line:col` range — anchored to the enclosing `.lean`
+    source rather than the `#strata` snippet. A snippet line `L` is file line
+    `block.baseLine + L - 1` (`baseLine` is the file line of the snippet's first
+    line); columns coincide. The filename is intentionally omitted: the Lean
+    test runner already reports which file a diagnostic came from, and dropping
+    it keeps `#guard_msgs` goldens stable regardless of how the file was opened.
+
+    With `showSnippet := true`, the snippet-relative `line:col` range is also
+    shown in parentheses — useful when correlating against inline `// ^^^`
+    annotations, which are snippet-local. It is off by default so goldens show
+    only the file-relative location.
+
+    Format: `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`,
+    or with `showSnippet`:
+    `<fileLine>:<colStart>-<colEnd> (snippet <line>:<colStart>-<colEnd>)  <kind>: <message>` -/
+def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
+    (showSnippet : Bool := false) : String :=
   let kind := match d.type with
     | .Warning => "warning"
     | .UserError => "error"
     | .NotYetImplemented => "not-yet-implemented"
     | .StrataBug => "strata-bug"
-  s!"{d.start.line}:{d.start.column}-{d.ending.column}  {kind}: {d.message}"
+  let fileLine := block.baseLine + d.start.line - 1
+  let snippet := if showSnippet then
+      s!" (snippet {d.start.line}:{d.start.column}-{d.ending.column})"
+    else ""
+  s!"{fileLine}:{d.start.column}-{d.ending.column}{snippet}  {kind}: {d.message}"
 
 /-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
@@ -86,7 +105,11 @@ private def runLaurelPipelineRaw (program : StrataDDM.Program)
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    Laurel.verifyToDiagnosticModels laurelProgram options
+    -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
+    -- back as a structured `DiagnosticModel` (rather than thrown like the CLI),
+    -- so it flows through the same snippet-local `line:col` rendering as every
+    -- other diagnostic instead of leaking a raw byte offset in its message.
+    Laurel.verifyToDiagnosticModelsCapturing laurelProgram options
 
 /-! ## Inline-annotation matcher
 
@@ -213,15 +236,23 @@ private def formatAnnotation (a : DiagnosticAnnotation) : String :=
     - Otherwise asserts an exact match: every diagnostic must be annotated,
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
-    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel)) : IO Unit := do
+    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
+    (showSnippet : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
+  -- Echo each diagnostic's file-relative `line:col` (computed from the snippet's
+  -- `baseLine`, no manual offsets) so the localization is always visible — and a
+  -- `#guard_msgs` golden can pin it. The annotation matching below still runs, so
+  -- the test asserts correctness rather than just printing. `showSnippet` adds
+  -- the snippet-relative range for correlating against inline `// ^^^` markers.
+  for d in actual do
+    IO.println (formatDiagnostic block d showSnippet)
   if annotations.isEmpty then
     unless actual.isEmpty do
       let mut report := s!"expected no diagnostics, got {actual.size}:\n"
       for d in actual do
-        report := report ++ s!"  {formatDiagnostic d}\n"
+        report := report ++ s!"  {formatDiagnostic block d showSnippet}\n"
       throw <| IO.userError report
     return
   -- Pair up: every actual diagnostic must match exactly one annotation.
@@ -250,7 +281,7 @@ private def runAndCheck (block : SourcedProgram)
   if !unmatchedDiags.isEmpty then
     report := report ++ s!"\nActual diagnostics with no matching annotation:\n"
     for d in unmatchedDiags do
-      report := report ++ s!"  {formatDiagnostic d}\n"
+      report := report ++ s!"  {formatDiagnostic block d}\n"
   throw <| IO.userError report
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -259,10 +290,16 @@ private def runAndCheck (block : SourcedProgram)
 
     `options` defaults to `defaultLaurelTestOptions` (quiet verifier, default
     solver). Pass an explicit value to override the solver, timeout, etc. — for
-    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`. -/
-public def testLaurel (block : SourcedProgram)
-    (options : LaurelVerifyOptions := default) : IO Unit :=
-  runAndCheck block (runLaurelPipelineRaw · options)
+    example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`.
+
+    Each diagnostic's file-relative `line:col` range is always printed. Set
+    `showSnippet := true` to also append the snippet-relative range — useful for
+    correlating against the inline `// ^^^` annotations, which are
+    snippet-local. -/
+def testLaurel (block : SourcedProgram)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions)
+    (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options) showSnippet
 
 /-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
@@ -277,8 +314,12 @@ public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
 /-- Like `testLaurel` but skips SMT verification (translate + resolve only).
     Use when the test only cares about resolution, not the verifier — e.g.
     "shadowing in nested blocks is OK", or asserting a specific resolution
-    error without the verifier surfacing unrelated noise. -/
-public def testLaurelResolution (block : SourcedProgram) : IO Unit :=
-  runAndCheck block runLaurelResolutionRaw
+    error without the verifier surfacing unrelated noise.
+
+    As with `testLaurel`, each diagnostic's file-relative `line:col` range is
+    printed; `showSnippet := true` appends the snippet-relative range. -/
+def testLaurelResolution (block : SourcedProgram)
+    (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block runLaurelResolutionRaw showSnippet
 
 end StrataTest.Util
