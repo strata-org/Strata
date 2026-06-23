@@ -35,6 +35,18 @@ structure Env (P : PureExpr) where
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
+/-- `NoGenStore Q ρ` says the environment `ρ` leaves every `Q`-kind slot
+undefined: for each string `s` satisfying the label-kind predicate `Q` (the
+kind of label a pass mints), `ρ`'s store maps `HasIdent.ident s` to `none`.
+
+This is the store-level analogue of the syntactic `NoGenSuffix` freshness
+condition: it captures the "minted names start undefined" precondition shared
+by the pipeline passes, parameterised by the kind each pass mints so a single
+initial store can satisfy several passes' obligations at disjoint kinds. -/
+@[expose] abbrev NoGenStore {P : PureExpr} [HasIdent P]
+    (Q : String → Prop) (ρ : Env P) : Prop :=
+  ∀ s : String, Q s → ρ.store (HasIdent.ident (P := P) s) = none
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative

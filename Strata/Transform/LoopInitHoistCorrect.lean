@@ -3150,9 +3150,7 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
     (h_src_modifiedVars_shapefree :
       StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.modifiedVars ss))
     (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
-    (h_src_store_shapefree :
-      ∀ str : String, Q str →
-        ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_src_store_shapefree : NoGenStore (P := P) Q ρ_src)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
                        (.stmts ss ρ_src) (.terminal ρ_src'))
     (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
@@ -3305,8 +3303,7 @@ theorem hoistLoopPrefixInits_preserves
         HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
     (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
     (h_src_store_shapefree :
-      ∀ str : String, String.HasUnderscoreDigitSuffix str →
-        ρ_src.store (HasIdent.ident (P := P) str) = none)
+      NoGenStore (P := P) String.HasUnderscoreDigitSuffix ρ_src)
     (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
                        (.stmts ss ρ_src) (.terminal ρ_src'))
     (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)

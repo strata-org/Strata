@@ -1577,9 +1577,9 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     -- fresh CFG-relevant binder collides with a populated store).  `modVars` need
     -- NOT be undefined.
     (h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
-    (h_store_mints : ∀ s : String,
-      (ndelimKind s ∨ hoistKind s ∨ StructuredToUnstructuredCorrect.s2uKind s) →
-      ρ₀.store (HasIdent.ident (P := P) s) = none)
+    (h_store_mints_ndelim : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_store_mints_hoist : NoGenStore (P := P) hoistKind ρ₀)
+    (h_store_mints_s2u : NoGenStore (P := P) StructuredToUnstructuredCorrect.s2uKind ρ₀)
     -- source shape restrictions (front-end well-formedness):
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
@@ -1611,7 +1611,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
     nondetElim_sound_kind extendEval ss ρ₀ ρ'
       hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
-      (fun s hk => h_store_mints s (Or.inl hk)) h_ndelim_writes h_nofd h_lhni h_term
+      h_store_mints_ndelim h_ndelim_writes h_nofd h_lhni h_term
   -- Direction-A hoist §F preconds on the `nondetElim` output, at `Q := hoistKind`.
   have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
     (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
@@ -1645,7 +1645,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
       h_src | ⟨str, h_eq, h_nd⟩
     · exact h_store_inits y h_src
-    · rw [h_eq]; exact h_store_mints str (Or.inl h_nd)
+    · rw [h_eq]; exact h_store_mints_ndelim str h_nd
   -- === STEP 2: hoist (input `nondetElim ss`, source run = Step 1's) ===
   -- StoreAgreement ρ_out.store ρ_h'.store.
   obtain ⟨ρ_h', h_run2, h_agree2, h_hf2⟩ :=
@@ -1659,7 +1659,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       h_out_iv_sf
       h_out_mv_sf
       h_out_undef
-      (fun str hk => h_store_mints str (Or.inr (Or.inl hk)))
+      h_store_mints_hoist
       h_run1
       hwfvar' hwfcongr' hwfsubst' hwfdef'
   -- === Direction-B S2U preconds on the hoist output, at `Q := s2uKind` ===
@@ -1678,7 +1678,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     intro x hx
     rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
     · exact h_out_undef x h_src
-    · rw [h_eq]; exact h_store_mints str (Or.inr (Or.inl h_hoistk))
+    · rw [h_eq]; exact h_store_mints_hoist str h_hoistk
   -- `NoGenSuffix s2uKind` on the hoist-output `initVars`: each init is foreign to
   -- `s2uKind` — a fresh `hoistKind`, or (further classified) a fresh `ndelimKind`
   -- or a genuine source init (`s2uKind`-free by hypothesis).
@@ -1730,7 +1730,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
       h_step3_undef
       h_disj
-      (fun x hx => h_store_mints x (Or.inr (Or.inr hx)))
+      h_store_mints_s2u
       h_step3_iv h_step3_mv
       h_run2
   -- === CHAIN via StoreAgreement.trans (source on the left) ===
@@ -1763,9 +1763,9 @@ structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval
   hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval
   h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none
-  h_store_mints : ∀ s : String,
-    (ndelimKind s ∨ hoistKind s ∨ StructuredToUnstructuredCorrect.s2uKind s) →
-    ρ₀.store (HasIdent.ident (P := P) s) = none
+  h_store_mints_ndelim : NoGenStore (P := P) ndelimKind ρ₀
+  h_store_mints_hoist : NoGenStore (P := P) hoistKind ρ₀
+  h_store_mints_s2u : NoGenStore (P := P) StructuredToUnstructuredCorrect.s2uKind ρ₀
   h_nofd : Block.noFuncDecl ss = true
   h_lhni : Block.loopHasNoInvariants ss = true
   h_nml : Block.noMeasureLoops ss = true
@@ -1823,7 +1823,8 @@ theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal 
     obtain ⟨σ_cfg, h_run, h_agree⟩ :=
       pipeline_sound extendEval ss ρ₀ ρ'
         hpre.hwfb hpre.hwfv hpre.hwfvar' hpre.hwfcongr' hpre.hwfsubst' hpre.hwfdef'
-        hpre.h_store_inits hpre.h_store_mints hpre.h_nofd hpre.h_lhni hpre.h_nml
+        hpre.h_store_inits hpre.h_store_mints_ndelim hpre.h_store_mints_hoist
+        hpre.h_store_mints_s2u hpre.h_nofd hpre.h_lhni hpre.h_nml
         hpre.h_unique hpre.h_fresh hpre.h_disj hpre.h_ndelim_writes hpre.h_ndelim_exprs
         hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars h_term
     exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },

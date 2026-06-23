@@ -3348,9 +3348,7 @@ theorem nondetElim_sound_kind {P : PureExpr} [HasFvar P] [HasNot P]
     (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
     (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
     (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
-    (h_no_gen_suffix :
-      ∀ s, ndelimKind s →
-        ρ₀.store (HasIdent.ident (P := P) s) = none)
+    (h_no_gen_suffix : NoGenStore (P := P) ndelimKind ρ₀)
     (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
     (h_nofd : Block.noFuncDecl ss = true)
     (h_lhni : Block.loopHasNoInvariants ss = true)
