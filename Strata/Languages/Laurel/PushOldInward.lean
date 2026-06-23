@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.MapStmtExpr
+public import Strata.Languages.Laurel.LaurelPass
 
 /-!
 # Push `Old` Inward
@@ -70,11 +71,18 @@ def transformProcedurePushOld (proc : Procedure) : PushOldM Procedure := do
 
 /-- Push every `StmtExpr.Old` inward until it immediately wraps an inout
     variable. Returns the rewritten program and any warnings emitted. -/
-@[expose]
 def pushOldInward (program : Program) : Program × List DiagnosticModel :=
   let (program', finalState) :=
     (program.staticProcedures.mapM transformProcedurePushOld).run {}
   ({ program with staticProcedures := program' }, finalState.diagnostics)
+
+/-- Pipeline pass: translate modifies clauses into ensures clauses. -/
+public def pushOldInwardPass : LoweringPass where
+  name := "pushOldInward"
+  documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. Warns on `old(e)` where `e` mentions no inout parameter and on nested `old(old(...))`."
+  run := fun p _ _ =>
+    let (p', diags) := pushOldInward p
+    (p', diags, {})
 
 end -- public section
 end Laurel

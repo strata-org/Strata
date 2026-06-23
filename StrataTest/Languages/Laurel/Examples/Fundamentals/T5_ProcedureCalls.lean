@@ -27,7 +27,7 @@ procedure fooSingleAssign(): int
   var x: int := 0;
   var x2: int := x + 1;
   var x3: int := x2 + 1;
-  x3
+  return x3
 };
 
 procedure fooProof()

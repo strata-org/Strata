@@ -100,10 +100,10 @@ def eliminateIncrDecr (program : Program) : Program :=
   mapProgramProcedures lowerProcedure program
 
 /-- Pipeline pass: eliminate increment/decrement operators. -/
-public def eliminateIncrDecrPass : LaurelPass where
+public def eliminateIncrDecrPass : LoweringPass where
   name := "EliminateIncrDecr"
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) into existing Laurel assignment and arithmetic constructs. Prefix forms yield the new value; postfix forms yield the old value. Runs early so that no later pass observes an `.IncrDecr` node."
-  run := fun p _m => (eliminateIncrDecr p, [], {})
+  run := fun p _m _ => (eliminateIncrDecr p, [], {})
 
 end -- public section
 end Strata.Laurel

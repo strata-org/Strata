@@ -75,7 +75,7 @@ def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     For nested types, the function calls the parent's constraint function. -/
 def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
-  let bodyExpr := match ct.base.val with
+  let bodyExpr: StmtExprMd := match ct.base.val with
     | .UserDefined parent =>
       if ptMap.contains parent.text then
         let paramId := { ct.valueName with uniqueId := none }
@@ -89,7 +89,7 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
-    body := .Transparent { val := .Block [bodyExpr] none, source := none }
+    body := .Transparent { val := .Return bodyExpr, source := none }
     isFunctional := true
     decreases := none
     preconditions := [] }
@@ -244,11 +244,11 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
    funcDiags)
 
 /-- Pipeline pass: constrained type elimination. -/
-public def constrainedTypeElimPass : LaurelPass where
+public def constrainedTypeElimPass : LoweringPass where
   name := "ConstrainedTypeElim"
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
   needsResolves := true
-  run := fun p m =>
+  run := fun p m _ =>
     let (p', diags) := constrainedTypeElim m p
     (p', diags, {})
 

@@ -15,7 +15,6 @@ expected output.
 meta import StrataDDM.Elab
 meta import StrataDDM.BuiltinDialects.Init
 meta import Strata.Languages.Laurel.Grammar
-meta import Strata.Languages.Laurel.LaurelToCoreTranslator
 meta import Strata.Languages.Laurel.EliminateIncrDecr
 meta import Strata.Languages.Laurel.LiftImperativeExpressions
 
@@ -42,7 +41,7 @@ def parseLowerIncrDecr (input : String) : IO Program := do
     -- Step 2: resolve so liftExpressionAssignments has a valid SemanticModel
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments model program)
+    pure (liftExpressionAssignments program model [])
 
 /-- Statement form: `x++;` and `--x` as statements. Prefix (`--x`) produces
     a clean assignment. Postfix (`x++`) emits the same assignment-based form as
