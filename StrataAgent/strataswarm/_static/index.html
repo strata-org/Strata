@@ -46,6 +46,7 @@ header h1 { font-size: 18px; color: #4fc3f7; }
 .msg .msg-agent { font-weight: 700; font-size: 11px; margin-bottom: 2px; }
 .msg.tool { background: #1a2e2a; border-left: 3px solid #80cbc4; font-family: monospace; font-size: 11px; }
 .msg.tool_result { background: #1a2a2e; border-left: 3px solid #4fc3f7; font-family: monospace; font-size: 11px; }
+.msg.query { background: #2e2a1a; border-left: 3px solid #ffa726; font-family: monospace; font-size: 11px; white-space: pre-wrap; }
 .msg.injected { background: #2e1a3a; border-left: 3px solid #ce93d8; }
 .msg.notification { background: #2a2a1a; border-left: 3px solid #ffcc02; font-size: 11px; }
 .msg.status { background: transparent; color: #666; font-size: 11px; padding: 2px 10px; }
@@ -212,11 +213,13 @@ header h1 { font-size: 18px; color: #4fc3f7; }
 <!-- Replay Controls Bar (shown during replay) -->
 <div id="replay-bar" style="display:none;background:#2a1040;border-bottom:1px solid #e040fb;padding:6px 20px;font-size:12px;color:#e0e0e0;align-items:center;gap:12px;">
   <span style="color:#e040fb;font-weight:700;">REPLAY</span>
+  <span id="replay-summary-info" style="color:#aaa;font-size:11px;"></span>
   <span id="replay-progress-text">0%</span>
   <div style="flex:1;height:4px;background:#333;border-radius:2px;margin:0 12px;">
     <div id="replay-progress-bar" style="height:100%;background:#e040fb;border-radius:2px;width:0%;transition:width 0.3s;"></div>
   </div>
   <span id="replay-agent-name" style="color:#4fc3f7;"></span>
+  <span id="replay-cost" style="color:#81c784;font-weight:600;"></span>
   <button onclick="replayPause()" id="replay-btn-pause" style="padding:4px 10px;border:none;border-radius:3px;background:#e65100;color:white;font-size:11px;cursor:pointer;">Pause</button>
   <button onclick="replayResume()" id="replay-btn-resume" style="display:none;padding:4px 10px;border:none;border-radius:3px;background:#1b5e20;color:#a5d6a7;font-size:11px;cursor:pointer;">Resume</button>
   <button onclick="replayStep()" id="replay-btn-step" style="display:none;padding:4px 10px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:11px;cursor:pointer;">Step</button>
@@ -333,6 +336,7 @@ function connect() {
       replayActive = true;
       isRunning = true;
       agents = {}; agentMessages = {}; allMessages = [];
+      if (data.summary) updateReplaySummaryDisplay(data.summary);
       render();
     } else if (data.type === 'replay_stopped' || data.type === 'replay_completed') {
       replayActive = false;
@@ -358,6 +362,10 @@ function handleEvent(ev) {
     const type = classifyMsg(text);
     agentMessages[name].push({ text, type, agent: name, ts: ev.timestamp_ms });
     allMessages.push({ text, type, agent: name, ts: ev.timestamp_ms });
+  } else if (ev.event_type === 'query') {
+    const text = `📤 QUERY: ${ev.data || ''}`;
+    agentMessages[name].push({ text, type: 'query', agent: name, ts: ev.timestamp_ms });
+    allMessages.push({ text, type: 'query', agent: name, ts: ev.timestamp_ms });
   } else if (ev.event_type === 'status_change') {
     if (!agents[name]) agents[name] = { name, status: ev.data, spawned_by: ev.spawned_by || null };
     else agents[name].status = ev.data;
@@ -1228,6 +1236,17 @@ function replayStop() {
   });
 }
 
+function updateReplaySummaryDisplay(summary) {
+  if (!summary || !summary.cost_usd) return;
+  const info = document.getElementById('replay-summary-info');
+  const parts = [];
+  if (summary.theorem) parts.push(summary.theorem);
+  if (summary.time_seconds) parts.push(Math.round(summary.time_seconds / 60) + 'min');
+  if (summary.proved != null && summary.total_lemmas != null) parts.push(summary.proved + '/' + summary.total_lemmas + ' proved');
+  info.textContent = parts.join(' | ');
+  document.getElementById('replay-cost').textContent = '$' + summary.cost_usd.toFixed(4);
+}
+
 function startReplayPoll() {
   stopReplayPoll();
   replayPollInterval = setInterval(() => {
@@ -1235,6 +1254,7 @@ function startReplayPoll() {
       document.getElementById('replay-progress-text').textContent = d.progress_pct + '%';
       document.getElementById('replay-progress-bar').style.width = d.progress_pct + '%';
       document.getElementById('replay-agent-name').textContent = d.current_agent || '';
+      if (d.summary) updateReplaySummaryDisplay(d.summary);
       if (!d.playing) {
         replayActive = false;
         document.getElementById('replay-bar').style.display = 'none';

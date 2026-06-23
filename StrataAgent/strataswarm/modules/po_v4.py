@@ -311,15 +311,20 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     # ─── Done ─────────────────────────────────────────────────────────────
     elapsed = _time.time() - _start_time
     elapsed_str = f"{elapsed/60:.1f}min" if elapsed >= 60 else f"{elapsed:.0f}s"
+    total_cost = getattr(agent.swarm, '_total_cost', 0.0) if hasattr(agent, 'swarm') else 0.0
     await agent._emit("message",
         f"[PO4] Finished: stage={state.stage}, proved={state.lemmas_proved}, "
-        f"cycles={state.cycles_detected}, time={elapsed_str}")
+        f"cycles={state.cycles_detected}, time={elapsed_str}, cost=${total_cost:.2f}")
     ledger.save()
+
+    # Write session summary to the session folder for replay/reporting
+    _write_session_summary(cwd, state, ledger, elapsed, total_cost)
 
     status = AgentStatus.COMPLETED if state.stage == "done" else AgentStatus.FAILED
     return AgentResult(name=agent.spec.name, status=status,
                        output={"stage": state.stage, "proved": state.lemmas_proved,
-                               "cycles": state.cycles_detected, "time_seconds": round(elapsed)})
+                               "cycles": state.cycles_detected, "time_seconds": round(elapsed),
+                               "cost_usd": round(total_cost, 4)})
 
 
 # ─── Phase handlers (each returns a Trans value) ─────────────────────────────
@@ -527,7 +532,9 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-CHUNK_TURNS = 35           # turns per writer chunk
+CHUNK_TURNS = 35           # default turns per writer chunk
+MIN_CHUNK_TURNS = 20       # minimum turns guide can assign
+MAX_CHUNK_TURNS = 100      # maximum turns guide can assign
 CONTEXT_THRESHOLD = 65.0   # % — guide can recommend decompose after this
 GRACE_TURNS = 20           # turns per grace extraction attempt
 WRITER_CLEANUP_TURNS = 10
@@ -627,7 +634,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             await guide.backend.compact()
 
         # ── Writer works (verified_loop ensures file compiles on exit) ──
-        chunk_turns = min(50, max(10, chunk_budget))
+        chunk_turns = min(MAX_CHUNK_TURNS, max(MIN_CHUNK_TURNS, chunk_budget))
         writer_instruction = (
             f"{action}\n\n"
             f"You have {chunk_turns} turns. "
@@ -1665,3 +1672,37 @@ def _load_state(cwd: Path, workspace_rel: str) -> PO4State | None:
         return PO4State(**{k: v for k, v in data.items() if k in PO4State.__dataclass_fields__})
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _write_session_summary(cwd: Path, state: PO4State, ledger: LemmaLedger,
+                           elapsed: float, total_cost: float):
+    """Write session_summary.json to the session folder for replay/reporting."""
+    from datetime import datetime
+
+    sessions_dir = cwd / "StrataAgent" / "strataswarm" / "temp" / "sessions"
+    if not sessions_dir.exists():
+        return
+
+    # Find the latest session folder
+    session_dirs = sorted(sessions_dir.iterdir(), reverse=True)
+    if not session_dirs:
+        return
+    session_dir = session_dirs[0]
+
+    entries = ledger.entries()
+    summary = {
+        "timestamp": datetime.now().isoformat(),
+        "theorem": state.root_theorem_name,
+        "workspace": state.root_workspace,
+        "stage": state.stage,
+        "time_seconds": round(elapsed),
+        "cost_usd": round(total_cost, 4),
+        "total_lemmas": len(entries),
+        "proved": sum(1 for e in entries if e.status == LemmaStatus.PROVED),
+        "failed": sum(1 for e in entries if e.status == LemmaStatus.FAILED),
+        "cycles": sum(1 for e in entries if e.status == LemmaStatus.CYCLE),
+        "pending": sum(1 for e in entries if e.status == LemmaStatus.PENDING),
+        "total_attempts": state.total_attempts,
+    }
+
+    (session_dir / "session_summary.json").write_text(json.dumps(summary, indent=2))

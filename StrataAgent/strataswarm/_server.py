@@ -195,6 +195,7 @@ class SwarmDashboard:
         self._replay_index: int = 0
         self._replay_speed: float = 1.0
         self._replay_playing: bool = False
+        self._replay_summary: dict[str, Any] = {}
         self._setup_routes()
         self._setup_middleware()
 
@@ -613,11 +614,26 @@ class SwarmDashboard:
             self._replay_paused = False
             self._replay_pause_event.set()
 
+            # Load session summary if available (sits in parent of swarm folder)
+            summary: dict[str, Any] = {}
+            summary_path = session_dir.parent / "session_summary.json"
+            if summary_path.exists():
+                try:
+                    summary = json.loads(summary_path.read_text())
+                except (json.JSONDecodeError, OSError):
+                    pass
+            self._replay_summary = summary
+
             # Reset frontend state for replay
             self._event_history = {}
             self._all_messages = []
             await self._broadcast({"type": "reset"})
-            await self._broadcast({"type": "replay_started", "total_events": len(events), "speed": speed})
+            await self._broadcast({
+                "type": "replay_started",
+                "total_events": len(events),
+                "speed": speed,
+                "summary": summary,
+            })
 
             self._replay_task = asyncio.create_task(self._replay_loop())
             return {"status": "started", "total_events": str(len(events)), "speed": str(speed)}
@@ -667,6 +683,7 @@ class SwarmDashboard:
                 "index": self._replay_index,
                 "total": total,
                 "speed": self._replay_speed,
+                "summary": self._replay_summary,
             }
 
         @self.app.post("/api/replay/step")

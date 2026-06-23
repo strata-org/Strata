@@ -2,7 +2,7 @@ name: SearchAgent
 description: "Codebase search. Finds definitions, lemmas, types."
 stateless: false
 reply_only: true
-replicas: 3
+replicas: 1
 routing: round_robin
 module: null
 hooks: search_agent_hooks
