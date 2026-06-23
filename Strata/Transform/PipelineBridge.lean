@@ -8,6 +8,7 @@ module
 public import Strata.Transform.NondetElimCorrect
 public import Strata.Transform.LoopInitHoistCorrect
 public import Strata.Transform.StructuredToUnstructuredCorrect
+public import Strata.Transform.PipelineLabelsPreserved
 
 -- `import all` to reach the (module-private) name-classification helpers from the
 -- loop-init-hoist WF family and the `Block.initVars`/`modVars` distribution
@@ -1583,8 +1584,7 @@ private theorem pipeline_sound_terminal [HasFvar P] [HasNot P] [HasVal P] [HasBo
     (h_nml : Block.noMeasureLoops ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
-    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
-      (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup ss)
     (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
     (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
     (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
@@ -1706,7 +1706,10 @@ private theorem pipeline_sound_terminal [HasFvar P] [HasNot P] [HasVal P] [HasBo
       (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
       (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
       h_step3_undef
-      h_disj
+      -- Discharge the transformed-body `userLabelsShapeNodup` obligation from
+      -- the source-side condition: `userBlockLabels` is preserved by both
+      -- `nondetElim` and `hoistLoopPrefixInits`.
+      (Block.userLabelsShapeNodup_pipeline_preserved ss h_disj)
       h_store_mints_s2u
       h_step3_iv h_step3_mv
       h_run2
@@ -1751,8 +1754,7 @@ private theorem pipeline_sound_exiting [HasFvar P] [HasNot P] [HasVal P] [HasBoo
     (h_nml : Block.noMeasureLoops ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
-    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
-      (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup ss)
     (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
     (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
     (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
@@ -1874,7 +1876,10 @@ private theorem pipeline_sound_exiting [HasFvar P] [HasNot P] [HasVal P] [HasBoo
       (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
       (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
       h_step3_undef
-      h_disj
+      -- Discharge the transformed-body `userLabelsShapeNodup` obligation from
+      -- the source-side condition: `userBlockLabels` is preserved by both
+      -- `nondetElim` and `hoistLoopPrefixInits`.
+      (Block.userLabelsShapeNodup_pipeline_preserved ss h_disj)
       h_store_mints_s2u
       h_step3_iv h_step3_mv
       lbl h_run2
@@ -1930,8 +1935,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
     (h_nml : Block.noMeasureLoops ss = true)
     (h_unique : Block.uniqueInits ss)
     (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
-    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
-      (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup ss)
     -- source kind-freedom (user names never collide with any minted prefix):
     (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
     (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
@@ -2015,8 +2019,7 @@ structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   h_nml : Block.noMeasureLoops ss = true
   h_unique : Block.uniqueInits ss
   h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true
-  h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
-    (Block.hoistLoopPrefixInits (Block.nondetElim ss))
+  h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup ss
   h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss
   h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss
   h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss
