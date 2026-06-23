@@ -25,12 +25,12 @@ and a `nextReference: int` for allocating new objects. Box is a sum type with co
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
-   - Input: `heap : THeap`
-   - Output: `heap : THeap`
+   - Input: `heap : Heap`
+   - Output: `heap : Heap`
    - Field writes become: `heap := updateField(heap, obj, field, BoxT(value))`
 
 2. Procedures that only read the heap get an in heap parameter
-   - Input: `heap : THeap`
+   - Input: `heap : Heap`
    - Field reads become: `Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
@@ -478,37 +478,31 @@ where
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
-  let heapInName := heapInVarName
   let readsHeap := (← get).heapReaders.contains proc.name
   let writesHeap := (← get).heapWriters.contains proc.name
 
   if writesHeap then
-    -- This procedure writes the heap - add $heap_in as input and $heap as output
-    -- At the start, assign $heap_in to $heap, then use $heap throughout
-    let heapInParam : Parameter := { name := heapInName, type := ⟨.THeap, none⟩ }
-    let heapOutParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure writes the heap — $heap appears in both inputs and outputs
+    -- (true inout). Core's two-state semantics provide `old $heap` automatically.
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
-    let inputs' := heapInParam :: proc.inputs
-    let outputs' := heapOutParam :: proc.outputs
+    let inputs' := heapParam :: proc.inputs
+    let outputs' := heapParam :: proc.outputs
 
-    -- Preconditions use $heap_in (the input state)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapInName model))
+    -- Preconditions reference $heap (evaluated at entry before any mutation)
+    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          -- First assign $heap_in to $heap, then transform body using $heap
-          let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
           let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
-          pure (.Transparent (mkMd (.Block [assignHeap, bodyExpr'] none)))
+          pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          -- Postconditions use $heap (the output state)
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
-                let assignHeap := mkMd (.Assign [mkVarMd (.Local heapName)] (mkMd (.Var (.Local heapInName))))
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
-                pure (some (mkMd (.Block [assignHeap, implExpr'] none)))
+                pure (some implExpr')
             | none => pure none
           let modif' ← modif.mapM (heapTransformExpr heapName model ·)
           pure (.Opaque postconds' impl' modif')
@@ -524,8 +518,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else if readsHeap then
-    -- This procedure only reads the heap - add $heap as input only
-    let heapParam : Parameter := { name := heapName, type := ⟨.THeap, none⟩ }
+    -- This procedure only reads the heap - add $heap as input only.
+    -- Use the prelude `Heap` datatype for the parameter type (see the
+    -- writes-heap branch above for rationale).
+    let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
     let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
@@ -583,7 +579,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
 public def heapParameterizationPass : LaurelPass where
   name := "HeapParameterization"
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
-  needsResolves := true
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun p m =>
     (heapParameterization m p, [], {})
   comesBefore := [

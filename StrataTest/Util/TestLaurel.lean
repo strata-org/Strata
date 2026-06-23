@@ -27,35 +27,6 @@ def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
 
-/-- Pretty-print a `Diagnostic` for error reporting, prefixed with its
-    **file-relative** `line:col` range — anchored to the enclosing `.lean`
-    source rather than the `#strata` snippet. A snippet line `L` is file line
-    `block.baseLine + L - 1` (`baseLine` is the file line of the snippet's first
-    line); columns coincide. The filename is intentionally omitted: the Lean
-    test runner already reports which file a diagnostic came from, and dropping
-    it keeps `#guard_msgs` goldens stable regardless of how the file was opened.
-
-    With `showSnippet := true`, the snippet-relative `line:col` range is also
-    shown in parentheses — useful when correlating against inline `// ^^^`
-    annotations, which are snippet-local. It is off by default so goldens show
-    only the file-relative location.
-
-    Format: `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`,
-    or with `showSnippet`:
-    `<fileLine>:<colStart>-<colEnd> (snippet <line>:<colStart>-<colEnd>)  <kind>: <message>` -/
-def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
-    (showSnippet : Bool := false) : String :=
-  let kind := match d.type with
-    | .Warning => "warning"
-    | .UserError => "error"
-    | .NotYetImplemented => "not-yet-implemented"
-    | .StrataBug => "strata-bug"
-  let fileLine := block.baseLine + d.start.line - 1
-  let snippet := if showSnippet then
-      s!" (snippet {d.start.line}:{d.start.column}-{d.ending.column})"
-    else ""
-  s!"{fileLine}:{d.start.column}-{d.ending.column}{snippet}  {kind}: {d.message}"
-
 /-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
     subtracting `basePos` and looking up in a snippet `FileMap`. -/
@@ -154,6 +125,69 @@ private def diagnosticKindString (t : Strata.DiagnosticType) : String :=
   | .NotYetImplemented => "not-yet-implemented"
   | .StrataBug => "strata-bug"
 
+/-! ## Unified reporting normal form
+
+Actual diagnostics (`Strata.Diagnostic`) and expected annotations
+(`DiagnosticAnnotation`) are two views of the *same* thing — a kinded message
+pinned to a `line:col` range. They are compared against each other and printed
+side-by-side in mismatch reports, so they MUST share one coordinate system and
+one layout. Rather than keep two parallel formatters in sync by discipline
+(they drifted once — actuals went file-relative while expecteds stayed
+snippet-local), both project into a single `LocatedMessage` and flow through
+the *one* `render` / `matches` below. There is no other way to format or
+compare a located message, so the two views cannot diverge again. -/
+
+/-- The common normal form: a kinded, located message in **snippet-local**
+    coordinates (1-indexed line, 0-indexed columns), the system both
+    `Strata.Diagnostic` and `DiagnosticAnnotation` natively use. `message` is
+    the substring to match (when this is an expected annotation) or the full
+    diagnostic text (when this is an actual diagnostic). -/
+private structure LocatedMessage where
+  line : Nat
+  colStart : Nat
+  colEnd : Nat
+  kind : String
+  message : String
+
+/-- View an actual pipeline `Diagnostic` as a `LocatedMessage`. -/
+private def LocatedMessage.ofDiagnostic (d : Strata.Diagnostic) : LocatedMessage :=
+  { line := d.start.line, colStart := d.start.column, colEnd := d.ending.column
+    kind := diagnosticKindString d.type, message := d.message }
+
+/-- View an expected `DiagnosticAnnotation` as a `LocatedMessage`. -/
+private def LocatedMessage.ofAnnotation (a : DiagnosticAnnotation) : LocatedMessage :=
+  { line := a.line, colStart := a.colStart, colEnd := a.colEnd
+    kind := a.kind, message := a.message }
+
+/-- The single renderer for any located message — used for BOTH the
+    "actual diagnostics" and "expected (annotated)" halves of every report, so
+    the two are always in the same coordinate system and layout.
+
+    Prints the **file-relative** `line:col` range (snippet line `L` is file line
+    `block.baseLine + L - 1`; columns coincide). The filename is intentionally
+    omitted: the Lean test runner already reports which file a diagnostic came
+    from, and dropping it keeps `#guard_msgs` goldens stable regardless of how
+    the file was opened. With `showSnippet := true` the snippet-relative range
+    is appended in parens — useful for correlating against inline `// ^^^`
+    annotations, which are snippet-local.
+
+    Format: `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`, or with
+    `showSnippet`:
+    `<fileLine>:<colStart>-<colEnd> (snippet <line>:<colStart>-<colEnd>)  <kind>: <message>` -/
+private def LocatedMessage.render (block : SourcedProgram) (m : LocatedMessage)
+    (showSnippet : Bool := false) : String :=
+  let fileLine := block.baseLine + m.line - 1
+  let snippet := if showSnippet then
+      s!" (snippet {m.line}:{m.colStart}-{m.colEnd})"
+    else ""
+  s!"{fileLine}:{m.colStart}-{m.colEnd}{snippet}  {m.kind}: {m.message}"
+
+/-- Format an actual `Diagnostic` for reporting. Thin wrapper over
+    `LocatedMessage.render` so callers don't project by hand. -/
+def formatDiagnostic (block : SourcedProgram) (d : Strata.Diagnostic)
+    (showSnippet : Bool := false) : String :=
+  (LocatedMessage.ofDiagnostic d).render block showSnippet
+
 /-- Number of leading whitespace characters (`' '` or `'\t'`) in a list. -/
 private def leadingWhitespace (cs : List Char) : Nat :=
   (cs.takeWhile (fun c => c == ' ' || c == '\t')).length
@@ -212,20 +246,28 @@ private def parseAnnotations (snippet : String) : Array DiagnosticAnnotation := 
 private def isSubstrOf (needle haystack : String) : Bool :=
   !needle.isEmpty && (haystack.splitOn needle).length > 1
 
-/-- Try to match an annotation to a diagnostic. The annotation pins the
-    diagnostic's *start* line and column range; `d.ending.line` is treated as
-    informational so that a future multi-line diagnostic doesn't silently fail
-    to match. -/
-private def matchesAnnotation (d : Strata.Diagnostic) (a : DiagnosticAnnotation) : Bool :=
-  d.start.line == a.line
-    && d.start.column == a.colStart
-    && d.ending.column == a.colEnd
-    && diagnosticKindString d.type == a.kind
-    && isSubstrOf a.message d.message
+/-- Does an actual diagnostic satisfy an expected annotation? Both are viewed
+    as `LocatedMessage`s and compared in the shared snippet-local coordinate
+    system: start line and the full column range must agree exactly, kinds must
+    be equal, and the expected `message` must appear as a substring of the
+    actual one (real messages carry volatile detail — unique-id suffixes, full
+    types — so we pin only the stable fragment). The diagnostic's *ending* line
+    is intentionally not constrained, so a future multi-line diagnostic doesn't
+    silently fail to match. -/
+private def LocatedMessage.matches (actual expected : LocatedMessage) : Bool :=
+  actual.line == expected.line
+    && actual.colStart == expected.colStart
+    && actual.colEnd == expected.colEnd
+    && actual.kind == expected.kind
+    && isSubstrOf expected.message actual.message
 
-/-- Format a single annotation for error reporting. -/
-private def formatAnnotation (a : DiagnosticAnnotation) : String :=
-  s!"{a.line}:{a.colStart}-{a.colEnd}  {a.kind}: {a.message}"
+/-- Format a single annotation for reporting. Thin wrapper over
+    `LocatedMessage.render` — the SAME renderer used for actual diagnostics, so
+    the "expected (annotated)" and "actual diagnostic" halves of a mismatch
+    report are always in the same coordinate system and layout. -/
+private def formatAnnotation (block : SourcedProgram) (a : DiagnosticAnnotation)
+    (showSnippet : Bool := false) : String :=
+  (LocatedMessage.ofAnnotation a).render block showSnippet
 
 /-- Drive a `SourcedProgram` against its inline annotations.
 
@@ -235,17 +277,21 @@ private def formatAnnotation (a : DiagnosticAnnotation) : String :=
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
     (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
-    (showSnippet : Bool := false) : IO Unit := do
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   let dms ← run block.program
   let actual := renderSnippetLocal block.basePos block.source dms
-  -- Echo each diagnostic's file-relative `line:col` (computed from the snippet's
-  -- `baseLine`, no manual offsets) so the localization is always visible — and a
-  -- `#guard_msgs` golden can pin it. The annotation matching below still runs, so
-  -- the test asserts correctness rather than just printing. `showSnippet` adds
-  -- the snippet-relative range for correlating against inline `// ^^^` markers.
-  for d in actual do
-    IO.println (formatDiagnostic block d showSnippet)
+  -- By default the suite stays silent on success — the inline `// ^^^`
+  -- annotations (matched below) are what assert correctness. `showLocations`
+  -- opts a test into echoing each diagnostic's file-relative `line:col`
+  -- (computed from the snippet's `baseLine`, no manual offsets) so a
+  -- `#guard_msgs` golden can pin it; `showSnippet` further appends the
+  -- snippet-relative range for correlating against the inline markers. Note the
+  -- *failure* reports below always use this same file-relative format, so a
+  -- mismatch points straight at the offending `.lean` line regardless.
+  if showLocations then
+    for d in actual do
+      IO.println (formatDiagnostic block d showSnippet)
   if annotations.isEmpty then
     unless actual.isEmpty do
       let mut report := s!"expected no diagnostics, got {actual.size}:\n"
@@ -260,7 +306,8 @@ private def runAndCheck (block : SourcedProgram)
     let mut matchIdx? : Option Nat := none
     for h : i in [0:annotations.size] do
       let a := annotations[i]
-      if !matchedAnnotationIdxs.contains i && matchesAnnotation d a then
+      if !matchedAnnotationIdxs.contains i
+          && (LocatedMessage.ofDiagnostic d).matches (LocatedMessage.ofAnnotation a) then
         matchIdx? := some i
         break
     match matchIdx? with
@@ -275,11 +322,11 @@ private def runAndCheck (block : SourcedProgram)
   if !unmatchedAnnotations.isEmpty then
     report := report ++ s!"\nExpected (annotated) but never fired:\n"
     for a in unmatchedAnnotations do
-      report := report ++ s!"  {formatAnnotation a}\n"
+      report := report ++ s!"  {formatAnnotation block a showSnippet}\n"
   if !unmatchedDiags.isEmpty then
     report := report ++ s!"\nActual diagnostics with no matching annotation:\n"
     for d in unmatchedDiags do
-      report := report ++ s!"  {formatDiagnostic block d}\n"
+      report := report ++ s!"  {formatDiagnostic block d showSnippet}\n"
   throw <| IO.userError report
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -290,24 +337,36 @@ private def runAndCheck (block : SourcedProgram)
     solver). Pass an explicit value to override the solver, timeout, etc. — for
     example, `(options := { verifyOptions := { .quiet with solver := "z3" } })`.
 
-    Each diagnostic's file-relative `line:col` range is always printed. Set
-    `showSnippet := true` to also append the snippet-relative range — useful for
-    correlating against the inline `// ^^^` annotations, which are
-    snippet-local. -/
+    Succeeds silently by default; the inline `// ^^^` annotations assert
+    correctness. Set `showLocations := true` to echo each diagnostic's
+    file-relative `line:col` range (so a `#guard_msgs` golden can pin the
+    localization), and `showSnippet := true` to also append the snippet-relative
+    range. (Failure reports always use the file-relative format regardless.) -/
 def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
-    (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block (runLaurelPipelineRaw · options) showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options) showLocations showSnippet
+
+/-- Path to the directory for intermediate files, inside the build directory.
+    Resolved from the current working directory so it works on any machine. -/
+def buildDir : IO String := do
+  let cwd ← IO.currentDir
+  return s!"{cwd}/.lake/build/intermediatePrograms/"
+
+def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+  let dir ← buildDir
+  runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
 
 /-- Like `testLaurel` but skips SMT verification (translate + resolve only).
     Use when the test only cares about resolution, not the verifier — e.g.
     "shadowing in nested blocks is OK", or asserting a specific resolution
     error without the verifier surfacing unrelated noise.
 
-    As with `testLaurel`, each diagnostic's file-relative `line:col` range is
-    printed; `showSnippet := true` appends the snippet-relative range. -/
+    As with `testLaurel`, succeeds silently by default; `showLocations := true`
+    echoes each diagnostic's file-relative `line:col` range and
+    `showSnippet := true` appends the snippet-relative range. -/
 def testLaurelResolution (block : SourcedProgram)
-    (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block runLaurelResolutionRaw showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
+  runAndCheck block runLaurelResolutionRaw showLocations showSnippet
 
 end StrataTest.Util

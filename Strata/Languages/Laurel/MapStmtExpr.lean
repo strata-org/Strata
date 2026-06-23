@@ -242,7 +242,91 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
 def mapStmtExprUsed (f : Bool → StmtExprMd → StmtExprMd) (resultUsed : Bool) (expr : StmtExprMd) : StmtExprMd :=
   (mapStmtExprUsedM (m := Id) f resultUsed expr)
 
+/-
+Bottom-up monadic traversal with a pre-filter. Before recursing into a node's
+children, `pre` is called. If `pre` returns `some result`, that result is used
+directly (children are NOT recursed into). If `pre` returns `none`, normal
+bottom-up recursion proceeds and `post` is applied after children are rebuilt.
+-/
+@[expose]
+def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
+    (post : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
+  match ← pre expr with
+  | some result => return result
+  | none =>
+  let source := expr.source
+  let rebuilt ← match _h : expr.val with
+  | .IfThenElse cond th el =>
+    pure ⟨.IfThenElse (← mapStmtExprPrePostM pre post cond) (← mapStmtExprPrePostM pre post th)
+      (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .Block stmts label =>
+    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label, source⟩
+  | .While cond invs dec body =>
+    pure ⟨.While (← mapStmtExprPrePostM pre post cond)
+      (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
+      (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
+      (← mapStmtExprPrePostM pre post body), source⟩
+  | .Return v =>
+    pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .Assign targets value =>
+    let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+      let ⟨vv, vs⟩ := v
+      match vv with
+      | .Field target fieldName =>
+        pure ⟨Variable.Field (← mapStmtExprPrePostM pre post target) fieldName, vs⟩
+      | .Local _ | .Declare _ => pure v
+    pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
+  | .Var (.Field target fieldName) =>
+    pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
+  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
+    pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  | .PureFieldUpdate target fieldName newValue =>
+    pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName
+      (← mapStmtExprPrePostM pre post newValue), source⟩
+  | .StaticCall callee args =>
+    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .PrimitiveOp op args skipProof =>
+    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) skipProof, source⟩
+  | .ReferenceEquals lhs rhs =>
+    pure ⟨.ReferenceEquals (← mapStmtExprPrePostM pre post lhs) (← mapStmtExprPrePostM pre post rhs), source⟩
+  | .AsType target ty =>
+    pure ⟨.AsType (← mapStmtExprPrePostM pre post target) ty, source⟩
+  | .IsType target ty =>
+    pure ⟨.IsType (← mapStmtExprPrePostM pre post target) ty, source⟩
+  | .InstanceCall target callee args =>
+    pure ⟨.InstanceCall (← mapStmtExprPrePostM pre post target) callee
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
+      (← mapStmtExprPrePostM pre post body), source⟩
+  | .Assigned name =>
+    pure ⟨.Assigned (← mapStmtExprPrePostM pre post name), source⟩
+  | .Old value =>
+    pure ⟨.Old (← mapStmtExprPrePostM pre post value), source⟩
+  | .Fresh value =>
+    pure ⟨.Fresh (← mapStmtExprPrePostM pre post value), source⟩
+  | .Assert cond =>
+    pure ⟨.Assert { cond with condition := ← mapStmtExprPrePostM pre post cond.condition }, source⟩
+  | .Assume cond =>
+    pure ⟨.Assume (← mapStmtExprPrePostM pre post cond), source⟩
+  | .ProveBy value proof =>
+    pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
+  | .ContractOf ty func =>
+    pure ⟨.ContractOf ty (← mapStmtExprPrePostM pre post func), source⟩
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
+  post rebuilt
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try term_by_mem)
+  all_goals (cases expr; simp_all; omega)
+
 /-- Apply a monadic transformation to all procedure bodies. -/
+@[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
@@ -253,6 +337,7 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
     (preconditions, decreases, body, and invokeOn). -/
+@[expose]
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
   return { proc with
@@ -269,6 +354,108 @@ def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) 
 /-- Apply a pure transformation to all `StmtExprMd` nodes in a program. -/
 def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
   mapProgramM (m := Id) f program
+
+/-! ## Type-annotation traversals
+
+`mapStmtExprHighTypesM` and friends apply a `HighType → HighType` rewrite to
+*every* type annotation reachable from a node / procedure / program, reusing
+`mapStmtExprM` for the structural recursion. This is the single source of truth
+for "rewrite all type references", so passes don't have to enumerate the
+type-carrying constructors by hand (and silently miss one). The supplied `f` is
+responsible for recursing into compound types (`TSet`/`TMap`/`Applied`/…). -/
+
+/-- Rewrite the declared type carried by a `Variable` (only `Declare` carries one). -/
+def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Variable) : m Variable := do
+  match v with
+  | .Declare param => pure (.Declare { param with type := ← f param.type })
+  | .Local _ | .Field _ _ => pure v
+
+/--
+Apply `f` to every `HighType` annotation carried *directly* by a single
+`StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
+targets), quantifier binders, `AsType`/`IsType` type arguments, and typed
+`Hole`s. Does **not** recurse into child expressions — compose with
+`mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
+-/
+def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd := do
+  let source := expr.source
+  match expr.val with
+  | .Var v => pure ⟨.Var (← mapVariableHighTypesM f v), source⟩
+  | .Assign targets value =>
+    let targets' ← targets.mapM (fun t => do pure (⟨← mapVariableHighTypesM f t.val, t.source⟩ : VariableMd))
+    pure ⟨.Assign targets' value, source⟩
+  | .IncrDecr mode op target =>
+    pure ⟨.IncrDecr mode op ⟨← mapVariableHighTypesM f target.val, target.source⟩, source⟩
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode { param with type := ← f param.type } trigger body, source⟩
+  | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩
+  | .IsType target ty => pure ⟨.IsType target (← f ty), source⟩
+  | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
+  | _ => pure expr
+
+/-- Apply `f` to every `HighType` annotation appearing anywhere in a `StmtExprMd`. -/
+def mapStmtExprHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd :=
+  mapStmtExprM (mapNodeHighTypesM f) expr
+
+/-- Pure version of `mapStmtExprHighTypesM`. -/
+def mapStmtExprHighTypes (f : HighTypeMd → HighTypeMd) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExprHighTypesM (m := Id) f expr
+
+/-- Apply `f` to every `HighType` annotation in a procedure: parameter types,
+    body, preconditions, decreases measure, and auto-invocation trigger. -/
+def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : Procedure) : m Procedure := do
+  let mapExpr := mapStmtExprHighTypesM f
+  let mapParam (p : Parameter) : m Parameter := do pure { p with type := ← f p.type }
+  let body' ← match proc.body with
+    | .Transparent b => pure (.Transparent (← mapExpr b))
+    | .Opaque ps impl mods =>
+      pure (.Opaque (← ps.mapM (·.mapM mapExpr)) (← impl.mapM mapExpr) (← mods.mapM mapExpr))
+    | .Abstract ps => pure (.Abstract (← ps.mapM (·.mapM mapExpr)))
+    | .External => pure .External
+  return { proc with
+    inputs := ← proc.inputs.mapM mapParam
+    outputs := ← proc.outputs.mapM mapParam
+    body := body'
+    preconditions := ← proc.preconditions.mapM (·.mapM mapExpr)
+    decreases := ← proc.decreases.mapM mapExpr
+    invokeOn := ← proc.invokeOn.mapM mapExpr }
+
+/-- Apply `f` to every `HighType` annotation in a type definition: composite
+    fields and instance procedures, constrained base/constraint/witness,
+    datatype constructor argument types, and alias targets. -/
+def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td : TypeDefinition) : m TypeDefinition := do
+  match td with
+  | .Composite ct =>
+    pure (.Composite { ct with
+      fields := ← ct.fields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+      instanceProcedures := ← ct.instanceProcedures.mapM (mapProcedureHighTypesM f) })
+  | .Constrained ct =>
+    pure (.Constrained { ct with
+      base := ← f ct.base
+      constraint := ← mapStmtExprHighTypesM f ct.constraint
+      witness := ← mapStmtExprHighTypesM f ct.witness })
+  | .Datatype dt =>
+    pure (.Datatype { dt with
+      constructors := ← dt.constructors.mapM (fun ctor => do
+        pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) })
+  | .Alias ta => pure (.Alias { ta with target := ← f ta.target })
+
+/-- Apply `f` to a constant's declared type and (optional) initializer. -/
+def mapConstantHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (c : Constant) : m Constant := do
+  pure { c with type := ← f c.type, initializer := ← c.initializer.mapM (mapStmtExprHighTypesM f) }
+
+/-- Apply `f` to every `HighType` annotation anywhere in a program: procedures,
+    static fields, type definitions, and constants. -/
+def mapProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : Program) : m Program := do
+  return { program with
+    staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
+    staticFields := ← program.staticFields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+    types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
+    constants := ← program.constants.mapM (mapConstantHighTypesM f) }
+
+/-- Pure version of `mapProgramHighTypesM`. -/
+def mapProgramHighTypes (f : HighTypeMd → HighTypeMd) (program : Program) : Program :=
+  mapProgramHighTypesM (m := Id) f program
 
 end -- public section
 end Strata.Laurel
