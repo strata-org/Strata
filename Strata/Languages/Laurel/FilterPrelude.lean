@@ -92,7 +92,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames cond; collectExprNames thenB
     elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     collectExprNames cond; invs.forM collectExprNames
     dec.forM collectExprNames
     collectExprNames body
@@ -221,8 +221,6 @@ private def buildDependencyMap (prog : Laurel.Program)
         for c in dt.constructors do
           insertNew c.name.text (deps.insert name)
             s!"constructor '{c.name.text}' of datatype '{name}'"
-          insertNew (dt.testerName c) (deps.insert name)
-            s!"tester '{dt.testerName c}' of datatype '{name}'"
           for a in c.args do
             insertNew (dt.destructorName a) (deps.insert name)
               s!"destructor '{dt.destructorName a}'"

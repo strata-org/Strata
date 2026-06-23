@@ -31,8 +31,6 @@ namespace Strata.Laurel
 open Strata
 
 abbrev ConstrainedTypeMap := Std.HashMap String ConstrainedType
-/-- Map from variable name to its constrained HighType (e.g. UserDefined "nat") -/
-abbrev PredVarMap := Std.HashMap String HighType
 
 def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :=
   types.foldl (init := {}) fun m td =>
@@ -52,20 +50,32 @@ def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
 def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
   match ty with | .UserDefined name => ptMap.contains name.text | _ => false
 
-/-- Build a call to the constraint function for a constrained type, or `none` if not constrained -/
-def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
+/-- Build a call to the constraint function for a constrained type, asserting
+    the constraint on the read-back expression `ref`. Returns `none` if `ty` is
+    not a constrained type.
+
+    `ref` is the expression whose value is checked (e.g. a local read
+    `x` or a field read `c#count`), allowing this to serve every assignment
+    target kind uniformly. -/
+def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
+    (ref : StmtExprMd) (src : Option FileRange := none) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
-      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [⟨.Var (.Local varName), src⟩], src⟩
+      some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩
     else none
   | _ => none
+
+/-- Build a call to the constraint function for a constrained type, checking a
+    local variable read, or `none` if not constrained. -/
+def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
+    (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
+  constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
 
 /-- Generate a constraint function for a constrained type.
     For nested types, the function calls the parent's constraint function. -/
 def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
-  let bodyExpr := match ct.base.val with
+  let bodyExpr: StmtExprMd := match ct.base.val with
     | .UserDefined parent =>
       if ptMap.contains parent.text then
         let paramId := { ct.valueName with uniqueId := none }
@@ -79,14 +89,10 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
-    body := .Transparent { val := .Block [bodyExpr] none, source := none }
+    body := .Transparent { val := .Return bodyExpr, source := none }
     isFunctional := true
     decreases := none
     preconditions := [] }
-
-private def wrap (stmts : List StmtExprMd) (src : Option FileRange)
-    : StmtExprMd :=
-  match stmts with | [s] => s | ss => ⟨.Block ss none, src⟩
 
 def resolveVariable (ptMap : ConstrainedTypeMap) (v : VariableMd) : VariableMd :=
   match v.val with
@@ -118,88 +124,60 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   | .IsType t ty => ⟨.IsType t (resolveType ptMap ty), source⟩
   | _ => expr
 
-abbrev ElimM := StateM PredVarMap
+/-- Per-node constrained-type elimination, applied bottom-up (with flattening)
+    by `mapStmtExprFlattenM`. `resultUsed` is `true` when the node occupies a
+    value position.
 
-private def inScope (action : ElimM α) : ElimM α := do
-  let saved ← get
-  let result ← action
-  set saved
-  return result
-
-def elimStmt (ptMap : ConstrainedTypeMap)
-    (stmt : StmtExprMd) : ElimM (List StmtExprMd) := do
-  let source := stmt.source
-
-  match _h : stmt.val with
+    - Uninitialized constrained declaration `var x: T;` → assume its constraint.
+    - Assignment to constrained target(s) → emit the assignment followed by an
+      `assert T$constraint(<read-back>)` per constrained target. The constraint
+      is checked on a *read-back* of the target rather than on the RHS, so the
+      RHS is evaluated exactly once. In value position the read-back is also
+      appended as the final statement, so the resulting value-block evaluates to
+      the assigned value (this covers expression-position assignments such as
+      `y := (x := -1) + 1`); in statement position it is omitted.
+    - All other nodes are returned unchanged; the traversal handles recursion. -/
+def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (resultUsed : Bool) (node : StmtExprMd) : List StmtExprMd :=
+  let source := node.source
+  match node.val with
   | .Var (.Declare param) =>
-    let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
-    if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
-    let check := match callOpt with
-      | some c => [⟨.Assume c, source⟩]
-      | none => []
-    pure ([stmt] ++ check)
-
+    let check := (constraintCallFor ptMap param.type.val param.name (src := source)).toList.map
+      fun c => ⟨.Assume c, source⟩
+    [node] ++ check
   | .Assign targets _value =>
-    -- Handle Declare targets for constrained type elimination
-    let declareChecks ← targets.foldlM (init := ([] : List StmtExprMd)) fun acc target =>
-      match target.val with
-      | .Declare param => do
-        let callOpt := constraintCallFor ptMap param.type.val param.name (src := source)
-        if callOpt.isSome then modify fun pv => pv.insert param.name.text param.type.val
-        pure (acc ++ callOpt.toList.map fun c => ⟨.Assert { condition := c }, source⟩)
-      | .Local name => do
-        match (← get).get? name.text with
-        | some ty =>
-          let assert := (constraintCallFor ptMap ty name (src := source)).toList.map
-            fun c => ⟨.Assert { condition := c }, source⟩
-          pure (acc ++ assert)
-        | none => pure acc
-      | _ => pure acc
-    pure ([stmt] ++ declareChecks)
+    let asserts: List StmtExprMd := targets.filterMap (fun target =>
+      let ref : StmtExprMd := VariableMd.toReadbackExpr target
+      let ty : HighType := (computeExprType model ref).val
+      (constraintCallForExpr ptMap ty ref (src := source)).map (⟨.Assert { condition := · }, source⟩))
+    let suffix := match targets with
+      | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
+      | _ => []
+    [node] ++ asserts ++ suffix
+  | _ => [node]
 
-  | .Block stmts sep =>
-    let stmtss ← inScope (stmts.mapM (elimStmt ptMap))
-    pure [⟨.Block stmtss.flatten sep, source⟩]
+/-- Apply `elimNode` across a body via the flattening, `resultUsed`-aware
+    traversal. A procedure body is a statement, so the top-level `resultUsed`
+    is `false`. -/
+def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (body : StmtExprMd) : StmtExprMd :=
+  mapStmtExprFlattenM (m := Id) (fun _ _ => none) (elimNode ptMap model) false body
 
-  | .IfThenElse cond thenBr (some elseBr) =>
-    let thenSs ← inScope (elimStmt ptMap thenBr)
-    let elseSs ← inScope (elimStmt ptMap elseBr)
-    pure [⟨.IfThenElse cond (wrap thenSs source) (some (wrap elseSs source)), source⟩]
-  | .IfThenElse cond thenBr none =>
-    let thenSs ← inScope (elimStmt ptMap thenBr)
-    pure [⟨.IfThenElse cond (wrap thenSs source) none, source⟩]
-
-  | .While cond inv dec body =>
-    let bodySs ← inScope (elimStmt ptMap body)
-    pure [⟨.While cond inv dec (wrap bodySs source), source⟩]
-
-  | _ => pure [stmt]
-termination_by sizeOf stmt
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt stmt)
-  all_goals (try term_by_mem)
-  all_goals omega
-
-def elimProc (ptMap : ConstrainedTypeMap) (proc : Procedure) : Procedure :=
+def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
   let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
-  let initVars : PredVarMap := proc.inputs.foldl (init := {}) fun s p =>
-    if isConstrainedType ptMap p.type.val then s.insert p.name.text p.type.val else s
   let body' := match proc.body with
   | .Transparent bodyExpr =>
-    let (stmts, _) := (elimStmt ptMap bodyExpr).run initVars
-    let body := wrap stmts bodyExpr.source
+    let body := elimStmts ptMap model bodyExpr
     if outputEnsures.isEmpty then .Transparent body
     else
       let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
       .Opaque outputEnsures (some retBody) []
   | .Opaque postconds impl modif =>
-    let impl' := impl.map fun b => wrap ((elimStmt ptMap b).run initVars).1 b.source
+    let impl' := impl.map (elimStmts ptMap model)
     .Opaque (postconds ++ outputEnsures) impl' modif
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
@@ -231,7 +209,20 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     isFunctional := false
     decreases := none }
 
-public def constrainedTypeElim (_model : SemanticModel) (program : Program)
+/-- Eliminate constrained types within a composite type definition: resolve
+    constrained field types to their base types and run constrained type
+    elimination on the composite's instance procedures.
+
+    This is necessary because `constrainedTypeElim` removes the constrained type
+    definitions from the program. Any reference to a constrained type left inside
+    a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
+    resolve in later passes and the final Core translation. -/
+def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (ct : CompositeType) : CompositeType :=
+  { ct with
+    fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model) }
+
+public def constrainedTypeElim (model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
@@ -244,13 +235,16 @@ public def constrainedTypeElim (_model : SemanticModel) (program : Program)
       acc.cons (diagnosticFromSource proc.name.source "constrained return types on functions are not yet supported")
     else acc
   ({ program with
-    staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap)
+    staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap model)
                         ++ witnessProcedures
-    types := program.types.filter fun | .Constrained _ => false | _ => true },
+    types := program.types.filterMap fun
+      | .Constrained _ => none
+      | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
+      | other => some other },
    funcDiags)
 
 /-- Pipeline pass: constrained type elimination. -/
-public def constrainedTypeElimPass : LaurelPass where
+public def constrainedTypeElimPass : LoweringPass where
   name := "ConstrainedTypeElim"
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
   needsResolves := true

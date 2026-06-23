@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.HeapParameterizationConstants
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.MapStmtExpr
@@ -233,7 +234,7 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnum
 end -- public section
 
 /-- Pipeline pass: filter non-composite modifies clauses. -/
-public def filterNonCompositeModifiesPass : LaurelPass where
+public def filterNonCompositeModifiesPass : LoweringPass where
   name := "FilterNonCompositeModifies"
   documentation := "Filters modifies clauses that refer to non-composite types (e.g. primitives), which cannot be heap-parameterized. Emits a warning for each removed clause. Should run before heap parameterization so that phase remains agnostic to modifies clauses."
   run := fun _ p m =>
@@ -241,10 +242,11 @@ public def filterNonCompositeModifiesPass : LaurelPass where
     (p', diags, {})
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
-public def modifiesClausesTransformPass : LaurelPass where
+public def modifiesClausesTransformPass : LoweringPass where
   name := "ModifiesClausesTransform"
   documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
+  comesAfter := [⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩]
   run := fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})

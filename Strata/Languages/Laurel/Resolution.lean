@@ -6,8 +6,8 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
@@ -236,7 +236,22 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
 private def containerScopedName (containerName memberName : Identifier) : Identifier :=
   mkId s!"{containerName.text}${memberName.text}"
 
-/-- Extract the UserDefined type name from a resolved target expression by looking up its scope entry. -/
+/-- Declared type of `fieldName` in the scope of composite type `typeName`; `none` if
+    unknown. Shared by `targetTypeName` and `incrDecrTargetType`. (`resolveFieldInTypeScope`
+    below is the same walk returning the field's *id* instead of its type.) -/
+private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
+  let s ← get
+  match s.typeScopes.get? typeName with
+  | some typeScope =>
+    match typeScope.get? fieldName.text with
+    | some (_, node) => pure (some node.getType.val)
+    | none => pure none
+  | none => pure none
+
+/-- UserDefined type name of a resolved target: a local directly, or a chained field
+    access (`a#b#c`) by recursing on the inner target then `fieldTypeInScope`.
+    Self-recursive on `.Var (.Field inner _)`; the `decreasing_by` proof below holds
+    only because `inner` is a strict subterm of `target`, so recurse only on subterms. -/
 private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := do
   let s ← get
   match _h : target.val with
@@ -251,15 +266,9 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     match (← targetTypeName inner) with
     | none => pure none
     | some innerTy =>
-      match s.typeScopes.get? innerTy with
-      | none => pure none
-      | some typeScope =>
-        match typeScope.get? fieldName.text with
-        | some (_, node) =>
-          match node.getType.val with
-          | .UserDefined typRef => pure (some typRef.text)
-          | _ => pure none
-        | none => pure none
+      match (← fieldTypeInScope innerTy fieldName) with
+      | some (.UserDefined typRef) => pure (some typRef.text)
+      | _ => pure none
   | _ => pure none
   termination_by sizeOf target
   decreasing_by
@@ -516,13 +525,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     | none => pure none
   | .Field tgt fieldName =>
     match (← targetTypeName tgt) with
-    | some typeName =>
-      match s.typeScopes.get? typeName with
-      | some typeScope =>
-        match typeScope.get? fieldName.text with
-        | some (_, node) => pure (some node.getType.val)
-        | none => pure none
-      | none => pure none
+    | some typeName => fieldTypeInScope typeName fieldName
     | none => pure none
   | .Declare param => pure (some param.type.val)
 
@@ -632,10 +635,10 @@ namespace Resolution
 set_option linter.unusedVariables false in
 -- The well-founded-recursion termination proofs for every helper in this
 -- large mutual block share a single elaboration heartbeat budget. Each
--- `decreasing_by` is individually cheap (a directed `rw [h]` plus a targeted
--- `simp only [<ctor>.sizeOf_spec]` then `omega`), but their cumulative cost
--- across ~30 functions sits just above the 200k default, so the budget is
--- raised modestly for the block.
+-- `decreasing_by` rewrites the node equation (`rw [h]`) and then discharges
+-- the size goal with `term_by_mem` (which adds `List`/`Array` membership-size
+-- lemmas, then `simp_all` and `omega`). Their cumulative cost across ~30
+-- functions sits above the 200k default, so the budget is raised for the block.
 set_option maxHeartbeats 400000 in
 mutual
 
@@ -717,8 +720,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Declare param) => do
     let r ← Check.varDeclare param source
     return (r, ⟨ .TVoid, source ⟩)
-  | .While cond invs dec body => do
-    let r ← Check.while exprMd cond invs dec body source (by rw [h_node])
+  | .While cond invs dec body postTest => do
+    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
   | .Exit target => do
     let r ← Check.exit target source
@@ -896,8 +899,7 @@ def Synth.varField (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Var.sizeOf_spec, Variable.Field.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Var-Declare)
     ```
@@ -948,9 +950,9 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     check mode. -/
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
-    (dec : Option StmtExprMd) (body : StmtExprMd)
+    (dec : Option StmtExprMd) (body : StmtExprMd) (postTest : Bool)
     (source : Option FileRange)
-    (h : exprMd.val = .While cond invs dec body) :
+    (h : exprMd.val = .While cond invs dec body postTest) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let invs' ← invs.attach.mapM (fun a => have := a.property; do
@@ -962,17 +964,16 @@ def Check.while (exprMd : StmtExprMd)
       typeMismatch a.val.source none "expected a numeric type" decTy
     pure e')
   let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
-  pure { val := .While cond' invs' dec' body', source := source }
+  -- `postTest` (the `do … while` variant) resolves identically and is carried
+  -- through unchanged for the `EliminateDoWhile` pass to lower afterwards.
+  pure { val := .While cond' invs' dec' body' postTest, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.While.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ invs›)
-      try (rw [‹dec = some _›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (Exit)
     ```
@@ -1092,9 +1093,7 @@ def Check.return (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Return.sizeOf_spec] at hsz
-      rw [Option.mem_def.mp ‹_ ∈ val›, Option.some.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (Empty-Block)
     ```
@@ -1235,9 +1234,7 @@ def Check.block (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Block.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      omega
+      term_by_mem
 
 /-- (If / If-NoElse)
     ```
@@ -1279,9 +1276,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.IfThenElse.sizeOf_spec] at hsz
-      try (rw [Option.mem_def.mp ‹_ ∈ elseBr›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (If-Synth)
     ```
@@ -1397,9 +1392,7 @@ def Synth.block (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Block.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      omega
+      term_by_mem
 
 -- ### Verification statements
 
@@ -1423,8 +1416,7 @@ def Check.assert (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assert.sizeOf_spec, Condition.mk.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Assume)
     ```
@@ -1445,8 +1437,7 @@ def Check.assume (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assume.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 -- ### Assignment
 
@@ -1499,10 +1490,7 @@ def Synth.assign (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
-      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
-           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
-      omega
+      term_by_mem
 
 /-- Check-mode rule for assignment. Synthesizes the assignment's type
     by inlining the same work as `Synth.assign` (resolving targets,
@@ -1552,10 +1540,7 @@ def Check.assign (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
-      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
-           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
-      omega
+      term_by_mem
 
 -- ### Increment / decrement
 
@@ -1605,11 +1590,9 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.IncrDecr.sizeOf_spec] at hsz
     have hsz2 := target.sizeOf_val_lt
     rw [h_tgt] at hsz2
-    simp only [Variable.Field.sizeOf_spec] at hsz2
-    omega
+    term_by_mem
 
 -- ### Calls
 
@@ -1710,9 +1693,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
-      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-      omega
+      term_by_mem
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -1799,9 +1780,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.InstanceCall.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ args›)
-      omega
+      term_by_mem
 
 -- ### Primitive operations
 
@@ -1977,9 +1956,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
-      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-      omega
+      term_by_mem
 
 /-- Cases on the operator family.
     ```
@@ -2041,9 +2018,7 @@ def Check.primitiveOp (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-    omega
+    term_by_mem
 
 -- ### Object forms
 
@@ -2112,8 +2087,7 @@ def Synth.asType (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.AsType.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (IsType)
     ```
@@ -2142,8 +2116,7 @@ def Synth.isType (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.IsType.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (RefEq)
     ```
@@ -2186,8 +2159,7 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ReferenceEquals.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (PureFieldUpdate)
     ```
@@ -2216,8 +2188,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.PureFieldUpdate.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 -- ### Verification expressions
 
@@ -2250,9 +2221,7 @@ def Synth.quantifier (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Quantifier.sizeOf_spec] at hsz
-      try (rw [Option.mem_def.mp ‹_ ∈ trigger›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (Assigned)
     ```
@@ -2285,8 +2254,7 @@ def Synth.assigned (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assigned.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Old)
     ```
@@ -2318,8 +2286,7 @@ def Check.old (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Old.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Old-Synth)
     ```
@@ -2347,8 +2314,7 @@ def Synth.old (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Old.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Fresh)
     ```
@@ -2375,8 +2341,7 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Fresh.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (ProveBy)
     ```
@@ -2402,8 +2367,7 @@ def Check.proveBy (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (ProveBy-Synth)
     ```
@@ -2430,8 +2394,7 @@ def Synth.proveBy (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 -- ### Self reference
 
@@ -2553,8 +2516,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.ContractOf.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 -- ### Holes
 
@@ -2617,8 +2579,8 @@ def resolveOutputParameter (inputNames : List String) (param : Parameter) : Reso
   else
     resolveParameter param
 
-/-- Resolve a procedure body by synthesizing its impl block (if any).
-    Bodies without an impl block (`Abstract`, `External`) resolve
+/-- Resolve a procedure body by synthesizing its body (if any).
+    Bodies without an body (`Abstract`, `External`) resolve
     postconditions only. -/
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
@@ -2670,10 +2632,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- (e.g. destructive assignments) inside a transparent body. So there is
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -2705,16 +2669,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
-    if !proc.isFunctional && body'.isTransparent && !proc.name.text.any (· == '$') then
-      let diag := diagnosticFromSource proc.name.source
-        s!"transparent statement bodies are not supported. Add 'opaque' to make the procedure opaque"
-      modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -2768,7 +2730,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         -- parameter's own name should stay unqualified.
         let destructorId := { p.name with uniqueId := resolved.uniqueId }
         return ⟨ destructorId, ty' ⟩
-      return { name := ctorName', args := args' : DatatypeConstructor }
+      -- Resolve the tester name so its uniqueId is set.
+      let testerResolved ← resolveRef (dt.testerName ctor)
+      let testerName' := { ctor.testerName with
+        text := testerResolved.text
+        uniqueId := testerResolved.uniqueId }
+      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
@@ -2783,6 +2750,28 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
   return { name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/
+
+/-- Generate a virtual tester procedure for a single constructor of a datatype.
+    The tester takes a single argument of the datatype's type and returns `bool`.
+    Used during resolution to synthesize the scope entry for tester calls
+    (e.g. `IntList..isNil(x)`) without requiring a separate AST pass. -/
+private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : Procedure :=
+  let tName := dt.testerName ctor
+  let inputParam : Parameter := {
+    name := mkId "value"
+    type := { val := .UserDefined dt.name, source := none }
+  }
+  let outputParam : Parameter := {
+    name := mkId "$result"
+    type := { val := .TBool, source := none }
+  }
+  { name := mkId tName
+    inputs := [inputParam]
+    outputs := [outputParam]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .External }
 
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
 private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (node : ResolvedNode)
@@ -2820,7 +2809,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
     let map := match dec with | some d => collectStmtExpr map d | none => map
@@ -2921,6 +2910,9 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     let map := register map dt.name (.datatypeDefinition dt)
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
+      -- Register the tester function in the refToDef map.
+      let testerProc := mkTesterProcedure dt ctor
+      let map := register map ctor.testerName (.staticProcedure testerProc)
       ctor.args.foldl (fun map p =>
         -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
         -- is the shared uniqueId of the safe/unsafe destructor scope entries,
@@ -3020,7 +3012,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     match e with
     | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
     | none => errs
-  | .While c invs _ b =>
+  | .While c invs _ b _ =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
@@ -3101,13 +3093,11 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        -- Register the tester override first; the second call reuses the
-        -- returned Identifier (now carrying a uniqueId) so the unprefixed
-        -- constructor name and the `TypeName..isCtor` tester name resolve to
-        -- the same uniqueId, which `buildRefToDef` in turn maps to
-        -- `.datatypeConstructor`.
-        let ctorName ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
-        let _ ← defineNameCheckDup ctorName (.datatypeConstructor dt.name ctor)
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        -- Register the tester function (e.g. `IntList..isNil`) as a static procedure.
+        let testerProc := mkTesterProcedure dt ctor
+        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+          (.staticProcedure testerProc) (some (dt.testerName ctor))
         for p in ctor.args do
           -- Same chaining trick for the safe and unsafe destructor names: both
           -- point to the same uniqueId so `IntList..head` and `IntList..head!`
@@ -3193,10 +3183,10 @@ but they are because certain type references have incorrectly not been updated.
 public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
-    : UnorderedCoreWithLaurelTypes × SemanticModel :=
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
   let fnProgram := unorderedCoreToProgram uc additionalTypes
   let fnResolveResult := resolve fnProgram existingModel
-  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model)
+  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model, fnResolveResult.errors)
 
 end -- public section
 end Strata.Laurel

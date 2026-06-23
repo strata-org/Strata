@@ -18,17 +18,13 @@ datatype IntList {
 }
 
 // Construction and destructor access
-procedure testConstruction()
-  opaque
-{
+procedure testConstruction() opaque {
   var xs: IntList := Cons(42, Nil());
   assert IntList..head(xs) == 42
 };
 
 // Constructor testing
-procedure testConstructorTest()
-  opaque
-{
+procedure testConstructorTest() opaque {
   var xs: IntList := Cons(1, Nil());
   assert IntList..isCons(xs);
   assert !IntList..isNil(xs);
@@ -39,9 +35,7 @@ procedure testConstructorTest()
 };
 
 // Nested construction and deconstruction
-procedure testNested()
-  opaque
-{
+procedure testNested() opaque {
   var xs: IntList := Cons(1, Cons(2, Nil()));
   assert IntList..isCons(xs);
   assert IntList..head(xs) == 1;
@@ -50,9 +44,7 @@ procedure testNested()
   assert IntList..isNil(IntList..tail(IntList..tail(xs)))
 };
 
-procedure unsafeDestructor()
-  opaque
-{
+procedure unsafeDestructor() opaque {
   var nil: IntList := Nil();
   var noError: int := IntList..head!(nil);
   var error: int := IntList..head(nil)
@@ -66,18 +58,14 @@ function listHead(xs: IntList): int
   IntList..head(xs)
 };
 
-procedure testFunction()
-  opaque
-{
+procedure testFunction() opaque {
   var xs: IntList := Cons(10, Nil());
   var h: int := listHead(xs);
   assert h == 10
 };
 
 // Failing assertion
-procedure testFailing()
-  opaque
-{
+procedure testFailing() opaque {
   var xs: IntList := Nil();
   assert IntList..isCons(xs)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
@@ -93,9 +81,7 @@ datatype OddList {
   OCons(head: int, tail: EvenList)
 }
 
-procedure testMutualConstruction()
-  opaque
-{
+procedure testMutualConstruction() opaque {
   var even: EvenList := ENil();
   assert EvenList..isENil(even);
   var odd: OddList := OCons(1, ENil());

@@ -145,11 +145,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
-      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩), source⟩
+      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩) postTest, source⟩
   | .Assert ⟨condExpr, summary, free⟩ =>
       return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
   | .Assume cond =>
@@ -192,13 +192,13 @@ def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List
 end -- public section
 
 /-- Pipeline pass: infer hole types. -/
-public def inferHoleTypesPass : LaurelPass where
+public def inferHoleTypesPass : LoweringPass where
   name := "InferHoleTypes"
   documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
   run := fun _ p m =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
   comesBefore := [
-      ⟨ eliminateDeterministicHolesPass, "eliminating deterministic holes relies on knowing the type of holes"⟩]
+      ⟨ eliminateDeterministicHolesPass.meta, "eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel

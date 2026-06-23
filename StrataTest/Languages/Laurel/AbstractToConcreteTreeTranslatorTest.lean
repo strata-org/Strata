@@ -121,7 +121,9 @@ composite Point {
 info: procedure test(x: int): int
   opaque
 {
-  if x > 0 then x else 0 - x
+  if x > 0
+  then x
+  else 0 - x
 };
 -/
 #guard_msgs in
@@ -332,7 +334,8 @@ procedure test(): int
 info: procedure earlyExit(b: bool)
   opaque
 {
-  if b then {
+  if b
+  then {
     return
   };
   assert true
@@ -345,6 +348,34 @@ program Laurel;
 procedure earlyExit(b: bool)
   opaque
 { if b then { return }; assert true };
+#end)
+
+-- Do-while (issue #1358): a `do … while` parses to a post-test `While`
+-- (`postTest := true`) and round-trips through the DDM tree via the `doWhile`
+-- serialization arm (whose `#[body, cond, invariants]` arg order this
+-- exercises), re-parsing stably. The desugaring to a pre-test loop happens
+-- later, in the `EliminateDoWhile` pass, not here.
+/--
+info: procedure loop()
+  opaque
+{
+  var x: int := 0;
+  do {
+    x := x + 1
+  } while(x < 3)
+    invariant 0 <= x && x <= 2
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure loop()
+  opaque
+{
+  var x: int := 0;
+  do { x := x + 1 } while(x < 3) invariant 0 <= x && x <= 2
+};
 #end)
 
 end Strata.Laurel

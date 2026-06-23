@@ -20,6 +20,7 @@ nondet procedure nonDeterministic(x: int): (r: int)
 };
 
 procedure caller()
+  opaque
 {
   var x = nonDeterministic(1)
   assert x > 0;
@@ -29,11 +30,13 @@ procedure caller()
 };
 
 nondet procedure nonDeterminsticTransparant(x: int): (r: int)
+  opaque
 {
   nonDeterministic(x + 1)
 };
 
 procedure nonDeterministicCaller(x: int): int
+  opaque
 {
   nonDeterministic(x)
 };

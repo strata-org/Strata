@@ -12,9 +12,8 @@ import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
-import Strata.Languages.Laurel.TypeHierarchy
-import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.EliminateValueInReturns
 
 /-
 Heap Parameterization Pass
@@ -68,7 +67,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
-  | .While c invs d b => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
+  | .While c invs d b _ => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
@@ -176,7 +175,12 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
 
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
-    for Composite types, uses "Box..compositeVal!". -/
+    for Composite types, uses "Box..compositeVal!".
+
+    Constrained types do not need resolving here: `ConstrainedTypeElim` runs
+    before this pass and has already lowered every constrained type to its base
+    type (and removed the constrained type definitions), so `ty` is never a
+    constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
   | .TInt => "Box..intVal!"
@@ -243,7 +247,7 @@ def readsHeap (name : Identifier) : TransformM Bool := do
 def writesHeap (name : Identifier) : TransformM Bool := do
   return (← get).heapWriters.contains name
 
-def freshVarName : TransformM Identifier := do
+private def freshVarName : TransformM Identifier := do
   let s ← get
   set { s with freshCounter := s.freshCounter + 1 }
   return s!"$tmp{s.freshCounter}"
@@ -336,9 +340,9 @@ where
           termination_by (sizeOf remaining, 0)
         let stmts' ← processStmts 0 stmts
         return [⟨ .Block stmts' label, source ⟩]
-    | .While c invs d b =>
+    | .While c invs d b postTest =>
         let invs' ← invs.mapM (recurseOne ·)
-        return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false), source ⟩]
+        return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false) postTest, source ⟩]
     | .Return v =>
         let v' ← match v with | some x => some <$> recurseOne x | none => pure none
         return [⟨ .Return v', source ⟩]
@@ -566,21 +570,25 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Generate Box datatype from all constructors used during transformation
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
+
+  let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
+    -- The filter is a hack to deal with another hack,
+    -- the box that was added in CoreDefinitionsForLaurel.lean
+    -- because Laurel does not support polymorphism yet
+    types'.filter (fun td => td.name.text != "Box")
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
-    types := fieldDatatype :: boxDatatype :: heapConstants.types ++ types' }
+    types }
 
 /-- Pipeline pass: heap parameterization. -/
-public def heapParameterizationPass : LaurelPass where
+public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     (heapParameterization m p, [], {})
-  comesBefore := [
-      ⟨ typeHierarchyTransformPass, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass." ⟩,
-      ⟨ modifiesClausesTransformPass, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap." ⟩,
-      ⟨ liftExpressionAssignmentsPass, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
+  comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
+  comesBefore := [⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
 
 end Strata.Laurel
 

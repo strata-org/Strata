@@ -229,6 +229,9 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
+      `invokeOn` and ensures clauses. -/
+  axioms : List (AstNode StmtExpr) := []
 
 /--
 A typed parameter for a procedure.
@@ -298,10 +301,21 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
+  /-- A while loop with a condition, invariants, optional termination measure, and body.
+      Only allowed in impure contexts.
+
+      `postTest` selects when the condition is tested relative to the body:
+      - `false` (default) — a *pre-test* loop (`while`): the condition is checked
+        before the body, so the body may run zero times.
+      - `true` — a *post-test* loop (`do … while`): the body runs once before the
+        condition is first checked, so it always runs at least once.
+
+      Invariants are checked at the loop head (before each body) in both cases.
+      A post-test loop is lowered to the pre-test form by the `EliminateDoWhile` pass. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
+    (postTest : Bool := false)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
@@ -742,6 +756,21 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Hole .. => "Hole"
   | .IncrDecr .. => "IncrDecr"
 
+/-- Build an expression that reads back the value of a variable reference.
+
+    The result is always a `Var` expression that evaluates to the variable's
+    value. A `Declare` is read back as a `Local` reference to the declared name
+    (so a declaration target reads back the variable it introduces). -/
+def Variable.toReadbackExpr : Variable → StmtExpr
+  | .Local name => .Var (.Local name)
+  | .Declare param => .Var (.Local param.name)
+  | .Field target fieldName => .Var (.Field target fieldName)
+
+/-- Source-preserving read-back expression for a `VariableMd`
+    (see `Variable.toReadbackExpr`). -/
+def VariableMd.toReadbackExpr (v : VariableMd) : StmtExprMd :=
+  ⟨ v.val.toReadbackExpr, v.source ⟩
+
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
 
@@ -811,6 +840,9 @@ structure ConstrainedType where
 structure DatatypeConstructor where
   name : Identifier
   args : List Parameter
+  /-- Identifier for the auto-generated tester function (e.g. `IntList..isNil`).
+      Populated with a `uniqueId` during resolution. -/
+  testerName : Identifier := mkId ""
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.

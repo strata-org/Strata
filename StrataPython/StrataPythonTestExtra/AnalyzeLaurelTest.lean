@@ -370,10 +370,9 @@ Without the attribute, the regex VC would be ❓ unknown. -/
     | .error msg => throw <| IO.userError s!"Pipeline failed: {msg}"
     | .ok vcResults =>
       for r in vcResults do
-        if r.obligation.label.startsWith "servicelib_Storage_" then
-          if !r.isSuccess then
-            throw <| IO.userError
-              s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
+        if !r.isSuccess then
+          throw <| IO.userError
+            s!"Expected all Storage preconditions to pass but got: {r.formatOutcome}"
 
 /-! ## Resolution error test after FilterPrelude
 

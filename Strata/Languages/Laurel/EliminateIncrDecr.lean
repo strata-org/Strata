@@ -97,16 +97,10 @@ Eliminate every `.IncrDecr` node in a Laurel program by lowering it to
 existing constructs. After this pass, no `.IncrDecr` node remains.
 -/
 def eliminateIncrDecr (program : Program) : Program :=
-  let staticProcs := program.staticProcedures.map lowerProcedure
-  let types := program.types.map fun td =>
-    match td with
-    | .Composite ct =>
-      .Composite { ct with instanceProcedures := ct.instanceProcedures.map lowerProcedure }
-    | other => other
-  { program with staticProcedures := staticProcs, types := types }
+  mapProgramProcedures lowerProcedure program
 
 /-- Pipeline pass: eliminate increment/decrement operators. -/
-public def eliminateIncrDecrPass : LaurelPass where
+public def eliminateIncrDecrPass : LoweringPass where
   name := "EliminateIncrDecr"
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) into existing Laurel assignment and arithmetic constructs. Prefix forms yield the new value; postfix forms yield the old value. Runs early so that no later pass observes an `.IncrDecr` node."
   run := fun _ p _m => (eliminateIncrDecr p, [], {})

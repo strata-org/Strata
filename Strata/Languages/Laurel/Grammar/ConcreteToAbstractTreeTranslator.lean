@@ -184,6 +184,20 @@ def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
   | q`Laurel.neg => some Operation.Neg
   | _ => none
 
+/-- Translate a `Seq InvariantClause` into the list of invariant conditions,
+    using `translate` for each clause body. Shared by the `while`, `forLoop`,
+    and `doWhile` arms. Takes `translate` as a parameter so it can stay outside
+    the `translateStmtExpr` mutual block and thus be a total `def`. -/
+def translateInvariantClauses (translate : Arg → TransM StmtExprMd) (arg : Arg) :
+    TransM (List StmtExprMd) := do
+  match arg with
+  | .seq _ _ clauses => clauses.toList.mapM fun clause => match clause with
+      | .op invOp => match invOp.name, invOp.args with
+        | q`Laurel.invariantClause, #[exprArg] => translate exprArg
+        | _, _ => TransM.error "Expected invariantClause"
+      | _ => TransM.error "Expected operation"
+  | _ => pure []
+
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
@@ -338,30 +352,25 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.Var (.Field obj field)) fieldSrc
     | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
       let cond ← translateStmtExpr condArg
-      let invariants ← match invSeqArg with
-        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
-            | .op invOp => match invOp.name, invOp.args with
-              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
-              | _, _ => TransM.error "Expected invariantClause"
-            | _ => TransM.error "Expected operation"
-        | _ => pure []
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.While cond invariants none body) src
     | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
       let init ← translateStmtExpr initArg
       let cond ← translateStmtExpr condArg
       let step ← translateStmtExpr stepArg
-      let invariants ← match invSeqArg with
-        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
-            | .op invOp => match invOp.name, invOp.args with
-              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
-              | _, _ => TransM.error "Expected invariantClause"
-            | _ => TransM.error "Expected operation"
-        | _ => pure []
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       let whileBody := mkStmtExprMd (.Block [body, step] none) src
       let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
       return mkStmtExprMd (.Block [init, whileStmt] none) src
+    | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
+      -- A `do … while` is a post-test `While`. The `EliminateDoWhile` pass
+      -- lowers `postTest := true` to the pre-test form later.
+      let body ← translateStmtExpr bodyArg
+      let cond ← translateStmtExpr condArg
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
+      return mkStmtExprMd (.While cond invariants none body (postTest := true)) src
     | q`Laurel.old, #[arg0] =>
       let inner ← translateStmtExpr arg0
       return mkStmtExprMd (.Old inner) src
@@ -559,6 +568,11 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected body or externalBody operation, got {repr bodyOp.name}"
       | .option _ none => pure none
       | _ => TransM.error s!"Expected body, got {repr bodyArg}"
+    -- For functions, wrap the body in a Return so the last expression
+    -- is treated as the return value by downstream passes.
+    let body := if op.name == q`Laurel.function then
+      body.map fun b => ⟨.Return (some b), b.source⟩
+    else body
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External

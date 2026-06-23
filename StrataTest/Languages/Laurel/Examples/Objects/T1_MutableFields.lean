@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelKeepIntermediates
 #strata
 program Laurel;
 composite Container {
@@ -66,9 +66,7 @@ procedure updatesAndAliasing()
   assert dAlias#intValue == d#intValue
 };
 
-procedure subsequentHeapMutations()
-  opaque
-{
+procedure subsequentHeapMutations() opaque {
   var c: Container := new Container;
 
   // The additional parenthesis on the next line are needed to let the parser succeed. Joe, any idea why this is needed?
@@ -124,9 +122,7 @@ composite Pixel {
   var color: Color
 }
 
-procedure datatypeField()
-  opaque
-{
+procedure datatypeField() opaque {
   var p: Pixel := new Pixel;
   p#color := Red();
   assert Color..isRed(p#color);
