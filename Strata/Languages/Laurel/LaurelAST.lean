@@ -328,6 +328,15 @@ inductive StmtExpr : Type where
       yielded value is discarded.
       Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
   | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
+  /-- C-style compound assignment (`x += e`, `x -= e`, `x *= e`, `x /= e`, `x %= e`),
+      plus `x ^= e` for string concatenation (Laurel uses `^` for concat, OCaml-style,
+      not bitwise XOR). Lowers to `target := target op rhs` and yields the new value.
+      The target must be a `Local` or `Field` `Variable`.
+      Invariant: `op` is one of `Add`/`Sub`/`Mul`/`Div`/`Mod`/`StrConcat` — the only
+      operators the concrete-to-abstract translator ever constructs here. Downstream
+      sites may treat any other `Operation` as a `StrataBug`.
+      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+  | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
@@ -402,6 +411,7 @@ def StmtExpr.constrName : StmtExpr → String
   | .Assign ..           => ":="
   | .IncrDecr _ .Incr .. => "++"
   | .IncrDecr _ .Decr .. => "--"
+  | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
   | .PrimitiveOp op ..   => toString op
@@ -741,6 +751,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .All => "All"
   | .Hole .. => "Hole"
   | .IncrDecr .. => "IncrDecr"
+  | .CompoundAssign .. => "CompoundAssign"
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false

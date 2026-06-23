@@ -59,6 +59,11 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprM f tgt) fieldName, vs⟩, source⟩
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
+  | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprM f tgt) fieldName, vs⟩ (← mapStmtExprM f rhs), source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op target (← mapStmtExprM f rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprM f target) fieldName (← mapStmtExprM f newValue), source⟩
   | .StaticCall callee args =>
@@ -149,6 +154,12 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
+  | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩
+      (← mapStmtExprPrePostM pre post rhs), source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op target (← mapStmtExprPrePostM pre post rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName
       (← mapStmtExprPrePostM pre post newValue), source⟩
@@ -254,6 +265,8 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
     pure ⟨.Assign targets' value, source⟩
   | .IncrDecr mode op target =>
     pure ⟨.IncrDecr mode op ⟨← mapVariableHighTypesM f target.val, target.source⟩, source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op ⟨← mapVariableHighTypesM f target.val, target.source⟩ rhs, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode { param with type := ← f param.type } trigger body, source⟩
   | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩

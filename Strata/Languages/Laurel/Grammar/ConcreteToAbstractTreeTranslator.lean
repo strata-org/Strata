@@ -268,6 +268,24 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.postDecr, #[arg0] =>
       let target ← translateIncrDecrTarget arg0 "postDecr"
       return mkStmtExprMd (.IncrDecr .Post .Decr target) src
+    | q`Laurel.addAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "+="
+      return mkStmtExprMd (.CompoundAssign .Add target (← translateStmtExpr arg1)) src
+    | q`Laurel.subAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "-="
+      return mkStmtExprMd (.CompoundAssign .Sub target (← translateStmtExpr arg1)) src
+    | q`Laurel.mulAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "*="
+      return mkStmtExprMd (.CompoundAssign .Mul target (← translateStmtExpr arg1)) src
+    | q`Laurel.divAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "/="
+      return mkStmtExprMd (.CompoundAssign .Div target (← translateStmtExpr arg1)) src
+    | q`Laurel.modAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "%="
+      return mkStmtExprMd (.CompoundAssign .Mod target (← translateStmtExpr arg1)) src
+    | q`Laurel.strConcatAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "^="
+      return mkStmtExprMd (.CompoundAssign .StrConcat target (← translateStmtExpr arg1)) src
     | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>
       let targets ← match targetsSeq with
         | .seq _ .comma args => args.toList.mapM fun targ => do

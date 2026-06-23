@@ -261,6 +261,9 @@ def translateExpr (expr : StmtExprMd)
   | .IncrDecr _ _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source
         "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
+  | .CompoundAssign _ _ _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source
+        "CompoundAssign should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
   | .While _ _ _ _ =>
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
