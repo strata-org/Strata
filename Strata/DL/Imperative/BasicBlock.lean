@@ -34,6 +34,11 @@ inductive DetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Stop execution of the current unstructured program. If in a procedure
   body, this can be interpreted as returning to the caller. -/
   | finish (md : MetaData P)
+  /-- Escape the current unstructured program by an uncaught structured exit
+  to `lbl`. Unlike `finish` (a normal return), this records that control
+  left the program via an exit that no enclosing block caught, preserving
+  the escaping label so the outcome kind is observable on the target side. -/
+  | exitTo (lbl : Label) (md : MetaData P)
 
 /-- For the moment, we don't have an unconditional jump in the language, and
 model it instead using `condGoto`. By defining this function, we can easily
@@ -83,6 +88,7 @@ structure CFG (Label Block : Type) where
 def DetTransferCmd.stripMetaData : DetTransferCmd Label P → DetTransferCmd Label P
   | .condGoto p lt lf _ => .condGoto p lt lf .empty
   | .finish _ => .finish .empty
+  | .exitTo lbl _ => .exitTo lbl .empty
 
 /-- Strip metadata from a non-deterministic transfer command. -/
 def NondetTransferCmd.stripMetaData : NondetTransferCmd Label P → NondetTransferCmd Label P
@@ -106,6 +112,7 @@ def formatDetTransferCmd (P : PureExpr) (c : DetTransferCmd Label P)
   match c with
   | .condGoto c lt lf md => f!"{md}condGoto {c} {lt} {lf}"
   | .finish md => f!"{md}finish"
+  | .exitTo lbl md => f!"{md}exitTo {lbl}"
 
 def formatNondetTransferCmd (P : PureExpr) (c : NondetTransferCmd Label P)
   [ToFormat Label] [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=

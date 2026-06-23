@@ -107,6 +107,11 @@ def detCFGToGotoTransform {P} [G : ToGoto P] [BEq P.Ident]
     | .finish _md =>
       -- No instruction needed; the caller appends END_FUNCTION
       pure ()
+    | .exitTo _lbl _md =>
+      -- An uncaught structured exit. Faithful GOTO lowering of an escaping
+      -- exit is deferred; for now emit no instruction (the caller appends
+      -- END_FUNCTION), keeping this backend total.
+      pure ()
   -- Second pass: resolve all pending labels and annotate backward-edge GOTOs
   -- with loop contracts when the target is a loop entry block.
   let mut resolvedPatches : List (Nat × Nat) := []

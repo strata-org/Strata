@@ -163,17 +163,20 @@ match ss with
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
 | .exit l md :: _ => do
-  -- Find the continuation of the block labeled `l`.
-  let bk :=
-    match exitConts.lookup (.some l) with
-    | .some k => k
-    -- Just keep going if this is an invalid exit. We assume a prior
-    -- check to avoid this.
-    | .none => k
-  -- Flush the accumulated commands, going to the continuation calculated above.
-  -- Any statements after the `.exit` are skipped.
+  -- Any statements after the `.exit` are skipped.  Flush the accumulated
+  -- commands and emit the transfer that matches the exit's outcome kind.
   let exitName := s!"block${l}$"
-  flushCmds exitName accum (.some (.goto bk md)) bk
+  match exitConts.lookup (.some l) with
+  -- Covered exit: an enclosing block named `l` catches it.  Goto that block's
+  -- continuation `bk`; the structured `.exiting l` is consumed there and the
+  -- outcome is a normal continuation, faithfully modelled by a goto.
+  | .some bk => flushCmds exitName accum (.some (.goto bk md)) bk
+  -- Uncaught exit: no enclosing block catches `l`, so the structured run
+  -- escapes via `.exiting l`.  Emit the dedicated `.exitTo l` transfer so the
+  -- escaping outcome (and its label) is observable on the target side, rather
+  -- than silently falling through to `k` (which would miscompile the escape to
+  -- a normal terminal).
+  | .none => flushCmds exitName accum (.some (.exitTo l md)) k
 
 @[expose]
 def stmtsToCFGM

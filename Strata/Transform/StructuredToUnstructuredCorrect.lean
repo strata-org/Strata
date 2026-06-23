@@ -1481,7 +1481,13 @@ private theorem stmtsToBlocks_genStep
     exact stmtsToBlocks_genStep k rest exitConts accum gen gen' entry blocks h_gen
   | .exit l? md :: _ =>
     unfold stmtsToBlocks at h_gen
-    exact flushCmds_genStep _ accum _ _ gen gen' entry blocks h_gen
+    cases h_lkp : exitConts.lookup (some l?) with
+    | some bk =>
+      rw [h_lkp] at h_gen
+      exact flushCmds_genStep _ accum _ _ gen gen' entry blocks h_gen
+    | none =>
+      rw [h_lkp] at h_gen
+      exact flushCmds_genStep _ accum _ _ gen gen' entry blocks h_gen
   | .block l bss md :: rest =>
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
@@ -1861,8 +1867,15 @@ private theorem stmtsToBlocks_allMem
     exact stmtsToBlocks_allMem hmints k rest exitConts accum gen gen' entry blocks h_gen h_in
   | .exit l? md :: _ =>
     unfold stmtsToBlocks at h_gen
-    exact flushCmds_allMem _ accum _ _ gen gen' entry blocks h_gen
-      (hmints.2.2.2.2.2.2.2.2.2.2.2.2 l?) h_in
+    cases h_lkp : exitConts.lookup (some l?) with
+    | some bk =>
+      rw [h_lkp] at h_gen
+      exact flushCmds_allMem _ accum _ _ gen gen' entry blocks h_gen
+        (hmints.2.2.2.2.2.2.2.2.2.2.2.2 l?) h_in
+    | none =>
+      rw [h_lkp] at h_gen
+      exact flushCmds_allMem _ accum _ _ gen gen' entry blocks h_gen
+        (hmints.2.2.2.2.2.2.2.2.2.2.2.2 l?) h_in
   | .block l bss md :: rest =>
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
@@ -2131,12 +2144,19 @@ private theorem stmtsToBlocks_invariant
     exact stmtsToBlocks_invariant k rest exitConts accum gen gen' entry blocks h_gen hwf
       (Block.userLabelsDisjoint_tail _ _ _ h_disj)
   | .exit l? md :: _ =>
-    -- The bk computation is pure (no gen calls); only flushCmds is stateful.
+    -- The transfer choice is pure (no gen calls); only flushCmds is stateful.
     -- exit truncates so blocks only come from flushCmds (no user labels).
+    -- Either branch (covered goto / uncaught exitTo) emits via flushCmds.
     unfold stmtsToBlocks at h_gen
     rw [Block.userBlockLabels_exit_cons]
-    have h_inv : @GenInv P gen gen' [] blocks :=
-      flushCmds_invariant _ accum _ _ gen gen' entry blocks h_gen hwf
+    have h_inv : @GenInv P gen gen' [] blocks := by
+      cases h_lkp : exitConts.lookup (some l?) with
+      | some bk =>
+        rw [h_lkp] at h_gen
+        exact flushCmds_invariant _ accum _ _ gen gen' entry blocks h_gen hwf
+      | none =>
+        rw [h_lkp] at h_gen
+        exact flushCmds_invariant _ accum _ _ gen gen' entry blocks h_gen hwf
     -- Weaken from [] to userBlockLabels of the rest (which we discard from h_disj).
     have h_disj_rest := Block.userLabelsDisjoint_tail _ _ _ h_disj
     apply GenInv.weaken_userLabels gen gen' [] _ blocks h_inv

@@ -28,7 +28,8 @@ Configuration for small-step semantics. A configuration is one of:
 - `.atBlock t σ f`  — about to fetch the block at label `t`.
 - `.inBlock t cs tr σ f` — partway through a block: `cs` are the residual
   commands that still need to execute, `tr` is the block's transfer.
-- `.terminal σ f`   — execution has finished.
+- `.terminal σ f`   — execution has finished normally.
+- `.exiting l σ f`  — execution escaped via an uncaught exit to label `l`.
 
 The configuration is parameterised by the command type `CmdT` so that the
 mid-block residual command list and the block's transfer have the right
@@ -43,6 +44,10 @@ inductive CFGConfig (l CmdT : Type) (P : PureExpr) : Type where
               → CFGConfig l CmdT P
   /-- Halt. -/
   | terminal : SemanticStore P → Bool → CFGConfig l CmdT P
+  /-- Escape via an uncaught structured exit to label `l`. A top-level
+      outcome, like `terminal`, but tagged with the escaping label so that
+      the outcome kind (normal halt vs. escaping exit) is observable. -/
+  | exiting  : l → SemanticStore P → Bool → CFGConfig l CmdT P
 
 /-- Monotonically update the `failure` flag in a `CFGConfig`. It will be set
 to `true` if the provided Boolean is `true`. -/
@@ -51,6 +56,7 @@ to `true` if the provided Boolean is `true`. -/
 | .atBlock t σ failed,        failed' => .atBlock t σ (failed || failed')
 | .inBlock t cs tr σ failed,  failed' => .inBlock t cs tr σ (failed || failed')
 | .terminal σ failed,         failed' => .terminal σ (failed || failed')
+| .exiting l σ failed,        failed' => .exiting l σ (failed || failed')
 
 /-- Project the running store from a `CFGConfig`. -/
 @[expose] def CFGConfig.getStore {l CmdT : Type} {P : PureExpr} :
@@ -58,6 +64,7 @@ to `true` if the provided Boolean is `true`. -/
 | .atBlock _ σ _       => σ
 | .inBlock _ _ _ σ _   => σ
 | .terminal σ _        => σ
+| .exiting _ σ _       => σ
 
 /-- Project the failure flag from a `CFGConfig`. -/
 @[expose] def CFGConfig.getFailure {l CmdT : Type} {P : PureExpr} :
@@ -65,6 +72,7 @@ to `true` if the provided Boolean is `true`. -/
 | .atBlock _ _ f       => f
 | .inBlock _ _ _ _ f   => f
 | .terminal _ f        => f
+| .exiting _ _ f       => f
 
 /--
 Per-command small-step operational semantics for a deterministic CFG.
@@ -78,6 +86,7 @@ There are five constructors:
 * `goto_true` / `goto_false`: from `.inBlock t [] (.condGoto c tlbl elbl _)`,
   evaluate the condition and jump to `.atBlock tlbl` or `.atBlock elbl`.
 * `finish`: from `.inBlock t [] (.finish _)`, halt at `.terminal`.
+* `exitTo`: from `.inBlock t [] (.exitTo lbl _)`, escape at `.exiting lbl`.
 
 Note: the unconditional `.goto k` transfer is the special case
 `condGoto HasBool.tt k k _` (definitionally equal); we therefore do not need
@@ -121,6 +130,11 @@ inductive StepCFG
       StepCFG P EvalCmd extendEval cfg
         (.inBlock t [] (.finish md) σ f)
         (.terminal σ f)
+  /-- Empty residual + uncaught exit: escape at `.exiting lbl`. -/
+  | exitTo :
+      StepCFG P EvalCmd extendEval cfg
+        (.inBlock t [] (.exitTo lbl md) σ f)
+        (.exiting lbl σ f)
 
 /--
 Operational semantics to evaluate an arbitrary number of CFG steps in
