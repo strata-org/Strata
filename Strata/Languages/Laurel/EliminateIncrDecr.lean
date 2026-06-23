@@ -11,11 +11,12 @@ import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 
 /-!
-# Eliminate Increment / Decrement
+# Eliminate Increment / Decrement and Compound Assignment
 
-Lowers `.IncrDecr` nodes (Java-style `++x`, `x++`, `--x`, `x--`) into
+Lowers `.IncrDecr` nodes (Java-style `++x`, `x++`, `--x`, `x--`) and
+`.CompoundAssign` nodes (C-style `x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into
 existing Laurel constructs. Runs before `LiftImperativeExpressions` so that
-later passes never see `.IncrDecr`.
+later passes never see either node.
 
 The lowering, parameterised on `op` (`Incr | Decr`) and `mode` (`Pre | Post`):
 
@@ -34,12 +35,17 @@ The lowering, parameterised on `op` (`Incr | Decr`) and `mode` (`Pre | Post`):
   x--  ⇝  ((x := x - 1) + 1)
   ```
 
-The pass uses the generic `mapStmtExpr` bottom-up traversal from
-`MapStmtExpr.lean`. The only constructor that changes is `.IncrDecr`; all
-other nodes are left as-is by the traversal's default recursion.
+Compound assignment `x op= e` lowers to `x := x op e` — always new-valued, so
+unlike postfix `IncrDecr` it needs no old-value recovery. Both share the same
+core (`lowerOpAssign`), with `IncrDecr` supplying `rhs = 1`.
 
-The target of `.IncrDecr` must be a `Variable.Local` or `Variable.Field` —
-the concrete-to-abstract translator already enforces this.
+The pass uses the generic `mapStmtExpr` bottom-up traversal from
+`MapStmtExpr.lean`. The only constructors that change are `.IncrDecr` and
+`.CompoundAssign`; all other nodes are left as-is by the traversal's default
+recursion.
+
+The target of `.IncrDecr` / `.CompoundAssign` must be a `Variable.Local` or
+`Variable.Field` — the concrete-to-abstract translator already enforces this.
 -/
 
 namespace Strata.Laurel
@@ -95,13 +101,18 @@ private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
     ⟨.PrimitiveOp inverseOp [assign, one], source⟩
 
 /-- The rewrite step applied bottom-up by `mapStmtExpr`. Replaces `.IncrDecr`
-    with its lowered form; all other nodes pass through unchanged. -/
+    and `.CompoundAssign` with their lowered forms; all other nodes pass through.
+
+    `IncrDecr` and `CompoundAssign` share one lowering, `x := x ⊕ rhs` via
+    `lowerOpAssign` (`IncrDecr` supplies `rhs = 1`). We fuse both here rather
+    than lowering `IncrDecr → CompoundAssign → :=` in separate passes: same
+    shared lowering, one fewer traversal. Prefix `++x` is exactly that
+    assignment; only postfix `x++` adds an inverse-op wrapper to recover the
+    old value. -/
 private def rewriteNode (node : StmtExprMd) : StmtExprMd :=
   match node.val with
   | .IncrDecr mode op target => lowerIncrDecr mode op target node.source
-  | .CompoundAssign op target rhs =>
-    -- `x op= e ⇝ x := x op e` — always new-valued, so no Pre/Post wrapper.
-    lowerOpAssign op target rhs node.source
+  | .CompoundAssign op target rhs => lowerOpAssign op target rhs node.source
   | _ => node
 
 /-- Apply the rewrite to a procedure (body, preconditions, decreases, invokeOn). -/
@@ -109,8 +120,8 @@ private def lowerProcedure (proc : Procedure) : Procedure :=
   mapProcedureM (m := Id) (mapStmtExpr rewriteNode) proc
 
 /--
-Eliminate every `.IncrDecr` node in a Laurel program by lowering it to
-existing constructs. After this pass, no `.IncrDecr` node remains.
+Eliminate every `.IncrDecr` and `.CompoundAssign` node in a Laurel program by
+lowering it to existing constructs. After this pass, neither node remains.
 -/
 def eliminateIncrDecr (program : Program) : Program :=
   let staticProcs := program.staticProcedures.map lowerProcedure
@@ -121,10 +132,10 @@ def eliminateIncrDecr (program : Program) : Program :=
     | other => other
   { program with staticProcedures := staticProcs, types := types }
 
-/-- Pipeline pass: eliminate increment/decrement operators. -/
+/-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
 public def eliminateIncrDecrPass : LaurelPass where
-  name := "EliminateIncrDecr"
-  documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) into existing Laurel assignment and arithmetic constructs. Prefix forms yield the new value; postfix forms yield the old value. Runs early so that no later pass observes an `.IncrDecr` node."
+  name := "EliminateIncrDecrAndCompoundAssign"
+  documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
   run := fun p _m => (eliminateIncrDecr p, [], {})
 
 end -- public section
