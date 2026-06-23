@@ -37,4 +37,4 @@ allowed_tools:
   - Glob
   - list_agents
   - get_time
-disallowed_tools: [Edit, Write, Bash(lake*)]
+disallowed_tools: [Edit, Write, Bash(lake*), "mcp__builder-mcp__*"]
