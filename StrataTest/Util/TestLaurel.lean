@@ -79,7 +79,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
 /-- Default options used by `testLaurel` when the caller doesn't override:
     quiet verifier, default solver. Override by passing
     `(options := …)` to `testLaurel`. -/
-def defaultLaurelTestOptions : LaurelVerifyOptions :=
+public def defaultLaurelTestOptions : LaurelVerifyOptions :=
   { verifyOptions := .quiet }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
@@ -296,7 +296,7 @@ private def runAndCheck (block : SourcedProgram)
     `showSnippet := true` to also append the snippet-relative range — useful for
     correlating against the inline `// ^^^` annotations, which are
     snippet-local. -/
-def testLaurel (block : SourcedProgram)
+public def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block (runLaurelPipelineRaw · options) showSnippet
@@ -318,7 +318,7 @@ public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
 
     As with `testLaurel`, each diagnostic's file-relative `line:col` range is
     printed; `showSnippet := true` appends the snippet-relative range. -/
-def testLaurelResolution (block : SourcedProgram)
+public def testLaurelResolution (block : SourcedProgram)
     (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block runLaurelResolutionRaw showSnippet
 

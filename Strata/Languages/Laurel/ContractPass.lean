@@ -122,7 +122,6 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    isFunctional := true
     body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
 
 /-- Information about a procedure's contracts. -/

@@ -36,13 +36,13 @@ procedure transparentWithMutatingAssignment(x: int): int
 procedure functionWithWhile(x: int): int
 {
   while(false) {};
-//^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
-  3
+//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
+  return 3
 };
 
 procedure callsHasMutatingAssignment(x: int): int
 {
-  hasMutatingAssignment()
+  return hasMutatingAssignment()
 };
 
 procedure impureContractIsLegal1(x: int)
