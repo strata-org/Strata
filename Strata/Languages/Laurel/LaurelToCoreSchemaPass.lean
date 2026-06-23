@@ -427,7 +427,6 @@ Diagnostics are emitted into the monad state.
 -/
 def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
-  let s ← get
   let md := astNodeToCoreMd stmt
   match _h : stmt.val with
   | .Assert cond =>
