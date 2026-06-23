@@ -13,6 +13,7 @@ composite Immutable {
   invariant x + y >= 5
 
   procedure construct()
+    opaque
     constructor
     requires contructing == {this}
     ensures constructing == {}
@@ -50,6 +51,7 @@ composite ImmutableChainOfTwo {
 
   // only used privately
   procedure allocate()
+    opaque
     constructor
     ensures constructing = {this} {    
     // empty body

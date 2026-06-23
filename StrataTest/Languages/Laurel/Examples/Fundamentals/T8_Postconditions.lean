@@ -30,9 +30,24 @@ procedure callerOfOpaqueProcedure()
 };
 
 procedure invalidPostcondition(x: int)
+  returns (r: int) // TODO, removing this returns triggers a latent bug
   opaque
   ensures false
-//        ^^^^^ error: assertion does not hold
+//        ^^^^^ error: postcondition does not hold
 {
+};
+
+procedure bar(x: int) returns (r: int)
+  requires x > 0
+  opaque
+  ensures r > 0
+{
+  r := x + 1
+};
+
+procedure caller() returns (out: int)
+  opaque
+{
+  out := bar(bar(5))
 };
 #end

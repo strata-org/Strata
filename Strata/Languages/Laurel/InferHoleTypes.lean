@@ -192,13 +192,13 @@ def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List
 end -- public section
 
 /-- Pipeline pass: infer hole types. -/
-public def inferHoleTypesPass : LaurelPass where
+public def inferHoleTypesPass : LoweringPass where
   name := "InferHoleTypes"
   documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
-  run := fun p m =>
+  run := fun p m _ =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
   comesBefore := [
-      ⟨ eliminateDeterministicHolesPass, "eliminating deterministic holes relies on knowing the type of holes"⟩]
+      ⟨ eliminateDeterministicHolesPass.meta, "eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel

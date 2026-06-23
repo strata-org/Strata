@@ -248,7 +248,6 @@ children, `pre` is called. If `pre` returns `some result`, that result is used
 directly (children are NOT recursed into). If `pre` returns `none`, normal
 bottom-up recursion proceeds and `post` is applied after children are rebuilt.
 -/
-@[expose]
 def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     (post : StmtExprMd → m StmtExprMd) (expr : StmtExprMd) : m StmtExprMd := do
   match ← pre expr with
@@ -278,16 +277,17 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
-  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
-    pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
-  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  | .IncrDecr mode op target => match target with
+    | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
+    | ⟨.Local _, _⟩
+    | ⟨.Declare _, _⟩ => pure expr
+
   | .PureFieldUpdate target fieldName newValue =>
-    pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName
-      (← mapStmtExprPrePostM pre post newValue), source⟩
+    pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
   | .StaticCall callee args =>
     pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
-  | .PrimitiveOp op args skipProof =>
-    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) skipProof, source⟩
+  | .PrimitiveOp op args skipProofs =>
+    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) skipProofs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprPrePostM pre post lhs) (← mapStmtExprPrePostM pre post rhs), source⟩
   | .AsType target ty =>
@@ -314,16 +314,15 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprPrePostM pre post func), source⟩
+  -- Leaves: no StmtExprMd children.
+  -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
+  -- it must get its own arm above; otherwise all passes will silently
+  -- skip recursion into those children.
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure expr
   post rebuilt
 termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-  all_goals (try term_by_mem)
-  all_goals (cases expr; simp_all; omega)
+decreasing_by map_stmt_expr_decreasing expr
 
 /-- Apply a monadic transformation to all procedure bodies. -/
 @[expose]
@@ -336,14 +335,14 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .External => return proc
 
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
-    (preconditions, decreases, body, and invokeOn). -/
-@[expose]
+    (preconditions, decreases, body, invokeOn, and axioms). -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
   return { proc with
     preconditions := ← proc.preconditions.mapM (·.mapM f)
     decreases := ← proc.decreases.mapM f
-    invokeOn := ← proc.invokeOn.mapM f }
+    invokeOn := ← proc.invokeOn.mapM f
+    axioms := ← proc.axioms.mapM f }
 
 /-- Apply a monadic transformation to every procedure in a program — both
     top-level static procedures and the instance procedures of composite types.

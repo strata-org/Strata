@@ -15,11 +15,11 @@ program Laurel;
 procedure transparentBody(): int
 {
   assert true;
-  3
+  return 3
 };
 
 procedure tranparentCaller(): int {
-  transparentBody()
+  return transparentBody()
 };
 
 procedure transparentCallerCaller() opaque {

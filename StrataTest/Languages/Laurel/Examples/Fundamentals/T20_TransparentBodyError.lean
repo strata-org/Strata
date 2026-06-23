@@ -16,13 +16,15 @@ procedure transparentBodyMultipleOuts() returns (q: int, r: int)
 {
   assert true;
   q := 3;
-//^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
   r := 2
+//^^^^^^ error: ending a transparent body with a Assign statement is not supported
 };
 
 procedure transparentBodyNoOuts()
 {
-  assert true
+  assert true;
+  3
+//^ error: ending a transparent body with a LiteralInt statement is not supported
 };
 
 procedure transparentProcedureCaller() opaque {

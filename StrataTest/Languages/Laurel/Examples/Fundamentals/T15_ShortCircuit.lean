@@ -24,7 +24,6 @@ procedure mustNotCallProc(): int
 };
 
 // Pure path: function with requires false
-
 procedure testAndThenFunc()
   opaque
 {

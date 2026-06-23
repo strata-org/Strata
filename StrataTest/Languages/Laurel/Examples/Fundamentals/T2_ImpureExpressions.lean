@@ -9,6 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -111,9 +112,9 @@ procedure imperativeCallInConditionalExpression(b: bool)
   }
 };
 
-function add(x: int, y: int): int
+procedure add(x: int, y: int): int
 {
-  x + y
+  return x + y
 };
 
 procedure repeatedBlockExpressions()
@@ -137,9 +138,58 @@ procedure addProcCaller(): int
 {
   var x: int := 0;
   var y: int := addProc({x := 1; x}, {x := x + 10; x});
-  assert y == 11 // TOOD should be 12. Fix in other PR
+  assert y == 12
 
+  // The next statement is not translated correctly.
+  // I think it's a bug in the handling of StaticCall
+  // Where a reference is substituted when it should not be
   // var z: int := addProc({x := 1; x}, {x := x + 10; x}) + (x := 3);
   // assert z == 15
 };
+
+procedure assertInsideConditionalExpression(a: int): int
+  return if a > 2
+    then 4
+    else {
+      assert a <= 2;
+      assert a < 2;
+//    ^^^^^^^^^^^^ error: assertion does not hold
+      5
+    };
+
+procedure assertInBlockExpr()
+opaque {
+  var x: int := 0;
+  var y: int := { assert x == 0; x := 1; x };
+  assert y == 1
+};
+
+procedure transparentProc(x: int) returns (r: int)
+{
+  return x + 1
+};
+
+procedure assignmentInExpressionAfterProcCall()
+opaque {
+  var x: int := 0;
+  var y: int := transparentProc(x) + (x := 2);
+  assert y == 3
+};
+
+procedure liftInsideAssignmentInExpression()
+opaque {
+  var x: int := 0;
+  var y: int := ((x := 1) + transparentProc(x));
+  assert y == 3
+};
+
+procedure hasMultipleOutputs() returns (x: int, y: int) opaque {
+  x := 1;
+  y := 2
+};
+
+procedure liftWithMultipleOutputs() opaque {
+  var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
+};
+
 #end

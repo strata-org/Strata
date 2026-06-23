@@ -121,7 +121,9 @@ composite Point {
 info: procedure test(x: int): int
   opaque
 {
-  if x > 0 then x else 0 - x
+  if x > 0
+  then x
+  else 0 - x
 };
 -/
 #guard_msgs in
@@ -332,7 +334,8 @@ procedure test(): int
 info: procedure earlyExit(b: bool)
   opaque
 {
-  if b then {
+  if b
+  then {
     return
   };
   assert true

@@ -229,6 +229,9 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
+      `invokeOn` and ensures clauses. -/
+  axioms : List (AstNode StmtExpr) := []
 
 /--
 A typed parameter for a procedure.
@@ -837,6 +840,9 @@ structure ConstrainedType where
 structure DatatypeConstructor where
   name : Identifier
   args : List Parameter
+  /-- Identifier for the auto-generated tester function (e.g. `IntList..isNil`).
+      Populated with a `uniqueId` during resolution. -/
+  testerName : Identifier := mkId ""
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.

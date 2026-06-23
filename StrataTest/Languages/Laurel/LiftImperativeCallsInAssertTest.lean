@@ -11,7 +11,7 @@ out of assert and assume conditions, while leaving assignments untouched
 -/
 
 import StrataTest.Util.TestLaurel
-import Strata.Languages.Laurel.LaurelToCoreTranslator
+import Strata.Languages.Laurel.LaurelToCoreSchemaPass
 import Strata.Languages.Laurel.Resolution
 
 open Strata
@@ -22,7 +22,7 @@ namespace Strata.Laurel
 private def parseLaurelAndLift (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
-  pure (liftExpressionAssignments result.model result.program)
+  pure (liftExpressionAssignments result.program result.model ["impure", "multi_out"])
 
 private def printLifted (program : StrataDDM.Program) : IO Unit := do
   let lifted ← parseLaurelAndLift program
@@ -40,9 +40,8 @@ info: procedure impure(): int
 };
 procedure test()
 {
-  var $c_0: int;
-  $c_0 := impure();
-  assert $c_0 == 1
+  var $cndtn_0: int := impure();
+  assert $cndtn_0 == 1
 };
 -/
 #guard_msgs in
@@ -65,7 +64,9 @@ procedure test() {
 info: procedure test()
 {
   var x: int := 0;
-  assert (x := 2) == 2
+  var $x_0: int := x;
+  x := 2;
+  assert x == 2
 };
 -/
 #guard_msgs in
@@ -89,9 +90,8 @@ info: procedure impure(): int
 };
 procedure test()
 {
-  var $c_0: int;
-  $c_0 := impure();
-  assume $c_0 == 1
+  var $cndtn_0: int := impure();
+  assume $cndtn_0 == 1
 };
 -/
 #guard_msgs in
@@ -121,9 +121,8 @@ info: procedure multi_out(x: int)
 };
 procedure test()
 {
-  var $c_0: BUG_MultiValuedExpr;
-  $c_0 := multi_out(5);
-  assert $c_0 == 6
+  var $cndtn_0: BUG_MultiValuedExpr := multi_out(5);
+  assert $cndtn_0 == 6
 };
 -/
 #guard_msgs in

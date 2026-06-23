@@ -6,7 +6,7 @@
 
 import VersoManual
 
-import Strata.Languages.Laurel
+import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization
@@ -24,34 +24,39 @@ open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
-/-- Block command that generates documentation for all Laurel pipeline passes.
-    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
-@[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let entries := laurelPipeline.map fun pass =>
+/-- Markdown documentation for all Laurel passes, including their
+    `comesBefore`/`comesAfter` ordering rationales. Note: pass
+    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
+    `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
+    converter); use backticks for inline code instead. -/
+def laurelPipelineDocsMarkdown : String :=
+  let entries := allPasses.map fun pass =>
     let base := s!"- **{pass.name}**: {pass.documentation}"
-    if pass.comesBefore.isEmpty then base
-    else
-      let deps := pass.comesBefore.map fun cb =>
-        s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
-      base ++ "\n" ++ "\n".intercalate deps
+    let beforeDeps := pass.comesBefore.map fun cb =>
+      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
+    let afterDeps := pass.comesAfter.map fun ca =>
+      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
+    let deps := beforeDeps ++ afterDeps
+    if deps.isEmpty then base
+    else base ++ "\n" ++ "\n".intercalate deps
+  "\n".intercalate entries.toList
 
-  let md := "\n".intercalate entries.toList
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
-/-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` property.
-    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
-@[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+/-- Markdown dependency graph for the Laurel passes, derived from the
+    `comesBefore`/`comesAfter` properties. -/
+def laurelPipelineDependencyGraphMarkdown : String := Id.run do
   -- Collect all edges: (source, target, reason) where source comesBefore target
   let mut edges : List (String × String × String) := []
-  for pass in laurelPipeline do
+  for pass in allPasses do
+    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
     for cb in pass.comesBefore do
       edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
+    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
+    for ca in pass.comesAfter do
+      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
+
+  -- Deduplicate edges with the same (source, target), keeping the first reason.
+  edges := edges.foldl (init := []) fun acc e =>
+    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
 
   -- Build the graph as a markdown list showing dependencies
   let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
@@ -62,16 +67,35 @@ def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun ()
       md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
 
   -- Add a textual rendering of the pipeline order with dependency annotations
-  md := md ++ "\n**Pipeline execution order:**\n\n"
+  md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
   md := md ++ "```\n"
   let mut idx := 1
-  for pass in laurelPipeline do
-    let deps := pass.comesBefore.map (s!" → {·.pass.name}")
+  for pass in allPasses do
+    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
+    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
+    let deps := beforeDeps ++ afterDeps
     let depStr := if deps.isEmpty then "" else String.join deps
     md := md ++ s!"{idx}. {pass.name}{depStr}\n"
     idx := idx + 1
   md := md ++ "```\n"
+  return md
 
+/-- Block command that generates documentation for all Laurel pipeline passes.
+    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
+@[block_command]
+def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDocsMarkdown
+  let some ast := MD4Lean.parse md
+    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
+  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
+  `(Verso.Doc.Block.concat #[$blocks,*])
+
+/-- Block command that generates a dependency graph for the Laurel pipeline passes
+    based on the `comesBefore` and `comesAfter` properties.
+    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
+@[block_command]
+def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
+  let md := laurelPipelineDependencyGraphMarkdown
   let some ast := MD4Lean.parse md
     | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
   let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
@@ -940,17 +964,20 @@ If new references or definitions are created during compilation, `resolve` must 
 
 ## Translation Pipeline
 
-Laurel programs are verified by translating them to Strata Core and then invoking the Core
-verification pipeline. The Laurel compilation pipeline consists of three parts:
-- Lowering, consisting of many phases. Maps Laurel to Laurel
-- Ordering, consisting of a single pass. Maps Laurel to OrderedLaurel
-- Translation, consisting of a single pass. Maps OrderedLaurel to Core.
+The Laurel to Core translation pipeline uses these IRs:
+- Laurel
+- UnorderedCoreWithLaurelTypes
+- CoreWithLaurelTypes
+- Core
 
-Ideally the translation pass only translates between types but does not change the structure of the program.
+Most of the passes are in the Laurel IR.
+The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
+The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
+And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
-## Lowering Passes
+## Passes
 
-The following passes are part of the lowering group:
+The following passes making up the compilation of Laurel to Core:
 
 {laurelPipelineDocs}
 

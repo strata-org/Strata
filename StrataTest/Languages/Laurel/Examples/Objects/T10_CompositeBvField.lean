@@ -44,7 +44,7 @@ procedure writeLiteral(r: Register)
 procedure writeWrongLiteral(r: Register)
   opaque
   ensures r#value == 100 bv 16
-//        ^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
   modifies r
 {
   r#value := 200 bv 16

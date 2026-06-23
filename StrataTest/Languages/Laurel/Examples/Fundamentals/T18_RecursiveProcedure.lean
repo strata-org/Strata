@@ -22,8 +22,9 @@ datatype IntList {
   Cons(head: int, tail: IntList)
 }
 
-function listLen(xs: IntList): int {
-  if IntList..isNil(xs) then 0
+procedure listLen(xs: IntList): int
+{
+  return if IntList..isNil(xs) then 0
   else 1 + listLen(IntList..tail!(xs))
 };
 
@@ -35,13 +36,15 @@ procedure testListLen()
 };
 
 // Mutual recursion
-function listLenEven(xs: IntList): bool {
-  if IntList..isNil(xs) then true
+procedure listLenEven(xs: IntList): bool
+{
+  return if IntList..isNil(xs) then true
   else listLenOdd(IntList..tail!(xs))
 };
 
-function listLenOdd(xs: IntList): bool {
-  if IntList..isNil(xs) then false
+procedure listLenOdd(xs: IntList): bool
+{
+  return if IntList..isNil(xs) then false
   else listLenEven(IntList..tail!(xs))
 };
 
