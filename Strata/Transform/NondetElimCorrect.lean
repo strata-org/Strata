@@ -3264,6 +3264,49 @@ private theorem nondetElim_simulation {P : PureExpr} [HasFvar P] [HasNot P]
       none h_term
   exact ⟨ρ_out, h_run, StoreAgreement.of_agreeOffGen h_off h_fresh', h_fl⟩
 
+/-- Escaping sibling of `nondetElim_simulation`: surfaces the banked exiting
+disjunct of `nondetElim_simulation_gen`.  Every *escaping* source run of `ss`
+(reaching `.exiting lbl ρ'`) is matched by an escaping run of `Block.nondetElim ss`
+to the *same* label, agreeing on the source's variables and the failure flag.
+Identical to the terminal `nondetElim_simulation` except it instantiates the
+outcome selector at `some lbl`. -/
+private theorem nondetElim_simulation_exit {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_no_gen_suffix :
+      ∀ s, Q s →
+        ρ₀.store (HasIdent.ident (P := P) s) = none)
+    (h_no_writes : SrcNoGenWrites (P := P) Q ss)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (lbl : String)
+    (h_exit : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) :
+    ∃ ρ_out, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.nondetElim ss) ρ₀) (.exiting lbl ρ_out)
+      ∧ StoreAgreement ρ'.store ρ_out.store
+      ∧ ρ_out.hasFailure = ρ'.hasFailure := by
+  have h_tgt_fresh : GenFreshStore Q StringGenState.emp ρ₀.store := by
+    intro s h_suf _; exact h_no_gen_suffix s h_suf
+  obtain ⟨h_fresh', ρ_out, h_run, h_off, h_fl, _, _⟩ :=
+    nondetElim_simulation_gen hQmint extendEval ss StringGenState.emp ρ₀ ρ' ρ₀
+      rfl rfl (AgreeOffGen.refl _) hwfb hwfv hwf_def hwf_congr hwf_var
+      StringGenState.wf_emp h_no_gen_suffix h_tgt_fresh h_no_writes h_nofd h_lhni
+      (some lbl) (by simpa only [outcomeConfig] using h_exit)
+  refine ⟨ρ_out, ?_, StoreAgreement.of_agreeOffGen h_off h_fresh', h_fl⟩
+  simpa only [outcomeConfig] using h_run
+
 /-- Forward simulation: every terminating source execution of `ss` has a
 matching execution of `Block.nondetElim ss` agreeing on the source's variables
 (`StoreAgreement`) and the failure flag. The existential picks each guard's
@@ -3361,5 +3404,38 @@ theorem nondetElim_sound_kind {P : PureExpr} [HasFvar P] [HasNot P]
     (Q := ndelimKind) ndelimKind_gen
     extendEval ss ρ₀ ρ'
     hwfb hwfv hwf_def hwf_congr hwf_var h_no_gen_suffix h_no_writes h_nofd h_lhni h_term
+
+/-- Escaping companion of `nondetElim_sound_kind` (at `Q := ndelimKind`): every
+escaping source run of `ss` reaching `.exiting lbl` is matched by an escaping run
+of `Block.nondetElim ss` to the *same* label, agreeing on the source's variables
+and the failure flag.  A thin forwarder to `nondetElim_simulation_exit`; the
+`NoGenStore` store precondition unfolds to the explicit per-kind freshness fact
+the simulation consumes. -/
+theorem nondetElim_sound_kind_exit {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_no_gen_suffix : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (lbl : String)
+    (h_exit : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) :
+    ∃ ρ_out, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.nondetElim ss) ρ₀) (.exiting lbl ρ_out)
+      ∧ StoreAgreement ρ'.store ρ_out.store
+      ∧ ρ_out.hasFailure = ρ'.hasFailure :=
+  nondetElim_simulation_exit
+    (Q := ndelimKind) ndelimKind_gen
+    extendEval ss ρ₀ ρ'
+    hwfb hwfv hwf_def hwf_congr hwf_var h_no_gen_suffix h_no_writes h_nofd h_lhni lbl h_exit
 
 end Imperative

@@ -3224,6 +3224,113 @@ theorem hoistLoopPrefixInits_preserves_kind {Q : String → Prop}
     exact ⟨ρ_h', h_run_h, HoistInv.to_storeAgreement_nil h_hinv_final, h_hf_final.symm⟩
   · exact absurd h_eq_src_e (by simp)
 
+/-- Escaping companion of `hoistLoopPrefixInits_preserves_kind`: surfaces the
+banked exiting arm of the §E mutual.  Every escaping source run of `ss`
+(reaching `.exiting lbl ρ_src'`) admits a corresponding escaping hoisted run to
+the *same* label with a pointwise-agreeing final store and the same `hasFailure`
+flag.  Identical to the terminal entry except it feeds the `.exiting` source-run
+disjunct to `Block.hoistLoopPrefixInits_preserves` and reads its exiting arm.
+The `NoGenStore`/`NoGenSuffix` preconditions unfold to the per-kind freshness
+facts the §E mutual consumes. -/
+theorem hoistLoopPrefixInits_preserves_kind_exit {Q : String → Prop}
+    [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
+    [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (ss : List (Stmt P (Cmd P)))
+    {ρ_src ρ_src' : Env P}
+    (h_no_nd      : Block.containsNondetLoop ss = false)
+    (h_no_fd      : Block.containsFuncDecl ss = false)
+    (h_no_inv     : Block.loopHasNoInvariants ss = true)
+    (h_no_measure : Block.loopMeasureNone ss = true)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
+    (h_unique     : Block.uniqueInits ss)
+    (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_src_initVars_shapefree :
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_src_modifiedVars_shapefree :
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.modifiedVars ss))
+    (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
+    (h_src_store_shapefree : NoGenStore (P := P) Q ρ_src)
+    (lbl          : String)
+    (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
+                       (.stmts ss ρ_src) (.exiting lbl ρ_src'))
+    (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    ∃ ρ_h',
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.hoistLoopPrefixInits ss) ρ_src) (.exiting lbl ρ_h')
+      ∧ StoreAgreement ρ_src'.store ρ_h'.store
+      ∧ ρ_h'.hasFailure = ρ_src'.hasFailure := by
+  -- Discharge §F by invoking the widened §E Block sibling at `A := []`, `B := []`,
+  -- `subst := []`, `σ := emp`, with `ρ_hoist := ρ_src` (no hoisting at the
+  -- outermost call site).  The σ-relative obligations collapse at `emp` (its
+  -- `stringGens` is empty) to the global front-end kind-freedom facts.
+  -- The §E Block sibling's separate `h_names_fresh A`/`h_names_fresh_B` slots take
+  -- the FULL `namesFreshInExprs` (where the guard clause is load-bearing) at the
+  -- hoist-accumulated names `A`/`B`; at the outermost call site `A = B = []`, so
+  -- they are vacuously true and need no input from `h_fresh`.
+  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true :=
+    Block.namesFreshInExprs_nil ss
+  have h_lhs_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_mod_disjoint_nil : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) ss, x ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_hinv_refl : HoistInv (P := P) [] [] [] ρ_src.store ρ_src.store :=
+    HoistInv.refl_id [] ρ_src.store
+  have h_hoist_bound_nil : ∀ y ∈ ([] : List P.Ident), ρ_src.store y ≠ none :=
+    fun _ h => absurd h (List.not_mem_nil)
+  have h_wf_emp : StringGenState.WF StringGenState.emp := StringGenState.wf_emp
+  have h_src_fresh_emp :
+      ∀ str ∈ StringGenState.stringGens StringGenState.emp,
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss := by
+    intro str h_str
+    exact absurd h_str (StringGenState.not_mem_stringGens_emp str)
+  have h_src_shapefree_F :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss ∧
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars (P := P) ss :=
+    fun str h_shape =>
+      ⟨List.not_mem_nil, List.not_mem_nil,
+        h_src_initVars_shapefree str h_shape,
+        h_src_modifiedVars_shapefree str h_shape⟩
+  have h_subst_wf_nil :
+      ∀ a b : P.Ident, (a, b) ∈ ([] : List (P.Ident × P.Ident)) → a ∈ ([] : List P.Ident) ∧ b ∈ ([] : List P.Ident) :=
+    fun _ _ h => absurd h List.not_mem_nil
+  have h_src_store_shapefree_emp :
+      ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens StringGenState.emp →
+        ρ_src.store (HasIdent.ident (P := P) str) = none :=
+    fun str h_shape _ => h_src_store_shapefree str h_shape
+  obtain ⟨ρ_h', cfg_hoist, h_run_h, h_disj⟩ :=
+    Block.hoistLoopPrefixInits_preserves hQmint (extendEval := extendEval) [] [] [] ss
+      StringGenState.emp
+      h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
+      h_names_fresh_nil h_names_fresh_nil h_lhs_disjoint_nil h_lhs_disjoint_nil
+      h_mod_disjoint_nil h_mod_disjoint_nil
+      h_hoist_undef h_hoist_undef h_src_store_shapefree_emp h_src_store_shapefree_emp
+      h_wf_emp h_src_fresh_emp h_src_shapefree_F h_subst_wf_nil
+      h_hinv_refl rfl rfl h_hoist_bound_nil
+      h_run_src (Or.inr ⟨lbl, ρ_src', rfl⟩) h_wfvar h_wfcongr h_wfsubst h_wfdef
+  rcases h_disj with
+    ⟨_, h_eq_src_t, _⟩
+    | ⟨lbl', ρ_src'', h_eq_src, h_eq_hoist, h_hinv_final, h_hf_final, _⟩
+  · exact absurd h_eq_src_t (by simp)
+  · -- .exiting lbl ρ_src' = .exiting lbl' ρ_src'' fixes lbl' = lbl and ρ_src'' = ρ_src'.
+    simp only [Config.exiting.injEq] at h_eq_src
+    obtain ⟨h_lbl_eq, h_env_eq⟩ := h_eq_src
+    subst h_lbl_eq; subst h_env_eq
+    subst h_eq_hoist
+    exact ⟨ρ_h', h_run_h, HoistInv.to_storeAgreement_nil h_hinv_final, h_hf_final.symm⟩
+
 /-! ## §F — Top-level forward-simulation theorem
 
 Stated with full Phase 8 signature. The proof is a direct invocation of the
