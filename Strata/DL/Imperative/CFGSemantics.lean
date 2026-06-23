@@ -151,3 +151,66 @@ def StepCFGStar
     (cfg : CFG l (DetBlock l CmdT P)) :
     CFGConfig l CmdT P → CFGConfig l CmdT P → Prop :=
   ReflTrans (StepCFG P EvalCmd extendEval cfg)
+
+/-! ## Stuck configurations and the deterministic transfer fragment
+
+The two top-level outcomes — `.terminal` (normal halt) and `.exiting`
+(escaping exit) — are *stuck*: no `StepCFG` rule applies to them.  This is what
+lets a forward-simulation refinement know that, once a CFG run reaches one of
+these halts, it stays there, so the run's *outcome kind* (normal halt vs.
+escaping exit) is final and observable.
+
+A note on determinism.  `StepCFG` is **not** a deterministic relation, even when
+the abstract command evaluator `EvalCmd` is functional: the `step_cmd`,
+`goto_true`, and `goto_false` rules each bind a *fresh* semantic evaluator `δ`
+that the configuration does not pin down.  Two derivations from the same config
+can therefore use *different* evaluators (one with `δ σ c = tt`, another with
+`δ' σ c = ff`) and reach genuinely different successors.  Consequently a
+"terminal-vs-exiting halt exclusion" stated purely over `StepCFGStar` is **not**
+a theorem of these semantics — the exclusion that a dual (terminal-or-exiting)
+soundness result needs comes from the *source* execution being deterministic in
+its outcome kind (the structured run either terminates or exits, not both),
+threaded through the forward simulation; it is not recovered at the CFG level.
+The reusable, unconditionally-true facts at this level are the stuckness of the
+two halt configurations, which is what follows. -/
+
+section Stuck
+
+variable {l CmdT : Type} [BEq l] {P : PureExpr}
+  {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
+  [HasNot P] [HasVarsPure P P.Expr]
+  {cfg : CFG l (DetBlock l CmdT P)}
+
+/-- A `.terminal` configuration is stuck: no `StepCFG` rule applies to it. -/
+theorem StepCFG.terminal_stuck {σ : SemanticStore P} {f : Bool}
+    {d : CFGConfig l CmdT P} :
+    ¬ StepCFG P EvalCmd extendEval cfg (.terminal σ f) d := by
+  intro h; cases h
+
+/-- An `.exiting` configuration is stuck: no `StepCFG` rule applies to it. -/
+theorem StepCFG.exiting_stuck {t : l} {σ : SemanticStore P} {f : Bool}
+    {d : CFGConfig l CmdT P} :
+    ¬ StepCFG P EvalCmd extendEval cfg (.exiting t σ f) d := by
+  intro h; cases h
+
+/-- A `StepCFGStar` run that starts at a `.terminal` configuration ends at the
+same `.terminal` configuration: a stuck start cannot move. -/
+theorem StepCFGStar.from_terminal {σ : SemanticStore P} {f : Bool}
+    {d : CFGConfig l CmdT P}
+    (h : StepCFGStar P EvalCmd extendEval cfg (.terminal σ f) d) :
+    d = .terminal σ f := by
+  cases h with
+  | refl => rfl
+  | step _ _ _ hstep _ => exact absurd hstep StepCFG.terminal_stuck
+
+/-- A `StepCFGStar` run that starts at an `.exiting` configuration ends at the
+same `.exiting` configuration: a stuck start cannot move. -/
+theorem StepCFGStar.from_exiting {t : l} {σ : SemanticStore P} {f : Bool}
+    {d : CFGConfig l CmdT P}
+    (h : StepCFGStar P EvalCmd extendEval cfg (.exiting t σ f) d) :
+    d = .exiting t σ f := by
+  cases h with
+  | refl => rfl
+  | step _ _ _ hstep _ => exact absurd hstep StepCFG.exiting_stuck
+
+end Stuck
