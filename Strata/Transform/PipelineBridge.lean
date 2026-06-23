@@ -2101,17 +2101,17 @@ theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal 
     exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
       h_agree, rfl, h_run⟩
 
-/-- **Covered-exit no-escape (soundness-by-construction for the omitted exiting
-disjunct).** When every `.exit` in the source `ss` is caught by an enclosing
-labeled block (`Block.exitsCoveredByBlocks [] ss`), no source run reaches a
-top-level `.exiting` configuration — it can only terminate (or diverge).
+/-- **Covered-exit no-escape.** When every `.exit` in the source `ss` is caught
+by an enclosing labeled block (`Block.exitsCoveredByBlocks [] ss`), no source
+run reaches a top-level `.exiting` configuration — it can only terminate (or
+diverge).
 
-This is why `pipeline_sound`'s terminal-only conclusion is sound *by
-construction* for the covered-exit fragment: the exiting outcome it omits is
-empty, not merely unstated.  The unstructured target IR (`CFGConfig`) has no
-`.exiting` constructor, so an *escaping* top-level exit cannot even be stated as
-a forward-simulation target; the covered-exit precondition rules that case out
-exactly as `detToKleene_overapproximates` discharges its exiting clause. -/
+This is an independent characterization of the covered-exit fragment: for such
+programs the exiting disjunct of `pipeline_sound` is empty, so its terminal
+disjunct holds outright.  (`pipeline_sound` itself no longer needs this — it is
+dual, matching whichever outcome the source reaches via the real
+`CFGConfig.exiting` target; this lemma remains a useful standalone fact about
+exit-covered programs.) -/
 theorem pipeline_no_escaping_exit
     [HasFvar P] [HasNot P] [HasBool P] [HasVarsPure P P.Expr]
     (extendEval : ExtendEval P) (ss : List (Stmt P (Cmd P)))
