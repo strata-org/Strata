@@ -68,7 +68,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
   | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
   | .Block stmts _ => for s in stmts do collectExprMd s
-  | .While c invs d b => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
+  | .While c invs d b _ => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
   | .Return v => if let some x := v then collectExprMd x
   | .Assign assignTargets v =>
       -- Check if any target is a field assignment (heap write)
@@ -341,9 +341,9 @@ where
           termination_by (sizeOf remaining, 0)
         let stmts' ← processStmts 0 stmts
         return [⟨ .Block stmts' label, source ⟩]
-    | .While c invs d b =>
+    | .While c invs d b postTest =>
         let invs' ← invs.mapM (recurseOne ·)
-        return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false), source ⟩]
+        return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false) postTest, source ⟩]
     | .Return v =>
         let v' ← match v with | some x => some <$> recurseOne x | none => pure none
         return [⟨ .Return v', source ⟩]

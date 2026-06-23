@@ -68,11 +68,11 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     let stmts' ← stmts.attach.mapIdxM fun i ⟨e, _⟩ =>
       mapStmtExprUsedM f (resultUsed && i + 1 == stmts.length) e
     pure ⟨.Block stmts' label, source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprUsedM f true cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
-      (← mapStmtExprUsedM f false body), source⟩
+      (← mapStmtExprUsedM f false body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
   | .Assign targets value =>
@@ -183,11 +183,11 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .Block stmts label =>
       let nested ← stmts.attach.mapIdxM fun i ⟨x, _⟩ => go (used && i + 1 == stmts.length) x
       pure ⟨.Block nested.flatten label, source⟩
-    | .While cond invs dec body =>
+    | .While cond invs dec body postTest =>
       pure ⟨.While (collapse (← go true cond) cond.source)
         (← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
         (← dec.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
-        (collapse (← go false body) body.source), source⟩
+        (collapse (← go false body) body.source) postTest, source⟩
     | .Return v =>
       pure ⟨.Return (← v.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
     | .Assign targets value =>
@@ -261,11 +261,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .Block stmts label =>
     pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label, source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprPrePostM pre post cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
-      (← mapStmtExprPrePostM pre post body), source⟩
+      (← mapStmtExprPrePostM pre post body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .Assign targets value =>
@@ -344,6 +344,22 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
     preconditions := ← proc.preconditions.mapM (·.mapM f)
     decreases := ← proc.decreases.mapM f
     invokeOn := ← proc.invokeOn.mapM f }
+
+/-- Apply a monadic transformation to every procedure in a program — both
+    top-level static procedures and the instance procedures of composite types.
+    The single place that knows where procedures live in a `Program`, so passes
+    don't each re-enumerate `staticProcedures` and composite `instanceProcedures`. -/
+def mapProgramProceduresM [Monad m] (f : Procedure → m Procedure) (program : Program) : m Program := do
+  let staticProcedures ← program.staticProcedures.mapM f
+  let types ← program.types.mapM fun td =>
+    match td with
+    | .Composite ct => return .Composite { ct with instanceProcedures := ← ct.instanceProcedures.mapM f }
+    | other => pure other
+  return { program with staticProcedures := staticProcedures, types := types }
+
+/-- Pure variant of `mapProgramProceduresM`. -/
+def mapProgramProcedures (f : Procedure → Procedure) (program : Program) : Program :=
+  mapProgramProceduresM (m := Id) f program
 
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use
