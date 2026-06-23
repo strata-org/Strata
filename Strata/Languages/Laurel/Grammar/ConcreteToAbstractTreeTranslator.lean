@@ -371,6 +371,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let cond ← translateStmtExpr condArg
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       return mkStmtExprMd (.While cond invariants none body (postTest := true)) src
+    | q`Laurel.old, #[arg0] =>
+      let inner ← translateStmtExpr arg0
+      return mkStmtExprMd (.Old inner) src
     | q`Laurel.forallExpr, #[nameArg, tyArg, triggerArg, bodyArg] =>
       let name ← translateIdent nameArg
       let ty ← translateHighType tyArg
