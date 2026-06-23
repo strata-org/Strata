@@ -17,10 +17,8 @@ public section
 structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
-  /-- Select the enumerated (quantifier-free) modifies frame for clauses that name
-      only single references. This is only beneficial when the heap `Map` is encoded
-      with SMT-LIB array theory, so it is set together with the verifier's
-      `useArrayTheory`. -/
+  /-- Quantifier-free modifies frame for single-reference clauses. Set-valued entries
+      keep the quantified frame. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
 
