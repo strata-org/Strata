@@ -1715,6 +1715,174 @@ private theorem pipeline_sound_terminal [HasFvar P] [HasNot P] [HasVal P] [HasBo
   rw [h_hf] at h_run3
   exact ⟨σ_cfg, h_run3, StoreAgreement.trans h_agree1 (StoreAgreement.trans h_agree2 h_agree3)⟩
 
+/-- **Pipeline soundness, exiting outcome (helper).** The exiting half of the
+dual `pipeline_sound`: an *escaping* source run of `ss` from a clean initial
+store `ρ₀` to a top-level uncaught exit `.exiting lbl ρ'` is matched by a CFG
+run of `pipeline ss` reaching the *same* `.exiting lbl σ_cfg`, agreeing on the
+final store (source on the left).  A real composition of the three
+`_sound_kind_exit` theorems via `StoreAgreement.trans`, threading the escaping
+label `lbl` through each pass (the pipeline preserves the escaping label).
+
+This is the exiting-only restatement the dual `pipeline_sound`'s exiting arm
+delegates to; it is also what `pipeline_overapproximates` consumes to discharge
+its exiting clause, since that clause needs an *exiting* CFG witness for the
+*same* `lbl` directly (the dual theorem's disjunctive conclusion cannot be
+projected to its exiting disjunct without a target-IR determinism principle,
+which is not a theorem of the CFG semantics — the per-config evaluator binders
+make `StepCFG` non-deterministic in its outcome kind). -/
+private theorem pipeline_sound_exiting [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
+    [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwfvar' : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
+    (h_store_mints_ndelim : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_store_mints_hoist : NoGenStore (P := P) hoistKind ρ₀)
+    (h_store_mints_s2u : NoGenStore (P := P) StructuredToUnstructuredCorrect.s2uKind ρ₀)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup
+      (Block.hoistLoopPrefixInits (Block.nondetElim ss)))
+    (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
+    (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
+    (h_disj_initVars : ∀ str : String,
+      (ndelimKind str ∨ hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.initVars ss)
+    (h_disj_modVars : ∀ str : String,
+      (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
+    (lbl : String)
+    (h_exit : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) :
+    ∃ σ_cfg, StructuredToUnstructuredCorrect.StepDetCFGStar extendEval (pipeline ss)
+        (.atBlock (pipeline ss).entry ρ₀.store ρ₀.hasFailure)
+        (.exiting lbl σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg := by
+  -- === STEP 1: nondetElim (exiting) ===
+  obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
+    nondetElim_sound_kind_exit extendEval ss ρ₀ ρ'
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
+      h_store_mints_ndelim h_ndelim_writes h_nofd h_lhni lbl h_exit
+  -- Direction-A hoist §F preconds on the `nondetElim` output, at `Q := hoistKind`.
+  have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
+    (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
+      h_unique (fun str hk => h_disj_initVars str (Or.inl hk))).2
+  have h_out_iv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.initVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_initVars str (Or.inr (Or.inl hk)) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_mv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_modVars str (Or.inl hk) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_exprs_sf : Block.exprsShapeFree (P := P) hoistKind (Block.nondetElim ss) :=
+    Block.nondetElimM_exprsShapeFree
+      (fun sg => (ndelim_name_not_hoistKind sg).1)
+      (fun sg => (ndelim_name_not_hoistKind sg).2)
+      ss StringGenState.emp h_hoist_exprs
+  have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
+    nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs
+  have h_out_undef : ∀ y ∈ Block.initVars (Block.nondetElim ss), ρ₀.store y = none := by
+    intro y hy
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
+      h_src | ⟨str, h_eq, h_nd⟩
+    · exact h_store_inits y h_src
+    · rw [h_eq]; exact h_store_mints_ndelim str h_nd
+  -- === STEP 2: hoist (exiting; input `nondetElim ss`, source run = Step 1's) ===
+  obtain ⟨ρ_h', h_run2, h_agree2, h_hf2⟩ :=
+    hoistLoopPrefixInits_preserves_kind_exit (Q := hoistKind) hoistKind_gen
+      (extendEval := extendEval) (Block.nondetElim ss)
+      (nondetElim_containsNondetLoop ss)
+      (nondetElim_containsFuncDecl ss h_nofd)
+      (nondetElim_loopHasNoInvariants ss h_lhni)
+      (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
+      h_out_exprs_sf h_out_unique h_out_fresh
+      h_out_iv_sf h_out_mv_sf
+      h_out_undef
+      h_store_mints_hoist
+      lbl h_run1
+      hwfvar' hwfcongr' hwfsubst' hwfdef'
+  -- === Direction-B S2U preconds on the hoist output, at `Q := s2uKind` ===
+  have h_hoist_iv_cls :=
+    LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified (Q := hoistKind) hoistKind_gen
+      (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf
+  have h_step3_unique : Block.uniqueInits (Block.hoistLoopPrefixInits (Block.nondetElim ss)) :=
+    h_hoist_iv_cls.2
+  have h_step3_undef : ∀ x ∈ Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss)),
+      ρ₀.store x = none := by
+    intro x hx
+    rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · exact h_out_undef x h_src
+    · rw [h_eq]; exact h_store_mints_hoist str h_hoistk
+  have h_step3_iv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
+      (Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
+    intro s hk hx
+    rcases h_hoist_iv_cls.1 _ hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_src with
+        h_src2 | ⟨str2, h_eq2, h_nd⟩
+      · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+      · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_step3_mv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
+      (StructuredToUnstructuredCorrect.transformBlockModVars
+        (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
+    rw [transformBlockModVars_eq_modifiedVars]
+    intro s hk hx
+    rcases LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_modVars_classified (Q := hoistKind) hoistKind_gen
+        (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf _ hx with
+      h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · rw [List.mem_append] at h_src
+      rcases h_src with h_mv | h_iv
+      · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ h_mv with
+          h_src2 | ⟨str2, h_eq2, h_nd⟩
+        · exact h_disj_modVars s (Or.inr hk) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+      · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_iv with
+          h_src2 | ⟨str2, h_eq2, h_nd⟩
+        · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  -- === STEP 3: stmtsToCFG (exiting; input `hoist (nondetElim ss)`, run = Step 2's) ===
+  obtain ⟨σ_cfg, h_run3, h_agree3⟩ :=
+    StructuredToUnstructuredCorrect.structuredToUnstructured_sound_kind_exit
+      (Q := StructuredToUnstructuredCorrect.s2uKind)
+      StructuredToUnstructuredCorrect.s2uKind_gen
+      extendEval (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀ ρ_h'
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
+      (hoist_noFuncDecl _ (nondetElim_noFuncDecl ss h_nofd))
+      (hoist_simpleShape _ (nondetElim_simpleShape ss))
+      h_step3_unique
+      (hoist_loopBodyNoInits _)
+      (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
+      (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
+      h_step3_undef
+      h_disj
+      h_store_mints_s2u
+      h_step3_iv h_step3_mv
+      lbl h_run2
+  -- === CHAIN via StoreAgreement.trans (source on the left) ===
+  have h_hf : ρ_h'.hasFailure = ρ'.hasFailure := h_hf2.trans h_hf1
+  rw [h_hf] at h_run3
+  exact ⟨σ_cfg, h_run3, StoreAgreement.trans h_agree1 (StoreAgreement.trans h_agree2 h_agree3)⟩
+
 /-- **Pipeline soundness (dual outcome).** Every source run of `ss` from a clean
 initial store `ρ₀` is matched by a run of the unstructured CFG `pipeline ss`
 reaching the *matching* outcome with a final store agreeing with the source's
@@ -1791,127 +1959,21 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   rcases h_run with h_term | ⟨lbl, h_exit⟩
   -- =========================================================================
   -- EXITING ARM — the source run reaches `.exiting lbl ρ'` (an uncaught
-  -- top-level exit).  Compose the three banked `_sound_kind_exit` siblings,
-  -- which surface the sum-typed loop-body drivers, exactly mirroring the
-  -- terminal composition but threading the escaping label `lbl` through.
+  -- top-level exit); delegate to the exiting-only helper, which composes the
+  -- three banked `_sound_kind_exit` siblings (the sum-typed loop-body drivers),
+  -- threading the escaping label `lbl` through.  Factored out so
+  -- `pipeline_overapproximates` can consume an exiting CFG witness directly.
   -- =========================================================================
   case inr =>
     right
-    refine ⟨lbl, ?_⟩
-    -- === STEP 1: nondetElim (exiting) ===
-    obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
-      nondetElim_sound_kind_exit extendEval ss ρ₀ ρ'
-        hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
-        h_store_mints_ndelim h_ndelim_writes h_nofd h_lhni lbl h_exit
-    -- Direction-A hoist §F preconds on the `nondetElim` output, at `Q := hoistKind`.
-    have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
-      (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
-        h_unique (fun str hk => h_disj_initVars str (Or.inl hk))).2
-    have h_out_iv_sf : ∀ str : String, hoistKind str →
-        HasIdent.ident (P := P) str ∉ Block.initVars (Block.nondetElim ss) := by
-      intro str hk hmem
-      rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ hmem with
-        h_src | ⟨str', h_eq, h_nd⟩
-      · exact h_disj_initVars str (Or.inr (Or.inl hk)) h_src
-      · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
-    have h_out_mv_sf : ∀ str : String, hoistKind str →
-        HasIdent.ident (P := P) str ∉ Block.modifiedVars (Block.nondetElim ss) := by
-      intro str hk hmem
-      rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ hmem with
-        h_src | ⟨str', h_eq, h_nd⟩
-      · exact h_disj_modVars str (Or.inl hk) h_src
-      · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
-    have h_out_exprs_sf : Block.exprsShapeFree (P := P) hoistKind (Block.nondetElim ss) :=
-      Block.nondetElimM_exprsShapeFree
-        (fun sg => (ndelim_name_not_hoistKind sg).1)
-        (fun sg => (ndelim_name_not_hoistKind sg).2)
-        ss StringGenState.emp h_hoist_exprs
-    have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
-      nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs
-    have h_out_undef : ∀ y ∈ Block.initVars (Block.nondetElim ss), ρ₀.store y = none := by
-      intro y hy
-      rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
-        h_src | ⟨str, h_eq, h_nd⟩
-      · exact h_store_inits y h_src
-      · rw [h_eq]; exact h_store_mints_ndelim str h_nd
-    -- === STEP 2: hoist (exiting; input `nondetElim ss`, source run = Step 1's) ===
-    obtain ⟨ρ_h', h_run2, h_agree2, h_hf2⟩ :=
-      hoistLoopPrefixInits_preserves_kind_exit (Q := hoistKind) hoistKind_gen
-        (extendEval := extendEval) (Block.nondetElim ss)
-        (nondetElim_containsNondetLoop ss)
-        (nondetElim_containsFuncDecl ss h_nofd)
-        (nondetElim_loopHasNoInvariants ss h_lhni)
-        (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
-        h_out_exprs_sf h_out_unique h_out_fresh
-        h_out_iv_sf h_out_mv_sf
-        h_out_undef
-        h_store_mints_hoist
-        lbl h_run1
-        hwfvar' hwfcongr' hwfsubst' hwfdef'
-    -- === Direction-B S2U preconds on the hoist output, at `Q := s2uKind` ===
-    have h_hoist_iv_cls :=
-      LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified (Q := hoistKind) hoistKind_gen
-        (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf
-    have h_step3_unique : Block.uniqueInits (Block.hoistLoopPrefixInits (Block.nondetElim ss)) :=
-      h_hoist_iv_cls.2
-    have h_step3_undef : ∀ x ∈ Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss)),
-        ρ₀.store x = none := by
-      intro x hx
-      rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
-      · exact h_out_undef x h_src
-      · rw [h_eq]; exact h_store_mints_hoist str h_hoistk
-    have h_step3_iv : Strata.Transform.GenSuffix.NoGenSuffix
-        (P := P) StructuredToUnstructuredCorrect.s2uKind
-        (Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
-      intro s hk hx
-      rcases h_hoist_iv_cls.1 _ hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
-      · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_src with
-          h_src2 | ⟨str2, h_eq2, h_nd⟩
-        · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
-        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
-      · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
-    have h_step3_mv : Strata.Transform.GenSuffix.NoGenSuffix
-        (P := P) StructuredToUnstructuredCorrect.s2uKind
-        (StructuredToUnstructuredCorrect.transformBlockModVars
-          (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
-      rw [transformBlockModVars_eq_modifiedVars]
-      intro s hk hx
-      rcases LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_modVars_classified (Q := hoistKind) hoistKind_gen
-          (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf _ hx with
-        h_src | ⟨str, h_eq, _, _, h_hoistk⟩
-      · rw [List.mem_append] at h_src
-        rcases h_src with h_mv | h_iv
-        · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ h_mv with
-            h_src2 | ⟨str2, h_eq2, h_nd⟩
-          · exact h_disj_modVars s (Or.inr hk) h_src2
-          · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
-        · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_iv with
-            h_src2 | ⟨str2, h_eq2, h_nd⟩
-          · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
-          · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
-      · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
-    -- === STEP 3: stmtsToCFG (exiting; input `hoist (nondetElim ss)`, run = Step 2's) ===
-    obtain ⟨σ_cfg, h_run3, h_agree3⟩ :=
-      StructuredToUnstructuredCorrect.structuredToUnstructured_sound_kind_exit
-        (Q := StructuredToUnstructuredCorrect.s2uKind)
-        StructuredToUnstructuredCorrect.s2uKind_gen
-        extendEval (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀ ρ_h'
-        hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
-        (hoist_noFuncDecl _ (nondetElim_noFuncDecl ss h_nofd))
-        (hoist_simpleShape _ (nondetElim_simpleShape ss))
-        h_step3_unique
-        (hoist_loopBodyNoInits _)
-        (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
-        (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
-        h_step3_undef
-        h_disj
-        h_store_mints_s2u
-        h_step3_iv h_step3_mv
-        lbl h_run2
-    -- === CHAIN via StoreAgreement.trans (source on the left) ===
-    have h_hf : ρ_h'.hasFailure = ρ'.hasFailure := h_hf2.trans h_hf1
-    rw [h_hf] at h_run3
-    exact ⟨σ_cfg, h_run3, StoreAgreement.trans h_agree1 (StoreAgreement.trans h_agree2 h_agree3)⟩
+    obtain ⟨σ_cfg, h_run, h_agree⟩ :=
+      pipeline_sound_exiting extendEval ss ρ₀ ρ'
+        hwfb hwfv hwfvar' hwfcongr' hwfsubst' hwfdef'
+        h_store_inits h_store_mints_ndelim h_store_mints_hoist h_store_mints_s2u
+        h_nofd h_lhni h_nml h_unique h_fresh h_disj
+        h_ndelim_writes h_ndelim_exprs h_hoist_exprs h_disj_initVars h_disj_modVars
+        lbl h_exit
+    exact ⟨lbl, σ_cfg, h_run, h_agree⟩
   -- =========================================================================
   -- TERMINAL ARM — the source run reaches `.terminal ρ'`; delegate to the
   -- terminal-only helper, which composes the three terminal `_sound_kind`
@@ -1927,16 +1989,13 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
 
 /-- The bundled precondition under which `pipeline ss` refines `ss`.
 
-Its fields are exactly `pipeline_sound`'s hypothesis list — the well-formed
-evaluator bundle, the clean-initial-store conditions (`h_store_inits`,
-`h_store_mints`), the source shape restrictions, and the per-pass minted-name
-kind-freedom conditions — plus one front-end well-formedness condition
-`h_noesc`: every `exit` in `ss` is caught by an enclosing block (no top-level
-escaping exit).  `h_noesc` is the source's "exits are covered" property; it is
-what makes the source unable to reach an `.exiting` configuration, discharging
-the refinement's exiting clause vacuously.  It is net-new relative to
-`pipeline_sound` (which proves only the terminal arm) but is a clean,
-satisfiable well-formedness condition, not a hidden assumption. -/
+Its fields are exactly the dual `pipeline_sound`'s hypothesis list — the
+well-formed evaluator bundle, the clean-initial-store conditions
+(`h_store_inits`, `h_store_mints`), the source shape restrictions, and the
+per-pass minted-name kind-freedom conditions.  No covered-exit condition is
+required: the refinement discharges *both* outcomes (terminal and escaping
+exit) non-vacuously from the dual soundness helpers, so a top-level escaping
+exit is matched, not assumed away. -/
 structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
     [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasSubstFvar P]
     [DecidableEq P.Ident] (extendEval : ExtendEval P)
@@ -1967,7 +2026,6 @@ structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   h_disj_modVars : ∀ str : String,
     (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
     HasIdent.ident (P := P) str ∉ Block.modifiedVars ss
-  h_noesc : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks ([] : List String) ss
 
 /-- **Pipeline soundness, restated as a refinement.** Under the
 `PipelinePre` bundle, `fun ss => some (pipeline ss)` overapproximates the
@@ -1988,10 +2046,19 @@ Both arms of the refinement are discharged:
   witness directly: the dual theorem's disjunctive conclusion (from `Or.inl
   h_term`) cannot be projected to its terminal disjunct without a target-IR
   determinism principle the development does not carry.
-* **exiting** — vacuously, from `h_noesc`: a source program whose exits are all
-  covered by enclosing blocks can never reach an `.exiting` configuration
-  (`block_exitsCoveredByBlocks_noEscape`), so the exiting hypothesis is
-  contradictory. -/
+* **exiting** — directly from `pipeline_sound_exiting` (the exiting half of the
+  dual `pipeline_sound`): for an escaping source run to `.exiting lbl ρ'`, its
+  `⟨σ_cfg, h_run, h_agree⟩` supplies the target witness
+  `ρ_t := { store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure }` and a
+  genuine `.exiting lbl σ_cfg` CFG run for the *same* `lbl`.  `R ρ'.store
+  ρ_t.store` is `h_agree`, `ρ_t.hasFailure = ρ'.hasFailure` is `rfl`, and the
+  target run definitionally matches `h_run` (the now-real `exitingCfg lbl ρ_t`
+  carries the `CFGConfig.exiting lbl ρ_t.store ρ_t.hasFailure` shape).  The
+  exiting helper, rather than the dual `pipeline_sound`, is consumed here for the
+  same reason as the terminal arm: this clause needs an *exiting* CFG witness for
+  the same `lbl` directly, and the dual theorem's disjunctive conclusion cannot
+  be projected to its exiting disjunct without a target-IR determinism principle
+  that is not a theorem of the CFG semantics. -/
 theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
@@ -2020,10 +2087,19 @@ theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal 
         hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars h_term
     exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
       h_agree, rfl, h_run⟩
-  · -- exiting arm: vacuous, the source has no top-level escaping exit.
+  · -- exiting arm: discharged by `pipeline_sound_exiting` (the exiting half of
+    -- the dual `pipeline_sound`), which yields an exiting CFG witness for the
+    -- *same* `lbl` directly — non-vacuous, no covered-exit assumption needed.
     intro lbl hexit
-    exact absurd hexit
-      (block_exitsCoveredByBlocks_noEscape P (EvalCmd P) extendEval ss hpre.h_noesc ρ₀ lbl ρ')
+    obtain ⟨σ_cfg, h_run, h_agree⟩ :=
+      pipeline_sound_exiting extendEval ss ρ₀ ρ'
+        hpre.hwfb hpre.hwfv hpre.hwfvar' hpre.hwfcongr' hpre.hwfsubst' hpre.hwfdef'
+        hpre.h_store_inits hpre.h_store_mints_ndelim hpre.h_store_mints_hoist
+        hpre.h_store_mints_s2u hpre.h_nofd hpre.h_lhni hpre.h_nml
+        hpre.h_unique hpre.h_fresh hpre.h_disj hpre.h_ndelim_writes hpre.h_ndelim_exprs
+        hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars lbl hexit
+    exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
+      h_agree, rfl, h_run⟩
 
 /-- **Covered-exit no-escape (soundness-by-construction for the omitted exiting
 disjunct).** When every `.exit` in the source `ss` is caught by an enclosing
