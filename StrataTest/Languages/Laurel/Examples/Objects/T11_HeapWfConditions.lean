@@ -13,10 +13,9 @@ condition of `setIt` only quantifies over objects allocated in the
 input heap and distinct from `c`, so two facts must reach the caller
 for the assertions to discharge:
 
-  * `Composite..ref!(d) < Heap..nextReference!($heap_in)` — every
-    composite is allocated in the input heap. This follows from the
-    synthesized `heapIsValid($heap)` precondition supplied by
-    `HeapParameterization` (a `forall` over composites).
+  * `Composite..ref!(d) < Heap..nextReference!($heap_in)` — `d` is
+    allocated in the input heap. Supplied by `HeapParameterization`
+    as a free (for now) precondition on each composite parameter.
   * the allocation counter is monotone across each call, so the
     allocation fact carries through a chain of calls. Supplied as a
     synthesized postcondition on every heap-writer.
