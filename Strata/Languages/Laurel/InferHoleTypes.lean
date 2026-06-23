@@ -145,11 +145,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
-      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩), source⟩
+      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩) postTest, source⟩
   | .Assert ⟨condExpr, summary, free⟩ =>
       return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
   | .Assume cond =>

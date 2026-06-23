@@ -73,7 +73,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
       match v with
       | some x => collectStaticCallNames x
       | none => []
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
       collectStaticCallNames cond ++
       invs.flatMap (fun i => collectStaticCallNames i) ++
       (match dec with

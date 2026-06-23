@@ -632,10 +632,10 @@ namespace Resolution
 set_option linter.unusedVariables false in
 -- The well-founded-recursion termination proofs for every helper in this
 -- large mutual block share a single elaboration heartbeat budget. Each
--- `decreasing_by` is individually cheap (a directed `rw [h]` plus a targeted
--- `simp only [<ctor>.sizeOf_spec]` then `omega`), but their cumulative cost
--- across ~30 functions sits just above the 200k default, so the budget is
--- raised modestly for the block.
+-- `decreasing_by` rewrites the node equation (`rw [h]`) and then discharges
+-- the size goal with `term_by_mem` (which adds `List`/`Array` membership-size
+-- lemmas, then `simp_all` and `omega`). Their cumulative cost across ~30
+-- functions sits above the 200k default, so the budget is raised for the block.
 set_option maxHeartbeats 400000 in
 mutual
 
@@ -717,8 +717,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Declare param) => do
     let r ← Check.varDeclare param source
     return (r, ⟨ .TVoid, source ⟩)
-  | .While cond invs dec body => do
-    let r ← Check.while exprMd cond invs dec body source (by rw [h_node])
+  | .While cond invs dec body postTest => do
+    let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
   | .Exit target => do
     let r ← Check.exit target source
@@ -896,8 +896,7 @@ def Synth.varField (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Var.sizeOf_spec, Variable.Field.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Var-Declare)
     ```
@@ -948,9 +947,9 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
     check mode. -/
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
-    (dec : Option StmtExprMd) (body : StmtExprMd)
+    (dec : Option StmtExprMd) (body : StmtExprMd) (postTest : Bool)
     (source : Option FileRange)
-    (h : exprMd.val = .While cond invs dec body) :
+    (h : exprMd.val = .While cond invs dec body postTest) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let invs' ← invs.attach.mapM (fun a => have := a.property; do
@@ -962,17 +961,16 @@ def Check.while (exprMd : StmtExprMd)
       typeMismatch a.val.source none "expected a numeric type" decTy
     pure e')
   let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
-  pure { val := .While cond' invs' dec' body', source := source }
+  -- `postTest` (the `do … while` variant) resolves identically and is carried
+  -- through unchanged for the `EliminateDoWhile` pass to lower afterwards.
+  pure { val := .While cond' invs' dec' body' postTest, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     all_goals
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.While.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ invs›)
-      try (rw [‹dec = some _›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (Exit)
     ```
@@ -1092,9 +1090,7 @@ def Check.return (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Return.sizeOf_spec] at hsz
-      rw [Option.mem_def.mp ‹_ ∈ val›, Option.some.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (Empty-Block)
     ```
@@ -1235,9 +1231,7 @@ def Check.block (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Block.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      omega
+      term_by_mem
 
 /-- (If / If-NoElse)
     ```
@@ -1279,9 +1273,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.IfThenElse.sizeOf_spec] at hsz
-      try (rw [Option.mem_def.mp ‹_ ∈ elseBr›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (If-Synth)
     ```
@@ -1397,9 +1389,7 @@ def Synth.block (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Block.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
-      omega
+      term_by_mem
 
 -- ### Verification statements
 
@@ -1423,8 +1413,7 @@ def Check.assert (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assert.sizeOf_spec, Condition.mk.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Assume)
     ```
@@ -1445,8 +1434,7 @@ def Check.assume (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assume.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 -- ### Assignment
 
@@ -1499,10 +1487,7 @@ def Synth.assign (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
-      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
-           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
-      omega
+      term_by_mem
 
 /-- Check-mode rule for assignment. Synthesizes the assignment's type
     by inlining the same work as `Synth.assign` (resolving targets,
@@ -1552,10 +1537,7 @@ def Check.assign (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Assign.sizeOf_spec] at hsz
-      try (have hmem := List.sizeOf_lt_of_mem ‹_ ∈ targets›
-           simp only [AstNode.mk.sizeOf_spec, Variable.Field.sizeOf_spec] at hmem)
-      omega
+      term_by_mem
 
 -- ### Increment / decrement
 
@@ -1605,11 +1587,9 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.IncrDecr.sizeOf_spec] at hsz
     have hsz2 := target.sizeOf_val_lt
     rw [h_tgt] at hsz2
-    simp only [Variable.Field.sizeOf_spec] at hsz2
-    omega
+    term_by_mem
 
 -- ### Calls
 
@@ -1710,9 +1690,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.StaticCall.sizeOf_spec] at hsz
-      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-      omega
+      term_by_mem
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -1799,9 +1777,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.InstanceCall.sizeOf_spec] at hsz
-      try (have := List.sizeOf_lt_of_mem ‹_ ∈ args›)
-      omega
+      term_by_mem
 
 -- ### Primitive operations
 
@@ -1977,9 +1953,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
-      have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-      omega
+      term_by_mem
 
 /-- Cases on the operator family.
     ```
@@ -2041,9 +2015,7 @@ def Check.primitiveOp (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.PrimitiveOp.sizeOf_spec] at hsz
-    have := List.sizeOf_lt_of_mem ‹_ ∈ args›
-    omega
+    term_by_mem
 
 -- ### Object forms
 
@@ -2112,8 +2084,7 @@ def Synth.asType (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.AsType.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (IsType)
     ```
@@ -2142,8 +2113,7 @@ def Synth.isType (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.IsType.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (RefEq)
     ```
@@ -2186,8 +2156,7 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ReferenceEquals.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (PureFieldUpdate)
     ```
@@ -2216,8 +2185,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.PureFieldUpdate.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 -- ### Verification expressions
 
@@ -2250,9 +2218,7 @@ def Synth.quantifier (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.Quantifier.sizeOf_spec] at hsz
-      try (rw [Option.mem_def.mp ‹_ ∈ trigger›, Option.some.sizeOf_spec] at hsz)
-      omega
+      term_by_mem
 
 /-- (Assigned)
     ```
@@ -2285,8 +2251,7 @@ def Synth.assigned (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Assigned.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Old)
     ```
@@ -2318,8 +2283,7 @@ def Check.old (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Old.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Old-Synth)
     ```
@@ -2347,8 +2311,7 @@ def Synth.old (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Old.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (Fresh)
     ```
@@ -2375,8 +2338,7 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.Fresh.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 /-- (ProveBy)
     ```
@@ -2402,8 +2364,7 @@ def Check.proveBy (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 /-- (ProveBy-Synth)
     ```
@@ -2430,8 +2391,7 @@ def Synth.proveBy (exprMd : StmtExprMd)
       apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
-      simp only [StmtExpr.ProveBy.sizeOf_spec] at hsz
-      omega
+      term_by_mem
 
 -- ### Self reference
 
@@ -2553,8 +2513,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
-    simp only [StmtExpr.ContractOf.sizeOf_spec] at hsz
-    omega
+    term_by_mem
 
 -- ### Holes
 
@@ -2820,7 +2779,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     | some e => collectStmtExpr map e
     | none => map
   | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     let map := collectStmtExpr map cond
     let map := invs.foldl collectStmtExpr map
     let map := match dec with | some d => collectStmtExpr map d | none => map
@@ -3020,7 +2979,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     match e with
     | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
     | none => errs
-  | .While c invs _ b =>
+  | .While c invs _ b _ =>
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
