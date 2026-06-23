@@ -46,7 +46,8 @@ type Composite;
 type Field;
 val value: Field;
 
-function opaqueProcedure_ensures(heap: Heap, c: Container, r: int): boolean {
+function opaqueProcedure_ensures(heap: Heap, c: Container, r: int): boolean
+{
   true
 }
 

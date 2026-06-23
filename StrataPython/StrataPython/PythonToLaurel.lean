@@ -2063,7 +2063,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
             let assumeInRange := mkStmtExprMdWithLoc (.Assume inRangeExpr) md
             pure [assumeTypeInt, assumeInRange]
           | _ =>
-            let targetInIter := mkStmtExprMd (.StaticCall "PIn" [targetVar, iterExpr])
+            let targetInIter := mkStmtExprMdWithLoc (.StaticCall "PIn" [targetVar, iterExpr]) md
             let assumeInStmt := mkStmtExprMdWithLoc (.Assume (Any_to_bool targetInIter)) md
             pure [assumeInStmt]
       | _ => pure []

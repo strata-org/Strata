@@ -33,7 +33,7 @@ program Laurel;
 procedure earlyReturnBuggy(x: int) returns (r: int)
   opaque
   ensures r >= 0
-//        ^^^^^^ error: assertion does not hold
+//        ^^^^^^ error: postcondition does not hold
 {
   if x < 0 then {
     return x

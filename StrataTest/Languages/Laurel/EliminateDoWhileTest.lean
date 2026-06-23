@@ -59,7 +59,8 @@ info: procedure basic()
       {
         x := x + 1
       };
-      if !(x < 3) then exit $dowhile_exit_0
+      if !(x < 3)
+      then exit $dowhile_exit_0
     }
   }$dowhile_exit_0;
   assert x == 3
@@ -106,12 +107,14 @@ info: procedure nested()
             {
               y := y + 1
             };
-            if !(y < 3) then exit $dowhile_exit_0
+            if !(y < 3)
+            then exit $dowhile_exit_0
           }
         }$dowhile_exit_0;
         x := x + 1
       };
-      if !(x < 3) then exit $dowhile_exit_1
+      if !(x < 3)
+      then exit $dowhile_exit_1
     }
   }$dowhile_exit_1;
   assert x == 3
