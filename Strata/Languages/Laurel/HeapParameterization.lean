@@ -482,10 +482,6 @@ private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
   | .UserDefined name => !isDatatype model name
   | _ => false
 
-/-- Wrap a `StmtExpr` with a source location for downstream VC labeling. -/
-private def mkMdAt (source : Option FileRange) (e : StmtExpr) : StmtExprMd :=
-  { val := e, source }
-
 /-! Heap well-formedness conditions below are emitted `free`:
     assumed for reference values appearing *directly* as  parameters/outputs,
     but not for indirectly reachable references (composite fields, set elements).
@@ -498,11 +494,11 @@ private def heapWellFormednessPreconds (model : SemanticModel)
   inputs.filterMap fun p =>
     if isCompositeParam model p then
       let src := p.name.source
-      let pRead   := mkMdAt src (.Var (.Local p.name))
-      let pRef    := mkMdAt src (.StaticCall "Composite..ref!" [pRead])
-      let heapRead := mkMdAt src (.Var (.Local heapVar))
-      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [heapRead])
-      let allocated := mkMdAt src (.PrimitiveOp .Lt [pRef, counter])
+      let pRead     : StmtExprMd := { val := .Var (.Local p.name), source := src }
+      let pRef      : StmtExprMd := { val := .StaticCall "Composite..ref!" [pRead], source := src }
+      let heapRead  : StmtExprMd := { val := .Var (.Local heapVar), source := src }
+      let counter   : StmtExprMd := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      let allocated : StmtExprMd := { val := .PrimitiveOp .Lt [pRef, counter], source := src }
       some { condition := allocated, summary := some "input is allocated in the heap", free := true }
     else none
 
@@ -511,10 +507,11 @@ private def heapWellFormednessPreconds (model : SemanticModel)
     the top of heap pointer never decreases. -/
 private def heapMonotonicityPostcond (source : Option FileRange)
     (heapVar : Identifier) : Condition :=
-  let nextRef := mkMdAt source (.StaticCall "Heap..nextReference!" [mkMdAt source (.Var (.Local heapVar))])
-  let inCounter := mkMdAt source (.Old nextRef)
+  let heapRead   : StmtExprMd := { val := .Var (.Local heapVar), source }
+  let nextRef    : StmtExprMd := { val := .StaticCall "Heap..nextReference!" [heapRead], source }
+  let inCounter  : StmtExprMd := { val := .Old nextRef, source }
   let outCounter := nextRef
-  { condition := mkMdAt source (.PrimitiveOp .Leq [inCounter, outCounter]),
+  { condition := { val := .PrimitiveOp .Leq [inCounter, outCounter], source },
     summary := some "monotonic heap pointer", free := true }
 
 /-- For each composite output `o`, the free postcondition
@@ -525,9 +522,11 @@ private def heapOutputAllocationPostconds (model : SemanticModel)
   outputs.filterMap fun o =>
     if isCompositeParam model o then
       let src := o.name.source
-      let oRef    := mkMdAt src (.StaticCall "Composite..ref!" [mkMdAt src (.Var (.Local o.name))])
-      let counter := mkMdAt src (.StaticCall "Heap..nextReference!" [mkMdAt src (.Var (.Local heapOutVar))])
-      some { condition := mkMdAt src (.PrimitiveOp .Lt [oRef, counter]),
+      let oRead    : StmtExprMd := { val := .Var (.Local o.name), source := src }
+      let oRef     : StmtExprMd := { val := .StaticCall "Composite..ref!" [oRead], source := src }
+      let heapRead : StmtExprMd := { val := .Var (.Local heapOutVar), source := src }
+      let counter  : StmtExprMd := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      some { condition := { val := .PrimitiveOp .Lt [oRef, counter], source := src },
              summary := some "output is allocated in the heap", free := true }
     else none
 
