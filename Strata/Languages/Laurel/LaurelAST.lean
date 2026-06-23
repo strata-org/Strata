@@ -302,10 +302,21 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
+  /-- A while loop with a condition, invariants, optional termination measure, and body.
+      Only allowed in impure contexts.
+
+      `postTest` selects when the condition is tested relative to the body:
+      - `false` (default) — a *pre-test* loop (`while`): the condition is checked
+        before the body, so the body may run zero times.
+      - `true` — a *post-test* loop (`do … while`): the body runs once before the
+        condition is first checked, so it always runs at least once.
+
+      Invariants are checked at the loop head (before each body) in both cases.
+      A post-test loop is lowered to the pre-test form by the `EliminateDoWhile` pass. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
+    (postTest : Bool := false)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/

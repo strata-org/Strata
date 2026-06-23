@@ -3,11 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+
 module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added Seq<T>, Array<T>, subscript, and seqLiteral productions.
+-- Last grammar change: added Seq<T>, Array<T>, subscript, and seqLiteral productions (merged with base's doWhile op).
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

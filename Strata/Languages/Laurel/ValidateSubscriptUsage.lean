@@ -172,12 +172,12 @@ def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List Diagnost
       | .Declare param => validateHighType param.type
       | .Local _ => []
     targetDiags ++ validateStmtExpr model value
-  | .While c invs (some dec) body =>
+  | .While c invs (some dec) body _ =>
     validateStmtExpr model c ++
     invs.attach.flatMap (fun ⟨i, _⟩ => validateStmtExpr model i) ++
     validateStmtExpr model dec ++
     validateStmtExpr model body
-  | .While c invs none body =>
+  | .While c invs none body _ =>
     validateStmtExpr model c ++
     invs.attach.flatMap (fun ⟨i, _⟩ => validateStmtExpr model i) ++
     validateStmtExpr model body

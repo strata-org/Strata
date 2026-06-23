@@ -90,7 +90,7 @@ def stmtExprUsesTArray (expr : StmtExprMd) : Bool :=
       stmtExprUsesTArray c || stmtExprUsesTArray th ||
       (el.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x))
   | .Block stmts _ => stmts.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)
-  | .While c invs dec body =>
+  | .While c invs dec body _ =>
       stmtExprUsesTArray c ||
       invs.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x) ||
       (dec.attach.any (fun ⟨x, _⟩ => stmtExprUsesTArray x)) ||
@@ -325,10 +325,10 @@ def elimExpr (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
     let t' := collapseStmts (splitArrayInit model (elimExpr model t)) t.source
     let e' := e.attach.map fun ⟨y, _⟩ => collapseStmts (splitArrayInit model (elimExpr model y)) y.source
     ⟨.IfThenElse (elimExpr model c) t' e', src⟩
-  | .While c invs dec body =>
+  | .While c invs dec body postTest =>
     let body' := collapseStmts (splitArrayInit model (elimExpr model body)) body.source
     ⟨.While (elimExpr model c) (invs.attach.map fun ⟨i, _⟩ => elimExpr model i)
-      (dec.attach.map fun ⟨d, _⟩ => elimExpr model d) body', src⟩
+      (dec.attach.map fun ⟨d, _⟩ => elimExpr model d) body' postTest, src⟩
   | .Return v => ⟨.Return (v.attach.map fun ⟨x, _⟩ => elimExpr model x), src⟩
   | .PrimitiveOp op args skipProof =>
     ⟨.PrimitiveOp op (args.attach.map fun ⟨a, _⟩ => elimExpr model a) skipProof, src⟩
