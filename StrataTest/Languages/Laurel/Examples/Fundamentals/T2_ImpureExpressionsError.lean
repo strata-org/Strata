@@ -15,7 +15,7 @@ open Strata
 -- pipeline helper because the expected diagnostics are not pure resolution
 -- errors.
 
-#eval testLaurel <|
+#eval testLaurelKeepIntermediates <|
 #strata
 program Laurel;
 procedure hasMutatingAssignment(): int
@@ -24,13 +24,6 @@ procedure hasMutatingAssignment(): int
   var x: int := 0;
   x := x + 1;
   x
-};
-
-procedure transparentWithMutatingAssignment(x: int): int
-{
-  x := x + 1;
-//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
-  return 3
 };
 
 procedure functionWithWhile(x: int): int
@@ -50,13 +43,5 @@ procedure impureContractIsLegal1(x: int)
   opaque
 {
   assert hasMutatingAssignment() == 1
-};
-
-procedure impureContractIsNotLegal2(x: int)
-  requires (x := 2) == 2
-//          ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
-  opaque
-{
-  assert (x := 2) == 2
 };
 #end

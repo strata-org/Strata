@@ -15,11 +15,19 @@ meta section
 #strata
 program Laurel;
 
-procedure transparentWithWhile(x: int): int
+procedure transparentWithMutatingAssignment(x: int): int
 {
-  while(false) {};
-//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
+  x := x + 1;
+//^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
   return 3
+};
+
+procedure impureContractIsNotLegal2(x: int)
+  requires (x := 2) == 2
+//          ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+  opaque
+{
+  assert (x := 2) == 2
 };
 
 #end
