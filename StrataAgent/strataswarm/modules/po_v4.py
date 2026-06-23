@@ -36,6 +36,21 @@ T = TypeVar("T")
 MAX_DEPTH = 3
 
 
+# ─── Guide verdict (structured output for stall decisions) ───────────────────
+
+class GuideAction(str, Enum):
+    CONTINUE = "continue"    # keep trying, theorem is provable in-file
+    DECOMPOSE = "decompose"  # needs helper lemmas extracted into separate files
+    GIVE_UP = "give_up"      # statement itself is mathematically false
+
+
+@dataclass
+class GuideVerdict:
+    action: GuideAction = GuideAction.CONTINUE
+    reason: str = ""
+    turns: int = 35  # how many turns to give writer next (10-50)
+
+
 # ─── State machine (for gen_mermaid.py + frontend visualization) ──────────────
 #
 # stateDiagram-v2
@@ -472,9 +487,15 @@ async def _do_detect_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Pat
 
 
 async def _do_update_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> Trans:
-    """Apply verdicts to ledger, prune siblings of dead nodes."""
+    """Apply verdicts to ledger, prune siblings of dead nodes, assemble proved."""
     lemma = ledger.get(state.current_lemma_id)
     _do_update(state, ledger, lemma, cwd)
+
+    # Assemble any newly proved entries (copy Stub.lean → .lean)
+    proved_entries = [e for e in ledger.entries() if e.status == LemmaStatus.PROVED]
+    if proved_entries:
+        await _assemble(agent, state, ledger, cwd)
+
     return Trans.CHECKED
 
 
@@ -499,23 +520,20 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-CHUNK_TURNS = 35           # turns per prove chunk
-CONTEXT_THRESHOLD = 65.0   # % — trigger extraction when writer hits this
-GRACE_TURNS = 20
+CHUNK_TURNS = 35           # turns per writer chunk
+CONTEXT_THRESHOLD = 65.0   # % — guide can recommend decompose after this
+GRACE_TURNS = 20           # turns per grace extraction attempt
 WRITER_CLEANUP_TURNS = 10
-STALL_CHUNKS = 2           # consult guide after this many no-progress chunks
 
 
 async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                          entry: LemmaEntry, cwd: Path) -> str:
     """Attempt to prove a single lemma.
 
-    Two phases (same as v3):
-    1. Initial attempts — try to close all sorry directly (decreasing budget)
-    2. Grace attempts — if main theorem still has sorry, factor into helpers
-       until main is sorry-free (helpers can keep sorry → extract phase)
+    Simple loop: guide advises → writer works → guide reviews → repeat.
+    Exits when: proved, guide says decompose, or guide says give_up.
 
-    Returns: 'proved' | 'has_sorry' | 'failed' | 'contradictory'
+    Returns: 'proved' | 'has_sorry' | 'failed'
     """
     tools = get_lean_tools()
     stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
@@ -533,30 +551,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
     writer = await _get_writer(agent, entry, state, ledger)
     guide = await _get_guide(agent, entry, state, ledger)
 
-    # Brief guide with ledger context
-    ledger_summary = _build_ledger_summary(ledger, entry)
-    # Get initial strategy from guide (same pattern as v3)
-    await agent._emit("message", f"[PO4] Consulting guide for {entry.name}...")
-    initial_advice = await guide.run_ai(
-        inp=(
-            f"CONTEXT:\n{ledger_summary}\n\n"
-            f"A proof_writer is about to prove theorem '{entry.name}' in {stub_rel}.\n"
-            f"Read the cheat sheet and then advise on the best approach.\n"
-            f"Consider: what proof technique fits this theorem's structure? "
-            f"What common pitfalls should the writer avoid?\n"
-            f"If the theorem statement looks contradictory or not provable as stated, "
-            f"say so clearly."
-        ),
-    )
-    guide_advice = initial_advice.raw_result or ""
-
-    # Check for contradictory diagnosis
-    if "contradictory" in guide_advice.lower() and "not provable" in guide_advice.lower():
-        await agent._emit("message", f"[PO4] Guide hints at contradiction for {entry.name}")
-        # TODO: structured contradictory confirmation
-
     # Build verifier
-    # Build list of ancestor modules to detect circular imports
     ancestor_modules = []
     for anc_id in ledger.get_ancestry(entry.id):
         anc = ledger.get(anc_id)
@@ -575,128 +570,152 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             protected_names = set(init_split.mutual_groups.get(block.mutual_group, [entry.name]))
             break
 
-    # Build initial action for writer (same pattern as v3 — explicit SearchAgent instructions)
-    action = _build_initial_action(entry, stub_rel, guide_advice, protected_names)
-
-    # ── Phase 1: Context-aware prove loop ──
-    # Run writer in chunks until: proved, context ≥65%, or hard backstop hit.
-    # Consult guide on stalls. This maximizes what the writer learns before decomposing.
+    # ── Main loop: guide ↔ writer ──
     total_turns_used = 0
-    stall_count = 0
     prev_sorry_count = None
+    chunk_budget = CHUNK_TURNS  # guide can adjust this (10-50) each cycle
+    guide_state_file = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
+
+    # Initial guide consultation
+    ledger_summary = _build_ledger_summary(ledger, entry)
+    state_reminder = ""
+    if guide_state_file.exists():
+        state_reminder = (
+            f"\nNOTE: Your prior state is saved at {entry.workspace}/guide_state/{entry.name}.md — "
+            f"re-read it if you've lost context."
+        )
+
+    await agent._emit("message", f"[PO4] Guide: initial strategy for {entry.name}")
+    initial_result = await guide.run_ai(
+        inp=(
+            f"CONTEXT:\n{ledger_summary}\n\n"
+            f"We are about to prove theorem '{entry.name}' in {stub_rel}.\n"
+            f"Read the cheat sheet, then advise on the best approach.\n"
+            f"What proof technique fits? What pitfalls to avoid?"
+            f"{state_reminder}"
+        ),
+    )
+    action = _build_initial_action(entry, stub_rel, initial_result.raw_result or "", protected_names)
 
     while True:
         ledger.increment_attempts(entry.id)
+
+        # Log context usage
+        writer_pct = await writer.get_context_percentage()
+        guide_pct = await guide.get_context_percentage()
+        pct_str = ""
+        if writer_pct is not None and guide_pct is not None:
+            pct_str = f" | writer: {writer_pct:.0f}% | guide: {guide_pct:.0f}%"
         await agent._emit("message",
             f"[PO4] Chunk {entry.attempts} ({CHUNK_TURNS} turns, "
-            f"total={total_turns_used})")
+            f"total={total_turns_used}){pct_str}")
 
-        outcome = await verified_loop(
+        # Guide at 75%: dump state + compact
+        if guide_pct is not None and guide_pct >= 75.0:
+            await agent._emit("message", f"[PO4] Guide at {guide_pct:.0f}% — dump + compact")
+            await _dump_guide_state(guide, entry, cwd)
+            await guide.backend.compact()
+
+        # ── Writer works (verified_loop ensures file compiles on exit) ──
+        chunk_turns = min(50, max(10, chunk_budget))
+        writer_instruction = (
+            f"{action}\n\n"
+            f"You have {chunk_turns} turns. "
+            f"The file MUST compile when you hand off (sorry is allowed)."
+        )
+        await verified_loop(
             agent_ctx=writer,
-            initial_input=f"{action}\n\nYou have {CHUNK_TURNS} turns.",
+            initial_input=writer_instruction,
             verify=verify_fn,
-            max_rounds=2,
-            max_turns=CHUNK_TURNS,
+            max_rounds=5,
+            max_turns=chunk_turns,
             use_run_ai=True,
         )
-        total_turns_used += CHUNK_TURNS
+        total_turns_used += chunk_turns
 
         # ── Check: proved? ──
         if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
             cr = tools.check_compiles(stub_rel)
             if cr.has_sorry:
                 ledger.mark_contingent(entry.id)
-                await agent._emit("message", "[PO4] Contingent: no local sorry, waiting on dependencies")
+                await agent._emit("message", "[PO4] Contingent: no local sorry, waiting on deps")
                 return "has_sorry"
             else:
                 ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                 return "proved"
 
-        # ── Check: file broken? ──
-        if not tools.check_compiles(stub_rel).success:
-            await agent._emit("message", "[PO4] File broken — cleanup round")
-            await writer.run_ai(
-                inp="Your file does not compile. Fix compilation errors ONLY. "
-                    "Do not add new proof content. Just make it compile (sorry is fine).",
-                max_turns=WRITER_CLEANUP_TURNS,
-            )
-            if not tools.check_compiles(stub_rel).success:
-                (cwd / stub_rel).write_text(original_content)
-
-        # ── Check: context % — should we stop and extract? ──
-        ctx_pct = await writer.get_context_percentage()
-        if ctx_pct is not None and ctx_pct >= CONTEXT_THRESHOLD:
-            await agent._emit("message",
-                f"[PO4] Writer context at {ctx_pct:.0f}% ≥ {CONTEXT_THRESHOLD}% — moving to extraction")
-            await _dump_guide_state(guide, entry, cwd)
-            break
-
-        # ── Check: progress stall ──
+        # ── Gather state for guide ──
+        writer_pct = await writer.get_context_percentage()
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         sorry_count = sum(len(v) for v in sorry_info.values())
 
-        current = (cwd / stub_rel).read_text()
-        if current.strip() == original_content.strip():
-            stall_count += 1
-        elif prev_sorry_count is not None and sorry_count >= prev_sorry_count:
-            stall_count += 1
-        else:
-            stall_count = 0
+        progress_note = f"Sorry count: {sorry_count}."
+        if prev_sorry_count is not None:
+            if sorry_count < prev_sorry_count:
+                progress_note = f"PROGRESS: sorry {prev_sorry_count} → {sorry_count}."
+            elif sorry_count == prev_sorry_count:
+                progress_note = f"NO REDUCTION: still {sorry_count} sorry."
         prev_sorry_count = sorry_count
 
-        # ── Stall: consult guide ──
-        if stall_count >= STALL_CHUNKS:
-            stall_count = 0
-            await agent._emit("message", f"[PO4] Stalled ({sorry_count} sorry). Consulting guide...")
-
-            first_thm = next(iter(sorry_info), None)
-            sorry_detail = ""
-            if first_thm and sorry_info[first_thm]:
-                pos = sorry_info[first_thm][0]
-                sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see the stuck goal."
-
-            advice_result = await guide.run_ai(
-                inp=(
-                    f"Writer is stuck after {total_turns_used} turns.\n"
-                    f"File: {stub_rel}\n"
-                    f"Goals with sorry: {sorry_info}\n"
-                    f"{sorry_detail}\n"
-                    f"Diagnose the stuck goals (use lean_goal) and advise what to try next.\n"
-                    f"If a goal looks contradictory or not provable in isolation, say so clearly."
-                ),
+        state_reminder = ""
+        if guide_state_file.exists():
+            state_reminder = (
+                f"\nNOTE: Your prior state is at {entry.workspace}/guide_state/{entry.name}.md — "
+                f"re-read it if you've lost context."
             )
-            advice = advice_result.raw_result or "Try a different approach."
 
-            # Contradictory check
-            if any(phrase in advice.lower() for phrase in
-                   ["contradictory", "statement is false", "not provable as stated",
-                    "the theorem is false", "give up"]):
-                from .._helpers import ask
+        first_thm = next(iter(sorry_info), None)
+        sorry_detail = ""
+        if first_thm and sorry_info[first_thm]:
+            pos = sorry_info[first_thm][0]
+            sorry_detail = f"\nUse lean_goal at {stub_rel} line {pos['line']} col {pos['col']} to see a stuck goal."
 
-                @dataclass
-                class GuideVerdict:
-                    give_up: bool = False
-                    reason: str = ""
+        # ── Guide reviews + advises ──
+        await agent._emit("message", f"[PO4] Guide reviews: {progress_note}")
+        advice_result = await guide.run_ai(
+            inp=(
+                f"Writer completed chunk {entry.attempts} ({total_turns_used} total turns).\n"
+                f"Writer context: {writer_pct:.0f}%\n"
+                f"{progress_note}\n"
+                f"File: {stub_rel}\n"
+                f"Sorries: {sorry_info}\n"
+                f"{sorry_detail}\n"
+                f"Diagnose and advise what to try next."
+                f"{state_reminder}"
+            ),
+        )
+        advice = advice_result.raw_result or "Try a different approach."
 
-                verdict = await ask(
-                    inp=(
-                        f"The proof guide said: {advice}\n\n"
-                        f"DIRECT QUESTION: Should we GIVE UP on proving this lemma in isolation?\n"
-                        f"give_up=true means: this lemma cannot be proved standalone, "
-                        f"it needs restructuring at the parent level (e.g. mutual recursion).\n"
-                        f"give_up=false means: it's hard but still possible, keep trying."
-                    ),
-                    result_type=GuideVerdict,
-                    system_prompt="You decide whether to abandon a proof attempt. Be conservative — only give up if truly impossible standalone.",
-                )
-                if verdict.output and verdict.output.give_up:
-                    await agent._emit("message", f"[PO4] Guide gives up: {verdict.output.reason}")
-                    ledger.mark_failed(entry.id, f"Guide abandoned: {verdict.output.reason}")
-                    return "failed"
+        # ── Guide verdict: continue / decompose / give_up + turns budget ──
+        verdict_result = await guide.run_ai(
+            inp=(
+                "What should happen next?\n"
+                f"Writer context: {writer_pct:.0f}%\n\n"
+                "- continue: Keep trying. Theorem is provable in this file.\n"
+                "- decompose: Needs helper lemmas in separate files. Move to extraction.\n"
+                "- give_up: Statement is mathematically false.\n\n"
+                "'Needs mutual recursion' or 'needs helpers' = decompose, NOT give_up.\n"
+                "Do NOT choose decompose unless writer context ≥ 65%.\n\n"
+                "If continue: set 'turns' (10-50) for how many turns the writer gets next.\n"
+                "More turns = writer explores deeper. Fewer = check in sooner."
+            ),
+            result_type=GuideVerdict,
+            max_turns=1,
+        )
 
-            action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
-        else:
-            action = f"Continue the proof. {sorry_count} sorry remaining in {stub_rel}."
+        if verdict_result.output:
+            verdict = verdict_result.output
+            if verdict.action == GuideAction.GIVE_UP:
+                await agent._emit("message", f"[PO4] Statement false: {verdict.reason}")
+                ledger.mark_failed(entry.id, f"Statement false: {verdict.reason}")
+                return "failed"
+            elif verdict.action == GuideAction.DECOMPOSE:
+                await agent._emit("message", f"[PO4] Decompose: {verdict.reason}")
+                await _dump_guide_state(guide, entry, cwd)
+                break  # → grace phase → extraction
+            chunk_budget = verdict.turns
+
+        action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
     # ── At max depth: no extraction, prove everything in one file ──
     if entry.depth >= MAX_DEPTH:
@@ -1182,62 +1201,66 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
 # ─── Assembly ─────────────────────────────────────────────────────────────────
 
 async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> bool:
-    """Bottom-up topological assembly.
+    """Assemble proved lemmas by copying Stub.lean back to the original .lean file.
 
-    Walks the DAG from leaves to root. At each node that has proved children:
-    rewrites imports in Stub.lean to point to the proved child's module, then builds.
+    For each proved entry with a workspace:
+      <workspace>/Stub.lean → <workspace>.lean (overwrite the sorry version)
+
+    Build order: leaves first (topo sort) so .olean files cascade correctly.
     """
     import subprocess
-    tools = get_lean_tools()
 
-    # Get topological order (leaves first, root last)
     topo_order = _topo_sort(ledger)
-    await agent._emit("message", f"[PO4] Assembly: {len(topo_order)} nodes in topo order")
+    assembled_count = 0
 
     for entry_id in topo_order:
         entry = ledger.get(entry_id)
         if not entry or entry.status != LemmaStatus.PROVED:
             continue
 
-        children = ledger.get_children(entry_id)
-        proved_children = [c for c in children if c.status == LemmaStatus.PROVED]
-        if not proved_children:
-            continue
-
-        # Rewrite imports: for each proved child, point to its module
         stub_path = cwd / entry.workspace / "Stub.lean"
+        target_path = cwd / f"{entry.workspace}.lean"
+
         if not stub_path.exists():
             continue
+        if not target_path.exists():
+            continue
 
-        content = stub_path.read_text()
-        changed = False
-        for child in proved_children:
-            child_module = child.file_path.replace("/", ".").removesuffix(".lean")
-            # If Stub.lean imports the decomposed helper file, rewrite to import proved Stub
-            child_workspace_module = child.workspace.replace("/", ".")
-            if f"import {child_workspace_module}" in content and f"import {child_workspace_module}.Stub" not in content:
-                content = content.replace(
-                    f"import {child_workspace_module}",
-                    f"import {child_workspace_module}.Stub"
-                )
-                changed = True
+        # Copy proved Stub.lean → original .lean file
+        shutil.copy2(stub_path, target_path)
+        assembled_count += 1
 
-        if changed:
-            stub_path.write_text(content)
+    if assembled_count == 0:
+        return True  # nothing to assemble
 
-        # Build this module
-        module = f"{entry.workspace}.Stub".replace("/", ".")
-        result = subprocess.run(
-            ["lake", "build", module], cwd=str(cwd),
-            capture_output=True, text=True, timeout=120,
-        )
-        output = result.stdout + "\n" + result.stderr
-        has_error = any(": error:" in l and "sorry" not in l for l in output.splitlines())
-        if has_error:
-            await agent._emit("message", f"[PO4] Assembly error at {entry.name}: {output[-200:]}")
-            return False
+    await agent._emit("message", f"[PO4] Assembled {assembled_count} files, rebuilding...")
 
-    # Final check: root sorry-free (transitive — lake build catches sorry in imports)
+    # Build from root to validate
+    root_module = f"{state.root_workspace}.Stub".replace("/", ".")
+    result = subprocess.run(
+        ["lake", "build", root_module], cwd=str(cwd),
+        capture_output=True, text=True, timeout=180,
+    )
+    output = result.stdout + "\n" + result.stderr
+    has_error = any(": error:" in l and "sorry" not in l for l in output.splitlines())
+    if has_error:
+        await agent._emit("message", f"[PO4] Assembly build error: {output[-300:]}")
+        return False
+
+    # Clean up: remove Stub.lean from child workspaces (not the root)
+    for entry_id in topo_order:
+        entry = ledger.get(entry_id)
+        if not entry or entry.status != LemmaStatus.PROVED:
+            continue
+        if entry_id == ledger.root_id:
+            continue  # never clean root's Stub.lean
+        stub_path = cwd / entry.workspace / "Stub.lean"
+        target_path = cwd / f"{entry.workspace}.lean"
+        if stub_path.exists() and target_path.exists():
+            stub_path.unlink()
+
+    # Check root sorry-free
+    tools = get_lean_tools()
     root_stub = f"{state.root_workspace}/Stub.lean"
     cr = tools.check_compiles(root_stub)
     if cr.success and not cr.has_sorry:
@@ -1245,8 +1268,8 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
         ledger.mark_proved(state.root_id, root_stub.replace("/", ".").removesuffix(".lean"))
         return True
 
-    await agent._emit("message", "[PO4] Assembly failed: root still has sorry or errors")
-    return False
+    await agent._emit("message", "[PO4] Assembly done (root still has transitive sorry)")
+    return True
 
 
 def _topo_sort(ledger: LemmaLedger) -> list[str]:

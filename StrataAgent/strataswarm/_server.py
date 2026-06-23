@@ -207,6 +207,10 @@ class SwarmDashboard:
         async def index() -> HTMLResponse:
             return HTMLResponse((static_dir / "index.html").read_text())
 
+        @self.app.get("/slides")
+        async def slides() -> HTMLResponse:
+            return HTMLResponse((static_dir / "slides.html").read_text())
+
         @self.app.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.accept()
