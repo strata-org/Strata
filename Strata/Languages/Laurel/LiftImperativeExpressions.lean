@@ -198,18 +198,10 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
 mutual
 
 def asLifted { t: Type } (runner: LiftM t) : LiftM t := do
-  -- Save only the bookkeeping that `runner` is meant to run in a fresh
-  -- sub-scope (`prependedStmts` and `subst`). We must NOT restore the whole
-  -- state: the monotonic counters (`condCounter`, `varCounters`) advanced by
-  -- `runner` reflect fresh names (e.g. `$cndtn_N`) that escape into the output
-  -- via the returned/prepended statements. Rolling those counters back would
-  -- let a later `freshTempVar`/`freshTempFor` reuse the same name, producing a
-  -- duplicate definition in the same scope.
-  let savedPrepends := (← get).prependedStmts
-  let savedSubst := (← get).subst
+  let savedState ← get
   modify fun s => { s with prependedStmts := [], subst := []}
   let result ← runner
-  modify fun s => { s with prependedStmts := savedPrepends, subst := savedSubst }
+  modify fun _ => savedState
   return result
 
 /--
