@@ -97,6 +97,7 @@ def laurelPipeline : Array LaurelPass := #[
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
   typeAliasElimPass,
+  constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   liftInstanceProceduresPass,
   eliminateValueInReturnsPass,
@@ -112,8 +113,7 @@ def laurelPipeline : Array LaurelPass := #[
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
   liftExpressionAssignmentsPass,
-  mergeAndLiftReturnsPass,
-  constrainedTypeElimPass
+  mergeAndLiftReturnsPass
 ]
 
 /-- Every `comesBefore` constraint is respected by the pipeline order.
