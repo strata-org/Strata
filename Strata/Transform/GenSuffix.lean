@@ -32,18 +32,4 @@ abbrev NoGenSuffix {P : PureExpr} [HasIdent P]
     (xs : List P.Ident) : Prop :=
   ∀ s : String, Q s → HasIdent.ident (P := P) s ∉ xs
 
-/-- Bridge to the membership-first reading: `NoGenSuffix Q xs` is equivalent to
-"every ident in `xs` is `HasIdent.ident s` only for non-`Q` strings `s`".  The
-two directions just reorder the binders and contrapose the final implication.
-Provided for any site that prefers to build the predicate membership-first. -/
-theorem noGenSuffix_iff_membFirst {P : PureExpr} [HasIdent P]
-    (Q : String → Prop) (xs : List P.Ident) :
-    NoGenSuffix (P := P) Q xs ↔
-      ∀ x ∈ xs, ∀ s : String, x = HasIdent.ident (P := P) s → ¬ Q s := by
-  constructor
-  · intro h x hx s heq hQ
-    exact h s hQ (heq ▸ hx)
-  · intro h s hQ hmem
-    exact h _ hmem s rfl hQ
-
 end Strata.Transform.GenSuffix
