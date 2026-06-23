@@ -6,6 +6,7 @@
 module
 
 import all Strata.Languages.Core.Statement
+import all Strata.DL.Util.List
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Imperative.StmtEval

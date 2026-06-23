@@ -7,6 +7,7 @@ module
 
 import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Factory
+import all Strata.DL.Util.List
 import all Strata.Util.Tactics
 
 /-!

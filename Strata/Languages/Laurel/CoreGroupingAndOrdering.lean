@@ -7,6 +7,7 @@
 module
 public import Strata.Languages.Laurel.TransparencyPass
 import Strata.DL.Lambda.LExpr
+import all Strata.DL.Util.List
 import StrataDDM.Util.Graph.Tarjan
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics

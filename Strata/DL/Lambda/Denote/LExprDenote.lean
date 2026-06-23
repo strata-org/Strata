@@ -7,6 +7,7 @@ module
 
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.Lambda.Factory
+import all Strata.DL.Util.List
 meta import Init.Grind.Cases
 import Std.Tactic.BVDecide.Normalize.BitVec
 import Std.Tactic.BVDecide.Normalize.Prop

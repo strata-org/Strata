@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Lambda.RecursiveAxioms
+import all Strata.DL.Util.List
 public import Strata.DL.SMT.Factory
 public import Strata.Languages.Core.Env
 public import Strata.Util.Name

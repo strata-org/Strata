@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.IntBoolFactory
 public import Strata.DL.Lambda.TypeFactory
+import all Strata.DL.Util.List
 
 /-!
 ## adtRank Axiom Generation for Termination Checking

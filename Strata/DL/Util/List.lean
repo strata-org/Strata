@@ -5,7 +5,6 @@
 -/
 module
 
-public section
 /-! # List Utilities
 -/
 
@@ -14,7 +13,7 @@ namespace List
 /--
 Remove duplicates in a list.
 -/
-def dedup {α : Type} [DecidableEq α] : List α → List α
+public def dedup {α : Type} [DecidableEq α] : List α → List α
   | [] => []
   | a :: as =>
     let as := as.dedup
@@ -25,7 +24,7 @@ Tail-recursive worker for `dedup`. Walks the input left-to-right,
 skipping elements that still appear later, and collects kept elements
 in reverse order.
 -/
-def dedupTR.go {α : Type} [DecidableEq α] :
+public def dedupTR.go {α : Type} [DecidableEq α] :
     List α → List α → List α
   | [], acc => acc.reverse
   | a :: as, acc =>
@@ -34,7 +33,7 @@ def dedupTR.go {α : Type} [DecidableEq α] :
 /--
 Tail-recursive implementation of `dedup`.
 -/
-def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+public def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
   dedupTR.go l []
 
 /--
@@ -136,7 +135,7 @@ theorem dedupTR.go_eq {α : Type} [DecidableEq α]
 /--
 `List.dedup` is equivalent to `dedupTR` at compile time.
 -/
-@[csimp] theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
+@[csimp] public theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
   funext α _ l
   simp [dedupTR, dedupTR.go_eq]
 
@@ -694,5 +693,3 @@ theorem zip_find_mem_snd [BEq α] (l1 : List α) (l2 : List β)
     p.2 ∈ l2 := by
   have h_mem := List.mem_of_find?_eq_some h
   exact (List.of_mem_zip h_mem).2
-
-end
