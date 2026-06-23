@@ -1656,8 +1656,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
       (nondetElim_loopHasNoInvariants ss h_lhni)
       (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
       h_out_exprs_sf h_out_unique h_out_fresh
-      (fun x hmem s heq hq => h_out_iv_sf s hq (heq ▸ hmem))
-      (fun x hmem s heq hq => h_out_mv_sf s hq (heq ▸ hmem))
+      h_out_iv_sf
+      h_out_mv_sf
       h_out_undef
       (fun str hk => h_store_mints str (Or.inr (Or.inl hk)))
       h_run1
@@ -1682,36 +1682,38 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   -- `NoGenSuffix s2uKind` on the hoist-output `initVars`: each init is foreign to
   -- `s2uKind` — a fresh `hoistKind`, or (further classified) a fresh `ndelimKind`
   -- or a genuine source init (`s2uKind`-free by hypothesis).
-  have h_step3_iv : NoGenSuffix (P := P) StructuredToUnstructuredCorrect.s2uKind
+  have h_step3_iv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
       (Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
-    intro x hx s hxs hk
-    rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
-    · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp x h_src with
+    intro s hk hx
+    rcases h_hoist_iv_cls.1 _ hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_src with
         h_src2 | ⟨str2, h_eq2, h_nd⟩
-      · exact h_disj_initVars s (Or.inr (Or.inr hk)) (hxs ▸ h_src2)
-      · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
-    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj (hxs ▸ h_eq) ▸ hk)
+      · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+      · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
   -- `NoGenSuffix s2uKind` on `transformBlockModVars` (≡ `Block.modifiedVars`):
   -- each output modVar is foreign to `s2uKind` similarly.
-  have h_step3_mv : NoGenSuffix (P := P) StructuredToUnstructuredCorrect.s2uKind
+  have h_step3_mv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
       (StructuredToUnstructuredCorrect.transformBlockModVars
         (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
     rw [transformBlockModVars_eq_modifiedVars]
-    intro x hx s hxs hk
+    intro s hk hx
     rcases LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_modVars_classified (Q := hoistKind) hoistKind_gen
-        (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf x hx with
+        (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf _ hx with
       h_src | ⟨str, h_eq, _, _, h_hoistk⟩
     · rw [List.mem_append] at h_src
       rcases h_src with h_mv | h_iv
-      · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp x h_mv with
+      · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ h_mv with
           h_src2 | ⟨str2, h_eq2, h_nd⟩
-        · exact h_disj_modVars s (Or.inr hk) (hxs ▸ h_src2)
-        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
-      · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp x h_iv with
+        · exact h_disj_modVars s (Or.inr hk) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+      · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_iv with
           h_src2 | ⟨str2, h_eq2, h_nd⟩
-        · exact h_disj_initVars s (Or.inr (Or.inr hk)) (hxs ▸ h_src2)
-        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj (hxs ▸ h_eq2) ▸ hk)
-    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj (hxs ▸ h_eq) ▸ hk)
+        · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
   -- === STEP 3: stmtsToCFG (input `hoist (nondetElim ss)`, source run = Step 2's) ===
   -- StoreAgreement ρ_h'.store σ_cfg.
   obtain ⟨σ_cfg, h_run3, h_agree3⟩ :=
