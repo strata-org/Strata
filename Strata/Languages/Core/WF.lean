@@ -150,6 +150,16 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   -- and pairwise distinct, so they neither collide with minted CFG labels nor
   -- with each other when the body is lowered to an unstructured CFG.
   userLabelsWF : Block.userLabelsShapeNodup d.body
+
+/-- A well-formed procedure body satisfies the user-label shape+Nodup condition.
+A trivial projection of the `userLabelsWF` field; the point is that the
+well-formedness bundle now *carries* this source-body condition, so a caller can
+project it from procedure well-formedness rather than assume it standalone. -/
+theorem WFProcedureProp.userLabelsShapeNodup_body
+    {p : Program} {d : Procedure} (h : WFProcedureProp p d) :
+    Block.userLabelsShapeNodup d.body :=
+  h.userLabelsWF
+
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
