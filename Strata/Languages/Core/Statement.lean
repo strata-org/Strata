@@ -524,13 +524,17 @@ public section
 
 /-- All user-provided `Stmt.block` labels appearing in a list of statements.
 Uses a `where`-helper that recurses on the statement constructor; the helper
-calls back into the list-level recursion for nested statement lists. -/
-@[expose] def Block.userBlockLabels {P : PureExpr} :
-    List (Stmt P (Cmd P)) → List String
+calls back into the list-level recursion for nested statement lists.
+
+The command type `C` is left abstract: `userBlockLabels` never inspects a
+command, so this applies uniformly to the pipeline's `Imperative.Cmd`-bodied
+statement lists and to extended command types (e.g. Core's `CmdExt`). -/
+@[expose] def Block.userBlockLabels {P : PureExpr} {C : Type} :
+    List (Stmt P C) → List String
   | [] => []
   | s :: rest => stmtUserBlockLabels s ++ Block.userBlockLabels rest
 where
-  stmtUserBlockLabels : Stmt P (Cmd P) → List String
+  stmtUserBlockLabels : Stmt P C → List String
     | .block l ss _ => l :: Block.userBlockLabels ss
     | .ite _ tss ess _ => Block.userBlockLabels tss ++ Block.userBlockLabels ess
     | .loop _ _ _ ss _ => Block.userBlockLabels ss
@@ -538,56 +542,56 @@ where
 
 /-! Equational lemmas for `userBlockLabels` (proved via `unfold`). -/
 
-theorem Block.userBlockLabels_block_cons {P : PureExpr}
-    (l : String) (bss : List (Stmt P (Cmd P))) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
+theorem Block.userBlockLabels_block_cons {P : PureExpr} {C : Type}
+    (l : String) (bss : List (Stmt P C)) (md : MetaData P)
+    (rest : List (Stmt P C)) :
     Block.userBlockLabels (.block l bss md :: rest) =
       (l :: Block.userBlockLabels bss) ++ Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_ite_cons {P : PureExpr}
-    (c : Imperative.ExprOrNondet P) (tss ess : List (Stmt P (Cmd P)))
-    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+theorem Block.userBlockLabels_ite_cons {P : PureExpr} {C : Type}
+    (c : Imperative.ExprOrNondet P) (tss ess : List (Stmt P C))
+    (md : MetaData P) (rest : List (Stmt P C)) :
     Block.userBlockLabels (.ite c tss ess md :: rest) =
       (Block.userBlockLabels tss ++ Block.userBlockLabels ess)
         ++ Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_loop_cons {P : PureExpr}
+theorem Block.userBlockLabels_loop_cons {P : PureExpr} {C : Type}
     (c : Imperative.ExprOrNondet P) (m : Option P.Expr)
-    (is : List (String × P.Expr)) (bss : List (Stmt P (Cmd P)))
-    (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+    (is : List (String × P.Expr)) (bss : List (Stmt P C))
+    (md : MetaData P) (rest : List (Stmt P C)) :
     Block.userBlockLabels (.loop c m is bss md :: rest) =
       Block.userBlockLabels bss ++ Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_cmd_cons {P : PureExpr}
-    (c : Cmd P) (rest : List (Stmt P (Cmd P))) :
+theorem Block.userBlockLabels_cmd_cons {P : PureExpr} {C : Type}
+    (c : C) (rest : List (Stmt P C)) :
     Block.userBlockLabels (.cmd c :: rest) = Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_funcDecl_cons {P : PureExpr}
+theorem Block.userBlockLabels_funcDecl_cons {P : PureExpr} {C : Type}
     (decl : Imperative.PureFunc P) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
+    (rest : List (Stmt P C)) :
     Block.userBlockLabels (.funcDecl decl md :: rest) =
       Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_typeDecl_cons {P : PureExpr}
+theorem Block.userBlockLabels_typeDecl_cons {P : PureExpr} {C : Type}
     (tc : TypeConstructor) (md : MetaData P)
-    (rest : List (Stmt P (Cmd P))) :
+    (rest : List (Stmt P C)) :
     Block.userBlockLabels (.typeDecl tc md :: rest) =
       Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
   rfl
 
-theorem Block.userBlockLabels_exit_cons {P : PureExpr}
-    (l : String) (md : MetaData P) (rest : List (Stmt P (Cmd P))) :
+theorem Block.userBlockLabels_exit_cons {P : PureExpr} {C : Type}
+    (l : String) (md : MetaData P) (rest : List (Stmt P C)) :
     Block.userBlockLabels (.exit l md :: rest) =
       Block.userBlockLabels rest := by
   show Block.userBlockLabels.stmtUserBlockLabels _ ++ _ = _
@@ -601,9 +605,11 @@ the shape-free conjunct prevents minted-vs-user label collisions, and the
 `Nodup` conjunct prevents user-vs-user duplicate CFG block keys.  The full
 `userLabelsDisjoint` (which additionally quantifies over generator states) is
 *derivable* from this together with well-formedness of the generator: a
-shape-free label is never in the `stringGens` of any WF state. -/
-@[expose] def Block.userLabelsShapeNodup {P : PureExpr}
-    (ss : List (Stmt P (Cmd P))) : Prop :=
+shape-free label is never in the `stringGens` of any WF state.
+
+The command type `C` is abstract for the same reason as `userBlockLabels`. -/
+@[expose] def Block.userLabelsShapeNodup {P : PureExpr} {C : Type}
+    (ss : List (Stmt P C)) : Prop :=
   (∀ l ∈ Block.userBlockLabels ss, ¬ String.HasUnderscoreDigitSuffix l) ∧
   (Block.userBlockLabels ss).Nodup
 

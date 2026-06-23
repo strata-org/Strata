@@ -146,6 +146,10 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfspec : WFSpecProp p d.spec d
   -- There is no exit statement that cannot be caught by any block in the procedure.
   bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
+  -- User-provided block labels are shape-free (no generator `_<digits>` suffix)
+  -- and pairwise distinct, so they neither collide with minted CFG labels nor
+  -- with each other when the body is lowered to an unstructured CFG.
+  userLabelsWF : Block.userLabelsShapeNodup d.body
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
