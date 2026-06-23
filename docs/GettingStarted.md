@@ -44,7 +44,7 @@ assert [test]: (x == 0);
 The DDM also offers a capability to generate Lean types automatically
 from these definitions using the following command:
 ```bash
-#strataGenAST ArithPrograms
+#strata_gen ArithPrograms
 ```
 
 For instance, we can see the generated type for expressions in
