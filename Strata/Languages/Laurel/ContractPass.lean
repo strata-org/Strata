@@ -289,14 +289,9 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
                 | none => return e'
               | _ => return e'))
             let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
-<<<<<<< HEAD
-            let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee tempRefs, callSrc⟩, src⟩
-            let preCheck := mkPreChecks info tempRefs src
-=======
             let callArgs := mkCallArgs info args' tempRefs
             let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
             let preCheck := mkPreChecks info tempRefs src
->>>>>>> issue-924-contract-and-proof-pass
             let outputArgs := targets.filterMap fun t =>
               match t.val with
               | .Local name => some (mkMd (.Var (.Local name)))
