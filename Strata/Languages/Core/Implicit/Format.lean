@@ -86,13 +86,19 @@ partial def formatStatement (extraFreeVars : Array String) (stmt : Statement) : 
 def formatProcedure (extraFreeVars : Array String) (p : Procedure) : Format :=
   let effectStr := match p.effect with
     | .none => "none" | .reads => "reads" | .writes => "writes"
+  let formatSig (sig : @Lambda.LMonoTySignature Unit) : Format :=
+    Format.joinSep (sig.toList.map (fun (id, ty) => id.name ++ " : " ++ format ty)) ", "
+  let inputsF := formatSig p.header.inputs
+  let outputsF := if p.header.outputs.isEmpty then Format.nil
+    else " returns (" ++ formatSig p.header.outputs ++ ")"
   let clauses (kw : String) (cs : List (Core.CoreLabel × Core.Procedure.Check)) : List Format :=
     cs.map (fun (_, c) => kw ++ " " ++ Core.formatExprs [c.expr] extraFreeVars)
   let specClauses := clauses "requires" p.spec.preconditions.toList ++
     clauses "ensures" p.spec.postconditions.toList
   let specF := if specClauses.isEmpty then Format.nil
     else Format.joinSep specClauses Format.line ++ Format.line
-  "procedure " ++ p.header.name.name ++ " [heap: " ++ effectStr ++ "]" ++ Format.line ++
+  "procedure " ++ p.header.name.name ++ "(" ++ inputsF ++ ")" ++ outputsF ++
+    " [heap: " ++ effectStr ++ "]" ++ Format.line ++
     specF ++ Format.joinSep (p.body.map (formatStatement extraFreeVars)) Format.line
 
 /-- Format an object-type schema: `class Name extends … { field : ty; … }`. -/

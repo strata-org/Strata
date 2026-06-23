@@ -58,7 +58,7 @@ class Account { balance : int }
 
 
 
-procedure manipulate [heap: writes]
+procedure manipulate(a : Composite) [heap: writes]
 block $body {
   heapWrite(a, Account.balance, 1)
   var x : int;
@@ -96,7 +96,7 @@ class Node { balance : int; next : Node }
 
 
 
-procedure nested [heap: writes]
+procedure nested(a : Composite) [heap: writes]
 block $body {
   var $h_0 : Composite;
   $h_0 := heapRead(a, Node.next)
@@ -146,7 +146,7 @@ class Account { balance : int }
 
 
 
-procedure consume [heap: writes]
+procedure consume(self : Composite) [heap: writes]
 block $body {
   var $h_0 : int;
   $h_0 := heapRead(self, Account.balance)
@@ -182,7 +182,7 @@ class Account { balance : int; ok : bool }
 
 
 
-procedure shortCircuit [heap: reads]
+procedure shortCircuit(self : Composite) [heap: reads]
 block $body {
   var $h_0 : bool;
   $h_0 := heapRead(self, Account.ok)
@@ -212,7 +212,7 @@ class Account { balance : int; limit : int }
 
 
 
-procedure compoundGuard [heap: writes]
+procedure compoundGuard(self : Composite) [heap: writes]
 block $body {
   var $h_0 : int;
   $h_0 := heapRead(self, Account.balance)
@@ -250,7 +250,7 @@ class Account { balance : int }
 
 
 
-procedure retRead [heap: reads]
+procedure retRead(self : Composite) returns (r : int) [heap: reads]
 ensures r == retRead$asFunction(self)
 block $body {
   r := heapRead(self, Account.balance)
@@ -276,7 +276,7 @@ class Node { value : int; next : Node }
 
 
 
-procedure deep [heap: reads]
+procedure deep(a : Composite) returns (r : int) [heap: reads]
 ensures r == deep$asFunction(a)
 block $body {
   var $h_0 : Composite;
@@ -309,12 +309,12 @@ class Account { balance : int }
 
 
 
-procedure takesAccount [heap: none]
+procedure takesAccount(x : Composite) [heap: none]
 block $body {
   var b : bool := true;
 }
 
-procedure makesAndPasses [heap: writes]
+procedure makesAndPasses() [heap: writes]
 block $body {
   var $h_0 : Composite;
   $h_0 := heapAlloc(Account)
@@ -368,7 +368,7 @@ class Dog extends Animal { name : int }
 
 
 
-procedure classify [heap: reads]
+procedure classify(a : Composite) returns (r : bool) [heap: reads]
 ensures r == classify$asFunction(a)
 block $body {
   r := heapInstanceOf(a, Dog)
@@ -400,13 +400,13 @@ class Dog extends Animal { name : int }
 
 
 
-procedure downcast [heap: reads]
+procedure downcast(a : Composite) returns (d : Composite) [heap: reads]
 ensures d == downcast$asFunction(a)
 block $body {
   var $h_0 : Composite := a;
   var $h_1 : bool;
   $h_1 := heapInstanceOf($h_0, Dog)
-  assert [|assert(9846)|]: $h_1;
+  assert [|assert(10090)|]: $h_1;
   d := $h_0;
 }
 -/
@@ -436,7 +436,7 @@ class Account { balance : int }
 
 
 
-procedure sameObj [heap: none]
+procedure sameObj(a : Composite, b : Composite) returns (r : bool) [heap: none]
 ensures r == sameObj$asFunction(a, b)
 block $body {
   r := a == b;
@@ -467,7 +467,7 @@ class Person { age : int; home : Address }
 
 
 
-procedure relocate [heap: writes]
+procedure relocate(p : Composite, a : Composite) returns (z : int) [heap: writes]
 ensures z == relocate$asFunction(p, a)
 block $body {
   heapWrite(p, Person.home, a)
