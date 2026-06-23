@@ -246,7 +246,7 @@ public def modifiesClausesTransformPass : LaurelPass where
   documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
   run := fun options p m =>
-    let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.useArrayTheory)
+    let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})
 
 end Strata.Laurel

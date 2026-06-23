@@ -17,7 +17,7 @@ open Strata
 
 private def arrayTheoryOpts :=
   { defaultLaurelTestOptions with
-    translateOptions := { defaultLaurelTestOptions.translateOptions with useArrayTheory := true },
+    translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
     verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }
 
 /-! ## 1. Illegal writes are rejected -/

@@ -174,7 +174,7 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
     { base.translateOptions with
       keepAllFilesPrefix
       overflowChecks := verifyOptions.overflowChecks
-      useArrayTheory := verifyOptions.useArrayTheory }
+      enumeratedModifiesClauses := verifyOptions.useArrayTheory }
   return { translateOptions, verifyOptions }
 
 end -- public section
