@@ -8,6 +8,7 @@ module
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.Cmd
 public import Strata.Transform.LoopInitHoist
+public import Strata.Transform.GenSuffix
 
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
@@ -16,6 +17,8 @@ import all Strata.Transform.LoopInitHoist
 public section
 
 namespace Imperative
+
+open Strata.Transform.GenSuffix (NoGenSuffix)
 
 variable {P : PureExpr}
 
@@ -481,34 +484,25 @@ is the identifier of a `Q`-kind label string. -/
     (s : Stmt P (Cmd P)) : Prop :=
   match s with
   | .cmd (.init _ _ rhs _) =>
-    ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars rhs
+    NoGenSuffix (P := P) Q (ExprOrNondet.getVars rhs)
   | .cmd (.set _ rhs _) =>
-    ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars rhs
+    NoGenSuffix (P := P) Q (ExprOrNondet.getVars rhs)
   | .cmd (.assert _ e _) =>
-    ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
+    NoGenSuffix (P := P) Q (HasVarsPure.getVars e)
   | .cmd (.assume _ e _) =>
-    ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
+    NoGenSuffix (P := P) Q (HasVarsPure.getVars e)
   | .cmd (.cover _ e _) =>
-    ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ HasVarsPure.getVars e
+    NoGenSuffix (P := P) Q (HasVarsPure.getVars e)
   | .block _ bss _ => Block.exprsShapeFree Q bss
   | .ite g tss ess _ =>
-    (∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars g) ∧
+    NoGenSuffix (P := P) Q (ExprOrNondet.getVars g) ∧
     Block.exprsShapeFree Q tss ∧ Block.exprsShapeFree Q ess
   | .loop g m inv body _ =>
-    (∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars g) ∧
+    NoGenSuffix (P := P) Q (ExprOrNondet.getVars g) ∧
     (match m with
      | none => True
-     | some me => ∀ str : String, Q str →
-        HasIdent.ident (P := P) str ∉ HasVarsPure.getVars me) ∧
-    (∀ p ∈ inv, ∀ str : String, Q str →
-      HasIdent.ident (P := P) str ∉ HasVarsPure.getVars p.snd) ∧
+     | some me => NoGenSuffix (P := P) Q (HasVarsPure.getVars me)) ∧
+    (∀ p ∈ inv, NoGenSuffix (P := P) Q (HasVarsPure.getVars p.snd)) ∧
     Block.exprsShapeFree Q body
   | .exit _ _ => True
   | .funcDecl _ _ => True
