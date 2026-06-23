@@ -7,7 +7,7 @@
 /-
 Structural check, independent of the solver: the enumerated modifies frame
 (`buildEnumeratedFrame`) must contain no quantifier, so there is nothing for the
-solver to instantiate. The `∀`-based frame it replaces (`buildPointwiseFrame`)
+solver to instantiate. The `∀`-based frame it replaces (`buildQuantifiedFrame`)
 does contain one; asserting both pins the property and shows the check
 discriminates between the two encodings.
 -/
@@ -29,6 +29,6 @@ private def hasQuantifier (e : StmtExprMd) : Bool :=
   (s.splitOn "forall").length > 1 || (s.splitOn "exists").length > 1
 
 #guard !hasQuantifier (buildEnumeratedFrame default singleRefModifies heapIn heapOut)
-#guard  hasQuantifier (buildPointwiseFrame   default singleRefModifies heapIn heapOut)
+#guard  hasQuantifier (buildQuantifiedFrame   default singleRefModifies heapIn heapOut)
 
 end StrataTest.Laurel.ModifiesFrameQuantifierFree

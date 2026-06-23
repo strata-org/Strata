@@ -74,13 +74,13 @@ def conjoinAll (exprs : List StmtExprMd) : StmtExprMd :=
   | first :: rest => rest.foldl (fun acc e => mkMd <| .PrimitiveOp .And [acc, e]) first
 
 /--
-Pointwise frame: every allocated object the `modifies` clause does not name keeps
+Quantified (pointwise) frame: every allocated object the `modifies` clause does not name keeps
 all of its field values across the call.
 
   forall $obj: Composite, $fld: Field =>
     notModified($obj) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 -/
-def buildPointwiseFrame (proc : Procedure) (entries : List ModifiesEntry)
+def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
     (heapIn heapOut : StmtExprMd) : StmtExprMd :=
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
@@ -155,7 +155,7 @@ def transformModifiesClauses (model: SemanticModel)
         if useEnumeratedFrame && onlyIndividualRefs entries then
           -- Callers assume the quantifier-free frame; the body re-checks the
           -- pointwise frame at every exit.
-          let pointwise := buildPointwiseFrame proc entries heapIn heapOut
+          let pointwise := buildQuantifiedFrame proc entries heapIn heapOut
           let framePost : Condition :=
             { condition := buildEnumeratedFrame proc entries heapIn heapOut,
               summary := "modifies clause", free := true }
@@ -163,7 +163,7 @@ def transformModifiesClauses (model: SemanticModel)
           .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
         else
           let framePost : Condition :=
-            { condition := buildPointwiseFrame proc entries heapIn heapOut,
+            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
               summary := "modifies clause" }
           .ok { proc with body := .Opaque (postconds ++ [framePost]) impl [] }
       else
