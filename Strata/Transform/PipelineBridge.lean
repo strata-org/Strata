@@ -2064,11 +2064,10 @@ theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal 
     [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
     [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
     (extendEval : ExtendEval P) :
-    Specification.Transform.OverapproximatesRelWhen
+    Specification.Transform.OverapproximatesAllowingExtraVarsWhen
       (Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P) (EvalCmd P) extendEval (isAtAssert P))
       (Lang.cfg extendEval)
       (fun ss ρ₀ => PipelinePre extendEval ss ρ₀)
-      StoreAgreement
       (fun ss => some (pipeline ss)) := by
   intro ss cfg ht ρ₀ ρ' hpre _ _ _
   -- `ht : some (pipeline ss) = some cfg` identifies `cfg` with `pipeline ss`.
