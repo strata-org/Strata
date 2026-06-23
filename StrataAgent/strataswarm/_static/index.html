@@ -97,7 +97,8 @@ header h1 { font-size: 18px; color: #4fc3f7; }
     <button class="btn-pause-all" onclick="pauseAll()">Pause All</button>
     <button class="btn-resume-all" onclick="resumeAll()">Resume All</button>
     <button class="btn-cancel-all" onclick="cancelAll()">Cancel All</button>
-    <button style="background:#4fc3f7;color:#1a1a2e;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;margin-left:12px;" onclick="window.open('/slides','_blank')">Slides</button>
+    <button style="background:#e040fb;color:white;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;margin-left:12px;" onclick="showReplayModal()">Replay</button>
+    <button style="background:#4fc3f7;color:#1a1a2e;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;margin-left:4px;" onclick="window.open('/slides','_blank')">Slides</button>
   </div>
 </header>
 <div class="container">
@@ -186,6 +187,40 @@ header h1 { font-size: 18px; color: #4fc3f7; }
       <button class="btn-modal-cancel" onclick="hideLoadModal()">Close</button>
     </div>
   </div>
+</div>
+
+<!-- Replay Modal -->
+<div class="modal-overlay" id="replay-modal" onclick="if(event.target===this)hideReplayModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2 style="color:#e040fb;">Session Replay</h2>
+    <div id="replay-session-list" style="margin-bottom:12px;"></div>
+    <label>Session Path (or pick from above)</label>
+    <input type="text" id="replay-session-path" placeholder="temp/sessions/2026-06-23_04-21-52/LeanSwarm">
+    <label>Speed</label>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <input type="range" id="replay-speed-slider" min="0" max="50" step="0.5" value="5" style="flex:1;" oninput="document.getElementById('replay-speed-val').textContent=this.value+'x'">
+      <span id="replay-speed-val" style="font-size:12px;color:#4fc3f7;min-width:40px;">5x</span>
+    </div>
+    <div style="font-size:11px;color:#888;margin-top:4px;">0 = step-through mode, 1 = real-time, 10+ = fast demo</div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="hideReplayModal()">Cancel</button>
+      <button style="background:#e040fb;color:white;padding:7px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="startReplay()">Start Replay</button>
+    </div>
+  </div>
+</div>
+
+<!-- Replay Controls Bar (shown during replay) -->
+<div id="replay-bar" style="display:none;background:#2a1040;border-bottom:1px solid #e040fb;padding:6px 20px;font-size:12px;color:#e0e0e0;align-items:center;gap:12px;">
+  <span style="color:#e040fb;font-weight:700;">REPLAY</span>
+  <span id="replay-progress-text">0%</span>
+  <div style="flex:1;height:4px;background:#333;border-radius:2px;margin:0 12px;">
+    <div id="replay-progress-bar" style="height:100%;background:#e040fb;border-radius:2px;width:0%;transition:width 0.3s;"></div>
+  </div>
+  <span id="replay-agent-name" style="color:#4fc3f7;"></span>
+  <button onclick="replayPause()" id="replay-btn-pause" style="padding:4px 10px;border:none;border-radius:3px;background:#e65100;color:white;font-size:11px;cursor:pointer;">Pause</button>
+  <button onclick="replayResume()" id="replay-btn-resume" style="display:none;padding:4px 10px;border:none;border-radius:3px;background:#1b5e20;color:#a5d6a7;font-size:11px;cursor:pointer;">Resume</button>
+  <button onclick="replayStep()" id="replay-btn-step" style="display:none;padding:4px 10px;border:none;border-radius:3px;background:#0288d1;color:white;font-size:11px;cursor:pointer;">Step</button>
+  <button onclick="replayStop()" style="padding:4px 10px;border:none;border-radius:3px;background:#b71c1c;color:#ef9a9a;font-size:11px;cursor:pointer;">Stop</button>
 </div>
 
 <script>
@@ -294,6 +329,17 @@ function connect() {
     } else if (data.type === 'chat_loaded') {
       loadedChat = data.chat;
       if (currentView === 'history') renderMessages();
+    } else if (data.type === 'replay_started') {
+      replayActive = true;
+      isRunning = true;
+      agents = {}; agentMessages = {}; allMessages = [];
+      render();
+    } else if (data.type === 'replay_stopped' || data.type === 'replay_completed') {
+      replayActive = false;
+      document.getElementById('replay-bar').style.display = 'none';
+      stopReplayPoll();
+      if (data.type === 'replay_completed') isRunning = false;
+      render();
     } else if (data.type === 'ping') {
       // keepalive, ignore
     } else if (data.type === 'error') {
@@ -306,6 +352,7 @@ function connect() {
 function handleEvent(ev) {
   const name = ev.agent;
   if (!agentMessages[name]) agentMessages[name] = [];
+  if (!agents[name]) agents[name] = { name, status: 'running' };
   if (ev.event_type === 'message') {
     const text = ev.data || '';
     const type = classifyMsg(text);
@@ -1102,6 +1149,102 @@ function loadSwarm(name) { wsSend({ action: 'load_swarm', name }); hideLoadModal
 function deleteSavedSwarm(name) {
   if (!confirm(`Delete saved swarm '${name}'?`)) return;
   wsSend({ action: 'delete_swarm', name });
+}
+
+// --- Replay ---
+let replayActive = false;
+let replayPollInterval = null;
+
+function showReplayModal() {
+  document.getElementById('replay-modal').classList.add('visible');
+  fetch('/api/replay/sessions').then(r => r.json()).then(sessions => {
+    const el = document.getElementById('replay-session-list');
+    if (!sessions.length) {
+      el.innerHTML = '<div style="color:#666;font-size:11px;padding:8px;">No sessions found in temp/sessions/</div>';
+      return;
+    }
+    el.innerHTML = sessions.map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#1a1a2e;border-radius:4px;margin-bottom:4px;font-size:12px;">
+        <span><span style="color:#e040fb;">${escapeHtml(s.swarm)}</span> <span style="color:#888;">${s.timestamp} (${s.agent_count} agents)</span></span>
+        <button onclick="document.getElementById('replay-session-path').value='${escapeAttr(s.path)}'" style="padding:3px 8px;border:none;border-radius:3px;background:#e040fb;color:white;font-size:10px;cursor:pointer;">Select</button>
+      </div>
+    `).join('');
+  });
+}
+function hideReplayModal() { document.getElementById('replay-modal').classList.remove('visible'); }
+
+function startReplay() {
+  const sessionPath = document.getElementById('replay-session-path').value.trim();
+  const speed = parseFloat(document.getElementById('replay-speed-slider').value);
+  if (!sessionPath) { alert('Enter a session path'); return; }
+  fetch('/api/replay/start', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({session_path: sessionPath, speed})
+  }).then(r => r.json()).then(d => {
+    if (d.status === 'started') {
+      replayActive = true;
+      hideReplayModal();
+      document.getElementById('replay-bar').style.display = 'flex';
+      if (speed === 0) {
+        document.getElementById('replay-btn-pause').style.display = 'none';
+        document.getElementById('replay-btn-resume').style.display = 'none';
+        document.getElementById('replay-btn-step').style.display = 'inline-block';
+      }
+      startReplayPoll();
+    } else {
+      alert(d.message || 'Failed to start replay');
+    }
+  });
+}
+
+function replayPause() {
+  fetch('/api/replay/pause', {method:'POST'}).then(r => r.json()).then(d => {
+    if (d.status === 'paused') {
+      document.getElementById('replay-btn-pause').style.display = 'none';
+      document.getElementById('replay-btn-resume').style.display = 'inline-block';
+      document.getElementById('replay-btn-step').style.display = 'inline-block';
+    }
+  });
+}
+function replayResume() {
+  fetch('/api/replay/resume', {method:'POST'}).then(r => r.json()).then(d => {
+    if (d.status === 'resumed') {
+      document.getElementById('replay-btn-pause').style.display = 'inline-block';
+      document.getElementById('replay-btn-resume').style.display = 'none';
+      document.getElementById('replay-btn-step').style.display = 'none';
+    }
+  });
+}
+function replayStep() {
+  fetch('/api/replay/step', {method:'POST'}).then(r => r.json()).then(d => {
+    if (d.status === 'error') alert(d.message);
+  });
+}
+function replayStop() {
+  fetch('/api/replay/stop', {method:'POST'}).then(() => {
+    replayActive = false;
+    document.getElementById('replay-bar').style.display = 'none';
+    stopReplayPoll();
+  });
+}
+
+function startReplayPoll() {
+  stopReplayPoll();
+  replayPollInterval = setInterval(() => {
+    fetch('/api/replay/status').then(r => r.json()).then(d => {
+      document.getElementById('replay-progress-text').textContent = d.progress_pct + '%';
+      document.getElementById('replay-progress-bar').style.width = d.progress_pct + '%';
+      document.getElementById('replay-agent-name').textContent = d.current_agent || '';
+      if (!d.playing) {
+        replayActive = false;
+        document.getElementById('replay-bar').style.display = 'none';
+        stopReplayPoll();
+      }
+    });
+  }, 1000);
+}
+function stopReplayPoll() {
+  if (replayPollInterval) { clearInterval(replayPollInterval); replayPollInterval = null; }
 }
 
 connect();

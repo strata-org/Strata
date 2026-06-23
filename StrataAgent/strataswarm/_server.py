@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -185,6 +186,15 @@ class SwarmDashboard:
         self._nudge_module: str | None = None
         self._manager: str | None = None
         self._agent_sessions: dict[str, str] = {}
+        # Replay state
+        self._replay_task: asyncio.Task | None = None
+        self._replay_paused: bool = False
+        self._replay_pause_event: asyncio.Event = asyncio.Event()
+        self._replay_pause_event.set()
+        self._replay_events: list[dict[str, Any]] = []
+        self._replay_index: int = 0
+        self._replay_speed: float = 1.0
+        self._replay_playing: bool = False
         self._setup_routes()
         self._setup_middleware()
 
@@ -568,6 +578,131 @@ class SwarmDashboard:
             except Exception as e:
                 logger.error(f"[MCP RESTART] Hook error: {e}")
                 return {"status": "error", "message": str(e)}
+
+        # --- Replay API ---
+
+        @self.app.post("/api/replay/start")
+        async def replay_start(body: dict[str, Any]) -> dict[str, str]:
+            session_path = body.get("session_path", "")
+            speed = float(body.get("speed", 2.0))
+            if not session_path:
+                return {"status": "error", "message": "session_path required"}
+            session_dir = Path(session_path)
+            if not session_dir.is_absolute():
+                session_dir = Path.cwd() / session_dir
+            if not session_dir.exists() or not session_dir.is_dir():
+                return {"status": "error", "message": f"Session directory not found: {session_dir}"}
+
+            # Stop any existing replay
+            if self._replay_task and not self._replay_task.done():
+                self._replay_task.cancel()
+                try:
+                    await self._replay_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            # Load and merge all events
+            events = self._load_session_events(session_dir)
+            if not events:
+                return {"status": "error", "message": "No events found in session directory"}
+
+            self._replay_events = events
+            self._replay_index = 0
+            self._replay_speed = speed
+            self._replay_playing = True
+            self._replay_paused = False
+            self._replay_pause_event.set()
+
+            # Reset frontend state for replay
+            self._event_history = {}
+            self._all_messages = []
+            await self._broadcast({"type": "reset"})
+            await self._broadcast({"type": "replay_started", "total_events": len(events), "speed": speed})
+
+            self._replay_task = asyncio.create_task(self._replay_loop())
+            return {"status": "started", "total_events": str(len(events)), "speed": str(speed)}
+
+        @self.app.post("/api/replay/pause")
+        async def replay_pause() -> dict[str, str]:
+            if not self._replay_playing:
+                return {"status": "error", "message": "No replay running"}
+            self._replay_paused = True
+            self._replay_pause_event.clear()
+            return {"status": "paused"}
+
+        @self.app.post("/api/replay/resume")
+        async def replay_resume() -> dict[str, str]:
+            if not self._replay_playing:
+                return {"status": "error", "message": "No replay running"}
+            self._replay_paused = False
+            self._replay_pause_event.set()
+            return {"status": "resumed"}
+
+        @self.app.post("/api/replay/stop")
+        async def replay_stop() -> dict[str, str]:
+            if self._replay_task and not self._replay_task.done():
+                self._replay_task.cancel()
+                try:
+                    await self._replay_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            self._replay_playing = False
+            self._replay_paused = False
+            self._replay_pause_event.set()
+            await self._broadcast({"type": "replay_stopped"})
+            return {"status": "stopped"}
+
+        @self.app.get("/api/replay/status")
+        async def replay_status() -> dict[str, Any]:
+            total = len(self._replay_events)
+            progress = (self._replay_index / total * 100) if total > 0 else 0
+            current_agent = None
+            if self._replay_index > 0 and self._replay_index <= total:
+                current_agent = self._replay_events[self._replay_index - 1].get("agent")
+            return {
+                "playing": self._replay_playing,
+                "paused": self._replay_paused,
+                "progress_pct": round(progress, 1),
+                "current_agent": current_agent,
+                "index": self._replay_index,
+                "total": total,
+                "speed": self._replay_speed,
+            }
+
+        @self.app.post("/api/replay/step")
+        async def replay_step() -> dict[str, str]:
+            """Advance one event in step-through mode (speed=0)."""
+            if not self._replay_playing or not self._replay_paused:
+                return {"status": "error", "message": "Set speed=0 and pause to use step mode"}
+            if self._replay_index >= len(self._replay_events):
+                return {"status": "error", "message": "End of replay"}
+            event = self._replay_events[self._replay_index]
+            self._replay_index += 1
+            await self._emit_replay_event(event)
+            return {"status": "stepped", "index": str(self._replay_index)}
+
+        @self.app.get("/api/replay/sessions")
+        async def replay_list_sessions() -> list[dict[str, Any]]:
+            """List available session directories for replay."""
+            sessions_dir = SWARM_SAVE_DIR / "sessions"
+            if not sessions_dir.exists():
+                return []
+            results = []
+            for ts_dir in sorted(sessions_dir.iterdir(), reverse=True):
+                if not ts_dir.is_dir():
+                    continue
+                for swarm_dir in sorted(ts_dir.iterdir()):
+                    if not swarm_dir.is_dir():
+                        continue
+                    jsonl_count = len(list(swarm_dir.glob("*.jsonl")))
+                    if jsonl_count > 0:
+                        results.append({
+                            "path": str(swarm_dir.relative_to(Path.cwd())),
+                            "timestamp": ts_dir.name,
+                            "swarm": swarm_dir.name,
+                            "agent_count": jsonl_count,
+                        })
+            return results
 
         @self.app.get("/api/agents/{name}/state_machine")
         async def get_state_machine(name: str) -> dict[str, Any]:
@@ -1350,6 +1485,112 @@ class SwarmDashboard:
                 await ws.send_json(payload)
             except Exception:
                 self._connections.remove(ws)
+
+    # --- Replay helpers ---
+
+    _REPLAY_SKIP_TYPES = {"heartbeat"}
+    _REPLAY_SKIP_PREFIXES = (
+        "[Waiting for backend response",
+        "[Sending query to backend",
+        "[Query sent",
+    )
+
+    def _load_session_events(self, session_dir: Path) -> list[dict[str, Any]]:
+        """Load all .jsonl files from a session directory, merge by timestamp."""
+        events: list[dict[str, Any]] = []
+        for jsonl_file in session_dir.glob("*.jsonl"):
+            agent_name = jsonl_file.stem
+            for line in jsonl_file.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                entry["agent"] = agent_name
+                events.append(entry)
+        events.sort(key=lambda e: e.get("ts", 0))
+        return events
+
+    def _should_emit_event(self, event: dict[str, Any]) -> bool:
+        """Filter out noise events during replay."""
+        event_type = event.get("type", "")
+        if event_type in self._REPLAY_SKIP_TYPES:
+            return False
+        if event_type == "message":
+            data = event.get("data", "")
+            if isinstance(data, str):
+                for prefix in self._REPLAY_SKIP_PREFIXES:
+                    if data.startswith(prefix):
+                        return False
+        return True
+
+    async def _emit_replay_event(self, event: dict[str, Any]) -> None:
+        """Emit a single replay event through the WebSocket broadcast."""
+        agent_name = event.get("agent", "unknown")
+        event_type = event.get("type", "message")
+        data = event.get("data")
+        ts = event.get("ts", 0)
+
+        entry = {
+            "agent": agent_name,
+            "event_type": event_type,
+            "data": json.dumps(data) if isinstance(data, dict) else str(data) if data is not None else None,
+            "timestamp_ms": ts,
+        }
+
+        if agent_name not in self._event_history:
+            self._event_history[agent_name] = []
+        self._event_history[agent_name].append(entry)
+
+        if event_type == "message":
+            self._all_messages.append(entry)
+
+        payload: dict[str, Any] = {"type": "agent_event", **entry}
+        await self._broadcast(payload)
+
+    async def _replay_loop(self) -> None:
+        """Background task that replays events with timing."""
+        try:
+            while self._replay_index < len(self._replay_events):
+                await self._replay_pause_event.wait()
+
+                event = self._replay_events[self._replay_index]
+
+                if not self._should_emit_event(event):
+                    self._replay_index += 1
+                    continue
+
+                await self._emit_replay_event(event)
+                self._replay_index += 1
+
+                # Calculate sleep duration based on gap to next event
+                if self._replay_index < len(self._replay_events) and self._replay_speed > 0:
+                    current_ts = event.get("ts", 0)
+                    next_ts = self._replay_events[self._replay_index].get("ts", 0)
+                    gap_ms = next_ts - current_ts
+                    if gap_ms > 0:
+                        sleep_s = (gap_ms / 1000.0) / self._replay_speed
+                        # Cap long silences at 2s actual wait
+                        max_gap = 5000 / self._replay_speed
+                        if gap_ms > max_gap:
+                            sleep_s = 2.0
+                        await asyncio.sleep(sleep_s)
+                elif self._replay_speed == 0:
+                    # Step mode — pause after each event
+                    self._replay_paused = True
+                    self._replay_pause_event.clear()
+
+            # Replay complete
+            self._replay_playing = False
+            await self._broadcast({"type": "replay_completed"})
+        except asyncio.CancelledError:
+            self._replay_playing = False
+        except Exception as e:
+            logger.error(f"[REPLAY] Error: {e}")
+            self._replay_playing = False
+            await self._broadcast({"type": "error", "message": f"Replay error: {e}"})
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic pings to keep WebSocket connections alive."""
