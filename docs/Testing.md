@@ -90,15 +90,20 @@ the message and the test stays robust as messages are reworded.
 
 #### Reported locations
 
-Each diagnostic is printed as `<fileLine>:<colStart>-<colEnd>  <kind>: <message>`,
-where `fileLine` is the line in the enclosing `.lean` file (computed from the
-snippet's base line — no manual offsets). The filename is omitted: the Lean
-test runner already reports which file a diagnostic came from. This line is
-always printed; pin it with `#guard_msgs` when you want to assert the
-localization itself. Pass `showSnippet := true` to also append the
-snippet-relative range — `… (snippet <line>:<colStart>-<colEnd>)` — which is
-handy when correlating against the inline `// ^^^` annotations (those are
-snippet-local, so their `line` differs from the file line).
+Diagnostic locations are formatted as `<fileLine>:<colStart>-<colEnd>  <kind>:
+<message>`, where `fileLine` is the line in the enclosing `.lean` file (computed
+from the snippet's base line — no manual offsets). The filename is omitted: the
+Lean test runner already reports which file a diagnostic came from.
+
+A test **succeeds silently** by default — the inline `// ^^^` annotations are
+what assert correctness, so there's no per-diagnostic noise in the build log.
+This file-relative format is, however, always used in **failure** reports, so a
+mismatch points straight at the offending `.lean` line. To also *echo* the
+locations on success (e.g. to pin them with `#guard_msgs` and demonstrate the
+localization), pass `showLocations := true`; add `showSnippet := true` to append
+the snippet-relative range — `… (snippet <line>:<colStart>-<colEnd>)` — handy
+when correlating against the inline annotations (those are snippet-local, so
+their `line` differs from the file line).
 
 ### 3. Resolution-only tests — skip the verifier
 
