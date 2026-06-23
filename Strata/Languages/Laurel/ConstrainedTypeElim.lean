@@ -169,9 +169,9 @@ def elimStmt (ptMap : ConstrainedTypeMap)
     let thenSs ← inScope (elimStmt ptMap thenBr)
     pure [⟨.IfThenElse cond (wrap thenSs source) none, source⟩]
 
-  | .While cond inv dec body =>
+  | .While cond inv dec body postTest =>
     let bodySs ← inScope (elimStmt ptMap body)
-    pure [⟨.While cond inv dec (wrap bodySs source), source⟩]
+    pure [⟨.While cond inv dec (wrap bodySs source) postTest, source⟩]
 
   | _ => pure [stmt]
 termination_by sizeOf stmt

@@ -39,11 +39,11 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Block stmts label =>
     pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e) label, source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprM f cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
-      (← mapStmtExprM f body), source⟩
+      (← mapStmtExprM f body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .Assign targets value =>
@@ -129,11 +129,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .Block stmts label =>
     pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label, source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprPrePostM pre post cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
       (← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
-      (← mapStmtExprPrePostM pre post body), source⟩
+      (← mapStmtExprPrePostM pre post body) postTest, source⟩
   | .Return v =>
     pure ⟨.Return (← v.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .Assign targets value =>
@@ -212,6 +212,22 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
     preconditions := ← proc.preconditions.mapM (·.mapM f)
     decreases := ← proc.decreases.mapM f
     invokeOn := ← proc.invokeOn.mapM f }
+
+/-- Apply a monadic transformation to every procedure in a program — both
+    top-level static procedures and the instance procedures of composite types.
+    The single place that knows where procedures live in a `Program`, so passes
+    don't each re-enumerate `staticProcedures` and composite `instanceProcedures`. -/
+def mapProgramProceduresM [Monad m] (f : Procedure → m Procedure) (program : Program) : m Program := do
+  let staticProcedures ← program.staticProcedures.mapM f
+  let types ← program.types.mapM fun td =>
+    match td with
+    | .Composite ct => return .Composite { ct with instanceProcedures := ← ct.instanceProcedures.mapM f }
+    | other => pure other
+  return { program with staticProcedures := staticProcedures, types := types }
+
+/-- Pure variant of `mapProgramProceduresM`. -/
+def mapProgramProcedures (f : Procedure → Procedure) (program : Program) : Program :=
+  mapProgramProceduresM (m := Id) f program
 
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use
