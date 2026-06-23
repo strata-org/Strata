@@ -1436,7 +1436,7 @@ class SwarmDashboard:
             self._agent_sessions[event.agent_name] = str(event.data)
 
         payload = {"type": "agent_event", **entry}
-        if event.event_type in ("cost_update", "cost_estimate") and self._swarm:
+        if event.event_type == "cost_update" and self._swarm:
             payload["total_cost"] = self._swarm._total_cost
         await self._broadcast(payload)
 

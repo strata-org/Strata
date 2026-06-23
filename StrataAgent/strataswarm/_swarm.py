@@ -157,7 +157,7 @@ class Swarm:
             self._nudge_monitor.record_stall(event.agent_name)
 
         # Track live costs as they're reported
-        if event.event_type in ("cost_update", "cost_estimate") and event.data:
+        if event.event_type == "cost_update" and event.data:
             try:
                 new_cost = float(event.data)
                 old_cost = self._registry.costs.get(event.agent_name, 0.0)

@@ -279,9 +279,7 @@ class SwarmAgent:
             elif message.type == "tool_result" and message.content:
                 await self._emit("message", f"[tool_result] {message.content}")
             elif message.type == "usage":
-                result.cost_usd = message.cost_usd
                 result.num_turns = message.num_turns
-                await self._emit("cost_estimate", message.cost_usd)
 
                 # Track turn count for budget hook
                 if self.spec.max_turns and message.num_turns:

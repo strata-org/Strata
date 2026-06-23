@@ -165,9 +165,12 @@ class PO4State:
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
 async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
+    import time as _time
     from .._types import AgentResult, AgentStatus
 
+    _start_time = _time.time()
     await agent._emit("status_change", "running")
+    agent._po4_start_time = _start_time
 
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
 
@@ -306,13 +309,17 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         _save_state(cwd, state)
 
     # ─── Done ─────────────────────────────────────────────────────────────
-    await agent._emit("message", f"[PO4] Finished: stage={state.stage}, proved={state.lemmas_proved}, cycles={state.cycles_detected}")
+    elapsed = _time.time() - _start_time
+    elapsed_str = f"{elapsed/60:.1f}min" if elapsed >= 60 else f"{elapsed:.0f}s"
+    await agent._emit("message",
+        f"[PO4] Finished: stage={state.stage}, proved={state.lemmas_proved}, "
+        f"cycles={state.cycles_detected}, time={elapsed_str}")
     ledger.save()
 
     status = AgentStatus.COMPLETED if state.stage == "done" else AgentStatus.FAILED
     return AgentResult(name=agent.spec.name, status=status,
                        output={"stage": state.stage, "proved": state.lemmas_proved,
-                               "cycles": state.cycles_detected})
+                               "cycles": state.cycles_detected, "time_seconds": round(elapsed)})
 
 
 # ─── Phase handlers (each returns a Trans value) ─────────────────────────────
@@ -600,15 +607,18 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
     while True:
         ledger.increment_attempts(entry.id)
 
-        # Log context usage
+        # Log context usage + elapsed time
+        import time as _time
+        elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
+        elapsed_str = f"{elapsed/60:.1f}min" if elapsed >= 60 else f"{elapsed:.0f}s"
         writer_pct = await writer.get_context_percentage()
         guide_pct = await guide.get_context_percentage()
         pct_str = ""
         if writer_pct is not None and guide_pct is not None:
             pct_str = f" | writer: {writer_pct:.0f}% | guide: {guide_pct:.0f}%"
         await agent._emit("message",
-            f"[PO4] Chunk {entry.attempts} ({CHUNK_TURNS} turns, "
-            f"total={total_turns_used}){pct_str}")
+            f"[PO4] Chunk {entry.attempts} ({chunk_budget}t, "
+            f"total={total_turns_used}) [{elapsed_str}]{pct_str}")
 
         # Guide at 75%: dump state + compact
         if guide_pct is not None and guide_pct >= 75.0:
