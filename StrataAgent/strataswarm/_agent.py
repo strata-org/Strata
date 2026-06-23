@@ -189,6 +189,9 @@ class SwarmAgent:
         async with self._backend_lock:
             if query:
                 await self._emit("message", "[Sending query to backend...]")
+                query_str = str(query)
+                query_preview = query_str[:500] + "\n ...\n" + query_str[-500:] if len(query_str) > 500 else query_str
+                await self._emit("query", query_preview)
                 await self.backend.send_query(query)
                 await self._emit("message", "[Query sent]")
             return await self._consume_response_inner(result, start_time)
