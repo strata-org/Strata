@@ -393,6 +393,22 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       else
         return expr
 
+  | .Assert _ =>
+      -- An assert in expression position (e.g. inside a block used as a value)
+      -- is lifted as a side effect. Prepend it *here*, during the right-to-left
+      -- traversal, so it keeps its position relative to assignments lifted from
+      -- the same block. (If it were left for `onlyKeepSideEffectStmtsAndLast` to
+      -- prepend afterwards, it would be moved ahead of those assignments.)
+      -- Core has no assert-expression, so the expression yields a dummy value
+      -- that the surrounding block discards as a non-final statement.
+      prepend expr
+      return ⟨.LiteralBool true, source⟩
+
+  | .Assume _ =>
+      -- See the `.Assert` case above: same side-effect lifting for assumes.
+      prepend expr
+      return ⟨.LiteralBool true, source⟩
+
   | _ => return expr
   termination_by (sizeOf expr, 0)
   decreasing_by
@@ -472,7 +488,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source⟩]
 
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       -- Process invariants and decreases through transformExpr for nondet holes
@@ -486,7 +502,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         let stmts ← transformStmt body
         pure ⟨.Block stmts none, source⟩
       return condPrepends ++ invPrepends ++ decPrepends ++
-        [⟨.While seqCond seqInvs seqDec seqBody, source⟩]
+        [⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr

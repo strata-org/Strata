@@ -79,7 +79,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .While _ _ _ _ => ⟨ .TVoid, source ⟩
+  | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
