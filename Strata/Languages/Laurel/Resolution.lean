@@ -11,6 +11,7 @@ public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
@@ -3304,169 +3305,80 @@ decreasing_by
   -- through `List.sizeOf_lt_of_mem`.
   all_goals (have := List.sizeOf_lt_of_mem ‹_›; term_by_val ty, _hht)
 
-/-- Walk a `StmtExprMd` and collect diagnostics for Subscript/Array.length
-    misuse, recursing into all subexpressions and embedded types. The
-    `.Subscript`-vs-`.SubscriptWrite` node distinction carries the
-    functional-vs-destructive meaning, so no position decoding is needed. -/
-def validateStmtExpr (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
+/-- Diagnostics for a *single* `StmtExpr` node — the Subscript/SubscriptWrite
+    misuse and `Array.length`/`Sequence.fromArray` argument/arity checks. Only
+    the constructors this validator is actually about are named; recursion into
+    children, and into the type-carrying constructors, is handled by the generic
+    `MapStmtExpr` traversals in `validateSubscriptUsage`, so a new unrelated
+    `StmtExpr` constructor needs no change here. -/
+private def validateSubscriptNode (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
+  match expr.val with
   -- Diagnostic 1: functional update `a[i := v]` on Array<T> (not supported).
-  | .Subscript target index (some value) =>
-    let here :=
-      if (computeExprType model target).val.isArray then
-        [diagnosticFromSource expr.source msgArrayFuncUpdate]
-      else []
-    here ++ validateStmtExpr model target ++ validateStmtExpr model index ++
-      validateStmtExpr model value
-  | .Subscript target index none =>
-    validateStmtExpr model target ++ validateStmtExpr model index
+  | .Subscript target _ (some _) =>
+    if (computeExprType model target).val.isArray then
+      [diagnosticFromSource expr.source msgArrayFuncUpdate]
+    else []
   -- Diagnostic 2: destructive write `s[i] := v` on Seq<T> (immutable).
-  | .SubscriptWrite target index value =>
-    let here :=
-      if (computeExprType model target).val.isSeq then
-        [diagnosticFromSource expr.source msgSeqDestructiveUpdate]
-      else []
-    here ++ validateStmtExpr model target ++ validateStmtExpr model index ++
-      validateStmtExpr model value
-  -- Diagnostics 3 and 5: Array.length(x) / Sequence.fromArray(x) with x not Array<T>
+  | .SubscriptWrite target _ _ =>
+    if (computeExprType model target).val.isSeq then
+      [diagnosticFromSource expr.source msgSeqDestructiveUpdate]
+    else []
+  -- Diagnostics 3 and 5: Array.length(x) / Sequence.fromArray(x) with x not Array<T>.
   | .StaticCall callee args =>
-    let lengthDiag : List DiagnosticModel :=
-      if callee.text == arrayLengthName then
-        match args with
-        | [a] =>
-          let actualTy := (computeExprType model a).val
-          if actualTy.isArray then []
-          else [diagnosticFromSource expr.source (msgArrayLengthArg (fmtSubscriptType actualTy))]
-        | _ => [diagnosticFromSource expr.source (msgArrayLengthArity args.length)]
-      else []
-    let fromArrayDiag : List DiagnosticModel :=
-      if callee.text == sequenceFromArrayName then
-        match args with
-        | [a] =>
-          let actualTy := (computeExprType model a).val
-          if actualTy.isArray then []
-          else [diagnosticFromSource expr.source (msgSequenceFromArrayArg (fmtSubscriptType actualTy))]
-        | _ => [diagnosticFromSource expr.source (msgSequenceFromArrayArity args.length)]
-      else []
-    lengthDiag ++ fromArrayDiag ++
-      args.attach.flatMap (fun ⟨a, _⟩ => validateStmtExpr model a)
-  -- Everything below: recurse into children; no local diagnostic.
-  | .IfThenElse c t (some e) =>
-    validateStmtExpr model c ++ validateStmtExpr model t ++ validateStmtExpr model e
-  | .IfThenElse c t none =>
-    validateStmtExpr model c ++ validateStmtExpr model t
-  | .Block stmts _ =>
-    stmts.attach.flatMap (fun ⟨s, _⟩ => validateStmtExpr model s)
-  | .Var (.Declare param) => validateHighType param.type
-  | .Var (.Field t _) => validateStmtExpr model t
-  | .Var (.Local _) => []
-  | .Assign targets value =>
-    let targetDiags := targets.attach.flatMap fun ⟨t, _⟩ =>
-      match _htv : t.val with
-      | .Field subTarget _ => validateStmtExpr model subTarget
-      | .Declare param => validateHighType param.type
-      | .Local _ => []
-    targetDiags ++ validateStmtExpr model value
-  | .While c invs (some dec) body _ =>
-    validateStmtExpr model c ++
-    invs.attach.flatMap (fun ⟨i, _⟩ => validateStmtExpr model i) ++
-    validateStmtExpr model dec ++
-    validateStmtExpr model body
-  | .While c invs none body _ =>
-    validateStmtExpr model c ++
-    invs.attach.flatMap (fun ⟨i, _⟩ => validateStmtExpr model i) ++
-    validateStmtExpr model body
-  | .Return (some v) => validateStmtExpr model v
-  | .Return none => []
-  | .PureFieldUpdate t _ v => validateStmtExpr model t ++ validateStmtExpr model v
-  | .IncrDecr _ _ ⟨.Field subTarget _, _⟩ => validateStmtExpr model subTarget
-  | .IncrDecr _ _ ⟨.Declare param, _⟩ => validateHighType param.type
-  | .IncrDecr _ _ ⟨.Local _, _⟩ => []
-  | .PrimitiveOp _ args _ =>
-    args.attach.flatMap (fun ⟨a, _⟩ => validateStmtExpr model a)
-  | .InstanceCall t _ args =>
-    validateStmtExpr model t ++
-    args.attach.flatMap (fun ⟨a, _⟩ => validateStmtExpr model a)
-  | .ReferenceEquals l r => validateStmtExpr model l ++ validateStmtExpr model r
-  | .AsType t ty => validateStmtExpr model t ++ validateHighType ty
-  | .IsType t ty => validateStmtExpr model t ++ validateHighType ty
-  | .Quantifier _ p (some trig) body =>
-    validateHighType p.type ++ validateStmtExpr model trig ++ validateStmtExpr model body
-  | .Quantifier _ p none body =>
-    validateHighType p.type ++ validateStmtExpr model body
-  | .Assigned n => validateStmtExpr model n
-  | .Old v => validateStmtExpr model v
-  | .Fresh v => validateStmtExpr model v
-  | .Assert c => validateStmtExpr model c.condition
-  | .Assume c => validateStmtExpr model c
-  | .ProveBy v p => validateStmtExpr model v ++ validateStmtExpr model p
-  | .ContractOf _ f => validateStmtExpr model f
-  | .Hole _ (some ty) => validateHighType ty
-  -- Leaves: no StmtExprMd children, no types to validate.
-  -- ⚠ If a new StmtExpr constructor with StmtExprMd children (or embedded
-  -- types) is added, it must get its own arm above; otherwise this walker
-  -- will silently skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Hole _ none | .New _ | .This | .Abstract | .All => []
-termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-  all_goals (try term_by_mem)
-  -- Assign-target list, .Field inner
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := Variable.sizeOf_field_target_lt_of_eq _htv
-    simp_all; omega))
-  -- .Subscript / .SubscriptWrite children (target/index/value/update).
-  all_goals (try term_by_val expr, _h)
-  -- Block / container list members.
-  all_goals (try (have := List.sizeOf_lt_of_mem ‹_›; simp_all; omega))
+    if callee.text == arrayLengthName then
+      match args with
+      | [a] =>
+        let actualTy := (computeExprType model a).val
+        if actualTy.isArray then []
+        else [diagnosticFromSource expr.source (msgArrayLengthArg (fmtSubscriptType actualTy))]
+      | _ => [diagnosticFromSource expr.source (msgArrayLengthArity args.length)]
+    else if callee.text == sequenceFromArrayName then
+      match args with
+      | [a] =>
+        let actualTy := (computeExprType model a).val
+        if actualTy.isArray then []
+        else [diagnosticFromSource expr.source (msgSequenceFromArrayArg (fmtSubscriptType actualTy))]
+      | _ => [diagnosticFromSource expr.source (msgSequenceFromArrayArity args.length)]
+    else []
+  | _ => []
 
-private def validateBody (model : SemanticModel) (body : Body) : List DiagnosticModel :=
-  match body with
-  | .Transparent b => validateStmtExpr model b
-  | .Opaque posts impl mods =>
-    posts.flatMap (fun c => validateStmtExpr model c.condition) ++
-    (match impl with | some i => validateStmtExpr model i | none => []) ++
-    mods.flatMap (validateStmtExpr model)
-  | .Abstract posts =>
-    posts.flatMap (fun c => validateStmtExpr model c.condition)
-  | .External => []
+/-- Run the Subscript/Array-length usage validator on the whole program.
 
-private def validateProcedure (model : SemanticModel) (proc : Procedure) : List DiagnosticModel :=
-  proc.inputs.flatMap (fun p => validateHighType p.type) ++
-  proc.outputs.flatMap (fun p => validateHighType p.type) ++
-  proc.preconditions.flatMap (fun c => validateStmtExpr model c.condition) ++
-  (match proc.decreases with | some d => validateStmtExpr model d | none => []) ++
-  (match proc.invokeOn with | some v => validateStmtExpr model v | none => []) ++
-  validateBody model proc.body
+    Two generic collects over `MapStmtExpr`, rather than a hand-written walker
+    that enumerates every `StmtExpr`/`HighType` constructor:
 
-private def validateTypeDefinition (model : SemanticModel)
-    (td : TypeDefinition) : List DiagnosticModel :=
-  match td with
-  | .Composite ct =>
-    ct.fields.flatMap (fun f => validateHighType f.type) ++
-    ct.instanceProcedures.flatMap (validateProcedure model)
-  | .Constrained ct =>
-    validateHighType ct.base ++ validateStmtExpr model ct.constraint ++
-    validateStmtExpr model ct.witness
-  | .Datatype dt =>
-    dt.constructors.flatMap fun c =>
-      c.args.flatMap fun p => validateHighType p.type
-  | .Alias ta => validateHighType ta.target
+    * `validateHighType` is driven over *every* embedded type annotation by
+      `mapProgramHighTypesM` (the single source of truth for "where types live").
+    * `validateSubscriptNode` is driven over *every* expression node by
+      `mapStmtExprM`. Only the program-level expr-bearing slots are named
+      explicitly here (procedures via `mapProcedureM`, constrained-type
+      constraint/witness, constant initializers) — there is no whole-program
+      `StmtExpr` collect — but no `StmtExpr`/`HighType` *constructor* is
+      enumerated, so a new unrelated one needs no change.
 
-private def validateConstant (model : SemanticModel) (c : Constant) : List DiagnosticModel :=
-  validateHighType c.type ++
-  (match c.initializer with | some i => validateStmtExpr model i | none => [])
-
-/-- Run the Subscript/Array-length usage validator on the whole program. -/
+    Collects only: both hooks return their argument unchanged, so
+    `computeExprType` still sees the original (un-rewritten) children and the
+    program is left untouched. -/
 def validateSubscriptUsage (model : SemanticModel) (program : Program) : List DiagnosticModel :=
-  program.staticProcedures.flatMap (validateProcedure model) ++
-  program.staticFields.flatMap (fun f => validateHighType f.type) ++
-  program.types.flatMap (validateTypeDefinition model) ++
-  program.constants.flatMap (validateConstant model)
+  let M := StateM (Array DiagnosticModel)
+  -- Visit every node of one expression, collecting node-level diagnostics.
+  let collectExpr (e : StmtExprMd) : M PUnit := do
+    let _ ← mapStmtExprM (m := M) (fun n => do
+      modify (· ++ (validateSubscriptNode model n).toArray); pure n) e
+  let run : M PUnit := do
+    -- Expression positions, program-wide: procedure bodies/pre/decreases/invokeOn,
+    -- constant initializers, and constrained-type constraint/witness.
+    let _ ← mapProgramProceduresM (mapProcedureM (m := M) (fun e => do collectExpr e; pure e)) program
+    for c in program.constants do
+      match c.initializer with | some i => collectExpr i | none => pure ()
+    for td in program.types do
+      match td with
+      | .Constrained ct => collectExpr ct.constraint; collectExpr ct.witness
+      | _ => pure ()
+    -- Type positions, program-wide.
+    let _ ← mapProgramHighTypesM (m := M) (fun t => do
+      modify (· ++ (validateHighType t).toArray); pure t) program
+  (run.run #[]).2.toList
 
 /-! ## Entry point -/
 
