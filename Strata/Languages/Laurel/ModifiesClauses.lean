@@ -152,16 +152,20 @@ def transformModifiesClauses (model: SemanticModel)
         let entries := extractModifiesEntries model modifiesExprs
         let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapVarName)))
         let heapOut := mkMd <| .Var (.Local heapVarName)
-        let pointwise := buildPointwiseFrame proc entries heapIn heapOut
-        let useEnumerated := useEnumeratedFrame && onlyIndividualRefs entries
-        let framePost : Condition :=
-          if useEnumerated then
+        if useEnumeratedFrame && onlyIndividualRefs entries then
+          -- Callers assume the quantifier-free frame; the body re-checks the
+          -- pointwise frame at every exit.
+          let pointwise := buildPointwiseFrame proc entries heapIn heapOut
+          let framePost : Condition :=
             { condition := buildEnumeratedFrame proc entries heapIn heapOut,
               summary := "modifies clause", free := true }
-          else
-            { condition := pointwise, summary := "modifies clause" }
-        let impl' := if useEnumerated then impl.map (insertFrameChecks proc pointwise) else impl
-        .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
+          let impl' := impl.map (insertFrameChecks proc pointwise)
+          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
+        else
+          let framePost : Condition :=
+            { condition := buildPointwiseFrame proc entries heapIn heapOut,
+              summary := "modifies clause" }
+          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl [] }
       else
         .ok proc
   | _ => .ok proc
