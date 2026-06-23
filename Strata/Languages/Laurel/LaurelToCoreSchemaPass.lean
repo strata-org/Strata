@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.PushOldInward
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
+public import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.Resolution
@@ -427,7 +428,6 @@ Diagnostics are emitted into the monad state.
 def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
   let s ← get
-  let model := s.model
   let md := astNodeToCoreMd stmt
   match _h : stmt.val with
   | .Assert cond =>
@@ -681,7 +681,7 @@ instance : Inhabited LaurelVerifyOptions where
 -/
 private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
   match b.val with
-  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel) => value
   | _ => b
 
 /--
