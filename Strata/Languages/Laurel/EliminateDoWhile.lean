@@ -70,16 +70,7 @@ public section
 /-- Eliminate every post-test `While` in a Laurel program; afterward every `While` has `postTest = false`. -/
 def eliminateDoWhile (program : Program) : Program :=
   let rewrite : Procedure → ElimM Procedure := mapProcedureM (mapStmtExprM rewriteNode)
-  let go : ElimM Program := do
-    let staticProcs ← program.staticProcedures.mapM rewrite
-    let types ← program.types.mapM fun td =>
-      match td with
-      | .Composite ct => do
-        let procs ← ct.instanceProcedures.mapM rewrite
-        pure (.Composite { ct with instanceProcedures := procs })
-      | other => pure other
-    pure { program with staticProcedures := staticProcs, types := types }
-  (go.run {}).fst
+  (mapProgramProceduresM rewrite program |>.run {}).fst
 
 /-- Pipeline pass: eliminate post-test (`do … while`) loops. -/
 public def eliminateDoWhilePass : LaurelPass where

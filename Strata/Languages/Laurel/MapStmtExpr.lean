@@ -127,6 +127,22 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
     decreases := ← proc.decreases.mapM f
     invokeOn := ← proc.invokeOn.mapM f }
 
+/-- Apply a monadic transformation to every procedure in a program — both
+    top-level static procedures and the instance procedures of composite types.
+    The single place that knows where procedures live in a `Program`, so passes
+    don't each re-enumerate `staticProcedures` and composite `instanceProcedures`. -/
+def mapProgramProceduresM [Monad m] (f : Procedure → m Procedure) (program : Program) : m Program := do
+  let staticProcedures ← program.staticProcedures.mapM f
+  let types ← program.types.mapM fun td =>
+    match td with
+    | .Composite ct => return .Composite { ct with instanceProcedures := ← ct.instanceProcedures.mapM f }
+    | other => pure other
+  return { program with staticProcedures := staticProcedures, types := types }
+
+/-- Pure variant of `mapProgramProceduresM`. -/
+def mapProgramProcedures (f : Procedure → Procedure) (program : Program) : Program :=
+  mapProgramProceduresM (m := Id) f program
+
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use
     `mapProcedureM` directly if those are needed. -/
