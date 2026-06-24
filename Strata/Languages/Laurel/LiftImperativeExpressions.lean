@@ -583,7 +583,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source⟩]
 
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
       -- Process invariants and decreases through transformExpr for nondet holes
@@ -597,7 +597,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         let stmts ← transformStmt body
         pure ⟨.Block stmts none, source⟩
       return condPrepends ++ invPrepends ++ decPrepends ++
-        [⟨.While seqCond seqInvs seqDec seqBody, source⟩]
+        [⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩]
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr

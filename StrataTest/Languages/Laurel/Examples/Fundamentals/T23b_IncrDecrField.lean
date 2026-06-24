@@ -31,9 +31,10 @@ local (`$tmp_i` or `$heap`), so its snapshot mechanism — which is keyed on
 `liftAssignExpr` (which falls through `| _ => pure ()`) is defensive but
 never reached in this pipeline order.
 
-The parentheses around `(c#n)` are needed in the surface syntax because
-`#field` and `++` are both trailing operators with the same precedence
-(90); `c#n++` parses ambiguously without them.
+`c#n++` now parses paren-free: `fieldAccess` is at `prec(95)`, above the
+postfix incr/decr ops (`prec(90)`), so `#` binds tighter than `++` and
+`c#n++` reads as `(c#n)++`. The parenthesised spelling `(c#n)++` remains
+valid; `parenFreeFieldIncrDecr` below covers the paren-free form.
 -/
 
 #guard_msgs (drop info) in
@@ -123,5 +124,22 @@ procedure postDecrFieldInExpression()
   var y: int := (c#n)--;
   assert c#n == 4;
   assert y == 5
+};
+
+procedure parenFreeFieldIncrDecr()
+  opaque
+{
+  // Paren-free field incr/decr: `c#n++` parses as `(c#n)++` because `fieldAccess`
+  // (prec 95) binds tighter than postfix `++`/`--` (prec 90).
+  var c: IncrDecrCounter := new IncrDecrCounter;
+  c#n := 10;
+  c#n++;
+  assert c#n == 11;
+  c#n--;
+  assert c#n == 10;
+  // Postfix in expression position yields the OLD value (10); c#n becomes 11.
+  var y: int := c#n++;
+  assert c#n == 11;
+  assert y == 10
 };
 #end

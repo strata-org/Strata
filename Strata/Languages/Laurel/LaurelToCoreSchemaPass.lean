@@ -99,7 +99,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
     | _ => do -- resolution should have already emitted a diagnostic
-      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
+      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
@@ -264,7 +264,7 @@ def translateExpr (expr : StmtExprMd)
   | .IncrDecr _ _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source
         "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
-  | .While _ _ _ _ =>
+  | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in transparent bodies or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
@@ -293,7 +293,7 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
-  | .Block (⟨ .While _ _ _ _, whileSource⟩ :: tail) _ =>
+  | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ =>
       disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
@@ -565,7 +565,10 @@ def translateStmt (stmt : StmtExprMd)
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
           emitCoreDiagnostic d
           return [.exit bodyLabel md]
-  | .While cond invariants decreasesExpr body =>
+  | .While cond invariants decreasesExpr body postTest =>
+      if postTest then
+        return ← throwStmtDiagnostic (diagnosticFromSource cond.source
+          "post-test while (do-while) should have been eliminated by EliminateDoWhile pass" DiagnosticType.StrataBug)
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)

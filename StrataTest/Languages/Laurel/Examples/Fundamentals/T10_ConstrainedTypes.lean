@@ -139,6 +139,17 @@ procedure uninitNat()
   assert y >= 0
 };
 
+procedure sideEffect()
+  opaque
+{
+  var x : nat;
+  var y : int;
+  y := (x := -1) + 1;
+//      ^^^^^^^ error: assertion does not hold
+  assert x==-1;
+  assert y==0
+};
+
 // Uninitialized nested constrained variable — havoc + assume constraint
 procedure uninitPosnat()
   opaque

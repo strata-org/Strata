@@ -29,10 +29,8 @@ private def printElim (program : StrataDDM.Program) : IO Unit := do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /--
-info: procedure nat$constraint(x: int): bool
-{
-  x >= 0
-};
+info: function nat$constraint(x: int): bool
+x >= 0;
 procedure test(n: int)
   returns (r: int)
   requires nat$constraint(n)
@@ -65,10 +63,8 @@ procedure test(n: nat) returns (r: nat) opaque {
 
 -- Scope management: constrained variable in if-branch must not leak into sibling block
 /--
-info: procedure pos$constraint(v: int): bool
-{
-  v > 0
-};
+info: function pos$constraint(v: int): bool
+v > 0;
 procedure test(b: bool)
   opaque
 {
@@ -108,10 +104,8 @@ procedure test(b: bool) opaque {
 -- Uninitialized constrained variable: havoc + assume constraint.
 -- The variable has no known value, only the type constraint is assumed.
 /--
-info: procedure posint$constraint(x: int): bool
-{
-  x > 0
-};
+info: function posint$constraint(x: int): bool
+x > 0;
 procedure f()
   opaque
 {
