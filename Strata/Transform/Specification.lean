@@ -356,6 +356,126 @@ def OverapproximatesAllowingExtraVarsWhen (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
   OverapproximatesRelWhen L₁ L₂ pre StoreAgreement T
 
+/-! ## Overapproximation up to an environment relation (`OverapproximatesUpto*`)
+
+This family relates the source and target executions *up to a single relation
+`R : Relation (Env P)` on whole environments*, with the per-language
+well-formedness facts routed through each `Lang`'s `initEnvWF` field rather than
+through explicit evaluator hypotheses.  It is the additive Upto formulation:
+
+* `OverapproximatesUptoWhen R` relates initial environments by `R` (as a
+  hypothesis) and final environments by `R` (under an existential), guards the
+  obligation by a statement-only precondition `pre : L₁.StmtT → Prop`, and also
+  preserves failure (`CanFail`) and the target's `initEnvWF`.
+* `OverapproximatesWhen` / `OverapproximatesUpto` are the obvious specializations
+  (equality relation, no precondition).
+
+Unlike the `OverapproximatesRel` family above — which keeps the WF-evaluator
+hypotheses explicit and relates only the *stores* — the Upto family threads
+initial-environment well-formedness through `initEnvWF` and relates whole
+environments.  Both families coexist. -/
+
+/-- After steps from `s`, it reaches a configuration whose `hasFailure` is true.
+    The configuration need not be terminal or exiting. -/
+@[expose] def CanFail (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
+  ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
+
+/-- Overapproximation up to an environment relation `R`, under a statement-only
+    precondition `pre`.
+
+    For every transformed pair `T st = some st'` with `pre st`, every source
+    initial env `ρ₀` that is `initEnvWF` (with the source parameters), and every
+    target initial env `ρ₀'` related to it by `R`:
+    1. every terminal (resp. exiting) env `ρ'` reachable from `st` in `L₁` has a
+       target counterpart `ρ''` reachable from `st'` in `L₂`, related by `R`;
+    2. failure is preserved (from `ρ₀` in `L₁` to `ρ₀'` in `L₂`);
+    3. the target initial env `ρ₀'` is `initEnvWF` (with the target parameters),
+       so the guarantee can be threaded into a further transform.
+
+    `R` is used on both the input (as a hypothesis) and the output (under an
+    existential). -/
+@[expose] def OverapproximatesUptoWhen
+    (R : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    ∀ (ρ₀ ρ₀' : Env P),
+      R ρ₀ ρ₀' →
+      L₁.initEnvWF params₁ st ρ₀ →
+      -- Terminal/exiting envs have an `R`-related target counterpart.
+      (∀ (ρ' : Env P),
+        (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+          ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.terminalCfg ρ''))
+        ∧
+        (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+                ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.exitingCfg lbl ρ'')))
+      ∧
+      -- Fail preservation.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀')
+      ∧
+      -- `initEnvWF` preservation on the target side, with the target's parameters.
+      L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Overapproximation up to an environment relation `R`, with no precondition. -/
+@[expose] def OverapproximatesUpto
+    (R : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesUptoWhen R L₁ L₂ T (fun _ => True) params₁ params₂
+
+/-- Overapproximation under a statement-only precondition `pre`: terminal/exiting
+    envs reachable from the source are also reachable from the target, and
+    failing programs are preserved.
+
+    This is the special case of `OverapproximatesUptoWhen` where the environment
+    relation is equality — source and target run from the *same* initial env and
+    reach the *same* final env. -/
+@[expose] def OverapproximatesWhen (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesUptoWhen (· = ·) L₁ L₂ T pre params₁ params₂
+
+/-- Aggressive overapproximation under a statement-only precondition `pre`: the
+    target program may assert-fail spuriously — instead of matching the source's
+    terminal/exiting env exactly, it is allowed to instead reach a failing
+    configuration. -/
+@[expose] def OverapproximatesAggressivelyWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  ∀ (st : L₁.StmtT) (st' : L₂.StmtT),
+    T st = some st' →
+    pre st →
+    ∀ (ρ₀ : Env P),
+      L₁.initEnvWF params₁ st ρ₀ →
+      -- Terminal case
+      (∀ ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.terminalCfg ρ')))
+      ∧
+      -- Exiting case
+      (∀ lbl ρ', L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+        CanFail L₂ st' ρ₀ ∨
+        (ρ'.hasFailure = false →
+          L₂.star (L₂.stmtCfg st' ρ₀) (L₂.exitingCfg lbl ρ')))
+      ∧
+      -- Fail preservation, but does not exactly track the counterexample.
+      (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀)
+      ∧
+      -- `initEnvWF` preservation on the target side, with the target's parameters.
+      L₂.initEnvWF params₂ st' ρ₀
+
+/-- Aggressive overapproximation: `OverapproximatesAggressivelyWhen` with no
+    precondition. -/
+@[expose] def OverapproximatesAggressively (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesAggressivelyWhen L₁ L₂ T (fun _ => True) params₁ params₂
+
 /-! ## Statement-list overapproximation (Imperative-specific) -/
 
 section ImperativeStmts

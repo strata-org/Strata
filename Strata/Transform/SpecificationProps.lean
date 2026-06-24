@@ -441,6 +441,189 @@ theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     · intro lbl hstar; exact hr₂.2 lbl (hr₁.2 lbl hstar)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
+/-! ## Overapproximation up to an environment relation (`OverapproximatesUpto*`)
+
+Consumer lemmas for the additive Upto family.  The Upto predicates relate whole
+environments by a relation `R : Relation (Env P)` and route initial-environment
+well-formedness through each `Lang`'s `initEnvWF` field.  These lemmas establish
+monotonicity in `R`, precondition strengthening, identity, and compositionality
+(via relation composition `RComp`, collapsed back to a single relation when `R`
+is a preorder). -/
+
+section Upto
+
+open scoped Relations  -- `R₁ ∘ R₂` for relation composition (`RComp`)
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- `OverapproximatesWhen` is `OverapproximatesUptoWhen` at the equality
+    relation (definitional). -/
+theorem overapproximatesWhen_iff_uptoWhen_eq (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) :
+    OverapproximatesWhen L₁ L₂ T pre params₁ params₂ ↔
+      OverapproximatesUptoWhen (· = ·) L₁ L₂ T pre params₁ params₂ :=
+  Iff.rfl
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- Unconditional version: `OverapproximatesWhen` at the trivial precondition is
+    `OverapproximatesUpto` at equality (definitional). -/
+theorem overapproximatesWhen_true_iff_upto_eq (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) :
+    OverapproximatesWhen L₁ L₂ T (fun _ => True) params₁ params₂ ↔
+      OverapproximatesUpto (· = ·) L₁ L₂ T params₁ params₂ :=
+  Iff.rfl
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- Rewriting the relation `R → R'`.  Since `R` is used both as an input
+    hypothesis (antitone) and an output witness (monotone), the change requires
+    `R' ⊆ R` (for the input) *and* `R ⊆ R'` (for the output). -/
+theorem OverapproximatesUptoWhen.mono (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {R R' : Relation (Env P)}
+    (hin : ∀ a b, R' a b → R a b)
+    (hout : ∀ a b, R a b → R' a b)
+    (h : OverapproximatesUptoWhen R L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesUptoWhen R' L₁ L₂ T pre params₁ params₂ := by
+  intro st st' ht hpre ρ₀ ρ₀' hR' hwf
+  have hr := h st st' ht hpre ρ₀ ρ₀' (hin _ _ hR') hwf
+  refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, hr.2.1, hr.2.2⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').1 hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').2 lbl hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- Precondition strengthening. -/
+theorem OverapproximatesUptoWhen.strengthen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {R : Relation (Env P)}
+    (himp : ∀ st, pre' st → pre st)
+    (h : OverapproximatesUptoWhen R L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesUptoWhen R L₁ L₂ T pre' params₁ params₂ := by
+  intro st st' ht hpre' ρ₀ ρ₀' hR hwf
+  exact h st st' ht (himp st hpre') ρ₀ ρ₀' hR hwf
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- The identity transform is an overapproximation up to `Eq` (reflexivity).
+    This is the unit for `comp`. -/
+theorem OverapproximatesUpto.id (L : Lang P) (params : L.InitEnvWFParamsTy) :
+    OverapproximatesUpto (· = ·) L L some params params := by
+  intro st st' ht _ ρ₀ ρ₀' heq hwf
+  simp only [Option.some.injEq] at ht; subst ht; subst heq
+  exact ⟨fun ρ' => ⟨fun hstar => ⟨ρ', rfl, hstar⟩, fun lbl hstar => ⟨ρ', rfl, hstar⟩⟩,
+         (fun h => h), hwf⟩
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- **Compositionality** (general form): composing transforms composes the
+    relations via `RComp`.  No conditions on the relations are needed at this
+    level of generality — they only appear when collapsing the composite
+    `RComp R₁ R₂` back into a single relation (see `comp_preorder`). -/
+theorem OverapproximatesUptoWhen.comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {R₁ R₂ : Relation (Env P)}
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen R₁ L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen R₂ L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen (R₁ ∘ R₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ := by
+  intro st st'' ht hpre₁ ρ₀ ρ₀'' hR hwf
+  -- Decompose the composed transform and the composed input relation.
+  simp only [bind, Option.bind] at ht
+  match hT₁ : T₁ st with
+  | none => rw [hT₁] at ht; exact absurd ht (by nofun)
+  | some st' =>
+    rw [hT₁] at ht
+    obtain ⟨ρ₀', hR₁, hR₂⟩ := hR
+    have hr₁ := h₁ st st' hT₁ hpre₁ ρ₀ ρ₀' hR₁ hwf
+    have hr₂ := h₂ st' st'' ht (hpre st st' hT₁ hpre₁) ρ₀' ρ₀'' hR₂ hr₁.2.2
+    refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩,
+            fun hcf => hr₂.2.1 (hr₁.2.1 hcf), hr₂.2.2⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').1 hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).1 hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').2 lbl hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).2 lbl hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- **Compositionality** (single-relation form): if `R` is a *preorder*
+    (`Reflexive` and `Transitive`) then composing two `OverapproximatesUptoWhen R`
+    transforms yields another `OverapproximatesUptoWhen R` transform.
+
+    The preorder conditions are exactly what is needed to collapse `RComp R R`
+    back into `R`: *reflexivity* witnesses `R ⊆ RComp R R` on inputs (antitone
+    side), and *transitivity* witnesses `RComp R R ⊆ R` on outputs (monotone
+    side). -/
+theorem OverapproximatesUptoWhen.comp_preorder (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {R : Relation (Env P)}
+    (hrefl : Reflexive R)
+    (htrans : Transitive R)
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen R L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen R L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen R L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
+  -- The composite holds for `RComp R R`; reflexivity/transitivity collapse it to `R`.
+  OverapproximatesUptoWhen.mono L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
+    (fun a _ hab => ⟨a, hrefl a, hab⟩)
+    (fun _ _ h => RComp.collapse htrans (fun _ _ => _root_.id) (fun _ _ => _root_.id) h)
+    (OverapproximatesUptoWhen.comp L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃ hpre h₁ h₂)
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- **Compositionality** for the unconditional `OverapproximatesUpto` under a
+    preorder `R`.  The precondition obligation vanishes since `pre = fun _ => True`. -/
+theorem OverapproximatesUpto.comp_preorder (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {R : Relation (Env P)}
+    (hrefl : Reflexive R)
+    (htrans : Transitive R)
+    (h₁ : OverapproximatesUpto R L₁ L₂ T₁ params₁ params₂)
+    (h₂ : OverapproximatesUpto R L₂ L₃ T₂ params₂ params₃) :
+    OverapproximatesUpto R L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ :=
+  OverapproximatesUptoWhen.comp_preorder L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃
+    hrefl htrans (fun _ _ _ _ => trivial) h₁ h₂
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- Precondition strengthening for `OverapproximatesAggressivelyWhen`. -/
+theorem OverapproximatesAggressivelyWhen.strengthen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (himp : ∀ st, pre' st → pre st)
+    (h : OverapproximatesAggressivelyWhen L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesAggressivelyWhen L₁ L₂ T pre' params₁ params₂ := by
+  intro st st' ht hpre' ρ₀ hswf
+  exact h st st' ht (himp st hpre') ρ₀ hswf
+
+omit [HasVal P] [HasVarsPure P P.Expr] in
+/-- `OverapproximatesUptoWhen` at equality implies `OverapproximatesAggressivelyWhen`
+    (same precondition).  An exact transform that handles all preconditioned
+    inputs is also an aggressive transform that handles them. -/
+theorem OverapproximatesWhen.toAggressivelyWhen (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (h : OverapproximatesWhen L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesAggressivelyWhen L₁ L₂ T pre params₁ params₂ := by
+  intro st st' ht hpre ρ₀ hswf
+  have hr := h st st' ht hpre ρ₀ ρ₀ rfl hswf
+  refine ⟨?_, ?_, hr.2.1, hr.2.2⟩
+  · intro ρ' hstar
+    obtain ⟨ρ'', heq, hstar'⟩ := (hr.1 ρ').1 hstar
+    exact .inr (fun _ => heq ▸ hstar')
+  · intro lbl ρ' hstar
+    obtain ⟨ρ'', heq, hstar'⟩ := (hr.1 ρ').2 lbl hstar
+    exact .inr (fun _ => heq ▸ hstar')
+
+end Upto
+
 /-! ## Statement-list overapproximation (Imperative-specific)
 
 Uses `Overapproximates L L T` (single-language): the proof decomposes

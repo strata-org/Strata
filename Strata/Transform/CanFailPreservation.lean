@@ -65,12 +65,6 @@ failing source configuration to a reachable failing CFG configuration — strict
 more than the endpoint lemmas supply.  The conditional theorem captures exactly the
 fragment the existing machinery proves. -/
 
-/-- `CanFail L s ρ₀`: some configuration reachable from `s` (under language `L`,
-from initial environment `ρ₀`) has its cumulative failure flag set. -/
-@[expose] def CanFail {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVal P]
-    [HasVarsPure P P.Expr] (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
-  ∃ cfg : L.CfgT, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
-
 /-! ## CFG-side `hasFailure` monotonicity
 
 `updateFailure` only ever OR-s the failure flag in, so the projected `getFailure` of
