@@ -32,6 +32,24 @@ structure Env (P : PureExpr) where
   /-- Cumulative failure flag — `true` once any command has signalled failure. -/
   hasFailure : Bool := false
 
+/-- Environment-level lift of `StoreAgreement`: two environments agree when their
+stores do.  This is the relation an output-side simulation that tracks store
+agreement (rather than store equality) would carry on environments, ignoring the
+evaluator and failure flag.  It inherits `StoreAgreement`'s preorder structure. -/
+@[expose] def StoreAgreementEnv {P : PureExpr} (a b : Env P) : Prop :=
+  StoreAgreement a.store b.store
+
+/-- `StoreAgreementEnv` is reflexive (from `StoreAgreement.refl`). -/
+theorem StoreAgreementEnv.refl {P : PureExpr} (e : Env P) :
+    StoreAgreementEnv e e :=
+  StoreAgreement.refl e.store
+
+/-- `StoreAgreementEnv` is transitive (from `StoreAgreement.trans`). -/
+theorem StoreAgreementEnv.trans {P : PureExpr} {a b c : Env P}
+    (h₁ : StoreAgreementEnv a b) (h₂ : StoreAgreementEnv b c) :
+    StoreAgreementEnv a c :=
+  StoreAgreement.trans h₁ h₂
+
 /-- Type of a function that extends the semantic evaluator with a new function definition. -/
 @[expose] abbrev ExtendEval (P : PureExpr) := SemanticEval P → SemanticStore P → PureFunc P → SemanticEval P
 
