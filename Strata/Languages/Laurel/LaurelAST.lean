@@ -166,9 +166,6 @@ inductive HighType : Type where
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
   | TBv (size : Nat)
-  /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
-  Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
-  | TCore (s: String)
   /-- Type used internally by the Laurel compilation pipeline.
   This type is used when a resolution error occurs,
   to continue compilation without producing superfluous errors

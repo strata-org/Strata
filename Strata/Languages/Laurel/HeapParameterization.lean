@@ -192,7 +192,6 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name then s!"Box..{name.text}Val!"
       else "Box..compositeVal!"
   | .TBv n => s!"Box..bv{n}Val!"
-  | .TCore name => s!"Box..{name}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -209,7 +208,6 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
-  | .TCore name => s!"Box..{name}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
@@ -227,8 +225,6 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
   | .TBv n =>
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
-  | .TCore name =>
-        some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
