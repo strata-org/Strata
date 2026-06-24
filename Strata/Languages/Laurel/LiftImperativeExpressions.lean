@@ -604,21 +604,11 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       let prepends ← takePrepends
       return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
 
-  | .PrimitiveOp _ args =>
-      -- A `PrimitiveOp` in statement position. If it carries any side effects
-      -- (an embedded assignment or imperative call — typically the result of
-      -- the postfix increment lowering `(x := x + 1) - 1`), lift them out and
-      -- discard the unused pure result. Otherwise leave the expression
-      -- statement intact so the Core translator can preserve it via
-      -- `exprAsUnusedInit`.
-      let imperativeCallees := (← get).imperativeCallees
-      if containsAssignmentOrImperativeCall imperativeCallees stmt then
-        let _ ← args.reverse.mapM transformExpr
-        let prepends ← takePrepends
-        modify fun s => { s with subst := [] }
-        return prepends
-      else
-        return [stmt]
+  | .PrimitiveOp op args _ =>
+      let seqArgs ← args.reverse.mapM transformExpr
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.PrimitiveOp op seqArgs.reverse, source⟩]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
@@ -626,10 +616,6 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       modify fun s => { s with subst := [] }
       return prepends ++ [⟨.Return (some seqRet), source⟩]
 
-  | .PrimitiveOp name args _ =>
-      let seqArgs ← args.mapM transformExpr
-      let prepends ← takePrepends
-      return prepends ++ [⟨.PrimitiveOp name seqArgs, source⟩]
   | _ =>
       return [stmt]
   termination_by (sizeOf stmt, 0)
