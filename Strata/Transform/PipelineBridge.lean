@@ -2437,6 +2437,41 @@ structure PipelinePre [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
     (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
     HasIdent.ident (P := P) str ∉ Block.modifiedVars ss
 
+/-- The source statement-list language whose initial-environment well-formedness
+field carries the `ρ₀`-dependent pipeline preconditions.
+
+This is `Lang.imperativeBlock` over `Cmd P` / `EvalCmd P` / `isAtAssert`, but
+with `initEnvWF` overriding the trivial default: `initEnvWF () ss ρ₀` is exactly
+`PipelinePre extendEval ss ρ₀`.  Routing the bundle through `initEnvWF` lets a
+downstream consumer state the preconditions per-language (via the `Lang`'s own
+`initEnvWF` field) instead of carrying them as a separate explicit hypothesis,
+which is what the up-to-relation overapproximation family expects.
+
+`InitEnvWFParamsTy` stays `Unit`: `PipelinePre` already takes the statement `ss`
+and the environment `ρ₀` directly, so no extra parameter record is needed. -/
+abbrev Lang.imperativeBlockSrc [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [HasSubstFvar P] (extendEval : ExtendEval P) : Specification.Lang P :=
+  Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P)
+    (EvalCmd P) extendEval (isAtAssert P)
+    Unit (fun _ ss ρ₀ => PipelinePre extendEval ss ρ₀)
+
+/-- **Projection of the source `initEnvWF`.** The custom `initEnvWF` of
+`Lang.imperativeBlockSrc` unfolds to the full `PipelinePre` bundle, from which
+every individual pipeline precondition (the well-formed-evaluator facts, the
+clean-initial-store conditions, the per-pass minted-name kind-freedom
+conditions, and the source-shape restrictions) is recoverable.
+
+This is the entry point a downstream up-to-relation overapproximation proof uses
+to turn the `L₁.initEnvWF params st ρ₀` hypothesis back into the concrete facts
+the dual `pipeline_sound` consumes. -/
+theorem imperativeBlockSrc_initEnvWF_pipelinePre [HasFvar P] [HasNot P] [HasVal P]
+    [HasBoolVal P] [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr]
+    [DecidableEq P.Ident] [HasSubstFvar P] (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P)
+    (h : (Lang.imperativeBlockSrc extendEval).initEnvWF () ss ρ₀) :
+    PipelinePre extendEval ss ρ₀ := h
+
 /-- **Pipeline soundness, restated as a refinement.** Under the
 `PipelinePre` bundle, `fun ss => some (pipeline ss)` overapproximates the
 source statement-list language `Lang.imperativeBlock` by the unstructured CFG

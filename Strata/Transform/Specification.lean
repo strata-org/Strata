@@ -484,8 +484,16 @@ variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval 
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
 /-- `Lang` for block-level (statement-list) overapproximation.
-    `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
-abbrev Lang.imperativeBlock : Lang P where
+    `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`.
+
+    `ParamsTy` is the `InitEnvWFParamsTy` for the resulting language; it defaults
+    to `Unit` (no parameters), in which case `initEnvWF` defaults to the trivial
+    predicate `True`.  A source language can supply both to carry the
+    initial-environment facts a downstream transform relies on. -/
+abbrev Lang.imperativeBlock
+    (ParamsTy : Type := Unit)
+    (initEnvWF : ParamsTy → List (Stmt P CmdT) → Env P → Prop := fun _ _ _ => True) :
+    Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
   star := StepStmtStar P evalCmd extendEval
@@ -494,8 +502,8 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
-  InitEnvWFParamsTy := Unit
-  initEnvWF := fun _ _ _ => True
+  InitEnvWFParamsTy := ParamsTy
+  initEnvWF := initEnvWF
 
 end ImperativeStmts
 
