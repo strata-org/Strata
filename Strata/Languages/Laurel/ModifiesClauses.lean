@@ -122,18 +122,6 @@ def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
 def onlyIndividualRefs (entries : List ModifiesEntry) : Bool :=
   !entries.isEmpty && entries.all fun e => match e with | .single _ => true | _ => false
 
-/-- Assert `frame` before every exit of `body` (`return` and body-block `exit`) and at its end. -/
-def insertFrameChecks (proc : Procedure) (frame : StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
-  let src := proc.name.source
-  let check : StmtExprMd := { val := .Assert { condition := frame, summary := "modifies clause" }, source := src }
-  let wrap (e : StmtExprMd) : StmtExprMd := { val := .Block [check, e] none, source := e.source }
-  let beforeExits := mapStmtExpr (fun e =>
-    match e.val with
-    | .Return _ => wrap e
-    | .Exit l => if l == bodyLabel then wrap e else e
-    | _ => e) body
-  { val := .Block [beforeExits, check] none, source := src }
-
 /--
 Check whether a procedure has a `$heap` output parameter,
 indicating it mutates the heap.
@@ -154,14 +142,16 @@ def transformModifiesClauses (model: SemanticModel)
         let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapVarName)))
         let heapOut := mkMd <| .Var (.Local heapVarName)
         if useEnumeratedFrame && onlyIndividualRefs entries then
-          -- Callers assume the quantifier-free frame; the body re-checks the
-          -- pointwise frame at every exit.
-          let pointwise := buildQuantifiedFrame proc entries heapIn heapOut
-          let framePost : Condition :=
+          -- Callers assume the quantifier-free frame (assume-only); the body
+          -- checks the pointwise frame (assert-only) at every exit, so the
+          -- quantified frame is verified but never exposed to callers.
+          let enumeratedPost : Condition :=
             { condition := buildEnumeratedFrame proc entries heapIn heapOut,
               summary := "modifies clause", mode := ConditionMode.Assume }
-          let impl' := impl.map (insertFrameChecks proc pointwise)
-          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
+          let pointwisePost : Condition :=
+            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
+              summary := "modifies clause", mode := ConditionMode.Assert }
+          .ok { proc with body := .Opaque (postconds ++ [enumeratedPost, pointwisePost]) impl [] }
         else
           let framePost : Condition :=
             { condition := buildQuantifiedFrame proc entries heapIn heapOut,
