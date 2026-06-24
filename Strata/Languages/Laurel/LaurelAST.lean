@@ -265,10 +265,23 @@ or abstract (requiring overriding in extending types).
 inductive Body where
   /-- A transparent body whose implementation is visible to callers. -/
   | Transparent (body : AstNode StmtExpr)
-  /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
+  /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed.
+
+      Each `modifies` entry lists state the procedure may change; everything else
+      on the heap is preserved. The legal forms, recognized by the downstream
+      `ModifiesClauses` pass, are:
+      - `modifies o` — a single object reference; any field of `o` may change.
+      - `modifies s` — an object set; any field of any member of `s` may change.
+      - `modifies o#f` — a single field of a single object; only field `f` of `o`
+        may change (field-granular).
+      - `modifies *` — the wildcard (`StmtExpr.All`); the procedure may change anything.
+
+      A 'field of an object set' (e.g. `s#f`) is intentionally not yet supported:
+      Laurel cannot yet construct set values, so there is no way to test it. -/
   | Opaque
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
+      -- See the constructor doc above for the allowed `modifies` forms.
       (modifies : List (AstNode StmtExpr))
       -- TODO: add back non-determinism together with an implementation
       -- deterministic : Bool
