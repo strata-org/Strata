@@ -475,6 +475,16 @@ where
       simp_all
       omega)
 
+/-- Heap-transform a modifies entry. A field target `o#f` is kept symbolic
+(only its owner is lowered) so the modifies pass can match it structurally. -/
+def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
+    (entry : StmtExprMd) : TransformM StmtExprMd := do
+  match entry.val with
+  | .Var (.Field target fieldName) =>
+      let target' ← heapTransformExpr heapName model target
+      return { entry with val := .Var (.Field target' fieldName) }
+  | _ => heapTransformExpr heapName model entry
+
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
   let readsHeap := (← get).heapReaders.contains proc.name
@@ -503,7 +513,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
                 pure (some implExpr')
             | none => pure none
-          let modif' ← modif.mapM (heapTransformExpr heapName model ·)
+          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
@@ -532,7 +542,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .Opaque postconds impl modif =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
-          let modif' ← modif.mapM (heapTransformExpr heapName model ·)
+          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))

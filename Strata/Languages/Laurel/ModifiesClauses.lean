@@ -56,25 +56,6 @@ inductive ModifiesEntry where
   | field (objExpr : StmtExprMd) (fieldConst : StmtExprMd)
 
 /--
-Recognize a heap-parameterized field read `readField($heap, obj, fieldConst)`
-(optionally under one Box destructor), as emitted for a field target like `o#f`.
-`fieldConst` is the per-declaring-type `Field` constructor (`A.x` ≠ `B.x`), the
-same one `readField` uses — so the soundness gate holds by construction.
--/
-def matchModifiesFieldRead (e : StmtExpr) : Option (StmtExprMd × StmtExprMd) :=
-  let tryReadField : StmtExpr → Option (StmtExprMd × StmtExprMd) := fun
-    | .StaticCall callee [_heap, objExpr, fieldConst] =>
-        if callee.text == "readField" then some (objExpr, fieldConst) else none
-    | _ => none
-  match tryReadField e with
-  | some r => some r
-  | none =>
-    -- Unwrap one Box destructor; gate on `Box` so unrelated unary calls aren't matched.
-    match e with
-    | .StaticCall callee [arg] => if callee.text.startsWith "Box" then tryReadField arg.val else none
-    | _ => none
-
-/--
 Classify a heap-relevant type into a `ModifiesEntry`, or `none` for
 non-heap-relevant types. Delegates to `classifyModifiesHighType` for the
 type classification.
@@ -85,20 +66,22 @@ def classifyModifiesType (expr : StmtExprMd) (ty : HighType) : Option ModifiesEn
   | some .compositeSet => some (.set expr)
   | none               => none
 
-/--
-Extract modifies entries. A field-access target (lowered to a `readField`)
-yields a field-granular entry; otherwise it is classified by type. Non-composite
-types (e.g. primitive globals) are filtered out — the frame applies to heap objects.
--/
+/-- Extract modifies entries: a field target `o#f` (kept symbolic by heap
+parameterization) becomes a field-granular entry; other entries are classified
+by type. Non-heap-relevant entries are dropped during resolution. -/
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
-    -- Soundness: a `.field` entry is only built for a field read of a heap object.
-    -- Targets with a non-composite owner are dropped upstream by
-    -- filterBodyNonCompositeModifies before heap parameterization.
-    match matchModifiesFieldRead expr.val with
-    | some (objExpr, fieldConst) => some (.field objExpr fieldConst)
-    | none => classifyModifiesType expr (computeExprType model expr).val
+    match expr.val with
+    -- Field target `o#f`. Soundness: targets with a non-composite owner are
+    -- dropped (with a diagnostic) upstream by `filterBodyNonCompositeModifies`
+    -- before heap parameterization, so every field target reaching here owns a
+    -- heap object. A field whose name fails to resolve (already diagnosed by
+    -- the resolution pass) yields `none` and is dropped.
+    | .Var (.Field objExpr fieldName) =>
+      (resolveQualifiedFieldName model fieldName).map fun qualifiedName =>
+        .field objExpr (mkMd <| .StaticCall qualifiedName [])
+    | _ => classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
 - For a single Composite `e`: `$obj != e`
