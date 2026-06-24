@@ -5,7 +5,7 @@ auto_start: false
 module: null
 tool_error_reminder: >
   That tool is not available to you. Your tools: Read, Write, Edit, lean_verify,
-  lean_goal, lean_multi_attempt, lean_diagnostic_messages, lean_local_search,
+  lean_goal, lean_diagnostic_messages, lean_local_search,
   lean_declaration_file, show_file_state, get_sorries_by_theorem, get_sorry_positions.
   For definitions/lemmas, ask SearchAgent: send_message(to="SearchAgent", message="...").
 
@@ -41,7 +41,6 @@ system_prompt: >
   - Only edit your assigned file
   - Ask SearchAgent BEFORE guessing — saves wasted turns
   - Use ledger_search to find proved lemmas you can import
-  - Use lean_multi_attempt for quick exploration
   - Do NOT create separate files or use write_helper_lemma
 
 prompt: ""
@@ -53,7 +52,6 @@ allowed_tools:
   - mcp__lean_lsp__lean_run_code
   - mcp__lean_lsp__lean_hover_info
   - mcp__lean_lsp__lean_goal
-  - mcp__lean_lsp__lean_multi_attempt
   - mcp__lean_lsp__lean_diagnostic_messages
   - mcp__lean_lsp__lean_local_search
   - mcp__lean_lsp__lean_declaration_file
@@ -65,6 +63,6 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_build]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

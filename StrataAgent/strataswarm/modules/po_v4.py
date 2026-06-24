@@ -48,7 +48,7 @@ class GuideAction(str, Enum):
 class GuideVerdict:
     action: GuideAction = GuideAction.CONTINUE
     reason: str = ""
-    turns: int = 35  # how many turns to give writer next (10-50)
+    turns: int = 50  # how many turns to give writer next (50-100)
 
 
 # ─── State machine (for gen_mermaid.py + frontend visualization) ──────────────
@@ -532,9 +532,9 @@ async def _do_assemble_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: P
 
 # ─── Prove a single lemma ─────────────────────────────────────────────────────
 
-CHUNK_TURNS = 35           # default turns per writer chunk
-MIN_CHUNK_TURNS = 20       # minimum turns guide can assign
+MIN_CHUNK_TURNS = 50       # minimum turns guide can assign
 MAX_CHUNK_TURNS = 100      # maximum turns guide can assign
+CHUNK_TURNS = MIN_CHUNK_TURNS  # default turns per writer chunk
 CONTEXT_THRESHOLD = 65.0   # % — guide can recommend decompose after this
 GRACE_TURNS = 20           # turns per grace extraction attempt
 WRITER_CLEANUP_TURNS = 10
@@ -587,7 +587,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
     # ── Main loop: guide ↔ writer ──
     total_turns_used = 0
     prev_sorry_count = None
-    chunk_budget = CHUNK_TURNS  # guide can adjust this (10-50) each cycle
+    chunk_budget = CHUNK_TURNS  # guide adjusts this each cycle
     guide_state_file = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
 
     # Initial guide consultation
@@ -713,24 +713,28 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 "- give_up: Statement is mathematically false.\n\n"
                 "'Needs mutual recursion' or 'needs helpers' = decompose, NOT give_up.\n"
                 "Do NOT choose decompose unless writer context ≥ 65%.\n\n"
-                "If continue: set 'turns' (10-50) for how many turns the writer gets next.\n"
-                "More turns = writer explores deeper. Fewer = check in sooner."
+                f"If continue: set 'turns' ({MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}) for how many turns the writer gets next.\n"
+                "More turns = writer explores deeper. Fewer = check in sooner.\n\n"
+                "Reply with EXACTLY this format (nothing else):\n"
+                "ACTION: <continue|decompose|give_up>\n"
+                "TURNS: <number>\n"
+                "REASON: <one sentence>"
             ),
-            result_type=GuideVerdict,
             max_turns=1,
         )
 
-        if verdict_result.output:
-            verdict = verdict_result.output
-            if verdict.action == GuideAction.GIVE_UP:
-                await agent._emit("message", f"[PO4] Statement false: {verdict.reason}")
-                ledger.mark_failed(entry.id, f"Statement false: {verdict.reason}")
-                return "failed"
-            elif verdict.action == GuideAction.DECOMPOSE:
-                await agent._emit("message", f"[PO4] Decompose: {verdict.reason}")
-                await _dump_guide_state(guide, entry, cwd)
-                break  # → grace phase → extraction
-            chunk_budget = verdict.turns
+        action, reason, turns = _parse_guide_verdict(verdict_result.raw_result or "")
+        if turns:
+            chunk_budget = turns
+
+        if action == "give_up":
+            await agent._emit("message", f"[PO4] Statement false: {reason}")
+            ledger.mark_failed(entry.id, f"Statement false: {reason}")
+            return "failed"
+        elif action == "decompose":
+            await agent._emit("message", f"[PO4] Decompose: {reason}")
+            await _dump_guide_state(guide, entry, cwd)
+            break  # → grace phase → extraction
 
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
@@ -1223,7 +1227,8 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
     For each proved entry with a workspace:
       <workspace>/Stub.lean → <workspace>.lean (overwrite the sorry version)
 
-    Build order: leaves first (topo sort) so .olean files cascade correctly.
+    Always rebuilds from root. On compilation errors (ignoring sorry/warnings),
+    spawns a compilation fixer agent to resolve conflicts.
     """
     import subprocess
 
@@ -1243,25 +1248,35 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
         if not target_path.exists():
             continue
 
-        # Copy proved Stub.lean → original .lean file
         shutil.copy2(stub_path, target_path)
         assembled_count += 1
 
-    if assembled_count == 0:
-        return True  # nothing to assemble
+    if assembled_count > 0:
+        await agent._emit("message", f"[PO4] Assembled {assembled_count} files")
 
-    await agent._emit("message", f"[PO4] Assembled {assembled_count} files, rebuilding...")
-
-    # Build from root to validate
+    # Always build from root
     root_module = f"{state.root_workspace}.Stub".replace("/", ".")
-    result = subprocess.run(
-        ["lake", "build", root_module], cwd=str(cwd),
-        capture_output=True, text=True, timeout=180,
-    )
-    output = result.stdout + "\n" + result.stderr
-    has_error = any(": error:" in l and "sorry" not in l for l in output.splitlines())
-    if has_error:
-        await agent._emit("message", f"[PO4] Assembly build error: {output[-300:]}")
+    for attempt in range(3):
+        result = subprocess.run(
+            ["lake", "build", root_module], cwd=str(cwd),
+            capture_output=True, text=True, timeout=180,
+        )
+        output = result.stdout + "\n" + result.stderr
+
+        # Only real compilation errors matter (ignore sorry warnings)
+        error_lines = [l for l in output.splitlines() if ": error:" in l]
+        if not error_lines:
+            break
+
+        # Compilation errors — spawn fixer
+        await agent._emit("message",
+            f"[PO4] Build errors (attempt {attempt + 1}/3) — running compilation fixer")
+        fixed = await _run_compilation_fixer(agent, state, cwd, "\n".join(error_lines))
+        if not fixed:
+            await agent._emit("message", "[PO4] Compilation fixer failed")
+            return False
+    else:
+        await agent._emit("message", f"[PO4] Assembly failed after 3 fixer attempts")
         return False
 
     # Clean up: remove Stub.lean from child workspaces (not the root)
@@ -1270,7 +1285,7 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
         if not entry or entry.status != LemmaStatus.PROVED:
             continue
         if entry_id == ledger.root_id:
-            continue  # never clean root's Stub.lean
+            continue
         stub_path = cwd / entry.workspace / "Stub.lean"
         target_path = cwd / f"{entry.workspace}.lean"
         if stub_path.exists() and target_path.exists():
@@ -1287,6 +1302,32 @@ async def _assemble(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> b
 
     await agent._emit("message", "[PO4] Assembly done (root still has transitive sorry)")
     return True
+
+
+async def _run_compilation_fixer(agent, state: PO4State, cwd: Path, error_text: str) -> bool:
+    """Spawn a stateless compilation fixer to resolve build errors.
+
+    Handles: duplicate definitions (add import, remove duplicate),
+    missing imports, type mismatches from stale .olean, etc.
+    """
+    async with swarm_agent("compilation_fixer", swarm=agent.swarm, cwd=agent._cwd,
+                           workspace=state.root_workspace) as fixer:
+        result = await fixer.run(
+            inp=(
+                f"Fix these Lean 4 compilation errors:\n\n"
+                f"{error_text}\n\n"
+                f"Common fixes:\n"
+                f"- 'already contains X from Y': Two files define the same thing. "
+                f"The file whose name matches the definition is the owner. "
+                f"In the other file: delete the duplicate (and its mutual block), "
+                f"add `import <owner_module>` at the top.\n"
+                f"- 'unknown identifier': Add the missing import.\n"
+                f"- 'type mismatch': Check if definitions changed signature.\n\n"
+                f"Read the files, make the minimal fix, verify with lean_verify.\n"
+                f"Workspace: {state.root_workspace}"
+            ),
+        )
+    return hasattr(result, 'status') and result.status.value == "completed"
 
 
 def _topo_sort(ledger: LemmaLedger) -> list[str]:
@@ -1405,6 +1446,19 @@ async def _dump_guide_state(guide, entry: LemmaEntry, cwd: Path):
         guide_dir = cwd / entry.workspace / "guide_state"
         guide_dir.mkdir(parents=True, exist_ok=True)
         (guide_dir / f"{entry.name}.md").write_text(state_text)
+
+
+def _parse_guide_verdict(raw: str) -> tuple[str, str, int | None]:
+    """Parse guide's ACTION/TURNS/REASON response. Returns (action, reason, turns)."""
+    import re
+    action_match = re.search(r'ACTION:\s*(continue|decompose|give_up)', raw, re.IGNORECASE)
+    turns_match = re.search(r'TURNS:\s*(\d+)', raw)
+    reason_match = re.search(r'REASON:\s*(.+)', raw)
+
+    action = action_match.group(1).lower() if action_match else "continue"
+    reason = reason_match.group(1).strip() if reason_match else ""
+    turns = int(turns_match.group(1)) if turns_match else None
+    return action, reason, turns
 
 
 # ─── Initial action for writer ─────────────────────────────────────────────────
