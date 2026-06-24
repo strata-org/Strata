@@ -218,19 +218,20 @@ def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
   match body with
   | .Opaque posts impl mods =>
     let (kept, diags) := mods.foldl (fun (acc, ds) e =>
+      -- Shared rejection: drop the entry and emit the "non-composite type" diagnostic.
+      let reject := fun (ty : HighType) (kind : String) =>
+        (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause {kind} has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
       match e.val with
       | .All => (acc ++ [e], ds)  -- wildcard is always kept
       | .Var (.Field target _) =>
         -- Field target `o#f`: keep when the owner is a heap object (the field's own type is irrelevant).
         let ownerTy := (computeExprType model target).val
         if isHeapRelevantType ownerTy then (acc ++ [e], ds)
-        else
-          (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause field target has non-composite owner type '{formatHighTypeVal ownerTy}' and will be ignored"])
+        else reject ownerTy "field target"
       | _ =>
         let ty := (computeExprType model e).val
         if isHeapRelevantType ty then (acc ++ [e], ds)
-        else
-          (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause entry has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
+        else reject ty "entry"
     ) ([], [])
     (.Opaque posts impl kept, diags)
   | other => (other, [])
