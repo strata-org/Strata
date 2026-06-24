@@ -729,8 +729,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Return val => do
     let r ← Check.return exprMd val source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
-  | .Assert ⟨condExpr, summary, free⟩ => do
-    let r ← Check.assert exprMd condExpr summary free source (by rw [h_node])
+  | .Assert ⟨condExpr, summary, mode⟩ => do
+    let r ← Check.assert exprMd condExpr summary mode source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assume cond => do
     let r ← Check.assume exprMd cond source (by rw [h_node])
@@ -1405,12 +1405,12 @@ def Synth.block (exprMd : StmtExprMd)
     `cond` is checked against `TBool`. `assert` is a statement: it
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assert (exprMd : StmtExprMd)
-    (condExpr : StmtExprMd) (summary : Option String) (free : Bool)
+    (condExpr : StmtExprMd) (summary : Option String) (mode : ConditionMode)
     (source : Option FileRange)
-    (h : exprMd.val = .Assert ⟨condExpr, summary, free⟩) :
+    (h : exprMd.val = .Assert ⟨condExpr, summary, mode⟩) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
-  pure { val := .Assert { condition := cond', summary, free }, source := source }
+  pure { val := .Assert { condition := cond', summary, mode }, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left

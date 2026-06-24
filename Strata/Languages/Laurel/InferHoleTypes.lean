@@ -150,8 +150,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
       return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩) postTest, source⟩
-  | .Assert ⟨condExpr, summary, free⟩ =>
-      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
+  | .Assert ⟨condExpr, summary, mode⟩ =>
+      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, mode }, source⟩
   | .Assume cond =>
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
   | .Return (some retExpr) =>

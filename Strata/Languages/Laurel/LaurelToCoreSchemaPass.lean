@@ -605,7 +605,7 @@ private def translateChecks (checks : List Condition) (labelBase : String) (over
     let md := match check.summary.orElse (fun _ => defaultSummary) with
       | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
       | none => baseMd
-    let attr := if check.free || overrideFree then Core.Procedure.CheckAttr.Free else .Default
+    let attr := if check.mode == ConditionMode.Assume || overrideFree then Core.Procedure.CheckAttr.Free else .Default
     let c : Core.Procedure.Check := { expr := checkExpr, attr, md }
     return (label, c))
 

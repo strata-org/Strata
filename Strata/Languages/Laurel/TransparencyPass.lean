@@ -138,7 +138,7 @@ private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Pr
   match freePost.val with
   | .LiteralBool true => proc  -- trivial, skip
   | _ =>
-    let freeCond : Condition := { condition := freePost, free := true }
+    let freeCond : Condition := { condition := freePost, mode := ConditionMode.Assume }
     match proc.body with
     | .Opaque postconds impl modif =>
       { proc with body := .Opaque (postconds ++ [freeCond]) impl modif }

@@ -451,8 +451,8 @@ where
     | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
     | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
     | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
-    | .Assert ⟨condExpr, summary, free⟩ =>
-        return [⟨ .Assert { condition := ← recurseOne condExpr, summary, free }, source ⟩]
+    | .Assert ⟨condExpr, summary, mode⟩ =>
+        return [⟨ .Assert { condition := ← recurseOne condExpr, summary, mode }, source ⟩]
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]

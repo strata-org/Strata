@@ -203,6 +203,10 @@ inductive IncrDecrOp where
   | Decr
   deriving Repr, BEq, Inhabited
 
+inductive ConditionMode where
+  | Assert | Assume | Both
+  deriving BEq
+
 mutual
 
 /--
@@ -255,7 +259,7 @@ structure Condition where
       A free precondition is assumed by the implementation but not asserted at
       call sites. A free postcondition is assumed upon return from calls but
       not checked on exit from implementations. -/
-  free : Bool := false
+  mode : ConditionMode := ConditionMode.Both
 
 /--
 The body of a procedure. A body can be transparent (with a visible

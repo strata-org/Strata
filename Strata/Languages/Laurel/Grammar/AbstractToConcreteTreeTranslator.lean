@@ -437,6 +437,7 @@ instance : Repr StmtExpr where
 instance : Repr HighType where
   reprPrec r _ := s!"{Std.format r}"
 
+deriving instance Repr for Strata.Laurel.ConditionMode
 deriving instance Repr for Strata.Laurel.Parameter
 deriving instance Repr for Strata.Laurel.Procedure
 deriving instance Repr for Strata.Laurel.Field
