@@ -1020,7 +1020,7 @@ def Check.exit (target : String) (source : Option FileRange) :
     ─────────────────────────
     Γ ⊢ Return none ⇐ A
 
-    T_o-bar = [T]    TVoid <:~ T                           (Return-None-Single)
+    T_o-bar = [T]                                          (Return-None-Single)
     ──────────────────────────────────
     Γ ⊢ Return none ⇐ A
 
@@ -1053,16 +1053,16 @@ def Check.exit (target : String) (source : Option FileRange) :
     resolving a constant initializer), so all `Return` checks are
     skipped — `Return` should not occur there in well-formed input.
 
-    `return;` synthesizes the missing payload as `TVoid`. In a
-    single-output procedure it is then required to subtype the declared
-    output (Return-None-Single's `TVoid <:~ T` premise) — accepted in
-    void-returning procedures, rejected in `int`/`bool`/etc. ones,
-    closing the soundness gap that the Dafny-style early-exit shorthand
-    used to leave open. In a void-output procedure it is unconditionally
-    accepted (Return-None-Void); in a multi-output procedure it is also
-    accepted (Return-None-Multi) and acts as an early-exit shorthand —
-    each declared output retains whatever was last assigned to it via
-    named-output assignment.
+    A valueless `return;` carries no payload, so there is nothing to
+    check against the declared output: it is accepted unconditionally in
+    every shape — void-output (Return-None-Void), single-output
+    (Return-None-Single), and multi-output (Return-None-Multi). It is the
+    Dafny-style early-exit shorthand: each declared output retains
+    whatever was last assigned to it via named-output assignment. This
+    also keeps the `EliminateValueInReturns` pass's output well-typed —
+    that pass rewrites `return e` into `out := e; return;`, and the
+    trailing bare `return;` must re-resolve cleanly even when the
+    procedure returns a non-void type.
 
     `return e` is checked against the declared output type in the
     single-output case. Multi-output procedures use named-output
@@ -1086,10 +1086,15 @@ def Check.return (exprMd : StmtExprMd)
     | _ => let (e', _) ← Synth.resolveStmtExpr a.val; pure e')
   match val, expectedReturn with
   | none,   some []          => pure ()
-  | none,   some [singleOutput] =>
-    -- `return;` synthesizes the missing payload as `TVoid`; require it to
-    -- be a consistent subtype of the declared output.
-    checkSubtype source singleOutput { val := .TVoid, source := source }
+  | none,   some [_singleOutput] =>
+    -- A valueless `return;` carries no payload to check against the declared
+    -- output: it is the Dafny-style early-exit shorthand, where the single
+    -- output parameter keeps whatever was last assigned to it. Accepted
+    -- unconditionally (no `TVoid <:~ T` premise). This is also what the
+    -- `EliminateValueInReturns` pass relies on — it rewrites `return e` into
+    -- `out := e; return;`, whose trailing bare `return;` must re-resolve
+    -- cleanly even in an `int`/`bool`/etc.-returning procedure.
+    pure ()
   | none,   some _           => pure ()
   | some _, some []          =>
     let diag := diagnosticFromSource source
@@ -1136,36 +1141,47 @@ def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
 
     Laurel has no syntactic statement/expression split — everything is a
     `StmtExpr` — so "what may appear where its value is discarded" is
-    defined by this rule rather than by the grammar. A statement `s` is
-    admitted in effect position iff one of:
+    defined by this rule rather than by the grammar. The rule cases on the
+    *shape* of `s`:
 
-    * **`Γ ⊢ s ⇐ TVoid`** — `s` checks against `TVoid`. Every
-      statement-shaped form lands here: `Var-Declare`, `Assign`, `Assert`,
-      `Assume`, `While`, the terminators `Exit`/`Return` (whose check
-      rules are polymorphic in the expected type), an `IfThenElse` with
-      void branches, and a nested void `Block`. A stranded *value* — a
-      literal `5`, a variable load `x`, a comparison `a < b`, a `new`, a
-      value-producing `IfThenElse` — fails this check (its type is not
-      consistent with `TVoid`) and is reported as dead code.
+    * **Statement-shaped / control-flow forms** — `Var-Declare`, `While`,
+      the terminators `Exit`/`Return`, `Assert`, `Assume`, `IfThenElse`,
+      and a nested `Block` — are checked against `TVoid`
+      (`Γ ⊢ s ⇐ TVoid`). The first six have no synthesis rule, so they
+      *must* be reached through check mode. `IfThenElse` and `Block` are
+      check-routed (rather than synthesized) so the void expectation is
+      pushed into their branches/statements: a terminator branch
+      (`if c then return …`) and nested blocks then resolve under their
+      own check rules instead of tripping the synth wildcard.
 
-    * **Discard-Call / Discard-IncrDecr** — `s` is a call
-      (`StaticCall`/`InstanceCall`) or an `IncrDecr` (`x++`/`--x`). The
-      expression is synthesized and its result dropped, so the
-      `list.add(x);` idiom type-checks even when the callee returns a
-      value, and a bare `x++;` is admitted even though `++` synthesizes
-      the (non-void) target type. These are the value-producing forms
-      admitted in effect position: their effects are the point and their
-      results are incidental.
+    * **Value-producing forms** — everything else (calls, `IncrDecr`,
+      literals, operators, a variable load, `new`, casts, …) — are
+      **synthesized and their result discarded** (`Γ ⊢ s ⇒ _`). A bare
+      `f(x);`, `x++;`, a stranded literal `5;`, or a stranded operator
+      `a < b;` is admitted with no `expected void` diagnostic. This is
+      what lets the lowering passes' output type-check: e.g.
+      `EliminateIncrDecr` rewrites a statement-position `x++` into the
+      `PrimitiveOp` `((x := x + 1) - 1)`, an operator in effect position,
+      which is simply synthesized and dropped here.
 
     This is the single definition of "what counts as a statement". It is
-    used by `Check.block` for every non-last statement, and for the last
-    statement when the block itself sits in statement position
-    (`expected = TVoid`). -/
+    used by `Check.block` for every non-last statement that is not itself
+    a block (non-last blocks are handled directly by `Check.block`, which
+    propagates the expected type into them), and for the last statement
+    when the block itself sits in statement position (`expected = TVoid`). -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   match s.val with
-  | .StaticCall .. | .InstanceCall .. | .IncrDecr .. =>
+  -- Forms that must be *checked* in effect position: the statement-shaped
+  -- constructs without a synth rule (`Var-Declare`, `While`, `Exit`,
+  -- `Return`, `Assert`, `Assume`) and the control-flow forms `IfThenElse` /
+  -- `Block`, whose check rules push the void expectation into their
+  -- branches/statements so terminators and nested blocks resolve correctly.
+  | .Var (.Declare ..) | .While .. | .Exit .. | .Return ..
+  | .Assert .. | .Assume .. | .IfThenElse .. | .Block .. =>
+    Check.resolveStmtExpr s { val := .TVoid, source := s.source }
+  -- Every other form is value-producing: synthesize and discard the result.
+  | _ =>
     let (s', _) ← Synth.resolveStmtExpr s; pure s'
-  | _ => Check.resolveStmtExpr s { val := .TVoid, source := s.source }
   termination_by (s, 4)
   decreasing_by all_goals (apply Prod.Lex.right; decide)
 
@@ -1176,25 +1192,35 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
     statement list into `[s₁; … ; sₙ]` (all but the last) and `last`,
     handling each part as follows:
 
-    * **non-last — `Γ ⊢ s ⇐ TVoid`.** A non-last statement is a pure
-      effect, so it is checked at `TVoid`. This admits every statement
-      form (`Var-Declare`, `Assign`, `Assert`, `Assume`, `While`,
-      `Exit`, `Return`, `IfThenElse`), since each either yields no
-      value or — for the terminators `Exit`/`Return` — accepts any
-      expected type, and rejects a stranded value expression like `5;`,
-      whose `TInt` is not consistent with `TVoid`. The one
-      **Discard-Call** carve-out: a call (`StaticCall`/`InstanceCall`)
-      is synthesized and its result dropped, so the standard
-      `list.add(x);` discard idiom is allowed even when the callee
-      returns a value.
+    This is a continuation-passing-style traversal: at each `hd :: tl`
+    the rule cases on the **head** `hd` and threads the surrounding
+    expected type `T` down the tail. Most heads are typed in effect
+    position and `T` is irrelevant to them; the one head that consumes
+    `T` is a nested block (an implicit control-flow join arm).
+
+    * **non-last, head is a nested `Block` — `Γ ⊢ hd ⇐ T`.** A non-last
+      block is *not* a pure effect: it may transfer control out of the
+      enclosing block (an `exit`/`return` in its tail), so its own value
+      is a join arm of the surrounding block and must satisfy the same
+      `T`. The expected type is therefore propagated into it (rather than
+      forcing it to `TVoid`), so its last statement is checked at `T`.
+      This is what keeps lowered code well-typed: passes routinely emit a
+      value-carrying block in non-last position.
+
+    * **non-last, any other head — `Γ ⊢ hd ⋄`.** Every other non-last
+      statement is in effect position, handled by `Check.statement`
+      (`Γ ⊢ hd ⋄`): statement-shaped and control-flow forms are checked
+      at `TVoid`, and value-producing forms (calls, `IncrDecr`, literals,
+      operators, …) are synthesized and their result discarded. A bare
+      `5;`, `x++;`, or `list.add(x);` is admitted regardless of the value
+      it produces.
 
     * **last — `Γ ⊢ last ⇐ T`.** The surrounding expected type `T` is
       routed to the last statement, so a check-only trailing form
       (`IfThenElse`, a nested `Block`, `Hole`, `Return`, …) still
-      receives its expected type. The same Discard-Call carve-out
-      applies when `T = TVoid` (a trailing `foo()` in statement
-      position discards its result, so `{ …; foo() }` type-checks as a
-      statement even when `foo` returns a value).
+      receives its expected type. When `T = TVoid` (the block is in
+      statement position) the last statement is also in effect position
+      and goes through `Check.statement`.
 
     A block most often occurs in check position (procedure bodies,
     branches, loop bodies, assignment RHS, and call arguments all supply
@@ -1212,14 +1238,19 @@ def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
-  -- A non-last statement is in effect position: admitted by `Check.statement`
-  -- (`Γ ⊢ s ⋄` — checks at `TVoid`, with the Discard-Call carve-out for calls).
-  let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd :=
-    Check.statement s
+  -- A non-last statement is typed by casing on its head (CPS dispatch). A
+  -- nested `Block` head is an implicit join arm — it may `exit`/`return` out
+  -- of the enclosing block — so the surrounding `expected` is propagated into
+  -- it (`Γ ⊢ hd ⇐ T`). Every other head is in effect position, admitted by
+  -- `Check.statement` (`Γ ⊢ hd ⋄`).
+  let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
+    match s.val with
+    | .Block .. => Check.resolveStmtExpr s expected
+    | _ => Check.statement s
   -- The last statement carries the block's value: push `expected` in (so
   -- check-only forms are reachable). When the block itself sits in statement
   -- position (`expected = TVoid`), the last statement is also in effect
-  -- position and goes through `Check.statement` (same Discard-Call carve-out).
+  -- position and goes through `Check.statement`.
   let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
     match expected.val with
     | .TVoid => Check.statement s
