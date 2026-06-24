@@ -1550,6 +1550,8 @@ abbrev Lang.cfg [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   exitingCfg := fun lbl ρ => (⟨"", []⟩, CFGConfig.exiting lbl ρ.store ρ.hasFailure)
   isAtAssert := fun _ _ => False
   getEnv := fun c => { store := c.2.getStore, eval := fun _ _ => none, hasFailure := c.2.getFailure }
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ _ => True
 
 /-- **Compositional-input pipeline soundness (terminal outcome).** Generalises
 `pipeline_sound_terminal` so the CFG `pipeline ss` may start from an *arbitrary*

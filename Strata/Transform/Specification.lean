@@ -94,14 +94,26 @@ structure Lang (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] where
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
+  /-- The type of parameters threaded into `initEnvWF`.  The default for the
+      generic imperative layer is `Unit` (no parameters); a source language may
+      override it with a record carrying language-specific data needed to state
+      initial-environment well-formedness. -/
+  InitEnvWFParamsTy : Type
+  /-- Initial-environment well-formedness, parameterized by `InitEnvWFParamsTy`
+      and the statement.  The default for the generic imperative layer is the
+      trivial predicate `True`; a source language may override it to carry the
+      initial-environment facts a downstream transform relies on. -/
+  initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
-    type and evaluator. -/
+    type and evaluator.  The two well-formedness fields are supplied with the
+    trivial defaults `InitEnvWFParamsTy := Unit` and `initEnvWF := fun _ _ _ => True`;
+    a source language can shadow this `abbrev` to override them. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
-   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, Unit, fun _ _ _ => True⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
@@ -362,6 +374,8 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ _ => True
 
 end ImperativeStmts
 
