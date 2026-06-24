@@ -498,7 +498,7 @@ private def heapWellFormednessPreconds (model : SemanticModel)
       let heapRead := { val := .Var (.Local heapVar), source := src }
       let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
       let allocated := { val := .PrimitiveOp .Lt [pRef, counter], source := src }
-      some { condition := allocated, summary := some "input is allocated in the heap", free := true }
+      some { condition := allocated, summary := some "input is allocated on the heap", free := true }
     else none
 
 /-- The free postcondition
@@ -526,7 +526,7 @@ private def heapOutputAllocationPostconds (model : SemanticModel)
       let heapRead := { val := .Var (.Local heapOutVar), source := src }
       let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
       some { condition := { val := .PrimitiveOp .Lt [oRef, counter], source := src },
-             summary := some "output is allocated in the heap", free := true }
+             summary := some "output is allocated on the heap", free := true }
     else none
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
