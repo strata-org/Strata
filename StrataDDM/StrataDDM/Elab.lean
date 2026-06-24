@@ -45,9 +45,9 @@ private inductive QuantifierSepState where
 | sawColon
 
 /--
-Canonicalize the legacy dotted Unicode quantifier separator to `::` before DDM
-parsing. This keeps `#strata` generic while accepting both `∀ x . P` and
-`∀ x :: P`.
+Canonicalize dotted binder separators to `::` before DDM parsing.
+Handles Unicode quantifiers (`∀`, `∃`, `ε`): `Q x . P` → `Q x :: P`.
+Both `x . P` and `x :: P` forms remain accepted.
 -/
 private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
   (src.foldl
@@ -56,22 +56,15 @@ private def normalizeUnicodeQuantifierSeparators (src : String) : String :=
       let (acc, qstate) := st
       match qstate with
       | .outside =>
-        if ch == '∀' || ch == '∃' then
-          (acc.push ch, .inBinder)
-        else
-          (acc.push ch, .outside)
+        if ch == '∀' || ch == '∃' || ch == 'ε' then (acc.push ch, .inBinder)
+        else (acc.push ch, .outside)
       | .inBinder =>
-        if ch == '.' then
-          (acc ++ "::", .outside)
-        else if ch == ':' then
-          (acc.push ch, .sawColon)
-        else
-          (acc.push ch, .inBinder)
+        if ch == '.' then (acc ++ "::", .outside)
+        else if ch == ':' then (acc.push ch, .sawColon)
+        else (acc.push ch, .inBinder)
       | .sawColon =>
-        if ch == ':' then
-          (acc.push ch, .outside)
-        else
-          (acc.push ch, .inBinder))).fst
+        if ch == ':' then (acc.push ch, .outside)
+        else (acc.push ch, .inBinder))).fst
 
 private def normalizeInputContext (inputContext : InputContext) : InputContext :=
   let inputString := normalizeUnicodeQuantifierSeparators inputContext.inputString
@@ -80,22 +73,15 @@ private def normalizeInputContext (inputContext : InputContext) : InputContext :
 private def normalizedQuantifierSepStep (state : QuantifierSepState) (ch : Char) : Nat × QuantifierSepState :=
   match state with
   | .outside =>
-    if ch == '∀' || ch == '∃' then
-      (ch.utf8Size, .inBinder)
-    else
-      (ch.utf8Size, .outside)
+    if ch == '∀' || ch == '∃' || ch == 'ε' then (ch.utf8Size, .inBinder)
+    else (ch.utf8Size, .outside)
   | .inBinder =>
-    if ch == '.' then
-      ("::".utf8ByteSize, .outside)
-    else if ch == ':' then
-      (ch.utf8Size, .sawColon)
-    else
-      (ch.utf8Size, .inBinder)
+    if ch == '.' then ("::".utf8ByteSize, .outside)
+    else if ch == ':' then (ch.utf8Size, .sawColon)
+    else (ch.utf8Size, .inBinder)
   | .sawColon =>
-    if ch == ':' then
-      (ch.utf8Size, .outside)
-    else
-      (ch.utf8Size, .inBinder)
+    if ch == ':' then (ch.utf8Size, .outside)
+    else (ch.utf8Size, .inBinder)
 
 /--
 Translate a byte position in the original input to the corresponding byte
