@@ -203,9 +203,28 @@ inductive IncrDecrOp where
   | Decr
   deriving Repr, BEq, Inhabited
 
+/-- How a pre/postcondition should be lowered.
+
+    A condition has a "natural assert" site and a "natural assume" site that
+    differ between pre- and postconditions:
+    - precondition: asserted at call sites, assumed in the implementation body.
+    - postcondition: asserted at the end of the body, assumed after calls.
+
+    The mode selects which of those lowerings are emitted. `Assume` corresponds
+    to the classic "free" condition (assumed but never checked). -/
 inductive ConditionMode where
   | Assert | Assume | Both
   deriving BEq
+
+/-- Whether the condition's "assert" lowering should be emitted. -/
+def ConditionMode.doesAssert : ConditionMode → Bool
+  | .Assert | .Both => true
+  | .Assume => false
+
+/-- Whether the condition's "assume" lowering should be emitted. -/
+def ConditionMode.doesAssume : ConditionMode → Bool
+  | .Assume | .Both => true
+  | .Assert => false
 
 mutual
 
@@ -255,10 +274,11 @@ structure Condition where
   condition : AstNode StmtExpr
   /-- Optional human-readable summary describing the property being checked. -/
   summary : Option String := none
-  /-- When `true`, this condition is *free*: assumed but not checked.
-      A free precondition is assumed by the implementation but not asserted at
-      call sites. A free postcondition is assumed upon return from calls but
-      not checked on exit from implementations. -/
+  /-- How this condition is lowered (checked, assumed, or both). The default
+      `Both` is the ordinary contract behavior. `Assume` corresponds to a *free*
+      condition: a free precondition is assumed by the implementation but not
+      asserted at call sites, and a free postcondition is assumed upon return
+      from calls but not checked on exit from implementations. -/
   mode : ConditionMode := ConditionMode.Both
 
 /--

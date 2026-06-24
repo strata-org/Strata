@@ -159,7 +159,7 @@ def transformModifiesClauses (model: SemanticModel)
           let pointwise := buildQuantifiedFrame proc entries heapIn heapOut
           let framePost : Condition :=
             { condition := buildEnumeratedFrame proc entries heapIn heapOut,
-              summary := "modifies clause", free := true }
+              summary := "modifies clause", mode := ConditionMode.Assume }
           let impl' := impl.map (insertFrameChecks proc pointwise)
           .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
         else

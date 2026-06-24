@@ -128,8 +128,8 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
-  preNames : List (String × Option String)  -- (procName, summary) for each precondition
-  postNames : List (String × Option String) -- (procName, summary) for each postcondition
+  preNames : List (String × Option String × ConditionMode)  -- (procName, summary, mode) for each precondition
+  postNames : List (String × Option String × ConditionMode) -- (procName, summary, mode) for each postcondition
   inputParams : List Parameter
   outputParams : List Parameter
 
@@ -144,9 +144,9 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
     let hasPost := !postconds.isEmpty
     if !proc.isFunctional && (hasPre || hasPost) then
       let preNames := proc.preconditions.zipIdx.map fun (c, i) =>
-        (preCondProcName proc.name.text i, c.summary)
+        (preCondProcName proc.name.text i, c.summary, c.mode)
       let postNames := postconds.zipIdx.map fun (c, i) =>
-        (postCondProcName proc.name.text i, c.summary)
+        (postCondProcName proc.name.text i, c.summary, c.mode)
       m.insert proc.name.text {
         preNames := preNames
         postNames := postNames
@@ -159,15 +159,22 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
   let inputArgs := paramsToArgs proc.inputs
   let postconds := getPostconditions proc.body
+  -- A precondition is assumed in the body unless it is assert-only (mode `Assert`).
   let preAssumes : List StmtExprMd :=
-    proc.preconditions.zip info.preNames |>.map fun (pc, name, _) =>
-      ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
+    proc.preconditions.zip info.preNames |>.filterMap fun (pc, name, _) =>
+      if pc.mode.doesAssume then
+        some ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
+      else none
   match proc.body with
   | .Transparent body =>
+    -- A postcondition is checked at the end of the body unless it is assume-only
+    -- (mode `Assume`, i.e. a free postcondition).
     let postAsserts : List StmtExprMd :=
-      postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
-        let summary := pc.summary.getD "postcondition"
-        ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
+      postconds.zip info.postNames |>.filterMap fun (pc, _name, _summary) =>
+        if pc.mode.doesAssert then
+          let summary := pc.summary.getD "postcondition"
+          some ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
+        else none
     .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
   | .Opaque _ (some impl) _ =>
     .Opaque postconds (some ⟨.Block (preAssumes ++ [impl]) none, impl.source⟩) []
@@ -205,23 +212,32 @@ private def mkTempAssignments (args : List StmtExprMd)
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName)))]
   return (decls, refs)
 
-/-- Generate precondition checks (one per precondition) for a call site. -/
+/-- Generate precondition checks (one per precondition) for a call site.
+    A precondition is checked at the call site unless it is assume-only
+    (mode `Assume`, i.e. a free precondition). In a functional caller an
+    assertion is not possible, so the check is emitted as an assumption. -/
 private def mkPreChecks (info : ContractInfo) (isFunctional : Bool)
     (tempRefs : List StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
   if !info.hasPreCondition then []
-  else info.preNames.map fun (name, summary) =>
-    let call := mkCall name tempRefs
-    if isFunctional then
-      ⟨.Assume call, src⟩
+  else info.preNames.filterMap fun (name, summary, mode) =>
+    if !mode.doesAssert then none
     else
-      ⟨.Assert { condition := call, summary := some (summary.getD "precondition") }, src⟩
+      let call := mkCall name tempRefs
+      if isFunctional then
+        some ⟨.Assume call, src⟩
+      else
+        some ⟨.Assert { condition := call, summary := some (summary.getD "precondition") }, src⟩
 
-/-- Generate postcondition assumes (one per postcondition) for a call site. -/
+/-- Generate postcondition assumes (one per postcondition) for a call site.
+    A postcondition is assumed after the call unless it is assert-only
+    (mode `Assert`). -/
 private def mkPostAssumes (info : ContractInfo)
     (tempRefs : List StmtExprMd) (outputArgs : List StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
   if !info.hasPostCondition then []
-  else info.postNames.map fun (name, _) =>
-    ⟨.Assume (mkCall name (tempRefs ++ outputArgs)), src⟩
+  else info.postNames.filterMap fun (name, _, mode) =>
+    if mode.doesAssume then
+      some ⟨.Assume (mkCall name (tempRefs ++ outputArgs)), src⟩
+    else none
 
 /-- Names of the callee's inout parameters: those appearing in both the input and
     output lists. By the Laurel inout convention an inout is declared by giving the
