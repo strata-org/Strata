@@ -73,11 +73,8 @@ def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
     match expr.val with
-    -- Field target `o#f`. Soundness: targets with a non-composite owner are
-    -- dropped (with a diagnostic) upstream by `filterBodyNonCompositeModifies`
-    -- before heap parameterization, so every field target reaching here owns a
-    -- heap object. A field whose name fails to resolve (already diagnosed by
-    -- the resolution pass) yields `none` and is dropped.
+    -- Field target `o#f`: non-composite owners are already dropped during
+    -- resolution, so any field target reaching here owns a heap object.
     | .Var (.Field objExpr fieldName) =>
       (resolveQualifiedFieldName model fieldName).map fun qualifiedName =>
         .field objExpr (mkMd <| .StaticCall qualifiedName [])
@@ -191,58 +188,6 @@ def transformModifiesClauses (model: SemanticModel)
   | _ => .ok proc
 
 /--
-Filter non-composite modifies entries from a procedure body, collecting diagnostics
-for each filtered entry. This pre-pass ensures that global variables of primitive type
-do not incorrectly trigger heap parameterization.
-Should run before heap parameterization.
--/
-def filterBodyNonCompositeModifies (model : SemanticModel) (body : Body)
-    : Body × List DiagnosticModel :=
-  match body with
-  | .Opaque posts impl mods =>
-    let (kept, diags) := mods.foldl (fun (acc, ds) e =>
-      -- Shared rejection: drop the entry and emit the "non-composite type" diagnostic.
-      let reject := fun (ty : HighType) (kind : String) =>
-        (acc, ds ++ [diagnosticFromSource e.source s!"modifies clause {kind} has non-composite type '{formatHighTypeVal ty}' and will be ignored"])
-      match e.val with
-      | .All => (acc ++ [e], ds)  -- wildcard is always kept
-      | .Var (.Field target _) =>
-        -- Field target `o#f`: keep when the owner is a heap object (the field's own type is irrelevant).
-        let ownerTy := (computeExprType model target).val
-        if isHeapRelevantType ownerTy then (acc ++ [e], ds)
-        else reject ownerTy "field target"
-      | _ =>
-        let ty := (computeExprType model e).val
-        if isHeapRelevantType ty then (acc ++ [e], ds)
-        else reject ty "entry"
-    ) ([], [])
-    (.Opaque posts impl kept, diags)
-  | other => (other, [])
-
-/--
-Filter non-composite modifies entries from all procedures in a program,
-collecting diagnostics. Should run before heap parameterization so that
-the heap parameterization phase remains agnostic to modifies clauses.
--/
-def filterNonCompositeModifies (model : SemanticModel) (program : Program)
-    : Program × List DiagnosticModel :=
-  let (staticProcs, staticDiags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
-    let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
-    (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
-  ) ([], [])
-  let (types', typeDiags) := program.types.foldl (fun (ts, ds) td =>
-    match td with
-    | .Composite ct =>
-      let (instProcs, instDiags) := ct.instanceProcedures.foldl (fun (ps, ds) proc =>
-        let (body', bodyDiags) := filterBodyNonCompositeModifies model proc.body
-        (ps ++ [{ proc with body := body' }], ds ++ bodyDiags)
-      ) ([], [])
-      (ts ++ [.Composite { ct with instanceProcedures := instProcs }], ds ++ instDiags)
-    | other => (ts ++ [other], ds)
-  ) ([], [])
-  ({ program with staticProcedures := staticProcs, types := types' }, staticDiags ++ typeDiags)
-
-/--
 Transform a Laurel program: apply modifies clause transformation to all procedures.
 This is a Laurel → Laurel pass that should run after heap parameterization.
 
@@ -258,14 +203,6 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) : Progra
   ({ program with staticProcedures := procs' }, errors)
 
 end -- public section
-
-/-- Pipeline pass: filter non-composite modifies clauses. -/
-public def filterNonCompositeModifiesPass : LoweringPass where
-  name := "FilterNonCompositeModifies"
-  documentation := "Filters modifies clauses that refer to non-composite types (e.g. primitives), which cannot be heap-parameterized. Emits a warning for each removed clause. Should run before heap parameterization so that phase remains agnostic to modifies clauses."
-  run := fun p m _ =>
-    let (p', diags) := filterNonCompositeModifies m p
-    (p', diags, {})
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def modifiesClausesTransformPass : LoweringPass where

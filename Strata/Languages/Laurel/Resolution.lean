@@ -2559,6 +2559,51 @@ open Resolution
 private def resolveStmtExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
   let (e', _) ← Synth.resolveStmtExpr e; pure e'
 
+/-- Resolve a single modifies-clause entry, dropping it (with a diagnostic) when
+    its type is not heap-relevant — the frame only applies to heap objects. For a
+    field target `o#f` the *owner* must be heap-relevant; `*` (`.All`) is always
+    kept. The type is unfolded through the `TypeLattice` so aliases/constrained
+    types are classified by their underlying type. Replaces the former
+    `FilterNonCompositeModifies` pass. -/
+private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd) := do
+  let ctx := (← get).typeLattice
+  match e.val with
+  | .All =>
+    -- `modifies *` wildcard: kept regardless of type.
+    let e' ← resolveStmtExpr e
+    return some e'
+  | .Var (.Field target fieldName) =>
+    -- Resolve the owner directly (as `Synth.varField` does) to gate on its type.
+    let (target', ownerTy) ← Synth.resolveStmtExpr target
+    let fieldName' ← resolveFieldRef target' fieldName e.source
+    let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
+    let ownerTy' := (ctx.unfold ownerTy).val
+    if isHeapRelevantType ownerTy' then
+      return some e'
+    else
+      let diag := diagnosticFromSource e.source
+        s!"modifies clause field target has non-composite owner type \
+           '{formatHighTypeVal ownerTy'}' and will be ignored"
+      modify fun s => { s with errors := s.errors.push diag }
+      return none
+  | _ =>
+    let (e', ty) ← Synth.resolveStmtExpr e
+    let ty' := (ctx.unfold ty).val
+    if isHeapRelevantType ty' then
+      return some e'
+    else
+      let diag := diagnosticFromSource e.source
+        s!"modifies clause entry has non-composite type \
+           '{formatHighTypeVal ty'}' and will be ignored"
+      modify fun s => { s with errors := s.errors.push diag }
+      return none
+
+/-- Resolve the modifies entries of an `Opaque` body, dropping the
+    non-heap-relevant ones via `resolveModifiesEntry`. -/
+private def resolveModifies (mods : List StmtExprMd) : ResolveM (List StmtExprMd) := do
+  let resolved ← mods.mapM resolveModifiesEntry
+  return resolved.filterMap id
+
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let ty' ← resolveHighType param.type
@@ -2590,7 +2635,7 @@ def resolveBody (body : Body) : ResolveM Body := do
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
     let impl' ← impl.mapM Synth.resolveStmtExpr
-    let mods' ← mods.mapM resolveStmtExpr
+    let mods' ← resolveModifies mods
     return .Opaque posts' (impl'.map (fun t => t.1)) mods'
   | .Abstract posts =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)

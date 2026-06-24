@@ -102,7 +102,6 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateIncrDecrPass,
   typeAliasElimPass,
   constrainedTypeElimPass,
-  filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
   liftInstanceProceduresPass,
   eliminateValueInReturnsPass,
