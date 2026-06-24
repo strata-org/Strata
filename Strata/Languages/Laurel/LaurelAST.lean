@@ -313,7 +313,7 @@ inductive StmtExpr : Type where
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
-    (postTest : Bool := false)
+    (postTest : Bool)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/

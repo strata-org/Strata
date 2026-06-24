@@ -353,7 +353,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let cond ← translateStmtExpr condArg
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.While cond invariants none body) src
+      return mkStmtExprMd (.While cond invariants none body false) src
     | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
       let init ← translateStmtExpr initArg
       let cond ← translateStmtExpr condArg
@@ -361,7 +361,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       let whileBody := mkStmtExprMd (.Block [body, step] none) src
-      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
+      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody false) src
       return mkStmtExprMd (.Block [init, whileStmt] none) src
     | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
       -- A `do … while` is a post-test `While`. The `EliminateDoWhile` pass

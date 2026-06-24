@@ -430,14 +430,14 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let seqRet ← transformExpr retExpr
       return ⟨.Return (some seqRet), source⟩
 
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
       let seqInvs ← invs.mapM transformExpr
       let seqDec ← match dec with
         | some d => pure (some (← transformExpr d))
         | none => pure none
       let seqBody ← transformExpr body
-      return ⟨.While seqCond seqInvs seqDec seqBody, source⟩
+      return ⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩
 
   | .PureFieldUpdate target fieldName newValue =>
       let seqTarget ← transformExpr target

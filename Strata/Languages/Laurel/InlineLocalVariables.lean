@@ -91,12 +91,12 @@ private partial def inlineExpr (subst : InlineSubst) (expr : StmtExprMd) : Inlin
     let el' ← el.mapM (inlineExpr subst)
     return ⟨.IfThenElse cond' th' el', source⟩
 
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
     let cond' ← inlineExpr subst cond
     let invs' ← invs.mapM (inlineExpr subst)
     let dec' ← dec.mapM (inlineExpr subst)
     let body' ← inlineExpr subst body
-    return ⟨.While cond' invs' dec' body', source⟩
+    return ⟨.While cond' invs' dec' body' postTest, source⟩
 
   | .Return value =>
     return ⟨.Return (← value.mapM (inlineExpr subst)), source⟩
