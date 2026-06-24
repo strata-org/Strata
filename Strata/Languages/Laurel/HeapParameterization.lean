@@ -88,7 +88,7 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
-  | .Assert ⟨c, _, _⟩ => collectExprMd c
+  | .Assert c _ => collectExprMd c
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
@@ -442,7 +442,7 @@ where
     | .AsType t ty =>
         let t' ← recurseOne t valueUsed
         let isCheck := ⟨ .IsType t' ty, source ⟩
-        let assertStmt := ⟨ .Assert { condition := isCheck }, source ⟩
+        let assertStmt := ⟨ .Assert isCheck none, source ⟩
         return [⟨ .Block [assertStmt, t'] none, source ⟩]
     | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
@@ -451,8 +451,8 @@ where
     | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
     | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
     | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
-    | .Assert ⟨condExpr, summary, mode⟩ =>
-        return [⟨ .Assert { condition := ← recurseOne condExpr, summary, mode }, source ⟩]
+    | .Assert condExpr summary =>
+        return [⟨ .Assert (← recurseOne condExpr) summary, source ⟩]
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]

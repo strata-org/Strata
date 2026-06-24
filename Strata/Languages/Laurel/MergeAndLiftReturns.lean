@@ -40,7 +40,7 @@ def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
       .ok ⟨ .IfThenElse cond newThen newTail, head.source ⟩
     | .Assign _ _ => .ok passThrough
     | .Assume _ => .ok passThrough
-    | .Assert _ => .ok passThrough
+    | .Assert .. => .ok passThrough
     | .Block _ _ => .ok passThrough
     | .IfThenElse _ _ (some _) => .error (diagnosticFromSource head.source "in a transparent body, if-then-else is only supported as the last statement in a block")
     | _ => .error (diagnosticFromSource head.source

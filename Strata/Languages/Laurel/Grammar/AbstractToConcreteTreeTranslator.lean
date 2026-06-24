@@ -166,10 +166,10 @@ where
     | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
     | .Return none => laurelOp "return" #[optionArg none]
     | .Exit label => laurelOp "exit" #[ident label]
-    | .Assert cond =>
-      let errOpt := optionArg (cond.summary.map fun msg =>
+    | .Assert cond summary =>
+      let errOpt := optionArg (summary.map fun msg =>
         laurelOp "errorSummary" #[.strlit sr msg])
-      laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
+      laurelOp "assert" #[stmtExprToArg cond, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]

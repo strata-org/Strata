@@ -163,7 +163,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
       containsAssignmentOrImperativeCall imperativeCallees th liftsAssertsAssumes ||
       match el with | some e => containsAssignmentOrImperativeCall imperativeCallees e liftsAssertsAssumes | none => false
   | .Assume cond => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes
-  | .Assert cond => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond.condition liftsAssertsAssumes
+  | .Assert cond _ => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes
   | .InstanceCall target _ args =>
       containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes ||
       args.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
@@ -412,9 +412,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       prependList argPrepends
       default
 
-  | .Assert cond =>
-      let (argPrepends, newCond) ← transformLiftedExpr cond.condition
-      prepend ⟨ .Assert {cond with condition := newCond}, source⟩
+  | .Assert cond summary =>
+      let (argPrepends, newCond) ← transformLiftedExpr cond
+      prepend ⟨ .Assert newCond summary, source⟩
       prependList argPrepends
       default
 
@@ -514,14 +514,14 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | AstNode.mk val source =>
   match val with
-  | .Assert cond =>
+  | .Assert cond summary =>
       -- Do not transform assert conditions with assignments — they must be rejected.
       -- But nondeterministic holes need to be lifted.
       -- if containsNondetHole cond.condition && !containsAssignmentOrImperativeCall (← get).model cond.condition then
-        let seqCond ← transformExpr cond.condition
+        let seqCond ← transformExpr cond
         let prepends ← takePrepends
         modify fun s => { s with subst := [] }
-        return prepends ++ [⟨.Assert { cond with condition := seqCond }, source⟩]
+        return prepends ++ [⟨.Assert seqCond summary, source⟩]
       -- else
       --   return [stmt]
 

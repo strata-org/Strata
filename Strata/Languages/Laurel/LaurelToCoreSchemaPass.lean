@@ -262,7 +262,7 @@ def translateExpr (expr : StmtExprMd)
       disallowed expr.source "loops are not supported in functions or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
-  | .Block (⟨ .Assert _, innerSrc⟩ :: rest) label => do
+  | .Block (⟨ .Assert .., innerSrc⟩ :: rest) label => do
     _ ← disallowed innerSrc "asserts are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .Assume _, innerSrc⟩ :: rest) label =>
@@ -322,7 +322,7 @@ def translateExpr (expr : StmtExprMd)
              This violates the pushOldInward normalization invariant."
             DiagnosticType.StrataBug
   | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
-  | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
+  | .Assert .. => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
   | .Assume _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
   | .ProveBy value _ => throwExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
   | .ContractOf _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
@@ -423,10 +423,10 @@ def translateStmt (stmt : StmtExprMd)
   let model := s.model
   let md := astNodeToCoreMd stmt
   match _h : stmt.val with
-  | .Assert cond =>
+  | .Assert cond summary =>
       -- Assert/assume bodies must be pure expressions (no assignments, loops, or procedure calls)
-      let coreExpr ← translateExpr cond.condition [] (isPureContext := true)
-      let md' := match cond.summary with
+      let coreExpr ← translateExpr cond [] (isPureContext := true)
+      let md' := match summary with
         | some msg => md.pushElem Imperative.MetaData.propertySummary (.msg msg)
         | none => md
       return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']

@@ -36,7 +36,7 @@ public section
 def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.source⟩
+    | .Assert .. | .Assume _ => ⟨.LiteralBool true, e.source⟩
     | .Block stmts label =>
       let stmts' := stmts.filter fun s =>
         match s.val with | .LiteralBool true => false | _ => true

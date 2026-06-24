@@ -173,7 +173,7 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
       postconds.zip info.postNames |>.filterMap fun (pc, _name, _summary) =>
         if pc.mode.doesAssert then
           let summary := pc.summary.getD "postcondition"
-          some ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
+          some ⟨.Assert pc.condition (some summary), pc.condition.source⟩
         else none
     .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
   | .Opaque _ (some impl) _ =>
@@ -226,7 +226,7 @@ private def mkPreChecks (info : ContractInfo) (isFunctional : Bool)
       if isFunctional then
         some ⟨.Assume call, src⟩
       else
-        some ⟨.Assert { condition := call, summary := some (summary.getD "precondition") }, src⟩
+        some ⟨.Assert call (some (summary.getD "precondition")), src⟩
 
 /-- Generate postcondition assumes (one per postcondition) for a call site.
     A postcondition is assumed after the call unless it is assert-only
@@ -387,7 +387,7 @@ private def exprMentions (name : String) (expr : StmtExprMd) : Bool :=
   | .Old v => exprMentions name v
   | .Fresh v => exprMentions name v
   | .Assume c => exprMentions name c
-  | .Assert c => exprMentions name c.condition
+  | .Assert c _ => exprMentions name c
   | .Return (some v) => exprMentions name v
   | .InstanceCall t _ args => exprMentions name t || args.attach.any (fun x => exprMentions name x.val)
   | .AsType t _ => exprMentions name t

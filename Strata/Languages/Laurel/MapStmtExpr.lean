@@ -112,8 +112,8 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.Old (← mapStmtExprUsedM f true value), source⟩
   | .Fresh value =>
     pure ⟨.Fresh (← mapStmtExprUsedM f true value), source⟩
-  | .Assert cond =>
-    pure ⟨.Assert { cond with condition := ← mapStmtExprUsedM f true cond.condition }, source⟩
+  | .Assert cond summary =>
+    pure ⟨.Assert (← mapStmtExprUsedM f true cond) summary, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprUsedM f true cond), source⟩
   | .ProveBy value proof =>
@@ -225,8 +225,8 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .Assigned name => pure ⟨.Assigned (collapse (← go true name) name.source), source⟩
     | .Old value => pure ⟨.Old (collapse (← go true value) value.source), source⟩
     | .Fresh value => pure ⟨.Fresh (collapse (← go true value) value.source), source⟩
-    | .Assert cond =>
-      pure ⟨.Assert { cond with condition := collapse (← go true cond.condition) cond.condition.source }, source⟩
+    | .Assert cond summary =>
+      pure ⟨.Assert (collapse (← go true cond) cond.source) summary, source⟩
     | .Assume cond => pure ⟨.Assume (collapse (← go true cond) cond.source), source⟩
     | .ProveBy value proof =>
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go true proof) proof.source), source⟩
@@ -306,8 +306,8 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Old (← mapStmtExprPrePostM pre post value), source⟩
   | .Fresh value =>
     pure ⟨.Fresh (← mapStmtExprPrePostM pre post value), source⟩
-  | .Assert cond =>
-    pure ⟨.Assert { cond with condition := ← mapStmtExprPrePostM pre post cond.condition }, source⟩
+  | .Assert cond summary =>
+    pure ⟨.Assert (← mapStmtExprPrePostM pre post cond) summary, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprPrePostM pre post cond), source⟩
   | .ProveBy value proof =>

@@ -1289,7 +1289,7 @@ partial def translateCall (ctx : TranslationContext)
           mkStmtExprMd (.StaticCall (mkId callee) [val])
         let isCorrectType := createBoolOrExpr checks.toList
         let cond := mkStmtExprMd (.PrimitiveOp .Implies [keyPresent, isCorrectType])
-        typeAsserts := typeAsserts.push (mkStmtExprMd (.Assert { condition := cond }))
+        typeAsserts := typeAsserts.push (mkStmtExprMd (.Assert cond none))
     let typeAssertsOrdered := typeAsserts.toList
     let call ← emitCall (allArgs ++ kwargsArg)
     if typeAssertsOrdered.isEmpty then
@@ -1659,7 +1659,7 @@ partial def getMaybeExceptionExprs (ctx : TranslationContext) (e : StmtExprMd) :
 /-- Build a single exception-check assert: `assert !Any..isexception(e)`. -/
 def mkExceptionCheckAssert (e : StmtExprMd) (summary : String) : StmtExprMd :=
   let condExpr := mkStmtExprMd (.PrimitiveOp .Not [mkStmtExprMd $ .StaticCall "Any..isexception" [e]])
-  mkStmtExprMdWithLoc (.Assert { condition := condExpr, summary := some summary }) e.source
+  mkStmtExprMdWithLoc (.Assert condExpr (some summary)) e.source
 
 partial def getExceptionAssertions (ctx : TranslationContext) (e : StmtExprMd) : List StmtExprMd :=
   (getMaybeExceptionExprs ctx e).map fun mbe =>
@@ -1770,7 +1770,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
           | some testerName =>
             let varExpr := mkStmtExprMd (StmtExpr.Var (.Local n.val))
             let cond := mkStmtExprMd (StmtExpr.StaticCall testerName [varExpr])
-            [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := cond }) md]
+            [mkStmtExprMdWithLoc (StmtExpr.Assert cond none) md]
           | none => []
         | _ => []
       return withExceptionChecks ctx (ctx, stmts ++ typeAssert)
@@ -1846,7 +1846,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
         ([varDecl], varRef, { ctx with variableTypes := ctx.variableTypes ++ [(freshVar, "bool")] })
       | _ => ([], condExpr, ctx)
 
-    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert { condition := Any_to_bool finalCondExpr, summary }) md
+    let assertStmt := mkStmtExprMdWithLoc (StmtExpr.Assert (Any_to_bool finalCondExpr) summary) md
 
     -- Wrap in block if we hoisted condition
     let result := if condStmts.isEmpty then
@@ -2093,11 +2093,11 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
   | .Break _ =>
     match ctx.loopBreakLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole) none) md])
   | .Continue _ =>
     match ctx.loopContinueLabel with
     | some lbl => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Exit lbl) md])
-    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert { condition := mkStmtExprMd .Hole }) md])
+    | none => return (ctx, [mkStmtExprMdWithLoc (StmtExpr.Assert (mkStmtExprMd .Hole) none) md])
 
   -- Augmented assignment: x += expr  →  x = x op expr
   | .AugAssign sr target op value => do

@@ -729,8 +729,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Return val => do
     let r ← Check.return exprMd val source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
-  | .Assert ⟨condExpr, summary, mode⟩ => do
-    let r ← Check.assert exprMd condExpr summary mode source (by rw [h_node])
+  | .Assert condExpr summary => do
+    let r ← Check.assert exprMd condExpr summary source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
   | .Assume cond => do
     let r ← Check.assume exprMd cond source (by rw [h_node])
@@ -1405,12 +1405,12 @@ def Synth.block (exprMd : StmtExprMd)
     `cond` is checked against `TBool`. `assert` is a statement: it
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assert (exprMd : StmtExprMd)
-    (condExpr : StmtExprMd) (summary : Option String) (mode : ConditionMode)
+    (condExpr : StmtExprMd) (summary : Option String)
     (source : Option FileRange)
-    (h : exprMd.val = .Assert ⟨condExpr, summary, mode⟩) :
+    (h : exprMd.val = .Assert condExpr summary) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
-  pure { val := .Assert { condition := cond', summary, mode }, source := source }
+  pure { val := .Assert cond' summary, source := source }
   termination_by (exprMd, 0)
   decreasing_by
     apply Prod.Lex.left
@@ -2855,7 +2855,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   | .Assigned name => collectStmtExpr map name
   | .Old val => collectStmtExpr map val
   | .Fresh val => collectStmtExpr map val
-  | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
+  | .Assert cond _ => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
   | .ProveBy val proof =>
     let map := collectStmtExpr map val
@@ -3016,7 +3016,7 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     let errs := validateDiamondFieldAccessesForStmtExpr model c ++
                 validateDiamondFieldAccessesForStmtExpr model b
     invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
+  | .Assert cond _ => validateDiamondFieldAccessesForStmtExpr model cond
   | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
   | .PrimitiveOp _ args _ =>
     args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []

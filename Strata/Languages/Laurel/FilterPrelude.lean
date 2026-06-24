@@ -119,7 +119,7 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectHighTypeNames param.type
     trigger.forM collectExprNames
     collectExprNames body
-  | .Assert cond => collectExprNames cond.condition
+  | .Assert cond _ => collectExprNames cond
   | .Assume cond => collectExprNames cond
   | .Return val => val.forM collectExprNames
   | .Old val | .Fresh val | .Assigned val => collectExprNames val

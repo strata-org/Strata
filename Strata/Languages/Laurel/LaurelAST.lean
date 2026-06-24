@@ -395,8 +395,9 @@ inductive StmtExpr : Type where
   | Old (value : AstNode StmtExpr)
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
   | Fresh (value : AstNode StmtExpr)
-  /-- Assert a condition, generating a proof obligation. -/
-  | Assert (condition : Condition)
+  /-- Assert a condition, generating a proof obligation. The optional summary is
+      a human-readable description of the property being checked. -/
+  | Assert (condition : AstNode StmtExpr) (summary : Option String)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/

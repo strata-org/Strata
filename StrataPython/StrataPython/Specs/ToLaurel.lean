@@ -464,16 +464,16 @@ def buildSpecBody (allArgs : Array Arg)
       if arg.default.isSome then
         let noneCheck : StmtExprMd := { val := .StaticCall (mkId "Any..isfrom_None") [paramId], source := source }
         let orExpr : StmtExprMd := { val := .PrimitiveOp .Or [noneCheck, assertion], source := source }
-        let assertStmt ← mkStmtWithLoc (.Assert { condition := orExpr, summary := none }) default
+        let assertStmt ← mkStmtWithLoc (.Assert orExpr none) default
         stmts := stmts.push assertStmt
       else
-        let assertStmt ← mkStmtWithLoc (.Assert { condition := assertion, summary := none }) default
+        let assertStmt ← mkStmtWithLoc (.Assert assertion none) default
         stmts := stmts.push assertStmt
     | none =>
       if arg.default.isNone then
         let cond : TypedStmtExpr _ := .not (.anyIsfromNone (.identifier arg.name StrataPython.Laurel.tyAny))
         let msg := SpecAssertMsg.requiredParam arg.name |>.render
-        let assertStmt ← mkStmtWithLoc (.Assert { condition := cond.stmt, summary := some msg }) default
+        let assertStmt ← mkStmtWithLoc (.Assert cond.stmt (some msg)) default
         stmts := stmts.push assertStmt
   -- 3. Assert user pyspec preconditions
   let mut idx := 0
@@ -485,7 +485,7 @@ def buildSpecBody (allArgs : Array Arg)
     let (⟨condType, condExpr⟩, success) ← runChecked <| specExprToLaurel assertion.formula source ctx
     if success then
       if let .TBool := condType then
-        let assertStmt ← mkStmtWithLoc (.Assert { condition := condExpr.stmt, summary := some msg }) default
+        let assertStmt ← mkStmtWithLoc (.Assert condExpr.stmt (some msg)) default
         stmts := stmts.push assertStmt
       else
         reportError .typeError default

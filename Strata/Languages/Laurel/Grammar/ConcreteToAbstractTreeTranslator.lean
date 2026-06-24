@@ -213,7 +213,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
             pure (some msg)
           | _, _ => pure none
         | _ => pure none
-      return mkStmtExprMd (.Assert { condition := cond, summary }) src
+      return mkStmtExprMd (.Assert cond summary) src
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
