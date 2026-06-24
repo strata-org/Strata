@@ -145,7 +145,7 @@ procedure sideEffect()
   var x : nat;
   var y : int;
   y := (x := -1) + 1;
-//      ^^^^^^^ error: assertion does not hold
+//      ^^^^^^^ error: assertion could not be proved
   assert x==-1;
   assert y==0
 };

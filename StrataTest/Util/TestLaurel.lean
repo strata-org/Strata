@@ -344,7 +344,7 @@ private def runAndCheck (block : SourcedProgram)
     file-relative `line:col` range (so a `#guard_msgs` golden can pin the
     localization), and `showSnippet := true` to also append the snippet-relative
     range. (Failure reports always use the file-relative format regardless.) -/
-def testLaurel (block : SourcedProgram)
+public def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block (runLaurelPipelineRaw · options) showLocations showSnippet
@@ -367,7 +367,7 @@ public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     As with `testLaurel`, succeeds silently by default; `showLocations := true`
     echoes each diagnostic's file-relative `line:col` range and
     `showSnippet := true` appends the snippet-relative range. -/
-def testLaurelResolution (block : SourcedProgram)
+public def testLaurelResolution (block : SourcedProgram)
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block runLaurelResolutionRaw showLocations showSnippet
 
