@@ -96,10 +96,6 @@ jobs:
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-      - name: Verify Java testdata is up to date
-        run: |
-          StrataTestExtra/DDM/Integration/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/DDM/Integration/Java/testdata/
       - name: Verify generated editor syntax files are up to date
         run: |
           lake env lean --run editors/GenSyntax.lean all

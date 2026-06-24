@@ -6,4 +6,3 @@
 module
 
 public import Strata.DDM.Integration.Java.Gen
-public import Strata.DDM.Integration.Java.GenDDM

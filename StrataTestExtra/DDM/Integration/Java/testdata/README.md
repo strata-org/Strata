@@ -16,4 +16,4 @@ The roundtrip test in `TestGen.lean`:
 ## Requirements
 
 - `javac` (Java 17+)
-- `ion-java-1.11.11.jar` in this directory (downloaded automatically by tests)
+- `ion-java-1.11.11.jar` in this directory (downloaded automatically by CI)
