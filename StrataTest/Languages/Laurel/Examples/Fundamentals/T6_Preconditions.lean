@@ -22,7 +22,7 @@ procedure hasRequires(x: int) returns (r: int)
 {
   assert x > 0;
   assert x > 3;
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
   x + 1
 };
 
@@ -30,7 +30,7 @@ procedure caller()
   opaque
 {
   var x: int := hasRequires(1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   var y: int := hasRequires(3)
 };
 

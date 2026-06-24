@@ -679,11 +679,14 @@ instance : Inhabited LaurelVerifyOptions where
 
 /-- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
     `{ result := <expr>; exit "$return" } $return` → `<expr>`
+    Also handles an extra wrapping layer from the contract pass:
+    `{ { result := <expr>; exit "$return" } $return } none` → `<expr>`
     Support for transparent multi-out procedures is not yet available.
 -/
 private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
   match b.val with
   | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel) => value
+  | .Block [⟨.Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel), _⟩] _ => value
   | _ => b
 
 /--

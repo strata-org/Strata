@@ -62,12 +62,16 @@ private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
     Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
+  let src := condition.condition.source
+  let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condition.condition, src⟩
+  let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
+  let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
   { name := mkId name
     inputs := params
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    body := .Transparent condition.condition }
+    body := .Transparent body }
 
 /-- Suffix appended to a procedure's output-parameter names when they are lowered
     into a postcondition helper *function*.
@@ -117,12 +121,17 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
     (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
+  let condExpr := renameOutputsInPostExpr outputNames condition.condition
+  let src := condExpr.source
+  let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condExpr, src⟩
+  let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
+  let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
   { name := mkId name
     inputs := inputs ++ renamedOutputs
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
+    body := .Transparent body }
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where

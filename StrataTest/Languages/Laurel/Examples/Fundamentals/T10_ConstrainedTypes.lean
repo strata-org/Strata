@@ -32,7 +32,7 @@ procedure outputValid(): nat
 
 // Output constraint — invalid return fails
 procedure outputInvalid(): nat
-//                         ^^^ error: postcondition could not be proved
+//                         ^^^ error: postcondition does not hold
   opaque
 {
   return -1
@@ -60,7 +60,7 @@ procedure assignInvalid()
   opaque
 {
   var y: nat := -1
-//^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Reassignment to constrained-typed variable — invalid
@@ -69,7 +69,7 @@ procedure reassignInvalid()
 {
   var y: nat := 5;
   y := -1
-//^^^^^^^ error: assertion could not be proved
+//^^^^^^^ error: assertion does not hold
 };
 
 // Argument to constrained-typed parameter — valid
@@ -88,7 +88,7 @@ procedure argInvalid() returns (r: int)
   opaque
 {
   var x: int := takesNat(-1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   return x
 };
 
@@ -129,7 +129,7 @@ procedure constrainedInExpr()
 
 // Invalid witness — witness -1 does not satisfy x > 0
 constrained bad = x: int where x > 0 witness -1
-//                                           ^^ error: assertion could not be proved
+//                                           ^^ error: assertion does not hold
 
 // Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat()
@@ -145,7 +145,7 @@ procedure sideEffect()
   var x : nat;
   var y : int;
   y := (x := -1) + 1;
-//      ^^^^^^^ error: assertion could not be proved
+//      ^^^^^^^ error: assertion does not hold
   assert x==-1;
   assert y==0
 };
@@ -165,7 +165,7 @@ procedure uninitNotWitness()
 {
   var y: posnat;
   assert y == 1
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // Quantifier constraint injection — forall
@@ -199,6 +199,6 @@ procedure captureTest(y: haslarger)
   opaque
 {
   assert false
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

@@ -158,10 +158,18 @@ For each procedure:
 -/
 def createFunctionsForTransparentBodies (program : Program) : UnorderedCoreWithLaurelTypes :=
   let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
-  let toUpdateNames : Std.HashSet String := toUpdate.foldl (fun s p => s.insert p.name.text) {}
-  -- $asFunction copies for non-external procedures
+  -- A transparent procedure whose body is purely functional (no Assume/Assert
+  -- from contract instrumentation) needs only a function copy, not a procedural
+  -- twin. This matches the old `isFunctional` behavior for condition helpers.
+  let needsProcTwin (p : Procedure) : Bool := match p.body with
+    | .Transparent b => blockContainsAssumeOrAssert b
+    | _ => true
+  let (imperativeProcs, _) := toUpdate.partition needsProcTwin
+  let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
+  -- $asFunction copies for procedures that have a procedural twin;
+  -- transparent-only procedures keep their original name.
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
-  let coreProcedures := toUpdate.map fun proc =>
+  let coreProcedures := imperativeProcs.map fun proc =>
     let freePostcondition := mkFreePostcondition proc
     let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
     let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
@@ -170,6 +178,24 @@ def createFunctionsForTransparentBodies (program : Program) : UnorderedCoreWithL
     | .Datatype dt => some dt
     | _ => none
   { functions, coreProcedures, datatypes, constants := program.constants }
+where
+  /-- Check if an expression tree contains Assume or Assert statements anywhere.
+      The contract pass inserts these for procedures with contracts. -/
+  blockContainsAssumeOrAssert (e : StmtExprMd) : Bool :=
+    match e with
+    | AstNode.mk val _ =>
+    match val with
+    | .Assume _ | .Assert _ => true
+    | .Block stmts _ => stmts.attach.any fun ⟨s, _⟩ => blockContainsAssumeOrAssert s
+    | .IfThenElse c t f =>
+      blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert t ||
+      match f with | some fe => blockContainsAssumeOrAssert fe | none => false
+    | .StaticCall _ args => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
+    | .Assign _ v => blockContainsAssumeOrAssert v
+    | .While c _ _ b _ => blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert b
+    | .Return v => match v with | some ve => blockContainsAssumeOrAssert ve | none => false
+    | .PrimitiveOp _ args _ => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
+    | _ => false
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "TransparencyPass"
