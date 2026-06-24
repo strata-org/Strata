@@ -10995,6 +10995,114 @@ private theorem end_block_terminal {P : PureExpr} [HasFvar P] [HasNot P] [HasVar
   rw [Bool.or_false] at h_run
   exact h_run
 
+/-- **Compositional input variant of `stmtsToCFG_terminal`.** Runs the CFG from
+an *arbitrary* external store `σ_ext` that overapproximates the source initial
+store (`StoreAgreement ρ₀.store σ_ext` — `σ_ext` agrees on every source-defined
+variable and may bind strictly more).  The source program still runs from `ρ₀`;
+only the CFG-side starting store is generalised.
+
+This is a verbatim re-exposure of `stmtsToCFG_terminal`: the underlying
+`stmtsToBlocks_simulation` already takes the CFG-side base store as a free
+parameter `σ_base` distinct from the source store (with a `StoreAgreement`
+between them), and `flushCmds_condGoto_agree` already proves every guard
+evaluates to the *same* boolean under the agreeing store (so `condGoto` selects
+the identical successor — branch divergence is excluded).  `stmtsToCFG_terminal`
+is the instance `σ_ext := ρ₀.store`.
+
+The freshness side conditions (`h_fresh_inits`, `h_store_gens`) are now stated
+about `σ_ext` rather than `ρ₀.store`: a generic superset is not enough, because
+the CFG emits `init` commands whose targets must be undefined for `InitState`
+to fire.  So `σ_ext` must leave the program's `initVars` and the minted
+`Q`-kind names undefined — the same shape as the original precondition with
+`σ_ext` substituted for `ρ₀.store`. -/
+theorem stmtsToCFG_terminal_compositional {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P)))
+    (ρ₀ ρ' : Env P)
+    (σ_ext : SemanticStore P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_simple : Block.simpleShape ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_lbni : Block.loopBodyNoInits ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    -- Track A: agreement between source initial store and the external CFG store.
+    (h_agree_ext : StoreAgreement ρ₀.store σ_ext)
+    -- Track A: freshness conditions now stated about σ_ext (was ρ₀.store).
+    (h_fresh_inits : ∀ x ∈ Block.initVars ss, σ_ext x = none)
+    (h_disj : Block.userLabelsShapeNodup ss)
+    (h_store_gens : ∀ x : String, Q x → σ_ext (HasIdent.ident (P := P) x) = none)
+    (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
+    (hQmint : S2UMintWitness Q)
+    (h_term : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts ss ρ₀) (.terminal ρ')) :
+    let cfg := stmtsToCFG ss
+    ∃ σ_cfg, StepDetCFGStar extendEval cfg
+      (.atBlock cfg.entry σ_ext ρ₀.hasFailure)
+      (.terminal σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg := by
+  intro cfg
+  have h_disj_wf : ∀ gen', StringGenState.WF gen' → Block.userLabelsDisjoint ss gen' :=
+    Block.userLabelsDisjoint_of_shapeNodup ss h_disj
+  have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend, h_wf_gen, h_gen0⟩ :=
+    stmtsToCFG_stmtsToBlocks_spec ss h_disj_wf
+  rw [h_entry]
+  -- accum runs struct-side from ρ₀.store to ρ₀.store (empty accum).
+  have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
+    EvalCmds.eval_cmds_none
+  have h_hf : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
+  have h_nodup := stmtsToCFG_nodup_keys ss h_disj_wf
+  -- freshness now about σ_ext
+  have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
+      σ_ext x = none := by
+    intro x hx
+    simp [Cmds.definedVars] at hx
+    exact h_fresh_inits x hx
+  have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
+    simp [Cmds.definedVars]
+    exact h_unique
+  have h_combined_no_gen_suffix :
+      NoGenSuffix (P := P) Q (Cmds.definedVars [].reverse ++ Block.initVars ss) := by
+    intro s hQ
+    simpa [Cmds.definedVars] using h_input_no_gen_suffix s hQ
+  have h_combined_no_gen_suffix_mod :
+      NoGenSuffix (P := P) Q (Cmds.modifiedVars [].reverse ++ transformBlockModVars ss) := by
+    intro s hQ
+    simpa [Cmds.modifiedVars] using h_input_no_gen_suffix_mod s hQ
+  have h_store_no_gens_upper :
+      ∀ x : String, Q x →
+        x ∉ StringGenState.stringGens gen' →
+        σ_ext (HasIdent.ident (P := P) x) = none := fun x hx _ => h_store_gens x hx
+  have h_allmem_gen : StringGenState.AllMem Q gen := by
+    rw [h_gen0]
+    exact StringGenState.allMem_gen Q "end$" StringGenState.emp
+      (StringGenState.allMem_emp Q) (hQmint.2.2.2.2.2.2.2.2.1 StringGenState.emp)
+  have h_allmem_gen' : StringGenState.AllMem Q gen' :=
+    stmtsToBlocks_allMem hQmint lend ss [] [] gen gen' entry blocks h_gen h_allmem_gen
+  have h_foreign : ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens gen' :=
+    fun s hns => StringGenState.not_mem_stringGens_of_not_allMem h_allmem_gen' hns
+  have ⟨σ_cfg, h_sim, h_agree, _h_preserve⟩ :=
+    stmtsToBlocks_simulation extendEval lend ss [] [] gen gen' entry blocks
+      h_gen h_nofd h_simple h_unique h_lbni h_lhni h_nml
+      ρ₀.store σ_ext ρ₀.hasFailure false ρ₀ ρ' hwfb hwfv hwf_def hwf_congr hwf_var
+      h_term h_accum h_agree_ext h_fresh_combined h_unique_combined h_hf
+      h_wf_gen h_combined_no_gen_suffix h_combined_no_gen_suffix_mod
+      gen' (fun _ h => h) h_store_no_gens_upper h_foreign
+      cfg h_blocks h_nodup
+  have h_end := end_block_terminal extendEval cfg lend σ_cfg ρ'.eval ρ'.hasFailure h_lend
+  exact ⟨σ_cfg, StepDetCFGStar_trans h_sim h_end, h_agree⟩
+
 /-- If the structured program reaches a terminal state, the CFG also reaches
     a corresponding terminal state.
 

@@ -1551,6 +1551,198 @@ abbrev Lang.cfg [HasFvar P] [HasNot P] [HasVal P] [HasVarsPure P P.Expr]
   isAtAssert := fun _ _ => False
   getEnv := fun c => { store := c.2.getStore, eval := fun _ _ => none, hasFailure := c.2.getFailure }
 
+/-- **Compositional-input pipeline soundness (terminal outcome).** Generalises
+`pipeline_sound_terminal` so the CFG `pipeline ss` may start from an *arbitrary*
+external store `σ_ext` that overapproximates the source initial store
+(`StoreAgreement ρ₀.store σ_ext`): `σ_ext` agrees on every source-defined
+variable and may bind strictly more.
+
+This is the constructive flip that makes the pipeline an
+`OverapproximatesUptoWhen`-shaped statement feeding a *further* transform: the
+downstream consumer universally quantifies the target initial env over all
+`R`-related (overapproximating) envs, and this theorem supports exactly that
+quantification instead of dropping it.
+
+The structured passes (`nondetElim`, `hoistLoopPrefixInits`) still run from
+`ρ₀` — they are source-to-source and never touch the CFG store — so they keep
+their original `ρ₀`-freshness preconditions.  Only the final `stmtsToCFG` pass
+runs the CFG, so only it consumes the `σ_ext` agreement and the `σ_ext`-stated
+freshness: the source `initVars`, the `ndelimKind` *and* `hoistKind` *and*
+`s2uKind` minted names must all be undefined in `σ_ext`.  The `ndelimKind`
+freshness on `σ_ext` is irreducibly required: `nondetElim` mints fresh-named
+`init` targets that become part of the CFG (S2U input) program's `initVars`, so
+`σ_ext` must leave them undefined for those CFG inits to fire.  (The `s2uKind`
+*source*-store mint hypothesis is no longer needed and is dropped.) -/
+theorem pipeline_sound_terminal_compositional
+    [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
+    [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
+    (σ_ext : SemanticStore P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwfvar' : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    -- ρ₀-freshness for the *structured* passes (nondetElim / hoist), unchanged:
+    (h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
+    (h_store_mints_ndelim : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_store_mints_hoist : NoGenStore (P := P) hoistKind ρ₀)
+    -- Track A: agreement + σ_ext-freshness for the *CFG* (S2U) pass:
+    (h_agree_ext : StoreAgreement ρ₀.store σ_ext)
+    (h_store_inits_ext : ∀ x ∈ Block.initVars ss, σ_ext x = none)
+    (h_store_mints_ndelim_ext :
+      ∀ s : String, ndelimKind s → σ_ext (HasIdent.ident (P := P) s) = none)
+    (h_store_mints_hoist_ext :
+      ∀ s : String, hoistKind s → σ_ext (HasIdent.ident (P := P) s) = none)
+    (h_store_mints_s2u_ext :
+      ∀ s : String, StructuredToUnstructuredCorrect.s2uKind s →
+        σ_ext (HasIdent.ident (P := P) s) = none)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_disj : StructuredToUnstructuredCorrect.Block.userLabelsShapeNodup ss)
+    (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
+    (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
+    (h_disj_initVars : ∀ str : String,
+      (ndelimKind str ∨ hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.initVars ss)
+    (h_disj_modVars : ∀ str : String,
+      (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
+    (h_term : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ')) :
+    ∃ σ_cfg, StructuredToUnstructuredCorrect.StepDetCFGStar extendEval (pipeline ss)
+        (.atBlock (pipeline ss).entry σ_ext ρ₀.hasFailure)
+        (.terminal σ_cfg ρ'.hasFailure)
+      ∧ StoreAgreement ρ'.store σ_cfg := by
+  -- === STEP 1: nondetElim (structured, from ρ₀) ===
+  obtain ⟨ρ_out, h_run1, h_agree1, h_hf1⟩ :=
+    nondetElim_sound_kind extendEval ss ρ₀ ρ'
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
+      h_store_mints_ndelim h_ndelim_writes h_nofd h_lhni h_term
+  have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
+    (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
+      h_unique (fun str hk => h_disj_initVars str (Or.inl hk))).2
+  have h_out_iv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.initVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_initVars str (Or.inr (Or.inl hk)) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_mv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_modVars str (Or.inl hk) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_exprs_sf : Block.exprsShapeFree (P := P) hoistKind (Block.nondetElim ss) :=
+    Block.nondetElimM_exprsShapeFree
+      (fun sg => (ndelim_name_not_hoistKind sg).1)
+      (fun sg => (ndelim_name_not_hoistKind sg).2)
+      ss StringGenState.emp h_hoist_exprs
+  have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
+    nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs
+  have h_out_undef : ∀ y ∈ Block.initVars (Block.nondetElim ss), ρ₀.store y = none := by
+    intro y hy
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
+      h_src | ⟨str, h_eq, h_nd⟩
+    · exact h_store_inits y h_src
+    · rw [h_eq]; exact h_store_mints_ndelim str h_nd
+  -- === STEP 2: hoist (structured, from ρ₀) ===
+  obtain ⟨ρ_h', h_run2, h_agree2, h_hf2⟩ :=
+    hoistLoopPrefixInits_preserves_kind (Q := hoistKind) hoistKind_gen
+      (extendEval := extendEval) (Block.nondetElim ss)
+      (nondetElim_containsNondetLoop ss)
+      (nondetElim_containsFuncDecl ss h_nofd)
+      (nondetElim_loopHasNoInvariants ss h_lhni)
+      (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
+      h_out_exprs_sf h_out_unique h_out_fresh
+      h_out_iv_sf h_out_mv_sf h_out_undef h_store_mints_hoist h_run1
+      hwfvar' hwfcongr' hwfsubst' hwfdef'
+  -- === Direction-B S2U preconds on the hoist output, at Q := s2uKind ===
+  have h_hoist_iv_cls :=
+    LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified (Q := hoistKind) hoistKind_gen
+      (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf
+  have h_step3_unique : Block.uniqueInits (Block.hoistLoopPrefixInits (Block.nondetElim ss)) :=
+    h_hoist_iv_cls.2
+  -- σ_ext analogue of the transformed-program initVars freshness (was ρ₀.store).
+  have h_out_undef_ext : ∀ y ∈ Block.initVars (Block.nondetElim ss), σ_ext y = none := by
+    intro y hy
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
+      h_src | ⟨str, h_eq, h_nd⟩
+    · exact h_store_inits_ext y h_src
+    · -- ndelim-minted init targets reach the CFG (S2U) input program's initVars,
+      -- so σ_ext must leave them undefined too: discharged by h_store_mints_ndelim_ext.
+      rw [h_eq]; exact h_store_mints_ndelim_ext str h_nd
+  have h_step3_undef_ext : ∀ x ∈ Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss)),
+      σ_ext x = none := by
+    intro x hx
+    rcases h_hoist_iv_cls.1 x hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · exact h_out_undef_ext x h_src
+    · rw [h_eq]; exact h_store_mints_hoist_ext str h_hoistk
+  have h_step3_iv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
+      (Block.initVars (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
+    intro s hk hx
+    rcases h_hoist_iv_cls.1 _ hx with h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_src with
+        h_src2 | ⟨str2, h_eq2, h_nd⟩
+      · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+      · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_step3_mv : Strata.Transform.GenSuffix.NoGenSuffix
+      (P := P) StructuredToUnstructuredCorrect.s2uKind
+      (StructuredToUnstructuredCorrect.transformBlockModVars
+        (Block.hoistLoopPrefixInits (Block.nondetElim ss))) := by
+    rw [transformBlockModVars_eq_modifiedVars]
+    intro s hk hx
+    rcases LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_modVars_classified (Q := hoistKind) hoistKind_gen
+        (Block.nondetElim ss) StringGenState.emp StringGenState.wf_emp h_out_unique h_out_iv_sf _ hx with
+      h_src | ⟨str, h_eq, _, _, h_hoistk⟩
+    · rw [List.mem_append] at h_src
+      rcases h_src with h_mv | h_iv
+      · rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ h_mv with
+          h_src2 | ⟨str2, h_eq2, h_nd⟩
+        · exact h_disj_modVars s (Or.inr hk) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+      · rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ h_iv with
+          h_src2 | ⟨str2, h_eq2, h_nd⟩
+        · exact h_disj_initVars s (Or.inr (Or.inr hk)) h_src2
+        · exact ndelimKind_not_s2uKind h_nd (LawfulHasIdent.ident_inj h_eq2 ▸ hk)
+    · exact hoistKind_not_s2uKind h_hoistk (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  -- === STEP 3: stmtsToCFG via the COMPOSITIONAL S2U spike (CFG from σ_ext) ===
+  obtain ⟨σ_cfg, h_run3, h_agree3⟩ :=
+    StructuredToUnstructuredCorrect.stmtsToCFG_terminal_compositional
+      (Q := StructuredToUnstructuredCorrect.s2uKind)
+      extendEval (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀ ρ_h' σ_ext
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
+      (hoist_noFuncDecl _ (nondetElim_noFuncDecl ss h_nofd))
+      (hoist_simpleShape _ (nondetElim_simpleShape ss))
+      h_step3_unique
+      (hoist_loopBodyNoInits _)
+      (hoist_loopHasNoInvariants _ (nondetElim_loopHasNoInvariants ss h_lhni))
+      (hoist_noMeasureLoops _ (nondetElim_noMeasureLoops ss h_nml))
+      h_agree_ext
+      h_step3_undef_ext
+      (Block.userLabelsShapeNodup_pipeline_preserved ss h_disj)
+      h_store_mints_s2u_ext
+      h_step3_iv h_step3_mv
+      StructuredToUnstructuredCorrect.s2uKind_gen
+      h_run2
+  -- === CHAIN via StoreAgreement.trans (source on the left) ===
+  have h_hf : ρ_h'.hasFailure = ρ'.hasFailure := h_hf2.trans h_hf1
+  rw [h_hf] at h_run3
+  -- (pipeline ss).entry def-unfolds to (stmtsToCFG (hoist (nondetElim ss))).entry
+  exact ⟨σ_cfg, h_run3, StoreAgreement.trans h_agree1 (StoreAgreement.trans h_agree2 h_agree3)⟩
+
 /-- **Pipeline soundness, terminal outcome (helper).** The terminal half of the
 dual `pipeline_sound`: a *terminating* source run of `ss` from a clean initial
 store `ρ₀` is matched by a terminating CFG run of `pipeline ss` agreeing on the
