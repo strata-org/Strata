@@ -1811,7 +1811,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
     let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$while_cond_{test.toAst.ann.start.byteIdx}"
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock false) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
 
@@ -1921,7 +1921,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
       | .Block stmts _ => stmts.any fun s => modifiesMaybeExceptVal s.val
       | .IfThenElse _ t e => modifiesMaybeExceptVal t.val ||
           (e.map (modifiesMaybeExceptVal ·.val)).getD false
-      | .While _ _ _ body => modifiesMaybeExceptVal body.val
+      | .While _ _ _ body postTest => modifiesMaybeExceptVal body.val
       | _ => false
     let modifiesMaybeExcept (stmt : StmtExprMd) : Bool :=
       modifiesMaybeExceptVal stmt.val
@@ -2085,7 +2085,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
     let continueBlock := mkStmtExprMd (StmtExpr.Block bodyInner (some continueLabel))
     let bodyStmts := [continueBlock, counterIncrease]
     let whileBody := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none whileBody) md
+    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none whileBody false) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
     let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
     return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
