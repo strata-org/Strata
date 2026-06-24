@@ -31,6 +31,7 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
+import Strata.Transform.CanFailPreservation
 import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.PipelineBridge
