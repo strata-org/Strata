@@ -76,7 +76,7 @@ def eliminateDoWhile (program : Program) : Program :=
 public def eliminateDoWhilePass : LoweringPass where
   name := "EliminateDoWhile"
   documentation := "Lowers post-test `While` loops (the `do … while` form) into the pre-test loop `{ while(true) invariant I { BODY; if (!COND) exit L } } L`, with a fresh `$`-prefixed exit label `L`. Runs early so no later pass observes a post-test loop; the invariant is checked at the loop head, matching `while`."
-  run := fun p _m _ => (eliminateDoWhile p, [], {})
+  run := fun _ p _m => (eliminateDoWhile p, [], {})
 
 end -- public section
 end Strata.Laurel
