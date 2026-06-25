@@ -271,9 +271,68 @@ procedure u(g: GHolder<Pair<int,bool>>) opaque modifies g { var p: Pair<int,bool
     src := r"
 composite Base<U,V> { var h: U }
 composite GHolder<A,B> extends Base<B,A> { var k: int }
-procedure u(g: GHolder<int,bool>) opaque modifies g { g#h := 7 };"} ]
+procedure u(g: GHolder<int,bool>) opaque modifies g { g#h := 7 };"},
 
-/-- Generic composite METHODS, inheritance, upcasting, and field-type concretization. -/
+  { name := "concrete_extends_geninst_upcast", outcome := .verifies,
+    why := "`IntBox extends Box<int>`: upcast to `Box<int>` + read the inherited field `val` through it verifies"
+    src := r"
+composite Box<T> { var val: T }
+composite IntBox extends Box<int> { var w: int }
+procedure u() opaque { var ib: IntBox := new IntBox; ib#val := 5; var b: Box<int> := ib; var got: int := b#val; assert got == 5 };"},
+
+  { name := "concrete_extends_geninst_inherited_direct", outcome := .verifies,
+    why := "inherited field read on the concrete child directly (no upcast) — the topo-sort places the monomorph parent first"
+    src := r"
+composite Box<T> { var val: T }
+composite IntBox extends Box<int> { var w: int }
+procedure u() opaque { var ib: IntBox := new IntBox; ib#val := 5; assert ib#val == 5 };"},
+
+  { name := "concrete_extends_geninst_transitive", outcome := .verifies,
+    why := "3-level mixed chain `Super extends IntBox extends Box<int>`: upcast Super to Box<int> reads the inherited field (whole-list topo sort handles the transitive concrete→monomorph order)"
+    src := r"
+composite Box<T> { var val: T }
+composite IntBox extends Box<int> { var w: int }
+composite Super extends IntBox { var z: int }
+procedure u() opaque { var s: Super := new Super; s#val := 9; var b: Box<int> := s; assert b#val == 9 };"},
+
+  { name := "concrete_extends_geninst_wrong_target", outcome := .rejected,
+    why := "`IntBox extends Box<int>` upcast to the WRONG instantiation `Box<bool>` must be REJECTED — the new subtype arm compares the SUBSTITUTED ancestor `Box<int>` with invariant args, so `Box<bool>` fails"
+    src := r"
+composite Box<T> { var val: T }
+composite IntBox extends Box<int> { var w: int }
+procedure u() opaque { var ib: IntBox := new IntBox; var b: Box<bool> := ib; assert 1 == 1 };"},
+
+  { name := "concrete_extends_geninst_remap_swap", outcome := .rejected,
+    why := "`W extends Pair<int,bool>` upcast to the SWAPPED `Pair<bool,int>` must be REJECTED (the prior-bug shape) — substituted ancestor `Pair<int,bool>` ≠ `Pair<bool,int>`"
+    src := r"
+composite Pair<A,B> { var a: A var b: B }
+composite W extends Pair<int,bool> { var w: int }
+procedure u() opaque { var x: W := new W; var p: Pair<bool,int> := x; assert 1 == 1 };"},
+
+  { name := "concrete_extends_geninst_false_twin", outcome := .failsExactly 1,
+    why := "a FALSE inherited-field read through the upcast must FAIL — the upcast is sound, not vacuous"
+    src := r"
+composite Box<T> { var val: T }
+composite IntBox extends Box<int> { var w: int }
+procedure u() opaque { var ib: IntBox := new IntBox; ib#val := 5; var b: Box<int> := ib; var got: int := b#val; assert got == 6 };"},
+
+  { name := "as_guarded_downcast_heap_neutral", outcome := .verifies,
+    why := "`if (p is Child) then ... p as Child ...` in a heap-neutral opaque proc on an opaque `Parent` param translates + verifies (was NotYetImplemented before the heap-neutral AsType-lowering fix); the guard discharges the cast's is-obligation"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) returns (r: int) opaque ensures true { if (p is Child) then { var c: Child := p as Child; r := c#y } else { r := 0 } };
+procedure u() opaque { var b: Parent := new Child; var got: int := d(b); assert 1 == 1 };"},
+
+  { name := "as_unguarded_downcast_guard_fails", outcome := .failsExactly 1,
+    why := "`p as Child` on an opaque `Parent` param (not provably a `Child`) FAILS the lowered is-guard — proves the heap-neutral `as` lowering ran AND the downcast obligation is real"
+    src := r"
+composite Parent { var x: int }
+composite Child extends Parent { var y: int }
+procedure d(p: Parent) returns (r: int) opaque ensures true { var c: Child := p as Child; r := c#y };
+procedure u() opaque { var got: int := d(new Parent); assert 1 == 1 };"},
+]
+
 def runGenericMethodTest : IO Unit := checkCases genericMethodCorpus
 
 #guard_msgs (drop info, error) in

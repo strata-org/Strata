@@ -170,33 +170,58 @@ private def runLaurelPasses
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       -- If the program ALREADY has a non-warning error (from the surface resolve or an
       -- earlier pass), it is already rejected, and a "new" re-resolution error is a
-      -- downstream CASCADE — the same surface error restated over the rewritten types
-      -- (`Box<bool>` → `Box$a1$bool`, escaping the `resolutionErrors` dedup only because the
-      -- name changed), or a dangling reference to a name TypeAliasElim left unfolded because
-      -- the surface use was itself arity-wrong, or a monomorph the depth cap already rejected
-      -- as `.NotYetImplemented`. Folding that as an `Internal error`/`.StrataBug` wrongly
-      -- blames the compiler for the user's own already-reported error. Suppress the cascade
-      -- and keep the clean surface diagnostic; a genuine post-transform internal failure
-      -- still surfaces once the user fixes their error and re-runs on an otherwise-valid
-      -- program (the net below still fires then).
+      -- downstream CASCADE — typically the same surface error restated over the rewritten
+      -- (e.g. monomorphized) types, which escapes the `resolutionErrors` dedup only because
+      -- the type names changed (`Box<bool>` → `Box$a1$bool`), a dangling reference to a
+      -- name TypeAliasElim left unfolded because the surface use was itself arity-wrong, or
+      -- a monomorph the depth cap already rejected as `.NotYetImplemented`. Folding that as
+      -- an `Internal error`/`.StrataBug` wrongly blames the compiler for the user's own
+      -- already-reported error. Suppress the cascade and keep the clean surface diagnostic;
+      -- a genuine post-transform internal failure still surfaces once the user fixes their
+      -- error and re-runs on an otherwise-valid program (the net below still fires then).
       if !newErrors.isEmpty && allDiags.any (·.type != .Warning) then
         return (program, model, allDiags, allStats)
       if !newErrors.isEmpty then
-        let newDiags := newErrors.toList.map fun d =>
-          { d with
-              message :=
-                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d}. Existing diagnostics were: {resolutionErrors.toList}"
-              type := .StrataBug }
-        emit pass.name "laurel.st" program
         -- Re-resolution fires after each `needsResolves := true` pass (lift at pos 0,
-        -- monomorphize at pos 1, and the elim/lift passes later) and a NEW error there is
-        -- a genuine post-transform failure (dangling monomorph ref, unresolved inherited
-        -- field) — folded in as a StrataBug so it fails loud (translated=false). HeapParam
-        -- and TypeHierarchy deliberately set `needsResolves := false` because they are one
-        -- logical pass whose intermediate states are not independently re-resolvable.
-        -- (This supersedes an earlier polymorphism-branch workaround that SUPPRESSED these
-        -- diagnostics — #1389 fixed the spurious-error sources so folding is safe; the
-        -- monomorphization re-resolution path is exercised by the polymorphism corpus.)
+        -- monomorphize at pos 1, and the elim/lift passes later). A NEW error here is
+        -- usually a genuine post-transform COMPILER failure (dangling monomorph ref,
+        -- unresolved inherited field) — folded in as a StrataBug so it fails loud
+        -- (translated=false). HeapParam and TypeHierarchy deliberately set
+        -- `needsResolves := false` because they are one logical pass whose intermediate
+        -- states are not independently re-resolvable. (This supersedes an earlier
+        -- polymorphism-branch workaround that SUPPRESSED these diagnostics — #1389 fixed
+        -- the spurious-error sources so folding is safe; the monomorphization
+        -- re-resolution path is exercised by the polymorphism corpus.)
+        --
+        -- EXCEPTION — user-caused name collisions are NOT compiler bugs. A synthetic name
+        -- minted by a pass (a monomorph `Box$a1$int`, a lifted method, a `$body`/`$heap`
+        -- label) can collide with a USER identifier, because `$` and the `$aN$` tag shape
+        -- are legal in source names (the tag encoders are not injective — see
+        -- `instTagCommon`). That surfaces here as a NEW `Duplicate definition` (a
+        -- genuine compiler-internal failure is a "not defined"-style dangling ref, never a
+        -- duplicate: two USER names would already have clashed in the first resolve, and
+        -- two generated names are deduped by the worklist — so a new duplicate is a user
+        -- name matching a generated one). Report those as a plain `UserError`, without the
+        -- "Internal error" prefix that wrongly blames the compiler.
+        -- TODO: the user's source location is lost here because the synthetic name carries
+        -- `source := none`; a pre-monomorphization check on `ct.name.source`/`proc.name.source`
+        -- (in `MonomorphizeComposites`) is the only place that location is still available.
+        let isUserCollision (d : DiagnosticModel) : Bool :=
+          (d.message.splitOn "Duplicate definition").length > 1
+        let newDiags := newErrors.toList.map fun d =>
+          if isUserCollision d then
+            { d with
+                message :=
+                  s!"{d.message} (a user identifier collides with a name generated by '{pass.name}'; \
+                     rename the identifier — names containing '$' or the '$aN$' instantiation-tag \
+                     shape can clash with synthetic names)"
+                type := .UserError }
+          else
+            { d with
+                message :=
+                  s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
+                type := .StrataBug }
+        emit pass.name "laurel.st" program
         return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model

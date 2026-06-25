@@ -14,6 +14,7 @@ import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-
 Heap Parameterization Pass
@@ -184,11 +185,15 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
 /-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation.
     `Bx<int>` → `Bx$a1$int`, distinct from `Bx<bool>` → `Bx$a1$bool`, so each
     instantiation gets its OWN box constructor/destructor — preserving the type
-    distinctness that the native parametric datatype gives us (no cross-instantiation
-    confusion). Mirrors `MonomorphizeComposites.tyTag`'s `$`-delimited rendering (inlined
-    here rather than imported, to avoid a pass↔pass import cycle). Returns `none` for a
-    shape that can't be rendered (e.g. an `.Applied` over a non-datatype, a `.TVar` arg),
-    which keeps the caller on its loud-failure fallback. -/
+    distinctness that the native parametric datatype gives us between different
+    instantiations of the same datatype. Mirrors `MonomorphizeComposites.tyTag`'s
+    `$`-delimited rendering (inlined here rather than imported, to avoid a pass↔pass
+    import cycle), and inherits its NON-injectivity: it distinguishes `int` from `bool`,
+    but a user name containing `$` (e.g. a datatype named `Bx$a1$int`) can render the same
+    string — that clash is caught downstream by the Core type checker when the boxed value
+    sorts differ, not prevented here (see the injectivity caveat on `instTagCommon`).
+    Returns `none` for a shape that can't be rendered (e.g. an `.Applied` over a
+    non-datatype, a `.TVar` arg), which keeps the caller on its loud-failure fallback. -/
 private partial def appliedBoxTag : HighType → Option String
   | .TCore n => some n                       -- heap-box naming accepts `Core` types; `.TVoid` it does NOT
   | ty => instTagCommon appliedBoxTag ty     -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TVoid/… (unsupported)
@@ -515,6 +520,23 @@ where
       simp_all
       omega)
 
+/-- Lower ONLY `AsType` nodes (`x as T` → `{ assert (x is T); x }`), recursing
+    structurally and leaving every other node untouched. This is the
+    heap-INDEPENDENT half of the `.AsType` rewrite in `heapTransformExpr`
+    (line ~482), factored out for the heap-neutral procedure branch: such a
+    procedure must NOT receive the heap-dependent rewrites (field access,
+    Composite `==` → reference compare — the latter mis-fires on a
+    constrained/`.UserDefined` non-composite operand), but it MUST still have its
+    `as` casts lowered or the Core translator hard-fails (`NotYetImplemented`).
+    Bottom-up, so nested casts (`(x as A) as B`) lower correctly. -/
+def lowerAsTypeOnly (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e => match e.val with
+    | .AsType t ty =>
+      let isCheck : StmtExprMd := ⟨ .IsType t ty, e.source ⟩
+      let assertStmt : StmtExprMd := ⟨ .Assert { condition := isCheck }, e.source ⟩
+      ⟨ .Block [assertStmt, t] none, e.source ⟩
+    | _ => e) expr
+
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
   let readsHeap := (← get).heapReaders.contains proc.name
@@ -585,8 +607,28 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else
-    -- This procedure doesn't read or write the heap - no changes needed
-    return proc
+    -- This procedure neither reads nor writes the heap, so it gets NO `$heap`
+    -- parameter and needs none of the heap-dependent rewrites (field
+    -- read/write → readField/updateField, Composite `==` → reference compare).
+    -- It CAN still contain `AsType` (`x as T`), which is heap-INDEPENDENT — it
+    -- lowers to `{ assert (x is T); x }` with no heap reference. Leaving it
+    -- un-lowered makes the Core translator hard-fail with `NotYetImplemented`
+    -- (LaurelToCoreTranslator, the `.AsType` arm). So we lower ONLY `AsType`
+    -- here, deliberately NOT running the full `heapTransformExpr` (whose
+    -- Composite-`==` rewrite would mis-fire on a constrained/`.UserDefined`
+    -- non-composite operand, wrapping an `int` in `Composite..ref!`).
+    let body' := match proc.body with
+      | .Transparent bodyExpr =>
+          .Transparent (lowerAsTypeOnly bodyExpr)
+      | .Opaque postconds impl modif =>
+          .Opaque (postconds.map (·.mapCondition lowerAsTypeOnly)) (impl.map lowerAsTypeOnly)
+            (modif.map lowerAsTypeOnly)
+      | .Abstract postconds =>
+          .Abstract (postconds.map (·.mapCondition lowerAsTypeOnly))
+      | .External => .External
+    return { proc with
+      body := body'
+      preconditions := proc.preconditions.map (·.mapCondition lowerAsTypeOnly) }
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Instance procedures are already lifted to `staticProcedures` by an earlier

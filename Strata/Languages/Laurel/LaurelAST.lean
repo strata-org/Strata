@@ -530,8 +530,13 @@ def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target :
     though the label has no syntactic declaration site.
 
     Shared here so the translator, the resolver, and frontends agree on the
-    exact string rather than each hard-coding it. The leading `$` keeps it
-    out of the user-name space (no source identifier can contain `$`). -/
+    exact string rather than each hard-coding it. The leading `$` is a naming
+    CONVENTION to keep synthetic labels clear of typical user names — it is NOT a
+    guarantee of disjointness: `$` is a legal identifier character (a user CAN
+    write `$body`), so this is a label, not a reserved word. Safety does not rest
+    on the prefix: a user identifier that collides with a synthetic name is caught
+    downstream by the duplicate-definition check on re-resolution (see
+    `LaurelCompilationPipeline.runLaurelPasses`), not prevented here. -/
 def bodyLabel : String := "$body"
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
@@ -727,12 +732,23 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
     nested `.Applied` args use the CALLER's accepted-type-set (the two callers differ only
     in one extra leaf arm — `tyTag` allows `.TVoid`, `appliedBoxTag` allows `.TCore` — and
     each keeps that arm local, so neither caller's accepted set changes). Returning `none`
-    (not a catch-all) is load-bearing: a collision would coalesce distinct instantiations.
-    E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`, and `Box<Map int int>` →
-    `Box$a1$Map$a2$int$int` (the `.TMap`/`.TSet` arms below tag collections too). A type this
-    renderer can't tag injectively yields `none` (e.g. an arg of `.TVar`/`.Pure` has no arm
-    here), so a `Box<T>` (unbound `T`) argument is untaggable → the whole tag is `none` (fail
-    loud, never coalesced). -/
+    (not a catch-all) on an untaggable arg is important: such an arg has no stable name, so
+    tagging it would be meaningless. E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`,
+    and `Box<Map int int>` → `Box$a1$Map$a2$int$int` (the `.TMap`/`.TSet` arms below tag
+    collections too). A type this renderer can't name yields `none` (e.g. an arg of
+    `.TVar`/`.Pure` has no arm here), so a `Box<T>` (unbound `T`) argument is untaggable →
+    the whole tag is `none` (fail loud).
+
+    INJECTIVITY CAVEAT: this encoding is NOT injective in general. The `$`-delimited join is
+    only injective under the assumption that no rendered leaf name itself contains `$` — but
+    `$` is a legal identifier character, so a user composite literally named `Pair$a2$int$bool`
+    renders the same string as `Box<Pair<int,bool>>`'s inner tag, and `Pair<X$Y,Z>` collides
+    with `Pair<X,Y$Z>` (a `$` migrating across the comma). Such collisions are NOT prevented
+    here; they are caught DOWNSTREAM — a coalesced composite with a divergent field layout
+    fails the duplicate-definition / type re-resolution net after `MonomorphizeComposites`
+    (see `LaurelCompilationPipeline.runLaurelPasses`), and divergent value sorts fail the Core
+    type checker. Making this encoding injective (escaping/length-prefixing `$`) would be a
+    defense-in-depth hardening; today the downstream nets are what guarantee soundness. -/
 partial def instTagCommon (recurse : HighType → Option String) : HighType → Option String
   | .TInt => some "int" | .TBool => some "bool" | .TReal => some "real"
   | .TString => some "string" | .TFloat64 => some "float64"
@@ -746,10 +762,12 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
     | _ => none
   -- Built-in collection formers `Map`/`Set` tag like a 2-/1-ary applied type, so a
   -- `Map`-/`Set`-typed composite FIELD can be heap-boxed (the box-name fns route through
-  -- this tagger). `Map`/`Set` are reserved keywords (no user `.Applied Map`), so `Map$a2$…`
-  -- cannot collide with a user generic. The `do`-block short-circuits to `none` on an
-  -- untaggable element (e.g. a nested `.TVar`), preserving injectivity / fail-loud exactly
-  -- like the `.Applied` arm above.
+  -- this tagger). `Map`/`Set` are reserved keywords, so there is no user `.Applied Map`/`Set`
+  -- HEAD. (This does NOT make `Map$a2$…` collision-free: a user composite named literally
+  -- `Map$a2$int$int` still renders the same string — see the injectivity caveat above; that
+  -- clash is caught by the downstream duplicate-definition net, not here.) The `do`-block
+  -- short-circuits to `none` on an untaggable element (e.g. a nested `.TVar`), fail-loud
+  -- exactly like the `.Applied` arm above.
   | .TMap k v => do
     let kt ← recurse k.val
     let vt ← recurse v.val
@@ -850,6 +868,17 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     (match highBaseName? subBase.val with
      | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => highEq anc sup')
      | none => false)
+    || highEq sub' sup'
+  -- CONCRETE child of a GENERIC-INSTANTIATION parent: `IntBox extends Box<int>` ⊢
+  -- `IntBox <: Box<int>`. `IntBox` is a bare `.UserDefined` (no type params), the
+  -- supertype is an `.Applied`. Same remap-aware discipline as the `.Applied`-sub arm
+  -- above: check whether the target equals a fully-SUBSTITUTED ancestor of the child
+  -- (`substitutedAncestors subName []` — the child has no args to substitute, so it
+  -- yields the `extends`-expression verbatim, e.g. `Box<int>`), compared with exact
+  -- `highEq` (args INVARIANT). So `IntBox <: Box<int>` succeeds while `IntBox <: Box<bool>`
+  -- (wrong instantiation) and a remap mismatch both FAIL — no wrong-accept.
+  | .UserDefined subName, .Applied _ _ =>
+    (ctx.substitutedAncestors subName.text []).any (fun anc => highEq anc sup')
     || highEq sub' sup'
   | _, _ => highEq sub' sup'
 

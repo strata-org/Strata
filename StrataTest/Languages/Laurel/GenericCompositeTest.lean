@@ -295,8 +295,8 @@ procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i
   -- loud (`expected 'Heap', got 'int'`, or `Duplicate definition '$heap'` via the seen-outputs
   -- dup-check) — either way `!translated`. This pins only "a user `$heap` output never translates";
   -- the sanity twin pins that the legit single synth `$heap` inout still merges.
-  { name := "user_heap_output_rejected", outcome := .rejected (some .StrataBug),
-    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution internal-error net (.StrataBug — `Duplicate definition '$heap'` and/or the `expected 'Heap', got 'int'` type-mismatch). The .StrataBug tag pins that it rejects via that net, NOT which specific diagnostic (the dup-check's effect is cosmetic — cleaner message — not separately machine-checked here)"
+  { name := "user_heap_output_rejected", outcome := .rejected (some .UserError),
+    why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution net as a `.UserError` (the colliding name is user-provided, so it is a user error — `Duplicate definition '$heap'` with a rename hint — not an `Internal error`/`.StrataBug`)"
     src := r"
 composite Inner { var v: int }
 procedure u() returns ($heap: int) opaque { var o: Inner := new Inner; o#v := 5; $heap := 0 };"},
@@ -478,10 +478,52 @@ procedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; as
     src := r"
 composite Box<T> { var val: T }
 composite Pair<A,B> { var a: A var b: B }
-procedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<bool,int>> };"} ]
+procedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<bool,int>> };"},
 
-/-- Generic composites verify end-to-end via monomorphization — across every type position,
-    nested generics (fixpoint worklist), explicit `new C<τ>`, and chained field writes. -/
+  { name := "generic_chained_field_read", outcome := .verifies,
+    why := "`p#b#az` (chained read directly through a generic composite's type-var-typed field) resolves + verifies"
+    src := r"
+composite Z { var az: int }
+composite Pair<A,B> { var a: A var b: B }
+procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; zz#az := 5; p#b := zz; assert p#b#az == 5 };"},
+
+  { name := "generic_chained_field_read_wrong", outcome := .failsExactly 1,
+    why := "a FALSE chained read `p#b#az == 6` must FAIL — the chain is sound, not vacuous (no over-accept)"
+    src := r"
+composite Z { var az: int }
+composite Pair<A,B> { var a: A var b: B }
+procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; zz#az := 5; p#b := zz; assert p#b#az == 6 };"},
+
+  { name := "generic_chained_field_write", outcome := .verifies,
+    why := "`p#b#az := 7` (chained WRITE through a generic field) then read verifies"
+    src := r"
+composite Z { var az: int }
+composite Pair<A,B> { var a: A var b: B }
+procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; p#b := zz; p#b#az := 7; assert p#b#az == 7 };"},
+
+  { name := "generic_chained_field_badfield_rejected", outcome := .rejected (some .UserError),
+    why := "`p#b#nope` (chained read of a field absent from the concrete holder type) is still REJECTED — the fix only resolves fields that genuinely exist, never over-accepts"
+    src := r"
+composite Z { var az: int }
+composite Pair<A,B> { var a: A var b: B }
+procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; p#b := zz; assert p#b#nope == 5 };"},
+
+  { name := "generic_chained_three_level", outcome := .verifies,
+    why := "`p#b#z2#aw` (three-level chain through generic-composite fields) resolves transitively + verifies"
+    src := r"
+composite W { var aw: int }
+composite Z { var z2: W }
+composite Pair<A,B> { var a: A var b: B }
+procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; var ww: W := new W; ww#aw := 9; zz#z2 := ww; p#b := zz; assert p#b#z2#aw == 9 };"},
+
+  { name := "user_name_collides_with_monomorph", outcome := .rejected (some .UserError),
+    why := "a user `composite Box$a1$int` collides with the `Box<int>` monomorph name and must be rejected as a duplicate definition (the index-keyed topo-sort preserves both entries so the collision is seen)"
+    src := r"
+composite Box<T> { var val: T }
+composite Box$a1$int { var val: bool }
+procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; assert bi#val == 7 };"},
+]
+
 def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus
 
 #guard_msgs (drop info, error) in

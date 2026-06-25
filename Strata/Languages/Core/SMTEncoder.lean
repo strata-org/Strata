@@ -322,8 +322,10 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (
   | .quant _ qk name (.some ty) tr e =>
     let fvarNames := (e.collectFvarNames.map (·.name)).toArray
     -- Generate base name using global counter to ensure uniqueness across terms.
-    -- The `$__` prefix is reserved for internal use and cannot appear in user
-    -- identifiers.
+    -- The `$__` prefix is a reserved-by-CONVENTION marker for internal names; `$` and
+    -- `_` are legal identifier characters, so this is not parser-enforced. Uniqueness of
+    -- these quantifier-bound names does not rely on the prefix: it comes from the
+    -- per-encoding `bvCounter`, so even a colliding user name is shadowed within scope.
     let (baseName, startSuffix) :=
       if ctx.uniqueBoundNames || name.isEmpty then
         (s!"$__bv{ctx.bvCounter}", 1)

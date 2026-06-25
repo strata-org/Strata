@@ -315,10 +315,33 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
   | none => return none
 
 /-- Resolve a field reference using the target's type to build a qualified lookup key.
-    Falls back to the instance type name (for `self.field` in instance methods),
-    then to unqualified lookup if the target type cannot be determined. -/
+
+    `holderTy?` is the *authoritative* concrete type of the receiver, as synthesized
+    by `Synth.resolveStmtExpr` at the call site. When supplied it is tried FIRST: its
+    base composite name (peeled via `unfold`+`highBaseName?`) keys the field-scope
+    lookup. This is what makes a CHAINED access through a generic composite field
+    resolve — e.g. `p#b#az` where `p : Pair<int,Z>` and field `b : B` (a type
+    variable): the receiver `p#b` synthesizes to the concrete `Z` (via
+    `concretizeFieldType`), so `#az` finds `Z`'s field. The string-based
+    `targetTypeName` fallback below cannot recover this because a `.TVar`/`.Applied`
+    field type carries no composite name on its own — it dropped to `none`, falling
+    through to `resolveRef` and the spurious "'az' is not defined".
+
+    Falls back (when `holderTy?` is absent or names no known composite) to
+    `targetTypeName target`, then to the instance type name (for `self.field` in
+    instance methods), then to unqualified `resolveRef`. Threading the already-
+    computed holder type only ever ADDS a successful resolution (it never overrides
+    a name the old path resolved differently — the type-scope field map is the same
+    one both paths consult), so it is a pure completeness improvement, never a
+    wrong-accept: a field absent from the concrete holder still falls through. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (source : Option FileRange) : ResolveM Identifier := do
+    (source : Option FileRange) (holderTy? : Option HighTypeMd := none) : ResolveM Identifier := do
+  -- Authoritative path: use the synthesized concrete holder type when available.
+  if let some holderTy := holderTy? then
+    let s ← get
+    if let some baseName := highBaseName? (s.typeLattice.unfold holderTy).val then
+      if let some resolved ← resolveFieldInTypeScope baseName.text fieldName then
+        return resolved
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -1008,7 +1031,7 @@ def Synth.varField (exprMd : StmtExprMd)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', holderTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName source
+  let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
   -- Concretize the field's `.TVar` against the holder's instantiation. `holderTy` is
   -- the synthesized holder type — already concretized for a nested `g#inner` because
   -- that read came through this same rule — so chains concretize transitively.
@@ -1591,7 +1614,7 @@ def Synth.assign (exprMd : StmtExprMd)
       pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
     | .Field target fieldName =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source
+      let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
       pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       let ty' ← resolveHighType param.type
@@ -1637,7 +1660,7 @@ def Check.assign (exprMd : StmtExprMd)
       pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
     | .Field target fieldName =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source
+      let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
       pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       let ty' ← resolveHighType param.type
@@ -1692,7 +1715,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       pure ((⟨.Local ref', target.source⟩ : VariableMd), ← getVarType ref)
     | .Field tgt fieldName =>
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source
+      let fieldName' ← resolveFieldRef tgt' fieldName source (holderTy? := holderTy)
       pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
@@ -2323,7 +2346,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     (h : exprMd.val = .PureFieldUpdate target fieldName newVal) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName target.source
+  let fieldName' ← resolveFieldRef target' fieldName target.source (holderTy? := targetTy)
   -- Concretize against the holder's instantiation.
   let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
