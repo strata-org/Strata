@@ -734,14 +734,29 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
     all_goals (cases a; cases b; try term_by_mem)
     cases t1; term_by_mem
 
-/-- Test whether a type is the gradual/dynamic top: `Unknown`, any `TCore _`
-    (pending removal from the representation), or a frontend-registered gradual
-    `UserDefined` (e.g. Python `Any`). Mirrors the `isGradual` local inside
-    `isConsistent` so `coerce` classifies identically. -/
+/-- Test whether a type is gradual (consistent with everything): `Unknown`, any
+    `TCore _` (pending removal from the representation), or a frontend-registered
+    gradual `UserDefined` (e.g. Python `Any`). Mirrors the `isGradual` local inside
+    `isConsistent` so `coerce`'s DECISION classifies identically. -/
 private def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighType) : Bool :=
   match t with
   | .Unknown => true
   | .TCore _ => true
+  | .UserDefined id => ctx.gradualTypes.contains id.text
+  | _ => false
+
+/-- Test whether a type is the BOXABLE dynamic type — Python `Any`, which appears
+    BOTH as `.TCore "Any"` (the erased/runtime form, the common case) and as a
+    frontend-registered gradual `.UserDefined "Any"`. This is the SUBSET of
+    `isGradualTop` that has a runtime representation you can inject into / project
+    out of. `Unknown` and OTHER `.TCore _` (`Heap`, `Box`, `Error`, …) are gradual
+    *wildcards* (a synth gap, a hole, an unresolved accessor, internal plumbing):
+    they flow freely but carry NO box/unbox coercion, so a coercion against them is
+    `refl` (identity) — coercing them would wrap concrete-typed prelude code
+    (`ListAny..tail!` synth'd as `Unknown`) or heap plumbing in a bogus box/unbox. -/
+private def TypeLattice.isDynamicBoxable (ctx : TypeLattice) (t : HighType) : Bool :=
+  match t with
+  | .TCore "Any" => true
   | .UserDefined id => ctx.gradualTypes.contains id.text
   | _ => false
 
@@ -753,13 +768,17 @@ private def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighType) : Bool :
     verdict names the KIND of coercion (inject/project/upcast/refl), never a runtime
     function; the frontend's `realizeCoercion` turns it into a concrete term.
 
-    Mirrors `isConsistent ∨ isSubtype` case-for-case:
-    - `MultiValuedExpr` (proc-output tuples): delegate to `isConsistent`; on the
-      sink-expansion path the term is not coerced, so `refl` suffices.
+    The gradual cases split by WHICH gradual: only the boxable dynamic type (`Any`)
+    yields a runtime `inject`/`project`; a bare wildcard (`Unknown`/`TCore`) yields
+    `refl` (it flows with no coercion). The DECISION (`.isSome`) is unchanged either
+    way — both are `some` — so `isConsistentSubtype` matches the old boolean exactly.
+
+    Case-for-case (mirrors `isConsistent ∨ isSubtype` for the decision):
+    - `MultiValuedExpr` (proc-output tuples): delegate to `isConsistent`; `refl`.
     - equal after unfold → `refl`.
-    - `sup` gradual, `sub` not → `inject sub'` (box a concrete value into the top).
-    - `sub` gradual, `sup` not → `project sup'` (unbox/downcast out of the top).
-    - both gradual → `refl` (top ↔ top is identity, e.g. Any↔Any).
+    - `sup` is `Any`, `sub` concrete → `inject sub'` (box into the dynamic type).
+    - `sub` is `Any`, `sup` concrete → `project sup'` (unbox/downcast out of it).
+    - either side a bare wildcard (`Unknown`/`TCore`) → `refl` (gradual, no runtime op).
     - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal). -/
 def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
   match sub.val, sup.val with
@@ -768,11 +787,17 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
   | _, _ =>
     let sub' := ctx.unfold sub
     let sup' := ctx.unfold sup
+    let subBoxable := ctx.isDynamicBoxable sub'.val
+    let supBoxable := ctx.isDynamicBoxable sup'.val
     let subG := ctx.isGradualTop sub'.val
     let supG := ctx.isGradualTop sup'.val
-    if subG && supG then some .refl
-    else if supG then some (.inject sub'.val)
-    else if subG then some (.project sup'.val)
+    -- A real box/unbox exists ONLY against the boxable dynamic type, and only when
+    -- the other side is concrete (not itself gradual).
+    if supBoxable && !subG then some (.inject sub'.val)
+    else if subBoxable && !supG then some (.project sup'.val)
+    -- Any remaining gradual case (a bare wildcard on either side, or Any↔Any) is
+    -- `refl`: consistent, no runtime coercion.
+    else if subG || supG then some .refl
     else if highEq sub' sup' then some .refl
     else match sub'.val, sup'.val with
       | .UserDefined subName, .UserDefined supName =>

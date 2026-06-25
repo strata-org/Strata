@@ -472,7 +472,7 @@ public def pythonAndSpecToLaurel
     Lives here in the Python pipeline, not in the generic Laurel resolver. -/
 public def pythonUnmodeledNames : Std.HashSet String :=
   ([ "datetime", "timedelta", "Client", "bytes", "MyInt",
-     "Any..as_Composite!", "Any..isfrom_Composite", "Any..from_Composite",
+     "Any..as_Composite!", "Any..isfrom_Composite", "from_Composite",
      "date", "timezone", "UTC", "BotocoreError", "ClientError",
      "Dict", "list_to_bool", "dict_to_bool", "float_to_bool",
      "Any_set_to_Any", "Any_list_to_Any", "Any_enumerate_to_Any",
@@ -497,9 +497,70 @@ public def pythonUnmodeledNames : Std.HashSet String :=
      "SchedulerWrapper", "Iterator", "Generator"
   ] : List String).foldl (fun s n => s.insert n) {}
 
-/-- Python gradual types: names that should be consistent with everything (the dynamic top type). -/
+/-- Python gradual types: names consistent with everything (the dynamic top type).
+    `Any` is Python's dynamic type. `re_Match` types the `from_Composite`/
+    `Any..as_Composite!` bridge stubs (the prelude cannot name the synthesized
+    `Composite`, so it borrows a named composite that flattens to it); making it
+    gradual lets a class instance of ANY class flow into the bridge at the
+    pre-flatten resolves; post-flatten both sides are `Composite`. -/
 public def pythonGradualTypes : Std.HashSet String :=
-  (["Any"] : List String).foldl (fun s n => s.insert n) {}
+  (["Any", "re_Match"] : List String).foldl (fun s n => s.insert n) {}
+
+/-- Wrap `e` in a unary `StaticCall` to the named prelude function. -/
+private def pyCoerceCall (name : String) (e : Laurel.StmtExprMd) : Laurel.StmtExprMd :=
+  { val := .StaticCall { text := name, uniqueId := none } [e], source := e.source }
+
+/-- Classify a Python/Laurel `HighType` to the prelude box/unbox vocabulary key.
+    Mirrors the elaborator's `eraseType` (Elaborate.lean): user-defined classes are
+    `Composite`; `Any`/containers keep their core name; Python `float` is `real`. -/
+private def pyTypeKey : Laurel.HighType → String
+  | .TInt => "int" | .TBool => "bool" | .TString => "str"
+  | .TFloat64 => "float" | .TReal => "float" | .TVoid => "void"
+  | .TCore "real" => "float"
+  | .TCore n => n
+  | .UserDefined id => match id.text with
+    | "Any" => "Any" | "ListAny" => "ListAny" | "DictStrAny" => "DictStrAny"
+    | "Error" | "OptionInt" | "Box" | "Field" | "TypeTag" => id.text
+    | _ => "Composite"   -- every user class boxes/unboxes as Composite
+  | _ => "Any"
+
+/-- Python REALIZER for the abstract `Coercion` verdict. Transcribes the gradual
+    (inject/project) rows of the elaborator's `subtype` table (Elaborate.lean:483-521)
+    into concrete prelude calls. `inject` boxes a concrete value into `Any` by the
+    SOURCE type; `project` unboxes/casts out of `Any` by the TARGET type. `upcast`
+    (nominal) and `refl` are identity. Truthiness/numeric-widening are NOT here —
+    they are not subtyping (handled by `pythonToBool` / inside prelude ops). -/
+public def pythonRealizeCoercion : Laurel.Coercion → Laurel.StmtExprMd → Laurel.StmtExprMd
+  | .refl, e => e
+  | .upcast, e => e
+  | .inject source, e =>
+    match pyTypeKey source with
+    | "int" => pyCoerceCall "from_int" e
+    | "bool" => pyCoerceCall "from_bool" e
+    | "str" => pyCoerceCall "from_str" e
+    | "float" => pyCoerceCall "from_float" e
+    | "ListAny" => pyCoerceCall "from_ListAny" e
+    | "DictStrAny" => pyCoerceCall "from_DictStrAny" e
+    | "Composite" => pyCoerceCall "from_Composite" e
+    | "void" => { val := .StaticCall { text := "from_None", uniqueId := none } [], source := e.source }
+    | _ => e   -- already Any or a type with no boxing witness: pass through
+  | .project target, e =>
+    match pyTypeKey target with
+    | "int" => pyCoerceCall "Any..as_int!" e
+    | "bool" => pyCoerceCall "Any_to_bool" e
+    | "str" => pyCoerceCall "Any..as_string!" e
+    | "float" => pyCoerceCall "Any..as_float!" e
+    | "ListAny" => pyCoerceCall "Any..as_ListAny!" e
+    | "DictStrAny" => pyCoerceCall "Any..as_Dict!" e
+    | "Composite" => pyCoerceCall "Any..as_Composite!" e
+    | _ => e
+
+/-- Python truthiness coercion for boolean context. Any value used where a `bool`
+    is expected is run through `Any_to_bool` (Python user values are `Any`). For an
+    already-concrete `bool` it is identity. -/
+public def pythonToBool : Laurel.StmtExprMd → Laurel.HighType → Laurel.StmtExprMd
+  | e, .TBool => e
+  | e, _ => pyCoerceCall "Any_to_bool" e
 
 /-- V2 variant of `translateCombinedLaurel` that pre-registers Python's unmodeled
     external names so the Laurel resolver emits no "not defined" diagnostics for them.
@@ -513,7 +574,9 @@ private def translateCombinedLaurelV2 (combined : Laurel.Program)
     Laurel.translateWithLaurel
       { inlineFunctionsWhenPossible := true
         externalNames := allExternal
-        gradualTypes := pythonGradualTypes }
+        gradualTypes := pythonGradualTypes
+        realizeCoercion := some pythonRealizeCoercion
+        toBool := some pythonToBool }
       combined
   return (coreOption.map appendCorePartOfRuntime, errors)
 

@@ -23,6 +23,15 @@ structure LaurelTranslateOptions where
   /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
       Used by language frontends (e.g. Python registers "Any" here). -/
   gradualTypes : Std.HashSet String := {}
+  /-- Frontend-supplied realizer for the abstract `Coercion` verdict of the
+      proof-relevant subtyping judgment: maps a verdict + the coerced term to a
+      rewritten term carrying the concrete box/unbox call. `none` = identity
+      (native Laurel inserts no coercion). Threaded onto `TypeLattice`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
+  /-- Frontend-supplied truthiness coercion for boolean context (`if`/`while`/
+      `assert`/`assume`/bool-ops): term + its synthesized type → to-bool-wrapped
+      term. `none` = identity. Threaded onto `TypeLattice`. -/
+  toBool : Option (StmtExprMd → HighType → StmtExprMd) := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

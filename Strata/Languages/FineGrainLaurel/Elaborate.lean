@@ -521,9 +521,16 @@ def subtype (actual0 expected0 : LowType) : CoercionResult :=
   | .TCore "ListAny", .TCore "Any" => .coerce (fun md v => .staticCall md "Any..as_ListAny!" [v])
   | _, _ => .unrelated
 
-/-- Apply the coercion witness for `actual <= expected` to a value. Identity if equal. -/
-def applySubtype (val : FGLValue) (actual expected : LowType) : FGLValue :=
-  match subtype actual expected with | .refl => val | .coerce c => c val.getMd val | .unrelated => val
+/-- Effects-only subsumption: the elaborator goes *untyped Laurel → effect-typed
+    (FGCBV) Laurel*, threading EFFECTS (grades, via `leftResidual`), NOT value
+    (box/unbox) coercions. The pure-type coercions are now inserted by the Laurel
+    resolver's proof-relevant subtyping judgment (`coerce` + the frontend's
+    `realizeCoercion`), which runs after elaboration. So `applySubtype` is the
+    identity on values — it must NOT box/unbox, or the resolver would double-coerce
+    (the elaborator and resolver are mutually exclusive coercers). `subtype` /
+    `CoercionResult` remain as the reference the Python realizer is transcribed from. -/
+def applySubtype (val : FGLValue) (_actual _expected : LowType) : FGLValue :=
+  val
 
 /-! ## The Translation ⟦·⟧ : Laurel → GFGL
 

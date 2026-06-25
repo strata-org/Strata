@@ -436,6 +436,32 @@ private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (ac
   unless compatible do
     typeMismatch source none s!"expected '{formatType expected}'" actual
 
+/-- PROOF-RELEVANT `[⇐] Sub`: check `actual ≤ expected` AND, on success, REALIZE the
+    coercion witness onto the rewritten term `e` (returning the coerced term). This
+    is `checkSubtype` plus term-rewriting; use it wherever the resolver holds the
+    expression and rebuilds the AST (subsumption fallback, assignment RHS, …).
+
+    The witness is the abstract `coerce` verdict; the concrete coercion is inserted
+    by the frontend-supplied `ctx.realizeCoercion` (identity for native Laurel, so
+    this is a no-op there). The decision and the realized coercion share the single
+    `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
+    as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
+    position) inserts no coercion. -/
+private def coerceTo (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+    (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let ctx := (← get).typeLattice
+  let actual' := stripTrailingErrors actual
+  if isVoidLikeHT actual'.val && isVoidLikeHT expected.val then
+    pure e
+  else match coerce ctx actual' expected with
+    | some verdict =>
+      match ctx.realizeCoercion with
+      | some realize => pure (realize verdict e)
+      | none => pure e
+    | none =>
+      typeMismatch source none s!"expected '{formatType expected}'" actual
+      pure e
+
 /-- Test whether a type is in the set of numeric primitives
     (`TInt` / `TReal` / `TFloat64` / `TBv`). `Unknown` is
     accepted as a gradual escape hatch. Aliases and constrained types are
@@ -501,12 +527,16 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     pure (retTy, proc.inputs.map (·.type))
-  | some (_, .datatypeConstructor t _) =>
-    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+  | some (_, .datatypeConstructor t ctor) =>
+    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type.
+    -- A constructor's argument types ARE its parameter types: return them so the
+    -- call rule checks + coerces each argument against them (e.g. `ListAny_cons(1,
+    -- …)` coerces `1` into the `Any` head slot). Previously `[]` was returned and
+    -- the elaborator boxed; the resolver now owns coercion, so supply them here.
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
-      pure ({ val := .UserDefined t, source := callee.source }, [])
+      pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .parameter p) => pure (p.type, [])
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
@@ -861,10 +891,12 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .PrimitiveOp .Implies args skipProof =>
     Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
-    -- Subsumption fallback: synth then check `actual <: expected`.
+    -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
+    -- realize the coercion witness onto the term. This chokepoint covers call
+    -- arguments, return values, functional bodies, and primitive-op subsumption —
+    -- every check-mode boundary without a bespoke rule funnels here.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
-    checkSubtype source expected actual
-    pure e'
+    coerceTo source expected actual e'
   termination_by (exprMd, 3)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
@@ -1537,6 +1569,13 @@ def Synth.assign (exprMd : StmtExprMd)
         pure (targets' ++ extraTargets, value')
       else
         pure (targets', value')
+    -- Single concrete target: check + coerce the RHS against the target's type.
+    -- (`var x : T := e` and `x := e` must coerce `e` to `T` — the elaborator no
+    -- longer does this; the resolver owns it. Identity realizer = no-op for native
+    -- Laurel.) Skipped for the `(T, Error)` proc case above, which is its own coercer.
+    | [single], _ =>
+      let value'' ← coerceTo source single actualTy value'
+      pure (targets', value'')
     | _, _ => pure (targets', value')
   pure (.Assign targets'' value'', expectedTy)
   termination_by (exprMd, 1)
@@ -1600,6 +1639,11 @@ def Check.assign (exprMd : StmtExprMd)
           pure (⟨.Declare sinkParam, none⟩ : VariableMd)
         pure (targets' ++ extraTargets, value')
       else pure (targets', value')
+    -- Single concrete target: check + coerce the RHS against the target's type
+    -- (see the matching arm in `Synth.assign`).
+    | [single], _ =>
+      let value'' ← coerceTo source single actualTy value'
+      pure (targets', value'')
     | _, _ => pure (targets', value')
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
@@ -2686,7 +2730,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -2732,7 +2782,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3225,7 +3281,9 @@ public def resolveWithExternalNames (program : Program) (externalNames : Std.Has
 
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
     (externalNames : Std.HashSet String := {})
-    (gradualTypes : Std.HashSet String := {}) : ResolutionResult :=
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
+    (toBool : Option (StmtExprMd → HighType → StmtExprMd) := none) : ResolutionResult :=
   -- Phase 1: pre-register external names, then all top-level names, then resolve references
   let phase1 : ResolveM Program := do
     preRegisterExternalNames externalNames
@@ -3237,7 +3295,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let typeLattice := { TypeLattice.ofTypes program.types with gradualTypes := gradualTypes }
+  let typeLattice := { TypeLattice.ofTypes program.types with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'

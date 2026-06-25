@@ -793,10 +793,18 @@ function PIs (v1: Any, v2: Any) : bool;
 function PIsNot (v1: Any, v2: Any) : bool;
 function PInvert (v1: Any) : Any;
 
-// Composite accessor stubs (kbd uses from_ClassInstance; v2 used from_Composite)
-function Any..as_Composite! (v: Any) : Any;
+// Composite ↔ Any bridge stubs (uninterpreted, sound: the value round-trips).
+// The resolver's coercion realizer boxes a class instance into Any via the bare
+// constructor-style `from_Composite` and recovers the pointer via the accessor-style
+// `Any..as_Composite!`. `Composite` cannot be named in the prelude (it is synthesized
+// by heapParameterizationPass), so the parameter is typed via `re_Match` — a named
+// composite that `compositeRefToComposite` (type-hierarchy pass) flattens to the flat
+// `Composite` datatype, so at Core these are `Composite → Any` / `Any → Composite`,
+// matching the boxed/unboxed class pointer. (`from_Composite` is BARE, not `Any..`:
+// the `Any..` prefix triggers accessor `!`-name-mangling for a constructor-style name.)
+function Any..as_Composite! (v: Any) : re_Match;
 function Any..isfrom_Composite (v: Any) : bool;
-function Any..from_Composite (v: Any) : Any;
+function from_Composite (v: re_Match) : Any;
 
 function PFloorDiv (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
