@@ -2651,28 +2651,25 @@ theorem imperativeBlockSrc_initEnvWF_pipelinePre [HasFvar P] [HasNot P] [HasVal 
     (h : (Lang.imperativeBlockSrc extendEval).initEnvWF () ss ρ₀) :
     PipelinePre extendEval ss ρ₀ := h
 
-/-- **Structured-pass failing-config bridge (hypothesis form).**  The combined
-structured prefix `hoist ∘ nondetElim` carries an *arbitrary reachable failing*
-source configuration to a reachable failing configuration of the transformed
-program, running both from the *same* clean initial environment `ρ₀`.
+/-- **Structured-pass failing-config bridge.**  The combined structured prefix
+`hoist ∘ nondetElim` carries an *arbitrary reachable failing* source configuration
+to a reachable failing configuration of the transformed program, running both from
+the *same* clean initial environment `ρ₀`.
 
-This is the one obligation `pipeline_to_fail` cannot discharge from the existing
-machinery: the per-pass simulation lemmas (`nondetElim_simulation`,
-`hoistLoopPrefixInits_preserves`, and their kind variants) are *endpoint*-keyed
-— each consumes a source run reaching `.terminal ρ'` / `.exiting lbl ρ'` and
-produces a matching transformed endpoint.  A failing source configuration need
-NOT lie on a run that reaches an endpoint: `assert` is a skip in the operational
-semantics (it only OR-s the cumulative `hasFailure` flag and continues), so a
-failing run may diverge or get stuck afterwards with no terminal/exiting
-endpoint to feed those lemmas.
+The endpoint-keyed per-pass simulation lemmas (`nondetElim_simulation`,
+`hoistLoopPrefixInits_preserves`, and their kind variants) cannot supply this:
+each consumes a source run reaching `.terminal ρ'` / `.exiting lbl ρ'` and
+produces a matching transformed endpoint, whereas a failing source configuration
+need NOT lie on a run that reaches an endpoint (`assert` is a skip in the
+operational semantics — it only OR-s the cumulative `hasFailure` flag and
+continues — so a failing run may diverge or get stuck afterwards with no
+terminal/exiting endpoint).
 
-Discharging this unconditionally requires, for each structured pass, a third
-forward-simulation variant keyed on a *failing configuration* as the halting
-condition (the analogue of the `stmtsToBlocks_simulation_to_fail` sibling already
-proven for the final S2U pass) — strictly more than the endpoint lemmas supply.
-Until those structured-pass `_to_fail` siblings exist, this bridge is taken as a
-hypothesis; everything downstream of it (the S2U failing-config simulation and the
-`CanFail` assembly) is fully proven. -/
+The per-pass *failing-config* siblings (`nondetElim_to_fail` and
+`hoistLoopPrefixInits_to_fail_kind`) are keyed on a failing configuration as the
+halting condition, so they DO supply it.  `structuredPassFailingBridge_holds`
+composes them to discharge this bridge from the (PipelinePre-derivable)
+structured-pass preconditions; it is no longer taken as a hypothesis. -/
 @[expose] def StructuredPassFailingBridge
     [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
@@ -2686,16 +2683,113 @@ hypothesis; everything downstream of it (the S2U failing-config simulation and t
         (.stmts (Block.hoistLoopPrefixInits (Block.nondetElim ss)) ρ₀) c'
       ∧ c'.getEnv.hasFailure = true
 
-/-- **Pipeline failure preservation (unconditional, modulo the structured-pass
-bridge).**  Given the structured-pass failing-config bridge
-(`StructuredPassFailingBridge`), an arbitrary reachable failing source
-configuration of `ss` (no terminal/exiting endpoint required) is matched by a
-reachable failing configuration of the CFG `pipeline ss`, started from an
-overapproximating external store `σ_ext`.
+/-- **Discharge of the structured-pass failing-config bridge.**  Given the
+structured-pass preconditions (all `PipelinePre`-derivable), the
+`StructuredPassFailingBridge` holds: a reachable failing source configuration of
+`ss` is matched by a reachable failing configuration of
+`hoist (nondetElim ss)`, started from the same `ρ₀`.
 
-Composition: the bridge transports the source failing config to a failing config
-of `hoist (nondetElim ss)`; `structuredToUnstructured_sound_kind_fail` (the S2U
-failing-config sibling) then transports that to a failing CFG config.  The S2U
+Composition: `nondetElim_to_fail` transports the source failing config to a
+failing config of `nondetElim ss`; `hoistLoopPrefixInits_to_fail_kind` (at
+`Q := hoistKind`) then transports that to a failing config of
+`hoist (nondetElim ss)`.  The hoist pass's structural / kind-freedom preconditions
+on `nondetElim ss` are discharged from the source-shape and minted-name conditions
+by the SAME `nondetElim` postcondition plumbing the terminal compositional pipeline
+uses (the `containsNondetLoop`/`noFuncDecl`/`loopHasNoInvariants`/`loopMeasureNone`
+preservation lemmas, the `initVars`/`modVars` classifications, and the
+`exprsShapeFree` / `hoistedNamesFreshInRhsAndGuards` transports). -/
+theorem structuredPassFailingBridge_holds
+    [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
+    [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwfvar' : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (hwfcongr' : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (hwfsubst' : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (hwfdef' : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (h_store_inits : ∀ x ∈ Block.initVars ss, ρ₀.store x = none)
+    (h_store_mints_ndelim : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_store_mints_hoist : NoGenStore (P := P) hoistKind ρ₀)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_ndelim_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_ndelim_exprs : Block.exprsShapeFree (P := P) ndelimKind ss)
+    (h_hoist_exprs : Block.exprsShapeFree (P := P) hoistKind ss)
+    (h_disj_initVars : ∀ str : String,
+      (ndelimKind str ∨ hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.initVars ss)
+    (h_disj_modVars : ∀ str : String,
+      (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars ss) :
+    StructuredPassFailingBridge extendEval ss ρ₀ := by
+  intro c h_reach h_c_fail
+  -- === STEP 1 (failing): source `ss` failing config ⟹ `nondetElim ss` failing. ===
+  obtain ⟨c1, h_run1, h_c1_fail⟩ :=
+    nondetElim_to_fail extendEval ss ρ₀ c
+      hwfb hwfv (hwfdef' ρ₀) (hwfcongr' ρ₀) (hwfvar' ρ₀)
+      h_store_mints_ndelim h_ndelim_writes h_nofd h_lhni h_reach h_c_fail
+  -- === Direction-A hoist preconds on `nondetElim ss` (same plumbing as the
+  --     terminal compositional pipeline). ===
+  have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=
+    (Block.nondetElimM_initVars_nodup ss StringGenState.emp StringGenState.wf_emp
+      h_unique (fun str hk => h_disj_initVars str (Or.inl hk))).2
+  have h_out_iv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.initVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_initVars str (Or.inr (Or.inl hk)) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_mv_sf : ∀ str : String, hoistKind str →
+      HasIdent.ident (P := P) str ∉ Block.modifiedVars (Block.nondetElim ss) := by
+    intro str hk hmem
+    rcases Block.nondetElimM_modVars_classified ss StringGenState.emp _ hmem with
+      h_src | ⟨str', h_eq, h_nd⟩
+    · exact h_disj_modVars str (Or.inl hk) h_src
+    · exact ndelimKind_not_hoistKind h_nd (LawfulHasIdent.ident_inj h_eq ▸ hk)
+  have h_out_exprs_sf : Block.exprsShapeFree (P := P) hoistKind (Block.nondetElim ss) :=
+    Block.nondetElimM_exprsShapeFree
+      (fun sg => (ndelim_name_not_hoistKind sg).1)
+      (fun sg => (ndelim_name_not_hoistKind sg).2)
+      ss StringGenState.emp h_hoist_exprs
+  have h_out_fresh : Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) = true :=
+    nondetElim_hoistedNamesFreshInRhsAndGuards ss h_fresh h_ndelim_exprs
+  have h_out_undef : ∀ y ∈ Block.initVars (Block.nondetElim ss), ρ₀.store y = none := by
+    intro y hy
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp y hy with
+      h_src | ⟨str, h_eq, h_nd⟩
+    · exact h_store_inits y h_src
+    · rw [h_eq]; exact h_store_mints_ndelim str h_nd
+  -- === STEP 2 (failing): `nondetElim ss` failing config ⟹ `hoist (nondetElim ss)`
+  --     failing config. ===
+  obtain ⟨c2, h_run2, h_c2_fail⟩ :=
+    hoistLoopPrefixInits_to_fail_kind (Q := hoistKind) hoistKind_gen
+      (extendEval := extendEval) (Block.nondetElim ss)
+      (nondetElim_containsNondetLoop ss)
+      (nondetElim_containsFuncDecl ss h_nofd)
+      (nondetElim_loopHasNoInvariants ss h_lhni)
+      (by rw [Block.loopMeasureNone_eq_noMeasureLoops]; exact nondetElim_noMeasureLoops ss h_nml)
+      h_out_exprs_sf h_out_unique h_out_fresh
+      h_out_iv_sf h_out_mv_sf h_out_undef h_store_mints_hoist h_run1 h_c1_fail
+      hwfvar' hwfcongr' hwfsubst' hwfdef'
+  exact ⟨c2, h_run2, h_c2_fail⟩
+
+/-- **Pipeline failure preservation (unconditional).**  An arbitrary reachable
+failing source configuration of `ss` (no terminal/exiting endpoint required) is
+matched by a reachable failing configuration of the CFG `pipeline ss`, started
+from an overapproximating external store `σ_ext`.
+
+Composition: `structuredPassFailingBridge_holds` (discharged inline from the
+structured-pass preconditions) transports the source failing config to a failing
+config of `hoist (nondetElim ss)`; `structuredToUnstructured_sound_kind_fail` (the
+S2U failing-config sibling) then transports that to a failing CFG config.  The S2U
 pass consumes the `σ_ext` agreement and the `σ_ext`-stated freshness (source
 `initVars` and all three minted kinds undefined in `σ_ext`), exactly as in the
 terminal compositional theorem; the structured-pass `_disj`/shape side conditions
@@ -2743,7 +2837,6 @@ theorem pipeline_to_fail
     (h_disj_modVars : ∀ str : String,
       (hoistKind str ∨ StructuredToUnstructuredCorrect.s2uKind str) →
       HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
-    (h_bridge : StructuredPassFailingBridge extendEval ss ρ₀)
     (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) c)
     (h_c_fail : c.getEnv.hasFailure = true) :
     ∃ d : CFGConfig String (Cmd P) P,
@@ -2751,8 +2844,16 @@ theorem pipeline_to_fail
         (.atBlock (pipeline ss).entry σ_ext ρ₀.hasFailure) d
       ∧ d.getFailure = true := by
   -- === STRUCTURED PASSES: bridge the source failing config to a failing config
-  --     of `hoist (nondetElim ss)` (running from the same `ρ₀`). ===
-  obtain ⟨c', h_reach', h_c'_fail⟩ := h_bridge c h_reach h_c_fail
+  --     of `hoist (nondetElim ss)` (running from the same `ρ₀`).  The structured-pass
+  --     failing bridge is discharged inline from the (PipelinePre-derivable)
+  --     structured-pass preconditions. ===
+  obtain ⟨c', h_reach', h_c'_fail⟩ :=
+    structuredPassFailingBridge_holds extendEval ss ρ₀
+      hwfb hwfv hwfvar' hwfcongr' hwfsubst' hwfdef'
+      h_store_inits h_store_mints_ndelim h_store_mints_hoist
+      h_nofd h_lhni h_nml h_unique h_fresh
+      h_ndelim_writes h_ndelim_exprs h_hoist_exprs h_disj_initVars h_disj_modVars
+      c h_reach h_c_fail
   -- === Direction-A/B structural side conditions on the structured output, reused
   --     verbatim from the terminal compositional theorem. ===
   have h_out_unique : Block.uniqueInits (Block.nondetElim ss) :=

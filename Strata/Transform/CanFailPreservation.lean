@@ -178,23 +178,25 @@ theorem canFail_preserved_when_outcome
     exact ⟨(⟨"", []⟩, d), by simpa [Lang.cfg, CFGConfig.getFailure] using hd_fail,
       by simpa [Lang.cfg] using hd_run⟩
 
-/-! ## Unconditional `CanFail` preservation (modulo the structured-pass bridge)
+/-! ## Unconditional `CanFail` preservation
 
 The conditional theorem above needs `h_outcome`: every failing source config must
 lie on a run reaching a terminal/exiting endpoint.  That hypothesis is the price
-of the *endpoint*-keyed pipeline simulations.  The S2U failing-config sibling
-(`stmtsToBlocks_simulation_to_fail`) removes the endpoint demand for the final
-pass; combined into `pipeline_to_fail`, the only remaining gap is the
-structured-pass failing-config bridge (`StructuredPassFailingBridge`).  Taking
-that bridge as a hypothesis, `CanFail` is preserved with NO `h_outcome` — the
-failing run may diverge or get stuck after the failure. -/
+of the *endpoint*-keyed pipeline simulations.  The per-pass failing-config
+siblings remove the endpoint demand: `nondetElim_to_fail` /
+`hoistLoopPrefixInits_to_fail_kind` for the structured passes (composed into the
+structured-pass failing bridge by `structuredPassFailingBridge_holds`) and
+`stmtsToBlocks_simulation_to_fail` for the final pass.  Combined into
+`pipeline_to_fail`, `CanFail` is preserved with NO `h_outcome` and NO extra
+hypothesis — the failing run may diverge or get stuck after the failure, and the
+bridge is discharged from the `PipelinePre`-derivable structured-pass
+preconditions. -/
 
-/-- **Unconditional `CanFail` preservation (modulo the structured-pass bridge).**
+/-- **Unconditional `CanFail` preservation.**
 If `ss` can fail from a clean initial environment `ρ₀` (`ρ₀.hasFailure = false`),
-then — given the structured-pass failing-config bridge — `pipeline ss` can fail
-from `ρ₀` under the CFG language.  No source endpoint hypothesis: this is the
-unconditional statement, with the structured-pass bridge as its sole remaining
-obligation.
+then `pipeline ss` can fail from `ρ₀` under the CFG language.  No source endpoint
+hypothesis and no structured-pass bridge hypothesis: the bridge is discharged from
+`PipelinePre` inside `pipeline_to_fail`.
 
 The proof runs `pipeline_to_fail` at `σ_ext := ρ₀.store` (the identity
 overapproximation: `StoreAgreement` is reflexive and the `σ_ext`-freshness side
@@ -205,7 +207,6 @@ theorem canFail_pipeline
     (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P)
     (hpre : PipelinePre extendEval ss ρ₀)
     (h_ρ₀_nofail : ρ₀.hasFailure = false)
-    (h_bridge : StructuredPassFailingBridge extendEval ss ρ₀)
     (h_src : CanFail (Lang.imperativeBlock (EvalCmd P) extendEval (isAtAssert P)) ss ρ₀) :
     CanFail (Lang.cfg extendEval) (pipeline ss) ρ₀ := by
   obtain ⟨c, h_c_fail, h_reach_c⟩ := h_src
@@ -217,7 +218,7 @@ theorem canFail_pipeline
       hpre.h_store_mints_ndelim hpre.h_store_mints_hoist hpre.h_store_mints_s2u
       hpre.h_nofd hpre.h_lhni hpre.h_nml hpre.h_unique hpre.h_fresh hpre.h_disj
       hpre.h_ndelim_writes hpre.h_ndelim_exprs hpre.h_hoist_exprs
-      hpre.h_disj_initVars hpre.h_disj_modVars h_bridge
+      hpre.h_disj_initVars hpre.h_disj_modVars
       (by simpa [Lang.imperativeBlock] using h_reach_c)
       (by simpa [Lang.imperativeBlock] using h_c_fail)
   -- `pipeline_to_fail` starts the CFG at `.atBlock _ ρ₀.store ρ₀.hasFailure`,
@@ -258,9 +259,9 @@ store-freshness fields pin `ρ₀'.store`) at every clean candidate initial env.
 * **terminal/exiting** — from `pipeline_sound_terminal_compositional` /
   `pipeline_sound_exiting_compositional`, run from `ρ₀'`, with the `ρ₀'`-store
   freshness drawn from the `pre`-supplied `PipelinePre ρ₀'`.
-* **CanFail** — from `canFail_pipeline` (modulo the structured-pass bridge),
-  run from `ρ₀'` (or, when `ρ₀'` already fails, witnessed by the failing start
-  config directly).
+* **CanFail** — from `canFail_pipeline`, run from `ρ₀'` (or, when `ρ₀'` already
+  fails, witnessed by the failing start config directly).  The structured-pass
+  failing bridge is discharged from `PipelinePre` inside `pipeline_to_fail`.
 * **target `initEnvWF`** — trivial, since `Lang.cfg.initEnvWF = fun _ _ _ => True`.
 -/
 
@@ -277,32 +278,32 @@ instance specialises to identity-input pipeline soundness. -/
 theorem PipelineEnvRel.refl (ρ₀ : Env P) : PipelineEnvRel ρ₀ ρ₀ :=
   ⟨StoreAgreement.refl _, rfl, rfl⟩
 
-/-- **Phase 4: pipeline overapproximation up to `PipelineEnvRel` (modulo the
-structured-pass failing bridge).**  `fun ss => some (pipeline ss)` overapproximates
-the source statement-list language by the unstructured CFG language *up to*
-`PipelineEnvRel`.
+/-- **Phase 4: pipeline overapproximation up to `PipelineEnvRel` (unconditional).**
+`fun ss => some (pipeline ss)` overapproximates the source statement-list language
+by the unstructured CFG language *up to* `PipelineEnvRel`.
 
 Because the single relation `R` cannot simultaneously carry the input freshness
 and permit the output's extra variables (see the section header), the per-`ρ₀'`
-`PipelinePre` — and the structured-pass failing bridge — are threaded through the
-statement-only `pre`, instantiated at the actual `R`-related target env.
-Everything else (the terminal/exiting compositional simulations and the `CanFail`
-assembly) is fully proven; the bridge is the only standing obligation. -/
+`PipelinePre` is threaded through the statement-only `pre`, instantiated at the
+actual `R`-related target env.  The structured-pass failing bridge is no longer a
+standing obligation: it is discharged from `PipelinePre` inside `pipeline_to_fail`
+(via `structuredPassFailingBridge_holds`), so every conjunct — the
+terminal/exiting compositional simulations and the `CanFail` assembly — is fully
+proven from `PipelinePre` alone. -/
 theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
     Specification.Transform.OverapproximatesUptoWhen
       (PipelineEnvRel (P := P))
       (Lang.imperativeBlockSrc extendEval)
       (Lang.cfg extendEval)
       (fun ss => some (pipeline ss))
-      (fun ss => ∀ ρ : Env P, PipelinePre extendEval ss ρ ∧
-        (ρ.hasFailure = false → StructuredPassFailingBridge extendEval ss ρ))
+      (fun ss => ∀ ρ : Env P, PipelinePre extendEval ss ρ)
       () () := by
   intro ss cfg ht hpre_all ρ₀ ρ₀' hR _hwf
   simp only [Option.some.injEq] at ht
   subst ht
   obtain ⟨hR_agree, hR_hf, hR_eval⟩ := hR
   -- `pre` supplies `PipelinePre` (hence the store-freshness) at the target env ρ₀'.
-  have hpre' : PipelinePre extendEval ss ρ₀' := (hpre_all ρ₀').1
+  have hpre' : PipelinePre extendEval ss ρ₀' := hpre_all ρ₀'
   -- σ_ext-freshness on ρ₀'.store, directly from `PipelinePre ρ₀'`.
   have h_inits_ext : ∀ x ∈ Block.initVars ss, ρ₀'.store x = none := hpre'.h_store_inits
   have h_ndelim_ext : ∀ s : String, ndelimKind s →
@@ -312,7 +313,7 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
   have h_s2u_ext : ∀ s : String, StructuredToUnstructuredCorrect.s2uKind s →
       ρ₀'.store (HasIdent.ident (P := P) s) = none := hpre'.h_store_mints_s2u
   -- The structured passes run from ρ₀; use the source-side preconditions for ρ₀.
-  have hpre : PipelinePre extendEval ss ρ₀ := (hpre_all ρ₀).1
+  have hpre : PipelinePre extendEval ss ρ₀ := hpre_all ρ₀
   refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, ?_, ?_⟩
   · -- ===== TERMINAL ARM =====
     have h_term : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) (.terminal ρ') := by
@@ -360,11 +361,9 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
         by simpa [Lang.cfg, CFGConfig.getFailure] using h_ρ₀'_fail, ?_⟩
       simp only [Lang.cfg]
       exact ReflTrans.refl _
-    · -- ρ₀ clean: bridge at ρ₀ from `pre`, run `pipeline_to_fail` from ρ₀ with
-      -- σ_ext := ρ₀'.store.
+    · -- ρ₀ clean: run `pipeline_to_fail` from ρ₀ with σ_ext := ρ₀'.store.  The
+      -- structured-pass failing bridge is discharged inside `pipeline_to_fail`.
       have h_ρ₀_nofail : ρ₀.hasFailure = false := by simpa using h_ρ₀_fail
-      have h_bridge : StructuredPassFailingBridge extendEval ss ρ₀ :=
-        (hpre_all ρ₀).2 h_ρ₀_nofail
       -- Source failing config + run from ρ₀ (`CanFail` reads star/getEnv/stmtCfg,
       -- shared by `imperativeBlockSrc`).
       obtain ⟨cfg_s, h_cfg_fail, h_cfg_reach⟩ := h_src
@@ -379,7 +378,7 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
           hR_agree h_inits_ext h_ndelim_ext h_hoist_ext h_s2u_ext
           hpre.h_nofd hpre.h_lhni hpre.h_nml hpre.h_unique hpre.h_fresh hpre.h_disj
           hpre.h_ndelim_writes hpre.h_ndelim_exprs hpre.h_hoist_exprs
-          hpre.h_disj_initVars hpre.h_disj_modVars h_bridge h_reach h_fail
+          hpre.h_disj_initVars hpre.h_disj_modVars h_reach h_fail
       -- `pipeline_to_fail` starts at `.atBlock _ ρ₀'.store ρ₀.hasFailure`; the CFG
       -- language's `stmtCfg (pipeline ss) ρ₀'` starts at `ρ₀'.hasFailure`.  Match
       -- the start flag via the relation's `ρ₀.hasFailure = ρ₀'.hasFailure`.
