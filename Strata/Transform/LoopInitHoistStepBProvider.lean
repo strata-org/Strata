@@ -257,6 +257,108 @@ theorem bodySimES_cons [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
         (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ_h ρ_h_mid h_head_h_run)
         h_tail_h_exit
 
+/-! ## FAILING-config body / statement simulation.
+
+The `_to_fail` siblings of `BodySimES` / `StmtSimES`.  A `BodySimFail` says: from
+any `HoistInv`-related entry (eval / `hasFailure` agreement, `B`-boundedness), a
+source body run reaching a *failing* configuration (`getEnv.hasFailure = true`,
+possibly intermediate on a never-terminating run) is matched by a hoist body run
+reaching a failing configuration.  No `HoistInv` / eval re-establishment at the
+failing point is needed — the conclusion only asserts the hoist side fails too.
+
+The cons sequencer `bodySimFail_cons` mirrors `stmts_cons_reaches_failing'`: a
+failing cons run either has the HEAD failing (discharged by the head's
+`StmtSimFail`) or the head terminates (discharged by the head's existing terminal
+`StmtSimES` clause, re-establishing `HoistInv`) and the TAIL fails (tail
+`BodySimFail`). -/
+
+/-- Failing-config single-statement sim: a source `.stmt s` run reaching a failing
+config is matched by a hoist `.stmt s'` run reaching a failing config. -/
+@[expose] def StmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
+    (s s' : Stmt P (Cmd P)) : Prop :=
+  ∀ (ρ_s ρ_h : Env P),
+    HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+    ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+    (∀ y ∈ B, ρ_h.store y ≠ none) →
+    ∀ (d : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ_s) d →
+      d.getEnv.hasFailure = true →
+      ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmt s' ρ_h) d'
+        ∧ d'.getEnv.hasFailure = true
+
+/-- Failing-config body sim: a source `.stmts bsrc` run reaching a failing config is
+matched by a hoist `.stmts bh` run reaching a failing config. -/
+@[expose] def BodySimFail [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
+    (bsrc bh : List (Stmt P (Cmd P))) : Prop :=
+  ∀ (ρ_s ρ_h : Env P),
+    HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+    ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+    (∀ y ∈ B, ρ_h.store y ≠ none) →
+    ∀ (d : Config P (Cmd P)),
+      StepStmtStar P (EvalCmd P) extendEval (.stmts bsrc ρ_s) d →
+      d.getEnv.hasFailure = true →
+      ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts bh ρ_h) d'
+        ∧ d'.getEnv.hasFailure = true
+
+/-- The empty body's only run is `step_stmts_nil` to `.terminal ρ_s`; a failing
+config forces `ρ_s.hasFailure = true`, so the hoist empty body's start (failing by
+`h_hf`) is itself a failing reachable config (`refl`). -/
+theorem bodySimFail_nil [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident)) :
+    BodySimFail (extendEval := extendEval) A B subst [] [] := by
+  intro ρ_s ρ_h _ _ h_hf _ d h_run hd
+  -- Every config reached from `.stmts [] ρ_s` has env `ρ_s`, so `ρ_s.hasFailure = true`.
+  have h_ρs_fail : ρ_s.hasFailure = true := by
+    cases h_run with
+    | refl => simpa [Config.getEnv] using hd
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      have h_d_eq : d = .terminal ρ_s := by
+        cases hr1 with
+        | refl => rfl
+        | step _ _ _ hd' _ => exact nomatch hd'
+      rw [h_d_eq] at hd; simpa [Config.getEnv] using hd
+  refine ⟨.stmts [] ρ_h, .refl _, ?_⟩
+  simpa [Config.getEnv] using (h_hf ▸ h_ρs_fail)
+
+/-- THE FAILING CONS-SEQUENCER: a head `StmtSimES` (terminal+exiting), a head
+`StmtSimFail`, and a tail `BodySimFail` compose into a `BodySimFail` for the cons
+body.  By `stmts_cons_reaches_failing'`, a failing cons run either has the head
+failing (use the head `StmtSimFail`, then lift the failing hoist head run into the
+cons frame) or the head terminates to `ρ_mid` (use the head's terminal `StmtSimES`
+clause to re-establish `HoistInv` at the hoist mid env, then the tail `BodySimFail`
+from there, splicing the hoist head-terminal run before the failing tail run). -/
+theorem bodySimFail_cons [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {s s' : Stmt P (Cmd P)} {rest rest' : List (Stmt P (Cmd P))}
+    (hhead_es : StmtSimES (extendEval := extendEval) A B subst s s')
+    (hhead_fail : StmtSimFail (extendEval := extendEval) A B subst s s')
+    (htail : BodySimFail (extendEval := extendEval) A B subst rest rest') :
+    BodySimFail (extendEval := extendEval) A B subst (s :: rest) (s' :: rest') := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  rcases stmts_cons_reaches_failing' P (EvalCmd P) extendEval (reflTrans_to_T h_run) hd with
+    hA | ⟨ρ_mid, d_rest, h_head_term, h_rest_run, hd_rest⟩
+  · -- HEAD fails.  The hoist head reaches a failing config; lift into the cons frame.
+    obtain ⟨d_head, h_head_run, hd_head⟩ := hA
+    obtain ⟨d_h, h_head_h_run, hd_h_fail⟩ :=
+      hhead_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d_head h_head_run hd_head
+    -- `.stmts (s' :: rest') ρ_h → .seq (.stmt s' ρ_h) rest' → … → .seq d_h rest'`.
+    refine ⟨.seq d_h rest', ?_, by simpa [Config.getEnv] using hd_h_fail⟩
+    exact .step _ _ _ StepStmt.step_stmts_cons
+      (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_head_h_run)
+  · -- HEAD terminates to `ρ_mid`; the TAIL fails from `ρ_mid`.
+    obtain ⟨ρ_h_mid, h_head_h_run, h_hinv_mid, h_hf_mid, h_bnd_mid, h_eval_mid⟩ :=
+      (hhead_es ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ_mid h_head_term
+    obtain ⟨d_h, h_tail_h_run, hd_h_fail⟩ :=
+      htail ρ_mid ρ_h_mid h_hinv_mid h_eval_mid h_hf_mid h_bnd_mid d_rest h_rest_run hd_rest
+    -- splice the hoist head-run (terminal) with the failing hoist tail-run.
+    refine ⟨d_h, ?_, hd_h_fail⟩
+    exact ReflTrans_Transitive _ _ _ _
+      (stmts_cons_step P (EvalCmd P) extendEval s' rest' ρ_h ρ_h_mid h_head_h_run)
+      h_tail_h_run
+
 /-! ## SUM-TYPED nested-loop `StmtSimES`.
 
 A nested loop `.loop (.det g2) none [] inner` reaches `.exiting l` exactly when its
@@ -359,6 +461,73 @@ theorem cmd_stmt_no_exit [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Exp
     cases h1
     cases hr1 with
     | step _ _ _ hd _ => exact nomatch hd
+
+/-! ## FAILING `StmtSimFail` producers (per statement kind).
+
+For an ATOMIC statement (`.cmd` / `.typeDecl` / `.exit`) a failing reachable
+config is either the start (`refl`, so `ρ_s` already fails) or a terminal/exiting
+ENDPOINT; the corresponding endpoint clause of the head `StmtSimES` transports the
+failure flag.  For `.block` / `.ite` / nested-`.loop` the failure can be INTERNAL,
+discharged by the inner body's own `BodySimFail` (recursion). -/
+
+/-- Generic atomic lifter: a statement `s` whose every failing reachable config is
+the start (`refl`) or a terminal/exiting endpoint has `StmtSimFail` derivable from
+its `StmtSimES`.  The `h_endpoint_inv` hypothesis captures the atomicity. -/
+theorem stmtSimFail_of_stmtSimES_atomic [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {s s' : Stmt P (Cmd P)}
+    (h_endpoint_inv : ∀ (ρ : Env P) (d : Config P (Cmd P)),
+       StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) d →
+       d.getEnv.hasFailure = true →
+       ρ.hasFailure = true ∨
+       (∃ ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) (.terminal ρ') ∧
+          ρ'.hasFailure = true) ∨
+       (∃ l ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) (.exiting l ρ') ∧
+          ρ'.hasFailure = true))
+    (h_es : StmtSimES (extendEval := extendEval) A B subst s s') :
+    StmtSimFail (extendEval := extendEval) A B subst s s' := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  rcases h_endpoint_inv ρ_s d h_run hd with h_ρs | ⟨ρ', h_term, h_fail⟩ | ⟨l, ρ', h_exit, h_fail⟩
+  · -- ρ_s already failing → the hoist start is failing too.
+    refine ⟨.stmt s' ρ_h, .refl _, ?_⟩
+    simpa [Config.getEnv] using (h_hf ▸ h_ρs)
+  · -- terminal endpoint: the head terminal clause transports the failure flag.
+    obtain ⟨ρ_h', h_h_run, _, h_hf', _, _⟩ := (h_es ρ_s ρ_h h_hinv h_eval h_hf h_bnd).1 ρ' h_term
+    refine ⟨.terminal ρ_h', h_h_run, ?_⟩
+    simpa [Config.getEnv] using (h_hf' ▸ h_fail)
+  · -- exiting endpoint: the head exiting clause transports the failure flag.
+    obtain ⟨ρ_h', h_h_run, _, h_hf', _, _⟩ := (h_es ρ_s ρ_h h_hinv h_eval h_hf h_bnd).2 l ρ' h_exit
+    refine ⟨.exiting l ρ_h', h_h_run, ?_⟩
+    simpa [Config.getEnv] using (h_hf' ▸ h_fail)
+
+/-- A `.cmd c` run reaching a failing config: either `refl` (start fails) or one
+`step_cmd` to a failing `.terminal`.  (`.cmd` never `.exiting`s.) -/
+theorem cmd_endpoint_inv [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (c : Cmd P) (ρ : Env P) (d : Config P (Cmd P))
+    (h_run : StepStmtStar P (EvalCmd P) extendEval (.stmt (.cmd c) ρ) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ρ.hasFailure = true ∨
+    (∃ ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.cmd c) ρ) (.terminal ρ') ∧
+       ρ'.hasFailure = true) ∨
+    (∃ l ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.cmd c) ρ) (.exiting l ρ') ∧
+       ρ'.hasFailure = true) := by
+  match h_run with
+  | .refl _ => exact Or.inl (by simpa [Config.getEnv] using hd)
+  | .step _ _ _ (StepStmt.step_cmd h_cmd) hr1 =>
+    -- after one `step_cmd`, the mid config is a `.terminal`; `hr1` from it stays there.
+    match hr1 with
+    | .refl _ =>
+      exact Or.inr (Or.inl ⟨_, .step _ _ _ (StepStmt.step_cmd h_cmd) (.refl _),
+        by simpa [Config.getEnv] using hd⟩)
+    | .step _ _ _ hd' _ => exact nomatch hd'
+
+/-- A `.cmd c` statement's `StmtSimFail` from its `StmtSimES` (the head sim already
+proven for the `.cmd` arm of `Block.bodyTransport`). -/
+theorem cmd_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)} {c c' : Cmd P}
+    (h_es : StmtSimES (extendEval := extendEval) A B subst (.cmd c) (.cmd c')) :
+    StmtSimFail (extendEval := extendEval) A B subst (.cmd c) (.cmd c') :=
+  stmtSimFail_of_stmtSimES_atomic (cmd_endpoint_inv c) h_es
 
 /-! ## The `.ite` arms of a sum-typed `StmtSimES`.
 
