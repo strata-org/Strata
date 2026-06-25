@@ -2963,7 +2963,18 @@ Both arms of the refinement are discharged:
   same reason as the terminal arm: this clause needs an *exiting* CFG witness for
   the same `lbl` directly, and the dual theorem's disjunctive conclusion cannot
   be projected to its exiting disjunct without a target-IR determinism principle
-  that is not a theorem of the CFG semantics. -/
+  that is not a theorem of the CFG semantics.
+
+This `OverapproximatesAllowingExtraVarsWhen` form (a store-on-store relation,
+two arms) and the unconditional `OverapproximatesUptoWhen PipelineEnvRel` form
+`pipeline_overapproximates_upto` (a whole-env relation, four arms additionally
+covering `CanFail`-preservation and target `initEnvWF`) are kept side by side
+deliberately: bridging between them is not definitional — the precondition
+arities differ (statement-only vs statement-and-env), the relation domains
+differ (env-relation vs store-relation), and recovering the store-relation arms
+from the env-relation ones would discard the `CanFail`/`initEnvWF` conjuncts and
+re-introduce the explicit well-formed-evaluator hypotheses, which is a separate
+proof rather than a corollary. -/
 theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
     [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]

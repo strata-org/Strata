@@ -5882,7 +5882,7 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
     obtain ⟨tr, h_ab⟩ :=
       flushCmds_nonempty_mem "blk$" accum .none bl gen_b gen_f accumEntry accumBlocks h_flush_eq h_accum_ne
-    simp only [pure, StateT.pure] at h_gen
+    simp only at h_gen
     split at h_gen
     · injection h_gen with h_pair h_gen_eq
       injection h_pair with h_entry_eq h_blks_eq
@@ -5968,7 +5968,7 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
         subst h_entry_eq; subst h_blks_eq
         refine ⟨[], tr, ?_⟩
         rw [h_ab]
-        simp only [List.append_nil, List.cons_append, List.nil_append, List.singleton_append]
+        simp only [List.append_nil, List.cons_append, List.nil_append]
         exact List.mem_cons_self
       | nondet =>
         exact absurd ((Block.simpleShape_cons_iff.mp h_simple).1)
@@ -5981,7 +5981,7 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
       simp only at h_gen
       generalize h_ldec_eq : StringGenState.gen "measure_decrease$" gen_ml = r_ldec at h_gen
       obtain ⟨ldec, gen_ld⟩ := r_ldec
-      simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
+      simp only at h_gen
       generalize h_body_eq :
         stmtsToBlocks ldec bss ((none, kNext) :: exitConts) [] gen_ld = r_body at h_gen
       obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
@@ -6010,7 +6010,7 @@ private theorem stmtsToBlocks_entry_has_accum_prefix
         subst h_entry_eq; subst h_blks_eq
         refine ⟨[], tr, ?_⟩
         rw [h_ab]
-        simp only [List.append_nil, List.cons_append, List.nil_append, List.singleton_append]
+        simp only [List.append_nil, List.cons_append, List.nil_append]
         exact List.mem_cons_self
       | nondet =>
         exact absurd ((Block.simpleShape_cons_iff.mp h_simple).1)
