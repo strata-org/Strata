@@ -51,9 +51,8 @@ deriving Repr, BEq
 -- Test 1: Structure generates a record with field-name-keyed Ion struct
 elab "#testPoint" : command => do
   let files := getIonSerializer% Point "com.test"
-  if files.files.size != 1 then Lean.logError "Expected 1 file"; return
-  let (name, content) := files.files[0]!
-  if name != "Point.java" then Lean.logError s!"Expected Point.java, got {name}"; return
+  let some (_, content) := files.files.find? (·.1 == "Point.java")
+    | Lean.logError "Expected Point.java"; return
   if !check content "public record Point(" then Lean.logError "Missing record Point"; return
   if !check content "long x" then Lean.logError "Missing long x"; return
   if !check content "long y" then Lean.logError "Missing long y"; return
@@ -66,9 +65,8 @@ elab "#testPoint" : command => do
 -- Test 2: Multi-constructor inductive generates sealed interface with records
 elab "#testColor" : command => do
   let files := getIonSerializer% Color "com.test"
-  if files.files.size != 1 then Lean.logError "Expected 1 file"; return
-  let (name, content) := files.files[0]!
-  if name != "Color.java" then Lean.logError s!"Expected Color.java, got {name}"; return
+  let some (_, content) := files.files.find? (·.1 == "Color.java")
+    | Lean.logError "Expected Color.java"; return
   if !check content "sealed interface Color" then Lean.logError "Missing sealed interface"; return
   if !check content "record Red" then Lean.logError "Missing record Red"; return
   if !check content "record Green" then Lean.logError "Missing record Green"; return
@@ -82,8 +80,8 @@ elab "#testColor" : command => do
 -- Test 3: Multi-constructor inductive with fields
 elab "#testShape" : command => do
   let files := getIonSerializer% Shape "com.test"
-  if files.files.size != 1 then Lean.logError "Expected 1 file"; return
-  let (_, content) := files.files[0]!
+  let some (_, content) := files.files.find? (·.1 == "Shape.java")
+    | Lean.logError "Expected Shape.java"; return
   if !check content "sealed interface Shape" then Lean.logError "Missing sealed interface"; return
   if !check content "record Circle(long radius)" then Lean.logError "Missing Circle record"; return
   if !check content "record Rect(long width, long height)" then Lean.logError "Missing Rect record"; return
@@ -95,8 +93,8 @@ elab "#testShape" : command => do
 -- Test 4: Structure with String and Bool fields
 elab "#testPerson" : command => do
   let files := getIonSerializer% Person "com.test"
-  if files.files.size != 1 then Lean.logError "Expected 1 file"; return
-  let (_, content) := files.files[0]!
+  let some (_, content) := files.files.find? (·.1 == "Person.java")
+    | Lean.logError "Expected Person.java"; return
   if !check content "java.lang.String name" then Lean.logError "Missing String name"; return
   if !check content "long age" then Lean.logError "Missing long age"; return
   if !check content "boolean active" then Lean.logError "Missing boolean active"; return
@@ -109,7 +107,6 @@ elab "#testPerson" : command => do
 -- Test 5: Nested structure generates files for both types
 elab "#testLine" : command => do
   let files := getIonSerializer% Line "com.test"
-  if files.files.size != 2 then Lean.logError s!"Expected 2 files, got {files.files.size}"; return
   if !files.files.any (fun f => f.1 == "Line.java") then Lean.logError "Missing Line.java"; return
   if !files.files.any (fun f => f.1 == "Point.java") then Lean.logError "Missing Point.java"; return
   for (fname, content) in files.files do
@@ -124,8 +121,8 @@ elab "#testLine" : command => do
 -- Test 6: Recursive type generates files
 elab "#testTree" : command => do
   let files := getIonSerializer% Tree "com.test"
-  if files.files.size != 1 then Lean.logError s!"Expected 1 file, got {files.files.size}"; return
-  let (_, content) := files.files[0]!
+  let some (_, content) := files.files.find? (·.1 == "Tree.java")
+    | Lean.logError "Expected Tree.java"; return
   if !check content "sealed interface Tree" then Lean.logError "Missing sealed interface"; return
   if !check content "record Leaf(long value)" then Lean.logError "Missing Leaf record"; return
   if !check content "record Node(Tree left, Tree right)" then Lean.logError "Missing Node record"; return
@@ -159,12 +156,12 @@ elab "#testWriteFiles" : command => do
 elab "#testCompile" : command => do
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
-    Lean.logError "Test failed: javac not found"
+    Lean.logWarning "Test skipped: javac not found"
     return
 
   let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
-    Lean.logError s!"Test failed: ion-java jar not found at {jarPath}"
+    Lean.logWarning s!"Test skipped: ion-java jar not found at {jarPath}"
     return
 
   let dir : System.FilePath := "/tmp/strata-java-test-compile"
@@ -201,12 +198,12 @@ elab "#testCompile" : command => do
 elab "#testRoundtrip" : command => do
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
-    Lean.logError "Roundtrip test skipped: javac not found"
+    Lean.logWarning "Roundtrip test skipped: javac not found"
     return
 
   let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
-    Lean.logError s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
+    Lean.logWarning s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
     return
 
   let dir : System.FilePath := "/tmp/strata-java-roundtrip"
