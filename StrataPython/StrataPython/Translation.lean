@@ -63,6 +63,10 @@ structure TransState where
   filePath : System.FilePath := ""
   /-- Stack of (break_label, continue_label) pairs for enclosing loops. -/
   loopLabels : List (Identifier × Identifier) := []
+  /-- Module-level assignment type-aliases (`MyInt = int`), consulted by
+      `pythonTypeToHighType` so annotations referring to an alias resolve to the
+      aliased type rather than a phantom composite. Set once in `translateModule`. -/
+  typeAliases : Std.HashMap String HighType := {}
   deriving Inhabited
 
 abbrev BaseM := StateT TransState (Except TransError)
@@ -177,7 +181,7 @@ containers (`dict[...]`, `list[...]`, and the `typing` aliases `Dict`/`List`/
 class (`.UserDefined`). The lowercase `dict`/`list` subscript cases must agree
 with the bare-name cases — otherwise `body: dict[str, Any]` is typed `Composite`
 while its dict-literal value is `DictStrAny`, and Core fails to unify the two. -/
-def pythonTypeToHighType : PythonType → HighType
+def pythonTypeToHighType (aliases : Std.HashMap String HighType := {}) : PythonType → HighType
   | .Name _ n _ => match n.val with
     | "int" => .TInt
     | "bool" => .TBool
@@ -190,7 +194,12 @@ def pythonTypeToHighType : PythonType → HighType
     | "Any" | "object" => .TCore "Any"
     | "dict" => .TCore "DictStrAny"
     | "list" => .TCore "ListAny"
-    | name => .UserDefined { text := name, uniqueId := none }
+    -- Module-level assignment type-alias (`MyInt = int`): resolve the name to the
+    -- aliased type instead of a phantom `UserDefined` composite. (mypy-valid; v2/kbd
+    -- only handle the 3.12 `.TypeAlias` node, not assignment-form aliases.)
+    | name => match aliases[name]? with
+      | some ty => ty
+      | none => .UserDefined { text := name, uniqueId := none }
   | .Constant _ (.ConNone _) _ => .TVoid
   | .BinOp _ _ (.BitOr _) _ => .TCore "Any"
   | .Subscript _ (.Name _ n _) _ _ => match n.val with
@@ -713,11 +722,11 @@ partial def renameParamsToInputs (paramNames : List String) (e : StmtExprMd) : S
     | other => other
   { e with val }
 
-private partial def buildProcInputs (sig : FuncSig) : List Parameter :=
+private partial def buildProcInputs (aliases : Std.HashMap String HighType) (sig : FuncSig) : List Parameter :=
   sig.laurelDeclInputs.map fun (lId, pTy) =>
-    { name := { text := s!"$in_{lId.text}", uniqueId := none }, type := mkTypeDefault (pythonTypeToHighType pTy) }
+    { name := { text := s!"$in_{lId.text}", uniqueId := none }, type := mkTypeDefault (pythonTypeToHighType aliases pTy) }
 
-private partial def buildProcOutputs (sig : FuncSig) : List Parameter :=
+private partial def buildProcOutputs (aliases : Std.HashMap String HighType) (sig : FuncSig) : List Parameter :=
   -- LaurelResult is typed by the USER-DECLARED return type (v2 verbatim). The frontend
   -- trusts the annotation; the coercion mechanism reconciles the body's Any-valued
   -- expressions with the declared type at the `return e` assignment. (Do NOT type it
@@ -728,19 +737,19 @@ private partial def buildProcOutputs (sig : FuncSig) : List Parameter :=
   -- fails kbd's Core type-checker ("unify bool with Any"). Python `None` IS a value
   -- (`from_None`) in the Any model, so type the result `Any`. (v2's Core accepted void
   -- here; kbd's stricter placeholder does not — same class of kbd adaptation as others.)
-  let retHigh := pythonTypeToHighType sig.returnType
+  let retHigh := pythonTypeToHighType aliases sig.returnType
   let resultTy := match retHigh with | .TVoid => HighType.TCore "Any" | t => t
   [{ name := rtLaurelResult, type := mkTypeDefault resultTy },
    { name := rtMaybeExcept, type := mkTypeDefault (.TCore "Error") }]
 
-private partial def buildParamCopies (sig : FuncSig) : List StmtExprMd :=
+private partial def buildParamCopies (aliases : Std.HashMap String HighType) (sig : FuncSig) : List StmtExprMd :=
   sig.laurelDeclInputs.map fun (lId, pTy) =>
-    mkLocalDeclDefault lId (mkTypeDefault (pythonTypeToHighType pTy))
+    mkLocalDeclDefault lId (mkTypeDefault (pythonTypeToHighType aliases pTy))
       (some (mkExprDefault (.Var (.Local { text := s!"$in_{lId.text}", uniqueId := none }))))
 
-private partial def buildLocalDecls (sig : FuncSig) : List StmtExprMd :=
+private partial def buildLocalDecls (aliases : Std.HashMap String HighType) (sig : FuncSig) : List StmtExprMd :=
   sig.laurelLocals.map fun (lId, lTy) =>
-    mkLocalDeclDefault lId (mkTypeDefault (pythonTypeToHighType lTy)) none
+    mkLocalDeclDefault lId (mkTypeDefault (pythonTypeToHighType aliases lTy)) none
 
 private partial def splitPreconditions (body : List (StrataPython.stmt ResolvedAnn))
     : List (StrataPython.stmt ResolvedAnn) × List (StrataPython.stmt ResolvedAnn) :=
@@ -748,10 +757,11 @@ private partial def splitPreconditions (body : List (StrataPython.stmt ResolvedA
 
 partial def translateFunction (sig : FuncSig) (body : Array (StrataPython.stmt ResolvedAnn))
     (sr : SourceRange) : TransM Procedure := do
-  let inputs := buildProcInputs sig
-  let outputs := buildProcOutputs sig
-  let paramCopies := buildParamCopies sig
-  let localDecls := buildLocalDecls sig
+  let aliases := (← get).typeAliases
+  let inputs := buildProcInputs aliases sig
+  let outputs := buildProcOutputs aliases sig
+  let paramCopies := buildParamCopies aliases sig
+  let localDecls := buildLocalDecls aliases sig
   let (preAsserts, restBody) := splitPreconditions body.toList
   let paramNames := sig.laurelDeclInputs.map (·.1.text)
   let preconditions ← preAsserts.mapM fun s => match s with
@@ -784,7 +794,7 @@ partial def translateClass (name : PythonIdentifier) (attributes : List (PythonI
   -- value context demands it). The box protocol stores/loads each field at its declared
   -- type (`Box..<T>`), so a field read synthesizes that type — `e ⇒ &{…l:A_l…} ⊢ e.l ⇒ A_l`.
   let laurelFields := attributes.map fun (fId, fTy) =>
-    ({ name := fId.toLaurel, isMutable := true, type := mkTypeDefault (pythonTypeToHighType fTy) } : Field)
+    ({ name := fId.toLaurel, isMutable := true, type := mkTypeDefault (pythonTypeToHighType {} fTy) } : Field)
   let procResults ← body.toList.mapM fun stmt => match stmt with
     | .FunctionDef ann _ _ fbody _ _ _ _ => match ann.info with
       | .funcDecl sig => do pure (some (← translateFunction sig fbody.val ann.sr))
@@ -820,6 +830,25 @@ partial def translateClass (name : PythonIdentifier) (attributes : List (PythonI
   pure (.Composite ct, procs)
 
 partial def translateModule (program : ResolvedPythonProgram) : TransM Strata.Laurel.Program := do
+  -- Collect module-level assignment type-aliases: `MyInt = int` where the RHS is a
+  -- type-name expression. These resolve annotations like `x: MyInt` to the aliased
+  -- type rather than a phantom `UserDefined` composite. (Only bare `Name = <typeExpr>`
+  -- at module level; the RHS is interpreted via `pythonTypeToHighType` itself.)
+  let aliases : Std.HashMap String HighType := program.stmts.toList.foldl (init := {}) fun m stmt =>
+    match stmt with
+    | .Assign _ targets value _ =>
+      match targets.val.toList with
+      | [.Name _ tn _] =>
+        -- RHS is a resolved type-name expr (`expr ResolvedAnn`); map its name string
+        -- through the same builtin table `pythonTypeToHighType` uses for `.Name`.
+        match value with
+        | .Name _ rn _ =>
+          let ty := pythonTypeToHighType {} (.Name SourceRange.none ⟨SourceRange.none, rn.val⟩ (.Load SourceRange.none))
+          m.insert tn.val ty
+        | _ => m
+      | _ => m
+    | _ => m
+  modify fun s => { s with typeAliases := aliases }
   let init : List Procedure × List TypeDefinition × List (StrataPython.stmt ResolvedAnn) := ([], [], [])
   let (procedures, types, otherStmts) ← program.stmts.toList.foldlM (fun (procs, tys, others) stmt => do
     match stmt with
@@ -846,7 +875,7 @@ partial def translateModule (program : ResolvedPythonProgram) : TransM Strata.La
       let nameId := rt "__name__"
       let nameDecl ← mkLocalDecl sr nameId (mkTypeDefault .TString) (some (mkExprDefault (.LiteralString "__main__")))
       let localDecls := program.moduleLocals.map fun (lId, lTy) =>
-        mkLocalDeclDefault lId.toLaurel (mkTypeDefault (pythonTypeToHighType lTy)) none
+        mkLocalDeclDefault lId.toLaurel (mkTypeDefault (pythonTypeToHighType aliases lTy)) none
       let bodyStmts ← execWriter otherStmts
       let bodyBlock ← mkExpr sr (.Block ([nameDecl] ++ localDecls ++ bodyStmts) none)
       let mainOutputs : List Parameter :=
