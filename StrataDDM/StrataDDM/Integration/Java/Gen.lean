@@ -115,6 +115,7 @@ private meta def leafSerializeExpr (name : Name) (accessor : String) : Option St
 private inductive FieldTypeInfo where
   | leaf (name : Name)
   | compound (name : Name)
+  | typeParam  -- type parameter (erased); value will have toIon at runtime
   | list (elem : FieldTypeInfo)
   | option (elem : FieldTypeInfo)
 
@@ -142,9 +143,17 @@ private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
       match env.find? name with | some (.inductInfo _) => true | _ => false)
 
 private meta partial def classifyFieldType (env : Environment) (ty : Expr) : MetaM FieldTypeInfo := do
-  let origName := ty.getAppFn.constName?
   let ty ← whnf ty
-  let name := origName <|> ty.getAppFn.constName?
+  -- Strip optParam/autoParam wrappers (fields with default values)
+  let ty := match ty.getAppFn.constName? with
+    | some ``optParam =>
+      let args := ty.getAppArgs
+      if h : args.size > 0 then args[0] else ty
+    | some ``autoParam =>
+      let args := ty.getAppArgs
+      if h : args.size > 0 then args[0] else ty
+    | _ => ty
+  let name := ty.getAppFn.constName?
   match name with
   | some ``List =>
     let args := ty.getAppArgs
@@ -157,7 +166,10 @@ private meta partial def classifyFieldType (env : Environment) (ty : Expr) : Met
   | some n =>
     if isCompoundType env n then return .compound n
     else return .leaf n
-  | none => return .leaf `unknown
+  | none =>
+    -- Type parameters (substituted as Sort or fvar) should serialize via toIon
+    if ty.isSort || ty.isFVar then return .typeParam
+    return .leaf `unknown
 
 private meta def extractCtorFields (env : Environment) (ctorName : Name)
     (fieldNames? : Option (Array Name) := none) : MetaM (Array FieldInfo) := do
@@ -203,6 +215,15 @@ private meta def analyzeType (env : Environment) (typeName : Name) : MetaM TypeS
 
 private meta partial def extractCompoundNamesFromExpr (env : Environment) (t : Expr) : MetaM (Array Name) := do
   let t ← whnf t
+  -- Strip optParam/autoParam wrappers
+  let t := match t.getAppFn.constName? with
+    | some ``optParam =>
+      let args := t.getAppArgs
+      if h : args.size > 0 then args[0] else t
+    | some ``autoParam =>
+      let args := t.getAppArgs
+      if h : args.size > 0 then args[0] else t
+    | _ => t
   let name := t.getAppFn.constName?
   match name with
   | some ``List | some ``Option =>
@@ -254,6 +275,7 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) : Meta
 private meta def javaTypeForInfo : FieldTypeInfo → String
   | .leaf name => (leafJavaType name).getD "java.lang.Object"
   | .compound name => escapeJavaName (toPascalCase (name.getString!))
+  | .typeParam => "ToIon"
   | .list elem => s!"java.util.List<{javaBoxedTypeForInfo elem}>"
   | .option elem => javaBoxedTypeForInfo elem
 where
@@ -271,6 +293,7 @@ private meta partial def serializeExprForInfo (ti : FieldTypeInfo) (accessor : S
   match ti with
   | .leaf name => (leafSerializeExpr name accessor).getD "ion.newNull()"
   | .compound _ => s!"{accessor}.toIon(ion)"
+  | .typeParam => s!"{accessor}.toIon(ion)"
   | .list _ =>
     -- List serialization requires multiple statements; handled by toIon body generators.
     -- This branch is used for inner elements of containers (e.g., Option (List T)).
@@ -346,7 +369,7 @@ private meta def generateTypeFile (package : String) (shape : TypeShape) : Strin
     let params := recordParams fields
     s!"package {package};
 
-public record {javaName}({params}) \{
+public record {javaName}({params}) implements ToIon \{
     public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
 {toIon}
     }
@@ -357,7 +380,7 @@ public record {javaName}({params}) \{
     let params := recordParams ctor.fields
     s!"package {package};
 
-public record {javaName}({params}) \{
+public record {javaName}({params}) implements ToIon \{
     public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
 {toIon}
     }
@@ -372,7 +395,7 @@ public record {javaName}({params}) \{
       s!"{javaName}.{escapeJavaName (toPascalCase ctor.shortName)}")
     s!"package {package};
 
-public sealed interface {javaName} permits {permits} \{
+public sealed interface {javaName} extends ToIon permits {permits} \{
     com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion);
 
 {"\n\n".intercalate recordDefs}
@@ -383,6 +406,9 @@ private meta def generateForType (env : Environment) (package : String) (rootNam
     MetaM GeneratedFiles := do
   let nestedTypes ← collectNestedTypes env rootName
   let mut files := #[]
+  -- Emit the ToIon interface used by type-parameter fields
+  let toIonInterface := s!"package {package};\n\npublic interface ToIon \{\n    com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion);\n}\n"
+  files := files.push ("ToIon.java", toIonInterface)
   for typeName in nestedTypes do
     let shape ← analyzeType env typeName
     let javaName := match shape with
