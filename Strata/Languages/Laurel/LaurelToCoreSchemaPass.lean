@@ -121,17 +121,12 @@ private def freshId : TranslateM Nat := do
   set { s with nextId := id + 1 }
   return id
 
-/-- Return `base` if unused in the current procedure, else `s!"{base}♯{n}"`
-    with the smallest `n ≥ 1` that is unused. Records the chosen label. -/
+/-- Return `base` if unused in the current procedure, else append `♯{n}` -/
 private def freshStmtLabel (base : String) : TranslateM String := do
   let s ← get
   let label :=
     if !s.procStmtLabels.contains base then base
-    else Id.run do
-      for n in [1 : s.procStmtLabels.size + 2] do
-        let candidate := s!"{base}♯{n}"
-        if !s.procStmtLabels.contains candidate then return candidate
-      return base
+    else s!"{base}♯{s.procStmtLabels.size}"
   modify fun s => { s with procStmtLabels := s.procStmtLabels.insert label }
   return label
 

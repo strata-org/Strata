@@ -5,10 +5,10 @@ test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@ad
 test_class_with_methods.py(32, 4): ✔️ always true if reached - input is allocated on the heap
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@add requires) Type constraint of amount
 test_class_with_methods.py(32, 4): ✔️ always true if reached - input is allocated on the heap
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)♯1_41
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)♯13_41
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
 test_class_with_methods.py(32, 4): ✔️ always true if reached - input is allocated on the heap
-test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)♯1_45
+test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)♯17_45
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_name should return mystore
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str

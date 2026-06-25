@@ -5,7 +5,7 @@ test_user_pre_post.py(14, 4): ✔️ always true if reached - insufficient funds
 test_user_pre_post.py(14, 4): ✔️ always true if reached - Check PGt exception
 test_user_pre_post.py(14, 4): ✔️ always true if reached - amount must be positive
 test_user_pre_post.py(14, 4): ✔️ always true if reached - Check PSub exception
-test_user_pre_post.py(14, 4): ✔️ always true if reached - assert(684)♯2
+test_user_pre_post.py(14, 4): ✔️ always true if reached - assert(684)♯3
 test_user_pre_post.py(15, 4): ✔️ always true if reached - assert(725)
 test_user_pre_post.py(13, 14): ✔️ always true if reached - (main ensures) Return type constraint
 DETAIL: 10 passed, 0 failed, 0 inconclusive
