@@ -806,7 +806,7 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
   - The @[cases] parameter is inferred for recursive functions.
   - Laurel parameter definitions are translated to Core ones.
   - Laurel calling conventions are translated to Core ones."
-  run := fun p fnModel options =>
+  run := fun options p fnModel =>
     let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
