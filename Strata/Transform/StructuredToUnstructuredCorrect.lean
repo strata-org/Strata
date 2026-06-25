@@ -5334,6 +5334,386 @@ private theorem loop_iterations_to_exit_det
         rw [h_hf_block] at h_run_recurse
         exact StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse
 
+/-! ### Failing-config (`_to_fail`) structured-side peeling helpers
+
+These are the length-bearing analogues of the `_reaches_terminal'` / `_reaches_exiting'`
+inversion lemmas, but keyed on a FAILING configuration as the halting condition
+(`d.getEnv.hasFailure = true`) instead of a stuck endpoint.  They drive a simulation
+variant that tracks the cumulative failure flag rather than a normal/escaping outcome,
+so that `hasFailure`-reachability on the structured side maps to `getFailure`-reachability
+on the CFG side WITHOUT any termination assumption.
+
+The target config is left abstract (it is the failing config, which need not be stuck),
+so a direct `match` on the trace cannot refine the source frame's components; each lemma
+therefore generalises the source over its frame component(s) and recurses on a `Nat` fuel
+bounding the derivation length (the same shape `loop_iterations_det` uses). -/
+
+/-- A `ReflTransT` run starting at a stuck `.terminal ρ` stays at `.terminal ρ`. -/
+private theorem reflTransT_from_terminal {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P) {ρ : Env P} {c : Config P (Cmd P)}
+    (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.terminal ρ) c) : c = .terminal ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- A `ReflTransT` run starting at a stuck `.exiting l ρ` stays at `.exiting l ρ`. -/
+private theorem reflTransT_from_exiting {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P) {l : String} {ρ : Env P} {c : Config P (Cmd P)}
+    (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.exiting l ρ) c) : c = .exiting l ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- Failing-config inversion for a `.seq inner ss` frame.  Either the failure is
+inside `inner` (it reaches a failing config), or `inner` terminates at `ρ₁` and the
+continuation `.stmts ss ρ₁` reaches a failing config — with strictly decreasing
+derivation length in the second case (the seq prefix is consumed). -/
+private theorem seqT_reaches_failing' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inner ss) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner d),
+        d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ₁) d),
+        d.getEnv.hasFailure = true ∧ h1.len + h2.len < hstar.len) := by
+  suffices H : ∀ n (inn : Config P (Cmd P))
+      (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.seq inn ss) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      (∃ d, ∃ (h' : ReflTransT (StepStmt P (EvalCmd P) extendEval) inn d),
+          d.getEnv.hasFailure = true ∧ h'.len ≤ h.len) ∨
+      (∃ (ρ₁ : Env P), ∃ d,
+        ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P) extendEval) inn (.terminal ρ₁)),
+        ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts ss ρ₁) d),
+          d.getEnv.hasFailure = true ∧ h1.len + h2.len < h.len) by
+    exact H hstar.len inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.seq inner₁ _) _ (.step_seq_inner h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      rcases ih inner₁ hrest hlen' hc' with hA | hB
+      · obtain ⟨d, h', hd, hlen''⟩ := hA
+        exact .inl ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+      · obtain ⟨ρ₁, d, h1, h2, hd, hlen''⟩ := hB
+        exact .inr ⟨ρ₁, d, .step _ _ _ h_inner_step h1, h2, hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_seq_done hrest, hl =>
+      rename_i ρ'
+      exact .inr ⟨ρ', _, .refl _, hrest, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ .step_seq_exit hrest, hl =>
+      rename_i label ρ'
+      left
+      refine ⟨.exiting label ρ', .refl _, ?_, by simp [ReflTransT.len]⟩
+      match hrest with
+      | .refl _ => exact hc'
+      | .step _ _ _ h' _ => exact nomatch h'
+
+/-- Failing-config inversion for a `.block .none σ_parent inner` frame: the failure
+is inside the block body (`inner` reaches a failing config), with derivation length
+bounded by the original.  The block-done / exit-propagation cases reduce to the inner
+body's already-reached failing endpoint. -/
+private theorem blockT_none_reaches_failing' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.block .none σ_parent inner) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) inner d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  suffices H : ∀ n (σ_p : SemanticStore P) (inn : Config P (Cmd P))
+      (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.block .none σ_p inn) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      ∃ d, ∃ (h' : ReflTransT (StepStmt P (EvalCmd P) extendEval) inn d),
+        d.getEnv.hasFailure = true ∧ h'.len ≤ h.len by
+    exact H hstar.len σ_parent inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.block _ _ inner₁) _ (.step_block_body h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      have ⟨d, h', hd, hlen''⟩ := ih σ_p inner₁ hrest hlen' hc'
+      exact ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_block_done hrest, hl =>
+      have hz := reflTransT_from_terminal extendEval hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'
+      simpa [Config.getEnv] using hc'
+    | .step _ _ _ (.step_block_exit_match heq) hrest, hl => exact (nomatch heq)
+    | .step _ _ _ (.step_block_exit_mismatch hne) hrest, hl =>
+      have hz := reflTransT_from_exiting extendEval hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'
+      simpa [Config.getEnv] using hc'
+
+/-- Singleton-list peel for the failing case: from `.stmts [s] ρ₀ ⟶* c` (failing),
+recover `.stmt s ρ₀ ⟶* d` reaching a failing config of no-greater length.  Used to
+recurse one loop iteration on the residual `[.loop ...]` singleton. -/
+private theorem stmts_singleton_reaches_failing' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {s : Stmt P (Cmd P)} {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts [s] ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmt s ρ₀) d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  match hstar with
+  | .refl _ =>
+    exact ⟨.stmt s ρ₀, .refl _, hc, by simp [ReflTransT.len]⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' extendEval hrest hc with hA | hB
+    · obtain ⟨d, h, hd, hlen⟩ := hA
+      exact ⟨d, h, hd, by simp [ReflTransT.len]; omega⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, hlen⟩ := hB
+      refine ⟨.terminal ρ₁, h1, ?_, by simp [ReflTransT.len]; omega⟩
+      have hρ₁ : ρ₁.hasFailure = true := by
+        have : d.getEnv = ρ₁ := by
+          match h2 with
+          | .refl _ => rfl
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h' _ => exact nomatch h'
+        rw [this] at hd
+        exact hd
+      simpa [Config.getEnv] using hρ₁
+
+/-- Iterate the deterministic loop until a FAILING configuration is reached (the
+`_to_fail` analogue of `loop_iterations_det`).  Inducts on a `Nat` fuel bounding the
+length of the finite structured run that reaches the failing config `a'` (finite by
+`hasFailure`-monotonicity), NOT on a terminal run.  Each COMPLETED iteration
+(case B) terminated at the body-block boundary — the loop re-entered — so the existing
+per-iteration terminal body sim `h_body_sim_at` applies, and we recurse on the next
+iteration via `stmts_singleton_reaches_failing'` with a strictly smaller bound.  The
+FAILING iteration (case A) is a partial body run to the failing command, discharged by
+the body-level `_to_fail` sim `h_body_sim_fail_at` with NO terminal demand.  The
+guard-false base case (`step_loop_exit`, `inv = []`) reaches a terminal whose failure
+flag equals `ρ_pre'.hasFailure`; if it is failing then the loop head is already a failing
+CFG config, so the loop terminating is never used. -/
+private theorem loop_iterations_to_fail_det
+    {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    (extendEval : ExtendEval P)
+    (g : P.Expr) (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre : Env P) (a' : Config P (Cmd P))
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (lentry kNext bl : String)
+    (σ_cfg_pre : SemanticStore P)
+    (storeInv : SemanticStore P → Prop)
+    (h_lentry_lkp : cfg.blocks.lookup lentry = some ⟨[], .condGoto g bl kNext md⟩)
+    (h_agree_pre : StoreAgreement ρ_pre.store σ_cfg_pre)
+    (h_inv_pre : storeInv σ_cfg_pre)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval
+       (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre) a')
+    (h_a'_fail : a'.getEnv.hasFailure = true)
+    (h_nofd_body : Block.noFuncDecl body = true)
+    (h_body_sim_at :
+       ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+         ρ_iter.eval = ρ_pre.eval →
+         StoreAgreement ρ_iter.store σ_cfg_iter →
+         storeInv σ_cfg_iter →
+         ∀ (ρ_body : Env P), StepStmtStar P (EvalCmd P) extendEval
+             (.stmts body ρ_iter) (.terminal ρ_body) →
+           ∃ σ_cfg_after_body,
+             StepDetCFGStar extendEval cfg
+               (.atBlock bl σ_cfg_iter ρ_iter.hasFailure)
+               (.atBlock lentry σ_cfg_after_body ρ_body.hasFailure) ∧
+             StoreAgreement ρ_body.store σ_cfg_after_body ∧
+             storeInv σ_cfg_after_body)
+    (h_body_sim_fail_at :
+       ∀ (ρ_iter : Env P) (σ_cfg_iter : SemanticStore P),
+         ρ_iter.eval = ρ_pre.eval →
+         StoreAgreement ρ_iter.store σ_cfg_iter →
+         storeInv σ_cfg_iter →
+         ∀ (d : Config P (Cmd P)), StepStmtStar P (EvalCmd P) extendEval
+             (.stmts body ρ_iter) d → d.getEnv.hasFailure = true →
+           ∃ e : CFGConfig String (Cmd P) P,
+             StepDetCFGStar extendEval cfg
+               (.atBlock bl σ_cfg_iter ρ_iter.hasFailure) e ∧
+             e.getFailure = true)
+    (hwfb_pre : WellFormedSemanticEvalBool ρ_pre.eval)
+    (hwf_def_pre : WellFormedSemanticEvalDef ρ_pre.eval)
+    (hwfcongr_pre : WellFormedSemanticEvalExprCongr ρ_pre.eval) :
+    ∃ e : CFGConfig String (Cmd P) P,
+      StepDetCFGStar extendEval cfg
+        (.atBlock lentry σ_cfg_pre ρ_pre.hasFailure) e ∧
+      e.getFailure = true := by
+  have hT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre) a' := reflTrans_to_T h_reach
+  suffices h_inner :
+    ∀ n (ρ_pre' : Env P) (a'' : Config P (Cmd P)) (σ_cfg_pre' : SemanticStore P),
+      ρ_pre'.eval = ρ_pre.eval →
+      WellFormedSemanticEvalBool ρ_pre'.eval →
+      WellFormedSemanticEvalDef ρ_pre'.eval →
+      WellFormedSemanticEvalExprCongr ρ_pre'.eval →
+      StoreAgreement ρ_pre'.store σ_cfg_pre' →
+      storeInv σ_cfg_pre' →
+      ∀ (hT' : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                 (.stmt (Stmt.loop (.det g) none [] body md) ρ_pre') a''),
+        a''.getEnv.hasFailure = true →
+        hT'.len ≤ n →
+        ∃ e : CFGConfig String (Cmd P) P,
+          StepDetCFGStar extendEval cfg
+            (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure) e ∧
+          e.getFailure = true from
+    h_inner hT.len ρ_pre a' σ_cfg_pre rfl
+      hwfb_pre hwf_def_pre hwfcongr_pre h_agree_pre h_inv_pre hT h_a'_fail (Nat.le_refl _)
+  intro n
+  induction n with
+  | zero =>
+    intro ρ_pre' a'' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' h_inv' hT' ha''_fail hlen'
+    match hT', hlen' with
+    | .refl _, _ =>
+      have : ρ_pre'.hasFailure = true := by simpa [Config.getEnv] using ha''_fail
+      exact ⟨.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure, ReflTrans.refl _,
+             by simpa [CFGConfig.getFailure] using this⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro ρ_pre' a'' σ_cfg_pre' h_eval_eq hwfb' hwf_def' hwfcongr' h_agree' h_inv' hT' ha''_fail hlen'
+    match hT', hlen' with
+    | .refl _, _ =>
+      have : ρ_pre'.hasFailure = true := by simpa [Config.getEnv] using ha''_fail
+      exact ⟨.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure, ReflTrans.refl _,
+             by simpa [CFGConfig.getFailure] using this⟩
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_false hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      have h_hif : hasInvFailure = false := by
+        cases hasInvFailure with
+        | false => rfl
+        | true => obtain ⟨le, hle, _⟩ := hff_iff.mp rfl; simp at hle
+      subst h_hif
+      have ha''_eq : a'' = .terminal { ρ_pre' with hasFailure := ρ_pre'.hasFailure || false } :=
+        reflTransT_from_terminal extendEval hrest
+      rw [ha''_eq] at ha''_fail
+      have : ρ_pre'.hasFailure = true := by simpa [Config.getEnv] using ha''_fail
+      exact ⟨.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure, ReflTrans.refl _,
+             by simpa [CFGConfig.getFailure] using this⟩
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_true hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      have h_hif : hasInvFailure = false := by
+        cases hasInvFailure with
+        | false => rfl
+        | true => obtain ⟨le, hle, _⟩ := hff_iff.mp rfl; simp at hle
+      subst h_hif
+      have h_body_init_eq :
+          ({ ρ_pre' with hasFailure := ρ_pre'.hasFailure || false } : Env P) = ρ_pre' := by simp
+      have h_step_enter : StepDetCFGStar extendEval cfg
+          (.atBlock lentry σ_cfg_pre' ρ_pre'.hasFailure)
+          (.atBlock bl σ_cfg_pre' ρ_pre'.hasFailure) :=
+        lentry_condGoto extendEval true cfg lentry bl kNext md g
+          ρ_pre'.eval ρ_pre'.store σ_cfg_pre' ρ_pre'.hasFailure h_lentry_lkp h_agree'
+          hwfb' hwf_def' hwfcongr' hg_true
+      rcases seqT_reaches_failing' extendEval hrest ha''_fail with hA | hB
+      · -- CASE A: failure inside THIS iteration's body block.
+        obtain ⟨d_blk, h_blk_run, hd_blk_fail, hlen_blk⟩ := hA
+        have ⟨d_body, h_body_run, hd_body_fail, hlen_body⟩ :=
+          blockT_none_reaches_failing' extendEval h_blk_run hd_blk_fail
+        rw [h_body_init_eq] at h_body_run
+        have ⟨e, h_step_body, he_fail⟩ :=
+          h_body_sim_fail_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' h_inv' d_body
+            (reflTransT_to_prop h_body_run) hd_body_fail
+        exact ⟨e, StepDetCFGStar_trans h_step_enter h_step_body, he_fail⟩
+      · -- CASE B: this iteration's body terminated; recurse on the next iteration.
+        obtain ⟨ρ_blk_inner, d_rest, h_blk_term, h_loop_rest, hd_rest_fail, hlen_rest⟩ := hB
+        have ⟨ρ_inner, h_inner_term, hρ_blk_eq, hlen_inner⟩ :=
+          blockT_none_reaches_terminal' extendEval h_blk_term
+        rw [h_body_init_eq] at h_inner_term
+        have ⟨σ_cfg_after_body, h_step_body, h_agree_after_body, h_inv_after⟩ :=
+          h_body_sim_at ρ_pre' σ_cfg_pre' h_eval_eq h_agree' h_inv' ρ_inner
+            (reflTransT_to_prop h_inner_term)
+        have h_agree_block : StoreAgreement ρ_blk_inner.store σ_cfg_after_body :=
+          StoreAgreement.through_projectStore hρ_blk_eq h_agree_after_body
+        have h_hf_block : ρ_blk_inner.hasFailure = ρ_inner.hasFailure := by rw [hρ_blk_eq]
+        have hρ_block_eval : ρ_blk_inner.eval = ρ_pre'.eval := by
+          rw [hρ_blk_eq]
+          show ρ_inner.eval = ρ_pre'.eval
+          have := smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval body
+                  ρ_pre' ρ_inner h_nofd_body (reflTransT_to_prop h_inner_term)
+          rw [this]
+        have h_eval_eq_block : ρ_blk_inner.eval = ρ_pre.eval := by
+          rw [hρ_block_eval]; exact h_eval_eq
+        have hwfb_block : WellFormedSemanticEvalBool ρ_blk_inner.eval := by
+          rw [hρ_block_eval]; exact hwfb'
+        have hwf_def_block : WellFormedSemanticEvalDef ρ_blk_inner.eval := by
+          rw [hρ_block_eval]; exact hwf_def'
+        have hwfcongr_block : WellFormedSemanticEvalExprCongr ρ_blk_inner.eval := by
+          rw [hρ_block_eval]; exact hwfcongr'
+        have ⟨d_loop, h_loop_stmt, hd_loop_fail, hlen_loop⟩ :=
+          stmts_singleton_reaches_failing' extendEval h_loop_rest hd_rest_fail
+        have h_inner_le_n : h_loop_stmt.len ≤ n := by
+          simp [ReflTransT.len] at hl_succ; omega
+        have ⟨e, h_run_recurse, he_fail⟩ :=
+          ih ρ_blk_inner d_loop σ_cfg_after_body h_eval_eq_block
+             hwfb_block hwf_def_block hwfcongr_block
+             h_agree_block h_inv_after h_loop_stmt hd_loop_fail h_inner_le_n
+        rw [h_hf_block] at h_run_recurse
+        exact ⟨e, StepDetCFGStar_trans (StepDetCFGStar_trans h_step_enter h_step_body) h_run_recurse,
+               he_fail⟩
+
+/-- Within-block failing-command discharge: when the accumulated commands of a block
+carry a `true` failure flag at the block end, the post-chain `.inBlock t [] tr σ' true`
+is a reachable CFG config with `getFailure = true`.  The block transfer need not fire —
+an `.inBlock` with `getFailure = true` is already a valid reachable failing config.
+This is the `flushCmds_to_fail_agree` core for the within-block (`.cmd`) arm. -/
+private theorem within_block_reaches_failing {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (t : String) (cs : List (Cmd P)) (tr : DetTransferCmd String P)
+    (δ : SemanticEval P) (σ σ' : SemanticStore P) (f_base f : Bool)
+    (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f)
+    (h_fail : (f_base || f) = true) :
+    ∃ e : CFGConfig String (Cmd P) P,
+      StepCFGStar P (EvalCmd P) extendEval cfg (.inBlock t cs tr σ f_base) e ∧
+      e.getFailure = true := by
+  refine ⟨.inBlock t [] tr σ' (f_base || f),
+    EvalCmds_to_StepCFG_chain (extendEval := extendEval) (cfg := cfg) h_cmds t tr f_base, ?_⟩
+  simpa [CFGConfig.getFailure] using h_fail
+
+/-- Fetch-then-discharge composite: from `.atBlock t` whose block records a failure in
+its command list, reach a `getFailure = true` config. -/
+private theorem atBlock_reaches_failing {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    (cfg : CFG String (DetBlock String (Cmd P) P))
+    (t : String) (cs : List (Cmd P)) (tr : DetTransferCmd String P)
+    (δ : SemanticEval P) (σ σ' : SemanticStore P) (f_base f : Bool)
+    (h_lkp : List.lookup t cfg.blocks = .some ⟨cs, tr⟩)
+    (h_cmds : EvalCmds P (EvalCmd P) δ σ cs σ' f)
+    (h_fail : (f_base || f) = true) :
+    ∃ e : CFGConfig String (Cmd P) P,
+      StepCFGStar P (EvalCmd P) extendEval cfg (.atBlock t σ f_base) e ∧
+      e.getFailure = true := by
+  have h_fetch : StepCFG (l := String) (CmdT := Cmd P) P (EvalCmd P) extendEval cfg
+      (.atBlock t σ f_base) (.inBlock t cs tr σ f_base) :=
+    StepCFG.fetch (extendEval := extendEval) h_lkp
+  obtain ⟨e, h_run, he⟩ := within_block_reaches_failing extendEval cfg t cs tr δ σ σ'
+    f_base f h_cmds h_fail
+  exact ⟨e, ReflTrans.step _ _ _ h_fetch h_run, he⟩
+
 end InlineLoopHelpers
 
 /-- Project the four shape predicates (`simpleShape`, `loopBodyNoInits`,
