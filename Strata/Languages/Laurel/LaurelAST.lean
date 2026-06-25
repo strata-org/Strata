@@ -789,20 +789,26 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
     let sup' := ctx.unfold sup
     let subBoxable := ctx.isDynamicBoxable sub'.val
     let supBoxable := ctx.isDynamicBoxable sup'.val
-    let subG := ctx.isGradualTop sub'.val
-    let supG := ctx.isGradualTop sup'.val
-    -- A real box/unbox exists ONLY against the boxable dynamic type, and only when
-    -- the other side is concrete (not itself gradual).
-    if supBoxable && !subG then some (.inject sub'.val)
-    else if subBoxable && !supG then some (.project sup'.val)
-    -- Any remaining gradual case (a bare wildcard on either side, or Any↔Any) is
-    -- `refl`: consistent, no runtime coercion.
-    else if subG || supG then some .refl
+    -- `Unknown` is the only PURE wildcard: a synth gap / hole / unresolved accessor
+    -- with no runtime form, so a coercion against it is `refl` (it flows freely, no
+    -- box/unbox). NB this is narrower than `isGradualTop` (which also treats every
+    -- `.TCore _` as gradual for the *decision*): a concrete `.TCore` container like
+    -- `ListAny`/`DictStrAny` is NOT a wildcard — it is a real type that boxes/unboxes
+    -- against `Any` (`from_ListAny`/`Any..as_ListAny!`). Distinguishing them here is
+    -- what lets `Any ↔ ListAny` insert a witness while `Any ↔ <hole>` stays `refl`.
+    let isWildcard (t : HighType) : Bool := match t with | .Unknown => true | _ => false
+    if subBoxable && supBoxable then some .refl                  -- Any ↔ Any
+    else if isWildcard sub'.val || isWildcard sup'.val then some .refl  -- wildcard: no op
+    else if supBoxable then some (.inject sub'.val)              -- concrete → Any (box)
+    else if subBoxable then some (.project sup'.val)             -- Any → concrete (unbox)
     else if highEq sub' sup' then some .refl
     else match sub'.val, sup'.val with
       | .UserDefined subName, .UserDefined supName =>
         if (ctx.ancestors subName.text).contains supName.text then some .upcast else none
-      | _, _ => none
+      -- Two distinct gradual `.TCore` names (e.g. `Heap`/`Box` plumbing, or a
+      -- `.TCore` that is consistent-but-not-coercible) — consistent, no runtime op.
+      | _, _ =>
+        if ctx.isGradualTop sub'.val || ctx.isGradualTop sup'.val then some .refl else none
 
 /-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. DERIVED from the
     proof-relevant `coerce` so the yes/no answer and the inserted coercion can

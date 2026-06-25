@@ -555,12 +555,24 @@ public def pythonRealizeCoercion : Laurel.Coercion → Laurel.StmtExprMd → Lau
     | "Composite" => pyCoerceCall "Any..as_Composite!" e
     | _ => e
 
-/-- Python truthiness coercion for boolean context. Any value used where a `bool`
-    is expected is run through `Any_to_bool` (Python user values are `Any`). For an
-    already-concrete `bool` it is identity. -/
+/-- Python truthiness coercion for boolean context (`if`/`while`/`assert`/`assume`/
+    bool-ops). Truthiness is NOT subtyping (a `str` is not a `bool`), so it lives
+    here, keyed on the operand's synthesized type — transcribing the `T ≤ TBool`
+    rows of the elaborator's `subtype` table (Elaborate.lean): `Any→Any_to_bool`,
+    `int→int_to_bool`, `str→str_to_bool`, `float→float_to_bool`, list/dict likewise;
+    a class instance / void are always truthy / falsy; an already-`bool` is identity;
+    an `Unknown` (synth gap) is left as-is (gradual). -/
 public def pythonToBool : Laurel.StmtExprMd → Laurel.HighType → Laurel.StmtExprMd
-  | e, .TBool => e
-  | e, _ => pyCoerceCall "Any_to_bool" e
+  | e, ty =>
+    match pyTypeKey ty with
+    | "bool" => e
+    | "Any" => pyCoerceCall "Any_to_bool" e
+    | "int" => pyCoerceCall "int_to_bool" e
+    | "str" => pyCoerceCall "str_to_bool" e
+    | "float" => pyCoerceCall "float_to_bool" e
+    | "ListAny" => pyCoerceCall "list_to_bool" e
+    | "DictStrAny" => pyCoerceCall "dict_to_bool" e
+    | _ => pyCoerceCall "Any_to_bool" e   -- default: treat as Any (sound; e is boxed)
 
 /-- V2 variant of `translateCombinedLaurel` that pre-registers Python's unmodeled
     external names so the Laurel resolver emits no "not defined" diagnostics for them.

@@ -182,7 +182,10 @@ def pythonTypeToHighType : PythonType → HighType
     | "int" => .TInt
     | "bool" => .TBool
     | "str" => .TString
-    | "float" => .TFloat64
+    -- Python `float` is a real: a float literal lowers to `LiteralDecimal : TReal`
+    -- and the prelude boxes via `from_float : real`. Annotating `float` as `TReal`
+    -- keeps annotation and literal in one domain (no `real`↔`float64` reconciliation).
+    | "float" => .TReal
     | "None" => .TVoid
     | "Any" | "object" => .TCore "Any"
     | "dict" => .TCore "DictStrAny"
