@@ -73,7 +73,7 @@ def eliminateReturnStatements (program : Program) : Program :=
 public def eliminateReturnStatementsPass : LoweringPass where
   name := "EliminateReturnStatements"
   documentation := "Lower return statements to exit statements. Wrap each procedure body with a 'return' block"
-  run := fun p _m _ =>
+  run := fun _ p _m =>
     let p' := eliminateReturnStatements p
     (p', [], {})
   -- comesBefore := [contractPass]

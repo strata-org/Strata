@@ -16,6 +16,10 @@ public section
 structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
+  /-- Quantifier-free modifies frame for single-reference clauses. Set-valued entries
+      keep the quantified frame. If the procedure's modifies clause contains sets,
+      this option has no effect. Use with the verifier's `useArrayTheory`. -/
+  enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
 
 instance : Inhabited LaurelTranslateOptions where
@@ -52,7 +56,7 @@ end
     metadata fields remain directly accessible (e.g. `p.name`). -/
 structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
   /-- The pass action. -/
-  run : Input → SemanticModel → LaurelTranslateOptions → Output × List DiagnosticModel × Statistics
+  run : LaurelTranslateOptions → Input → SemanticModel → Output × List DiagnosticModel × Statistics
 
 abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
 
