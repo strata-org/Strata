@@ -13822,6 +13822,106 @@ theorem stmtsToCFG_exiting {P : PureExpr} [HasFvar P] [HasNot P]
   -- The simulation already lands at `.exiting label σ_cfg`; no end-block compose.
   exact ⟨σ_cfg, h_sim, h_agree⟩
 
+/-- **Failing companion of `stmtsToCFG_terminal_compositional`.**  From an
+*arbitrary reachable failing* source configuration `c` (no terminal/exiting
+endpoint required — the run may diverge or get stuck after the failure), the CFG
+`stmtsToCFG ss` started from an overapproximating external store `σ_ext` reaches a
+configuration whose `getFailure` flag is set.
+
+This is the compositional `σ_ext`-input restatement (the form a downstream
+transform consumes, running the target from an `R`-related store) of the
+intermediate-failing-config simulation: it threads the same agreement /
+`σ_ext`-freshness preconditions as the terminal compositional theorem and
+delegates to the `stmtsToBlocks_simulation_to_fail` mutual sibling.  The source
+must start non-failing (`h_ρ₀_nofail`) so the failure genuinely arises within
+the run rather than being inherited at entry; this matches the pipeline's clean
+initial store. -/
+theorem stmtsToCFG_to_fail {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P)))
+    (ρ₀ : Env P)
+    (c : Config P (Cmd P))
+    (σ_ext : SemanticStore P)
+    (h_ρ₀_nofail : ρ₀.hasFailure = false)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_simple : Block.simpleShape ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_lbni : Block.loopBodyNoInits ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_agree_ext : StoreAgreement ρ₀.store σ_ext)
+    (h_fresh_inits : ∀ x ∈ Block.initVars ss, σ_ext x = none)
+    (h_disj : Block.userLabelsShapeNodup ss)
+    (h_store_gens : ∀ x : String, Q x → σ_ext (HasIdent.ident (P := P) x) = none)
+    (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
+    (hQmint : S2UMintWitness Q)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    let cfg := stmtsToCFG ss
+    ∃ d : CFGConfig String (Cmd P) P,
+      StepDetCFGStar extendEval cfg
+        (.atBlock cfg.entry σ_ext ρ₀.hasFailure) d
+      ∧ d.getFailure = true := by
+  intro cfg
+  have h_disj_wf : ∀ gen', StringGenState.WF gen' → Block.userLabelsDisjoint ss gen' :=
+    Block.userLabelsDisjoint_of_shapeNodup ss h_disj
+  have ⟨lend, gen, gen', entry, blocks, h_gen, h_entry, h_blocks, h_lend, h_wf_gen, h_gen0⟩ :=
+    stmtsToCFG_stmtsToBlocks_spec ss h_disj_wf
+  rw [h_entry]
+  -- accum runs struct-side from ρ₀.store to ρ₀.store (empty accum).
+  have h_accum : EvalCmds P (EvalCmd P) ρ₀.eval ρ₀.store [].reverse ρ₀.store false :=
+    EvalCmds.eval_cmds_none
+  have h_hf : ρ₀.hasFailure = (ρ₀.hasFailure || false) := by simp
+  have h_nodup := stmtsToCFG_nodup_keys ss h_disj_wf
+  -- Combined freshness/Nodup: empty accum, so reduces to just inits (about σ_ext).
+  have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
+      σ_ext x = none := by
+    intro x hx
+    simp [Cmds.definedVars] at hx
+    exact h_fresh_inits x hx
+  have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
+    simp [Cmds.definedVars]
+    exact h_unique
+  have h_combined_no_gen_suffix :
+      NoGenSuffix (P := P) Q (Cmds.definedVars [].reverse ++ Block.initVars ss) := by
+    intro s hQ
+    simpa [Cmds.definedVars] using h_input_no_gen_suffix s hQ
+  have h_combined_no_gen_suffix_mod :
+      NoGenSuffix (P := P) Q (Cmds.modifiedVars [].reverse ++ transformBlockModVars ss) := by
+    intro s hQ
+    simpa [Cmds.modifiedVars] using h_input_no_gen_suffix_mod s hQ
+  have h_store_no_gens_upper :
+      ∀ x : String, Q x →
+        x ∉ StringGenState.stringGens gen' →
+        σ_ext (HasIdent.ident (P := P) x) = none := fun x hx _ => h_store_gens x hx
+  -- Foreign-label self-discharge, identical to the terminal corollaries.
+  have h_allmem_gen : StringGenState.AllMem Q gen := by
+    rw [h_gen0]
+    exact StringGenState.allMem_gen Q "end$" StringGenState.emp
+      (StringGenState.allMem_emp Q) (hQmint.2.2.2.2.2.2.2.2.1 StringGenState.emp)
+  have h_allmem_gen' : StringGenState.AllMem Q gen' :=
+    stmtsToBlocks_allMem hQmint lend ss [] [] gen gen' entry blocks h_gen h_allmem_gen
+  have h_foreign : ∀ s : String, ¬ Q s → s ∉ StringGenState.stringGens gen' :=
+    fun s hns => StringGenState.not_mem_stringGens_of_not_allMem h_allmem_gen' hns
+  exact stmtsToBlocks_simulation_to_fail extendEval lend ss [] [] gen gen' entry blocks
+    h_gen h_nofd h_simple h_unique h_lbni h_lhni h_nml
+    ρ₀.store σ_ext ρ₀.hasFailure false ρ₀ c h_ρ₀_nofail hwfb hwfv hwf_def hwf_congr hwf_var
+    h_reach h_c_fail h_accum h_agree_ext h_fresh_combined h_unique_combined h_hf
+    h_wf_gen h_combined_no_gen_suffix h_combined_no_gen_suffix_mod
+    gen' (fun _ h => h) h_store_no_gens_upper h_foreign
+    cfg h_blocks h_nodup
+
 /-! ## Main theorems -/
 
 /-! ### The structured-to-unstructured label *kind*
@@ -14010,6 +14110,55 @@ theorem structuredToUnstructured_sound_kind_exit {P : PureExpr} [HasFvar P] [Has
     h_nofd h_simple h_unique h_lbni h_lhni h_nml
     h_fresh_inits h_disj h_store_gens h_input_no_gen_suffix
     h_input_no_gen_suffix_mod hQmint label h_exit
+
+/-- **Failing companion of `structuredToUnstructured_sound_kind`.**  From an
+arbitrary reachable *failing* source configuration (no endpoint demand), the
+unstructured CFG `stmtsToCFG ss`, run from an overapproximating external store
+`σ_ext`, reaches a failing configuration.  A thin forwarder to
+`stmtsToCFG_to_fail`; the foreign-label obligation is discharged internally from
+`hQmint`. -/
+theorem structuredToUnstructured_sound_kind_fail {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint : S2UMintWitness Q)
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P)))
+    (ρ₀ : Env P)
+    (c : Config P (Cmd P))
+    (σ_ext : SemanticStore P)
+    (h_ρ₀_nofail : ρ₀.hasFailure = false)
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_simple : Block.simpleShape ss = true)
+    (h_unique : Block.uniqueInits ss)
+    (h_lbni : Block.loopBodyNoInits ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_nml : Block.noMeasureLoops ss = true)
+    (h_agree_ext : StoreAgreement ρ₀.store σ_ext)
+    (h_fresh_inits : ∀ x ∈ Block.initVars ss, σ_ext x = none)
+    (h_disj : Block.userLabelsShapeNodup ss)
+    (h_store_gens : ∀ x : String, Q x → σ_ext (HasIdent.ident (P := P) x) = none)
+    (h_input_no_gen_suffix : NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_input_no_gen_suffix_mod : NoGenSuffix (P := P) Q (transformBlockModVars ss))
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    let cfg := stmtsToCFG ss
+    ∃ d : CFGConfig String (Cmd P) P,
+      StepDetCFGStar extendEval cfg
+        (.atBlock cfg.entry σ_ext ρ₀.hasFailure) d
+      ∧ d.getFailure = true :=
+  stmtsToCFG_to_fail (Q := Q)
+    extendEval ss ρ₀ c σ_ext h_ρ₀_nofail hwfb hwfv hwf_def hwf_congr hwf_var
+    h_nofd h_simple h_unique h_lbni h_lhni h_nml
+    h_agree_ext h_fresh_inits h_disj h_store_gens h_input_no_gen_suffix
+    h_input_no_gen_suffix_mod hQmint h_reach h_c_fail
 
 ---------------------------------------------------------------------
 -- Loop-init-hoisting additive helpers (ported; used by LoopInitHoist*).
