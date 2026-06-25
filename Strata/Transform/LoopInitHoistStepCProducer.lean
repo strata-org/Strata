@@ -1066,6 +1066,39 @@ theorem Block.stepB_bodySim_of_lift [HasFvar P] [HasBool P] [HasNot P] [HasVal P
       h_wfvar h_wfcongr h_wfsubst h_wfdef
   exact OptEStepBProvider.bodySimES_to_bodySimSum hBES
 
+/-- The FAILING-config sibling of `Block.stepB_bodySim_of_lift`: the same lift's
+`BodyTransport` derivation, fed to `Block.bodyTransport_to_fail`, yields a
+`BodySimFail` for the rewritten loop body (a failing source-body run is matched by a
+failing renamed-lifted-body run). -/
+theorem Block.stepB_bodySim_of_lift_fail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    (body₁ : List (Stmt P (Cmd P))) (σ : StringGenState)
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident))
+    (h_initfree : Block.allLoopBodiesInitFree body₁ = true)
+    (h_entries : EntriesIn A B subst body₁ σ)
+    (h_B_fresh : Block.namesFreshInExprs B body₁ = true)
+    (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars body₁, x ∉ B)
+    (h_subst_wf : ∀ a b, (a, b) ∈ subst → a ∈ A ∧ b ∈ B)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_shape : Block.transportShape body₁ = true)
+    (h_subst_fst_A : ∀ a ∈ subst.map Prod.fst, a ∈ A)
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_subst_snd_B : ∀ b ∈ subst.map Prod.snd, b ∈ B)
+    (h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    OptEStepBProvider.BodySimFail (extendEval := extendEval) A B subst
+      body₁
+      (Block.applyRenames subst (Block.liftInitsInLoopBodyM body₁ σ).1.2.2) :=
+  LoopInitHoistBodyTransport.Block.bodyTransport_to_fail (extendEval := extendEval)
+    (Block.bodyTransport_of_lift body₁ σ A B subst h_initfree h_entries h_B_fresh
+      h_mod_disjoint_B h_subst_wf h_A_subst_fst h_src_nodup h_tgt_nodup h_disjoint h_shape)
+    h_subst_fst_A h_A_subst_fst h_subst_snd_B h_src_nodup h_disjoint h_tgt_nodup
+    h_wfvar h_wfcongr h_wfsubst h_wfdef
+
 end LoopInitHoistStepCProducer
 end Imperative
 

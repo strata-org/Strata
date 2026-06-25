@@ -2032,7 +2032,10 @@ open LoopInitHoistLoopDriver (BodySimSum BodySimUSFSum
   bridge_in_guarded_undef_sf stepJ_restrict
   loopDet_lift_sf_undef_TE_recovers_single
   loopDet_lift_sf_undef_E_recovers_single
+  loopDet_lift_sf_2g_undef_F_fuel
   prelude_bridge_list_md_frame)
+
+open OptEStepBProvider (BodySimFail)
 
 /-- Loop-entry union `HoistInv` builder (guarded frame). -/
 theorem union_entry_hinv
@@ -2114,6 +2117,85 @@ theorem Block.stepB_self_of_lift [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P
            List.mem_map.mpr ⟨e, he, rfl⟩,
            List.mem_map.mpr ⟨e, he, rfl⟩⟩
   refine LoopInitHoistStepCProducer.Block.stepB_bodySim_of_lift
+    (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2
+    (sourcesOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+    (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+    (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+    ?_ h_entries ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h_wfvar h_wfcongr h_wfsubst h_wfdef
+  · exact Block.hoistLoopPrefixInitsM_allLoopBodiesInitFree body σ
+  · exact Block.hoistLoopPrefixInitsM_namesFreshInExprs_targets_of_exprsShapeFree
+      hQmint body σ h_wf₁ h_sf
+  · exact h_mod_disjoint_B
+  · intro a b hab
+    obtain ⟨e, he, heq⟩ := List.mem_map.mp hab
+    cases heq
+    exact ⟨List.mem_map.mpr ⟨e, he, rfl⟩, List.mem_map.mpr ⟨e, he, rfl⟩⟩
+  · exact Block.entriesOf_substOf_src_nodup_of_initVars (Block.hoistLoopPrefixInitsM body σ).1
+      (Block.hoistLoopPrefixInitsM body σ).2 h_nd_body1
+  · rw [show (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2)).map Prod.snd
+        = targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2) from
+      (LoopInitHoistLoopDriver.targetsOf'_eq_substOf'_snd _).symm]
+    exact (Block.entriesOf_targetGen (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2 h_wf₁).2
+  · rw [substOf'_map_fst, show (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2)).map Prod.snd
+        = targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2) from
+      (LoopInitHoistLoopDriver.targetsOf'_eq_substOf'_snd _).symm]
+    exact Block.sourcesOf'_disjoint_targetsOf'_self hQmint body σ h_wf_σ h_unique h_src_shapefree
+  · exact Block.transportShape_hoistLoopPrefixInitsM body σ h_nd h_fd h_inv h_measure
+  · rw [substOf'_map_fst]; exact fun a ha => ha
+  · rw [substOf'_map_fst]; exact fun a ha => ha
+  · rw [show (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2)).map Prod.snd
+        = targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2) from
+      (LoopInitHoistLoopDriver.targetsOf'_eq_substOf'_snd _).symm]
+    exact fun b hb => hb
+
+/-- The FAILING-config sibling of `Block.stepB_self_of_lift`: the same harvest
+carriers and lift preconditions, but producing a `BodySimFail` (a failing
+`body₁`-run is matched by a failing `body₃`-run) via
+`Block.stepB_bodySim_of_lift_fail`.  The preconditions are discharged identically
+to `Block.stepB_self_of_lift`. -/
+theorem Block.stepB_self_of_lift_fail [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIntOrder P] {Q : String → Prop}
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (body : List (Stmt P (Cmd P))) (σ : StringGenState)
+    (h_wf_σ : StringGenState.WF σ)
+    (h_nd : Block.containsNondetLoop body = false)
+    (h_fd : Block.containsFuncDecl body = false)
+    (h_inv : Block.loopHasNoInvariants body = true)
+    (h_measure : Block.loopMeasureNone body = true)
+    (h_unique : Block.uniqueInits body)
+    (h_sf : Block.exprsShapeFree (P := P) Q body)
+    (h_src_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ Block.initVars body)
+    (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars (Block.hoistLoopPrefixInitsM body σ).1,
+        x ∉ targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1
+          (Block.hoistLoopPrefixInitsM body σ).2))
+    (h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    BodySimFail (extendEval := extendEval)
+      (sourcesOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (Block.hoistLoopPrefixInitsM body σ).1
+      (Block.applyRenames
+        (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+        (Block.liftInitsInLoopBodyM (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2).1.2.2) := by
+  have h_wf₁ : StringGenState.WF (Block.hoistLoopPrefixInitsM body σ).2 :=
+    (Block.hoistLoopPrefixInitsM_genStep body σ).wf_mono h_wf_σ
+  have h_nd_body1 : (Block.initVars (Block.hoistLoopPrefixInitsM body σ).1).Nodup :=
+    Block.hoistLoopPrefixInitsM_initVars_nodup hQmint body σ h_wf_σ h_unique h_src_shapefree
+  have h_entries : LoopInitHoistStepCProducer.EntriesIn
+      (sourcesOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (substOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
+      (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2 := by
+    intro e he
+    exact ⟨List.mem_map.mpr ⟨e, he, rfl⟩,
+           List.mem_map.mpr ⟨e, he, rfl⟩,
+           List.mem_map.mpr ⟨e, he, rfl⟩⟩
+  refine LoopInitHoistStepCProducer.Block.stepB_bodySim_of_lift_fail
     (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2
     (sourcesOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))
     (targetsOf' (Block.entriesOf (Block.hoistLoopPrefixInitsM body σ).1 (Block.hoistLoopPrefixInitsM body σ).2))

@@ -2163,6 +2163,84 @@ public theorem compose_union_sf_sum [HasFvar P] [HasBool P] [HasNot P] [HasVal P
       · exact bound_Bo_through_stepB h_hinv₃ h_bnd₁ h_Bo_notAs h_Bo_notBs y hyBo
       · exact h_bnd₃ y hyBs
 
+/-- The FAILING-config union composition: a failing Step A (`body → body₁` over the
+enclosing carriers `Ao Bo so`, carrier-guarded) composed with a failing Step B
+(`body₁ → body₃` over the new carriers `As Bs ss`) yields a failing body provider
+`body → body₃` over the union carriers, in the shape
+`loopDet_lift_sf_2g_undef_F_fuel`'s `body_sim_fail` slot expects.
+
+The mid env `ρ₁` comes from the same `bridge_in` splitter the terminal compose uses;
+then the failing chain is direct: `body` fails from `ρ_s` ⟹ (Step A fail) `body₁`
+fails from `ρ₁` ⟹ (Step B fail) `body₃` fails from `ρ_h`.  No terminal/exiting
+re-establishment is needed at the failing point. -/
+public theorem compose_union_fail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] {extendEval : ExtendEval P}
+    {Q : String → Prop}
+    {Vs Vh : List P.Ident} {σ_sf : StringGenState}
+    {Ao Bo As Bs : List P.Ident}
+    {so ss : List (P.Ident × P.Ident)}
+    {body body₁ body₃ : List (Stmt P (Cmd P))}
+    (stepA_fail : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) Ao Bo so ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true)
+    (stepB_fail : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) As Bs ss ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bs, ρ_h.store y ≠ none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body₃ ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true)
+    (h_Vh_sub_Vs : ∀ y ∈ Vh, y ∈ Vs)
+    (bridge_in : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) (Ao ++ As) (Bo ++ Bs) (so ++ ss) ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo ++ Bs, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vh, ρ_s.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       ∃ ρ₁ : Env P,
+         HoistInv (P := P) Ao Bo so ρ_s.store ρ₁.store ∧
+         ρ_s.eval = ρ₁.eval ∧ ρ_s.hasFailure = ρ₁.hasFailure ∧
+         (∀ y ∈ Bo, ρ₁.store y ≠ none) ∧
+         (∀ y ∈ Vh, ρ₁.store y = none) ∧
+         (∀ str : String, Q str →
+            str ∉ StringGenState.stringGens σ_sf → ρ₁.store (HasIdent.ident (P := P) str) = none) ∧
+         HoistInv (P := P) As Bs ss ρ₁.store ρ_h.store ∧
+         ρ₁.eval = ρ_h.eval ∧ ρ₁.hasFailure = ρ_h.hasFailure ∧
+         (∀ y ∈ Bs, ρ_h.store y ≠ none)) :
+    ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) (Ao ++ As) (Bo ++ Bs) (so ++ ss) ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ Bo ++ Bs, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vh, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body₃ ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd h_Vs h_Vh h_src_sf d h_run hd
+  obtain ⟨ρ₁, h_hinv_A, h_eval_A, h_hf_A, h_bnd_A, h_Vh_A, h_sf_A,
+          h_hinv_B, h_eval_B, h_hf_B, h_bnd_B⟩ :=
+    bridge_in ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+      (by intro y hy; exact h_Vs y (h_Vh_sub_Vs y hy)) h_src_sf
+  obtain ⟨d₁, h_run₁, hd₁⟩ :=
+    stepA_fail ρ_s ρ₁ h_hinv_A h_eval_A h_hf_A h_bnd_A h_Vs h_Vh_A h_src_sf h_sf_A d h_run hd
+  exact stepB_fail ρ₁ ρ_h h_hinv_B h_eval_B h_hf_B h_bnd_B d₁ h_run₁ hd₁
+
 /-- `BodySimUSFSum` unfolds definitionally to the ∀-shape the sum-typed exiting
 driver `loopDet_lift_sf_2g_undef_E_fuel`'s `body_sim` parameter expects (a
 `BodySimSum`-like predicate guarded by the `Vs`/`Vh`/`σ_sf` carriers). -/
