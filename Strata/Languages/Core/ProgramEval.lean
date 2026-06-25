@@ -6,14 +6,8 @@
 module
 
 public import Strata.Languages.Core.Env
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.ProcedureEval
-public import Strata.Languages.Core.Statement
-public import Strata.Languages.Core.StatementEval
-public import Strata.Languages.Core.StatementSemantics
-public import Strata.DL.Lambda.LExprEval
-public import Strata.DL.Imperative.StmtEval
-public import Strata.DL.Imperative.CmdEval
+public import Strata.Util.Statistics
+import Strata.Languages.Core.ProcedureEval
 
 ---------------------------------------------------------------------
 
@@ -51,7 +45,7 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
             "Internal error: path condition stack misaligned when adding axiom")
       else
         let declsE := { declsE with pathConditions :=
-                      declsE.pathConditions.insert (toString $ a.name) a.e }
+                      declsE.pathConditions.addEntry (.assumption (toString a.name) a.e) }
         go rest declsE stats
 
     | .distinct _ es _ =>
@@ -60,6 +54,12 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
     | .proc proc _md =>
       let (E, procStats) := Procedure.eval declsE proc
+      -- Reset path conditions to the pre-procedure state so a procedure's
+      -- assumptions don't leak into later ones: a structured `exit` bypasses
+      -- `Env.merge` and leaves its frames unpopped, which would otherwise be
+      -- threaded into the next procedure (strata-org/Strata#1390). Deferred
+      -- obligations and fresh names carry forward.
+      let E := { E with pathConditions := declsE.pathConditions }
       go rest E (stats.merge procStats)
 
     | .func func _ => do
@@ -86,7 +86,7 @@ def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
     fs.foldlM (fun E f => E.addFactoryFunc f) E
   | .ax a _md =>
     -- Not strictly necessary for concrete execution
-    .ok { E with pathConditions := E.pathConditions.addInNewest [(toString a.name, a.e)] }
+    .ok { E with pathConditions := E.pathConditions.addInNewest [.assumption (toString a.name) a.e] }
   | _ => .ok E
 
 /--

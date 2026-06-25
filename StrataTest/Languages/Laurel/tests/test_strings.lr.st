@@ -1,7 +1,9 @@
-procedure main() {
+procedure main()
+  opaque
+{
     var s1: string := "hello";
     var s2: string := " world";
-    var result: string := s1 ++ s2;
+    var result: string := s1 ^ s2;
     assert result == "hello world";
 
     var a: string := "abc";

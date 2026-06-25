@@ -3,8 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
+open StrataDDM (Program)
 
 /-!
 # Mutual Recursive Function Error Tests
@@ -41,11 +46,11 @@ function lenHelper<a>(@[cases] xs : MyList a) : int
 #eval TransM.run Inhabited.default (translateProgram polyMutualPgm) |>.snd |>.isEmpty
 
 /--
-error: ❌ Type checking error.
+error: ❌ Symbolic evaluation error.
 Polymorphic recursive functions are not yet supported for SMT verification: 'len'. SMT solvers require monomorphic axioms.
 -/
 #guard_msgs in
-#eval verify polyMutualPgm (options := .quiet)
+#eval Core.verify polyMutualPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: missing @[cases] in mutual block is rejected
@@ -58,10 +63,12 @@ program Core;
 datatype MyNat { Zero(), Succ(pred: MyNat) };
 
 rec function isEven (n : MyNat) : bool
+decreases n
 {
   if MyNat..isZero(n) then true else isOdd(MyNat..pred(n))
 }
 function isOdd (n : MyNat) : bool
+decreases n
 {
   if MyNat..isZero(n) then false else isEven(MyNat..pred(n))
 };
@@ -69,10 +76,11 @@ function isOdd (n : MyNat) : bool
 #end
 
 /--
-error: ❌ Type checking error.
-Recursive function 'isEven' requires a @[cases] parameter
+error: recursive function 'isEven': structural recursion requires @[cases]
 -/
 #guard_msgs in
-#eval verify noCasesMutualPgm (options := .quiet)
+#eval Core.verify noCasesMutualPgm (options := .quiet)
 
 end Strata.MutualRecursiveFunctionErrorTest
+
+end

@@ -3,9 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.ProcedureEval
+meta import Strata.Languages.Core.StatementEval
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 namespace Core
 
@@ -66,6 +71,8 @@ func Str.Concat :  ((x : string) (y : string)) → string;
 func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
 func Str.ToRegEx :  ((x : string)) → regex;
 func Str.InRegEx :  ((x : string) (y : regex)) → bool;
+func Str.PrefixOf :  ((x : string) (y : string)) → bool;
+func Str.SuffixOf :  ((x : string) (y : string)) → bool;
 func Re.All :  () → regex;
 func Re.AllChar :  () → regex;
 func Re.Range :  ((x : string) (y : string)) → regex;
@@ -83,12 +90,16 @@ func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
 func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
-func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
+func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
-func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
+func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
+  requires 0 <= i && i < Sequence.length(s);
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
-func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
-func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
+func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
+func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
+  requires 0 <= n && n <= Sequence.length(s);
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;
@@ -96,6 +107,24 @@ func TriggerGroup.addTrigger : ∀[a]. ((x : a) (t : TriggerGroup)) → TriggerG
 func Bv8.Concat :  ((x : bv8) (y : bv8)) → bv16;
 func Bv16.Concat :  ((x : bv16) (y : bv16)) → bv32;
 func Bv32.Concat :  ((x : bv32) (y : bv32)) → bv64;
+func Bv1.ToUInt :  ((x : bv1)) → int;
+func Bv8.ToUInt :  ((x : bv8)) → int;
+func Bv16.ToUInt :  ((x : bv16)) → int;
+func Bv32.ToUInt :  ((x : bv32)) → int;
+func Bv64.ToUInt :  ((x : bv64)) → int;
+func Bv128.ToUInt :  ((x : bv128)) → int;
+func Bv1.ToInt :  ((x : bv1)) → int;
+func Bv8.ToInt :  ((x : bv8)) → int;
+func Bv16.ToInt :  ((x : bv16)) → int;
+func Bv32.ToInt :  ((x : bv32)) → int;
+func Bv64.ToInt :  ((x : bv64)) → int;
+func Bv128.ToInt :  ((x : bv128)) → int;
+func Int.ToBv1 :  ((x : int)) → bv1;
+func Int.ToBv8 :  ((x : int)) → bv8;
+func Int.ToBv16 :  ((x : int)) → bv16;
+func Int.ToBv32 :  ((x : int)) → bv32;
+func Int.ToBv64 :  ((x : int)) → bv64;
+func Int.ToBv128 :  ((x : int)) → bv128;
 func Bv8.Extract_7_7 :  ((x : bv8)) → bv1;
 func Bv16.Extract_15_15 :  ((x : bv16)) → bv1;
 func Bv16.Extract_7_0 :  ((x : bv16)) → bv8;
@@ -266,115 +295,115 @@ func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv1.SafeMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv1.SafeNeg :  ((x : bv1)) → bv1
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv1.SafeUNeg :  ((x : bv1)) → bv1
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv8.SafeMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv8.SafeNeg :  ((x : bv8)) → bv8
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv8.SafeUNeg :  ((x : bv8)) → bv8
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv16.SafeSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv16.SafeMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv16.SafeNeg :  ((x : bv16)) → bv16
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv16.SafeUNeg :  ((x : bv16)) → bv16
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv32.SafeSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv32.SafeMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv32.SafeNeg :  ((x : bv32)) → bv32
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv32.SafeUNeg :  ((x : bv32)) → bv32
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SAddOverflow(x, y));
 func Bv64.SafeSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SSubOverflow(x, y));
 func Bv64.SafeMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.SMulOverflow(x, y));
 func Bv64.SafeNeg :  ((x : bv64)) → bv64
-  requires !(!x);
+  requires !(Bv.SNegOverflow(x));
 func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.UAddOverflow(x, y));
 func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.USubOverflow(x, y));
 func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(x <= y);
+  requires !(Bv.UMulOverflow(x, y));
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
-  requires !(!x);
+  requires !(Bv.UNegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(x <= y);
+  requires !(Bv.SDivOverflow(x, y));
 
 
 Datatypes:
@@ -394,7 +423,7 @@ Proof Obligation:
 -/
 #guard_msgs in
 #eval do let E := Env.init
-         let (E, _stats) := eval E
+         let (E, _stats) := Core.Procedure.eval E
               { header := {name := "P",
                            typeArgs := [],
                            inputs := [("x", mty[int])],
@@ -402,7 +431,7 @@ Proof Obligation:
                 spec := {
                     preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
                     postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
-                body := [
+                body := .structured [
                   Statement.set "y" eb[(~Int.Neg x)] .empty
                 ]
               }
@@ -421,11 +450,11 @@ section ConcreteInterpretation
 open Lambda Strata
 open Std (ToFormat Format format)
 
-private def parseAndTypeCheck (pgm : Strata.Program) : Except DiagnosticModel Core.Program := do
+private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
   Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
 
-private def runProc (pgm : Strata.Program) (procName : String)
+private def runProc (pgm : StrataDDM.Program) (procName : String)
     (args : List Expression.Expr := [])
     (fuel : Nat := 10000) : IO Unit := do
   match parseAndTypeCheck pgm with
@@ -449,7 +478,7 @@ private def runProc (pgm : Strata.Program) (procName : String)
     | .error diag => IO.println s!"error: {diag}"
 
 -- Simple assignment
-private def simplePgm : Strata.Program :=
+private def simplePgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -463,7 +492,7 @@ procedure Test(out y : int)
 #eval runProc simplePgm "Test"
 
 -- Arithmetic
-private def arithPgm : Strata.Program :=
+private def arithPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(x : int, out y : int)
@@ -477,7 +506,7 @@ procedure Test(x : int, out y : int)
 #eval runProc arithPgm "Test" [.intConst () 5]
 
 -- If-then-else
-private def itePgm : Strata.Program :=
+private def itePgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(x : int, out y : int)
@@ -499,7 +528,7 @@ procedure Test(x : int, out y : int)
 #eval runProc itePgm "Test" [.intConst () (-3)]
 
 -- Procedure call
-private def callPgm : Strata.Program :=
+private def callPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Double(n : int, out result : int)
@@ -517,7 +546,7 @@ procedure Test(x : int, out y : int)
 #eval runProc callPgm "Test" [.intConst () 10]
 
 -- Chained procedure calls (DoubleTwice)
-private def chainedCallPgm : Strata.Program :=
+private def chainedCallPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Double(n : int, out result : int)
@@ -536,7 +565,7 @@ procedure Test(x : int, out output : int)
 #eval runProc chainedCallPgm "Test" [.intConst () 5]
 
 -- Loop (sum of 0..n-1)
-private def loopPgm : Strata.Program :=
+private def loopPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(n : int, out sum : int)
@@ -557,7 +586,7 @@ procedure Test(n : int, out sum : int)
 #eval runProc loopPgm "Test" [.intConst () 5]
 
 -- Assertion success
-private def assertSuccessPgm : Strata.Program :=
+private def assertSuccessPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -572,7 +601,7 @@ procedure Test(out y : int)
 #eval runProc assertSuccessPgm "Test"
 
 -- Assertion failure
-private def assertFailPgm : Strata.Program :=
+private def assertFailPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -589,7 +618,7 @@ false
 #eval runProc assertFailPgm "Test"
 
 -- Nested blocks with scoping
-private def blockPgm : Strata.Program :=
+private def blockPgm : StrataDDM.Program :=
 #strata
 program Core;
 procedure Test(out y : int)
@@ -612,3 +641,5 @@ end ConcreteInterpretation
 ---------------------------------------------------------------------
 
 end Core
+
+end

@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.StatementEval
+meta import Strata.Languages.Core.StatementEval
+
+meta section
 
 namespace Core
 ---------------------------------------------------------------------
@@ -588,3 +591,5 @@ if $__nondet_cond_0 then 1 else 2 == 1
 end Tests
 ---------------------------------------------------------------------
 end Core
+
+end

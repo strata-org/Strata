@@ -13,38 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Install cvc5
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-              unzip -q cvc5-Linux-${ARCH_NAME}-static.zip
-              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+        uses: ./.github/actions/install-cvc5
       - name: Install z3
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
-                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
-                ARCHIVE_NAME="z3-4.15.2-arm64-glibc-2.34"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              unzip -q "${ARCHIVE_NAME}.zip"
-              chmod +x "${ARCHIVE_NAME}/bin/z3"
-              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
+        uses: ./.github/actions/install-z3
       - name: Prepare ccache
         uses: actions/cache@v5
         with:
@@ -60,7 +31,7 @@ jobs:
           sudo apt-get -qq install -y cmake ninja-build flex bison ccache
           git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
           cd cbmc-src
-          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Python/cbmc-string-support.patch"
+          git apply "$GITHUB_WORKSPACE/StrataPython/StrataPythonTest/cbmc-string-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
@@ -77,11 +48,19 @@ jobs:
         # The cache is safe to use here because we just saved it for this exact SHA
         # in the build_and_test_lean job from ci.yml
         # https://github.com/strata-org/Strata/issues/952
-        uses: actions/cache/restore@v5
+        # Path list must match the save step in ci.yml's build_and_test_lean —
+        # actions/cache hashes the path list into the cache version, so a
+        # mismatch causes a miss even when the key matches.
+        uses: ./.github/actions/restore-lake-cache
         with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
-          fail-on-cache-miss: true
+          path: |
+            .lake
+            StrataCLI/.lake
+            StrataDDM/.lake
+            StrataBoole/.lake
+            StrataPython/.lake
+          fail-on-cache-miss: "true"
+          use-restore-keys: "false"
       - name: Build Strata
         uses: leanprover/lean-action@v1
         with:
@@ -103,8 +82,9 @@ jobs:
       - name: Run Python CBMC pipeline tests
         shell: bash
         run: |
-          pip install ./Tools/Python
-          ./StrataTest/Languages/Python/run_py_cbmc_tests.sh
+          pip install ./Tools/Python-base
+          pip install ./StrataPython/Tools/strata-python
+          ./StrataPython/StrataPythonTest/run_py_cbmc_tests.sh
       - name: Run property summary tests
         shell: bash
         run: |

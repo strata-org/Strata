@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.B3.DDMTransform.ParseCST
-import Strata.Languages.B3.DDMTransform.DefinitionAST
-import Strata.Languages.B3.DDMTransform.Conversion
+meta import Strata.Languages.B3.DDMTransform.ParseCST
+meta import Strata.Languages.B3.DDMTransform.DefinitionAST
+meta import Strata.Languages.B3.DDMTransform.Conversion
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # B3 DDM Formatting Test Utilities
@@ -18,6 +22,7 @@ Provides string cleanup functions and shared formatting infrastructure used acro
 namespace B3
 
 open Std (Format)
+open StrataDDM
 open Strata
 open Strata.B3CST
 
@@ -260,3 +265,4 @@ def cleanupDeclRepr (s : String) : String :=
   s
 
 end B3
+end

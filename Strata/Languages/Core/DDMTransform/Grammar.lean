@@ -11,10 +11,9 @@
 -/
 module
 
-public import Strata.DDM.AST
-public import Strata.DDM.HNF
-import Strata.DDM.Integration.Lean
-public import Strata.DDM.Integration.Lean.OfAstM
+public import StrataDDM.HNF
+public import StrataDDM.Integration.Lean.OfAstM
+import StrataDDM.Integration.Lean -- shake: keep
 
 ---------------------------------------------------------------------
 public section
@@ -25,7 +24,7 @@ namespace Strata
 
 -- Sequence operations and lambda/application syntax increase the grammar size enough
 -- to require higher recursion and heartbeat limits.
-set_option maxRecDepth 10000
+set_option maxRecDepth 20000
 set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
@@ -50,6 +49,7 @@ type bv8;
 type bv16;
 type bv32;
 type bv64;
+type bv128;
 type Map (dom : Type, range : Type);
 type Sequence (elem : Type);
 
@@ -92,6 +92,7 @@ fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
 fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
 fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
+fn bv128Lit (n : Num) : bv128 => "bv{128}" "(" n ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
@@ -103,9 +104,9 @@ fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
 
-// TODO: seq_empty is not yet supported in the grammar because the DDM parser
-// cannot currently handle 0-ary polymorphic functions (no arguments to infer
-// the type parameter from). The Factory definition exists for programmatic use.
+// seq_empty uses explicit type annotation syntax since there are no value
+// arguments to infer the type parameter from.
+fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
 fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
@@ -127,6 +128,8 @@ fn str_concat (a : string, b : string) : string => "str.concat" "(" a ", " b ")"
 fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a ", " i ", " n ")";
 fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
 fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s ", " a ")";
+fn str_prefixof (s : string, t : string) : bool => "str.prefixof" "(" s ", " t ")";
+fn str_suffixof (s : string, t : string) : bool => "str.suffixof" "(" s ", " t ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
 fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
@@ -185,6 +188,16 @@ fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b
 fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
 fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
 fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
+
+fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.SNegOverflow" "(" a ")";
+fn bv_uneg_overflow (tp : Type, a : tp) : bool => "Bv.UNegOverflow" "(" a ")";
+fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
+fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
+fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";
+fn bv_sdiv_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SDivOverflow" "(" a ", " b ")";
+fn bv_uadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UAddOverflow" "(" a ", " b ")";
+fn bv_usub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.USubOverflow" "(" a ", " b ")";
+fn bv_umul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UMulOverflow" "(" a ", " b ")";
 
 fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
@@ -262,12 +275,12 @@ op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";";
 
 category Invariant;
-op invariant (e : Expr) : Invariant => "invariant" e ";";
+op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
 
 category Invariants;
 op nilInvariants : Invariants => ;
-op consInvariants(e : Expr, is : Invariants) : Invariants =>
-  "invariant " e "\n" is:0;
+op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants =>
+  "invariant " label e "\n" is:0;
 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
@@ -287,7 +300,6 @@ op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
 op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
 op exit_statement (label : Ident) : Statement => "exit " label ";";
-op exit_unlabeled_statement : Statement => "exit;";
 
 category SpecElt;
 category Free;
@@ -353,7 +365,7 @@ op command_fndecl (name : Ident,
   "function " name typeArgs b " : " r ";\n";
 
 category Inline;
-op inline () : Inline => "inline";
+op inline () : Inline => "inline ";
 
 // Note: when editing command_fndef, consider whether recfn_decl needs
 // matching edits.
@@ -380,8 +392,9 @@ op recfn_decl (name : Ident,
                @[scope(typeArgs)] b : Bindings,
                @[scope(typeArgs)] r : Type,
                @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
+               @[scope(b)] decreases : Option Measure,
                @[scope(b)] c : r) : RecFnDecl =>
-  "function " name typeArgs b " : " r indent(2, preconds) "\n{\n  " indent(2, c) "\n}";
+  "function " name typeArgs b " : " r indent(2, preconds) "\n" indent(2, decreases) "{\n  " indent(2, c) "\n}";
 
 @[scope(recfns), preRegisterFunctions(recfns)]
 op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
@@ -449,9 +462,65 @@ op datatype_decl (name : Ident,
 
 // Unified datatype command: one or more datatype declarations separated by
 // newlines, ending with a semicolon.
+//
+// `@[nonempty]` is load-bearing: see
+// https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (datatypes : NewlineSepBy DatatypeDecl) : Command =>
+op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
   datatypes ";\n";
+
+// =====================================================================
+// CFG (Unstructured Control Flow) Syntax
+// =====================================================================
+
+// Transfer commands: how a basic block ends
+category Transfer;
+
+// Unconditional goto: exactly one target.
+op transfer_goto (label : Ident) : Transfer =>
+  "goto " label ";";
+
+// Nondeterministic goto: exactly two targets chosen nondeterministically.
+op transfer_nondet_goto (label1 : Ident, label2 : Ident) : Transfer =>
+  "goto " label1 ", " label2 ";";
+
+// Conditional goto (deterministic: condition selects between two targets)
+// NOTE: We use "branch" instead of "if" to avoid ambiguity with the
+// structured if-statement syntax. The DDM parser registers tokens globally,
+// so "if (" in Transfer would conflict with "if (" in Statement.
+op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
+  "branch (" c ") goto " lt " else " "goto " lf ";";
+
+// Return/finish (terminate execution)
+op transfer_return : Transfer =>
+  "return;";
+
+// A single CFG basic block: label, commands, transfer
+category CFGBlock;
+@[scope(cmds)]
+op cfg_block (label : Ident, cmds : Seq Statement, tr : Transfer) : CFGBlock =>
+  label ":" " {\n" indent(2, cmds) "  " tr "\n}";
+
+// A list of CFG blocks
+category CFGBlocks;
+op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b;
+op cfg_blocks_cons (b : CFGBlock, rest : CFGBlocks) : CFGBlocks =>
+  b "\n" rest;
+
+// CFG body: entry label + blocks
+category CFGBody;
+op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
+  "cfg " entry " {\n" indent(2, blocks) "\n}";
+
+// Procedure with CFG body
+op command_cfg_procedure (name : Ident,
+                          typeArgs : Option TypeArgs,
+                          @[scope(typeArgs)] b : Bindings,
+                          @[scope(b)] s : Option Spec,
+                          @[scope(b)] body : CFGBody) :
+  Command =>
+  @[prec(10)] "procedure " name typeArgs b "\n"
+              s body ";\n";
 
 #end
 

@@ -4,17 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-public import Strata.DDM.Util.SourceRange
+public import StrataDDM.Util.SourceRange
 public import Lean.Data.Position
+public import Lean.ToExpr
 
 open Std (Format)
 
 public section
 namespace Strata
+export StrataDDM (SourceRange)
+
+abbrev SourceRange.none := StrataDDM.SourceRange.none
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 instance : Std.ToFormat Uri where
  format fr := private match fr with | .file path => path
@@ -22,7 +26,7 @@ instance : Std.ToFormat Uri where
 structure FileRange where
   file: Uri
   range: SourceRange
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 instance : Std.ToFormat FileRange where
  format fr := private f!"{fr.file}:{fr.range}"
@@ -72,7 +76,7 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
       f!"{baseName}({fr.range.start}-{fr.range.stop})"
 
 inductive DiagnosticType where | Warning | UserError | NotYetImplemented | StrataBug
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Lean.ToExpr, Hashable
 
 /-- A diagnostic model that holds a file range and a message.
     This can be converted to a formatted string using a FileMap. -/
@@ -80,7 +84,7 @@ structure DiagnosticModel where
   fileRange : FileRange
   message : String
   type : DiagnosticType
-  deriving Repr, BEq, Inhabited
+  deriving Repr, BEq, Inhabited, Hashable
 
 instance : Inhabited DiagnosticModel where
   default := { fileRange := FileRange.unknown, message := "", type := .UserError }
@@ -88,7 +92,7 @@ instance : Inhabited DiagnosticModel where
 /-- Create a DiagnosticModel from just a message (using default location).
 This should not be called, it only exists temporarily to enable incrementally
 migrating code without error locations -/
-def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+def DiagnosticModel.fromMessage (msg : String) (type : DiagnosticType := DiagnosticType.UserError) : DiagnosticModel :=
   { fileRange := FileRange.unknown, message := msg, type := type }
 
 /-- Create a DiagnosticModel from a Format (using default location).
@@ -104,7 +108,7 @@ def DiagnosticModel.withRange (fr : FileRange) (msg : Format) (type : Diagnostic
 /-- Format a DiagnosticModel using a FileMap to convert byte offsets to line/column positions. -/
 def DiagnosticModel.format (dm : DiagnosticModel) (fileMap : Option Lean.FileMap) (includeEnd? : Bool := true) : Std.Format :=
   let rangeStr := dm.fileRange.format fileMap includeEnd?
-  if dm.fileRange.range.isNone then
+  if rangeStr.isEmpty then
     f!"{dm.message}"
   else
     f!"{rangeStr} {dm.message}"

@@ -5,13 +5,13 @@
 -/
 module
 
-public import Strata.Transform.CoreTransform
-public import Strata.DL.Lambda.Preconditions
-public import Strata.DL.Lambda.TypeFactory
 public import Strata.Languages.Core.PipelinePhase
-public import Strata.Languages.Core.CoreOp
 import all Strata.DL.Imperative.Stmt
-import Strata.Util.DecideProp
+public import Strata.Util.DecideProp
+import Strata.DL.Lambda.Preconditions
+import Strata.Languages.Core.Factory
+import Strata.Transform.TerminationCheck
+import Strata.Util.Tactics
 
 /-! # Partial Function Precondition Elimination
 
@@ -75,6 +75,8 @@ private def classifyPrecondition (funcName : String) (precondIdx : Nat := 0) : O
   | .bv ⟨_, .SafeAdd⟩ | .bv ⟨_, .SafeSub⟩ | .bv ⟨_, .SafeMul⟩ | .bv ⟨_, .SafeNeg⟩
   | .bv ⟨_, .SafeUAdd⟩ | .bv ⟨_, .SafeUSub⟩ | .bv ⟨_, .SafeUMul⟩ | .bv ⟨_, .SafeUNeg⟩ =>
     some Imperative.MetaData.arithmeticOverflow
+  | .seq .Select | .seq .Update | .seq .Take | .seq .Drop =>
+    some Imperative.MetaData.outOfBoundsAccess
   | _ => none
 
 /--
@@ -174,7 +176,7 @@ def mkContractWFProc (F : @Lambda.Factory CoreLParams) (proc : Procedure)
     some <| .proc {
       header := { proc.header with name := ⟨wfProcName name, ()⟩, noFilter := true }
       spec := { preconditions := [], postconditions := [] }
-      body := body
+      body := .structured body
     } md
   else
     none
@@ -230,7 +232,7 @@ def mkFuncWFProc (F : @Lambda.Factory CoreLParams) (func : Function)
         noFilter := true
       }
       spec := { preconditions := [], postconditions := [] }
-      body := wfStmts
+      body := .structured wfStmts
     } md)
 
 /-! ## Statement transformation -/
@@ -289,7 +291,11 @@ def transformStmt (s : Statement)
     let measureAssertsEnd := match measure with
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
-    let invAsserts := invariant.flatMap (fun inv => collectPrecondAsserts F inv "loop_invariant" md)
+    -- Preserve the per-invariant label in the generated preconditions' prefix.
+    -- For unlabeled invariants, fall back to the plain "loop_invariant" prefix.
+    let invAsserts := invariant.flatMap (fun (lbl, inv) =>
+      let prefix' := if lbl.isEmpty then "loop_invariant" else s!"loop_invariant_{lbl}"
+      collectPrecondAsserts F inv prefix' md)
     let guardAsserts := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard" md
       | .nondet => []
@@ -315,7 +321,7 @@ def transformStmt (s : Statement)
     let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-      | throw s!"{func.name.name} already in factory."
+      | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
     let F' := F.push func notMem
     setFactory F'
     let decl' := { decl with preconditions := [] }
@@ -367,51 +373,65 @@ def precondElim (p : Program)
 where
   transformDecls (decls : List Decl)
       : CoreTransformM (Bool × List Decl) := do
-    match decls with
-    | [] => return (false, [])
-    | d :: rest =>
+    let mut acc : Array Decl := #[]
+    let mut changed := false
+    let mut remaining := decls
+    while h : remaining ≠ [] do
+      let d := remaining.head h
+      let rest := remaining.tail
       match d with
       | .proc proc md => do
-        let F ← getFactory
-        let (changed, body') ← transformStmts proc.body
-        setFactory F
-        let proc' := { proc with body := body' }
-        let procDecl := Decl.proc proc' md
-        let (changed', rest') ← transformDecls rest
-        match mkContractWFProc F proc md with
-        | some wfDecl => do
-          incrementStat s!"{Stats.wfProceduresGenerated}"
-          incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
-
-          addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
-          return (true, wfDecl :: procDecl :: rest')
-        | none => return (changed || changed', procDecl :: rest')
+        if TermCheck.isTermProc proc.header.name.name then
+          acc := acc.push d
+        else
+          let F ← getFactory
+          let (bodyChanged, proc') ← match proc.body with
+            | .structured ss =>
+              let (c, body') ← transformStmts ss
+              pure (c, { proc with body := .structured body' })
+            -- CFG bodies pass through untouched.
+            | .cfg _ => pure (false, proc)
+          setFactory F
+          let procDecl := Decl.proc proc' md
+          match mkContractWFProc F proc md with
+          | some wfDecl => do
+            incrementStat s!"{Stats.wfProceduresGenerated}"
+            incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
+              (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
+            addWFProcToCallGraph (wfProcName (CoreIdent.toPretty proc.header.name))
+            changed := true
+            acc := acc.push wfDecl
+            acc := acc.push procDecl
+          | none =>
+            changed := changed || bodyChanged
+            acc := acc.push procDecl
       | .func func md => do
         let F ← getFactory
         let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-          | throw s!"{func.name.name} already in factory."
+          | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
         let F' := F.push func notMem
         setFactory F'
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
         let hasPreconds := !func.preconditions.isEmpty
         if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
-        let (changed, rest') ← transformDecls rest
         match mkFuncWFProc F' func md with
         | some wfDecl => do
           incrementStat s!"{Stats.wfProceduresGenerated}"
           incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-            (match wfDecl with | .proc p _ => p.body.length | _ => 0)
-
+            (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
           addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
-          return (true, wfDecl :: funcDecl :: rest')
-        | none => return (changed || hasPreconds, funcDecl :: rest')
+          changed := true
+          acc := acc.push wfDecl
+          acc := acc.push funcDecl
+        | none =>
+          changed := changed || hasPreconds
+          acc := acc.push funcDecl
       | .recFuncBlock funcs md => do
         let F ← getFactory
         let F' ← funcs.foldlM (init := F) fun F func =>  do
           let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
-            | throw s!"{func.name.name} already in factory."
+            | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
           pure <| F.push func notMem
         setFactory F'
         let funcs' := funcs.map ({ · with preconditions := [] })
@@ -420,30 +440,32 @@ where
         let numStripped := funcs.foldl (fun n f =>
           if !f.preconditions.isEmpty then n + 1 else n) 0
         incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
-
-        let (changed, rest') ← transformDecls rest
         let wfDecls ← funcs.filterMapM fun func => do
           match mkFuncWFProc F' func md with
           | some wfDecl => do
             incrementStat s!"{Stats.wfProceduresGenerated}"
             incrementStat s!"{Stats.wfProcedureBodyStmtsEmitted}"
-              (match wfDecl with | .proc p _ => p.body.length | _ => 0)
-
+              (match wfDecl with | .proc p _ => p.body.structuredLength | _ => 0)
             addWFProcToCallGraph (wfProcName (CoreIdent.toPretty func.name))
             return some wfDecl
           | none => return none
-        if !wfDecls.isEmpty then return (true, funcDecl :: wfDecls ++ rest')
-        else return (changed || hasPreconds, funcDecl :: rest')
+        if !wfDecls.isEmpty then
+          changed := true
+          acc := acc.push funcDecl
+          acc := acc ++ wfDecls.toArray
+        else
+          changed := changed || hasPreconds
+          acc := acc.push funcDecl
       | .type (.data block) _ => do
         let F ← getFactory
         let bf ← liftDiag (Lambda.genBlockFactory (T := CoreLParams) block)
         let F' ← liftDiag (F.addFactory bf)
         setFactory F'
-        let (changed, rest') ← transformDecls rest
-        return (changed, d :: rest')
+        acc := acc.push d
       | _ => do
-        let (changed, rest') ← transformDecls rest
-        return (changed, d :: rest')
+        acc := acc.push d
+      remaining := rest
+    return (changed, acc.toList)
 
 end PrecondElim
 

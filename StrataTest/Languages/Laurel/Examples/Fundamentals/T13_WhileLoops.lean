@@ -4,16 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def whileLoopsProgram := r"
-procedure countDown() {
+#eval testLaurel
+#strata
+program Laurel;
+procedure countDown()
+  opaque
+{
     var i: int := 3;
     while(i > 0)
       invariant i >= 0
@@ -23,7 +24,9 @@ procedure countDown() {
     assert i == 0
 };
 
-procedure countUp() {
+procedure countUp()
+  opaque
+{
     var n: int := 5;
     var i: int := 0;
     while(i < n)
@@ -34,9 +37,4 @@ procedure countUp() {
     };
     assert i == n
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "WhileLoops" whileLoopsProgram 14 processLaurelFile
-
-end Laurel
+#end

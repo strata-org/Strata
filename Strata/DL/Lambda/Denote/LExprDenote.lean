@@ -6,9 +6,11 @@
 module
 
 import Strata.DL.Lambda.Denote.LExprAnnotated
-public import Strata.DL.Util.HList
 import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.TypeFactory
+meta import Init.Grind.Cases
+import Std.Tactic.BVDecide.Normalize.BitVec
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.DL.Util.HList
 
 /-!
 ## Core Denotational Semantics
@@ -33,7 +35,9 @@ namespace Lambda
 variables. We use a separate type rather than `LMonoTy` to avoid carrying
 around proofs that a type has no type variables. -/
 public inductive LSort where
+  /-- A named type constructor applied to sort arguments. -/
   | tcons (name : String) (args : List LSort)
+  /-- A bit vector sort of the given size. -/
   | bitvec (size : Nat)
 
 def LSort_eqb (s1 s2: LSort) : Bool :=

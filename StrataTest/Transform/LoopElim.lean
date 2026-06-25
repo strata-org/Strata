@@ -3,11 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Transform.LoopElim
-import Strata.Languages.Core.Verifier
+meta import Strata.Transform.LoopElim
+meta import Strata.Languages.Core.Verifier
 
 /-! ## Loop-elimination pipeline phase obligation tests -/
+meta section
 section LoopElimPhaseTests
 open Core
 open Strata.SMT
@@ -19,13 +21,13 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with loop-elimination labels in path conditions. -/
 private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_loopElim", property := .assert,
-    assumptions := [[("assume_invariant_0_0", .true ()), ("assume_guard_0", .true ())]],
+    assumptions := [[.assumption "assume_invariant_0_0" (.true ()), .assumption "assume_guard_0" (.true ())]],
     obligation := .true (), metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[("precond_x_positive", .true ())]],
+    assumptions := [[.assumption "precond_x_positive" (.true ())]],
     obligation := .true (), metadata := {} }
 
 -- loopElimPipelinePhase: rejects sat when obligation has loop-elim labels
@@ -35,3 +37,4 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 end LoopElimPhaseTests
+end

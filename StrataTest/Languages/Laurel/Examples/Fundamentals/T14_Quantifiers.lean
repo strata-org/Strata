@@ -4,20 +4,23 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata
-namespace Laurel
-
-def quantifiersProgram := r"
-procedure testForall() {
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure testForall()
+  opaque
+{
     assert forall(x: int) => x + 0 == x
 };
 
-procedure testExists() {
+procedure testExists()
+  opaque
+{
     assert exists(x: int) => x == 42
 };
 
@@ -30,7 +33,9 @@ procedure testQuantifierInContract(n: int)
 
 function P(x: int): int;
 function Q(): int;
-procedure triggers() {
+procedure triggers()
+  opaque
+{
   assert forall(i: int) { P(i) } => P(i) == i + 1;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   assert forall(i: int) => true;
@@ -40,10 +45,4 @@ procedure triggers() {
 //^^^^^^^^^^^^^^^ error: assertion could not be proved
   assert P(1) == 2
 };
-
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "Quantifiers" quantifiersProgram 14 processLaurelFile
-
-end Laurel
+#end

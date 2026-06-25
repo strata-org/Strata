@@ -1,0 +1,433 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.Languages.Core.PipelinePhase
+import Strata.DL.Lambda.AdtRankAxioms
+import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
+
+/-! # Termination Checking for Recursive Functions
+
+This transformation generates termination-checking procedures for recursive
+function blocks. For each `recFuncBlock`, it:
+
+1. Determines the termination measure for each function: either structural
+   (decreasing on an ADT parameter via `adtRank`) or int-valued (a
+   user-supplied integer expression that decreases).
+2. For structural recursion, generates `D..adtRank` function declarations and
+   per-constructor axioms for the relevant datatypes.
+3. Generates a `$$term` procedure per function that asserts the measure
+   decreases at each recursive call site (and is non-negative for int-valued
+   measures).
+-/
+
+public section
+
+namespace Core
+namespace TermCheck
+
+open Lambda
+open Strata (DiagnosticModel FileRange)
+open Strata.DL.Util (FuncAttr)
+open Core.Transform
+
+/-- Statistics keys tracked by the termination checking transformation. -/
+inductive Stats where
+  | termCheckProcsGenerated
+  | termCheckAssertsEmitted
+  | adtRankAxiomsGenerated
+
+#derive_prefixed_toString Stats "TermCheck"
+
+/-- Suffix for generated termination-checking procedures. -/
+def termSuffix : String := "$$term"
+
+def termProcName (name : String) : String := s!"{name}{termSuffix}"
+
+def isTermProc (name : String) : Bool := name.endsWith termSuffix
+
+/-- Classifies the termination measure for a recursive function. -/
+inductive DecreasesKind where
+  | structural (paramIdx : Nat) (dtName : String)
+  | intValued (measure : Expression.Expr)
+
+/-- Validate that a parameter index refers to a known ADT type, returning `.structural`. -/
+private def validateStructuralParam (func : Function) (tf : @TypeFactory Unit)
+    (idx : Nat)
+    : Except String DecreasesKind := do
+  if FuncAttr.findInlineIfConstr func.attr |>.isNone then
+    .error s!"recursive function '{func.name.name}': structural recursion requires @[cases]"
+  match func.inputs.values[idx]? with
+  | some (.tcons n _) =>
+    if (tf.getType n).isSome then .ok (.structural idx n)
+    else .error s!"recursive function '{func.name.name}': decreasing parameter type '{n}' is not a known datatype"
+  | some _ =>
+    .error s!"recursive function '{func.name.name}': decreasing parameter must have a datatype type"
+  | none =>
+    .error s!"recursive function '{func.name.name}': decreasing parameter index {idx} is out of range"
+
+/-- Determine the `DecreasesKind` for a recursive function, validating types
+    against the TypeFactory. This is the single source of truth for validating
+    ADT-valued (fvar) measures, which require TypeFactory information not
+    available during type checking in `FunctionType`. -/
+private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
+    : Except String DecreasesKind := do
+  match func.measure with
+  | some (.fvar _ id _) =>
+    match func.inputs.findWithIdx? id with
+    | some (_, .int) => .ok (.intValued (.fvar () id (.some .int)))
+    | some (idx, _) => validateStructuralParam func tf idx
+    | none =>
+      .error s!"recursive function '{func.name.name}': decreases variable '{id}' is not a parameter"
+  | some measure =>
+    .ok (.intValued measure)
+  | none =>
+    match FuncAttr.findInlineIfConstr func.attr with
+    | some idx => validateStructuralParam func tf idx
+    | none =>
+      .error s!"recursive function '{func.name.name}' requires a 'decreases' clause or a '@[cases]' parameter for termination checking"
+
+/-- Extract the datatype name from a monomorphic type.
+  Precondition: `ty` must be a `.tcons`
+  (enforced by error checking in `termCheck`). -/
+private def adtNameOf (ty : LMonoTy) : String :=
+  match ty with
+  | .tcons n _ => n
+  | _ => ""
+
+/-- Check if an expression contains a call to any operation in the given name list. -/
+private def containsOpCall (e : Expression.Expr) (names : List String) : Bool :=
+  match e with
+  | .op _ opName _ => opName.name ∈ names
+  | .app _ fn arg => containsOpCall fn names || containsOpCall arg names
+  | .ite _ c t f => containsOpCall c names || containsOpCall t names || containsOpCall f names
+  | .eq _ e1 e2 => containsOpCall e1 names || containsOpCall e2 names
+  | .abs _ _ _ body => containsOpCall body names
+  | .quant _ _ _ _ tr body => containsOpCall tr names || containsOpCall body names
+  | _ => false
+
+/-- Extract termination obligations from an expression. Path conditions
+    through `ite` branches are accumulated and wrapped as implications
+    in the obligation expression, mirroring `collectWFObligations`.
+
+    `mkObligations` is called at each recursive call site with the callee's
+    name and the list of actual arguments. It returns the obligation
+    expressions (e.g., adtRank decrease for structural, or nonNeg + decrease
+    for int-valued). -/
+private def extractTermObligations
+    (body : Expression.Expr)
+    (recFuncNames : List String)
+    (mkObligations : String → List Expression.Expr → Except String (List Expression.Expr))
+    : Except String (List Expression.Expr) :=
+  go body []
+where
+  go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
+      : Except String (List Expression.Expr) :=
+    match _he: e with
+    | .ite _ c t f => do
+      let cObs ← go c implications
+      let tObs ← go t (((), c) :: implications)
+      let notC : Expression.Expr :=
+        LExpr.mkApp () (@boolNotFunc CoreLParams).opExpr [c]
+      let fObs ← go f (((), notC) :: implications)
+      return cObs ++ tObs ++ fObs
+    | .app _ fn arg =>
+      match _h : getLFuncCall e with
+      | (op, args) => do
+        let argObs ← args.attach.flatMapM fun ⟨a, _⟩ => go a implications
+        let callObs ← match op with
+          | .op _ opName _ =>
+            if opName.name ∈ recFuncNames then do
+              let obs ← mkObligations opName.name args
+              .ok (obs.map (wrapImplications (T := CoreLParams) implications ·))
+            else .ok []
+          | _ => do
+            let fnObs ← go fn implications
+            let argObs2 ← go arg implications
+            .ok (fnObs ++ argObs2)
+        return argObs ++ callObs
+    | .eq _ e1 e2 => do
+      let obs1 ← go e1 implications
+      let obs2 ← go e2 implications
+      return obs1 ++ obs2
+    | .abs _ _ _ body => go body implications
+    | .quant _ _ _ _ trigger body => do
+      let obs1 ← go trigger implications
+      let obs2 ← go body implications
+      return obs1 ++ obs2
+    | _ => .ok []
+  termination_by e.sizeOf
+  decreasing_by
+    all_goals (try term_by_mem)
+    rename_i a_in
+    have h := getLFuncCall_smaller _h a a_in
+    subst_vars
+    simp_all
+
+/-- Build a type substitution that specializes a polymorphic datatype's type
+    variables to the concrete type arguments used at a call site.
+    E.g., for `MyList` with `typeArgs = ["a"]` and concrete type `MyList int`,
+    produces `[("a", int)]`. -/
+private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
+  match concreteTy with
+  | .tcons adtName concreteArgs =>
+    if concreteArgs.isEmpty then []
+    else match tf.getType adtName with
+      | some dt =>
+        if dt.typeArgs.length != concreteArgs.length then []
+        else [dt.typeArgs.zip concreteArgs]
+      | none => []
+  | _ => [] -- unreachable: termCheck Step 1 rejects non-.tcons types
+
+/-- Compute the call-site measure expression. For structural, wraps the
+    decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/
+private def computeCallMeasure
+    (calleeName : String)
+    (calleeKind : DecreasesKind)
+    (calleeFormals : List Expression.Ident)
+    (calleeInputTys : List LMonoTy)
+    (callArgs : List Expression.Expr)
+    : Except String Expression.Expr :=
+  match calleeKind with
+  | .structural calleeIdx calleeDtName =>
+    match callArgs[calleeIdx]?, calleeInputTys[calleeIdx]? with
+    | some arg, some calleeAdtTy =>
+      .ok (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+    | _, _ => .error s!"termination checking '{calleeName}': decreasing parameter index {calleeIdx} is out of range at call site"
+  | .intValued calleeMeasure =>
+    if calleeFormals.length != callArgs.length then
+      .error s!"termination checking '{calleeName}': call has {callArgs.length} arguments but function expects {calleeFormals.length}"
+    else
+      .ok (LExpr.substFvarsLifting calleeMeasure (calleeFormals.zip callArgs))
+
+/-- Compute the caller's measure expression from its DecreasesKind. -/
+private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
+    : Except String Expression.Expr :=
+  match kind with
+  | .structural idx dtName =>
+    match func.inputs.keys[idx]?, func.inputs.values[idx]? with
+    | some param, some adtTy =>
+      .ok (LExpr.mkApp () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
+        [.fvar () param (.some adtTy)])
+    | _, _ => .error s!"termination checking '{func.name.name}': decreasing parameter index {idx} is out of range"
+  | .intValued m => .ok m
+
+/-- Generate a termination-checking procedure for a single function.
+    Returns `none` if the function has no recursive calls or no valid
+    decreasing parameter. The polymorphic `adtRankAxioms` are specialized
+    to the function's concrete decreasing-parameter type before being
+    embedded as preconditions.
+    The resulting procedure should NOT have preconditions checked, since
+    they will already be checked by the original program, and the generated
+    axioms do not use partial functions. -/
+private def mkTermCheckProc
+    (func : Function)
+    (recFuncNames : List String)
+    (callerKind : DecreasesKind)
+    (funcKindMap : List (String × DecreasesKind × List Expression.Ident × List LMonoTy))
+    (adtRankAxioms : List (String × Expression.Expr))
+    (tf : @TypeFactory Unit)
+    (md : Imperative.MetaData Expression)
+    : Except String (Option (Decl × Nat)) := do
+  let some body := func.body | return none
+  let callerMeasure ← computeCallerMeasure func callerKind
+  -- Safe to use caller's kind: mixed mutual blocks are rejected in `termCheck`
+  let needsNonNeg := match callerKind with
+    | .intValued _ => true
+    | .structural _ _ => false
+  let mkObligations (calleeName : String) (callArgs : List Expression.Expr)
+      : Except String (List Expression.Expr) := do
+    match funcKindMap.find? (fun (n, _, _, _) => n == calleeName) with
+    | some (_, calleeKind, calleeFormals, calleeInputTys) =>
+      match computeCallMeasure calleeName calleeKind calleeFormals calleeInputTys callArgs with
+      | .ok callMeasure =>
+        if callMeasure.hasBVar then
+          .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
+        else if containsOpCall callMeasure recFuncNames then
+          .error s!"termination checking '{func.name.name}': decreasing argument contains a recursive call"
+        else
+          let decrease := LExpr.mkApp () (@intLtFunc CoreLParams).opExpr
+            [callMeasure, callerMeasure]
+          if needsNonNeg then
+            let nonNeg := LExpr.mkApp () (@intLeFunc CoreLParams).opExpr
+              [LExpr.intConst () 0, callMeasure]
+            .ok [nonNeg, decrease]
+          else
+            .ok [decrease]
+      | .error msg => .error msg
+    | none => .ok []
+  let obligations ← extractTermObligations body recFuncNames mkObligations
+  if obligations.isEmpty then return none
+  let stmts := obligations.mapIdx fun i ob =>
+    Statement.assert s!"{func.name.name}_terminates_{i}" ob md
+  let specializedAxioms : List (String × Expression.Expr) := match callerKind with
+    | .structural idx callerDtName =>
+      match func.inputs.values[idx]? with
+      | some callerAdtTy =>
+        let relevantDtNames : List String :=
+          match tf.toList.find? (fun b => b.any (fun d => d.name == callerDtName)) with
+          | some block => block.map (·.name)
+          | none => [callerDtName]
+        let relevantAxioms := adtRankAxioms.filter fun (name, _) =>
+          relevantDtNames.any (fun dtName => name.startsWith (adtRankFuncName dtName))
+        let tySubst := mkTySubst tf callerAdtTy
+        relevantAxioms.map fun (name, e) => (name, e.applySubst tySubst)
+      | none => []
+    | .intValued _ => []
+  return some (.proc {
+    header := {
+      name := ⟨termProcName func.name.name, ()⟩
+      typeArgs := func.typeArgs
+      inputs := func.inputs
+      outputs := []
+      noFilter := true
+    }
+    spec := { preconditions :=
+                 (specializedAxioms.map fun (name, e) =>
+                   (name, { expr := e, attr := .Free })) ++
+                 (func.preconditions.mapIdx fun i p =>
+                   (s!"{func.name.name}_requires_{i}", { expr := p.expr, attr := .Free })),
+               postconditions := [] }
+    body := .structured stmts
+  } md, obligations.length)
+
+/-- Add a termination-check procedure as a leaf node in the cached call graph. -/
+private def addTermProcToCallGraph (name : String) : CoreTransformM Unit :=
+  modify fun σ => match σ.cachedAnalyses.callGraph with
+  | .some cg => { σ with cachedAnalyses := { σ.cachedAnalyses with
+      callGraph := .some (cg.addLeafNode name) } }
+  | .none => σ
+
+/-- Result of generating adtRank declarations for a mutual datatype block. -/
+private structure AdtRankDecls where
+  namedDecls : List (String × Decl)
+  axioms : List (String × Expression.Expr)
+
+/-- Generate adtRank function declarations and axiom expressions for all
+    datatypes in the mutual block containing `adtName`. -/
+private def mkAdtRankDecls
+    (adtName : String) (tf : @TypeFactory Unit)
+    (md : Imperative.MetaData Expression)
+    : AdtRankDecls :=
+  match tf.toList.find? (fun b => b.any (fun d => d.name == adtName)) with
+  | none => ⟨[], []⟩
+  | some block =>
+    { namedDecls := block.map fun dt =>
+        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md)
+      axioms := block.flatMap fun dt =>
+        let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
+        axioms.mapIdx fun i ax =>
+          (s!"{adtRankFuncName dt.name}_{i}", ax) }
+
+/-- Main transformation: iterate over declarations, generating adtRank axioms
+    and termination-checking procedures for each `recFuncBlock`. -/
+def termCheck (p : Program) : CoreTransformM (Bool × Program) := do
+  match (← get).factory with
+  | .none => return (false, p)
+  | .some _ =>
+    let (changed, newDecls) ← transformDecls p.decls TypeFactory.default {}
+    return (changed, { decls := newDecls })
+where
+  transformDecls (decls : List Decl) (tf : @TypeFactory Unit)
+      (emittedAdtRank : Std.HashSet String)
+      : CoreTransformM (Bool × List Decl) := do
+    let mut acc : Array Decl := #[]
+    let mut changed := false
+    let mut remaining := decls
+    let mut tf := tf
+    let mut emittedAdtRank := emittedAdtRank
+    while h : remaining ≠ [] do
+      let d := remaining.head h
+      let rest := remaining.tail
+      match d with
+      | .recFuncBlock funcs md => do
+        let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
+        let throwErr (msg : String) : CoreTransformM Unit :=
+          throw (DiagnosticModel.withRange fileRange msg)
+        -- Step 1: Validate measures and determine DecreasesKind for each function.
+        -- Skip polymorphic functions: adtRank axioms are monomorphic.
+        let mut funcKindList : List (String × DecreasesKind × List Expression.Ident × List LMonoTy) := []
+        for func in funcs do
+          if func.typeArgs.isEmpty then
+            match getDecreasesKind func tf with
+            | .error msg => throwErr msg
+            | .ok kind =>
+              funcKindList := (func.name.name, kind, func.inputs.keys, func.inputs.values) :: funcKindList
+        let funcKindMap := funcKindList.reverse
+        -- Reject mutual blocks that mix structural and int-valued measures.
+        let hasStructural := funcKindMap.any fun (_, k, _, _) => match k with
+          | .structural _ _ => true | .intValued _ => false
+        let hasIntValued := funcKindMap.any fun (_, k, _, _) => match k with
+          | .intValued _ => true | .structural _ _ => false
+        if hasStructural && hasIntValued then
+          throwErr "mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure"
+        -- Step 2: Generate adtRank function declarations and per-constructor axioms
+        -- for structural functions only.
+        let allAdtNames := funcKindMap.filterMap fun (_, kind, _, _) =>
+          match kind with
+          | .structural _ dtName => some dtName
+          | .intValued _ => none
+        let allAdtNames := allAdtNames.eraseDups
+        let allAdtRank : AdtRankDecls :=
+          let (_, revResults) : Std.HashSet String × List AdtRankDecls :=
+            allAdtNames.foldl (init := ({}, [])) fun (seen, acc') adtName =>
+              if seen.contains adtName then (seen, acc')
+              else
+                let r := mkAdtRankDecls adtName tf md
+                (r.namedDecls.foldl (fun s (n, _) => s.insert n) seen, r :: acc')
+          let results := revResults.reverse
+          { namedDecls := results.flatMap (·.namedDecls)
+            axioms := results.flatMap (·.axioms) }
+        let newFuncDecls := allAdtRank.namedDecls.filterMap
+          fun (n, d') => if emittedAdtRank.contains n then none else some d'
+        emittedAdtRank := allAdtRank.namedDecls.foldl (fun s (n, _) => s.insert n) emittedAdtRank
+        incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
+        -- Step 3: Generate a $$term procedure per function with adtRank
+        -- decrease assertions at each recursive call site.
+        let recNames := funcs.map (·.name.name)
+        let termDecls ← funcs.filterMapM fun func => do
+          let callerKind := funcKindMap.find? (fun (n, _, _, _) => n == func.name.name)
+          match callerKind with
+          | none => return none
+          | some (_, kind, _, _) =>
+            match mkTermCheckProc func recNames kind funcKindMap allAdtRank.axioms tf md with
+            | .error msg => do throwErr msg; return none
+            | .ok (some (decl, numAsserts)) => do
+              incrementStat s!"{Stats.termCheckProcsGenerated}"
+              incrementStat s!"{Stats.termCheckAssertsEmitted}" numAsserts
+              addTermProcToCallGraph (termProcName func.name.name)
+              return some decl
+            | .ok none => return none
+        -- Step 4: Splice adtRank decls before the rec block, term procs after.
+        if newFuncDecls.isEmpty && termDecls.isEmpty then
+          acc := acc.push d
+        else
+          changed := true
+          acc := acc ++ newFuncDecls.toArray
+          acc := acc.push d
+          acc := acc ++ termDecls.toArray
+      | .type (.data block) _md => do
+        tf := tf.push block
+        acc := acc.push d
+      | .func _ _ | .proc _ _ | .ax _ _ | .distinct _ _ _
+      | .type (.con _) _ | .type (.syn _) _ => do
+        acc := acc.push d
+      remaining := rest
+    return (changed, acc.toList)
+
+end TermCheck
+
+/-- TermCheck pipeline phase: generates termination-checking procedures for
+    recursive functions. Model-preserving because it only adds new
+    assertions and procedures. -/
+def termCheckPipelinePhase : PipelinePhase :=
+  modelPreservingPipelinePhase "TermCheck" fun prog => do
+    TermCheck.termCheck prog
+
+end Core
+
+end -- public section

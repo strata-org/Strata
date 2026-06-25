@@ -1,9 +1,9 @@
 Python:
   - changed-files:
       - any-glob-to-any-file:
-          - 'Strata/Languages/Python/**'
-          - 'StrataTest/Languages/Python/**'
-          - 'Tools/Python/**'
+          - 'StrataPython/**'
+          - 'Tools/Python-base/**'
+          - 'StrataPython/Tools/strata-python/**'
 
 Laurel:
   - changed-files:
@@ -42,7 +42,8 @@ dependencies:
           - 'lake-manifest.json'
           - 'lakefile.toml'
           - 'lean-toolchain'
-          - 'Tools/Python/pyproject.toml'
+          - 'Tools/Python-base/pyproject.toml'
+          - 'StrataPython/Tools/strata-python/pyproject.toml'
           - 'Tools/BoogieToStrata/**/*.csproj'
           - 'Tools/BoogieToStrata/**/*.sln'
 

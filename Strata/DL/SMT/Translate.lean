@@ -7,12 +7,13 @@ module
 
 import Lean.Meta.Basic
 
+public import Strata.DL.SMT.SmtArray
 public import Strata.Languages.Core.SMTEncoder
 
 public section
 
 open Lean
-open Strata hiding Expr
+open Strata
 open SMT
 
 deriving instance Hashable for Core.SMT.Sort
@@ -105,6 +106,11 @@ private def getBitVecWidth (α : Expr) : TranslateM Nat :=
     | some w => return w
     | none => throw m!"Error: expected natural number for BitVec width, got '{w}'"
   | _ => throw m!"Error: expected BitVec type, got '{α}'"
+
+private def getArrayTypes (α : Expr) : TranslateM (Expr × Expr) :=
+  match α with
+  | mkApp2 (.const ``SmtArray [0, 0]) αTy βTy => return (αTy, βTy)
+  | _ => throw m!"Error: expected Array type, got '{α}'"
 
 private def mkString : Expr :=
   toTypeExpr String
@@ -243,6 +249,30 @@ private def mkBitVecAppend (w v : Nat) : Expr :=
          (mkBitVec w) (mkBitVec v) (mkBitVec (w + v))
          (mkApp2 (.const ``BitVec.instHAppendHAddNat []) (toExpr w) (toExpr v))
 
+private def mkStringAppend : Expr :=
+  mkApp4 (.const ``HAppend.hAppend [0, 0, 0])
+         mkString mkString mkString
+         (mkApp2 (.const ``instHAppendOfAppend [0]) mkString
+                 (.const ``instAppendString []))
+
+/--
+Length of a string as an `Int` (via `Int.ofNat`), matching the semantics used
+in `Denote.lean`.
+-/
+private def mkStringLength (s : Expr) : Expr :=
+  .app (.const ``Int.ofNat []) (.app (.const ``String.length []) s)
+
+/--
+Throw unless `α` is the Lean `String` type (as produced by `mkString`). Used
+to guard string-theory operations so that a malformed SMT term such as
+`(.app .str_length [.prim (.int 0)] ...)` is rejected up front, matching the
+behaviour of `Denote.denoteTerm`.
+-/
+private def expectString (α : Expr) : TranslateM Unit :=
+  match α with
+  | .const ``String [] => return ()
+  | _ => throw m!"Error: expected String type, got '{α}'"
+
 def symbolToName (s : String) : Name :=
   -- Quote the string if a natural translation to Name fails
   if s.toName == .anonymous then
@@ -269,11 +299,23 @@ def translateSort (ty : TermType) : TranslateM Expr := do
   | .option ty => do
     let ty ← translateSort ty
     return .app (.const ``Option [0]) ty
+  | .constr "Array" [α, β] => do
+    let α ← translateSort α
+    let β ← translateSort β
+    return mkApp2 (.const ``SmtArray [0, 0]) α β
   | .constr n as =>
     let (_, t) ← findVar (.us { name := n, arity := as.length })
     let as ← as.mapM translateSort
     return mkAppN t as.toArray
 
+/--
+Translate an SMT term to a Lean expression, together with its Lean type.
+
+The first component is the actual type of the second component, not just a
+hint. Consumers use it as the type argument for generated Lean constructs such
+as `Eq` and `ite`, and helpers such as `leftAssocOp` propagate it as the result
+type of compound expressions.
+-/
 def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
   match t with
   | .var v =>
@@ -325,7 +367,7 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (as, a) := ((a :: as).dropLast, (a :: as).getLast?.get rfl)
     return (mkProp, as.foldr mkArrow a)
   | .prim (.int x) =>
-    return (mkProp, toExpr x)
+    return (mkInt, toExpr x)
   | .app .neg [a] _ =>
     let (_, a) ← translateTerm a
     return (mkInt, .app mkIntNeg a)
@@ -337,8 +379,12 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     leftAssocOp mkIntMul as
   | .app .div as _ =>
     leftAssocOp mkIntDiv as
+  | .app .mod [x, y] _ =>
+    let (α, x) ← translateTerm x
+    let (_, y) ← translateTerm y
+    return (α, mkApp2 mkIntMod x y)
   | .app .mod as _ =>
-    leftAssocOp mkIntMod as
+    throw m!"Error: 'mod' expects exactly two operands, got '{as.length}'"
   | .app .abs [a] _ =>
     let (_, a) ← translateTerm a
     let c := mkApp2 mkIntLT a (toExpr (0 : Int))
@@ -488,19 +534,66 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let (α, x) ← translateTerm x
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
+  | .app .ubv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
+  | .app .sbv_to_int [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkInt, mkApp (.const ``BitVec.toInt []) x)
+  | .app (.int_to_bv n) [x] _ =>
+    let (_, x) ← translateTerm x
+    return (mkBitVec n, mkApp2 (.const ``BitVec.ofInt []) (toExpr n) x)
+  -- SMT-Lib theory of arrays
+  | .app .select [x, i] _ =>
+    let (τ, x) ← translateTerm x
+    let (_, i) ← translateTerm i
+    let (α, β) ← getArrayTypes τ
+    return (β, mkApp4 (.const ``SmtArray.select [0, 0]) α β x i)
+  | .app .store [x, i, v] _ =>
+    let (τ, x) ← translateTerm x
+    let (_, i) ← translateTerm i
+    let (_, v) ← translateTerm v
+    let (α, β) ← getArrayTypes τ
+    return (τ, mkApp6 (.const ``SmtArray.store [0, 0]) α β (.app (.const ``Classical.typeDecidableEq [1]) α) x i v)
+  -- SMT-Lib theory of strings
+  | .prim (.string s) =>
+    return (mkString, toExpr s)
+  | .app .str_length [s] _ =>
+    let (α, s) ← translateTerm s
+    expectString α
+    return (mkInt, mkStringLength s)
+  | .app .str_concat as _ =>
+    -- `Denote.leftAssoc` requires at least two operands and checks that each
+    -- operand has the expected type.  Mirror that here rather than delegating
+    -- to `leftAssocOp`, which does neither.
+    let a :: b :: as := as
+      | throw m!"Error: str_concat expects at least two operands, got '{as.length}'"
+    let (α, a) ← translateTerm a
+    expectString α
+    let (β, b) ← translateTerm b
+    expectString β
+    let as ← as.mapM fun t => do
+      let (γ, e) ← translateTerm t
+      expectString γ
+      return e
+    return (mkString, as.foldl (mkApp2 mkStringAppend) (mkApp2 mkStringAppend a b))
   | t => throw m!"Error: unsupported term '{repr t}'"
 where
   leftAssocOp (op : Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for '{op}', got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
   leftAssocOpBitVec (op : Nat → Expr) (as : List SMT.Term) : TranslateM (Expr × Expr) := do
-    let a :: as := as | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
+    let a :: b :: as := as
+      | throw m!"Error: expected at least two arguments for BitVec op, got '{as.length}'"
     let (α, a) ← translateTerm a
+    let (_, b) ← translateTerm b
     let op := op (← getBitVecWidth α)
     let as ← as.mapM (translateTerm · >>= pure ∘ Prod.snd)
-    return (α, as.foldl (mkApp2 op) a)
+    return (α, as.foldl (mkApp2 op) (mkApp2 op a b))
 
 /--
 Translate assumptions and a conclusion into a right-associated implication

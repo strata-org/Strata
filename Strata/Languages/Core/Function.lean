@@ -6,7 +6,7 @@
 module
 
 
-public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.Expressions
 
 ---------------------------------------------------------------------
 
@@ -53,6 +53,7 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
     concreteEval := none
     axioms := decl.axioms
     preconditions := decl.preconditions
+    measure := decl.measure
   }
 
 ---------------------------------------------------------------------

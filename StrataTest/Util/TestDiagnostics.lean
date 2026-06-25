@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+import StrataDDM.Parser
+public import Strata.Languages.Core.Verifier
 import Lean.Elab.Command
 
 open Strata
+open StrataDDM
 open String
 open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
-structure DiagnosticExpectation where
+public structure DiagnosticExpectation where
   line : Nat
   colStart : Nat
   colEnd : Nat
@@ -31,7 +34,7 @@ private def commentMarker (line : String) : Option String :=
 /-- Parse diagnostic expectations from source file comments.
     Format: `//  ^^^^^^ error: message` or `#  ^^^^^^ error: message`
     on the line after the problematic code -/
-def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
+public def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation := Id.run do
   let lines := content.splitOn "\n"
   let mut expectations := []
 
@@ -79,16 +82,23 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
 def stringContains (haystack : String) (needle : String) : Bool :=
   needle.isEmpty || (haystack.splitOn needle).length > 1
 
+/-- Map a `DiagnosticType` to the level keyword used in expectation comments. -/
+private def diagnosticLevel (t : DiagnosticType) : String :=
+  match t with
+  | .Warning => "warning"
+  | _ => "error"
+
 /-- Check if a Diagnostic matches a DiagnosticExpectation -/
-def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
+public def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :=
   diag.start.line == exp.line &&
   diag.start.column == exp.colStart &&
   diag.ending.line == exp.line &&
   diag.ending.column == exp.colEnd &&
+  diagnosticLevel diag.type == exp.level &&
   stringContains diag.message exp.message
 
 /-- Test input with line offset - adds imaginary newlines to the start of the input -/
-def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
+public def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
     (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
 
   -- Add imaginary newlines to the start of the input so the reported line numbers match the Lean source file
@@ -97,16 +107,16 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
 
   -- Parse diagnostic expectations from comments
   let expectations := parseDiagnosticExpectations offsetInput
-  let expectedErrors := expectations.filter (fun e => e.level == "error")
+  let expected := expectations.filter (fun e => e.level == "error" || e.level == "warning")
 
   -- Get actual diagnostics from the language-specific processor
   let diagnostics <- process inputContext
 
-  -- Check if all expected errors are matched
+  -- Check if all expected diagnostics are matched
   let mut allMatched := true
   let mut unmatchedExpectations := []
 
-  for exp in expectedErrors do
+  for exp in expected do
     let matched := diagnostics.any (fun diag => matchesDiagnostic diag exp)
     if !matched then
       allMatched := false
@@ -114,29 +124,33 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
 
   let mut unmatchedDiagnostics := []
   for diag in diagnostics do
-    let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
+    let matched := expected.any (fun exp => matchesDiagnostic diag exp)
     if !matched then
       allMatched := false
       unmatchedDiagnostics := unmatchedDiagnostics.append [diag]
 
   -- Report results
-  if allMatched && diagnostics.size == expectedErrors.length then
-    IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    for exp in expectedErrors do
-      IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+  if allMatched && diagnostics.size == expected.length then
+    IO.println s!"✓ Test passed: All {expected.length} diagnostic(s) matched"
+    for exp in expected do
+      IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd} [{exp.level}]: {exp.message}"
   else
     IO.println s!"✗ Test failed: Mismatched diagnostics"
-    IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
+    IO.println s!"\nExpected {expected.length} diagnostic(s), got {diagnostics.size} diagnostic(s)"
 
     if unmatchedExpectations.length > 0 then
       IO.println s!"\nUnmatched expected diagnostics:"
       for exp in unmatchedExpectations do
-        IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+        IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd} [{exp.level}]: {exp.message}"
 
     if unmatchedDiagnostics.length > 0 then
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
-        IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+        IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column} [{diagnosticLevel diag.type}]: {diag.message}"
+
+    if unmatchedExpectations.length == 0 && unmatchedDiagnostics.length == 0 then
+      IO.println s!"Duplicate diagnostics: {repr diagnostics}"
+
     throw (IO.userError "Test failed")
 
 def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=

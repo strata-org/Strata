@@ -37,14 +37,18 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   is chosen non-deterministically. -/
   | ite      (cond : ExprOrNondet P)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P)
   /-- An iterated execution statement. Includes an optional measure (for
-  termination) and invariants. When `guard` is `.nondet`, the loop iterates
-  a non-deterministic number of times. -/
-  | loop     (guard : ExprOrNondet P) (measure : Option P.Expr) (invariants : List P.Expr)
+  termination) and labeled invariants. When `guard` is `.nondet`, the loop iterates
+  a non-deterministic number of times. Each invariant carries a label string
+  (expected to be distinct, like assert labels do).
+  TODO: measure will be moved to metadata md, since it doesn't contribute to
+  the small-step semantics (StepStmt).
+  -/
+  | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
+             (invariants : List (String × P.Expr))
              (body : List (Stmt P Cmd)) (md : MetaData P)
-  /-- An exit statement that transfers control out of the nearest enclosing
-  block with the given label. If no label is provided, exits the nearest
-  enclosing block. -/
-  | exit     (label : Option String) (md : MetaData P)
+  /-- An exit statement that transfers control out of the enclosing block
+  with the given label. -/
+  | exit     (label : String) (md : MetaData P)
   /-- A function declaration within a statement block. -/
   | funcDecl (decl : PureFunc P) (md : MetaData P)
   /-- A type declaration within a statement block. -/
@@ -74,11 +78,11 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       (∀ s, s ∈ thenb → motive s) →
       (∀ s, s ∈ elseb → motive s) →
       motive (Stmt.ite cond thenb elseb md))
-    (loop_case : ∀ (guard : ExprOrNondet P) (measure : Option P.Expr) (invariant : List P.Expr)
+    (loop_case : ∀ (guard : ExprOrNondet P) (measure : Option P.Expr) (invariant : List (String × P.Expr))
       (body : List (Stmt P Cmd)) (md : MetaData P),
       (∀ s, s ∈ body → motive s) →
       motive (Stmt.loop guard measure invariant body md))
-    (exit_case : ∀ (label : Option String) (md : MetaData P),
+    (exit_case : ∀ (label : String) (md : MetaData P),
       motive (Stmt.exit label md))
     (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
       motive (Stmt.funcDecl decl md))
@@ -158,6 +162,46 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### MapExpr
+
+Apply a function to all expressions in a statement's structural positions
+(guards, measures, invariants). Command-level expressions are mapped by
+the caller-supplied `mapCmd` function.
+-/
+
+mutual
+/-- Apply `fExpr` to structural expressions and `mapCmd` to commands. -/
+def Stmt.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (s : Stmt P C) : Stmt P C :=
+  match s with
+  | .cmd c => .cmd (mapCmd c)
+  | .block l ss md => .block l (Block.mapExpr fExpr mapCmd ss) md
+  | .ite (.det c) tss ess md =>
+    .ite (.det (fExpr c)) (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
+  | .ite .nondet tss ess md =>
+    .ite .nondet (Block.mapExpr fExpr mapCmd tss) (Block.mapExpr fExpr mapCmd ess) md
+  | .loop (.det g) measure inv body md =>
+    .loop (.det (fExpr g)) (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
+      (Block.mapExpr fExpr mapCmd body) md
+  | .loop .nondet measure inv body md =>
+    .loop .nondet (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
+      (Block.mapExpr fExpr mapCmd body) md
+  | .exit l md => .exit l md
+  | .funcDecl decl md => .funcDecl decl md
+  | .typeDecl tc md => .typeDecl tc md
+  termination_by (Stmt.sizeOf s)
+
+/-- Apply `fExpr` and `mapCmd` to every statement in a block. -/
+def Block.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
+    (ss : Block P C) : Block P C :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.mapExpr fExpr mapCmd s :: Block.mapExpr fExpr mapCmd rest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### StripMetaData
 
 Functions to remove metadata from statements and blocks.
@@ -191,57 +235,112 @@ end
 
 mutual
 /-- Get all variables accessed by `s`. -/
-def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+@[expose]
+def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
-  | .loop guard _ _ bss _ => guard.getVars ++ Block.getVars bss
+  | .loop guard measure invariants bss _ =>
+    guard.getVars ++
+    (measure.map HasFvars.getFvars).getD [] ++
+    (invariants.flatMap fun lp => HasFvars.getFvars lp.2) ++
+    Block.getVars bss
   | .exit _ _  => []
   | .funcDecl decl _ =>
-    -- Get free variables from function body, excluding formal parameters
-    match decl.body with
-    | none => []
-    | some body =>
-      let bodyVars := HasVarsPure.getVars body
-      let formals := decl.inputs.map (·.1)
-      bodyVars.filter (fun v => formals.all (fun f => ¬(P.EqIdent v f).decide))
+    -- Get free variables from function body and axioms, excluding formal
+    -- parameters. Axiom free variables are included.
+    (match decl.body with
+      | some body => (HasFvars.getFvars body).filter
+          (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide))
+      | none => []) ++
+    decl.axioms.flatMap (fun ax => (HasFvars.getFvars ax).filter
+      (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide)))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
-def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+@[expose]
+def Block.getVars [HasFvars P] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
 end
 
-instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
+instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
   : HasVarsPure P (Stmt P C) where
   getVars := Stmt.getVars
 
-instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
+instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
   : HasVarsPure P (Block P C) where
   getVars := Block.getVars
 
 mutual
-/-- Get all variables defined by the statement `s`. -/
-def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+/-- Get all operator/function names referenced by `s`.  Mirrors
+    `Stmt.getVars` but collects `.op`-style names (resolved via the evaluator)
+    rather than free variables (resolved via the store). -/
+@[expose]
+def Stmt.getOps [HasOps P] [HasOpsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ bss _ => Block.definedVars bss
-  | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
-  | .loop _ _ _ body _ => Block.definedVars body
-  | .funcDecl decl _ => [decl.name]  -- Function declaration defines the function name
-  | .typeDecl _ _ => []  -- Type declarations don't define variables
-  | _ => []
+  | .cmd cmd => HasOpsImp.getOps cmd
+  | .block _ bss _ => Block.getOps bss
+  | .ite cond tbss ebss _ =>
+    cond.getOps ++ Block.getOps tbss ++ Block.getOps ebss
+  | .loop guard measure invariants bss _ =>
+    guard.getOps ++
+    (measure.map (HasOps.getOps (P := P))).getD [] ++
+    (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2) ++
+    Block.getOps bss
+  | .exit _ _  => []
+  | .funcDecl decl _ =>
+    -- Operator names referenced by the function body and axioms.
+    -- (Operator names are global, so no formal-parameter filtering applies.)
+    ((decl.body.map (HasOps.getOps (P := P))).getD []) ++
+    decl.axioms.flatMap (HasOps.getOps (P := P))
+  | .typeDecl _ _ => []
 
-def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+@[expose]
+def Block.getOps [HasOps P] [HasOpsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
+  | s :: srest => Stmt.getOps s ++ Block.getOps srest
+end
+
+instance (P : PureExpr) [HasOps P] [HasOpsImp P C]
+  : HasOpsImp P (Stmt P C) where
+  getOps := Stmt.getOps
+
+instance (P : PureExpr) [HasOps P] [HasOpsImp P C]
+  : HasOpsImp P (Block P C) where
+  getOps := Block.getOps
+
+mutual
+/-- Get all variables defined by the statement `s`. -/
+@[simp, expose]
+def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C)
+    (excludeScoped : Bool) : List P.Ident :=
+  match s with
+  | .cmd cmd => HasVarsImp.definedVars cmd excludeScoped -- excludeScoped doesn't matter
+  | .block _ bss _ => if excludeScoped then [] else Block.definedVars bss excludeScoped
+  | .ite _ tbss ebss _ =>
+    if excludeScoped then [] else Block.definedVars tbss excludeScoped ++ Block.definedVars ebss excludeScoped
+  | .loop _ _ _ body _ => if excludeScoped then [] else Block.definedVars body excludeScoped
+  -- `step_funcDecl` extends `eval`, leaving `store` unchanged.  `definedVars`
+  -- tracks store-level definitions, so funcDecl introduces nothing here; the
+  -- name is tracked separately via `Stmt.funcDeclNames`.
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+  | _ => []
+
+@[simp, expose]
+def Block.definedVars [HasVarsImp P C] (ss : Block P C)
+    (excludeScoped : Bool) : List P.Ident :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.definedVars s excludeScoped ++ Block.definedVars srest excludeScoped
 end
 
 mutual
 /-- Get all variables modified by the statement `s`. -/
+@[simp, expose]
 def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
@@ -252,41 +351,92 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
+@[simp, expose]
 def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
 end
 
-mutual
-/-- Get all variables modified/defined by the statement `s`.
-    Note that we need a separate function because order matters here for sub-blocks
- -/
-@[simp]
-def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
-  match s with
-  | .block _ bss _ => Block.touchedVars bss
-  | .ite _ tbss ebss _ => Block.touchedVars tbss ++ Block.touchedVars ebss
-  | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
+/-- Get all variables modified/defined by the statement `s` (the write-set). -/
+@[simp, expose]
+def Stmt.modifiedOrDefinedVars [HasVarsImp P C] (s : Stmt P C)
+    (excludeScoped : Bool): List P.Ident :=
+  s.modifiedVars ++ s.definedVars excludeScoped
 
-@[simp]
-def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
-  match ss with
-  | [] => []
-  | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
+@[simp, expose]
+def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C)
+    (excludeScoped : Bool): List P.Ident :=
+  ss.modifiedVars ++ ss.definedVars excludeScoped
+
+mutual
+/-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
+@[simp, expose]
+def Stmt.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+    (s : Stmt P C) : List P.Ident :=
+  Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
+
+@[simp, expose]
+def Block.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+    (ss : Block P C) : List P.Ident :=
+  Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end
+
+mutual
+/-- Collect all labeled `exit` targets occurring in a statement (recursive). -/
+@[expose] def Stmt.labels (s : Stmt P C) : List String :=
+  match s with
+  | .exit l _        => [l]
+  | .cmd _           => []
+  | .block _ bss _   => Block.labels bss
+  | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
+  | .loop _ _ _ bss _ => Block.labels bss
+  | .funcDecl _ _    => []
+  | .typeDecl _ _    => []
+
+/-- Collect all labeled `exit` targets in a list of statements. -/
+@[expose] def Block.labels (ss : Block P C) : List String :=
+  match ss with
+  | []        => []
+  | s :: rest => Stmt.labels s ++ Block.labels rest
+end
+
+mutual
+/-- Collect `decl.name` from `funcDecl` AST nodes in a statement.
+
+    `excludeScoped = false` (the recursive form): collect all `funcDecl`
+    names syntactically inside `s`.
+    `excludeScoped = true` (the scope-aware form): collect only `funcDecl`
+    names introduced at the top level of `s`. Parallel to `Stmt.definedVars _ true`. -/
+@[expose] def Stmt.funcDeclNames (s : Stmt P C) (excludeScoped : Bool) : List P.Ident :=
+  match s with
+  | .funcDecl decl _ => [decl.name]
+  | .cmd _           => []
+  | .exit _ _        => []
+  | .typeDecl _ _    => []
+  | .block _ bss _ => if excludeScoped then [] else Block.funcDeclNames bss excludeScoped
+  | .ite _ tss ess _ =>
+    if excludeScoped then [] else Block.funcDeclNames tss excludeScoped ++
+                                  Block.funcDeclNames ess excludeScoped
+  | .loop _ _ _ bss _ => if excludeScoped then [] else Block.funcDeclNames bss excludeScoped
+
+/-- Collect `decl.name` from `funcDecl` AST nodes in a block.  See
+    `Stmt.funcDeclNames` for the meaning of `excludeScoped`. -/
+@[expose] def Block.funcDeclNames (ss : Block P C) (excludeScoped : Bool) : List P.Ident :=
+  match ss with
+  | []        => []
+  | s :: rest => Stmt.funcDeclNames s excludeScoped ++
+                 Block.funcDeclNames rest excludeScoped
+end
+
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmt.touchedVars
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -307,12 +457,17 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
 
   | .loop guard measure invariant body md =>
       let body := formatBlock P body
-      let beforeBody := nestD f!"{line}{guard}{line}({measure}){line}{invariant}"
+      -- Format each labeled invariant as `[lbl]: expr` (unlabeled ones just as `expr`).
+      let invParts : List Format := invariant.map fun (l, e) =>
+        if l.isEmpty then f!"{e}" else f!"[{l}]: {e}"
+      let invFmt : Format := f!"[{Format.joinSep invParts f!", "}]"
+      let measureFmt : Format := match measure with
+        | none => f!"none"
+        | some e => f!"some {e}"
+      let beforeBody := nestD f!"{line}{guard}{line}({measureFmt}){line}{invFmt}"
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
-  | .exit label md => match label with
-    | some l => f!"{md}exit {l}"
-    | none => f!"{md}exit"
+  | .exit label md => f!"{md}exit {label}"
   | .funcDecl _ md => f!"{md}funcDecl <function>"
   | .typeDecl tc md => f!"{md}type {tc.name} (arity {tc.numargs})"
 
@@ -351,95 +506,13 @@ When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`.
   | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
   | labels, .ite _ tss ess _ => Block.exitsCoveredByBlocks labels tss ∧ Block.exitsCoveredByBlocks labels ess
   | labels, .loop _ _ _ body _ => Block.exitsCoveredByBlocks labels body
-  | labels, .exit none _ => labels.length > 0
-  | labels, .exit (some l) _ => l ∈ labels
+  | labels, .exit l _ => l ∈ labels
   | _, .funcDecl _ _ => True
   | _, .typeDecl _ _ => True
 where
   Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
     | _, [] => True
     | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
-
-theorem block_exitsCoveredByBlocks_append
-    {P : PureExpr} {CmdT : Type}
-    (labels : List String) (ss₁ ss₂ : List (Stmt P CmdT))
-    (h₁ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₁)
-    (h₂ : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss₂) :
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels (ss₁ ++ ss₂) := by
-  induction ss₁ with
-  | nil => exact h₂
-  | cons s ss ih => exact ⟨h₁.1, ih h₁.2⟩
-
-/-- `exitsCoveredByBlocks` is monotone in the label list: more covering labels
-    can only help. -/
-theorem exitsCoveredByBlocks_weaken
-    {P : PureExpr} {CmdT : Type}
-    (labels₁ labels₂ : List String)
-    (hsub : ∀ l, l ∈ labels₁ → l ∈ labels₂) :
-    (∀ (s : Stmt P CmdT),
-      s.exitsCoveredByBlocks labels₁ → s.exitsCoveredByBlocks labels₂) ∧
-    (∀ (ss : List (Stmt P CmdT)),
-      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels₁ ss →
-      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels₂ ss) := by
-  suffices hstmt : ∀ (s : Stmt P CmdT),
-      ∀ labels₁ labels₂, (∀ l, l ∈ labels₁ → l ∈ labels₂) →
-        s.exitsCoveredByBlocks labels₁ → s.exitsCoveredByBlocks labels₂ by
-    constructor
-    · exact fun s => hstmt s labels₁ labels₂ hsub
-    · intro ss
-      induction ss with
-      | nil => intros; trivial
-      | cons s ss ih =>
-        exact fun h => ⟨hstmt s _ _ hsub h.1, ih h.2⟩
-  intro s
-  induction s using Stmt.rec (motive_2 := fun ss =>
-    ∀ labels₁ labels₂, (∀ l, l ∈ labels₁ → l ∈ labels₂) →
-      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels₁ ss →
-      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels₂ ss) with
-  | cmd _ => intros; trivial
-  | block l ss _ ih =>
-    intro labels₁ labels₂ hsub h
-    show Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (l :: labels₂) ss
-    exact ih (l :: labels₁) (l :: labels₂)
-      (fun x hx => by cases hx with
-        | head => exact .head _
-        | tail _ hm => exact .tail _ (hsub x hm))
-      h
-  | ite _ tss ess _ ih_t ih_e =>
-    intro labels₁ labels₂ hsub h
-    exact ⟨ih_t labels₁ labels₂ hsub h.1, ih_e labels₁ labels₂ hsub h.2⟩
-  | loop _ _ _ body _ ih =>
-    intro labels₁ labels₂ hsub h
-    exact ih labels₁ labels₂ hsub h
-  | exit label _ =>
-    intro labels₁ labels₂ hsub h
-    cases label with
-    | none =>
-      show labels₂.length > 0
-      exact List.length_pos_iff_exists_mem.mpr
-        (let ⟨x, hx⟩ := List.length_pos_iff_exists_mem.mp h; ⟨x, hsub x hx⟩)
-    | some l => exact hsub l h
-  | funcDecl _ _ => intros; trivial
-  | typeDecl _ _ => intros; trivial
-  | nil => intros; trivial
-  | cons s ss ih_s ih_ss =>
-    rename_i labels₁ labels₂ hsub h
-    exact ⟨ih_s labels₁ labels₂ hsub h.1, ih_ss labels₁ labels₂ hsub h.2⟩
-
-/-- If every statement in a list is a `.cmd`, then `exitsCoveredByBlocks` holds
-    for any labels (since `.cmd` has no exit statements). -/
-theorem all_cmd_exitsCoveredByBlocks
-    {P : PureExpr} {CmdT : Type}
-    (labels : List String) (ss : List (Stmt P CmdT))
-    (h : ∀ s ∈ ss, ∃ c, s = Stmt.cmd c) :
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss := by
-  induction ss with
-  | nil => trivial
-  | cons hd tl ih =>
-    constructor
-    · obtain ⟨c, hc⟩ := h hd (.head _)
-      subst hc; exact True.intro
-    · exact ih (fun s hs => h s (.tail _ hs))
 
 ---------------------------------------------------------------------
 

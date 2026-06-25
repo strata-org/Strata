@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import StrataTest.DL.Imperative.Arith
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.SMT.SMT
+meta import all StrataTest.DL.Imperative.Arith
+meta import Strata.DL.Imperative.EvalContext
+meta import Strata.DL.SMT
 import Init.Data.String.Extra
+
+meta section
 
 namespace Arith
 
@@ -64,7 +67,9 @@ def toSMTTerms (E : Env) (es : List Arith.Expr) : Except Format (List Term) := d
 
 def ProofObligation.toSMTTerms (E : Env) (d : Imperative.ProofObligation Arith.PureExpr) :
   Except Format (List Term) := do
-  let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  let assumptions := d.assumptions.flatten.filterMap (fun
+    | .assumption _ e => some e
+    | _ => none)
   let assumptions_terms ← Arith.toSMTTerms E assumptions
   let obligation_pos_term ← Arith.toSMTTerm E d.obligation
   let obligation_term := Factory.not obligation_pos_term
@@ -73,7 +78,7 @@ def ProofObligation.toSMTTerms (E : Env) (d : Imperative.ProofObligation Arith.P
 def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderState) := do
   Solver.setLogic "ALL"
   let estate := EncoderState.init
-  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm False) |>.run estate
+  let (termEncs, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm) |>.run estate
   for t in termEncs do
     Solver.assert t
   let ids := estate.ufs.values
@@ -83,3 +88,4 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
 ---------------------------------------------------------------------
 
   end Arith
+end

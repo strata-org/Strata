@@ -20,6 +20,7 @@ op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
 op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
+op bvLiteral(value: Num, width: Num): StmtExpr => value "bv" width;
 op hole: StmtExpr => "<?>";
 op nondetHole: StmtExpr => "<??>";
 
@@ -33,13 +34,16 @@ op initializer(value: StmtExpr): Initializer => " := " value:0;
 op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
   => @[prec(0)] "var " name varType assignment;
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
+  @[prec(95)] callee:89 "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access. prec coupled to `call` (also 95, via its `callee:89`): keep them
+// equal or `a#b(x)` parsing shifts. prec 95 > postfix `++`/`--` (90) is what lets
+// `c#n++` parse paren-free as `(c#n)++`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(95), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
@@ -47,6 +51,16 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " := " value;
+
+// Multi-target assignment: assign var x: int, y, var z: int := call()
+// Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
+category AssignTarget;
+op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
+op assignTargetVar (name: Ident): AssignTarget => name;
+op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
+
+op multiAssign (targets: CommaSepBy AssignTarget, value: StmtExpr): StmtExpr
+  => @[prec(0)] "assign " targets " := " value:0;
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " + " rhs;
@@ -67,11 +81,24 @@ op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " |
 op andThen (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
 op orElse (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
-op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ++ " rhs;
+// String concatenation. Uses `^` (OCaml-style) so that `++` is reserved for the
+// Java-style increment operator below.
+op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ^ " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
+
+// Refer to the pre-state value of an expression (for use in postconditions, modifies clauses).
+op old (inner: StmtExpr): StmtExpr => "old(" inner ")";
+
+// Java-style increment / decrement.
+// Prefix forms (leading parsers): yield the new value.
+op preIncr (target: StmtExpr): StmtExpr => @[prec(80)] "++" target;
+op preDecr (target: StmtExpr): StmtExpr => @[prec(80)] "--" target;
+// Postfix forms (trailing parsers): yield the old value.
+op postIncr (target: StmtExpr): StmtExpr => @[prec(90)] target "++";
+op postDecr (target: StmtExpr): StmtExpr => @[prec(90)] target "--";
 
 // Quantifiers
 category Trigger;
@@ -88,16 +115,16 @@ op errorSummary(msg: Str): ErrorSummary => " summary " msg;
 
 // If-else
 category ElseBranch;
-op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] " else " stmts;
+op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "\nelse " stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
-  @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond "\nthen " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
-op return (value : StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
-op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{ " stmts " }";
-op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{ " stmts " }" label;
+op return (value : Option StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
+op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}";
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label;
 op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // While loops
@@ -109,6 +136,9 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
 
 op forLoop (init: StmtExpr, cond: StmtExpr, step: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "for" "(" init ";" cond ";" step ")" invariants " " body:0;
+
+op doWhile (body: StmtExpr, cond: StmtExpr, invariants: Seq InvariantClause): StmtExpr
+  => "do " body:0 " while" "(" cond ")" invariants;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;

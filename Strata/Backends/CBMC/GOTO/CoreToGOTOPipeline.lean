@@ -5,9 +5,13 @@
 -/
 module
 
-public import Strata.Backends.CBMC.CollectSymbols
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Transform.ProcedureInlining
+public import Strata.Languages.Core.Factory
+import Strata.Backends.CBMC.CollectSymbols
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Json
 
 /-! ## Core-to-GOTO translation pipeline
 
@@ -40,12 +44,17 @@ namespace Strata
 
 public section
 
-private def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
+/-- Rewrite a `Core.CoreIdent` according to a name-substitution map. Names absent
+from `rn` pass through unchanged; metadata is preserved. -/
+def renameIdent (rn : Std.HashMap String String) (id : Core.CoreIdent) : Core.CoreIdent :=
   match rn[id.name]? with
   | some new => ⟨new, id.metadata⟩
   | none => id
 
-private partial def renameExpr
+/-- Rewrite all free variable names in a `Core.Expression.Expr` according to `rn`.
+Recurses through binders and other expression forms; bound-variable indices are
+unchanged. -/
+partial def renameExpr
     (rn : Std.HashMap String String)
     : Core.Expression.Expr → Core.Expression.Expr
   | .fvar m name ty => .fvar m (renameIdent rn name) ty
@@ -56,7 +65,9 @@ private partial def renameExpr
   | .eq m e1 e2 => .eq m (renameExpr rn e1) (renameExpr rn e2)
   | e => e
 
-private def renameCmd
+/-- Apply a name-substitution map to identifiers and expressions inside an
+`Imperative.Cmd` over Core expressions. -/
+def renameCmd
     (rn : Std.HashMap String String)
     : Imperative.Cmd Core.Expression → Imperative.Cmd Core.Expression
   | .init name ty e md => .init (renameIdent rn name) ty (e.map (renameExpr rn)) md
@@ -80,7 +91,8 @@ private partial def unwrapCmdExt
     .ok (.ite (c.map (renameExpr rn)) t' e' md)
   | .loop g m i body md => do
     let body' ← body.mapM (unwrapCmdExt rn)
-    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn)) (i.map (renameExpr rn)) body' md)
+    .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
+      (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
   | .funcDecl _d _md =>
     .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
@@ -101,7 +113,7 @@ private def hasCallStmt : List Core.Statement → Bool
 Collect all funcDecl statements from a procedure body (recursively)
 and return them as Core.Functions, stripping them from the body.
 -/
-private def collectFuncDecls : List Core.Statement →
+def collectFuncDecls : List Core.Statement →
     Except Std.Format (List Core.Function × List Core.Statement)
   | [] => return ([], [])
   | .funcDecl decl _ :: rest => do
@@ -216,7 +228,7 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for inv in invariants do
+          for (_, inv) in invariants do
             let inv_expr ← toExpr (renameExpr rn inv)
             backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
           match measure with
@@ -258,7 +270,11 @@ def procedureToGotoCtx
     : Except Std.Format
         (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
   -- Lift local function declarations out of the body
-  let (liftedFuncs, body) ← collectFuncDecls p.body
+  -- TODO: This pass could be split into a two-stage transformation:
+  -- 1. structured → cfg (via StructuredToUnstructured)
+  -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
+  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+  let (liftedFuncs, body) ← collectFuncDecls bodyStmts
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
@@ -269,7 +285,7 @@ def procedureToGotoCtx
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
   let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
-  let locals := (Imperative.Block.definedVars body).map Core.CoreIdent.toPretty
+  let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
   let rn : Std.HashMap String String :=
     (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
@@ -498,7 +514,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
   let inlined ← match Core.Transform.run program (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
-    | .error msg => throw msg
+    | .error msg => throw (toString msg)
   let (tcPgm, Env) ← match typeCheckCore inlined factory with
     | .ok r => pure r
     | .error msg => throw msg

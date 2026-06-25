@@ -5,11 +5,11 @@
 -/
 module
 
-public import Strata.DDM.Elab
-public import Strata.DDM.AST
-public import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
-public import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+public import StrataDDM.AST
+public import StrataDDM.Integration.Lean.HashCommands -- shake: keep
+public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
 
 namespace Strata.Laurel
 
@@ -25,17 +25,23 @@ def coreDefinitionsForLaurelDDM :=
 #strata
 program Laurel;
 
+datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
+datatype LaurelUnit { MkLaurelUnit() }
 
 // The types for these Map functions are incorrect.
 // We'll fix them when Laurel supports polymorphism
-function select(map: int, key: int) : int
+// And then we can remove the datatype Box as well
+// And remove the hacky filter in HeapParameterization
+datatype Box { MkBox() }
+
+function select(map: int, key: int) : Box
   external;
 
-function update(map: int, key: int, value: int) : int
+function update(map: int, key: int, value: int) : Box
   external;
 
-function const(value: int) : int
+function const(value: int) : Box
   external;
 
 #end

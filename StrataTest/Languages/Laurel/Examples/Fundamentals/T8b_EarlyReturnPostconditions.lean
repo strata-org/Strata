@@ -4,15 +4,16 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
+/-! ## Correct early return -/
 
-def program := r"
+#eval testLaurel
+#strata
+program Laurel;
 procedure earlyReturnCorrect(x: int) returns (r: int)
   opaque
   ensures r >= 0
@@ -22,20 +23,21 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
   };
   return x
 };
+#end
 
+/-! ## Buggy early return: postcondition fails -/
+
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure earlyReturnBuggy(x: int) returns (r: int)
   opaque
   ensures r >= 0
-//        ^^^^^^ error: assertion does not hold
+//        ^^^^^^ error: postcondition does not hold
 {
   if x < 0 then {
     return x
   };
   return x
 };
-"
-
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "EarlyReturn" program 14 processLaurelFile
-
-end Strata.Laurel
+#end

@@ -4,14 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import Strata.Languages.Laurel
 
-open StrataTest.Util
 open Strata
 
 namespace Laurel
 
+-- TODO test non-det vs det holes. Make the default of holes non-det.
 def program := r"
 nondet procedure nonDeterministic(x: int): (r: int)
   opaque
@@ -20,7 +19,9 @@ nondet procedure nonDeterministic(x: int): (r: int)
   assumed
 };
 
-procedure caller() {
+procedure caller()
+  opaque
+{
   var x = nonDeterministic(1)
   assert x > 0;
   var y = nonDeterministic(1)
@@ -29,11 +30,13 @@ procedure caller() {
 };
 
 nondet procedure nonDeterminsticTransparant(x: int): (r: int)
+  opaque
 {
   nonDeterministic(x + 1)
 };
 
 procedure nonDeterministicCaller(x: int): int
+  opaque
 {
   nonDeterministic(x)
 };

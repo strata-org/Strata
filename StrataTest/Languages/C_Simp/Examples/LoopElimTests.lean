@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
-import Strata.Languages.Core.CoreOp
+meta import all Strata.Languages.C_Simp.C_Simp
+meta import all Strata.Languages.C_Simp.Verify
+meta import all Strata.Languages.Core.CoreOp
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! ## Loop elimination: deterministic guard without measure
 
@@ -82,6 +86,7 @@ through `to_core` to test the nondet loop elimination path.
 -/
 
 open Strata in
+open StrataDDM in
 open Strata.C_Simp in
 private def nondetLoopProgram : C_Simp.Program :=
   let md : Imperative.MetaData Expression := .empty
@@ -102,7 +107,7 @@ private def nondetLoopProgram : C_Simp.Program :=
     inputs := ListMap.ofList [(n, .tcons "int" [])],
     body := [
       .cmd (.init i intTy (.det zero) md),
-      .loop .nondet .none [iLeN] [
+      .loop .nondet .none [("iLeN", iLeN)] [
         .cmd (.set i (.det iAddOne) md)
       ] md,
       .exit "return" md
@@ -145,3 +150,5 @@ spec {
 -/
 #guard_msgs in
 #eval Strata.to_core nondetLoopProgram
+
+end

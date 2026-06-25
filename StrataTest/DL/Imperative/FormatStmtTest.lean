@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.Languages.Core.Statement
-import Strata.Languages.Core.DDMTransform.FormatCore
+module
+meta import Strata.Languages.Core.Statement
+meta import Strata.Languages.Core.DDMTransform.FormatCore
+
+meta section
 
 namespace FormatStmtTest
 open Core
@@ -136,22 +139,18 @@ info: while
 info: while
   x == 0
   (some x)
-  [true]
+  [[inv1]: true]
 {
   x := 1;
 }
 -/
 #guard_msgs in
-#eval! format (Stmt.loop (.det xEq0) (some x) [tt]
+#eval! format (Stmt.loop (.det xEq0) (some x) [("inv1", tt)]
                 ([Statement.set "x" int1 .empty] : Ss) .empty : S)
 
 -- 14. exit with label
 /-- info: exit target -/
-#guard_msgs in #eval! format (Stmt.exit (some "target") .empty : S)
-
--- 14b. exit without label
-/-- info: exit -/
-#guard_msgs in #eval! format (Stmt.exit none .empty : S)
+#guard_msgs in #eval! format (Stmt.exit "target" .empty : S)
 
 -- 15. funcDecl
 /-- info: funcDecl <function> -/
@@ -178,3 +177,4 @@ info: {
                 Statement.assert "check" xEq1 .empty] : Ss)
 
 end FormatStmtTest
+end

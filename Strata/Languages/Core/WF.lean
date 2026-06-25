@@ -5,7 +5,6 @@
 -/
 module
 
-public import Strata.DL.Util.Func
 public import Strata.DL.Util.ListUtils
 import all Strata.DL.Util.ListUtils
 public import Strata.Languages.Core.Program
@@ -67,9 +66,9 @@ structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : 
 
 structure WFifProp    (Cmd : Type) (p : Program) (cond : ExprOrNondet Expression)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (b : Block) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List (String × Expression.Expr)) (b : Block) : Prop where
 
-structure WFexitProp  (p : Program) (label : Option String) : Prop where
+structure WFexitProp  (p : Program) (label : String) : Prop where
 
 /-- Well-formedness for local function declarations.
     Checks that function parameter names are unique.
@@ -91,9 +90,10 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
   | .ite   (cond : ExprOrNondet Expression) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr) (invariant : List Expression.Expr) (body : Block) _ =>
+  | .loop  (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
+           (invariant : List (String × Expression.Expr)) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
-  | .exit (label : Option String) _ => WFexitProp p label
+  | .exit (label : String) _ => WFexitProp p label
   | .funcDecl decl _ => WFfuncDeclProp p decl
   | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
@@ -114,7 +114,7 @@ structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.C
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
-  oldOnlyInout : ∀ id ∈ Imperative.HasVarsPure.getVars (P := Expression) pp.2.expr,
+  oldOnlyInout : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
     CoreIdent.isOldIdent id → id ∈ ListMap.keys (d.header.getInoutParams.map
       (fun (x, ty) => (CoreIdent.mkOld x.name, ty)))
 
@@ -136,16 +136,22 @@ structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
+-- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
+-- `bodyExitsCovered`) are vacuously satisfied. CFG-specific well-formedness
+-- (e.g., label uniqueness, reachability) is not yet captured here:
+--   * verify block labels are unique
+--   * all variables used are declared/initialized
+--   * target labels of transfer commands exist
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
-  wfstmts : WFStatementsProp p d.body
-  wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
+  wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
+  wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss false).Nodup
   inputsNodup : (ListMap.keys d.header.inputs).Nodup
   outputsNodup : (ListMap.keys d.header.outputs).Nodup
   ioNotOld : ∀ id ∈ ListMap.keys d.header.inputs ++ ListMap.keys d.header.outputs,
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
-  -- There is no exit statement that cannot be caught by any block in the procedure.
-  bodyExitsCovered : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] d.body
+  bodyExitsCovered : ∀ ss, d.body = .structured ss →
+    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

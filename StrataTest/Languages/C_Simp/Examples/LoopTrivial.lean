@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
+meta import all Strata.Languages.C_Simp.C_Simp
+meta import all Strata.Languages.C_Simp.Verify
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 def LoopTrivialPgm :=
 #strata
@@ -62,7 +66,7 @@ info: function loopTrivial {
   while
     (~Int.Lt i n)
     (some (~Int.Sub n i))
-    [(~Int.Le i n)]
+    [[loopTrivial_invariant_433_454]: (~Int.Le i n)]
   {
     i := (~Int.Add i #1)
   }
@@ -233,3 +237,5 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify LoopTrivialPgm
+
+end

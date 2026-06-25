@@ -6,8 +6,6 @@
 module
 
 public import Strata.DL.Lambda.IntBoolFactory
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.LExprWF
 
 /-! # Function Precondition Obligation Collection
 
@@ -66,12 +64,6 @@ For each call to a function with preconditions:
 def collectWFObligations [Coe String (T.Identifier)]  [Inhabited T.Metadata] (F : Factory T) (e : LExpr T.mono) : List (WFObligation T) :=
   go F e []
 where
-  /-- Wrap an obligation with accumulated implications -/
-  wrapImplications (implications : List (T.Metadata × LExpr T.mono))
-      (ob : LExpr T.mono) : LExpr T.mono :=
-    implications.foldr (fun (md, lhs) acc =>
-      .app md (.app md (@boolImpliesFunc T).opExpr lhs) acc) ob
-
   go (F : Factory T) (e : LExpr T.mono)
       (implications : List (T.Metadata × LExpr T.mono)) : List (WFObligation T) :=
     -- A function call generates an obligation that the precondition is
@@ -105,6 +97,19 @@ where
         if opName == (@boolImpliesFunc T).name then
           let lhsObs := go F lhs implications
           let rhsObs := go F rhs ((md, lhs) :: implications)
+          lhsObs ++ rhsObs
+        else if opName == (@boolAndFunc T).name then
+          -- Short-circuit &&: rhs is only reached when lhs is true.
+          -- E.g. `0 <= j && j < n && Sequence.select(s, j)` — the prefix
+          -- is a hypothesis for the select's out-of-bounds check.
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, lhs) :: implications)
+          lhsObs ++ rhsObs
+        else if opName == (@boolOrFunc T).name then
+          -- Short-circuit ||: rhs is only reached when lhs is false.
+          -- E.g. `i == 0 || x / i > 1` — ¬(i == 0) is a hypothesis for x / i.
+          let lhsObs := go F lhs implications
+          let rhsObs := go F rhs ((md, .app md (@boolNotFunc T).opExpr lhs) :: implications)
           lhsObs ++ rhsObs
         else
           go F lhs implications ++ go F rhs implications

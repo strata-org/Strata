@@ -1,0 +1,181 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+meta import Strata.Transform.ANFEncoder
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.DDMTransform.ASTtoCST
+import StrataDDM.Integration.Lean.HashCommands
+
+
+meta section
+
+namespace Core.ANFEncoder.Tests
+
+open Strata Lambda Imperative Core.ANFEncoder
+
+private def translateCore (p : StrataDDM.Program) : Core.Program :=
+  (TransM.run Inhabited.default (translateProgram p)).fst
+
+/-! ## ANFEncoder across ITE branches and condition -/
+
+private def iteDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  if (x + y > 0) {
+    assert (x + y >= 1);
+  } else {
+    assert (x + y <= 0);
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  var $__anf.0 : int := x + y;
+  if ($__anf.0 > 0) {
+    assert [assert_0]: $__anf.0 >= 1;
+  } else {
+    assert [assert_1]: $__anf.0 <= 0;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore iteDupProg)).2)
+
+/-! ## No duplicates leaves body unchanged -/
+
+private def noDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assume (x >= 5);
+  assert (y <= 10);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  assume [assume_0]: x >= 5;
+  assert [assert_0]: y <= 10;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore noDupProg)).2)
+
+/-! ## Duplicate ITE expression is lifted -/
+
+private def iteDupExprProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert ((if x > 0 then x else y) >= 0);
+  assert ((if x > 0 then x else y) <= 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  var $__anf.0 : int := if x > 0 then x else y;
+  assert [assert_0]: $__anf.0 >= 0;
+  assert [assert_1]: $__anf.0 <= 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore iteDupExprProg)).2)
+
+/-! ## Subexpressions within function calls are lifted when duplicated -/
+
+private def fnCallDupArgProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert (x + y > 0);
+  assert (x + y < 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  var $__anf.0 : int := x + y;
+  assert [assert_0]: $__anf.0 > 0;
+  assert [assert_1]: $__anf.0 < 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore fnCallDupArgProg)).2)
+
+/-! ## Unique subexpressions are not lifted -/
+
+private def uniqueSubexprProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert (x + 1 > 0);
+  assert (y + 2 < 100);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int, y : int)
+{
+  assert [assert_0]: x + 1 > 0;
+  assert [assert_1]: y + 2 < 100;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore uniqueSubexprProg)).2)
+
+/-! ## Multi-pass: outer subsumes inner duplicate -/
+
+-- `(x + 1) * 2` and `x + 1` are both duplicated, but `x + 1` is a subexpression
+-- of `(x + 1) * 2` and so is dropped by `removeSubsumed` in pass 1. After pass
+-- 1 lifts `(x + 1) * 2` into a var declaration, `x + 1` appears once in that
+-- var-decl init AND once in the third assert, exposing a fresh duplicate that
+-- pass 2 then extracts. Without fixpoint iteration the third assert would
+-- still hold a free `(x + 1)` that duplicates the var-decl's init.
+private def nestedDupProg :=
+#strata
+program Core;
+procedure test(x : int) {
+  assert ((x + 1) * 2 > 0);
+  assert ((x + 1) * 2 < 100);
+  assert (x + 1 > 50);
+};
+#end
+
+/--
+info: program Core;
+
+procedure test (x : int)
+{
+  var $__anf.1 : int := x + 1;
+  var $__anf.0 : int := $__anf.1 * 2;
+  assert [assert_0]: $__anf.0 > 0;
+  assert [assert_1]: $__anf.0 < 100;
+  assert [assert_2]: $__anf.1 > 50;
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (anfEncodeProgram (translateCore nestedDupProg)).2)
+
+end Core.ANFEncoder.Tests
+end

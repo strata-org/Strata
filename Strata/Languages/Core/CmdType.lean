@@ -7,7 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.TypeContext
-public import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.LExprT
 
 namespace Core
 open Lambda Imperative
@@ -58,15 +58,8 @@ bound variables.
 -/
 def inferType (C: LContext CoreLParams) (Env: TEnv Unit) (c : Cmd Expression) (e : LExpr CoreLParams.mono) :
     Except DiagnosticModel ((LExpr CoreLParams.mono) × LTy × TEnv Unit) := do
-  -- We only allow free variables to appear in `init` statements. Any other
-  -- occurrence leads to an error.
-  let T ← match c with
-    | .init _ _ _ _ =>
-      let efv := LExpr.freeVars e
-      (Env.addInOldestContext efv).mapError DiagnosticModel.fromFormat
-    | _ =>
-      let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError DiagnosticModel.fromFormat
-      .ok Env
+  let _ ← Env.freeVarCheck e f!"[{c}]" |>.mapError DiagnosticModel.fromFormat
+  let T := Env
   let (ea, T) ← LExpr.resolve C T e |>.mapError DiagnosticModel.fromFormat
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)

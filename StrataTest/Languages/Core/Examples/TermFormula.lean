@@ -3,9 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 /-!
 # Term/Formula Deep Embedding
 
@@ -239,6 +243,82 @@ Obligation: holds_body_calls_Formula..cons_12
 Property: assert
 Result: ✅ pass
 
+Obligation: eval_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_2
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_4
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_5
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_2
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_4
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_5
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_6
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_7
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_8
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_9
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_10
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_11
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_12
+Property: assert
+Result: ✅ pass
+
 Obligation: add_neg
 Property: assert
 Result: ✅ pass
@@ -332,6 +412,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify termFormulaPgm (options := .quiet)
+#eval Core.verify termFormulaPgm (options := .quiet)
 
 end Strata.TermFormulaTest
+end

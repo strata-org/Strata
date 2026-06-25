@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
-import Strata.Transform.CallElim
+meta import Strata.Languages.Core.Verifier
+meta import Strata.Transform.CallElim
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
+open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -46,7 +50,7 @@ private def testCallElim
       dbg_trace f!"New Program:\n{elimProgram}"
       let runner tempDir :=
         EIO.toIO (fun dm => IO.Error.userError (toString (dm.format none)))
-                    (Core.verify elimProgram tempDir .none .quiet)
+                    (_root_.Core.verify elimProgram tempDir .none .quiet)
       match tempDir with
       | .none =>
         IO.FS.withTempDir runner
@@ -96,3 +100,4 @@ Result: ✅ pass
 ---------------------------------------------------------------------
 
 end Strata
+end

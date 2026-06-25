@@ -6,14 +6,8 @@
 module
 
 public import Strata.Languages.Core.Expressions
-public import Strata.DL.Imperative.PureExpr
-public import Strata.Languages.Core.Identifiers
-public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Imperative.HasVars
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.TypeConstructor
-import Strata.Util.Tactics
+import Std.Tactic.BVDecide.Normalize.Prop
 
 namespace Core
 open Imperative
@@ -29,15 +23,20 @@ A call argument is either an input expression, an in-out variable, or an
 output variable.
 -/
 inductive CallArg (P : PureExpr) where
+  /-- An input argument: a by-value expression. -/
   | inArg (e : P.Expr)
+  /-- An input-output argument: a mutable variable passed by reference. -/
   | inoutArg (id : P.Ident)
+  /-- An output-only argument: a variable whose final value is returned to the caller. -/
   | outArg (id : P.Ident)
 
 /--
 Extend Imperative's commands by adding a procedure call.
 -/
 inductive CmdExt (P : PureExpr) where
+  /-- A standard imperative command. -/
   | cmd (c : Imperative.Cmd P)
+  /-- A procedure call with the given name and arguments. -/
   | call (procName : String) (args : List (CallArg P))
          (md : MetaData P)
 
@@ -192,42 +191,46 @@ end
 
 ---------------------------------------------------------------------
 
-def Command.getVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.getVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.getVars
-  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasVarsPure.getVars
+  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasFvars.getFvars
 
 instance : HasVarsPure Expression Command where
   getVars := Command.getVars
 
-def Command.definedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.getOps (c : Command) : List Expression.Ident :=
+  match c with
+  | .cmd c => Cmd.getOps c
+  | .call _ args _ => (CallArg.getInputExprs args).flatMap HasOps.getOps
+
+instance : HasOpsImp Expression Command where
+  getOps := Command.getOps
+
+@[expose] def Command.definedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.definedVars
   | _ => []
 
-def Command.modifiedVars (c : Command) : List Expression.Ident :=
+@[expose] def Command.modifiedVars (c : Command) : List Expression.Ident :=
   match c with
   | .cmd c => c.modifiedVars
   | .call _ args _ => CallArg.getLhs args
 
-def Command.touchedVars (c : Command) : List Expression.Ident :=
+def Command.modifiedOrDefinedVars (c : Command) : List Expression.Ident :=
   Command.definedVars c ++ Command.modifiedVars c
 
 instance : HasVarsImp Expression Command where
-  definedVars := Command.definedVars
+  definedVars c _ := Command.definedVars c
   modifiedVars := Command.modifiedVars
-  touchedVars := Command.touchedVars
 
 instance : HasVarsImp Expression Statement where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
-  touchedVars := Stmt.touchedVars
 
 instance : HasVarsImp Expression (List Statement) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
-  -- order matters for Havoc, so needs to override the default
-  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -277,7 +280,7 @@ def Command.getVarsTrans
   | .cmd c => Cmd.getVars (P:=Expression) c
   | .call f args _ =>
     let lhs := CallArg.getLhs args
-    (CallArg.getInputExprs args).flatMap HasVarsPure.getVars ++
+    (CallArg.getInputExprs args).flatMap HasFvars.getFvars ++
     match π f with
     | some proc => lhs ++ HasVarsTrans.getVarsTrans π proc
     | none => []
@@ -301,7 +304,7 @@ def Statement.getVarsTrans
     match decl.body with
     | none => []
     | some body =>
-      let bodyVars := HasVarsPure.getVars body
+      let bodyVars := HasFvars.getFvars body
       let formals := decl.inputs.map (·.1)
       bodyVars.filter (fun v => formals.all (fun f => v.name != f.name))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
@@ -325,17 +328,17 @@ def Command.definedVarsTrans
 -- since call statement does not define any new variables
 def Statement.definedVarsTrans
   (_ : String → Option ProcType) (s : Statement) :=
-  Stmt.definedVars s
+  Stmt.definedVars s false
 
 -- don't need to transitively lookup for procedures
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Block.definedVars s
+  Block.definedVars s false
 
 mutual
-/-- get all variables touched by the statement `s`. -/
-def Statement.touchedVarsTrans
+/-- get all variables modified or defined by the statement `s` (write-set, transitive). -/
+def Statement.modifiedOrDefinedVarsTrans
   {ProcType : Type}
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (s : Statement)
@@ -343,26 +346,26 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .exit _ _ => []
-  | .block _ bss _ => Statements.touchedVarsTrans π bss
-  | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
-  | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
+  | .block _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
+  | .ite _ tbss ebss _ => Statements.modifiedOrDefinedVarsTrans π tbss ++ Statements.modifiedOrDefinedVarsTrans π ebss
+  | .loop _ _ _ bss _ => Statements.modifiedOrDefinedVarsTrans π bss
   | .funcDecl decl _ => [decl.name]  -- Function declaration touches (defines) the function name
   | .typeDecl _ _ => []  -- Type declarations don't touch variables
 
-def Statements.touchedVarsTrans
+def Statements.modifiedOrDefinedVarsTrans
   {ProcType : Type}
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (ss : Statements)
   : List Expression.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
+  | s :: srest => Statement.modifiedOrDefinedVarsTrans π s ++ Statements.modifiedOrDefinedVarsTrans π srest
 end
 
 def Statement.allVarsTrans
   [HasVarsProcTrans Expression ProcType]
   (π : String → Option ProcType) (s : Statement) :=
-  Statement.getVarsTrans π s ++ Statement.touchedVarsTrans π s
+  Statement.getVarsTrans π s ++ Statement.modifiedOrDefinedVarsTrans π s
 
 def Statements.allVarsTrans
   [HasVarsProcTrans Expression ProcType]
@@ -405,8 +408,8 @@ def Statement.substFvar (s : Core.Statement)
           (Block.substFvar elseb fr to) metadata
   | .loop guard measure invariant body metadata =>
     .loop (guard.map (Lambda.LExpr.substFvar · fr to))
-          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
-          (invariant.map (Lambda.LExpr.substFvar · fr to))
+          (measure.map (Lambda.LExpr.substFvar · fr to))
+          (invariant.map (fun (l, e) => (l, Lambda.LExpr.substFvar e fr to)))
           (Block.substFvar body fr to)
           metadata
   | .exit _ _ => s
@@ -453,6 +456,64 @@ def Statement.renameLhs (s : Core.Statement)
   | .typeDecl _ _ => s  -- Type declarations don't have lhs variables
   | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .exit _ _ => s
 end
+
+---------------------------------------------------------------------
+
+/-- Apply a function to all user-facing expressions in a Core command. -/
+def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Command
+  | .cmd (.assert l e md) => .cmd (.assert l (f e) md)
+  | .cmd (.assume l e md) => .cmd (.assume l (f e) md)
+  | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
+  | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
+  | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
+  | .call pname args md => .call pname (args.map fun
+      | .inArg e => .inArg (f e)
+      | a => a) md
+  | c => c
+
+/-- Apply a function to all user-facing expressions in a statement. -/
+def Statement.mapExprs (f : Expression.Expr → Expression.Expr) (s : Statement) : Statement :=
+  Imperative.Stmt.mapExpr f (Command.mapExpr f) s
+
+/-- Apply a function to all user-facing expressions in a list of statements. -/
+def Statements.mapExprs (f : Expression.Expr → Expression.Expr)
+    (ss : Statements) : Statements :=
+  ss.map (Statement.mapExprs f)
+
+/-- Collect all user-facing expressions from a statement. -/
+def Statement.collectExprs :
+    Statement → List Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) => [e]
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .cmd (.cmd (.cover _ e _)) => [e]
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .cmd (.cmd (.set _ (.det e) _)) => [e]
+  | .cmd (.call _ args _) => args.filterMap fun
+      | .inArg e => some e
+      | _ => none
+  | .block _ ss _ => ss.flatMap Statement.collectExprs
+  | .ite (.det c) tss ess _ =>
+    [c] ++ tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .ite .nondet tss ess _ =>
+    tss.flatMap Statement.collectExprs ++
+    ess.flatMap Statement.collectExprs
+  | .loop (.det g) measure inv body _ =>
+    [g] ++ measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .loop .nondet measure inv body _ =>
+    measure.toList ++
+    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
+  | .cmd (.cmd (.init _ _ .nondet _)) => []
+  | .cmd (.cmd (.set _ .nondet _)) => []
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Collect all user-facing expressions from a list of statements. -/
+def Statements.collectExprs
+    (ss : Statements) : List Expression.Expr :=
+  ss.flatMap Statement.collectExprs
 
 ---------------------------------------------------------------------
 

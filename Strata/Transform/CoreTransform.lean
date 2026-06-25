@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
-public import Strata.DL.Util.LabelGen
 public import Strata.Util.Statistics
 
 /-! # Utility functions for program transformation in Strata Core -/
@@ -127,7 +125,7 @@ def CoreTransformState.emp : CoreTransformState :=
     currentProcedureName := .none, cachedAnalyses := .emp }
 
 @[expose]
-abbrev Err := String
+abbrev Err := Strata.DiagnosticModel
 
 @[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
@@ -151,13 +149,13 @@ instance : MonadLift CoreGenM (StateM CoreTransformState) where
 def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
   match e with
   | .ok a => pure a
-  | .error dm => throw dm.message
+  | .error dm => throw dm
 
 /-- Get the factory from state, throwing if not set. -/
 def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
   match (← get).factory with
   | some F => pure F
-  | none => throw "factory not set in CoreTransformState"
+  | none => throw (Strata.DiagnosticModel.fromMessage "factory not set in CoreTransformState")
 
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
@@ -166,6 +164,7 @@ def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
 /-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
   modify fun σ => { σ with statistics := σ.statistics.increment key n }
+
 
 
 /--
@@ -178,7 +177,7 @@ def genArgExprIdentsTrip
   (args : List Expression.Expr)
   : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
-  if inputs.length ≠ args.length then throw "input length and args length mismatch"
+  if inputs.length ≠ args.length then throw (Strata.DiagnosticModel.fromMessage "input length and args length mismatch")
   else let gen_idents ← genArgExprIdents args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
@@ -191,7 +190,7 @@ def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
-  if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"
+  if outputs.length ≠ lhs.length then throw (Strata.DiagnosticModel.fromMessage "output length and lhs length mismatch")
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
 
@@ -331,10 +330,14 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let (changed, new_body) ← runStmtsRec f proc.body
+        let bodyStmts ← match proc.body with
+          | .structured ss => pure ss
+          | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+              s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
+        let (changed, new_body) ← runStmtsRec f bodyStmts
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }

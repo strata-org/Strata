@@ -5,12 +5,14 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.InstToJson
-public import Strata.Backends.CBMC.GOTO.DefaultSymbols
 public import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
 public import Strata.DL.Imperative.ToCProverGOTO
-public import Strata.Languages.Core.Verifier
-import Lean.Parser.Types
+public import Strata.Backends.CBMC.GOTO.Program
+public import Strata.Languages.Core.Program
+import Strata.Backends.CBMC.GOTO.DefaultSymbols
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramType
+import Strata.Util.Json
 
 public section
 
@@ -108,8 +110,8 @@ def convertMetaData (md : Imperative.MetaData Core.Expression)
     match elem.fld with
     | .label l => match elem.value with
       | .msg s => some ⟨.label l, .msg s⟩
-      | .fileRange r => some ⟨.label l, .fileRange r⟩
       | .switch b => some ⟨.label l, .switch b⟩
+      | .provenance p => some ⟨.label l, .provenance p⟩
       | .expr _ => none
     | .var _ => none
 
@@ -159,6 +161,7 @@ structure CProverGOTO.Json where
   goto   : Lean.Json := .null
 
 open Strata in
+open StrataDDM in
 def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context) :
   Except String CProverGOTO.Json := do
   let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
@@ -201,7 +204,11 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       if !p.header.typeArgs.isEmpty then
         throw f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
 
-      let cmds ← p.body.mapM
+      -- TODO: This pass could be split into a two-stage transformation:
+      -- 1. structured → cfg (via StructuredToUnstructured)
+      -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
+      let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
+      let cmds ← bodyStmts.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c
           | _ => throw f!"[transformToGoto] We can process Strata Core commands only, not statements! \
@@ -218,7 +225,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
       let formals_renamed := formals.zip new_formals
       let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
 
-      let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
+      let locals := (Imperative.Block.definedVars bodyStmts false).map Core.CoreIdent.toPretty
       let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
       let locals_renamed := locals.zip new_locals
 
@@ -247,6 +254,7 @@ def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context :
               GOTO at a time!"
 
 open Strata in
+open StrataDDM in
 def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := do
   let (program, errors) := TransM.run Inhabited.default (translateProgram env)
   if errors.isEmpty then
@@ -260,6 +268,7 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
     throw (IO.userError s!"DDM Transform Error: {repr errors}")
 
 open Strata in
+open StrataDDM in
 def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
   let json ← getGotoJson programName env
   let symtabObj := match json.symtab with | .obj m => m | _ => .empty

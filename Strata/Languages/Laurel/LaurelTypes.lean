@@ -5,10 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
-public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.Resolution
-import Strata.Util.Tactics
+public import Strata.Languages.Laurel.SemanticModel
 
 public section
 
@@ -20,6 +17,20 @@ no inference is performed.
 -/
 
 namespace Strata.Laurel
+
+def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+  match model.get callee with
+    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
+    | .datatypeDestructor _ fld => fld.type
+    | .parameter p => p.type
+    | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
+      | [] => { val := .TVoid, source := source }
+      | [singleOutput] => singleOutput.type
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+    | .unresolved source => { val := HighType.Unknown, source := source }
+    | astNode =>
+      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
+      default
 
 /--
 Compute the HighType of a StmtExpr given a type environment, type definitions, and procedure list.
@@ -35,26 +46,19 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, source ⟩
   | .LiteralString _ => ⟨ .TString, source ⟩
   | .LiteralDecimal _ => ⟨ .TReal, source ⟩
+  | .LiteralBv _ width => ⟨ .TBv width, source ⟩
   -- Variables
-  | .Identifier id => (model.get id).getType
+  | .Var (.Local id) => (model.get id).getType
+  | .Var (.Declare _) => ⟨ .TVoid, source ⟩
   -- Field access
-  | .FieldSelect _ fieldName => (model.get fieldName).getType
+  | .Var (.Field _ fieldName) => (model.get fieldName).getType
   -- Pure field update returns the same type as the target
   | .PureFieldUpdate target _ _ => computeExprType model target
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
-  | .StaticCall callee _ => match model.get callee with
-    | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
-    | .parameter p => p.type
-    | .staticProcedure proc => match proc.outputs with
-      | [singleOutput] => singleOutput.type
-      | _ => { val := HighType.Unknown, source := none }
-    | .unresolved => { val := HighType.Unknown, source := none }
-    | astNode =>
-      dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"
-      default
-  | .InstanceCall _ _ _ => default -- TODO: implement
+  | .StaticCall callee _ => getCallType source model callee
+  | .InstanceCall _ callee _ => getCallType source model callee
   -- Operators
-  | .PrimitiveOp op args =>
+  | .PrimitiveOp op args _ =>
       match args with
       | head :: tail =>
         match op with
@@ -75,11 +79,16 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .LocalVariable _ _ _ => ⟨ .TVoid, source ⟩
-  | .While _ _ _ _ => ⟨ .TVoid, source ⟩
+  | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
+  | .IncrDecr _ _ target =>
+    -- The expression's type is the type of the target variable.
+    match target.val with
+    | .Local id => (model.get id).getType
+    | .Field _ fieldName => (model.get fieldName).getType
+    | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
@@ -119,6 +128,7 @@ of composite), i.e. the kind of type that appears in modifies clauses and
 triggers heap parameterization. -/
 def isHeapRelevantType (ty : HighType) : Bool :=
   (classifyModifiesHighType ty).isSome
+
 
 end Strata.Laurel
 

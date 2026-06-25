@@ -6,8 +6,8 @@
 module
 
 public meta import Lean.Elab.Term.TermElabM
-public import Strata.DDM.Util.Ion
-public import Strata.DDM.Util.Decimal
+public import StrataDDM.Util.Ion
+public import StrataDDM.Util.Decimal
 
 open Lean Meta Elab Term
 open Ion

@@ -51,6 +51,9 @@ inductive BvOpKind where
   -- Overflow predicates
   | SAddOverflow | SSubOverflow | SMulOverflow | SNegOverflow | SDivOverflow
   | UAddOverflow | USubOverflow | UMulOverflow | UNegOverflow
+  -- Cross-sort conversion
+  | ToUInt -- unsigned bv → int (ubv_to_int)
+  | ToInt  -- signed bv → int  (sbv_to_int)
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 structure BvOp where
@@ -69,7 +72,7 @@ def BvOpKind.isPredicate : BvOpKind → Bool
   | _ => false
 
 def BvOpKind.isUnary : BvOpKind → Bool
-  | .Neg | .Not => true
+  | .Neg | .Not | .ToUInt | .ToInt => true
   | _ => false
 
 def BvOpKind.names : List (BvOpKind × String) :=
@@ -89,7 +92,8 @@ def BvOpKind.names : List (BvOpKind × String) :=
    (.SMulOverflow, "SMulOverflow"), (.SNegOverflow, "SNegOverflow"),
    (.SDivOverflow, "SDivOverflow"),
    (.UAddOverflow, "UAddOverflow"), (.USubOverflow, "USubOverflow"),
-   (.UMulOverflow, "UMulOverflow"), (.UNegOverflow, "UNegOverflow")]
+   (.UMulOverflow, "UMulOverflow"), (.UNegOverflow, "UNegOverflow"),
+   (.ToUInt, "ToUInt"), (.ToInt, "ToInt")]
 
 def BvOpKind.toString (k : BvOpKind) : String := lookupName names k
 instance : ToString BvOpKind := ⟨BvOpKind.toString⟩
@@ -160,12 +164,13 @@ def BoolOpKind.ofString? (s : String) : Option BoolOpKind := lookupKind names s
 /-! ### String Operations -/
 
 inductive StrOpKind where
-  | Length | Concat | Substr | ToRegEx | InRegEx
+  | Length | Concat | Substr | ToRegEx | InRegEx | PrefixOf | SuffixOf
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def StrOpKind.names : List (StrOpKind × String) :=
   [(.Length, "Length"), (.Concat, "Concat"), (.Substr, "Substr"),
-   (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx")]
+   (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx"),
+   (.PrefixOf, "PrefixOf"), (.SuffixOf, "SuffixOf")]
 
 def StrOpKind.toString (k : StrOpKind) : String := lookupName names k
 instance : ToString StrOpKind := ⟨StrOpKind.toString⟩
@@ -240,6 +245,7 @@ inductive CoreOp where
   | map (kind : MapOpKind)
   | seq (kind : SeqOpKind)
   | bvExtract (size hi lo : Nat)
+  | intToBv (n : Nat)  -- int → bv of width n (int_to_bv)
   | trigger (kind : TriggerOpKind)
   | other (name : String)
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
@@ -256,6 +262,7 @@ def CoreOp.toString : CoreOp → String
   | .map kind => kind.toString
   | .seq kind => s!"Sequence.{kind}"
   | .bvExtract size hi lo => s!"Bv{size}.Extract_{hi}_{lo}"
+  | .intToBv n => s!"Int.ToBv{n}"
   | .trigger kind => kind.toString
   | .other name => name
 
@@ -290,6 +297,12 @@ def CoreOp.ofString (name : String) : CoreOp :=
   match parseBvOp? name with
   | some op => op
   | none =>
+  -- Try "Int.ToBv{n}": int → bitvector of width n
+  if name.startsWith "Int.ToBv" then
+    match (name.drop 8).toString.toNat? with
+    | some n => .intToBv n
+    | none   => .other name
+  else
   -- Try numeric ops: "Int.{kind}" or "Real.{kind}"
   let numPrefixes := [("Int.", NumericType.int), ("Real.", NumericType.real)]
   let numResult := numPrefixes.findSome? fun (pfx, ty) =>

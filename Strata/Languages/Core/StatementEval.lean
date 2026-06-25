@@ -5,18 +5,15 @@
 -/
 module
 
-public import Strata.Languages.Core.Statement
 import all Strata.Languages.Core.Statement
-public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.Env
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
-public import Strata.DL.Lambda.LTyUnify
-public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Imperative.StmtEval
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.CmdEval
+public import Strata.Util.Statistics
 
 ---------------------------------------------------------------------
 
@@ -178,7 +175,8 @@ def Command.inlineCallContract (E : Env)
     let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
 
     -- Add postconditions to path conditions.
-    let postconditions := postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)
+    let postconditions := (postconditions.keys.zip (Procedure.Spec.getCheckExprs postconditions)).map
+      fun (label, e) => Imperative.PathConditionEntry.assumption label e
     let E := { E with pathConditions := (E.pathConditions.addInNewest postconditions)}
 
     -- Update environment with post-call state.
@@ -319,11 +317,7 @@ private def createUnreachableAssertObligations
     Imperative.ProofObligations Expression :=
   asserts.toArray.map
     (fun (label, md) =>
-      let propType := match md.getPropertyType with
-        | some s => if s == Imperative.MetaData.divisionByZero then .divisionByZero
-                    else if s == Imperative.MetaData.arithmeticOverflow then .arithmeticOverflow
-                    else .assert
-        | _ => .assert
+      let propType := Imperative.convertMetaDataPropertyType md
       (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
 
 /--
@@ -379,7 +373,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [(deadLabel, LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.false ())]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -584,8 +578,8 @@ private def evalOneStmt (old_var_subst : SubstMap)
     | .nondet =>
       let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
       let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet Imperative.MetaData.empty
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss Imperative.MetaData.empty
+      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
+      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       evalSub Ewn [initStmt, iteStmt] nextSplitId
     | .det c =>
       let cond' := Ewn.env.exprEval c
@@ -676,9 +670,9 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
-  let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
+  let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
+                            [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -771,7 +765,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     match Program.Procedure.find? E.program ⟨procName, ()⟩ with
     | none => CmdEval.updateError E (.Misc s!"procedure '{procName}' not found")
     | some proc =>
-      if proc.body.isEmpty then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
+      if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
         match args.mapM (LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
@@ -811,9 +805,14 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               hasError := fun E => E.error.isSome
               addError := fun E msg => CmdEval.updateError E (.Misc msg)
             }
-            let config : Imperative.RunConfig Expression Command Env :=
-              .stmts proc.body callEnv
-            let configAfter := Imperative.runStmt ops fuel' config
+            let configAfter := match proc.body with
+              | .structured ss =>
+                let config : Imperative.RunConfig Expression Command Env :=
+                  .stmts ss callEnv
+                Imperative.runStmt ops fuel' config
+              | .cfg _ =>
+                .terminal (CmdEval.updateError callEnv
+                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
             match configAfter with
             | .terminal callEnv' =>
               match callEnv'.error with

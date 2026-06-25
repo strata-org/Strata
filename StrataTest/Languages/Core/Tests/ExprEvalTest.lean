@@ -3,22 +3,26 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LTy
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.Encoder
-import Strata.Languages.Core.Env
-import Strata.Languages.Core.Factory
-import Strata.Languages.Core.Identifiers
-import Strata.Languages.Core.Options
-import Strata.Languages.Core.SMTEncoder
-import Strata.Languages.Core.Verifier
-import StrataTest.DL.Lambda.TestGen
-import StrataTest.DL.Lambda.PlausibleHelpers
-import Plausible.Gen
+meta import Strata.DL.Lambda
+meta import Strata.DL.Lambda.LExpr
+meta import Strata.DL.Lambda.LState
+meta import Strata.DL.Lambda.LTy
+meta import Strata.DL.SMT.Term
+meta import Strata.DL.SMT.Encoder
+meta import Strata.Languages.Core.Env
+meta import Strata.Languages.Core.Factory
+meta import Strata.Languages.Core.Identifiers
+meta import Strata.Languages.Core.Options
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+meta import all StrataTest.DL.Lambda.TestGen
+meta import all StrataTest.DL.Lambda.PlausibleHelpers
+public meta import Plausible.Arbitrary
+meta import Plausible
+
+meta section
 
 /-! This file does random testing of Strata Core operations registered in factory, by
 (1) choosing random constant inputs to the operations
@@ -59,6 +63,7 @@ Check whether concrete evaluation of e matches the SMT encoding of e.
 Returns false if e did not reduce to a constant.
 -/
 def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   let tenv := TEnv.default
   let init_state := LState.init
   let e_fvs := LExpr.freeVars e
@@ -75,7 +80,7 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
       let ans ← Core.SMT.dischargeObligation
         { Core.VerifyOptions.default with verbose := .quiet }
         e_fvs_typed Imperative.MetaData.empty filename.toString
-        [] smt_term ctx true false (label := "exprEvalTest")
+        [] smt_term ctx true false (label := "exprEvalTest") (pctx := pctx)
       match ans with
       | .ok (.sat _, _, _) => return true
       | _ =>
@@ -222,3 +227,5 @@ abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
 end Tests
 
 end Core
+
+end

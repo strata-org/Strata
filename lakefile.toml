@@ -1,8 +1,12 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "strata", "StrataMain", "StrataToCBMC", "StrataCoreToGoto"]
+defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
+
+[[require]]
+name = "StrataDDM"
+path = "StrataDDM"
 
 [[require]]
 name = "plausible"
@@ -11,10 +15,6 @@ rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
 name = "Strata"
-
-[[lean_exe]]
-name = "strata"
-root = "StrataMain"
 
 [[lean_lib]]
 name = "StrataExamples"
@@ -27,7 +27,12 @@ globs = ["StrataTest.+"]
 [[lean_exe]]
 name = "StrataTestMain"
 root = "Scripts.StrataTestMain"
-needs = ["StrataTest"]
+# `Strata` is listed explicitly because the driver spawns `lean` on files
+# under `StrataTestExtra/` (which is not a `lean_lib`). Those files import
+# modules from the `Strata` library that are not in `StrataTest`'s transitive
+# closure (e.g., `Strata.DDM.Integration.Java`), so without this the oleans
+# would be missing when running `lake test` from a clean `.lake`.
+needs = ["Strata", "StrataTest"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
@@ -43,5 +48,3 @@ root = "Scripts.CheckImports"
 name = "ImportStats"
 root = "Scripts.ImportStats"
 
-[[lean_exe]]
-name = "DiffTestCore"

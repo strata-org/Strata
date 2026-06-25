@@ -5,7 +5,8 @@
 -/
 module
 
-public import Strata.Languages.Laurel.Laurel
+public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Core.Factory
 
 /-! ### Prelude Filtering
 
@@ -70,15 +71,14 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   match ty.val with
   | .UserDefined name => addTypeName name.text
   | .TCore _ => pure ()
-  | .TTypedField vt => collectHighTypeNames vt
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
   | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
-  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
-  | .TBv _ | .Unknown => pure ()
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
+  | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
 private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
@@ -92,19 +92,27 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames cond; collectExprNames thenB
     elseB.forM collectExprNames
   | .Block stmts _ => stmts.forM collectExprNames
-  | .LocalVariable _ ty init =>
-    collectHighTypeNames ty
-    init.forM collectExprNames
-  | .While cond invs dec body =>
+  | .While cond invs dec body _ =>
     collectExprNames cond; invs.forM collectExprNames
     dec.forM collectExprNames
     collectExprNames body
   | .Assign targets value =>
-    collectExprNames value; targets.forM collectExprNames
-  | .FieldSelect target _ => collectExprNames target
+    collectExprNames value
+    for ⟨t, _⟩ in targets.attach do
+      match t.val with
+      | .Field target _ => collectExprNames target
+      | .Local _ => pure ()
+      | .Declare param => collectHighTypeNames param.type
+  | .IncrDecr _ _ target =>
+    match target.val with
+    | .Field tgt _ => collectExprNames tgt
+    | .Local _ => pure ()
+    | .Declare param => collectHighTypeNames param.type
+  | .Var (.Field target _) => collectExprNames target
+  | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
-  | .PrimitiveOp _ args => args.forM collectExprNames
+  | .PrimitiveOp _ args _ => args.forM collectExprNames
   | .AsType target ty => collectExprNames target; collectHighTypeNames ty
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
   | .Quantifier _ param trigger body =>
@@ -119,8 +127,8 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ContractOf _ func => collectExprNames func
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => ty.forM collectHighTypeNames
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Identifier _ | .This | .Abstract | .All => pure ()
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Var (.Local _) | .This | .Abstract | .All => pure ()
 
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
@@ -177,8 +185,8 @@ private partial def collectInvokeOnTargets (expr : StmtExprMd)
   | .StaticCall callee args =>
     let rest ← args.flatMapM collectInvokeOnTargets
     return callee.text :: rest
-  | .Identifier _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
-  | .LiteralDecimal _ => return []
+  | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .LiteralDecimal _ | .LiteralBv _ _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
 
@@ -213,8 +221,6 @@ private def buildDependencyMap (prog : Laurel.Program)
         for c in dt.constructors do
           insertNew c.name.text (deps.insert name)
             s!"constructor '{c.name.text}' of datatype '{name}'"
-          insertNew (dt.testerName c) (deps.insert name)
-            s!"tester '{dt.testerName c}' of datatype '{name}'"
           for a in c.args do
             insertNew (dt.destructorName a) (deps.insert name)
               s!"destructor '{dt.destructorName a}'"

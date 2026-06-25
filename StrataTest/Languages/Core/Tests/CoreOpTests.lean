@@ -3,8 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.CoreOp
+meta import Strata.Languages.Core.CoreOp
+
+meta section
 
 /-! ## Tests for CoreOp structured operator types -/
 
@@ -55,6 +58,8 @@ private def checkRoundTrip (name : String) : Bool :=
 #guard checkRoundTrip "Str.Length"
 #guard checkRoundTrip "Str.Concat"
 #guard checkRoundTrip "Str.Substr"
+#guard checkRoundTrip "Str.PrefixOf"
+#guard checkRoundTrip "Str.SuffixOf"
 
 -- Regex ops
 #guard checkRoundTrip "Re.All"
@@ -118,3 +123,5 @@ end RoundTrip
   | .bvExtract 16 15 15 => true | _ => false
 
 end Core
+
+end

@@ -5,10 +5,14 @@
 -/
 module
 
-public import Strata.Languages.Laurel.MapStmtExpr
-public import Strata.Languages.Laurel.LaurelTypes
-public import Strata.DL.Imperative.MetaData
+import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
+public import Strata.Languages.Laurel.LaurelPass
+public import Strata.Languages.Laurel.Resolution
+import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 
 public section
 
@@ -16,28 +20,8 @@ namespace Strata.Laurel
 
 open Strata
 
-/--
-Compute the flattened set of ancestors for a composite type, including itself.
-Traverses the `extending` list transitively.
--/
-def computeAncestors (model: SemanticModel) (name : Identifier) : List CompositeType :=
-  let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
-    match fuel with
-    | 0 =>
-      match model.get current with
-      | .compositeType (ty : CompositeType) => [ty]
-      | _ => []
-    | fuel' + 1 =>
-      match model.get current with
-        | .compositeType (ty : CompositeType) =>
-          [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
-        | _ => []
-  let seen : List Identifier := []
-  (go model.compositeCount name).foldl (fun (acc, seen) ct =>
-    if seen.contains ct.name then (acc, seen)
-    else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
-
 private def mkMd (e : StmtExpr) : StmtExprMd := ⟨e, none⟩
+private def mkVarMd (v : Variable) : VariableMd := ⟨v, none⟩
 
 /--
 Generate Laurel constant definitions for the type hierarchy:
@@ -93,98 +77,6 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   ancestorsForDecls ++ [ancestorsDecl]
 
 /--
-Check if a field can be reached through a given type (directly declared or inherited).
-Returns true if the type or any of its ancestors declares the field.
--/
-def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
-  match model.get fieldName with
-  | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
-  | _ => false -- recover from a resolution error
-
-/--
-Check if a field is inherited through multiple parent paths (diamond inheritance).
-Returns true if more than one direct parent of the given type can reach the field.
--/
-def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
-  match model.get typeName with
-  | .compositeType ct =>
-    -- If the field is directly declared on this type, it's not a diamond
-    if ct.fields.any (·.name == fieldName) then false
-    else
-      -- Count how many direct parents can reach this field
-      let parentsWithField := ct.extending.filter (canReachField model · fieldName)
-      parentsWithField.length > 1
-  | _ => false
-
-/--
-Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
--/
-def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
-    (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
-  | .FieldSelect target fieldName =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := match (computeExprType model target).val with
-      | .UserDefined typeName =>
-        if isDiamondInheritedField model typeName fieldName then
-          let fileRange := expr.source.getD FileRange.unknown
-          [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
-        else []
-      | _ => []
-    targetErrors ++ fieldError
-  | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
-  | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model t) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
-  | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model t
-    match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
-    | none => errs
-  | .LocalVariable _ _ (some init) =>
-    validateDiamondFieldAccessesForStmtExpr model init
-  | .While c invs _ b =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
-  | _ => []
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt expr)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals omega
-
-/--
-Validate a Laurel program for diamond-inherited field accesses.
-Returns an array of DiagnosticModel errors.
--/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
-  let errors := program.staticProcedures.foldl (fun acc proc =>
-    let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
-      | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
-        let implErrors := match impl with
-          | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
-          | none => []
-        postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
-      | .External => []
-    acc ++ bodyErrors) []
-  errors
-
-/--
 Lower `IsType target ty` to Laurel-level map lookups:
   `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
 -/
@@ -216,13 +108,13 @@ Lower `New name` to a block that:
 3. Constructs a `MkComposite(counter, name_TypeTag())` value
 -/
 def lowerNew (name : Identifier) (source : Option FileRange) : THM StmtExprMd := do
-  let heapVar : Identifier := "$heap"
+  let heapVar := heapVarName
   let freshVar ← freshVarName
-  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Identifier heapVar)])
-  let saveCounter := mkMd (.LocalVariable freshVar ⟨.TInt, none⟩ (some getCounter))
-  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Identifier heapVar)])
-  let updateHeap := mkMd (.Assign [mkMd (.Identifier heapVar)] newHeap)
-  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Identifier freshVar), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
+  let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar))])
+  let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, ⟨.TInt, none⟩⟩)] getCounter)
+  let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar))])
+  let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar)] newHeap)
+  let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)), mkMd (.StaticCall (name.text ++ "_TypeTag") [])])
   return { val := .Block [saveCounter, updateHeap, compositeResult] none, source := source }
 
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
@@ -231,6 +123,26 @@ private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := d
   | .New name => lowerNew name exprMd.source
   | .IsType target ty => return lowerIsType target ty exprMd.source
   | _ => return exprMd
+
+/--
+Rewrite a type so that every reference to a composite type (a name in
+`composites`) becomes the flattened `Composite` datatype. After the type
+hierarchy pass all composite values are represented by `Composite` references,
+so their *static* types must follow suit; otherwise re-resolution sees a
+`Pixel`-typed value flowing into a `Composite`-typed slot (`readField`,
+`Composite..ref!`, an allocation `new C`, …). Recurses through compound types. -/
+partial def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if composites.contains name.text then { ty with val := .UserDefined "Composite" } else ty
+  | .TSet et => { ty with val := .TSet (compositeRefToComposite composites et) }
+  | .TMap kt vt =>
+    { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
+  | .Applied base args =>
+    { ty with val := .Applied (compositeRefToComposite composites base) (args.map (compositeRefToComposite composites ·)) }
+  | .Pure base => { ty with val := .Pure (compositeRefToComposite composites base) }
+  | .Intersection tys => { ty with val := .Intersection (tys.map (compositeRefToComposite composites ·)) }
+  | _ => ty
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).
@@ -261,10 +173,28 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
           else c }
       else td
     | _ => td
-  { program with
-    staticProcedures := procs',
-    types := [typeTagDatatype] ++ remainingTypes,
-    constants := program.constants ++ typeHierarchyConstants }
+  let transformed : Program :=
+    { program with
+      staticProcedures := procs',
+      types := [typeTagDatatype] ++ remainingTypes,
+      constants := program.constants ++ typeHierarchyConstants }
+  -- Now that `New`/`IsType` have been lowered (they needed the original
+  -- composite names), flatten every remaining composite reference type to the
+  -- `Composite` datatype so the program re-resolves consistently. The
+  -- program-wide `HighType` traversal lives in `MapStmtExpr` so that every
+  -- type position is covered uniformly.
+  let compositeSet : Std.HashSet String :=
+    compositeNames.foldl (init := {}) (·.insert ·)
+  mapProgramHighTypes (compositeRefToComposite compositeSet) transformed
+
+/-- Pipeline pass: type hierarchy transform. -/
+public def typeHierarchyTransformPass : LoweringPass where
+  name := "TypeHierarchyTransform"
+  documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
+  comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
+  run := fun p m _ =>
+    (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel
 

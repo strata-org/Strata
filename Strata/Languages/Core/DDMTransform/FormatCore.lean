@@ -7,9 +7,10 @@ module
 
 public import Strata.Languages.Core.DDMTransform.Grammar
 public import Strata.Languages.Core.Procedure
-public import Strata.DDM.Util.DecimalRat
-public import Strata.DDM.Format
-public import Strata.Languages.Core.CoreOp
+public import StrataDDM.Util.DecimalRat
+public import StrataDDM.Format
+import Strata.Languages.Core.Factory
+open StrataDDM
 
 public section
 
@@ -37,8 +38,6 @@ Known issues:
   translation in the latter's metadata field and recover them in the future.
 
 - Misc. formatting issues
-  -- Remove extra parentheses around constructors in datatypes, assignments,
-  etc.
   -- Remove extra indentation from the last brace of a block or the `end`
   keyword of a mutual block.
 -/
@@ -271,7 +270,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
       let ty := CoreType.tvar default unknownTypeVar
       pure (.neg_expr default ty (.natToInt default ⟨default, n.natAbs⟩))
   | .realConst r =>
-    match Strata.Decimal.fromRat r with
+    match StrataDDM.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
     | none => do
       ToCSTM.logError "lconstToExpr" "unsupported real" (toString r)
@@ -295,10 +294,20 @@ def handleZeroaryOps {M} [Inhabited M] (name : String)
   | .re .All => pure (.re_all default)
   | .re .AllChar => pure (.re_allchar default)
   | .re .None => pure (.re_none default)
-  -- TODO: seq_empty is not yet parseable (see Grammar.lean); handle here when added.
   | _ => do
     ToCSTM.logError "lopToExpr" "0-ary op not found" name
     pure (.re_none default)
+
+/-- Convert a bitvector width to the corresponding CoreType, logging an error and
+    falling back to bv64 for unsupported widths. -/
+def bvTypeOfWidth {M} [Inhabited M] (caller : String) (w : Nat) : ToCSTM M (CoreType M) :=
+  match w with
+  | 1 => pure (CoreType.bv1 default) | 8 => pure (.bv8 default)
+  | 16 => pure (.bv16 default) | 32 => pure (.bv32 default)
+  | 64 => pure (.bv64 default)
+  | _ => do
+    ToCSTM.logError caller s!"unsupported BV width {w}" (toString w)
+    pure (.bv64 default)
 
 /-- Handle unary operations -/
 def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
@@ -338,8 +347,13 @@ def handleUnaryOps {M} [Inhabited M] (name : String) (arg : CoreDDM.Expr M)
   | .bv ⟨16, .SafeNeg⟩ | .bv ⟨16, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv16 default) arg)
   | .bv ⟨32, .SafeNeg⟩ | .bv ⟨32, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv32 default) arg)
   | .bv ⟨64, .SafeNeg⟩ | .bv ⟨64, .SafeUNeg⟩ => pure (.safeneg_expr default (.bv64 default) arg)
-  -- Overflow predicates: approximated as Bool.Not for CST printing
-  | .bv ⟨_, .SNegOverflow⟩ | .bv ⟨_, .UNegOverflow⟩ => pure (.not default arg)
+  -- Overflow predicates
+  | .bv ⟨w, .SNegOverflow⟩ => do
+    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
+    pure (.bv_neg_overflow default bvTy arg)
+  | .bv ⟨w, .UNegOverflow⟩ => do
+    let bvTy ← bvTypeOfWidth "handleUnaryOps" w
+    pure (.bv_uneg_overflow default bvTy arg)
   -- Bitvector extract ops
   | .bvExtract 8 7 7 => pure (.bvextract_7_7 default arg)
   | .bvExtract 16 15 15 => pure (.bvextract_15_15 default arg)
@@ -386,14 +400,14 @@ def bvBinaryOpMap {M} [Inhabited M] :
   (.SafeUAdd, fun ty arg1 arg2 => .safeadd_expr default ty arg1 arg2),
   (.SafeUSub, fun ty arg1 arg2 => .safesub_expr default ty arg1 arg2),
   (.SafeUMul, fun ty arg1 arg2 => .safemul_expr default ty arg1 arg2),
-  -- Overflow predicates: approximated as boolean ops for CST printing
-  (.SAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.SSubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.SMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.SDivOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.UAddOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.USubOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2),
-  (.UMulOverflow, fun _ty arg1 arg2 => .le default _ty arg1 arg2)
+  -- Overflow predicates
+  (.SAddOverflow, fun ty arg1 arg2 => .bv_sadd_overflow default ty arg1 arg2),
+  (.SSubOverflow, fun ty arg1 arg2 => .bv_ssub_overflow default ty arg1 arg2),
+  (.SMulOverflow, fun ty arg1 arg2 => .bv_smul_overflow default ty arg1 arg2),
+  (.SDivOverflow, fun ty arg1 arg2 => .bv_sdiv_overflow default ty arg1 arg2),
+  (.UAddOverflow, fun ty arg1 arg2 => .bv_uadd_overflow default ty arg1 arg2),
+  (.USubOverflow, fun ty arg1 arg2 => .bv_usub_overflow default ty arg1 arg2),
+  (.UMulOverflow, fun ty arg1 arg2 => .bv_umul_overflow default ty arg1 arg2)
 ]
 
 /-- Map from bitvector sizes to their corresponding type constructors -/
@@ -472,6 +486,8 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   -- String and Regex operations
   | .str .Concat => pure (.str_concat default arg1 arg2)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
+  | .str .PrefixOf => pure (.str_prefixof default arg1 arg2)
+  | .str .SuffixOf => pure (.str_suffixof default arg1 arg2)
   | .re .Range => pure (.re_range default arg1 arg2)
   | .re .Concat => pure (.re_concat default arg1 arg2)
   | .re .Union => pure (.re_union default arg1 arg2)
@@ -549,11 +565,19 @@ partial def lexprToExpr {M} [Inhabited M]
         pure (.fvar default (ctx.allFreeVars.size))
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
-  | .op _ name _ => lopToExpr name.name []
+  | .op _ name ty => do
+    -- seq_empty needs the type annotation to render the explicit type parameter
+    if name.name == "Sequence.empty" then
+      let tyCST ← match ty with
+        | some (.tcons "Sequence" [ety]) => lmonoTyToCoreType ety
+        | _ => pure (CoreType.tvar default unknownTypeVar)
+      pure (.seq_empty default tyCST)
+    else
+      lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
   | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
-  | .quant _ qkind _ ty trigger body =>
-    lquantToExpr qkind ty trigger body (qLevel + 1)
+  | .quant _ qkind prettyName ty trigger body =>
+    lquantToExpr qkind prettyName ty trigger body (qLevel + 1)
 
 /-- Extract trigger patterns from Lambda's trigger expression representation -/
 partial def extractTriggerPatterns {M} [Inhabited M]
@@ -607,11 +631,13 @@ partial def labsToExpr {M} [Inhabited M]
   pure (.lambda default tyExpr dl bodyExpr)
 
 partial def lquantToExpr {M} [Inhabited M]
-    (qkind : Lambda.QuantifierKind) (ty : Option Lambda.LMonoTy)
+    (qkind : Lambda.QuantifierKind) (prettyName : String)
+    (ty : Option Lambda.LMonoTy)
     (trigger : Lambda.LExpr CoreLParams.mono) (body : Lambda.LExpr CoreLParams.mono)
     (qLevel : Nat)
     : ToCSTM M (CoreDDM.Expr M) := do
-  let name : Ann String M := ⟨default, mkQuantVarName (qLevel - 1)⟩
+  let varName := if prettyName.isEmpty then mkQuantVarName (qLevel - 1) else prettyName
+  let name : Ann String M := ⟨default, varName⟩
   modify ToCSTContext.pushScope
   modify (·.addScopedBoundVars #[name.val])
   let tyExpr ← match ty with
@@ -659,23 +685,23 @@ partial def leqToExpr {M} [Inhabited M]
 
 partial def lappToExpr {M} [Inhabited M]
     (e : Lambda.LExpr CoreLParams.mono)
-    (qLevel : Nat) (acc : List (CoreDDM.Expr M) := [])
-    : ToCSTM M (CoreDDM.Expr M) :=
-  match e with
-  | .app _ (.app m fn e1) e2 => do
-    let e2Expr ← lexprToExpr e2 qLevel
-    lappToExpr (.app m fn e1) qLevel (e2Expr :: acc)
-  | .app _ (.op _ fn _) e1 => do
-    let e1Expr ← lexprToExpr e1 qLevel
-    lopToExpr fn.name (e1Expr :: acc)
-  | .app _ fn e1 => do
+    (qLevel : Nat)
+    : ToCSTM M (CoreDDM.Expr M) := do
+  let (head, args) := Lambda.getLFuncCall e
+  match head with
+  | .op _ fn _ =>
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    lopToExpr fn.name argExprs
+  | .app _ fn arg =>
+    -- getLFuncCall couldn't decompose further (fn is not .app or .op)
     let fnCST ← lexprToExpr fn qLevel
-    let e1Expr ← lexprToExpr e1 qLevel
-    pure <| (e1Expr :: acc).foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
-  | _ => do
-    -- Non-application head (e.g. lambda applied to arguments)
-    let eCST ← lexprToExpr e qLevel
-    pure <| acc.foldl (fun fnAcc arg => .app default fnAcc arg) eCST
+    let argCST ← lexprToExpr arg qLevel
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    pure <| (argCST :: argExprs).foldl (fun fnAcc a => .app default fnAcc a) fnCST
+  | _ =>
+    let fnCST ← lexprToExpr head qLevel
+    let argExprs ← args.mapM (lexprToExpr · qLevel)
+    pure <| argExprs.foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
 end
 
 /-- Convert preconditions to CST spec elements -/
@@ -715,7 +741,9 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   let paramNames := results.map (·.2)
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lTyToCoreType decl.output
-  let inline? : Ann (Option (Inline M)) M := ⟨default, none⟩
+  let inline? : Ann (Option (Inline M)) M :=
+    if decl.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
+    else ⟨default, none⟩
   -- Add formals to the context
   modify (·.addScopedBoundVars (reverse? := false) paramNames)
   -- Convert preconditions
@@ -732,6 +760,24 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   -- matching DDM's @[declareFn] which makes the name a bvar.
   modify (·.pushBoundVar name.val)
   pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
+
+/-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
+    with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
+    in left-to-right order, or `none` if the expression is not this pattern. -/
+private def decomposeMapUpdate (varName : String)
+    (e : Lambda.LExpr CoreLParams.mono)
+    : Option (List (Lambda.LExpr CoreLParams.mono) × Lambda.LExpr CoreLParams.mono) :=
+  let (head, args) := Lambda.getLFuncCall e
+  match head, args with
+  | .op _ opName _, [base, idx, val] =>
+    if opName.name == "update" then
+      match base with
+      | .fvar _ ident _ =>
+        if ident.name == varName then some ([idx], val)
+        else none
+      | _ => none
+    else none
+  | _, _ => none
 
 mutual
 /-- Convert `Core.Statement` to `CoreDDM.Statement` -/
@@ -756,9 +802,20 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     modify (·.pushBoundVar name.toPretty)
     pure result
   | .set name expr _md => do
-    let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
-    let exprCST ← lexprToExpr expr 0
-    -- Type annotation required by CST but not semantically used.
+    -- Detect map_update(name, idx, val) pattern to produce lhsArray syntax
+    let (lhs, exprCST) ← match decomposeMapUpdate name.name expr with
+      | some (idxs, val) => do
+        let baseLhs := Lhs.lhsIdent default ⟨default, name.name⟩
+        let lhs ← idxs.foldlM (init := baseLhs) fun acc idx => do
+          let idxCST ← lexprToExpr idx 0
+          let tyCST := CoreType.tvar default unknownTypeVar
+          pure (Lhs.lhsArray default tyCST acc idxCST)
+        let valCST ← lexprToExpr val 0
+        pure (lhs, valCST)
+      | none => do
+        let lhs := Lhs.lhsIdent default ⟨default, name.name⟩
+        let exprCST ← lexprToExpr expr 0
+        pure (lhs, exprCST)
     let tyCST := CoreType.tvar default unknownTypeVar
     pure (.assign default tyCST lhs exprCST)
   | .havoc name _md => do
@@ -826,12 +883,8 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     | .nondet =>
       pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
   | .exit label _md => do
-    match label with
-    | some l =>
-      let labelAnn : Ann String M := ⟨default, l⟩
-      pure (.exit_statement default labelAnn)
-    | none =>
-      pure (.exit_unlabeled_statement default)
+    let labelAnn : Ann String M := ⟨default, label⟩
+    pure (.exit_statement default labelAnn)
   | .funcDecl decl _md => funcDeclToStatement decl
   | .typeDecl tc _md =>
     let nameAnn : Ann String M := ⟨default, tc.name⟩
@@ -854,13 +907,18 @@ partial def elseToCST {M} [Inhabited M] (stmts : List Core.Statement)
     pure (.else1 default blockCST)
 
 partial def invariantsToCST {M} [Inhabited M]
-    (inv : List (Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
+    (inv : List (String × Lambda.LExpr CoreLParams.mono)) : ToCSTM M (Invariants M) :=
   match inv with
   | [] => pure (.nilInvariants default)
-  | expr :: rest => do
+  | (label, expr) :: rest => do
+    -- An empty source label is emitted as `none`; a non-empty label becomes
+    -- `some (.label …)`, matching how `assert` / `assume` labels are formatted.
+    let labelAnn : Ann (Option (Label M)) M :=
+      if label.isEmpty then ⟨default, none⟩
+      else ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
     let restCST ← invariantsToCST rest
-    pure (.consInvariants default exprCST restCST)
+    pure (.consInvariants default labelAnn exprCST restCST)
 
 partial def measureToCST {M} [Inhabited M]
     (measure : Option (Lambda.LExpr CoreLParams.mono)) :
@@ -931,7 +989,12 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyCST ← blockToCST proc.body
+  let bodyStmts ← match proc.body with
+    | .structured ss => pure ss
+    | .cfg _ => do
+        ToCSTM.logError "procToCST" "CFG bodies not yet supported in CST conversion" proc.header.name.toPretty
+        pure []
+  let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
   pure (.command_procedure default name typeArgs arguments spec body)

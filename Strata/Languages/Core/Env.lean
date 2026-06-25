@@ -7,7 +7,8 @@ module
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
-public import Strata.Util.Name
+public import Strata.DL.Lambda.LExprEval
+public import Strata.Languages.Core.Factory
 
 public section
 
@@ -50,12 +51,17 @@ instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMono
 
 ---------------------------------------------------------------------
 
+private def formatCoreEntry : PathConditionEntry Expression → Format
+  | .assumption label expr => f!"({label}, {expr.eraseTypes})"
+  | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e.eraseTypes})"
+  | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
   | [] => ""
-  | [(k, v)] => f!"({k}, {v.eraseTypes})"
-  | (k, v) :: rest =>
-    (f!"({k}, {v.eraseTypes}){Format.line}") ++ ListMap.format' rest
+  | [e] => formatCoreEntry e
+  | e :: rest =>
+    (f!"{formatCoreEntry e}{Format.line}") ++ PathCondition.format rest
 
 def PathConditions.format (ps : PathConditions Expression) : Format :=
   match ps with
@@ -63,9 +69,14 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
   | p :: prest =>
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
+private def entryExprs : PathConditionEntry Expression → List Expression.Expr
+  | .assumption _ e => [e]
+  | .varDecl _ _ (.det e) => [e]
+  | .varDecl _ _ .nondet => []
+
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  p.map (fun (_, e) => Lambda.LExpr.freeVars e) |> .flatten |> .eraseDups
+  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> .eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
@@ -80,7 +91,10 @@ def ProofObligation.getVars (d : ProofObligation Expression)
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
     property := d.property,
-    assumptions := d.assumptions.map (fun m => (m.map (fun (label, expr) => (label, expr.eraseTypes)))),
+    assumptions := d.assumptions.map (fun m => m.map (fun
+      | .assumption label expr => .assumption label expr.eraseTypes
+      | .varDecl name ty (.det e) => .varDecl name ty (.det e.eraseTypes)
+      | .varDecl name ty .nondet => .varDecl name ty .nondet)),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
     }
@@ -211,15 +225,16 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
 def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
     Except DiagnosticModel Unit := do
   for func in funcs do
-    let recIdx ← (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).elim
-      (.error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter")) .ok
-    let recTy ← func.inputs.values[recIdx]?.elim
-      (.error (.fromFormat f!"'{func.name}': @[cases] index {recIdx} out of bounds")) .ok
-    match recTy with
-    | .tcons n _ =>
-      if (tf.toList.find? (·.any (·.name == n))).isNone then
-        .error (.fromFormat f!"'{func.name}': @[cases] type '{n}' is not a known datatype")
-    | _ => .error (.fromFormat f!"'{func.name}': @[cases] type is not a datatype")
+    match Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr with
+    | none => pure ()
+    | some recIdx =>
+      let recTy ← func.inputs.values[recIdx]?.elim
+        (.error (.fromFormat f!"'{func.name}': @[cases] index {recIdx} out of bounds")) .ok
+      match recTy with
+      | .tcons n _ =>
+        if (tf.toList.find? (·.any (·.name == n))).isNone then
+          .error (.fromFormat f!"'{func.name}': @[cases] type '{n}' is not a known datatype")
+      | _ => .error (.fromFormat f!"'{func.name}': @[cases] type is not a datatype")
 
 /-- Add a function to the environment. For recursive functions, checks that
     the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
@@ -229,8 +244,9 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Di
   if func.isRecursive && !func.typeArgs.isEmpty then
     .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
       verification: '{func.name}'. SMT solvers require monomorphic axioms.")
-  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone then
-    .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter")
+  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isNone
+      && func.measure.isNone then
+    .error (.fromFormat f!"Recursive function '{func.name}' requires a @[cases] parameter or 'decreases' clause")
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
@@ -319,8 +335,12 @@ def Env.insertFreeVarsInOldestScope
 
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
-  let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
-  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite () cond (LExpr.false ()) (LExpr.true ())) e))
+  let wrapAssumption (ant : Expression.Expr) : PathConditionEntry Expression → PathConditionEntry Expression
+    | .assumption label e => .assumption label (mkImplies ant e)
+    | entry => entry
+  let negCond := LExpr.ite () cond (LExpr.false ()) (LExpr.true ())
+  let pc1' := pc1.map (wrapAssumption cond)
+  let pc2' := pc2.map (wrapAssumption negCond)
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
   LExpr.ite () ant con (LExpr.true ())
@@ -334,7 +354,7 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   let pc2 := E2.pathConditions.newest
   let pc_merged := PathCondition.merge cond pc1 pc2
   let pcs := pcs1.pop
-  let pcs := Maps.addInNewest pcs pc_merged
+  let pcs := pcs.addInNewest pc_merged
   let deferred := E1.deferred.append E2.deferred
   { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
 

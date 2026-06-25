@@ -4,15 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
 
-namespace Strata.Laurel
-
-def program := r"
+#eval testLaurel <|
+#strata
+program Laurel;
 procedure opaqueBody(x: int) returns (r: int)
   opaque
   ensures r > 0
@@ -21,7 +20,9 @@ procedure opaqueBody(x: int) returns (r: int)
   else { r := 1 }
 };
 
-procedure callerOfOpaqueProcedure() {
+procedure callerOfOpaqueProcedure()
+  opaque
+{
   var x: int := opaqueBody(3);
   assert x > 0;
   assert x == 3
@@ -29,12 +30,24 @@ procedure callerOfOpaqueProcedure() {
 };
 
 procedure invalidPostcondition(x: int)
-    opaque
-    ensures false
-//          ^^^^^ error: assertion does not hold
+  returns (r: int) // TODO, removing this returns triggers a latent bug
+  opaque
+  ensures false
+//        ^^^^^ error: postcondition does not hold
 {
 };
-"
 
-#guard_msgs (drop info, error) in
-#eval testInputWithOffset "Postconditions" program 14 processLaurelFile
+procedure bar(x: int) returns (r: int)
+  requires x > 0
+  opaque
+  ensures r > 0
+{
+  r := x + 1
+};
+
+procedure caller() returns (out: int)
+  opaque
+{
+  out := bar(bar(5))
+};
+#end

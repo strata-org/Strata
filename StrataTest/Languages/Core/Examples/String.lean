@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
 
+meta section
 ---------------------------------------------------------------------
 namespace Strata
 
@@ -33,6 +36,11 @@ procedure main() {
     assert [substr_of_concat]: (str.substr(str.concat(s1,s2), 0, str.len(s1)) == s1);
 
     assert [substr_of_concat_concrete_test]: (str.substr("testing123", 2, 0) == "");
+
+    assert [prefixof_concrete_true]: str.prefixof("abc", "abcdef");
+    assert [prefixof_concrete_false]: !str.prefixof("xyz", "abcdef");
+    assert [suffixof_concrete_true]: str.suffixof("def", "abcdef");
+    assert [suffixof_concrete_false]: !str.suffixof("xyz", "abcdef");
 };
 #end
 
@@ -73,6 +81,42 @@ s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
 Obligation:
 str.substr("testing123", 2, 0) == ""
 
+Label: prefixof_concrete_true
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+true
+
+Label: prefixof_concrete_false
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+true
+
+Label: suffixof_concrete_true
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+true
+
+Label: suffixof_concrete_false
+Property: assert
+Assumptions:
+s1_len: str.len(s1) == 3
+s2_len: str.len(s2) == 3
+s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+Obligation:
+true
+
 ---
 info:
 Obligation: concrete_string_test
@@ -90,8 +134,26 @@ Result: ✅ pass
 Obligation: substr_of_concat_concrete_test
 Property: assert
 Result: ✅ pass
+
+Obligation: prefixof_concrete_true
+Property: assert
+Result: ✅ pass
+
+Obligation: prefixof_concrete_false
+Property: assert
+Result: ✅ pass
+
+Obligation: suffixof_concrete_true
+Property: assert
+Result: ✅ pass
+
+Obligation: suffixof_concrete_false
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify strPgm
+#eval Core.verify strPgm
 
+end Strata
+end
 ---------------------------------------------------------------------

@@ -57,11 +57,11 @@
     },
     "keyword": {
       "name": "keyword.core-st",
-      "match": "\\b(var|assume|assert|cover|if|else|havoc|invariant|decreases|while|out|inout|call|exit|free|ensures|requires|spec|procedure|type|const|function|inline|rec|axiom|distinct|datatype|old|forall|exists|program)\\b"
+      "match": "\\b(var|assume|assert|cover|if|else|havoc|invariant|decreases|while|out|inout|call|exit|free|ensures|requires|spec|procedure|type|const|function|inline|rec|axiom|distinct|datatype|goto|cfg|old|forall|exists|program)\\b"
     },
     "type": {
       "name": "support.type.core-st",
-      "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|Map|Sequence)\\b"
+      "match": "\\b(bool|int|string|regex|real|bv1|bv8|bv16|bv32|bv64|bv128|Map|Sequence)\\b"
     },
     "constant": {
       "name": "constant.language.core-st",
@@ -84,7 +84,7 @@
       ]
     },
     "function-call": {
-      "match": "\\b(Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "match": "\\b(Sequence\\.empty|Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|str\\.prefixof|str\\.suffixof|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|Bv\\.SNegOverflow|Bv\\.UNegOverflow|Bv\\.SAddOverflow|Bv\\.SSubOverflow|Bv\\.SMulOverflow|Bv\\.SDivOverflow|Bv\\.UAddOverflow|Bv\\.USubOverflow|Bv\\.UMulOverflow|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
       "captures": {
         "1": { "name": "support.function.builtin.core-st" }
       }

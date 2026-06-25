@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -26,11 +30,11 @@ procedure test () {
 #end
 
 /--
-error:  ❌ Type checking error.
+error: ❌ Type checking error.
 Block label "foo" shadows an enclosing block.
 -/
 #guard_msgs in
-#eval verify blockLabelUniqueTestPgm1
+#eval Core.verify blockLabelUniqueTestPgm1
 
 ---------------------------------------------------------------------
 
@@ -54,4 +58,8 @@ VCs:
 info:
 -/
 #guard_msgs in
-#eval verify blockLabelUniqueTestPgm2
+#eval Core.verify blockLabelUniqueTestPgm2
+
+end Strata
+
+end

@@ -7,11 +7,7 @@ module
 
 public meta import Lean.Elab.Command
 
-public import Strata.Languages.Core.Identifiers
-public meta import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.Expressions
-public import Strata.DL.Lambda.Factory
-public import Strata.DL.Lambda.FactoryWF
 public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy
@@ -19,6 +15,7 @@ import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
+public meta import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Core
@@ -325,6 +322,12 @@ def strToRegexFunc : WFLFunc CoreLParams :=
 def strInRegexFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Str.InRegEx" mty[string] mty[regex] mty[bool]
 
+def strPrefixOfFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.PrefixOf" String.isPrefixOf
+
+def strSuffixOfFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -426,9 +429,9 @@ def seqLengthFunc : WFLFunc CoreLParams :=
     ])
 
 /- An empty `Sequence` constructor with type `∀a. Sequence a`.
-   NOTE: This is registered in the Factory for programmatic use, but is not yet
-   parseable from `.st` files because the DDM grammar cannot currently handle
-   0-ary polymorphic functions (no arguments to infer the type parameter from). -/
+   `Sequence.empty<A>()` returns an empty sequence of element type `A`.
+   The `<A>` is surface syntax produced by Grammar.lean and consumed by
+   Translate.lean; this function itself takes no value parameters. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
     (axioms := [
@@ -493,10 +496,57 @@ def seqAppendFunc : WFLFunc CoreLParams :=
               else #true))]
     ])
 
-/- A `Sequence` selection function with type `∀a. Sequence a → int → a`. -/
+/-! ### Sequence bounds preconditions
+
+`Sequence.select` / `update` / `take` / `drop` carry bounds
+preconditions; the other `Sequence.*` ops are total. -/
+
+/-- Choice of upper-bound operator in `mkSeqBoundsPrecond`: `Lt` (strict) for
+    `Sequence.select`/`update`, `Le` (non-strict) for `Sequence.take`/`drop`.
+    Restricting the parameter to this inductive rather than taking an
+    arbitrary `WFLFunc` or `LExpr` makes it impossible to attach a partial
+    operator (which would create a nested precondition obligation) by
+    accident. -/
+private inductive SeqBoundKind where | Lt | Le
+
+/-- Returns the *upper-bound* comparison for `mkSeqBoundsPrecond`.
+    The lower bound is always `0 ≤ x` (see `mkSeqBoundsPrecond`), so this
+    method characterises only the upper comparison. A future partial
+    Sequence op requiring a non-`int` comparison (e.g. a bitvector variant)
+    should introduce a separate helper rather than extend this enum. -/
+private def SeqBoundKind.upperOpExpr : SeqBoundKind → LExpr CoreLParams.mono
+  | .Lt => (intLtFunc (T := CoreLParams)).opExpr
+  | .Le => (intLeFunc (T := CoreLParams)).opExpr
+
+/-- Precondition `0 <= varName && varName `k.upperOpExpr` Sequence.length(seqName)`.
+
+    `seqName` defaults to `"s"` since all four current call sites
+    (`Sequence.select`/`update`/`take`/`drop`) name their `Sequence a` input
+    that way. The parameter exists so a future partial Sequence op with a
+    different input name need only pass it explicitly rather than rely on a
+    hidden string literal. Either way, mismatches between the function's
+    declared inputs and the names used here are caught at elaboration by
+    `polyUneval`'s `h_precond` free-vars check. -/
+private def mkSeqBoundsPrecond
+    (varName : String) (k : SeqBoundKind) (seqName : String := "s") :
+    Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
+  let sVar  : LExpr CoreLParams.mono := .fvar default seqName (some (seqTy mty[%a]))
+  let xVar  : LExpr CoreLParams.mono := .fvar default varName (some mty[int])
+  let zero  : LExpr CoreLParams.mono := .intConst default 0
+  let lenS  : LExpr CoreLParams.mono := .app default seqLengthFunc.opExpr sVar
+  let lower : LExpr CoreLParams.mono :=
+    .app default (.app default (intLeFunc (T := CoreLParams)).opExpr zero) xVar
+  let upper : LExpr CoreLParams.mono :=
+    .app default (.app default k.upperOpExpr xVar) lenS
+  ⟨.app default (.app default (boolAndFunc (T := CoreLParams)).opExpr lower) upper,
+   default⟩
+
+/- A `Sequence` selection function with type `∀a. Sequence a → int → a`.
+   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
@@ -549,7 +599,8 @@ def seqBuildFunc : WFLFunc CoreLParams :=
     ])
 
 /- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
-   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`. -/
+   `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`.
+   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
 def seqUpdateFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
@@ -600,6 +651,7 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
                 else #true)))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
@@ -622,7 +674,8 @@ def seqContainsFunc : WFLFunc CoreLParams :=
     ])
 
 /- A `Sequence` take function with type `∀a. Sequence a → int → Sequence a`.
-   `take(s, n)` returns the first `n` elements of `s`. -/
+   `take(s, n)` returns the first `n` elements of `s`.
+   Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqTakeFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
@@ -658,9 +711,11 @@ def seqTakeFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
-   `drop(s, n)` returns the sequence with the first `n` elements removed. -/
+   `drop(s, n)` returns the sequence with the first `n` elements removed.
+   Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqDropFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
@@ -703,6 +758,7 @@ def seqDropFunc : WFLFunc CoreLParams :=
                     (((~Int.Add : int → int → int) %0) %1))
               else #true))]
     ])
+    (preconditions := [mkSeqBoundsPrecond "n" .Le])
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
@@ -764,9 +820,39 @@ def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
   unaryFuncUneval s!"Bv{size}.Extract_{hi}_{lo}"
     (.bitvec size) (.bitvec (hi + 1 - lo)) rfl rfl
 
+def bvToUIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Bv{size}.ToUInt" (.bitvec size) .int rfl rfl
+
+def bvToIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Bv{size}.ToInt" (.bitvec size) .int rfl rfl
+
+def intToBvFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryFuncUneval s!"Int.ToBv{size}" .int (.bitvec size) rfl rfl
+
 def bv8ConcatFunc  := bvConcatFunc 8
 def bv16ConcatFunc := bvConcatFunc 16
 def bv32ConcatFunc := bvConcatFunc 32
+
+def bv1ToUIntFunc   := bvToUIntFunc 1
+def bv8ToUIntFunc   := bvToUIntFunc 8
+def bv16ToUIntFunc  := bvToUIntFunc 16
+def bv32ToUIntFunc  := bvToUIntFunc 32
+def bv64ToUIntFunc  := bvToUIntFunc 64
+def bv128ToUIntFunc := bvToUIntFunc 128
+
+def bv1ToIntFunc   := bvToIntFunc 1
+def bv8ToIntFunc   := bvToIntFunc 8
+def bv16ToIntFunc  := bvToIntFunc 16
+def bv32ToIntFunc  := bvToIntFunc 32
+def bv64ToIntFunc  := bvToIntFunc 64
+def bv128ToIntFunc := bvToIntFunc 128
+
+def int1ToBvFunc   := intToBvFunc 1
+def int8ToBvFunc   := intToBvFunc 8
+def int16ToBvFunc  := intToBvFunc 16
+def int32ToBvFunc  := intToBvFunc 32
+def int64ToBvFunc  := intToBvFunc 64
+def int128ToBvFunc := intToBvFunc 128
 
 def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
 def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
@@ -779,10 +865,7 @@ def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 @[expose]
-def WFFactory : Lambda.WFLFactory CoreLParams :=
-  -- (T := CoreLParams) annotations needed for IntBoolFactory
-  -- functions to resolve typeclass instances.
-  WFLFactory.ofArray (name_nodup := by native_decide) (#[
+def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   intAddFunc (T := CoreLParams),
   intSubFunc (T := CoreLParams),
   intMulFunc (T := CoreLParams),
@@ -822,6 +905,8 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   strSubstrFunc,
   strToRegexFunc,
   strInRegexFunc,
+  strPrefixOfFunc,
+  strSuffixOfFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -856,6 +941,24 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv8ConcatFunc,
   bv16ConcatFunc,
   bv32ConcatFunc,
+  bv1ToUIntFunc,
+  bv8ToUIntFunc,
+  bv16ToUIntFunc,
+  bv32ToUIntFunc,
+  bv64ToUIntFunc,
+  bv128ToUIntFunc,
+  bv1ToIntFunc,
+  bv8ToIntFunc,
+  bv16ToIntFunc,
+  bv32ToIntFunc,
+  bv64ToIntFunc,
+  bv128ToIntFunc,
+  int1ToBvFunc,
+  int8ToBvFunc,
+  int16ToBvFunc,
+  int32ToBvFunc,
+  int64ToBvFunc,
+  int128ToBvFunc,
   bv8Extract_7_7_Func,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,
@@ -867,10 +970,20 @@ def WFFactory : Lambda.WFLFactory CoreLParams :=
   bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
   ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64]))
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
+
+@[expose]
+def WFFactory : Lambda.WFLFactory CoreLParams :=
+  WFLFactory.ofArray (name_nodup := by native_decide) WFFactoryArray
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
+
+def FactoryFuncNames : List String :=
+  (WFFactoryArray.map (·.func.name.name)).toList
+
+/-- Decidable predicate: is `s` the name of a built-in factory function? -/
+def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 
 end -- public section
 
@@ -972,6 +1085,8 @@ def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
+def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
+def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr
@@ -987,7 +1102,10 @@ def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
-def seqEmptyOp : Expression.Expr := seqEmptyFunc.opExpr
+def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
+  match elemTy with
+  | none => seqEmptyFunc.opExpr
+  | some ty => .op default "Sequence.empty" (some (seqTy ty))
 def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
 def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
 def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr

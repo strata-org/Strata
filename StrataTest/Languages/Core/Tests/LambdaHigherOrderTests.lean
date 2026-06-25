@@ -3,10 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-! # Lambda, Higher-Order Function, and Function Type Tests
 
@@ -18,7 +22,7 @@ and interactions with polymorphism, recursive functions, and datatypes.
 open Core
 open Strata
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 /-! ## Lambda expression parsing and formatting -/
@@ -93,7 +97,7 @@ info: [Strata.Core] Type checking succeeded.
 ---
 info: ok: program Core;
 
-function apply (f : int -> int, x : int) : int {
+inline function apply (f : int -> int, x : int) : int {
   f(x)
 }
 procedure TestLambdaApply (out result : int)
@@ -113,7 +117,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify lambdaApplyPgm (options := .quiet)
+#eval Strata.Core.verify lambdaApplyPgm (options := .quiet)
 
 /-! ## Lambda used as a function body, no "inline" (fails) -/
 
@@ -139,10 +143,10 @@ spec {
 info:
 Obligation: TestLambdaApply_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode function 'apply' to SMT: it has function-typed parameter(s) [f]. Higher-order functions cannot be encoded to SMT. Consider marking the function as `inline`.
+Result: 🚨 SMT Encoding Error! Cannot encode function 'apply' to SMT: it has function-typed parameter(s) [f]. Higher-order functions cannot be encoded to SMT. Consider marking the function as `inline`.
 -/
 #guard_msgs in
-#eval verify lambdaApplyNoInlinePgm (options := .quiet)
+#eval Strata.Core.verify lambdaApplyNoInlinePgm (options := .quiet)
 
 /-! ## Lambda in function body (no higher-order inputs) -/
 
@@ -167,9 +171,9 @@ spec {
 /-- info:
 Obligation: Test_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode function 'mkFn' to SMT: its body contains a lambda expression. Lambda abstractions cannot be encoded to SMT. Consider marking the function as `inline`.-/
+Result: 🚨 SMT Encoding Error! Cannot encode function 'mkFn' to SMT: its body contains a lambda expression. Lambda abstractions cannot be encoded to SMT. Consider marking the function as `inline`.-/
 #guard_msgs in
-#eval verify lambdaInBodyPgm (options := .quiet)
+#eval Strata.Core.verify lambdaInBodyPgm (options := .quiet)
 
 /-! ## Recursive function with function-typed input -/
 
@@ -198,11 +202,15 @@ Obligation: applyN_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
+Obligation: applyN_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify recHigherOrderPgm (options := .quiet)
+#eval Strata.Core.verify recHigherOrderPgm (options := .quiet)
 
 /-! ## Recursive function with lambda in body -/
 
@@ -232,7 +240,7 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify recLambdaInBodyPgm (options := .quiet)
+#eval Strata.Core.verify recLambdaInBodyPgm (options := .quiet)
 
 /-! ## Lambda directly in a procedure assert -/
 
@@ -253,10 +261,10 @@ spec {
 
 /-- info: Obligation: Test_ensures_0
 Property: assert
-Result: 🚨 Implementation Error! SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
+Result: 🚨 SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
 Lambda: fun x : int => x + 1-/
 #guard_msgs in
-#eval verify lambdaInAssertPgm (options := .quiet)
+#eval Strata.Core.verify lambdaInAssertPgm (options := .quiet)
 
 -- If it can be simplified by partial evaluation, it is OK
 def lambdaInAssertPgm2 :=
@@ -278,7 +286,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify lambdaInAssertPgm2 (options := .quiet)
+#eval Strata.Core.verify lambdaInAssertPgm2 (options := .quiet)
 
 /-! ## Polymorphic functions with lambdas -/
 
@@ -305,7 +313,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyApplyPgm (options := .quiet)
+#eval Strata.Core.verify polyApplyPgm (options := .quiet)
 
 -- Polymorphic compose: two lambdas chained through polymorphic positions
 def polyComposePgm :=
@@ -342,7 +350,7 @@ Obligation: Test1_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyComposePgm (options := .quiet)
+#eval Strata.Core.verify polyComposePgm (options := .quiet)
 
 -- Polymorphic lambda: lambda whose parameter has a type variable type
 def polyLambdaPgm :=
@@ -373,7 +381,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyLambdaPgm (options := .quiet)
+#eval Strata.Core.verify polyLambdaPgm (options := .quiet)
 
 -- Polymorphic identity lambda
 def polyIdentityLambdaPgm :=
@@ -399,7 +407,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyIdentityLambdaPgm (options := .quiet)
+#eval Strata.Core.verify polyIdentityLambdaPgm (options := .quiet)
 
 -- Polymorphic datatype + monomorphic recursive function + polymorphic function + polymorphic lambda
 def polyRecLambdaPgm :=
@@ -431,11 +439,15 @@ spec {
 Property: assert
 Result: ✅ pass
 
+Obligation: intListLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyRecLambdaPgm (options := .quiet)
+#eval Strata.Core.verify polyRecLambdaPgm (options := .quiet)
 
 /-! ## Multi-binding lambda -/
 
@@ -462,7 +474,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify multiBindingLambdaPgm (options := .quiet)
+#eval Strata.Core.verify multiBindingLambdaPgm (options := .quiet)
 
 /-! ## Expression application -/
 
@@ -484,7 +496,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify exprApplyPgm (options := .quiet)
+#eval Strata.Core.verify exprApplyPgm (options := .quiet)
 
 
 -- Expression application with polymorphic selector (requires apply_expr type inference)
@@ -507,7 +519,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyDatatypeFnInstExprAppPgm (options := .quiet)
+#eval Strata.Core.verify polyDatatypeFnInstExprAppPgm (options := .quiet)
 
 
 /-! ## Lambda in a spec -/
@@ -534,7 +546,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify lambdaInSpecPgm (options := .quiet)
+#eval Strata.Core.verify lambdaInSpecPgm (options := .quiet)
 
 /-! ## Currying: lambda returning lambda, applied step by step -/
 
@@ -555,7 +567,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify curryPgm (options := .quiet)
+#eval Strata.Core.verify curryPgm (options := .quiet)
 
 /-! ## Lambda in a conditional -/
 
@@ -582,7 +594,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify lambdaInCondPgm (options := .quiet)
+#eval Strata.Core.verify lambdaInCondPgm (options := .quiet)
 
 /-! ## Higher-order lambda: lambda that takes a function argument -/
 
@@ -604,7 +616,7 @@ spec {
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify higherOrderLambdaPgm (options := .quiet)
+#eval Strata.Core.verify higherOrderLambdaPgm (options := .quiet)
 
 /-! ## Datatype with function-typed field + lambda -/
 
@@ -631,7 +643,7 @@ spec {
 
 /-- error: Cannot encode datatype 'Transformer' to SMT: constructor 'MkTransformer' has function-typed field 'f' of type '(arrow int int)'. Function types cannot be represented in SMT-LIB datatypes.-/
 #guard_msgs in
-#eval verify datatypeFnFieldLambdaPgm (options := .quiet)
+#eval Strata.Core.verify datatypeFnFieldLambdaPgm (options := .quiet)
 
 -- A similar test with symbolic values
 def datatypeFnFieldSymbolicPgm :=
@@ -664,7 +676,7 @@ spec {
 
 /-- error: Cannot encode datatype 'Transformer' to SMT: constructor 'MkTransformer' has function-typed field 'f' of type '(arrow int int)'. Function types cannot be represented in SMT-LIB datatypes.-/
 #guard_msgs in
-#eval verify datatypeFnFieldSymbolicPgm (options := .quiet)
+#eval Strata.Core.verify datatypeFnFieldSymbolicPgm (options := .quiet)
 
 /-! ## Polymorphic datatype instantiated with function type -/
 
@@ -697,4 +709,6 @@ Obligation: Test_ensures_0
 Property: assert
 Result: ✅ pass-/
 #guard_msgs in
-#eval verify polyDatatypeFnInstPgm (options := .quiet)
+#eval Strata.Core.verify polyDatatypeFnInstPgm (options := .quiet)
+
+end

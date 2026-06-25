@@ -4,15 +4,17 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
+open Strata
 
-namespace Strata.Laurel
-
-def exitProgram := r"
-procedure exitSkipsRest() {
+#eval testLaurel
+#strata
+program Laurel;
+procedure exitSkipsRest()
+  opaque
+{
     var x: int := 0;
     {
         x := 1;
@@ -21,7 +23,9 @@ procedure exitSkipsRest() {
     assert x == 1
 };
 
-procedure exitFromNestedBlock() {
+procedure exitFromNestedBlock()
+  opaque
+{
     var x: int := 0;
     {
         {
@@ -32,9 +36,4 @@ procedure exitFromNestedBlock() {
     } outer;
     assert x == 42
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "Exit" exitProgram 14 processLaurelFile
-
-end Strata.Laurel
+#end

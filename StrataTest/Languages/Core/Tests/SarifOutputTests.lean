@@ -3,10 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.SarifOutput
-import Strata.Languages.Core.Verifier
-import Lean.Data.Json
+meta import Strata.Languages.Core.SarifOutput
+meta import Strata.Languages.Core.Verifier
+meta import Lean.Data.Json
+
+meta section
 
 /-!
 # SARIF Output Tests
@@ -35,16 +38,14 @@ private def mkOutcome (sat val : Result) : VCOutcome :=
 def makeMetadata (file : String) (_line _col : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
   -- Create a 1D range (byte offsets). For testing, we use simple offsets.
-  let range : Strata.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
-  let fr : Strata.FileRange := { file := uri, range := range }
-  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
+  let range : StrataDDM.SourceRange := { start := ⟨0⟩, stop := ⟨10⟩ }
+  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create metadata with a specific byte offset for the file range start. -/
 def makeMetadataAt (file : String) (startByte : Nat) : MetaData Expression :=
   let uri := Strata.Uri.file file
-  let range : Strata.SourceRange := { start := ⟨startByte⟩, stop := ⟨startByte + 10⟩ }
-  let fr : Strata.FileRange := { file := uri, range := range }
-  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
+  let range : StrataDDM.SourceRange := { start := ⟨startByte⟩, stop := ⟨startByte + 10⟩ }
+  Imperative.MetaData.ofProvenance (Strata.Provenance.ofSourceRange uri range)
 
 /-- Create a simple FileMap for testing -/
 def makeFileMap : Lean.FileMap :=
@@ -57,9 +58,10 @@ def makeFilesMap (file : String) : Map Strata.Uri Lean.FileMap :=
   Map.empty.insert uri makeFileMap
 
 /-- Create a simple proof obligation for testing -/
-def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObligation Expression :=
+def makeObligation (label : String) (md : MetaData Expression := #[])
+    (property : Imperative.PropertyType := .assert) : ProofObligation Expression :=
   { label := label
-    property := .assert
+    property := property
     assumptions := []
     obligation := Lambda.LExpr.boolConst () true
     metadata := md }
@@ -67,8 +69,9 @@ def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObl
 /-- Create a VCResult for testing -/
 def makeVCResult (label : String) (outcome : VCOutcome)
   (md : MetaData Expression := #[])
-  (lexprModel : LExprModel := []) : VCResult :=
-  { obligation := makeObligation label md
+  (lexprModel : LExprModel := [])
+  (property : Imperative.PropertyType := .assert) : VCResult :=
+  { obligation := makeObligation label md property
     outcome := .ok outcome
     verbose := .normal
     lexprModel := lexprModel
@@ -101,7 +104,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 #guard outcomeToMessage (mkOutcome .unknown .unknown) = "Unknown (solver timeout or incomplete)"
 
 -- Test unreachable message
-#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable: path condition is contradictory"
+#guard outcomeToMessage (mkOutcome .unsat .unsat) = "Unreachable in this context"
 
 /-! ## Location Extraction Tests -/
 
@@ -122,7 +125,7 @@ def makeVCResult (label : String) (outcome : VCOutcome)
 -- Test location extraction from metadata with wrong value type
 #guard
   let md : MetaData Expression := #[
-    { fld := Imperative.MetaData.fileRange, value := .msg "not a fileRange" }
+    { fld := Imperative.MetaData.provenanceField, value := .msg "not a provenance" }
   ]
   let files := makeFilesMap "/test/file.st"
   (extractLocation files md == none)
@@ -347,4 +350,35 @@ def makeVCResult (label : String) (outcome : VCOutcome)
   let sarif := vcResultsToSarif .deductive files vcResults
   Strata.Sarif.toJsonString sarif
 
+/-! ## Property classification tests
+
+The SARIF `properties.propertyType` field should reflect the obligation's
+`PropertyType`, not the default `"assert"`. -/
+
+private def sarifPropertyType (vcr : VCResult) : String :=
+  let files := makeFilesMap "/test/x.st"
+  (vcResultToSarifResult .deductive files vcr).properties.propertyType
+
+/-- info: "assert" -/
+#guard_msgs in
+#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .assert))
+
+/-- info: "division-by-zero" -/
+#guard_msgs in
+#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .divisionByZero))
+
+/-- info: "arithmetic-overflow" -/
+#guard_msgs in
+#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .arithmeticOverflow))
+
+/-- info: "out-of-bounds-access" -/
+#guard_msgs in
+#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .outOfBoundsAccess))
+
+/-- info: "cover" -/
+#guard_msgs in
+#eval sarifPropertyType (makeVCResult "t" (mkOutcome (.sat []) .unsat) (property := .cover))
+
 end Core.Sarif.Tests
+
+end

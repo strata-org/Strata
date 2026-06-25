@@ -5,7 +5,9 @@
 -/
 module
 
+public import Strata.DL.SMT.SmtArray
 public import Strata.Languages.Core.SMTEncoder
+import Std.Tactic.BVDecide.Normalize.Prop
 
 public section
 
@@ -18,6 +20,11 @@ currently supported. The core entry point is `denoteTerm`, which builds a
 `TermDenoteResult` describing both the type of a term and a semantic interpreter
 for it. The surrounding infrastructure tracks the well-formedness of
 term and uninterpreted-function contexts so that evaluation is safe.
+
+The denotation uses propositional extensionality (`propext`) and
+`Classical.propDecidable` (excluded middle) to make `if`-then-`else` over
+`Prop`-valued conditions definable. Downstream correctness proofs
+(see `FactoryCorrect.lean`) inherit these dependencies.
 -/
 
 open Strata.SMT
@@ -137,7 +144,7 @@ def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
 mutual
 
 /-- Interpret primitive SMT types as Lean types, when supported. -/
-def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
+@[expose] def denotePrimSort (sctx : SortContext) (pty : TermPrimType) : Option (SortDenoteResult sctx) := do
   match pty with
   | .bool => return fun _ => Prop
   | .int => return fun _ => Int
@@ -161,6 +168,10 @@ def denoteSortAux (sctx : SortContext) (ty : TermType) : Option (SortDenoteResul
   | .option ty =>
     let ty ← denoteSortAux sctx ty
     return fun sΓ => Option (ty sΓ)
+  | .constr "Array" [kTy, vTy] =>
+    let kTy ← denoteSortAux sctx kTy
+    let vTy ← denoteSortAux sctx vTy
+    return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
@@ -191,12 +202,16 @@ Interpret an SMT `TermType` as a Lean `Type`, when supported.
 
 Returns `none` when we lack an interpretation (e.g. for reals).
 -/
-def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
+@[expose] def denoteSort (sctx : SortContext) (ty : TermType) : Option (SortDenoteResult sctx) := do
   match ty with
   | .prim pty => denotePrimSort sctx pty
   | .option ty =>
     let ty ← denoteSort sctx ty
     return fun sΓ => Option (ty sΓ)
+  | .constr "Array" [kTy, vTy] =>
+    let kTy ← denoteSort sctx kTy
+    let vTy ← denoteSort sctx vTy
+    return fun sΓ => SmtArray (kTy sΓ) (vTy sΓ)
   | .constr id args =>
     match hi : sctx.uss.findIdx? (·.name == id) with
     | some i =>
@@ -249,12 +264,29 @@ theorem denoteSortOption_Some :
   (denoteSort sctx (.option ty)).get h sΓ = Option ((denoteSort sctx ty).get (denoteSortOption_isSome h) sΓ) := by
   simp [denoteSort]
 
+theorem denoteSortArray_isSome_key (h : (denoteSort sctx (.constr "Array" [kTy, vTy])).isSome) :
+    (denoteSort sctx kTy).isSome := by
+  exact Option.isSome_of_isSome_bind h
+
+theorem denoteSortArray_isSome_val (h : (denoteSort sctx (.constr "Array" [kTy, vTy])).isSome) :
+    (denoteSort sctx vTy).isSome := by
+  simp only [denoteSort, Bind.bind] at h
+  rewrite [Option.bind_comm (denoteSort sctx kTy) (denoteSort sctx vTy)] at h
+  apply Option.isSome_of_isSome_bind h
+
+theorem denoteSortArray_Some :
+  (denoteSort sctx (.constr "Array" [kTy, vTy])).get h sΓ =
+   SmtArray ((denoteSort sctx kTy).get (denoteSortArray_isSome_key h) sΓ)
+            ((denoteSort sctx vTy).get (denoteSortArray_isSome_val h) sΓ) := by
+  simp [denoteSort]
+
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     (denoteSort sctx a.ty).isSome ∧ (denoteFunSort sctx as out).isSome := by
   simp only [denoteFunSort, Option.pure_def, Option.bind_eq_bind,
               Option.isSome_bind, Option.isSome_some, Option.any_true] at h
   have ⟨h1 , h2⟩ := (Option.any_eq_true_iff_get _ _).mp h
   exact ⟨h1, h2⟩
+
 
 theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     have has := denoteFunSortCons_isSome h
@@ -552,6 +584,7 @@ def buildForall (ctx : Context) (vs : List TermVar)
     : Prop :=
   buildQuant bindForallVar ctx vs hTys bodyFt tdi
 
+
 mutual
 
 /-
@@ -563,7 +596,7 @@ Noncomputable because of `ite` case. Two conditions are needed to make this func
 Attempt to interpret a single SMT term under `ctx`, returning its Lean type
 and semantics when successful.
 -/
-noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
+@[expose] noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResult ctx) := do
   match t with
   -- Variable lookup: if `v` is declared in `ctx.tctx.vs` and its sort can be
   -- interpreted, return the corresponding semantic value from `tdi.tΓ.vs`.
@@ -847,6 +880,15 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
   | .app (.zero_extend i) [x] _ =>
     let ⟨.prim (.bitvec n), _, x⟩ ← denoteTerm ctx x | none
     return ⟨.prim (.bitvec (n + i)), rfl, fun Γ => BitVec.zeroExtend (n + i) (x Γ)⟩
+  | .app .ubv_to_int [x] _ =>
+    let ⟨.prim (.bitvec _), _, x⟩ ← denoteTerm ctx x | none
+    return ⟨.prim .int, rfl, fun Γ => Int.ofNat (x Γ).toNat⟩
+  | .app .sbv_to_int [x] _ =>
+    let ⟨.prim (.bitvec _), _, x⟩ ← denoteTerm ctx x | none
+    return ⟨.prim .int, rfl, fun Γ => (x Γ).toInt⟩
+  | .app (.int_to_bv n) [x] _ =>
+    let ⟨.prim .int, _, x⟩ ← denoteTerm ctx x | none
+    return ⟨.prim (.bitvec n), rfl, fun Γ => BitVec.ofInt n (x Γ)⟩
   -- SMT-Lib theory of strings
   | .prim (.string s) =>
     return ⟨.prim .string, rfl, fun _ => s⟩
@@ -871,13 +913,30 @@ noncomputable def denoteTerm (ctx : Context) (t : Term) : Option (TermDenoteResu
   | .some a =>
     let ⟨ty, h, a⟩ ← denoteTerm ctx a
     return ⟨.option ty, isSome_denoteSortOption h, fun Γ => denoteSortOption_Some ▸ some (a Γ)⟩
+  -- Array datatype
+  | .app .select [x, i] _ =>
+    let ⟨.constr "Array" [αTy, βTy], h, x⟩ ← denoteTerm ctx x | none
+    let ⟨αTy', _, i⟩ ← denoteTerm ctx i
+    if hα' : αTy' = αTy then
+      return ⟨βTy, denoteSortArray_isSome_val h, fun Γ => (denoteSortArray_Some ▸ x Γ).select (hα' ▸ i Γ)⟩
+    else
+      none
+  | .app .store [x, i, v] _ =>
+    let ⟨.constr "Array" [αTy, βTy], h, x⟩ ← denoteTerm ctx x | none
+    let ⟨αTy', _, i⟩ ← denoteTerm ctx i
+    let ⟨βTy', _, v⟩ ← denoteTerm ctx v
+    if hαβ : αTy' = αTy ∧ βTy' = βTy then
+      return ⟨.constr "Array" [αTy, βTy], h, fun Γ => denoteSortArray_Some ▸
+              @SmtArray.store _ _ (Classical.typeDecidableEq _) (denoteSortArray_Some ▸ x Γ) (hαβ.left ▸ i Γ) (hαβ.right ▸ v Γ)⟩
+    else
+      none
   | _ => none
 
 -- Note: Using `List.mapM` breaks definitional equality for some reason, so we use a recursive function instead.
 /--
 Interpret every term in a list, short-circuiting if any sub-term fails.
 -/
-noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
+@[expose] noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (TermDenoteResult ctx)) := do
   match ts with
   | [] => return []
   | a :: as =>
@@ -885,7 +944,7 @@ noncomputable def denoteTerms (ctx : Context) (ts : List Term) : Option (List (T
     let as ← denoteTerms ctx as
     return a :: as
 
-noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
+@[expose] noncomputable def leftAssoc (ctx : Context) (ty : TermType) (h : (denoteSort ctx.sctx ty).isSome)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -935,7 +994,7 @@ where
       else
         none
 
-noncomputable def chainable (ctx ty h)
+@[expose] noncomputable def chainable (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do
   let t₁ :: t₂ :: ts := ts | none
@@ -949,7 +1008,7 @@ noncomputable def chainable (ctx ty h)
   else
     none
 
-noncomputable def chainable.go (ctx ty h)
+@[expose] noncomputable def chainable.go (ctx ty h)
     (op : (sdi : SortDenoteInput ctx.sctx) → (denoteSort ctx.sctx ty).get h sdi → (denoteSort ctx.sctx ty).get h sdi → Prop)
     (ft : TermDenoteInput ctx → Prop) (ft₁ : (tdi : TermDenoteInput ctx) → (denoteSort ctx.sctx ty).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
     (ts : List (TermDenoteResult ctx)) : Option (TermDenoteResult ctx) := do match ts with
@@ -963,20 +1022,36 @@ noncomputable def chainable.go (ctx ty h)
 
 end
 
+
 /--
 Interpret a ground boolean term in the empty context.
 -/
-@[simp]
-noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
+@[expose, simp] noncomputable def denoteBoolTermAux (t : Term) : Option Prop := do
   let some ⟨.prim .bool, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--
 Interpret a ground integer term in the empty context.
 -/
-@[simp]
-noncomputable def denoteIntTermAux (t : Term) : Option Int := do
+@[expose, simp] noncomputable def denoteIntTermAux (t : Term) : Option Int := do
   let some ⟨.prim .int, _, fi⟩ := denoteTerm {} t | none
+  return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+
+/--
+Interpret a ground bitvector term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteBVTermAux (n : Nat) (t : Term) : Option (BitVec n) := do
+  let some ⟨.prim (.bitvec m), _, fi⟩ := denoteTerm {} t | none
+  if h : m = n then
+    return h ▸ fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
+  else
+    none
+
+/--
+Interpret a ground string term in the empty context.
+-/
+@[expose, simp] noncomputable def denoteStringTermAux (t : Term) : Option String := do
+  let some ⟨.prim .string, _, fi⟩ := denoteTerm {} t | none
   return fi ⟨[], { h := rfl, ha := fun _ hi => nomatch hi }, ⟨[], []⟩, ⟨{ h := rfl, ha := fun _ hi => nomatch hi }, { h := rfl, ha := fun _ hi => nomatch hi }⟩⟩
 
 /--

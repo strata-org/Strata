@@ -6,172 +6,137 @@
 
 /-
 Tests that the resolution pass detects duplicate names in the same scope.
-Uses inline error annotations like the other Laurel tests (e.g. T1_AssertFalse).
 -/
 
-import StrataTest.Util.TestDiagnostics
-import Strata.DDM.Elab
-import Strata.DDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.Resolution
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
-open Strata.Elab (parseStrataProgramFromDialect)
-
-namespace Strata.Laurel
-
-/-- Run only parsing + resolution and return diagnostics (no SMT verification). -/
-private def processResolution (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
-  let dialects := Strata.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
-  let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
-  let uri := Strata.Uri.file input.fileName
-  match Laurel.TransM.run uri (Laurel.parseProgram strataProgram) with
-  | .error e => throw (IO.userError s!"Translation errors: {e}")
-  | .ok program =>
-    let result := resolve program
-    let files := Map.insert Map.empty uri input.fileMap
-    return result.errors.toList.map (fun dm => dm.toDiagnostic files) |>.toArray
 
 /-! ## Duplicate static procedure names -/
 
-def dupProcedures := r"
-procedure foo() { };
-procedure foo() { };
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure foo() opaque { };
+procedure foo() opaque { };
 //        ^^^ error: Duplicate definition 'foo' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupProcedures" dupProcedures 35 processResolution
+#end
 
 /-! ## Duplicate type names -/
 
-def dupTypes := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Foo { }
 composite Foo { }
 //        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupTypes" dupTypes 43 processResolution
+#end
 
 /-! ## Duplicate field names in a composite type -/
 
-def dupFields := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Foo {
   var f: int
   var f: bool
 //    ^ error: Duplicate definition 'Foo.f' is already defined in this scope
 }
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupFields" dupFields 51 processResolution
+#end
 
 /-! ## Duplicate parameter names in a procedure -/
 
-def dupParams := r"
-procedure foo(x: int, x: bool) { };
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure foo(x: int, x: bool) opaque { };
 //                    ^ error: Duplicate definition 'x' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupParams" dupParams 61 processResolution
+#end
 
 /-! ## Duplicate instance procedure names in a composite type -/
 
-def dupInstanceProcs := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Foo {
-  procedure bar() { };
-  procedure bar() { };
-//          ^^^ error: Duplicate definition 'bar' is already defined in this scope
+  procedure bar() opaque { };
+  procedure bar() opaque { };
+//          ^^^ error: Duplicate definition 'Foo$bar' is already defined in this scope
 }
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupInstanceProcs" dupInstanceProcs 71 processResolution
+#end
 
 /-! ## Duplicate local variable names in the same block -/
 
-def dupLocals := r"
-procedure foo() {
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure foo() opaque {
   var x: int := 1;
   var x: int := 2
 //    ^ error: Duplicate definition 'x' is already defined in this scope
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupLocals" dupLocals 81 processResolution
+#end
 
 /-! ## Procedure and type with the same name -/
 
-def dupProcType := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Foo { }
-procedure Foo() { };
+procedure Foo() opaque { };
 //        ^^^ error: Duplicate definition 'Foo' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupProcType" dupProcType 91 processResolution
+#end
 
 /-! ## Shadowing quantifier variables in nested scopes is OK (no error expected) -/
 
-def shadowQuantifierVars := r"
-procedure test() {
+#eval testLaurelResolution
+#strata
+program Laurel;
+procedure test() opaque {
   assert forall(x: int) => forall(x: int) => x > 0
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "ShadowQuantifierVars" shadowQuantifierVars 99 processResolution
+#end
 
 /-! ## Shadowing in nested blocks is OK (no error expected) -/
 
-def shadowingOk := r"
-procedure foo() {
+#eval testLaurelResolution
+#strata
+program Laurel;
+procedure foo() opaque {
   var x: int := 1;
   {
     var x: int := 2
   }
 };
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "ShadowingOk" shadowingOk 109 processResolution
+#end
 
 /-! ## Duplicate constrained type names -/
 
-def dupConstrainedTypes := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 constrained nat = x: int where x > 0 witness 1
 //          ^^^ error: Duplicate definition 'nat' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupConstrainedTypes" dupConstrainedTypes 119 processResolution
+#end
 
 /-! ## Duplicate datatype names -/
 
-def dupDatatypes := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 datatype Foo { A }
 datatype Foo { B }
 //       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupDatatypes" dupDatatypes 127 processResolution
+#end
 
 /-! ## Composite type and datatype with the same name -/
 
-def dupCompositeDatatype := r"
+#eval testLaurelResolution <|
+#strata
+program Laurel;
 composite Foo { }
 datatype Foo { A }
 //       ^^^ error: Duplicate definition 'Foo' is already defined in this scope
-"
-
-#guard_msgs (error, drop all) in
-#eval testInputWithOffset "DupCompositeDatatype" dupCompositeDatatype 135 processResolution
-
-end Laurel
+#end

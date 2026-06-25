@@ -5,12 +5,10 @@
 -/
 module
 
-public import Strata.Languages.C_Simp.DDMTransform.Parse
 public import Strata.DL.Imperative.Stmt
-public import Strata.DL.Lambda.Lambda
-public import Strata.DL.Lambda.LExpr
-public import Strata.DL.Lambda.LTy
-public import Strata.DL.Lambda.Identifiers
+public import Strata.DL.Lambda.LExprTypeEnv
+public import Strata.DL.Lambda.LState
+public import Strata.Languages.C_Simp.DDMTransform.Parse -- strata: keep
 
 public section
 
@@ -44,7 +42,7 @@ abbrev Command := Imperative.Cmd Expression
 abbrev Statement := Imperative.Stmt Expression Command
 
 instance : Imperative.HasVarsImp Expression Command where
-  definedVars := Imperative.Cmd.definedVars
+  definedVars c _excludeScoped := Imperative.Cmd.definedVars c
   modifiedVars := Imperative.Cmd.modifiedVars
 
 -- Our statement language is `DL/Imp` with `DL/Lambda` as the expression language

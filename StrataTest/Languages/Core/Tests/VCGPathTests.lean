@@ -3,21 +3,30 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 ---------------------------------------------------------------------
 namespace Strata
 
 /-- Extract evaluator statistics from a program without running the solver. -/
-private def getEvalStats (program : Strata.Program)
+private def getEvalStats (program : StrataDDM.Program)
     (options : Core.VerifyOptions := .quiet) : IO (Statistics × Nat) := do
   let (coreProgram, _) := Core.getProgram program
-  match Core.typeCheckAndEval options coreProgram with
+  let coreProgram ← IO.ofExcept (Core.typeCheck options coreProgram)
+  match Core.buildEnv options coreProgram with
   | .error _ => return ({}, 0)
-  | .ok (envs, stats) =>
-    let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
-    return (stats, numObligations)
+  | .ok (E, declStats) =>
+    match Core.Program.eval E with
+    | .error _ => return ({}, 0)
+    | .ok (envs, evalStats) =>
+      let numObligations := envs.foldl (fun acc e => acc + e.deferred.size) 0
+      let stats := declStats.merge evalStats
+      return (stats, numObligations)
 
 private def statsLine (stats : Statistics) (numObs : Nat) : String :=
   let merged := stats.get s!"{Core.Evaluator.Stats.processIteBranches_merged}"
@@ -84,7 +93,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify issue419TestPgm
+#eval Core.verify issue419TestPgm
 
 /--
 info: merged=0 diverged=1 stmtMerged=0 obligations=3
@@ -124,7 +133,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify issue419TestPgm
+#eval Core.verify issue419TestPgm
   (options := { Core.VerifyOptions.default with pathCap := some 1 })
 
 /--
@@ -177,7 +186,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sequentialExitItePgm (options := .quiet)
+#eval Core.verify sequentialExitItePgm (options := .quiet)
 /--
 info: merged=0 diverged=4 stmtMerged=0 obligations=5
 -/
@@ -194,7 +203,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sequentialExitItePgm
+#eval Core.verify sequentialExitItePgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
 
 /--
@@ -325,7 +334,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify sameExitCapPgm (options := .quiet)
+#eval Core.verify sameExitCapPgm (options := .quiet)
 
 /--
 info: merged=0 diverged=1 stmtMerged=0 obligations=2
@@ -371,7 +380,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm (options := .quiet)
+#eval Core.verify buggyPgm (options := .quiet)
 
 /-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
 #guard_msgs in
@@ -386,7 +395,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm
+#eval Core.verify buggyPgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 1 })
 
 /-- info: merged=0 diverged=1 stmtMerged=1 obligations=1 -/
@@ -403,7 +412,7 @@ Property: assert
 Result: ❌ fail
 -/
 #guard_msgs in
-#eval verify buggyPgm
+#eval Core.verify buggyPgm
   (options := { Core.VerifyOptions.quiet with pathCap := some 5 })
 
 /-- info: merged=0 diverged=1 stmtMerged=0 obligations=2 -/
@@ -445,7 +454,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteTrueDeadElse (options := .quiet)
+#eval Core.verify concreteTrueDeadElse (options := .quiet)
 
 def concreteFalseDeadThen :=
 #strata
@@ -470,7 +479,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteFalseDeadThen (options := .quiet)
+#eval Core.verify concreteFalseDeadThen (options := .quiet)
 
 def concreteFalseDeadThenCover :=
 #strata
@@ -495,7 +504,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify concreteFalseDeadThenCover (options := .quiet)
+#eval Core.verify concreteFalseDeadThenCover (options := .quiet)
 
 def programOrderConcreteFalse :=
 #strata
@@ -530,10 +539,10 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify programOrderConcreteFalse (options := .quiet)
+#eval Core.verify programOrderConcreteFalse (options := .quiet)
 
 -- Unreachable annotation test: with full check level, dead-branch asserts carry
--- `(❗path unreachable)` and dead-branch covers fail with the same annotation.
+-- `(❗unreachable in this context)` and dead-branch covers fail with the same annotation.
 -- Within a dead branch, covers are emitted before asserts (collectDeadBranchDeferred
 -- calls createUnreachableCoverObligations ++ createUnreachableAssertObligations).
 def deadBranchAnnotations :=
@@ -552,14 +561,14 @@ procedure p() {
 info:
 Obligation: dead_cover
 Property: cover
-Result: ❌ fail (❗path unreachable)
+Result: ❌ fail (❗unreachable in this context)
 
 Obligation: dead_assert
 Property: assert
-Result: ✅ pass (❗path unreachable)
+Result: ✅ pass (❗unreachable in this context)
 -/
 #guard_msgs in
-#eval verify deadBranchAnnotations
+#eval Core.verify deadBranchAnnotations
         (options := { Core.VerifyOptions.default with verbose := .quiet, checkLevel := .full })
 
 ---------------------------------------------------------------------
@@ -615,7 +624,7 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify noDupConcreteTrue (options := .quiet)
+#eval Core.verify noDupConcreteTrue (options := .quiet)
 
 def noDupConcreteFalse :=
 #strata
@@ -661,6 +670,10 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify noDupConcreteFalse (options := .quiet)
+#eval Core.verify noDupConcreteFalse (options := .quiet)
 
 ---------------------------------------------------------------------
+
+end Strata
+
+end

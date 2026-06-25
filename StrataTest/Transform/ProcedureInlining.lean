@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.StatementSemantics
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Transform.CoreTransform
-import Strata.Transform.ProcedureInlining
-import Strata.Util.Tactics
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Util.Tactics
+
+meta section
 
 open Core
 open Core.Transform
@@ -87,12 +90,13 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
   | _, _ =>
     .error ".some and .none mismatch"
 
-private def alphaEquivExprsList (l1 l2 : List Expression.Expr) (map : IdMap)
+private def alphaEquivLoopInvs (l1 l2 : List (String × Expression.Expr)) (map : IdMap)
     : Except Format Bool :=
   if l1.length != l2.length then
     .error "invariant lists have different lengths"
   else
-    return (l1.zip l2).all (fun (a, b) => alphaEquivExprs a b map)
+    return (l1.zip l2).all (fun ((lbl1, a), (lbl2, b)) =>
+      lbl1 == lbl2 && alphaEquivExprs a b map)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
@@ -146,15 +150,12 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
       .error "guard does not match"
     else if ¬ (← alphaEquivExprsOpt m1 m2 map) then
       .error "measure does not match"
-    else if ¬ (← alphaEquivExprsList i1 i2 map) then
+    else if ¬ (← alphaEquivLoopInvs i1 i2 map) then
       .error "invariant does not match"
     else alphaEquivBlock b1 b2 map
 
-  | .exit lbl1 _, .exit lbl2 _ =>
-    match lbl1, lbl2 with
-    | some l1, some l2 => IdMap.updateLabel map l1 l2
-    | none, none => .ok map
-    | _, _ => mk_err "exit label mismatch"
+  | .exit l1 _, .exit l2 _ =>
+    IdMap.updateLabel map l1 l2
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
@@ -214,28 +215,29 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 end
 
 private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
-  if p1.body.length ≠ p2.body.length then
-    .error (s!"# statements do not match: in {p1.header.name}, "
-        ++ s!"inlined fn one has {p1.body.length}"
-        ++ s!" whereas the answer has {p2.body.length}")
-  else
-    let newmap:IdMap := IdMap.mk ([], []) []
-    let stmts := (p1.body.zip p2.body)
-    let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
-        alphaEquivStatement s1 s2 map)
-      newmap stmts
-    -- The corresponding outputs should be pairwise α-equivalent
-    return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  match p1.body, p2.body with
+  | .structured ss1, .structured ss2 =>
+    if ss1.length ≠ ss2.length then
+      .error (s!"# statements do not match: in {p1.header.name}, "
+          ++ s!"inlined fn one has {ss1.length}"
+          ++ s!" whereas the answer has {ss2.length}")
+    else
+      let newmap:IdMap := IdMap.mk ([], []) []
+      let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
+          alphaEquivStatement s1 s2 map)
+        newmap (ss1.zip ss2)
+      return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
+  | _, _ => .error f!"alphaEquiv: CFG procedure bodies are not supported in the inlining test harness"
 
 
 
-def translate (t : Strata.Program) : Core.Program :=
+def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
   match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
   | ⟨.ok (_,res), _⟩ => res
-  | ⟨.error e, _⟩ => panic! e
+  | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
 
 def checkInlining (prog : Core.Program) (progAns : Core.Program)
     : Except Format Bool := do
@@ -483,3 +485,4 @@ def testThreeChainCG := do
   | ⟨.error m, _⟩ => s!"ERROR: {m}"))
 
 end ProcedureInliningExamples
+end

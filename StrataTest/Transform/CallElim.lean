@@ -3,17 +3,20 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Languages.Core.Core
-import Strata.Languages.Core.DDMTransform.Translate
-import Strata.Languages.Core.ProgramType
-import Strata.Languages.Core.ProgramWF
-import Strata.Languages.Core.StatementSemantics
-import Strata.Transform.CoreTransform
-import Strata.Transform.CallElim
-import Strata.Languages.Core.Verifier
+import StrataDDM.Integration.Lean
+meta import StrataDDM.Util.Format
+meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
+meta import Strata.Languages.Core.ProgramType
+meta import Strata.Languages.Core.ProgramWF
+meta import Strata.Languages.Core.StatementSemantics
+meta import Strata.Transform.CoreTransform
+meta import Strata.Transform.CallElim
+meta import Strata.Languages.Core.Verifier
+
+meta section
 
 
 open Core
@@ -186,7 +189,7 @@ procedure h(inout j : bool, k : bool) {
 };
 #end
 
-def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : StrataDDM.SourcedProgram) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
 def env : Lambda.LContext CoreLParams := .default (functions := Core.Factory)
 
@@ -201,7 +204,7 @@ def callElim (p : Core.Program)
   : Core.Program :=
   match (run p callElim') with
   | .ok (_changed, res) => res
-  | .error e => panic! e
+  | .error e => panic! (toString e) -- nopanic:ok
 
 /--
 info: true
@@ -222,13 +225,13 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[("callElimAssume_post", .true ())]],
+    assumptions := [[.assumption "callElimAssume_post" (.true ())]],
     obligation := .true (), metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[("precond_x_positive", .true ())]],
+    assumptions := [[.assumption "precond_x_positive" (.true ())]],
     obligation := .true (), metadata := {} }
 
 -- callElimPipelinePhase: rejects sat when obligation has call-elim labels
@@ -238,3 +241,4 @@ private def cleanObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase] cleanObligation).1 == satResult
 
 end CallElimPhaseTests
+end

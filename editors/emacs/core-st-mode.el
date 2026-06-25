@@ -8,12 +8,12 @@
   '(    "var" "assume" "assert" "cover" "if" "else" "havoc" "invariant"
     "decreases" "while" "out" "inout" "call" "exit" "free" "ensures"
     "requires" "spec" "procedure" "type" "const" "function" "inline"
-    "rec" "axiom" "distinct" "datatype" "old" "forall" "exists"
-    "program"))
+    "rec" "axiom" "distinct" "datatype" "goto" "cfg" "old" "forall"
+    "exists" "program"))
 
 (defvar core-st-types
   '(    "bool" "int" "string" "regex" "real" "bv1" "bv8" "bv16" "bv32"
-    "bv64" "Map" "Sequence"))
+    "bv64" "bv128" "Map" "Sequence"))
 
 (defvar core-st-constants
   '(    "true" "false" "null"))
@@ -22,12 +22,16 @@
   '(    "div" "mod" "sdiv" "smod" "safesdiv" "safesmod"))
 
 (defvar core-st-builtins
-  '(    "Sequence.length" "Sequence.select" "Sequence.append"
-    "Sequence.build" "Sequence.update" "Sequence.contains"
-    "Sequence.take" "Sequence.drop" "str.len" "str.concat" "str.substr"
-    "str.to.re" "str.in.re" "re.allchar" "re.all" "re.range" "re.concat"
-    "re.*" "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
-    "Int.DivT" "Int.ModT"))
+  '(    "Sequence.empty" "Sequence.length" "Sequence.select"
+    "Sequence.append" "Sequence.build" "Sequence.update"
+    "Sequence.contains" "Sequence.take" "Sequence.drop" "str.len"
+    "str.concat" "str.substr" "str.to.re" "str.in.re" "str.prefixof"
+    "str.suffixof" "re.allchar" "re.all" "re.range" "re.concat" "re.*"
+    "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
+    "Int.DivT" "Int.ModT" "Bv.SNegOverflow" "Bv.UNegOverflow"
+    "Bv.SAddOverflow" "Bv.SSubOverflow" "Bv.SMulOverflow"
+    "Bv.SDivOverflow" "Bv.UAddOverflow" "Bv.USubOverflow"
+    "Bv.UMulOverflow"))
 
 ;; Font-lock rules
 (defvar core-st-font-lock-keywords

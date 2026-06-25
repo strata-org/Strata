@@ -4,12 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Util.TestDiagnostics
-import StrataTest.Languages.Laurel.TestExamples
+import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
-
-namespace Strata.Laurel
+open Strata
 
 /-! ## End-to-end test: safe division (no errors) and unsafe division (error)
 
@@ -18,19 +16,18 @@ built-in preconditions (divisor ≠ 0). The PrecondElim transform automatically
 generates verification conditions for these preconditions.
 -/
 
-def e2eProgram := r"
-procedure safeDivision() {
+/-! ### Safe paths verify cleanly -/
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure safeDivision()
+  opaque
+{
   var x: int := 10;
   var y: int := 2;
   var z: int := x / y;
   assert z == 5
-};
-
-// Error ranges are too wide because Core does not use expression locations
-procedure unsafeDivision(x: int) {
-  var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// Error ranges are too wide because Core does not use expression locations
 };
 
 function pureDiv(x: int, y: int): int
@@ -39,19 +36,43 @@ function pureDiv(x: int, y: int): int
   x / y
 };
 
-procedure callPureDivSafe() {
+procedure callPureDivSafe()
+  opaque
+{
   var z: int := pureDiv(10, 2);
   assert z == 5
 };
+#end
 
-procedure callPureDivUnsafe(x: int) {
+/-! ### Unsafe division: divisor not constrained, fails verification -/
+
+-- Error ranges are too wide because Core does not use expression locations.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure unsafeDivision(x: int)
+  opaque
+{
+  var z: int := 10 / x
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ### Unsafe call to function with `requires y != 0` -/
+
+#eval testLaurel <|
+#strata
+program Laurel;
+function pureDiv(x: int, y: int): int
+  requires y != 0
+{
+  x / y
+};
+
+procedure callPureDivUnsafe(x: int)
+  opaque
+{
   var z: int := pureDiv(10, x)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-// Error ranges are too wide because Core does not use expression locations
 };
-"
-
-#guard_msgs(drop info, error) in
-#eval testInputWithOffset "DivByZeroE2E" e2eProgram 22 processLaurelFile
-
-end Laurel
+#end
