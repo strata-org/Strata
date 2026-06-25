@@ -3101,6 +3101,1391 @@ private theorem Block.hoistLoopPrefixInits_preserves {Q : String → Prop}
 
 end
 
+/-\! ## Failing-config forward simulation (`hoistLoopPrefixInits_to_fail`)
+
+`Stmt.hoistLoopPrefixInits_preserves` / `Block.hoistLoopPrefixInits_preserves`
+are *endpoint*-keyed: each consumes a source run reaching `.terminal` / `.exiting`.
+A reachable *failing* configuration need not lie on such a run (an `assert` only
+OR-s the cumulative `hasFailure` flag and continues, so a failing run may diverge
+or get stuck afterwards).  The `_to_fail` siblings below remove the endpoint
+demand: a reachable failing source configuration of `ss` is matched by a reachable
+failing configuration of `Block.hoistLoopPrefixInitsM ss σ` from the same
+`HoistInv`-related start.
+
+The construction mirrors the endpoint mutual but keys on the *failing
+configuration* as the halting condition.  Each statement / loop iteration that
+*completed before the failure* terminated, so the endpoint simulation applies to
+it verbatim and re-establishes the invariant (the endpoint mutual
+`Stmt`/`Block.hoistLoopPrefixInits_preserves` is reused for those); only the
+single statement / iteration that *contains* the failure is transported by a bare
+failing-config reach.  The loop arm dispatches to the failing-target loop closer
+`loop_arm_close_fail`, whose induction is on a `Nat` fuel bounding the SOURCE run
+length (finite by failure monotonicity), never on the loop terminating. -/
+
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 4000 in
+mutual
+
+/-- §E Stmt-level FAILING-config simulation (the `_to_fail` analogue of
+`Stmt.hoistLoopPrefixInits_preserves`): same front-end / generator preconditions,
+but the source run reaches a *failing* config and the conclusion asserts the
+hoisted residual reaches a failing config too (no terminal/exiting endpoint, no
+re-established invariant). -/
+private theorem Stmt.hoistLoopPrefixInits_to_fail {Q : String → Prop}
+    [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
+    [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (A : List P.Ident)
+    (B : List P.Ident)
+    (subst : List (P.Ident × P.Ident))
+    (s : Stmt P (Cmd P))
+    (σ : StringGenState)
+    {ρ_src ρ_hoist : Env P}
+    {cfg_src : Config P (Cmd P)}
+    (h_no_nd      : Stmt.containsNondetLoop s = false)
+    (h_no_fd      : Stmt.containsFuncDecl s = false)
+    (h_no_inv     : Stmt.loopHasNoInvariants s = true)
+    (h_no_measure : Stmt.loopMeasureNone s = true)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q [s])
+    (h_unique     : Block.uniqueInits [s])
+    (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true)
+    (h_names_fresh : Block.namesFreshInExprs A [s] = true)
+    (h_names_fresh_B : Block.namesFreshInExprs B [s] = true)
+    (h_lhs_disjoint : ∀ y ∈ Block.initVars [s], y ∉ A)
+    (h_extra_disjoint : ∀ y ∈ Block.initVars [s], y ∉ B)
+    (h_mod_disjoint_A : ∀ x ∈ Block.modifiedVars [s], x ∉ A)
+    (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars [s], x ∉ B)
+    (h_hoist_undef : ∀ y ∈ Block.initVars [s], ρ_src.store y = none)
+    (h_hoist_undef_h : ∀ y ∈ Block.initVars [s], ρ_hoist.store y = none)
+    (h_src_store_shapefree : ∀ str : String, Q str →
+      str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_hoist_store_shapefree : ∀ str : String, Q str →
+      str ∉ StringGenState.stringGens σ → ρ_hoist.store (HasIdent.ident (P := P) str) = none)
+    (h_wf_σ       : StringGenState.WF σ)
+    (h_src_namesFreshFromσ :
+      ∀ str ∈ StringGenState.stringGens σ,
+        HasIdent.ident (P := P) str ∉ A ∧
+        HasIdent.ident (P := P) str ∉ B ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars [s])
+    (h_src_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ A ∧
+        HasIdent.ident (P := P) str ∉ B ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars [s] ∧
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars [s])
+    (h_subst_wf : ∀ a b, (a, b) ∈ subst → a ∈ A ∧ b ∈ B)
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval_eq    : ρ_src.eval = ρ_hoist.eval)
+    (h_hf_eq      : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_hoist_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
+                     (.stmt s ρ_src) cfg_src)
+    (h_c_fail     : cfg_src.getEnv.hasFailure = true)
+    (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    ∃ d : Config P (Cmd P),
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Stmt.hoistLoopPrefixInitsM s σ).1 ρ_hoist) d
+      ∧ d.getEnv.hasFailure = true := by
+  classical
+  -- Uniform handler for atomic statements (`.cmd` / `.exit` / `.typeDecl`): a
+  -- failing run is `refl` (start failing ⇒ hoist start fails by `h_hf_eq`) or a
+  -- single endpoint reach (terminal/exiting) carrying the failure — the endpoint
+  -- mutual `Stmt.hoistLoopPrefixInits_preserves` replays it to a hoist endpoint
+  -- of the same shape with the same `hasFailure` flag, which is therefore failing.
+  have atomic : (cfg_src = .stmt s ρ_src) ∨
+      (∃ ρ', cfg_src = .terminal ρ') ∨ (∃ l ρ', cfg_src = .exiting l ρ') →
+      ∃ d : Config P (Cmd P),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmts (Stmt.hoistLoopPrefixInitsM s σ).1 ρ_hoist) d
+        ∧ d.getEnv.hasFailure = true := by
+    rintro (h_refl | h_endpoint)
+    · refine ⟨.stmts (Stmt.hoistLoopPrefixInitsM s σ).1 ρ_hoist, .refl _, ?_⟩
+      rw [h_refl] at h_c_fail
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_c_fail
+      simpa [Config.getEnv] using (h_hf_eq ▸ this)
+    · obtain ⟨ρ_h', cfg_hoist, h_run_h, h_out⟩ :=
+        Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
+          h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
+          h_names_fresh h_names_fresh_B h_lhs_disjoint h_extra_disjoint
+          h_mod_disjoint_A h_mod_disjoint_B h_hoist_undef h_hoist_undef_h
+          h_src_store_shapefree h_hoist_store_shapefree
+          h_wf_σ h_src_namesFreshFromσ h_src_shapefree h_subst_wf h_hinv
+          h_eval_eq h_hf_eq h_hoist_bound h_run_src
+          (by rcases h_endpoint with ⟨ρ', h⟩ | ⟨l, ρ', h⟩
+              · exact Or.inl ⟨ρ', h⟩
+              · exact Or.inr ⟨l, ρ', h⟩)
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      refine ⟨cfg_hoist, h_run_h, ?_⟩
+      rcases h_out with ⟨ρ_s', h_eq_src, h_eq_h, _, h_hf', _⟩ | ⟨l, ρ_s', h_eq_src, h_eq_h, _, h_hf', _⟩
+      · rw [h_eq_src] at h_c_fail
+        have h_s_fail : ρ_s'.hasFailure = true := by simpa [Config.getEnv] using h_c_fail
+        rw [h_eq_h]; simpa [Config.getEnv] using (h_hf' ▸ h_s_fail)
+      · rw [h_eq_src] at h_c_fail
+        have h_s_fail : ρ_s'.hasFailure = true := by simpa [Config.getEnv] using h_c_fail
+        rw [h_eq_h]; simpa [Config.getEnv] using (h_hf' ▸ h_s_fail)
+  match h_match : s with
+  | .cmd c =>
+    subst h_match
+    -- A `.cmd` run reaching a failing config is `refl` or a single step to terminal.
+    apply atomic
+    cases h_run_src with
+    | refl => exact Or.inl rfl
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      cases hr1 with
+      | refl => exact Or.inr (Or.inl ⟨_, rfl⟩)
+      | step _ _ _ hd _ => exact nomatch hd
+  | .exit lbl md =>
+    subst h_match
+    -- An `.exit` run reaching a failing config is `refl` or a single step to exiting.
+    apply atomic
+    cases h_run_src with
+    | refl => exact Or.inl rfl
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      cases hr1 with
+      | refl => exact Or.inr (Or.inr ⟨_, _, rfl⟩)
+      | step _ _ _ hd _ => exact nomatch hd
+  | .typeDecl t md =>
+    subst h_match
+    -- A `.typeDecl` run reaching a failing config is `refl` or a single step to terminal.
+    apply atomic
+    cases h_run_src with
+    | refl => exact Or.inl rfl
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      cases hr1 with
+      | refl => exact Or.inr (Or.inl ⟨_, rfl⟩)
+      | step _ _ _ hd _ => exact nomatch hd
+  | .funcDecl d md =>
+    subst h_match
+    rw [Stmt.containsFuncDecl] at h_no_fd
+    exact absurd h_no_fd (by simp)
+  | .block lbl bss md =>
+    subst h_match
+    -- === Decompose the §E preconditions for `[.block lbl bss md]` to `bss`. ===
+    -- Every structural Bool walker on `.block` reduces to its body, and
+    -- `Block.initVars [.block lbl bss md] = Block.initVars bss`.
+    have h_iv_eq : Block.initVars [Stmt.block lbl bss md] = Block.initVars bss := by
+      simp only [Block.initVars, Stmt.initVars, List.append_nil]
+    have h_mod_eq : Block.modifiedVars [Stmt.block lbl bss md] = Block.modifiedVars bss := by
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil]
+    have h_nd_bss : Block.containsNondetLoop bss = false := by
+      simpa only [Block.containsNondetLoop, Stmt.containsNondetLoop, Bool.or_false] using h_no_nd
+    have h_fd_bss : Block.containsFuncDecl bss = false := by
+      simpa only [Block.containsFuncDecl, Stmt.containsFuncDecl, Bool.or_false] using h_no_fd
+    have h_inv_bss : Block.loopHasNoInvariants bss = true := by
+      simpa only [Block.loopHasNoInvariants, Stmt.loopHasNoInvariants, Bool.and_true] using h_no_inv
+    have h_measure_bss : Block.loopMeasureNone bss = true := by
+      simpa only [Block.loopMeasureNone, Stmt.loopMeasureNone, Bool.and_true] using h_no_measure
+    have h_exprs_shapefree_bss : Block.exprsShapeFree (P := P) Q bss := by
+      have h := h_exprs_shapefree
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
+      exact h.1
+    have h_unique_bss : Block.uniqueInits bss := by
+      show (Block.initVars bss).Nodup
+      have : Block.uniqueInits [Stmt.block lbl bss md] =
+          (Block.initVars [Stmt.block lbl bss md]).Nodup := rfl
+      rw [this, h_iv_eq] at h_unique; exact h_unique
+    have h_fresh_bss : Block.hoistedNamesFreshInRhsAndGuards (P := P) bss = true := by
+      have h_fresh_unfold := h_fresh
+      unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh_unfold ⊢
+      -- `namesFreshInRhsExprs (initVars [.block..]) [.block..] = namesFreshInRhsExprs (initVars bss) bss`.
+      have : Block.namesFreshInRhsExprs (Block.initVars [Stmt.block lbl bss md])
+          [Stmt.block lbl bss md] =
+          Block.namesFreshInRhsExprs (Block.initVars bss) bss := by
+        simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs, Bool.and_true, h_iv_eq]
+      rwa [this] at h_fresh_unfold
+    have h_names_fresh_bss : Block.namesFreshInExprs A bss = true := by
+      simpa only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true] using h_names_fresh
+    have h_names_fresh_B_bss : Block.namesFreshInExprs B bss = true := by
+      simpa only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true] using h_names_fresh_B
+    have h_lhs_disjoint_bss : ∀ y ∈ Block.initVars bss, y ∉ A := fun y hy =>
+      h_lhs_disjoint y (h_iv_eq ▸ hy)
+    have h_extra_disjoint_bss : ∀ y ∈ Block.initVars bss, y ∉ B := fun y hy =>
+      h_extra_disjoint y (h_iv_eq ▸ hy)
+    have h_mod_disjoint_A_bss : ∀ x ∈ Block.modifiedVars bss, x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (h_mod_eq ▸ hx)
+    have h_mod_disjoint_B_bss : ∀ x ∈ Block.modifiedVars bss, x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (h_mod_eq ▸ hx)
+    have h_hoist_undef_bss : ∀ y ∈ Block.initVars bss, ρ_src.store y = none := fun y hy =>
+      h_hoist_undef y (h_iv_eq ▸ hy)
+    have h_hoist_undef_h_bss : ∀ y ∈ Block.initVars bss, ρ_hoist.store y = none := fun y hy =>
+      h_hoist_undef_h y (h_iv_eq ▸ hy)
+    have h_src_fresh_bss :
+        ∀ str ∈ StringGenState.stringGens σ,
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars bss := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+      exact ⟨hA, hB, fun h => hiv (h_iv_eq ▸ h)⟩
+    have h_src_shapefree_bss :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars bss ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars bss := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (h_iv_eq ▸ h), fun h => hmv (h_mod_eq ▸ h)⟩
+    -- === Rewrite the residual to the singleton hoisted `.block`. ===
+    have h_block_out :
+        (Stmt.hoistLoopPrefixInitsM (.block lbl bss md) σ).1 =
+          [Stmt.block lbl (Block.hoistLoopPrefixInitsM bss σ).1 md] :=
+      Stmt.hoistLoopPrefixInitsM_block_out lbl bss md σ
+    rw [h_block_out]
+    -- A failing run of `.stmt (.block lbl bss md) ρ_src` is `refl` (start failing)
+    -- or steps `step_block` into the body block, whose failure
+    -- (`block_reaches_failing'`) is reached inside `.stmts bss`.  Recurse on `bss`
+    -- and lift the failing hoist body run back into the hoisted block.
+    cases h_run_src with
+    | refl =>
+      refine ⟨.stmts [Stmt.block lbl (Block.hoistLoopPrefixInitsM bss σ).1 md] ρ_hoist, .refl _, ?_⟩
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_c_fail
+      simpa [Config.getEnv] using (h_hf_eq ▸ this)
+    | step _ _ _ h1 hr1 =>
+      cases h1
+      obtain ⟨d_inner, h_inner_run, hd_inner⟩ :=
+        block_reaches_failing' P (EvalCmd P) extendEval hr1 h_c_fail
+      obtain ⟨d', h_body_h, hd'⟩ :=
+        Block.hoistLoopPrefixInits_to_fail hQmint A B subst bss σ
+          h_nd_bss h_fd_bss h_inv_bss h_measure_bss h_exprs_shapefree_bss h_unique_bss h_fresh_bss
+          h_names_fresh_bss h_names_fresh_B_bss h_lhs_disjoint_bss h_extra_disjoint_bss
+          h_mod_disjoint_A_bss h_mod_disjoint_B_bss h_hoist_undef_bss h_hoist_undef_h_bss
+          h_src_store_shapefree h_hoist_store_shapefree
+          h_wf_σ h_src_fresh_bss h_src_shapefree_bss h_subst_wf h_hinv
+          h_eval_eq h_hf_eq h_hoist_bound h_inner_run hd_inner h_wfvar h_wfcongr h_wfsubst h_wfdef
+      refine ⟨.seq (.block (.some lbl) ρ_hoist.store d') [], ?_, by simpa [Config.getEnv] using hd'⟩
+      refine ReflTrans.step _ _ _ StepStmt.step_stmts_cons ?_
+      refine ReflTrans.step _ _ _ (StepStmt.step_seq_inner StepStmt.step_block) ?_
+      exact seq_inner_star P (EvalCmd P) extendEval _ _ []
+        (block_inner_star P (EvalCmd P) extendEval _ _ (.some lbl) ρ_hoist.store h_body_h)
+  | .ite g tss ess md =>
+    subst h_match
+    -- === Decompose the §E preconditions for `[.ite g tss ess md]` to the
+    --     branches `tss` (processed at σ) and `ess` (processed at σ1). ===
+    have h_iv_split : Block.initVars [Stmt.ite g tss ess md] =
+        Block.initVars tss ++ Block.initVars ess := by
+      simp only [Block.initVars, Stmt.initVars, List.append_nil]
+    have h_mod_split : Block.modifiedVars [Stmt.ite g tss ess md] =
+        Block.modifiedVars tss ++ Block.modifiedVars ess := by
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil]
+    -- Bool preconds.
+    have h_nd_branches : Block.containsNondetLoop tss = false ∧ Block.containsNondetLoop ess = false := by
+      simp only [Stmt.containsNondetLoop,
+        Bool.or_eq_false_iff] at h_no_nd; exact h_no_nd
+    have h_fd_branches : Block.containsFuncDecl tss = false ∧ Block.containsFuncDecl ess = false := by
+      simp only [Stmt.containsFuncDecl,
+        Bool.or_eq_false_iff] at h_no_fd; exact h_no_fd
+    have h_inv_branches : Block.loopHasNoInvariants tss = true ∧ Block.loopHasNoInvariants ess = true := by
+      simp only [Stmt.loopHasNoInvariants,
+        Bool.and_eq_true] at h_no_inv; exact h_no_inv
+    have h_measure_branches : Block.loopMeasureNone tss = true ∧ Block.loopMeasureNone ess = true := by
+      simp only [Stmt.loopMeasureNone,
+        Bool.and_eq_true] at h_no_measure; exact h_no_measure
+    have h_exprs_shapefree_branches :
+        Block.exprsShapeFree (P := P) Q tss ∧
+          Block.exprsShapeFree (P := P) Q ess := by
+      have h := h_exprs_shapefree
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
+      exact ⟨h.1.2.1, h.1.2.2⟩
+    -- uniqueInits: Nodup splits over the append.
+    have h_unique_full : (Block.initVars tss ++ Block.initVars ess).Nodup := by
+      have : Block.uniqueInits [Stmt.ite g tss ess md] =
+          (Block.initVars [Stmt.ite g tss ess md]).Nodup := rfl
+      rw [this, h_iv_split] at h_unique; exact h_unique
+    have h_unique_tss : Block.uniqueInits tss := (List.nodup_append.mp h_unique_full).1
+    have h_unique_ess : Block.uniqueInits ess := (List.nodup_append.mp h_unique_full).2.1
+    -- hoistedNamesFreshInRhsAndGuards: split into the two branches.
+    have h_fresh_unfold := h_fresh
+    unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh_unfold
+    -- namesFreshInRhsExprs over initVars [.ite ..]: split via subset + the ite arm
+    -- (the `.ite` guard read position is no longer checked, so no guard conjunct).
+    have h_sub_tss : (Block.initVars tss : List P.Ident) ⊆ Block.initVars [Stmt.ite g tss ess md] := by
+      rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inl h)
+    have h_sub_ess : (Block.initVars ess : List P.Ident) ⊆ Block.initVars [Stmt.ite g tss ess md] := by
+      rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inr h)
+    simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs, Bool.and_true,
+      Bool.and_eq_true] at h_fresh_unfold
+    obtain ⟨h_nf_tss_iv, h_nf_ess_iv⟩ := h_fresh_unfold
+    have h_fresh_tss : Block.hoistedNamesFreshInRhsAndGuards (P := P) tss = true := by
+      unfold Block.hoistedNamesFreshInRhsAndGuards
+      exact Block.namesFreshInRhsExprs_subset h_sub_tss tss h_nf_tss_iv
+    have h_fresh_ess : Block.hoistedNamesFreshInRhsAndGuards (P := P) ess = true := by
+      unfold Block.hoistedNamesFreshInRhsAndGuards
+      exact Block.namesFreshInRhsExprs_subset h_sub_ess ess h_nf_ess_iv
+    -- namesFreshInExprs A / B split over the branches.
+    have h_names_fresh_A_split :
+        Block.namesFreshInExprs A tss = true ∧ Block.namesFreshInExprs A ess = true := by
+      simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
+        Bool.and_eq_true] at h_names_fresh; exact ⟨h_names_fresh.1.2, h_names_fresh.2⟩
+    have h_names_fresh_B_split :
+        Block.namesFreshInExprs B tss = true ∧ Block.namesFreshInExprs B ess = true := by
+      simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
+        Bool.and_eq_true] at h_names_fresh_B; exact ⟨h_names_fresh_B.1.2, h_names_fresh_B.2⟩
+    -- initVars-based disjointness / undef: split via initVars membership.
+    have h_lhs_disjoint_tss : ∀ y ∈ Block.initVars tss, y ∉ A := fun y hy =>
+      h_lhs_disjoint y (h_sub_tss hy)
+    have h_lhs_disjoint_ess : ∀ y ∈ Block.initVars ess, y ∉ A := fun y hy =>
+      h_lhs_disjoint y (h_sub_ess hy)
+    have h_extra_disjoint_tss : ∀ y ∈ Block.initVars tss, y ∉ B := fun y hy =>
+      h_extra_disjoint y (h_sub_tss hy)
+    have h_extra_disjoint_ess : ∀ y ∈ Block.initVars ess, y ∉ B := fun y hy =>
+      h_extra_disjoint y (h_sub_ess hy)
+    have h_mod_sub_tss : (Block.modifiedVars tss : List P.Ident) ⊆
+        Block.modifiedVars [Stmt.ite g tss ess md] := by
+      rw [h_mod_split]; exact fun _ h => List.mem_append.mpr (Or.inl h)
+    have h_mod_sub_ess : (Block.modifiedVars ess : List P.Ident) ⊆
+        Block.modifiedVars [Stmt.ite g tss ess md] := by
+      rw [h_mod_split]; exact fun _ h => List.mem_append.mpr (Or.inr h)
+    have h_mod_disjoint_A_tss : ∀ x ∈ Block.modifiedVars tss, x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (h_mod_sub_tss hx)
+    have h_mod_disjoint_A_ess : ∀ x ∈ Block.modifiedVars ess, x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (h_mod_sub_ess hx)
+    have h_mod_disjoint_B_tss : ∀ x ∈ Block.modifiedVars tss, x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (h_mod_sub_tss hx)
+    have h_mod_disjoint_B_ess : ∀ x ∈ Block.modifiedVars ess, x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (h_mod_sub_ess hx)
+    have h_hoist_undef_tss : ∀ y ∈ Block.initVars tss, ρ_src.store y = none := fun y hy =>
+      h_hoist_undef y (h_sub_tss hy)
+    have h_hoist_undef_ess : ∀ y ∈ Block.initVars ess, ρ_src.store y = none := fun y hy =>
+      h_hoist_undef y (h_sub_ess hy)
+    have h_hoist_undef_h_tss : ∀ y ∈ Block.initVars tss, ρ_hoist.store y = none := fun y hy =>
+      h_hoist_undef_h y (h_sub_tss hy)
+    have h_hoist_undef_h_ess : ∀ y ∈ Block.initVars ess, ρ_hoist.store y = none := fun y hy =>
+      h_hoist_undef_h y (h_sub_ess hy)
+    -- σ-freshness / shape-free restricted to each branch.
+    have h_src_fresh_tss :
+        ∀ str ∈ StringGenState.stringGens σ,
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars tss := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+      exact ⟨hA, hB, fun h => hiv (h_sub_tss h)⟩
+    have h_src_shapefree_tss :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars tss ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars tss := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (h_sub_tss h), fun h => hmv (h_mod_sub_tss h)⟩
+    have h_src_shapefree_ess :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars ess ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars ess := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (h_sub_ess h), fun h => hmv (h_mod_sub_ess h)⟩
+    -- GenStep facts: σ → σ1 = (Block.hoistLoopPrefixInitsM tss σ).2; WF of σ1.
+    have h_genStep_tss : StringGenState.GenStep σ (Block.hoistLoopPrefixInitsM tss σ).2 :=
+      Block.hoistLoopPrefixInitsM_genStep tss σ
+    have h_wf_σ1 : StringGenState.WF (Block.hoistLoopPrefixInitsM tss σ).2 :=
+      h_genStep_tss.wf_mono h_wf_σ
+    -- σ-freshness for ESS at σ1: thread via SrcNamesFreshFromGen.genStep_of_delta.
+    have h_src_fresh_ess_σ1 :
+        ∀ str ∈ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2,
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars ess := by
+      have h_fresh_σ_ess : SrcNamesFreshFromGen (P := P) A B (Block.initVars ess) σ := by
+        intro str hstr
+        obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+        exact ⟨hA, hB, fun h => hiv (h_sub_ess h)⟩
+      exact SrcNamesFreshFromGen.genStep_of_delta
+        (Block.hoistLoopPrefixInitsM_genStep_delta_Q hQmint tss σ)
+        (fun str hsuf => let ⟨a, b, c, _⟩ := h_src_shapefree_ess str hsuf; ⟨a, b, c⟩) h_fresh_σ_ess
+    -- Store-shapefree at σ1 for the ELSE branch.  The else branch runs from the
+    -- SAME entry stores `ρ_src`/`ρ_hoist` (the `.ite` selects one branch), so the
+    -- store facts are unchanged; only the generator state index advances to σ1.
+    -- A suffix name `∉ stringGens σ1` is `∉ stringGens σ` by genStep monotonicity,
+    -- so the σ-version facts transfer.
+    have h_src_store_shapefree_σ1 : ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2 →
+        ρ_src.store (HasIdent.ident (P := P) str) = none := fun str h_suf h_notσ1 =>
+      h_src_store_shapefree str h_suf (fun h => h_notσ1 (h_genStep_tss.subset h))
+    have h_hoist_store_shapefree_σ1 : ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens (Block.hoistLoopPrefixInitsM tss σ).2 →
+        ρ_hoist.store (HasIdent.ident (P := P) str) = none := fun str h_suf h_notσ1 =>
+      h_hoist_store_shapefree str h_suf (fun h => h_notσ1 (h_genStep_tss.subset h))
+    -- === Rewrite the residual to the singleton hoisted `.ite`. ===
+    have h_ite_out :
+        (Stmt.hoistLoopPrefixInitsM (.ite g tss ess md) σ).1 =
+          [Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+            (Block.hoistLoopPrefixInitsM ess
+              (Block.hoistLoopPrefixInitsM tss σ).2).1 md] :=
+      Stmt.hoistLoopPrefixInitsM_ite_out g tss ess md σ
+    rw [h_ite_out]
+    -- THEN-branch failing driver: recurse `Block.hoistLoopPrefixInits_to_fail` on
+    -- `tss` at σ, then lift through the single hoisted-ite branch-selection step.
+    have run_then_fail :
+        StepStmtStar P (EvalCmd P) extendEval (.stmts tss ρ_src) cfg_src →
+        StepStmt P (EvalCmd P) extendEval
+          (.stmt (Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+            (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 md) ρ_hoist)
+          (.stmts (Block.hoistLoopPrefixInitsM tss σ).1 ρ_hoist) →
+        ∃ d : Config P (Cmd P),
+          StepStmtStar P (EvalCmd P) extendEval
+            (.stmts [Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+              (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 md] ρ_hoist) d
+          ∧ d.getEnv.hasFailure = true := by
+      intro hr1 h_step
+      obtain ⟨d', h_branch_h, hd'⟩ :=
+        Block.hoistLoopPrefixInits_to_fail hQmint A B subst tss σ
+          h_nd_branches.1 h_fd_branches.1 h_inv_branches.1 h_measure_branches.1
+          h_exprs_shapefree_branches.1
+          h_unique_tss h_fresh_tss h_names_fresh_A_split.1 h_names_fresh_B_split.1
+          h_lhs_disjoint_tss h_extra_disjoint_tss h_mod_disjoint_A_tss h_mod_disjoint_B_tss
+          h_hoist_undef_tss h_hoist_undef_h_tss
+          h_src_store_shapefree h_hoist_store_shapefree
+          h_wf_σ h_src_fresh_tss h_src_shapefree_tss h_subst_wf h_hinv h_eval_eq h_hf_eq
+          h_hoist_bound hr1 h_c_fail h_wfvar h_wfcongr h_wfsubst h_wfdef
+      refine ⟨.seq d' [], ?_, by simpa [Config.getEnv] using hd'⟩
+      refine ReflTrans.step _ _ _ StepStmt.step_stmts_cons ?_
+      refine ReflTrans.step _ _ _ (StepStmt.step_seq_inner h_step) ?_
+      exact seq_inner_star P (EvalCmd P) extendEval _ _ [] h_branch_h
+    -- ELSE-branch failing driver: recurse on `ess` at σ1.
+    have run_else_fail :
+        StepStmtStar P (EvalCmd P) extendEval (.stmts ess ρ_src) cfg_src →
+        StepStmt P (EvalCmd P) extendEval
+          (.stmt (Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+            (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 md) ρ_hoist)
+          (.stmts (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 ρ_hoist) →
+        ∃ d : Config P (Cmd P),
+          StepStmtStar P (EvalCmd P) extendEval
+            (.stmts [Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+              (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 md] ρ_hoist) d
+          ∧ d.getEnv.hasFailure = true := by
+      intro hr1 h_step
+      obtain ⟨d', h_branch_h, hd'⟩ :=
+        Block.hoistLoopPrefixInits_to_fail hQmint A B subst ess (Block.hoistLoopPrefixInitsM tss σ).2
+          h_nd_branches.2 h_fd_branches.2 h_inv_branches.2 h_measure_branches.2
+          h_exprs_shapefree_branches.2
+          h_unique_ess h_fresh_ess h_names_fresh_A_split.2 h_names_fresh_B_split.2
+          h_lhs_disjoint_ess h_extra_disjoint_ess h_mod_disjoint_A_ess h_mod_disjoint_B_ess
+          h_hoist_undef_ess h_hoist_undef_h_ess
+          h_src_store_shapefree_σ1 h_hoist_store_shapefree_σ1
+          h_wf_σ1 h_src_fresh_ess_σ1 h_src_shapefree_ess h_subst_wf h_hinv h_eval_eq h_hf_eq
+          h_hoist_bound hr1 h_c_fail h_wfvar h_wfcongr h_wfsubst h_wfdef
+      refine ⟨.seq d' [], ?_, by simpa [Config.getEnv] using hd'⟩
+      refine ReflTrans.step _ _ _ StepStmt.step_stmts_cons ?_
+      refine ReflTrans.step _ _ _ (StepStmt.step_seq_inner h_step) ?_
+      exact seq_inner_star P (EvalCmd P) extendEval _ _ [] h_branch_h
+    -- Invert the source ite step (or `refl` start-failing).
+    cases h_run_src with
+    | refl =>
+      refine ⟨.stmts [Stmt.ite g (Block.hoistLoopPrefixInitsM tss σ).1
+        (Block.hoistLoopPrefixInitsM ess (Block.hoistLoopPrefixInitsM tss σ).2).1 md] ρ_hoist, .refl _, ?_⟩
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_c_fail
+      simpa [Config.getEnv] using (h_hf_eq ▸ this)
+    | step _ _ _ h1 hr1 =>
+      cases h1 with
+      | step_ite_true h_eval h_wfb =>
+        have h_guard := h_eval
+        rw [ite_guard_agree (subst := subst) (tss := tss) (ess := ess) (md := md)
+          h_names_fresh h_names_fresh_B h_hinv
+          (read_vars_def_of_eval (h_wfdef ρ_src) h_eval) h_eval_eq h_wfcongr] at h_guard
+        rw [h_eval_eq] at h_wfb
+        exact run_then_fail hr1 (StepStmt.step_ite_true h_guard h_wfb)
+      | step_ite_false h_eval h_wfb =>
+        have h_guard := h_eval
+        rw [ite_guard_agree (subst := subst) (tss := tss) (ess := ess) (md := md)
+          h_names_fresh h_names_fresh_B h_hinv
+          (read_vars_def_of_eval (h_wfdef ρ_src) h_eval) h_eval_eq h_wfcongr] at h_guard
+        rw [h_eval_eq] at h_wfb
+        exact run_else_fail hr1 (StepStmt.step_ite_false h_guard h_wfb)
+      | step_ite_nondet_true => exact run_then_fail hr1 StepStmt.step_ite_nondet_true
+      | step_ite_nondet_false => exact run_else_fail hr1 StepStmt.step_ite_nondet_false
+  | .loop g m inv body md =>
+    subst h_match
+    -- === A. Normalize the loop shape: g = .det g', m = none, inv = []. ===
+    -- `loopMeasureNone` ⇒ `m = none`; `loopHasNoInvariants` ⇒ `inv = []`;
+    -- `containsNondetLoop = false` ⇒ guard is `.det g'`.
+    have h_no_measure_s : Stmt.loopMeasureNone (Stmt.loop g m inv body md) = true := by
+      simpa only [Block.loopMeasureNone, Bool.and_true] using h_no_measure
+    have h_no_inv_s : Stmt.loopHasNoInvariants (Stmt.loop g m inv body md) = true := by
+      simpa only [Block.loopHasNoInvariants, Bool.and_true] using h_no_inv
+    have h_no_nd_s : Stmt.containsNondetLoop (Stmt.loop g m inv body md) = false := by
+      simpa only [Block.containsNondetLoop, Bool.or_false] using h_no_nd
+    have h_m_none : m = none := by
+      rw [Stmt.loopMeasureNone, Bool.and_eq_true] at h_no_measure_s
+      exact Option.isNone_iff_eq_none.mp h_no_measure_s.1
+    have h_inv_nil : inv = [] := by
+      rw [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_no_inv_s
+      exact List.isEmpty_iff.mp h_no_inv_s.1
+    subst h_m_none; subst h_inv_nil
+    have h_body_nd : ∃ g', g = ExprOrNondet.det g' ∧ Block.containsNondetLoop body = false := by
+      cases g with
+      | nondet => rw [Stmt.containsNondetLoop] at h_no_nd_s; exact absurd h_no_nd_s (by simp)
+      | det g' => refine ⟨g', rfl, ?_⟩; rw [Stmt.containsNondetLoop] at h_no_nd_s; exact h_no_nd_s
+    obtain ⟨g', rfl, h_nd_body⟩ := h_body_nd
+    -- === Carrier identities: initVars/modifiedVars of the singleton loop ARE body's. ===
+    have h_iv_body : Block.initVars [Stmt.loop (.det g') none [] body md] = Block.initVars body := by
+      simp only [Block.initVars, Stmt.initVars, List.append_nil]
+    have h_mod_body : Block.modifiedVars [Stmt.loop (.det g') none [] body md] = Block.modifiedVars body := by
+      simp only [Block.modifiedVars, Stmt.modifiedVars, List.append_nil]
+    -- === Body-level §E preconditions, decomposed from the loop's. ===
+    have h_fd_body : Block.containsFuncDecl body = false := by
+      have : Stmt.containsFuncDecl (Stmt.loop (.det g') none [] body md) = false := by
+        simpa only [Block.containsFuncDecl, Bool.or_false] using h_no_fd
+      rw [Stmt.containsFuncDecl] at this; exact this
+    have h_inv_body : Block.loopHasNoInvariants body = true := by
+      rw [Stmt.loopHasNoInvariants, Bool.and_eq_true] at h_no_inv_s; exact h_no_inv_s.2
+    have h_measure_body : Block.loopMeasureNone body = true := by
+      rw [Stmt.loopMeasureNone, Bool.and_eq_true] at h_no_measure_s; exact h_no_measure_s.2
+    have h_exprs_shapefree_body : Block.exprsShapeFree (P := P) Q body := by
+      have h := h_exprs_shapefree
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
+      exact h.1.2.2.2
+    have h_unique_body : Block.uniqueInits body := by
+      show (Block.initVars body).Nodup; rw [← h_iv_body]; exact h_unique
+    have h_fresh_body : Block.hoistedNamesFreshInRhsAndGuards (P := P) body = true := by
+      have h := h_fresh
+      unfold Block.hoistedNamesFreshInRhsAndGuards at h ⊢
+      rw [h_iv_body] at h
+      -- the `.loop` arm of `namesFreshInRhsExprs` recurses into the body only.
+      simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs,
+        Bool.and_true] at h
+      exact h
+    have h_names_fresh_A_body : Block.namesFreshInExprs A body = true := by
+      simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
+        Bool.and_eq_true] at h_names_fresh; exact h_names_fresh.2
+    have h_names_fresh_B_body : Block.namesFreshInExprs B body = true := by
+      simp only [Block.namesFreshInExprs, Stmt.namesFreshInExprs, Bool.and_true,
+        Bool.and_eq_true] at h_names_fresh_B; exact h_names_fresh_B.2
+    -- guard `g'` freshness from A / B.
+    have freshFromIdents_notmem : ∀ {z : P.Ident} {vars : List P.Ident},
+        freshFromIdents z vars = true → z ∉ vars := by
+      intro z vars h
+      unfold freshFromIdents at h
+      rw [List.all_eq_true] at h
+      intro hmem
+      have h_z := h z hmem
+      have h_eq : (P.EqIdent z z).decide = true := by simp
+      rw [h_eq] at h_z
+      exact absurd h_z (by decide)
+    have h_g_A_fresh : ∀ x ∈ A, x ∉ HasVarsPure.getVars g' := by
+      simp only [Block.namesFreshInExprs, Bool.and_true] at h_names_fresh
+      unfold Stmt.namesFreshInExprs at h_names_fresh
+      rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h_names_fresh
+      obtain ⟨⟨⟨h_g, _⟩, _⟩, _⟩ := h_names_fresh
+      rw [List.all_eq_true] at h_g
+      intro x hx
+      have := h_g x hx
+      rw [ExprOrNondet.getVars] at this
+      exact freshFromIdents_notmem this
+    have h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g' := by
+      simp only [Block.namesFreshInExprs, Bool.and_true] at h_names_fresh_B
+      unfold Stmt.namesFreshInExprs at h_names_fresh_B
+      rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h_names_fresh_B
+      obtain ⟨⟨⟨h_g, _⟩, _⟩, _⟩ := h_names_fresh_B
+      rw [List.all_eq_true] at h_g
+      intro x hx
+      have := h_g x hx
+      rw [ExprOrNondet.getVars] at this
+      exact freshFromIdents_notmem this
+    -- initVars/modifiedVars-based disjointness + undef + σ-freshness for body.
+    have h_lhs_disjoint_body : ∀ y ∈ Block.initVars body, y ∉ A := fun y hy =>
+      h_lhs_disjoint y (by rw [h_iv_body]; exact hy)
+    have h_extra_disjoint_body : ∀ y ∈ Block.initVars body, y ∉ B := fun y hy =>
+      h_extra_disjoint y (by rw [h_iv_body]; exact hy)
+    have h_mod_disjoint_A_body : ∀ x ∈ Block.modifiedVars body, x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (by rw [h_mod_body]; exact hx)
+    have h_mod_disjoint_B_body : ∀ x ∈ Block.modifiedVars body, x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (by rw [h_mod_body]; exact hx)
+    have h_hoist_undef_body : ∀ y ∈ Block.initVars body, ρ_src.store y = none := fun y hy =>
+      h_hoist_undef y (by rw [h_iv_body]; exact hy)
+    have h_hoist_undef_h_body : ∀ y ∈ Block.initVars body, ρ_hoist.store y = none := fun y hy =>
+      h_hoist_undef_h y (by rw [h_iv_body]; exact hy)
+    have h_src_fresh_body :
+        ∀ str ∈ StringGenState.stringGens σ,
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars body := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+      exact ⟨hA, hB, fun h => hiv (by rw [h_iv_body]; exact h)⟩
+    have h_src_shapefree_body :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧ HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars body ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars body := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (by rw [h_iv_body]; exact h),
+        fun h => hmv (by rw [h_mod_body]; exact h)⟩
+    -- === Loop output decomposition: havocs ++ [.loop g' none [] body₃ md]. ===
+    -- body₁ = post-order hoist of body; σ₁ = its final gen state; E = harvest of
+    -- body₁ at σ₁; body₃ = applyRenames (substOf' E) body₂ where body₂ is the
+    -- lift residual.  The output's renames equal substOf' E (entries_from_lift).
+    -- Abbreviations (no `set` tactic in this project): the post-order body, its
+    -- gen state, the harvest, and the rewritten loop body.
+    let body₁ : List (Stmt P (Cmd P)) := (Block.hoistLoopPrefixInitsM body σ).1
+    let σ₁ : StringGenState := (Block.hoistLoopPrefixInitsM body σ).2
+    let E : List (LoopInitHoistLoopDriver.Entry P) :=
+      LoopInitHoistLoopDriver.Block.entriesOf body₁ σ₁
+    let body₃ : List (Stmt P (Cmd P)) :=
+      Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
+        (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2
+    -- The hoisted loop residual.
+    have h_loop_out :
+        (Stmt.hoistLoopPrefixInitsM (Stmt.loop (.det g') none [] body md) σ).1 =
+          (Block.liftInitsInLoopBodyM body₁ σ₁).1.1.map Stmt.cmd ++
+          [Stmt.loop (.det g') none [] body₃ md] :=
+      Stmt.hoistLoopPrefixInitsM_loop_out (.det g') none [] body md σ
+    rw [h_loop_out]
+    -- The havocs (mapped to .cmd) equal havocStmts' E; renames equal substOf' E.
+    have h_harvest := LoopInitHoistLoopDriver.Block.lift_harvest_subst body₁ σ₁
+    have h_havoc_eq : (Block.liftInitsInLoopBodyM body₁ σ₁).1.1.map Stmt.cmd =
+        LoopInitHoistLoopDriver.havocStmts' E := h_harvest.1
+    have h_renames_eq : (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1 =
+        LoopInitHoistLoopDriver.substOf' E := h_harvest.2
+    rw [h_havoc_eq]
+    -- === Step A: the §E Block IH at the harvest `σ`, presented in the raw
+    --     ∀-shape `loop_arm_close` expects (both source- and hoist-side
+    --     `σ`-relative store-shape-freedom supplied directly per iteration). ===
+    have stepA : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+        (∀ y ∈ B, ρ_h.store y ≠ none) →
+        (∀ y ∈ Block.initVars body, ρ_s.store y = none) →
+        (∀ y ∈ Block.initVars body, ρ_h.store y = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+        ∀ (ρ_s' : Env P),
+          StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.terminal ρ_s') →
+          ∃ ρ_h' : Env P,
+            StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.terminal ρ_h') ∧
+            HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+            ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) := by
+      intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i ρ_s' h_run_i
+      obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
+          h_nd_body h_fd_body h_inv_body h_measure_body
+          h_exprs_shapefree_body h_unique_body h_fresh_body
+          h_names_fresh_A_body h_names_fresh_B_body
+          h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
+          (fun y hy => h_Vs_i y hy) (fun y hy => h_Vh_i y hy)
+          h_src_sf_i h_hoist_sf_i
+          h_wf_σ h_src_fresh_body h_src_shapefree_body h_subst_wf h_hinv_i h_eval_i h_hf_i h_bnd_i
+          h_run_i (Or.inl ⟨ρ_s', rfl⟩)
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      rcases h_out with ⟨r, hr1, hr2, hr3, hr4, hr5⟩ | ⟨l, r, hr1, _, _, _, _⟩
+      · cases hr1; cases hr2
+        exact ⟨ρ_h', h_run_h, hr3, hr4, hr5⟩
+      · exact absurd hr1 (by rintro ⟨⟩)
+    -- === Step A (exiting): the §E Block IH at the harvest `σ`, presented in the
+    --     raw ∀-shape `loop_arm_close` expects for a body iteration that BREAKS
+    --     with a label.  Same Block IH, dispatched with the `.exiting` `cfg_src`
+    --     disjunct; the `.terminal` output clause is impossible (`cfg_src` is
+    --     `.exiting`).  A body `.exit` is admitted (no static no-exit guard is consumed). ===
+    have stepA_exit : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+        (∀ y ∈ B, ρ_h.store y ≠ none) →
+        (∀ y ∈ Block.initVars body, ρ_s.store y = none) →
+        (∀ y ∈ Block.initVars body, ρ_h.store y = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+        ∀ (l : String) (ρ_s' : Env P),
+          StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.exiting l ρ_s') →
+          ∃ ρ_h' : Env P,
+            StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.exiting l ρ_h') ∧
+            HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+            ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none) := by
+      intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i l ρ_s' h_run_i
+      obtain ⟨ρ_h', cfg_h, h_run_h, h_out⟩ :=
+        Block.hoistLoopPrefixInits_preserves hQmint A B subst body σ
+          h_nd_body h_fd_body h_inv_body h_measure_body
+          h_exprs_shapefree_body h_unique_body h_fresh_body
+          h_names_fresh_A_body h_names_fresh_B_body
+          h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
+          (fun y hy => h_Vs_i y hy) (fun y hy => h_Vh_i y hy)
+          h_src_sf_i h_hoist_sf_i
+          h_wf_σ h_src_fresh_body h_src_shapefree_body h_subst_wf h_hinv_i h_eval_i h_hf_i h_bnd_i
+          h_run_i (Or.inr ⟨l, ρ_s', rfl⟩)
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      rcases h_out with ⟨r, hr1, _, _, _, _⟩ | ⟨l', r, hr1, hr2, hr3, hr4, hr5⟩
+      · exact absurd hr1 (by rintro ⟨⟩)
+      · obtain ⟨hl_eq, hr_eq⟩ : l' = l ∧ r = ρ_s' := by
+          cases hr1; exact ⟨rfl, rfl⟩
+        cases hl_eq; cases hr_eq; cases hr2
+        exact ⟨ρ_h', h_run_h, hr3, hr4, hr5⟩
+    -- === Step B: the lift renaming simulation at `body₁`'s own harvest carriers. ===
+    have h_src_shapefree_body_iv : ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ Block.initVars body := fun str h_suf =>
+      (h_src_shapefree_body str h_suf).2.2.1
+    -- Source-side modifiedVars-shape-freedom, projected from the threaded
+    -- 4-conjunct `h_src_shapefree_body`: a `Q`-kind string never names a
+    -- source set-target.
+    have h_mod_shapefree_body : ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars body := fun str h_suf =>
+      (h_src_shapefree_body str h_suf).2.2.2
+    -- `targetsOf' E` are minted in the lift σ₁ → σ₂ (so ∉ stringGens σ₁) and are
+    -- `_<digit>`-suffix-shaped.  `modifiedVars body₁` splits (by the post-order
+    -- pass's `modifiedVars` classification) into: ORIGINAL `.set` targets (members
+    -- of `modifiedVars body ++ initVars body`, suffix-free for a well-formed
+    -- source) and FRESH names from NESTED-loop init lifting (∈ stringGens σ₁).
+    -- Both classes are disjoint from the suffix-shaped, ∉-σ₁ targets.
+    have h_mod_disjoint_B1 : ∀ x ∈ Block.modifiedVars body₁,
+        x ∉ LoopInitHoistLoopDriver.targetsOf' E :=
+      LoopInitHoistLoopArmWF.Block.modifiedVars_disjoint_targetsOf'_self hQmint body σ h_wf_σ
+        h_unique_body h_src_shapefree_body_iv h_mod_shapefree_body
+    -- `body₃` (arm-local) uses the lift's OWN renames `(lift body₁ σ₁).1.2.1`,
+    -- whereas `stepB_self_of_lift` produces `body₃` over `substOf' E`; the two
+    -- coincide by the harvest identity `h_renames_eq`.
+    have stepB : LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
+        (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
+        (LoopInitHoistLoopDriver.substOf' E) body₁ body₃ := by
+      have hB :=
+        LoopInitHoistLoopArmWF.Block.stepB_self_of_lift hQmint (extendEval := extendEval) body σ h_wf_σ
+          h_nd_body h_fd_body h_inv_body h_measure_body h_unique_body
+          h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      show LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval)
+        (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
+        (LoopInitHoistLoopDriver.substOf' E) body₁
+        (Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
+          (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2)
+      rw [h_renames_eq]
+      exact hB
+    -- === Assemble the close.  Abbreviations for the harvest carriers. ===
+    have h_wf_σ₁ : StringGenState.WF σ₁ :=
+      (Block.hoistLoopPrefixInitsM_genStep body σ).wf_mono h_wf_σ
+    -- Sources ⊆ initVars body₁; targets are `_<digit>`-suffixed and ∉ σ₁.
+    -- Source-side classification: each harvested source is ORIGINAL (∈ initVars
+    -- body) or FRESH (= ident str, `Q str`, ∈ σ₁ \ σ).
+    have h_src_class : ∀ a ∈ LoopInitHoistLoopDriver.sourcesOf' E,
+        (a ∈ Block.initVars body) ∨
+        (∃ str : String, a = HasIdent.ident str ∧ Q str ∧
+          str ∈ StringGenState.stringGens σ₁ ∧ str ∉ StringGenState.stringGens σ) := by
+      intro a ha
+      have h_a_in₁ : a ∈ Block.initVars body₁ :=
+        LoopInitHoistLoopDriver.Block.sourcesOf_entriesOf_subset body₁ σ₁ a ha
+      have h_class :=
+        (LoopInitHoistLoopArmWF.Block.hoistLoopPrefixInitsM_initVars_classified hQmint body σ
+          h_wf_σ h_unique_body h_src_shapefree_body_iv).1 a h_a_in₁
+      rcases h_class with h_o | ⟨str, he, hin, hnot, hQ⟩
+      · exact Or.inl h_o
+      · exact Or.inr ⟨str, he, hQ, hin, hnot⟩
+    -- Each harvested target is `ident str` with `Q str` and ∉ σ₁ ⊇ σ.
+    have h_tgt_class : ∀ b ∈ LoopInitHoistLoopDriver.targetsOf' E,
+        ∃ str : String, b = HasIdent.ident str ∧ Q str ∧
+          str ∉ StringGenState.stringGens σ₁ := by
+      intro b hb
+      obtain ⟨e, he_mem, he_eq⟩ := List.mem_map.mp hb
+      obtain ⟨str, h_b_eq, _, h_notσ₁⟩ :=
+        (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).1 e he_mem
+      obtain ⟨str', h_eq', h_Q'⟩ :=
+        LoopInitHoistLoopArmWF.Block.mem_targetsOf'_entriesOf_hasUnderscoreDigitSuffix
+          hQmint body₁ σ₁ hb
+      have h_b_eq' : b = HasIdent.ident str := he_eq.symm.trans h_b_eq
+      have h_id : (HasIdent.ident str' : P.Ident) = HasIdent.ident str := h_eq'.symm.trans h_b_eq'
+      have : str' = str := LawfulHasIdent.ident_inj h_id
+      exact ⟨str, h_b_eq', this ▸ h_Q', this ▸ h_notσ₁⟩
+    -- Targets are undef at the source post-store (loop entry undef + no-exit).
+    -- Sources/targets disjoint from ambient A/B and from initVars body.
+    have h_As_notA : ∀ x ∈ LoopInitHoistLoopDriver.sourcesOf' E, x ∉ A := by
+      intro x hx
+      rcases h_src_class x hx with h_o | ⟨str, he, hsuf, _, _⟩
+      · exact h_lhs_disjoint_body x h_o
+      · exact he ▸ (h_src_shapefree_body str hsuf).1
+    have h_As_notB : ∀ x ∈ LoopInitHoistLoopDriver.sourcesOf' E, x ∉ B := by
+      intro x hx
+      rcases h_src_class x hx with h_o | ⟨str, he, hsuf, _, _⟩
+      · exact h_extra_disjoint_body x h_o
+      · exact he ▸ (h_src_shapefree_body str hsuf).2.1
+    have h_B_notAs : ∀ b ∈ B, b ∉ LoopInitHoistLoopDriver.sourcesOf' E :=
+      fun b hb hmem => h_As_notB b hmem hb
+    have h_Bs_notB : ∀ b ∈ LoopInitHoistLoopDriver.targetsOf' E, b ∉ B := by
+      intro b hb
+      obtain ⟨str, he, hsuf, _⟩ := h_tgt_class b hb
+      exact he ▸ (h_src_shapefree_body str hsuf).2.1
+    have h_B_notBs : ∀ b ∈ B, b ∉ LoopInitHoistLoopDriver.targetsOf' E :=
+      fun b hb hmem => h_Bs_notB b hmem hb
+    have h_ss_wf : ∀ a b, (a, b) ∈ LoopInitHoistLoopDriver.substOf' E →
+        a ∈ LoopInitHoistLoopDriver.sourcesOf' E ∧ b ∈ LoopInitHoistLoopDriver.targetsOf' E := by
+      intro a b hab
+      obtain ⟨e, he, heq⟩ := List.mem_map.mp hab
+      cases heq
+      exact ⟨List.mem_map.mpr ⟨e, he, rfl⟩, List.mem_map.mpr ⟨e, he, rfl⟩⟩
+    -- guard `g'` is shape-free: it never reads a `_<digit>`-suffixed ident.
+    have h_guard_sf : ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ ExprOrNondet.getVars (ExprOrNondet.det g') := by
+      have h := h_exprs_shapefree
+      simp only [Block.exprsShapeFree, Stmt.exprsShapeFree] at h
+      exact h.1.1
+    have h_guard_sf' : ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ HasVarsPure.getVars g' := by
+      intro str h_suf
+      have := h_guard_sf str h_suf
+      rw [ExprOrNondet.getVars] at this; exact this
+    -- guard `g'` freshness from sources/targets.
+    -- Only the NON-`initVars body` sources need a static freshness witness;
+    -- `h_src_class` forces such a source into the FRESH (suffix-shaped) case,
+    -- discharged by guard shape-freedom.  The `initVars body` sources are
+    -- handled inside the driver via the `Vs`-undef invariant: a body-init
+    -- name is undefined at every loop head, so an evaluating guard cannot
+    -- read it.
+    have h_g_As_minus_Vs_fresh : ∀ x ∈ LoopInitHoistLoopDriver.sourcesOf' E,
+        x ∉ Block.initVars body → x ∉ HasVarsPure.getVars g' := by
+      intro x hx hxVs
+      rcases h_src_class x hx with h_o | ⟨str, heq, hsuf, _, _⟩
+      · exact absurd h_o hxVs
+      · exact heq ▸ h_guard_sf' str hsuf
+    have h_g_Bs_fresh : ∀ x ∈ LoopInitHoistLoopDriver.targetsOf' E, x ∉ HasVarsPure.getVars g' := by
+      intro x hx
+      obtain ⟨str, heq, hsuf, _⟩ := h_tgt_class x hx
+      exact heq ▸ h_guard_sf' str hsuf
+    -- `Vs := initVars body` disjoint from targets (program names vs suffix-shaped).
+    have h_Vs_notBs : ∀ y ∈ Block.initVars body, y ∉ LoopInitHoistLoopDriver.targetsOf' E := by
+      intro y hy hmem
+      obtain ⟨str, he, hsuf, _⟩ := h_tgt_class y hmem
+      exact (h_src_shapefree_body str hsuf).2.2.1 (he ▸ hy)
+    -- noFuncDecl facts.
+    have h_nofd_src : Block.noFuncDecl body = true := Block.noFuncDecl_of_not_containsFuncDecl body h_fd_body
+    have h_nofd_h : Block.noFuncDecl body₃ = true := by
+      show Block.noFuncDecl
+        (Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
+          (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2) = true
+      rw [h_renames_eq]
+      exact LoopInitHoistLoopArmWF.Block.stepB_noFuncDecl_h_of_lift hQmint body σ h_wf_σ
+        h_nd_body h_fd_body h_inv_body h_measure_body h_unique_body
+        h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
+    -- entry-undef of sources/targets at ρ_hoist (the harvest carriers are undef there).
+    have h_src_undef_h : ∀ e ∈ E, ρ_hoist.store e.1 = none := by
+      intro e he
+      have h_mem : e.1 ∈ LoopInitHoistLoopDriver.sourcesOf' E := List.mem_map.mpr ⟨e, he, rfl⟩
+      rcases h_src_class e.1 h_mem with h_o | ⟨str, heq, hsuf, _, hnotσ⟩
+      · exact h_hoist_undef_h_body e.1 h_o
+      · exact heq ▸ h_hoist_store_shapefree str hsuf hnotσ
+    have h_tgt_undef_h : ∀ e ∈ E, ρ_hoist.store e.2.1 = none := by
+      intro e he
+      have h_mem : e.2.1 ∈ LoopInitHoistLoopDriver.targetsOf' E := List.mem_map.mpr ⟨e, he, rfl⟩
+      obtain ⟨str, heq, hsuf, hnotσ₁⟩ := h_tgt_class e.2.1 h_mem
+      exact heq ▸ h_hoist_store_shapefree str hsuf
+        (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
+    -- source-store undef on the harvested sources (ORIGINAL ⇒ initVars body undef;
+    -- FRESH ⇒ suffix-shaped ∉ σ undef by the threaded store-shapefree).
+    have h_src_As_undef : ∀ a ∈ LoopInitHoistLoopDriver.sourcesOf' E, ρ_src.store a = none := by
+      intro a ha
+      rcases h_src_class a ha with h_o | ⟨str, he, hsuf, _, hnotσ⟩
+      · exact h_hoist_undef_body a h_o
+      · exact he ▸ h_src_store_shapefree str hsuf hnotσ
+    -- post-store undef of sources/targets via `loopDet_preserves_none_terminal`.
+    -- No-exit-free: a `.terminal` source loop run keeps any loop-entry-undefined
+    -- carrier undefined (each iteration's `.none`-block projects undefined entries
+    -- back to `none`; an inner `.exiting` would propagate the loop to `.exiting`,
+    -- not `.terminal`).  The source body need NOT be statically exit-free.
+    have h_post_src_none : ∀ (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.terminal ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.sourcesOf' E → ρ_post.store x = none := by
+      intro ρ_post x h_run hx
+      exact LoopInitHoistLoopDriver.loopDet_preserves_none_terminal (h_src_As_undef x hx) h_run
+    have h_post_tgt_none : ∀ (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.terminal ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.targetsOf' E → ρ_post.store x = none := by
+      intro ρ_post x h_run hx
+      refine LoopInitHoistLoopDriver.loopDet_preserves_none_terminal ?_ h_run
+      obtain ⟨str, he, hsuf, hnotσ₁⟩ := h_tgt_class x hx
+      exact he ▸ h_src_store_shapefree str hsuf
+        (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
+    -- post-store undef of sources/targets on an EXITING source loop run.  A body
+    -- `.exit` is ADMITTED: when some iteration breaks with a label, the loop reaches
+    -- `.exiting`.  `loopDet_preserves_none_exiting` (no-exit-free) keeps any
+    -- loop-entry-undefined carrier undefined at the exit store — the same
+    -- per-iteration `projectStore` invariant, capped by the breaking iteration's
+    -- `.none`-block mismatch.  These obligations feed the sum-typed driver's exit
+    -- branch, which now genuinely fires on a body `.exit`.
+    have h_post_src_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.sourcesOf' E → ρ_post.store x = none := by
+      intro lbl ρ_post x h_run hx
+      exact LoopInitHoistLoopDriver.loopDet_preserves_none_exiting (h_src_As_undef x hx) h_run
+    have h_post_tgt_none_exit : ∀ (lbl : String) (ρ_post : Env P) (x : P.Ident),
+        StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det g') none [] body md) ρ_src) (.exiting lbl ρ_post) →
+        x ∈ LoopInitHoistLoopDriver.targetsOf' E → ρ_post.store x = none := by
+      intro lbl ρ_post x h_run hx
+      refine LoopInitHoistLoopDriver.loopDet_preserves_none_exiting ?_ h_run
+      obtain ⟨str, he, hsuf, hnotσ₁⟩ := h_tgt_class x hx
+      exact he ▸ h_src_store_shapefree str hsuf
+        (fun h => hnotσ₁ ((Block.hoistLoopPrefixInitsM_genStep body σ).subset h))
+    have h_tgt_nodup : (LoopInitHoistLoopDriver.targetsOf' E).Nodup :=
+      (LoopInitHoistLoopArmWF.Block.entriesOf_targetGen body₁ σ₁ h_wf_σ₁).2
+    -- σ_sf-relative source-store shape-freedom at ρ_src for the driver.
+    have h_arm_src_sf : ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none :=
+      h_src_store_shapefree
+    have h_sf_notA : ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens σ → HasIdent.ident (P := P) str ∉ A :=
+      fun str h_suf _ => (h_src_shapefree_body str h_suf).1
+    have h_sf_notB : ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens σ → HasIdent.ident (P := P) str ∉ B :=
+      fun str h_suf _ => (h_src_shapefree_body str h_suf).2.1
+    -- === FAILING Step A: the body §E `_to_fail` at the harvest `σ`, in the raw
+    --     ∀-shape `loop_arm_close_fail` expects (a failing body run is matched by
+    --     a failing `body₁` run). ===
+    have stepA_fail : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+        ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+        (∀ y ∈ B, ρ_h.store y ≠ none) →
+        (∀ y ∈ Block.initVars body, ρ_s.store y = none) →
+        (∀ y ∈ Block.initVars body, ρ_h.store y = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+        (∀ str : String, Q str →
+           str ∉ StringGenState.stringGens σ → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+        ∀ (d : Config P (Cmd P)),
+          StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) d →
+          d.getEnv.hasFailure = true →
+          ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) d'
+            ∧ d'.getEnv.hasFailure = true := by
+      intro ρ_s ρ_h h_hinv_i h_eval_i h_hf_i h_bnd_i h_Vs_i h_Vh_i h_src_sf_i h_hoist_sf_i d h_run_i hd_i
+      exact Block.hoistLoopPrefixInits_to_fail hQmint A B subst body σ
+        h_nd_body h_fd_body h_inv_body h_measure_body
+        h_exprs_shapefree_body h_unique_body h_fresh_body
+        h_names_fresh_A_body h_names_fresh_B_body
+        h_lhs_disjoint_body h_extra_disjoint_body h_mod_disjoint_A_body h_mod_disjoint_B_body
+        (fun y hy => h_Vs_i y hy) (fun y hy => h_Vh_i y hy)
+        h_src_sf_i h_hoist_sf_i
+        h_wf_σ h_src_fresh_body h_src_shapefree_body h_subst_wf h_hinv_i h_eval_i h_hf_i h_bnd_i
+        h_run_i hd_i h_wfvar h_wfcongr h_wfsubst h_wfdef
+    -- === FAILING Step B: the lift renaming `_to_fail` at `body₁`'s harvest
+    --     carriers (a failing `body₁` run is matched by a failing `body₃` run). ===
+    have stepB_fail : OptEStepBProvider.BodySimFail (extendEval := extendEval)
+        (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
+        (LoopInitHoistLoopDriver.substOf' E) body₁ body₃ := by
+      have hB :=
+        LoopInitHoistLoopArmWF.Block.stepB_self_of_lift_fail hQmint (extendEval := extendEval) body σ h_wf_σ
+          h_nd_body h_fd_body h_inv_body h_measure_body h_unique_body
+          h_exprs_shapefree_body h_src_shapefree_body_iv h_mod_disjoint_B1
+          h_wfvar h_wfcongr h_wfsubst h_wfdef
+      show OptEStepBProvider.BodySimFail (extendEval := extendEval)
+        (LoopInitHoistLoopDriver.sourcesOf' E) (LoopInitHoistLoopDriver.targetsOf' E)
+        (LoopInitHoistLoopDriver.substOf' E) body₁
+        (Block.applyRenames (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.1
+          (Block.liftInitsInLoopBodyM body₁ σ₁).1.2.2)
+      rw [h_renames_eq]
+      exact hB
+    exact LoopInitHoistLoopArmWF.loop_arm_close_fail (σ_sf := σ) (Vs := Block.initVars body)
+      (entries := E) (body := body) (body₁ := body₁) (body₃ := body₃) (g := g') (md := md)
+      stepA stepA_exit stepA_fail stepB stepB_fail
+      h_hoist_undef_body h_hoist_undef_h_body h_arm_src_sf h_sf_notA h_sf_notB
+      h_lhs_disjoint_body h_extra_disjoint_body h_Vs_notBs
+      h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs h_Bs_notB
+      h_g_A_fresh h_g_B_fresh h_g_As_minus_Vs_fresh h_g_Bs_fresh
+      h_src_As_undef h_nofd_src h_nofd_h h_tgt_nodup
+      h_src_undef_h h_tgt_undef_h
+      h_wfvar h_wfcongr h_wfdef h_hinv h_eval_eq h_hf_eq h_hoist_bound h_run_src h_c_fail
+  termination_by sizeOf s
+  decreasing_by all_goals (subst h_match; simp_wf; omega)
+
+
+/-- §E Block-level FAILING-config simulation (the `_to_fail` analogue of
+`Block.hoistLoopPrefixInits_preserves`): a reachable failing source configuration
+of `ss` is matched by a reachable failing configuration of the hoisted residual,
+running both from the same `HoistInv`-related start. -/
+private theorem Block.hoistLoopPrefixInits_to_fail {Q : String → Prop}
+    [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
+    [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (A : List P.Ident)
+    (B : List P.Ident)
+    (subst : List (P.Ident × P.Ident))
+    (ss : List (Stmt P (Cmd P)))
+    (σ : StringGenState)
+    {ρ_src ρ_hoist : Env P}
+    {cfg_src : Config P (Cmd P)}
+    (h_no_nd      : Block.containsNondetLoop ss = false)
+    (h_no_fd      : Block.containsFuncDecl ss = false)
+    (h_no_inv     : Block.loopHasNoInvariants ss = true)
+    (h_no_measure : Block.loopMeasureNone ss = true)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
+    (h_unique     : Block.uniqueInits ss)
+    (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_names_fresh : Block.namesFreshInExprs A ss = true)
+    (h_names_fresh_B : Block.namesFreshInExprs B ss = true)
+    (h_lhs_disjoint : ∀ y ∈ Block.initVars ss, y ∉ A)
+    (h_extra_disjoint : ∀ y ∈ Block.initVars ss, y ∉ B)
+    (h_mod_disjoint_A : ∀ x ∈ Block.modifiedVars ss, x ∉ A)
+    (h_mod_disjoint_B : ∀ x ∈ Block.modifiedVars ss, x ∉ B)
+    (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
+    (h_hoist_undef_h : ∀ y ∈ Block.initVars ss, ρ_hoist.store y = none)
+    (h_src_store_shapefree : ∀ str : String, Q str →
+      str ∉ StringGenState.stringGens σ → ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_hoist_store_shapefree : ∀ str : String, Q str →
+      str ∉ StringGenState.stringGens σ → ρ_hoist.store (HasIdent.ident (P := P) str) = none)
+    (h_wf_σ       : StringGenState.WF σ)
+    (h_src_namesFreshFromσ :
+      ∀ str ∈ StringGenState.stringGens σ,
+        HasIdent.ident (P := P) str ∉ A ∧
+        HasIdent.ident (P := P) str ∉ B ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars ss)
+    (h_src_shapefree :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ A ∧
+        HasIdent.ident (P := P) str ∉ B ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars ss ∧
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars ss)
+    (h_subst_wf : ∀ a b, (a, b) ∈ subst → a ∈ A ∧ b ∈ B)
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval_eq    : ρ_src.eval = ρ_hoist.eval)
+    (h_hf_eq      : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_hoist_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
+                     (.stmts ss ρ_src) cfg_src)
+    (h_c_fail     : cfg_src.getEnv.hasFailure = true)
+    (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    ∃ d : Config P (Cmd P),
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.hoistLoopPrefixInitsM ss σ).1 ρ_hoist) d
+      ∧ d.getEnv.hasFailure = true := by
+  classical
+  match h_match : ss with
+  | [] =>
+    subst h_match
+    -- Empty block: the only reachable config has env `ρ_src`; failing forces
+    -- `ρ_src.hasFailure = true`, so the hoist empty residual's start fails.
+    refine ⟨.stmts (Block.hoistLoopPrefixInitsM ([] : List (Stmt P (Cmd P))) σ).1 ρ_hoist, .refl _, ?_⟩
+    have h_ρs_fail : ρ_src.hasFailure = true := by
+      cases h_run_src with
+      | refl => simpa [Config.getEnv] using h_c_fail
+      | step _ _ _ h1 hr1 =>
+        cases h1
+        have h_d_eq : cfg_src = .terminal ρ_src := by
+          cases hr1 with
+          | refl => rfl
+          | step _ _ _ hd _ => exact nomatch hd
+        rw [h_d_eq] at h_c_fail; simpa [Config.getEnv] using h_c_fail
+    simpa [Config.getEnv] using (h_hf_eq ▸ h_ρs_fail)
+  | s :: rest =>
+    subst h_match
+    -- === Decompose the MONADIC residual: head-at-σ ++ tail-at-σ1. ===
+    have h_cons_out :
+        (Block.hoistLoopPrefixInitsM (s :: rest) σ).1 =
+          (Stmt.hoistLoopPrefixInitsM s σ).1 ++
+            (Block.hoistLoopPrefixInitsM rest (Stmt.hoistLoopPrefixInitsM s σ).2).1 :=
+      Block.hoistLoopPrefixInitsM_cons_out s rest σ
+    -- === Boolean precondition decomposition: [s] / rest from s::rest. ===
+    have h_split_list : (s :: rest : List (Stmt P (Cmd P))) = [s] ++ rest := rfl
+    have h_nd_s : Block.containsNondetLoop [s] = false ∧ Block.containsNondetLoop rest = false := by
+      rw [h_split_list, Block.containsNondetLoop_append, Bool.or_eq_false_iff] at h_no_nd
+      exact h_no_nd
+    have h_fd_s : Block.containsFuncDecl [s] = false ∧ Block.containsFuncDecl rest = false := by
+      rw [h_split_list, Block.containsFuncDecl_append, Bool.or_eq_false_iff] at h_no_fd
+      exact h_no_fd
+    have h_inv_s : Block.loopHasNoInvariants [s] = true ∧ Block.loopHasNoInvariants rest = true := by
+      rw [h_split_list, Block.loopHasNoInvariants_append, Bool.and_eq_true] at h_no_inv
+      exact h_no_inv
+    have h_measure_s : Block.loopMeasureNone [s] = true ∧ Block.loopMeasureNone rest = true := by
+      rw [h_split_list, Block.loopMeasureNone_append, Bool.and_eq_true] at h_no_measure
+      exact h_no_measure
+    have h_exprs_shapefree_s :
+        Block.exprsShapeFree (P := P) Q [s] ∧
+          Block.exprsShapeFree (P := P) Q rest := by
+      -- `Block.exprsShapeFree (s :: rest) = Stmt.exprsShapeFree s ∧ Block.exprsShapeFree rest`
+      -- and `Block.exprsShapeFree [s] = Stmt.exprsShapeFree s ∧ True`.
+      have h := h_exprs_shapefree
+      simp only [Block.exprsShapeFree] at h ⊢
+      exact ⟨⟨h.1, True.intro⟩, h.2⟩
+    have h_iv_split : Block.initVars (s :: rest) = Block.initVars [s] ++ Block.initVars rest := by
+      rw [h_split_list, Block.initVars_append]
+    have h_mod_split : Block.modifiedVars (s :: rest) =
+        Block.modifiedVars [s] ++ Block.modifiedVars rest := by
+      simp only [Block.modifiedVars, List.append_nil]
+    have h_unique_full : (Block.initVars [s] ++ Block.initVars rest).Nodup := by
+      have : Block.uniqueInits (s :: rest) = (Block.initVars (s :: rest)).Nodup := rfl
+      rw [this, h_iv_split] at h_unique; exact h_unique
+    have h_unique_s : Block.uniqueInits [s] := by
+      show (Block.initVars [s]).Nodup
+      exact (List.nodup_append.mp h_unique_full).1
+    have h_unique_rest : Block.uniqueInits rest := by
+      show (Block.initVars rest).Nodup
+      exact (List.nodup_append.mp h_unique_full).2.1
+    have h_fresh_unfold := h_fresh
+    unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh_unfold
+    have h_nf_cons :
+        Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) (s :: rest) =
+          (Stmt.namesFreshInRhsExprs (Block.initVars (s :: rest)) s &&
+            Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) rest) := by
+      rw [Block.namesFreshInRhsExprs]
+    rw [h_nf_cons, Bool.and_eq_true] at h_fresh_unfold
+    obtain ⟨h_nf_s_full, h_nf_rest_full⟩ := h_fresh_unfold
+    have h_sub_s : (Block.initVars [s] : List P.Ident) ⊆ Block.initVars (s :: rest) := by
+      rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inl h)
+    have h_sub_rest : (Block.initVars rest : List P.Ident) ⊆ Block.initVars (s :: rest) := by
+      rw [h_iv_split]; exact fun _ h => List.mem_append.mpr (Or.inr h)
+    have h_nf_s_block : Block.namesFreshInRhsExprs (Block.initVars (s :: rest)) [s] = true := by
+      simp only [Block.namesFreshInRhsExprs, Bool.and_true]; exact h_nf_s_full
+    have h_fresh_s : Block.hoistedNamesFreshInRhsAndGuards (P := P) [s] = true := by
+      unfold Block.hoistedNamesFreshInRhsAndGuards
+      exact Block.namesFreshInRhsExprs_subset h_sub_s [s] h_nf_s_block
+    have h_fresh_rest : Block.hoistedNamesFreshInRhsAndGuards (P := P) rest = true := by
+      unfold Block.hoistedNamesFreshInRhsAndGuards
+      exact Block.namesFreshInRhsExprs_subset h_sub_rest rest h_nf_rest_full
+    have h_names_fresh_cons :
+        Block.namesFreshInExprs A (s :: rest) =
+          (Stmt.namesFreshInExprs A s && Block.namesFreshInExprs A rest) := by
+      rw [Block.namesFreshInExprs]
+    rw [h_names_fresh_cons, Bool.and_eq_true] at h_names_fresh
+    obtain ⟨h_names_fresh_s_stmt, h_names_fresh_rest⟩ := h_names_fresh
+    have h_names_fresh_s : Block.namesFreshInExprs A [s] = true := by
+      simp only [Block.namesFreshInExprs, Bool.and_true]; exact h_names_fresh_s_stmt
+    have h_names_fresh_B_cons :
+        Block.namesFreshInExprs B (s :: rest) =
+          (Stmt.namesFreshInExprs B s && Block.namesFreshInExprs B rest) := by
+      rw [Block.namesFreshInExprs]
+    rw [h_names_fresh_B_cons, Bool.and_eq_true] at h_names_fresh_B
+    obtain ⟨h_names_fresh_B_s_stmt, h_names_fresh_B_rest⟩ := h_names_fresh_B
+    have h_names_fresh_B_s : Block.namesFreshInExprs B [s] = true := by
+      simp only [Block.namesFreshInExprs, Bool.and_true]; exact h_names_fresh_B_s_stmt
+    have h_lhs_disjoint_s : ∀ y ∈ Block.initVars [s], y ∉ A := fun y hy =>
+      h_lhs_disjoint y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl hy))
+    have h_lhs_disjoint_rest : ∀ y ∈ Block.initVars rest, y ∉ A := fun y hy =>
+      h_lhs_disjoint y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy))
+    have h_extra_disjoint_s : ∀ y ∈ Block.initVars [s], y ∉ B := fun y hy =>
+      h_extra_disjoint y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl hy))
+    have h_extra_disjoint_rest : ∀ y ∈ Block.initVars rest, y ∉ B := fun y hy =>
+      h_extra_disjoint y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy))
+    have h_mod_disjoint_A_s : ∀ x ∈ Block.modifiedVars [s], x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inl hx))
+    have h_mod_disjoint_A_rest : ∀ x ∈ Block.modifiedVars rest, x ∉ A := fun x hx =>
+      h_mod_disjoint_A x (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inr hx))
+    have h_mod_disjoint_B_s : ∀ x ∈ Block.modifiedVars [s], x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inl hx))
+    have h_mod_disjoint_B_rest : ∀ x ∈ Block.modifiedVars rest, x ∉ B := fun x hx =>
+      h_mod_disjoint_B x (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inr hx))
+    have h_hoist_undef_s : ∀ y ∈ Block.initVars [s], ρ_src.store y = none := fun y hy =>
+      h_hoist_undef y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl hy))
+    have h_hoist_undef_h_s : ∀ y ∈ Block.initVars [s], ρ_hoist.store y = none := fun y hy =>
+      h_hoist_undef_h y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl hy))
+    have h_src_fresh_s :
+        ∀ str ∈ StringGenState.stringGens σ,
+          HasIdent.ident (P := P) str ∉ A ∧
+          HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars [s] := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+      exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl h))⟩
+    have h_src_shapefree_s :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧
+          HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars [s] ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars [s] := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl h)),
+        fun h => hmv (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inl h))⟩
+    have h_src_shapefree_rest :
+        ∀ str : String, Q str →
+          HasIdent.ident (P := P) str ∉ A ∧
+          HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars rest ∧
+          HasIdent.ident (P := P) str ∉ Block.modifiedVars rest := by
+      intro str hstr
+      obtain ⟨hA, hB, hiv, hmv⟩ := h_src_shapefree str hstr
+      exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr h)),
+        fun h => hmv (by rw [h_mod_split]; exact List.mem_append.mpr (Or.inr h))⟩
+    have h_genStep_head : StringGenState.GenStep σ (Stmt.hoistLoopPrefixInitsM s σ).2 :=
+      Stmt.hoistLoopPrefixInitsM_genStep s σ
+    have h_wf_σ1 : StringGenState.WF (Stmt.hoistLoopPrefixInitsM s σ).2 :=
+      h_genStep_head.wf_mono h_wf_σ
+    have h_src_fresh_σ1 :
+        SrcNamesFreshFromGen (P := P) A B (Block.initVars rest)
+          (Stmt.hoistLoopPrefixInitsM s σ).2 := by
+      have h_fresh_σ_rest : SrcNamesFreshFromGen (P := P) A B (Block.initVars rest) σ := by
+        intro str hstr
+        obtain ⟨hA, hB, hiv⟩ := h_src_namesFreshFromσ str hstr
+        exact ⟨hA, hB, fun h => hiv (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr h))⟩
+      exact SrcNamesFreshFromGen.genStep_of_delta
+        (Stmt.hoistLoopPrefixInitsM_genStep_delta_Q hQmint s σ)
+        (fun str hsuf => let ⟨a, b, c, _⟩ := h_src_shapefree_rest str hsuf; ⟨a, b, c⟩) h_fresh_σ_rest
+    have h_src_fresh_rest :
+        ∀ str ∈ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2,
+          HasIdent.ident (P := P) str ∉ A ∧
+          HasIdent.ident (P := P) str ∉ B ∧
+          HasIdent.ident (P := P) str ∉ Block.initVars rest := h_src_fresh_σ1
+    -- === Split the SOURCE failing run: HEAD fails, or HEAD terminates + TAIL fails. ===
+    rw [h_cons_out]
+    have h_nd_stmt : Stmt.containsNondetLoop s = false := by
+      rw [Block.containsNondetLoop, Bool.or_eq_false_iff] at h_nd_s; exact h_nd_s.1.1
+    have h_fd_stmt : Stmt.containsFuncDecl s = false := by
+      rw [Block.containsFuncDecl, Bool.or_eq_false_iff] at h_fd_s; exact h_fd_s.1.1
+    have h_inv_stmt : Stmt.loopHasNoInvariants s = true := by
+      rw [Block.loopHasNoInvariants, Bool.and_eq_true] at h_inv_s; exact h_inv_s.1.1
+    have h_measure_stmt : Stmt.loopMeasureNone s = true := by
+      rw [Block.loopMeasureNone, Bool.and_eq_true] at h_measure_s; exact h_measure_s.1.1
+    have h_residual_nofd :
+        Block.noFuncDecl (Stmt.hoistLoopPrefixInitsM s σ).1 = true := by
+      apply Block.noFuncDecl_of_not_containsFuncDecl
+      rw [Stmt.hoistLoopPrefixInitsM_containsFuncDecl]; exact h_fd_stmt
+    rcases stmts_cons_reaches_failing' P (EvalCmd P) extendEval (reflTrans_to_T h_run_src) h_c_fail with
+      ⟨d_head, h_head_run, hd_head⟩ | ⟨ρ_s_mid, d_tail, h_head_stmt, h_tail_run, hd_tail⟩
+    · -- HEAD fails: recurse the Stmt-level `_to_fail` on the head, then lift the
+      --   failing head residual into the cons residual (`stmts_prefix_failing_append`).
+      obtain ⟨d', h_head_h, hd'⟩ :=
+        Stmt.hoistLoopPrefixInits_to_fail hQmint A B subst s σ
+          h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_exprs_shapefree_s.1 h_unique_s h_fresh_s
+          h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
+          h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
+          h_src_store_shapefree h_hoist_store_shapefree
+          h_wf_σ h_src_fresh_s h_src_shapefree_s h_subst_wf h_hinv h_eval_eq h_hf_eq h_hoist_bound
+          h_head_run hd_head h_wfvar h_wfcongr h_wfsubst h_wfdef
+      exact stmts_prefix_failing_append P (EvalCmd P) extendEval
+        (Stmt.hoistLoopPrefixInitsM s σ).1
+        (Block.hoistLoopPrefixInitsM rest (Stmt.hoistLoopPrefixInitsM s σ).2).1
+        ρ_hoist d' h_head_h hd'
+    · -- HEAD terminates at `ρ_s_mid`, TAIL fails: run the head ENDPOINT sim to
+      --   re-establish the invariant at the hoist mid env, recurse the Block-level
+      --   `_to_fail` on the tail, then splice the (terminal) head residual run.
+      obtain ⟨ρ_h_mid, cfg_h_head, h_head_hoist, h_head_outcome⟩ :=
+        Stmt.hoistLoopPrefixInits_preserves hQmint A B subst s σ
+          h_nd_stmt h_fd_stmt h_inv_stmt h_measure_stmt h_exprs_shapefree_s.1 h_unique_s h_fresh_s
+          h_names_fresh_s h_names_fresh_B_s h_lhs_disjoint_s h_extra_disjoint_s
+          h_mod_disjoint_A_s h_mod_disjoint_B_s h_hoist_undef_s h_hoist_undef_h_s
+          h_src_store_shapefree h_hoist_store_shapefree
+          h_wf_σ h_src_fresh_s h_src_shapefree_s h_subst_wf h_hinv h_eval_eq h_hf_eq h_hoist_bound
+          h_head_stmt (Or.inl ⟨ρ_s_mid, rfl⟩) h_wfvar h_wfcongr h_wfsubst h_wfdef
+      obtain ⟨h_cfg_h_eq, h_hinv_mid, h_hf_mid, h_bound_mid⟩ :
+            cfg_h_head = .terminal ρ_h_mid ∧
+            HoistInv (P := P) A B subst ρ_s_mid.store ρ_h_mid.store ∧
+            ρ_s_mid.hasFailure = ρ_h_mid.hasFailure ∧ (∀ y ∈ B, ρ_h_mid.store y ≠ none) := by
+        rcases h_head_outcome with ⟨r, hr1, hr2, hr3, hr4, hr5⟩ | ⟨l, r, hr1, _, _, _, _⟩
+        · have hr_eq : r = ρ_s_mid := by
+            simp only [Config.terminal.injEq] at hr1; exact hr1.symm
+          subst hr_eq; exact ⟨hr2, hr3, hr4, hr5⟩
+        · exact absurd hr1 (by simp)
+      subst h_cfg_h_eq
+      have h_src_s_nofd : Stmt.noFuncDecl s = true :=
+        Stmt.noFuncDecl_of_not_containsFuncDecl s h_fd_stmt
+      have h_src_mid_eval : ρ_s_mid.eval = ρ_src.eval :=
+        smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendEval s ρ_src ρ_s_mid
+          h_src_s_nofd h_head_stmt
+      have h_h_mid_eval : ρ_h_mid.eval = ρ_hoist.eval :=
+        smallStep_noFuncDecl_preserves_eval_block P (EvalCmd P) extendEval
+          (Stmt.hoistLoopPrefixInitsM s σ).1 ρ_hoist ρ_h_mid h_residual_nofd h_head_hoist
+      have h_eval_mid : ρ_s_mid.eval = ρ_h_mid.eval := by
+        rw [h_src_mid_eval, h_h_mid_eval, h_eval_eq]
+      have h_hoist_undef_mid : ∀ y ∈ Block.initVars rest, ρ_s_mid.store y = none := by
+        intro y hy
+        have h_y_src_none : ρ_src.store y = none :=
+          h_hoist_undef y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy))
+        have h_y_not_init_s : y ∉ Block.initVars [s] := fun hc =>
+          (List.nodup_append.mp h_unique_full).2.2 y hc y hy rfl
+        have h_y_not_def_s : y ∉ Stmt.definedVars (P := P) (C := Cmd P) s := by
+          rw [Stmt.definedVars_eq_initVars_of_no_fd s h_fd_stmt]
+          intro hc
+          exact h_y_not_init_s (by simp only [Block.initVars, List.append_nil]; exact hc)
+        exact stmt_run_terminal_preserves_none h_y_src_none h_y_not_def_s h_head_stmt
+      have h_hoist_undef_h_mid : ∀ y ∈ Block.initVars rest, ρ_h_mid.store y = none := by
+        intro y hy
+        have h_y_h_none : ρ_hoist.store y = none :=
+          h_hoist_undef_h y (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy))
+        have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
+          have : (Block.initVars [s]).Nodup := h_unique_s
+          simpa only [Block.initVars, List.append_nil] using this
+        have h_shapefree_s_stmt : ∀ str : String, Q str →
+            HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
+          intro str h_shape hc
+          exact (h_src_shapefree_s str h_shape).2.2.1
+            (by simp only [Block.initVars, List.append_nil]; exact hc)
+        have h_y_not_src : y ∉ Stmt.initVars s := fun hc =>
+          (List.nodup_append.mp h_unique_full).2.2 y
+            (by simp only [Block.initVars, List.append_nil]; exact hc) y hy rfl
+        have h_y_shapefree : ∀ str : String, y = HasIdent.ident str →
+            ¬ Q str := by
+          intro str h_y_eq h_shape
+          exact (h_src_shapefree str h_shape).2.2.1
+            (h_y_eq ▸ (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inr hy)))
+        exact residual_run_terminal_preserves_none hQmint h_wf_σ h_unique_s_stmt
+          h_shapefree_s_stmt h_fd_stmt h_y_not_src h_y_shapefree h_y_h_none h_head_hoist
+      -- Mid-store store-shapefree (σ1-relative) for the tail: same derivation as the
+      -- terminal branch — the head run defines no `Q`-kind name `str ∉ stringGens σ1`.
+      have h_src_store_shapefree_mid : ∀ str : String, Q str →
+          str ∉ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2 →
+          ρ_s_mid.store (HasIdent.ident (P := P) str) = none := by
+        intro str h_shape h_notσ1
+        have h_notσ : str ∉ StringGenState.stringGens σ :=
+          fun h => h_notσ1 (h_genStep_head.subset h)
+        have h_z_src_none : ρ_src.store (HasIdent.ident (P := P) str) = none :=
+          h_src_store_shapefree str h_shape h_notσ
+        have h_z_not_def_s :
+            HasIdent.ident (P := P) str ∉ Stmt.definedVars (P := P) (C := Cmd P) s := by
+          rw [Stmt.definedVars_eq_initVars_of_no_fd s h_fd_stmt]
+          intro hc
+          exact (h_src_shapefree str h_shape).2.2.1
+            (by rw [h_iv_split]; exact List.mem_append.mpr (Or.inl
+              (by simp only [Block.initVars, List.append_nil]; exact hc)))
+        exact stmt_run_terminal_preserves_none h_z_src_none h_z_not_def_s h_head_stmt
+      have h_hoist_store_shapefree_mid : ∀ str : String, Q str →
+          str ∉ StringGenState.stringGens (Stmt.hoistLoopPrefixInitsM s σ).2 →
+          ρ_h_mid.store (HasIdent.ident (P := P) str) = none := by
+        intro str h_shape h_notσ1
+        have h_notσ : str ∉ StringGenState.stringGens σ :=
+          fun h => h_notσ1 (h_genStep_head.subset h)
+        have h_z_h_none : ρ_hoist.store (HasIdent.ident (P := P) str) = none :=
+          h_hoist_store_shapefree str h_shape h_notσ
+        have h_unique_s_stmt : (Stmt.initVars s).Nodup := by
+          have : (Block.initVars [s]).Nodup := h_unique_s
+          simpa only [Block.initVars, List.append_nil] using this
+        have h_shapefree_s_stmt : ∀ str : String, Q str →
+            HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
+          intro str' h_shape' hc
+          exact (h_src_shapefree_s str' h_shape').2.2.1
+            (by simp only [Block.initVars, List.append_nil]; exact hc)
+        have h_z_not_residual :
+            HasIdent.ident (P := P) str ∉ Block.initVars (Stmt.hoistLoopPrefixInitsM s σ).1 := by
+          intro h_mem
+          have h_class :=
+            (LoopInitHoistLoopArmWF.Stmt.hoistLoopPrefixInitsM_initVars_classified
+              hQmint s σ h_wf_σ h_unique_s_stmt h_shapefree_s_stmt).1 _ h_mem
+          rcases h_class with h_orig | ⟨str', h_eq, h_str'_in, _, _⟩
+          · exact h_shapefree_s_stmt str h_shape h_orig
+          · exact h_notσ1 ((LawfulHasIdent.ident_inj h_eq) ▸ h_str'_in)
+        have h_residual_contains_nofd :
+            Block.containsFuncDecl (Stmt.hoistLoopPrefixInitsM s σ).1 = false := by
+          rw [Stmt.hoistLoopPrefixInitsM_containsFuncDecl]; exact h_fd_stmt
+        exact block_run_terminal_preserves_none_of_not_initVars
+          h_residual_contains_nofd h_z_not_residual h_z_h_none h_head_hoist
+      obtain ⟨d', h_tail_h, hd'⟩ :=
+        Block.hoistLoopPrefixInits_to_fail hQmint A B subst rest (Stmt.hoistLoopPrefixInitsM s σ).2
+          h_nd_s.2 h_fd_s.2 h_inv_s.2 h_measure_s.2 h_exprs_shapefree_s.2 h_unique_rest h_fresh_rest
+          h_names_fresh_rest h_names_fresh_B_rest h_lhs_disjoint_rest h_extra_disjoint_rest
+          h_mod_disjoint_A_rest h_mod_disjoint_B_rest h_hoist_undef_mid h_hoist_undef_h_mid
+          h_src_store_shapefree_mid h_hoist_store_shapefree_mid
+          h_wf_σ1 h_src_fresh_rest h_src_shapefree_rest h_subst_wf h_hinv_mid h_eval_mid h_hf_mid h_bound_mid
+          h_tail_run hd_tail h_wfvar h_wfcongr h_wfsubst h_wfdef
+      refine ⟨d', ?_, hd'⟩
+      exact ReflTrans_Transitive _ _ _ _
+        (stmts_prefix_terminal_append P (EvalCmd P) extendEval
+          (Stmt.hoistLoopPrefixInitsM s σ).1
+          (Block.hoistLoopPrefixInitsM rest (Stmt.hoistLoopPrefixInitsM s σ).2).1
+          ρ_hoist ρ_h_mid h_head_hoist) h_tail_h
+  termination_by sizeOf ss
+  decreasing_by all_goals (subst h_match; simp_wf; omega)
+
+end
+
+
 /-! ### The loop-init-hoist label *kind*
 
 `hoistLoopPrefixInits` mints labels under exactly one prefix, `hoistFreshPrefix`
@@ -3444,5 +4829,93 @@ theorem hoistLoopPrefixInits_preserves
 -- equality is FALSE for the hoisting pass, which introduces fresh hoist targets
 -- defined only in the hoisted store. The sound relation is `StoreAgreement`
 -- (preservation modulo hoisted variables), already concluded above.
+
+/-- Kind-generalized FAILING-config soundness of the loop-init hoist (the
+`_to_fail` analogue of `hoistLoopPrefixInits_preserves_kind`): a reachable failing
+source configuration of `ss` (no terminal/exiting endpoint required) is matched by
+a reachable failing configuration of `Block.hoistLoopPrefixInits ss`, for any
+source program whose `Q`-labelled slots are undefined / unwritten.  Instantiating
+the §F entry at `A := []`, `B := []`, `subst := []`, `σ := emp`, with the hoist
+store starting at `ρ_src`. -/
+theorem hoistLoopPrefixInits_to_fail_kind {Q : String → Prop}
+    [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [LawfulHasIdent P] [HasSubstFvar P]
+    [HasIntOrder P] [HasVarsPure P P.Expr] [LawfulHasSubstFvar P]
+    [DecidableEq P.Ident]
+    (hQmint : ∀ sg, Q (StringGenState.gen hoistFreshPrefix sg).1)
+    {extendEval : ExtendEval P}
+    (ss : List (Stmt P (Cmd P)))
+    {ρ_src : Env P} {cfg_src : Config P (Cmd P)}
+    (h_no_nd      : Block.containsNondetLoop ss = false)
+    (h_no_fd      : Block.containsFuncDecl ss = false)
+    (h_no_inv     : Block.loopHasNoInvariants ss = true)
+    (h_no_measure : Block.loopMeasureNone ss = true)
+    (h_exprs_shapefree : Block.exprsShapeFree (P := P) Q ss)
+    (h_unique     : Block.uniqueInits ss)
+    (h_fresh      : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss = true)
+    (h_src_initVars_shapefree :
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.initVars ss))
+    (h_src_modifiedVars_shapefree :
+      StructuredToUnstructuredCorrect.NoGenSuffix (P := P) Q (Block.modifiedVars ss))
+    (h_hoist_undef : ∀ y ∈ Block.initVars ss, ρ_src.store y = none)
+    (h_src_store_shapefree : NoGenStore (P := P) Q ρ_src)
+    (h_run_src    : StepStmtStar P (EvalCmd P) extendEval
+                       (.stmts ss ρ_src) cfg_src)
+    (h_c_fail     : cfg_src.getEnv.hasFailure = true)
+    (h_wfvar      : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr    : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst    : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef      : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    ∃ d : Config P (Cmd P),
+      StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.hoistLoopPrefixInits ss) ρ_src) d
+      ∧ d.getEnv.hasFailure = true := by
+  have h_names_fresh_nil : Block.namesFreshInExprs (P := P) [] ss = true :=
+    Block.namesFreshInExprs_nil ss
+  have h_lhs_disjoint_nil : ∀ y ∈ Block.initVars (P := P) ss, y ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_mod_disjoint_nil : ∀ x ∈ Block.modifiedVars (P := P) (C := Cmd P) ss, x ∉ ([] : List P.Ident) :=
+    fun _ _ => List.not_mem_nil
+  have h_hinv_refl : HoistInv (P := P) [] [] [] ρ_src.store ρ_src.store :=
+    HoistInv.refl_id [] ρ_src.store
+  have h_hoist_bound_nil : ∀ y ∈ ([] : List P.Ident), ρ_src.store y ≠ none :=
+    fun _ h => absurd h (List.not_mem_nil)
+  have h_wf_emp : StringGenState.WF StringGenState.emp := StringGenState.wf_emp
+  have h_src_fresh_emp :
+      ∀ str ∈ StringGenState.stringGens StringGenState.emp,
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss := by
+    intro str h_str
+    exact absurd h_str (StringGenState.not_mem_stringGens_emp str)
+  have h_src_shapefree_F :
+      ∀ str : String, Q str →
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ ([] : List P.Ident) ∧
+        HasIdent.ident (P := P) str ∉ Block.initVars (P := P) ss ∧
+        HasIdent.ident (P := P) str ∉ Block.modifiedVars (P := P) ss :=
+    fun str h_shape =>
+      ⟨List.not_mem_nil, List.not_mem_nil,
+        h_src_initVars_shapefree str h_shape,
+        h_src_modifiedVars_shapefree str h_shape⟩
+  have h_subst_wf_nil :
+      ∀ a b : P.Ident, (a, b) ∈ ([] : List (P.Ident × P.Ident)) → a ∈ ([] : List P.Ident) ∧ b ∈ ([] : List P.Ident) :=
+    fun _ _ h => absurd h List.not_mem_nil
+  have h_src_store_shapefree_emp :
+      ∀ str : String, Q str →
+        str ∉ StringGenState.stringGens StringGenState.emp →
+        ρ_src.store (HasIdent.ident (P := P) str) = none :=
+    fun str h_shape _ => h_src_store_shapefree str h_shape
+  obtain ⟨d, h_run_h, hd⟩ :=
+    Block.hoistLoopPrefixInits_to_fail hQmint (extendEval := extendEval) [] [] [] ss
+      StringGenState.emp
+      h_no_nd h_no_fd h_no_inv h_no_measure h_exprs_shapefree h_unique h_fresh
+      h_names_fresh_nil h_names_fresh_nil h_lhs_disjoint_nil h_lhs_disjoint_nil
+      h_mod_disjoint_nil h_mod_disjoint_nil
+      h_hoist_undef h_hoist_undef h_src_store_shapefree_emp h_src_store_shapefree_emp
+      h_wf_emp h_src_fresh_emp h_src_shapefree_F h_subst_wf_nil
+      h_hinv_refl rfl rfl h_hoist_bound_nil
+      h_run_src h_c_fail h_wfvar h_wfcongr h_wfsubst h_wfdef
+  exact ⟨d, h_run_h, hd⟩
 
 end Imperative
