@@ -75,6 +75,18 @@ namespace LoopInitHoistLoopDriver
 
 open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendStoreOne_other)
 
+/-- Discharge a renamed invariant-failure flag `$hif` to `false` (using the
+    invariant-list emptiness witness `$hiff`) and substitute it away.  Captures
+    the identical four-line discharge the `.loop`-arm inversions repeat right
+    after `rename_i`. -/
+local macro "discharge_hif " hif:ident hiff:ident : tactic =>
+  `(tactic|
+    (have h_hif_false : $hif = false := by
+       cases h_hif : $hif with
+       | false => rfl
+       | true => obtain ⟨le, hle_mem, _⟩ := ($hiff).mp h_hif; simp at hle_mem
+     subst h_hif_false))
+
 variable {P : PureExpr}
 
 /-! ## Iteration peel / build helpers.
@@ -389,11 +401,7 @@ public theorem loopDet_lift_2g_E_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVal
         | .step _ _ _ hd _ => exact nomatch hd
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         -- Common bodies, with the `|| false` collapse.
         let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
         let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
@@ -589,11 +597,7 @@ public theorem loopDet_preserves_none_exiting_fuel [HasFvar P] [HasBool P] [HasN
         | .step _ _ _ hd _ => exact nomatch hd
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         rcases seqT_reaches_exiting' hrest with ⟨h_block_exit, _⟩ | ⟨ρ₁, h_block_term, h_loop_stmts, _⟩
         · -- inl: this iteration's body exits; `ρ_post` is the projected exit store.
           obtain ⟨ρ_inner, _, h_ρpost_eq, _⟩ := blockT_none_reaches_exiting' h_block_exit
@@ -672,11 +676,7 @@ public theorem loopDet_preserves_none_terminal_fuel [HasFvar P] [HasBool P] [Has
         exact h_none
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         -- Peel one iteration WITHOUT a no-exit hypothesis: the seq decomposes to a
         -- `.block .none` reaching `.terminal`, which forces an inner `.terminal`.
         obtain ⟨ρ_block, h_block_term, h_loop_stmts, _⟩ :=
@@ -786,11 +786,7 @@ public theorem loopDet_lift_2g_TE_fuel [HasFvar P] [HasBool P] [HasNot P] [HasVa
         · intro y hy; show ρ_hoist.store y ≠ none; exact h_bound y hy
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         -- Peel one iteration WITHOUT a no-exit hypothesis: the seq decomposes to a
         -- `.block .none` reaching `.terminal`, which forces an inner `.terminal`.
         obtain ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
@@ -1017,11 +1013,7 @@ public theorem loopDet_lift_sf_2g_undef_F_fuel [HasFvar P] [HasBool P] [HasNot P
       cases step with
       | step_loop_exit ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         have ha'_eq : a' = .terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) := by
           match hrest with
           | .refl _ => rfl
@@ -1032,11 +1024,7 @@ public theorem loopDet_lift_sf_2g_undef_F_fuel [HasFvar P] [HasBool P] [HasNot P
           by simpa [Config.getEnv] using (h_hf ▸ this)⟩
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         have h_guard_h : ρ_hoist.eval ρ_hoist.store g_h = .some HasBool.tt :=
           h_guard_transport ρ_src ρ_hoist h_hinv h_eval h_Vs ht
         have h_wfb_h : WellFormedSemanticEvalBool ρ_hoist.eval :=
@@ -2354,11 +2342,7 @@ public theorem loopDet_lift_sf_2g_undef_E_fuel [HasFvar P] [HasBool P] [HasNot P
         | .step _ _ _ hd _ => exact nomatch hd
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         let ρ_src_body : Env P := { ρ_src with hasFailure := ρ_src.hasFailure || false }
         let ρ_h_body : Env P := { ρ_hoist with hasFailure := ρ_hoist.hasFailure || false }
         have h_hinv_body : HoistInv (P := P) A B subst ρ_src_body.store ρ_h_body.store := by
@@ -2648,11 +2632,7 @@ public theorem loopDet_lift_sf_2g_undef_TE_fuel [HasFvar P] [HasBool P] [HasNot 
         · intro y hy; show ρ_hoist.store y ≠ none; exact h_bound y hy
       | step_loop_enter ht hinv hiff hwf =>
         rename_i hasInvFailure
-        have h_hif_false : hasInvFailure = false := by
-          cases h_hif : hasInvFailure with
-          | false => rfl
-          | true => obtain ⟨le, hle_mem, _⟩ := hiff.mp h_hif; simp at hle_mem
-        subst h_hif_false
+        discharge_hif hasInvFailure hiff
         obtain ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
           seqT_reaches_terminal extendEval hrest
         obtain ⟨ρ_inner, h_body_src_T, h_ρ_block_eq, hlen_block⟩ :=

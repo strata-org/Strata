@@ -6121,6 +6121,61 @@ private theorem atBlock_reaches_failing {P : PureExpr} [HasFvar P] [HasNot P]
     f_base f h_cmds h_fail
   exact ⟨e, ReflTrans.step _ _ _ h_fetch h_run, he⟩
 
+/-- The `STEP 3b` `GenStep` chain shared by every `.loop`-arm of the four mutual
+simulation theorems.  From the four sub-translation equations produced by
+`loop_det_decompose_h_gen` (`rest`, `loop_entry$`, `body`, `before_loop$` flush),
+the input `WF gen`, and the outer upper-bound fact, it threads the
+`gen → gen_r → gen_le → gen_b → gen_f` `GenStep` chain together with the
+intermediate `WF` and `⊆ genUpperBound` facts the arms consume. -/
+theorem loop_genStep_chain {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P]
+    [HasIntOrder P] [HasNot P]
+    {k kNext lentry : String} {gen gen_r gen_le gen_b gen_f genUpperBound : StringGenState}
+    {bl : String} {bbs bsRest : DetBlocks String (Cmd P) P}
+    {accum : List (Cmd P)} {accumEntry : String} {accumBlocks : DetBlocks String (Cmd P) P}
+    {body rest : List (Stmt P (Cmd P))} {exitConts : List (Option String × String)}
+    (h_rest_eq : stmtsToBlocks k rest exitConts [] gen = ((kNext, bsRest), gen_r))
+    (h_le_eq : StringGenState.gen "loop_entry$" gen_r = (lentry, gen_le))
+    (h_body_eq : stmtsToBlocks lentry body ((Option.none, kNext) :: exitConts) [] gen_le
+                   = ((bl, bbs), gen_b))
+    (h_flush_eq : flushCmds (P := P) (CmdT := Cmd P) "before_loop$" accum .none lentry gen_b
+                    = ((accumEntry, accumBlocks), gen_f))
+    (h_wf_gen : StringGenState.WF gen)
+    (h_outer_upper : StringGenState.stringGens gen_f ⊆ StringGenState.stringGens genUpperBound) :
+    StringGenState.GenStep gen gen_r ∧
+    StringGenState.GenStep gen_r gen_le ∧
+    StringGenState.GenStep gen_le gen_b ∧
+    StringGenState.GenStep gen_b gen_f ∧
+    StringGenState.GenStep gen gen_le ∧
+    StringGenState.GenStep gen gen_b ∧
+    StringGenState.WF gen_r ∧
+    StringGenState.WF gen_le ∧
+    StringGenState.WF gen_b ∧
+    StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound ∧
+    StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound ∧
+    StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound := by
+  have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
+    stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
+  have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
+    rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
+    exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
+  have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
+    stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
+  have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
+    flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
+  have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
+  have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
+  have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
+  have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
+  have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
+  have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
+    h_step_b_to_f.subset.trans h_outer_upper
+  have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
+    h_step_le_to_b.subset.trans h_outer_upper_b
+  have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
+    h_step_r_to_le.subset.trans h_outer_upper_le
+  exact ⟨h_step_gen_to_r, h_step_r_to_le, h_step_le_to_b, h_step_b_to_f, h_step_gen_to_le,
+    h_step_gen_to_b, h_wf_r, h_wf_le, h_wf_b, h_outer_upper_b, h_outer_upper_le, h_outer_upper_r⟩
+
 end InlineLoopHelpers
 
 /-- Project the four shape predicates (`simpleShape`, `loopBodyNoInits`,
@@ -6874,26 +6929,11 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasNot P]
     -- === STEP 3b: GenStep chain  gen → gen_r → gen_le → gen_b → gen_f = gen'. ===
     subst h_entry_eq
     subst h_gen_eq
-    have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
-    have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
-      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
-      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
-    have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
-    have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
-      flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
-    have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
-    have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
-    have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
-    have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
-    have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
-    have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_b_to_f.subset.trans h_outer_upper
-    have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_le_to_b.subset.trans h_outer_upper_b
-    have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_r_to_le.subset.trans h_outer_upper_le
+    obtain ⟨h_step_gen_to_r, h_step_r_to_le, h_step_le_to_b, h_step_b_to_f,
+           h_step_gen_to_le, h_step_gen_to_b, h_wf_r, h_wf_le, h_wf_b,
+           h_outer_upper_b, h_outer_upper_le, h_outer_upper_r⟩ :=
+      InlineLoopHelpers.loop_genStep_chain h_rest_eq h_le_eq h_body_eq h_flush_eq
+        h_wf_gen h_outer_upper
     -- === STEP 3c: Block-list membership distribution. ===
     -- blocks = accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ bsRest.
     let lentryBlk : DetBlock String (Cmd P) P :=
@@ -9467,26 +9507,11 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     -- === STEP 3b: GenStep chain. ===
     subst h_entry_eq
     subst h_gen_eq
-    have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
-    have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
-      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
-      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
-    have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
-    have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
-      flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
-    have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
-    have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
-    have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
-    have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
-    have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
-    have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_b_to_f.subset.trans h_outer_upper
-    have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_le_to_b.subset.trans h_outer_upper_b
-    have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_r_to_le.subset.trans h_outer_upper_le
+    obtain ⟨h_step_gen_to_r, h_step_r_to_le, h_step_le_to_b, h_step_b_to_f,
+           h_step_gen_to_le, h_step_gen_to_b, h_wf_r, h_wf_le, h_wf_b,
+           h_outer_upper_b, h_outer_upper_le, h_outer_upper_r⟩ :=
+      InlineLoopHelpers.loop_genStep_chain h_rest_eq h_le_eq h_body_eq h_flush_eq
+        h_wf_gen h_outer_upper
     -- === STEP 3c: Block-list membership. ===
     let lentryBlk : DetBlock String (Cmd P) P :=
       { cmds := ([] : List (Cmd P)), transfer := DetTransferCmd.condGoto guardExpr bl kNext md }
@@ -11377,26 +11402,11 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     -- === STEP 3b: GenStep chain. ===
     subst h_entry_eq
     subst h_gen_eq
-    have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
-    have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
-      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
-      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
-    have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
-    have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
-      flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
-    have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
-    have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
-    have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
-    have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
-    have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
-    have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_b_to_f.subset.trans h_outer_upper
-    have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_le_to_b.subset.trans h_outer_upper_b
-    have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_r_to_le.subset.trans h_outer_upper_le
+    obtain ⟨h_step_gen_to_r, h_step_r_to_le, h_step_le_to_b, h_step_b_to_f,
+           h_step_gen_to_le, h_step_gen_to_b, h_wf_r, h_wf_le, h_wf_b,
+           h_outer_upper_b, h_outer_upper_le, h_outer_upper_r⟩ :=
+      InlineLoopHelpers.loop_genStep_chain h_rest_eq h_le_eq h_body_eq h_flush_eq
+        h_wf_gen h_outer_upper
     -- === STEP 3c: Block-list membership. ===
     let lentryBlk : DetBlock String (Cmd P) P :=
       { cmds := ([] : List (Cmd P)), transfer := DetTransferCmd.condGoto guardExpr bl kNext md }
@@ -13013,26 +13023,11 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     -- === STEP 3b: GenStep chain. ===
     subst h_entry_eq
     subst h_gen_eq
-    have h_step_gen_to_r : StringGenState.GenStep gen gen_r :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_rest_eq
-    have h_step_r_to_le : StringGenState.GenStep gen_r gen_le := by
-      rw [show gen_le = (StringGenState.gen "loop_entry$" gen_r).2 from (by rw [h_le_eq])]
-      exact StringGenState.GenStep.of_gen "loop_entry$" gen_r
-    have h_step_le_to_b : StringGenState.GenStep gen_le gen_b :=
-      stmtsToBlocks_genStep _ _ _ _ _ _ _ _ h_body_eq
-    have h_step_b_to_f : StringGenState.GenStep gen_b gen_f :=
-      flushCmds_genStep _ _ _ _ _ _ _ _ h_flush_eq
-    have h_step_gen_to_le : StringGenState.GenStep gen gen_le := h_step_gen_to_r.trans h_step_r_to_le
-    have h_step_gen_to_b : StringGenState.GenStep gen gen_b := h_step_gen_to_le.trans h_step_le_to_b
-    have h_wf_r : StringGenState.WF gen_r := h_step_gen_to_r.wf_mono h_wf_gen
-    have h_wf_le : StringGenState.WF gen_le := h_step_gen_to_le.wf_mono h_wf_gen
-    have h_wf_b : StringGenState.WF gen_b := h_step_gen_to_b.wf_mono h_wf_gen
-    have h_outer_upper_b : StringGenState.stringGens gen_b ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_b_to_f.subset.trans h_outer_upper
-    have h_outer_upper_le : StringGenState.stringGens gen_le ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_le_to_b.subset.trans h_outer_upper_b
-    have h_outer_upper_r : StringGenState.stringGens gen_r ⊆ StringGenState.stringGens genUpperBound :=
-      h_step_r_to_le.subset.trans h_outer_upper_le
+    obtain ⟨h_step_gen_to_r, h_step_r_to_le, h_step_le_to_b, h_step_b_to_f,
+           h_step_gen_to_le, h_step_gen_to_b, h_wf_r, h_wf_le, h_wf_b,
+           h_outer_upper_b, h_outer_upper_le, h_outer_upper_r⟩ :=
+      InlineLoopHelpers.loop_genStep_chain h_rest_eq h_le_eq h_body_eq h_flush_eq
+        h_wf_gen h_outer_upper
     -- === STEP 3c: Block-list membership. ===
     let lentryBlk : DetBlock String (Cmd P) P :=
       { cmds := ([] : List (Cmd P)), transfer := DetTransferCmd.condGoto guardExpr bl kNext md }

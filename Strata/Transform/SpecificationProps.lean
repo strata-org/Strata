@@ -30,12 +30,6 @@ namespace Hoare
 /-! ## Parametric Hoare rules -/
 
 omit [HasVal P] in
-/-- False precondition proves anything -/
-theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
-    Triple L (fun _ => False) s Post := by
-  intro _ _ hpre; exact absurd hpre id
-
-omit [HasVal P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
 theorem consequence
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
@@ -148,39 +142,6 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hwfcongr hf₀ (.inr ⟨lbl, hexit⟩)
         subst heq; exact hpost_proj ρ_inner _ hpost hf
-
-omit [HasVal P] in
-/-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
-theorem Triple.toTripleBlock {s : Stmt P CmdT}
-    {Pre Post : Env P → Prop}
-    (h : Triple (Lang.imperative P CmdT evalCmd extendEval isAtAssertFn) Pre s Post)
-    (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
-    TripleBlock evalCmd extendEval Pre [s] Post := by
-  intro ρ₀ ρ' hpre hwfb hwfcongr hf₀ hdone
-  match hdone with
-  | .inl hterm =>
-    cases hterm with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        have ⟨ρ₁, hterm_s, hrest_nil⟩ := seq_reaches_terminal P evalCmd extendEval hrest
-        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hwfb hwfcongr hf₀ hterm_s
-        cases hrest_nil with
-        | step _ _ _ h1 r1 => cases h1 with
-          | step_stmts_nil => cases r1 with
-            | refl => exact ⟨hp, hf⟩
-            | step _ _ _ h _ => exact nomatch h
-  | .inr ⟨lbl, hexit⟩ =>
-    cases hexit with
-    | step _ _ _ hstep hrest => cases hstep with
-      | step_stmts_cons =>
-        match seq_reaches_exiting P evalCmd extendEval hrest with
-        | .inl hexit_s =>
-          exact absurd hexit_s
-            (exitsCoveredByBlocks_noEscape P evalCmd extendEval s hnoesc ρ₀ lbl ρ')
-        | .inr ⟨ρ₁, hterm_s, hexit_nil⟩ =>
-          cases hexit_nil with
-          | step _ _ _ h _ => cases h with
-            | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
 omit [HasVal P] in
 /-- Empty block is skip. -/
@@ -455,26 +416,6 @@ section Upto
 open scoped Relations  -- `R₁ ∘ R₂` for relation composition (`RComp`)
 
 omit [HasVal P] [HasVarsPure P P.Expr] in
-/-- `OverapproximatesWhen` is `OverapproximatesUptoWhen` at the equality
-    relation (definitional). -/
-theorem overapproximatesWhen_iff_uptoWhen_eq (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
-    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) :
-    OverapproximatesWhen L₁ L₂ T pre params₁ params₂ ↔
-      OverapproximatesUptoWhen (· = ·) L₁ L₂ T pre params₁ params₂ :=
-  Iff.rfl
-
-omit [HasVal P] [HasVarsPure P P.Expr] in
-/-- Unconditional version: `OverapproximatesWhen` at the trivial precondition is
-    `OverapproximatesUpto` at equality (definitional). -/
-theorem overapproximatesWhen_true_iff_upto_eq (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT)
-    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) :
-    OverapproximatesWhen L₁ L₂ T (fun _ => True) params₁ params₂ ↔
-      OverapproximatesUpto (· = ·) L₁ L₂ T params₁ params₂ :=
-  Iff.rfl
-
-omit [HasVal P] [HasVarsPure P P.Expr] in
 /-- Rewriting the relation `R → R'`.  Since `R` is used both as an input
     hypothesis (antitone) and an output witness (monotone), the change requires
     `R' ⊆ R` (for the input) *and* `R ⊆ R'` (for the output). -/
@@ -591,36 +532,6 @@ theorem OverapproximatesUpto.comp_preorder (L₁ L₂ L₃ : Lang P)
     OverapproximatesUpto R L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ :=
   OverapproximatesUptoWhen.comp_preorder L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃
     hrefl htrans (fun _ _ _ _ => trivial) h₁ h₂
-
-omit [HasVal P] [HasVarsPure P P.Expr] in
-/-- Precondition strengthening for `OverapproximatesAggressivelyWhen`. -/
-theorem OverapproximatesAggressivelyWhen.strengthen (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT) {pre pre' : L₁.StmtT → Prop}
-    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
-    (himp : ∀ st, pre' st → pre st)
-    (h : OverapproximatesAggressivelyWhen L₁ L₂ T pre params₁ params₂) :
-    OverapproximatesAggressivelyWhen L₁ L₂ T pre' params₁ params₂ := by
-  intro st st' ht hpre' ρ₀ hswf
-  exact h st st' ht (himp st hpre') ρ₀ hswf
-
-omit [HasVal P] [HasVarsPure P P.Expr] in
-/-- `OverapproximatesUptoWhen` at equality implies `OverapproximatesAggressivelyWhen`
-    (same precondition).  An exact transform that handles all preconditioned
-    inputs is also an aggressive transform that handles them. -/
-theorem OverapproximatesWhen.toAggressivelyWhen (L₁ L₂ : Lang P)
-    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
-    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
-    (h : OverapproximatesWhen L₁ L₂ T pre params₁ params₂) :
-    OverapproximatesAggressivelyWhen L₁ L₂ T pre params₁ params₂ := by
-  intro st st' ht hpre ρ₀ hswf
-  have hr := h st st' ht hpre ρ₀ ρ₀ rfl hswf
-  refine ⟨?_, ?_, hr.2.1, hr.2.2⟩
-  · intro ρ' hstar
-    obtain ⟨ρ'', heq, hstar'⟩ := (hr.1 ρ').1 hstar
-    exact .inr (fun _ => heq ▸ hstar')
-  · intro lbl ρ' hstar
-    obtain ⟨ρ'', heq, hstar'⟩ := (hr.1 ρ').2 lbl hstar
-    exact .inr (fun _ => heq ▸ hstar')
 
 end Upto
 

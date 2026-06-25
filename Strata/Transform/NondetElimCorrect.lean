@@ -395,65 +395,41 @@ theorem seq_nil_outcome {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVa
 /-- Outcome-generic `.ite .nondet` prefix replay (then side): the chosen branch
 `tss` reaching `outcomeConfig oc ρt'` drives the emitted prefix to the same
 outcome (havoc value `tt`). -/
-theorem step_ndelim_ite_prefix_true_outcome {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
-    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
+    (b : Bool) (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ρ ρt' : Env P) (oc : Option String)
     (h_none : ρ.store ident = none)
     (hwf_var : WellFormedSemanticEvalVar ρ.eval)
     (hwfb : WellFormedSemanticEvalBool ρ.eval)
     (h_branch : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts tss ({ ρ with store := storeWith ρ.store ident HasBool.tt } : Env P))
+      (.stmts (if b then tss else ess)
+        ({ ρ with store := storeWith ρ.store ident (if b then HasBool.tt else HasBool.ff) } : Env P))
       (outcomeConfig oc ρt')) :
     StepStmtStar P (EvalCmd P) extendEval
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
                .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
       (outcomeConfig oc ρt') := by
-  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.tt }
+  let v : P.Expr := if b then HasBool.tt else HasBool.ff
+  let ρg : Env P := { ρ with store := storeWith ρ.store ident v }
   have h1 : StepStmtStar P (EvalCmd P) extendEval
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
                .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
       (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
     stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
-      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.tt md ρ h_none hwf_var)
-  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.tt :=
-    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.tt hwf_var
+      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy v md ρ h_none hwf_var)
+  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some v :=
+    eval_mkFvar_storeWith ρ.eval ρ.store ident v hwf_var
   have hwfb' : WellFormedSemanticEvalBool ρg.eval := hwfb
   have h2 : StepStmtStar P (EvalCmd P) extendEval
       (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) (outcomeConfig oc ρt') := by
     refine .step _ _ _ .step_stmts_cons ?_
-    refine .step _ _ _ (.step_seq_inner (.step_ite_true h_guard hwfb')) ?_
-    exact seq_nil_outcome (extendEval := extendEval) _ _ oc h_branch
-  exact ReflTrans_Transitive _ _ _ _ h1 h2
-
-/-- Outcome-generic `.ite .nondet` prefix replay (else side). -/
-theorem step_ndelim_ite_prefix_false_outcome {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
-    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
-    (ρ ρt' : Env P) (oc : Option String)
-    (h_none : ρ.store ident = none)
-    (hwf_var : WellFormedSemanticEvalVar ρ.eval)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts ess ({ ρ with store := storeWith ρ.store ident HasBool.ff } : Env P))
-      (outcomeConfig oc ρt')) :
-    StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
-      (outcomeConfig oc ρt') := by
-  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.ff }
-  have h1 : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
-    stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
-      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.ff md ρ h_none hwf_var)
-  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.ff :=
-    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.ff hwf_var
-  have hwfb' : WellFormedSemanticEvalBool ρg.eval := hwfb
-  have h2 : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) (outcomeConfig oc ρt') := by
-    refine .step _ _ _ .step_stmts_cons ?_
-    refine .step _ _ _ (.step_seq_inner (.step_ite_false h_guard hwfb')) ?_
-    exact seq_nil_outcome (extendEval := extendEval) _ _ oc h_branch
+    cases b with
+    | true =>
+      exact .step _ _ _ (.step_seq_inner (.step_ite_true h_guard hwfb'))
+        (seq_nil_outcome (extendEval := extendEval) _ _ oc h_branch)
+    | false =>
+      exact .step _ _ _ (.step_seq_inner (.step_ite_false h_guard hwfb'))
+        (seq_nil_outcome (extendEval := extendEval) _ _ oc h_branch)
   exact ReflTrans_Transitive _ _ _ _ h1 h2
 
 /-- From a *clean*-start statement run reaching a *failing* config, the run takes
@@ -488,63 +464,36 @@ theorem stmt_to_singleton_stmts_fail {P : PureExpr} [HasFvar P] [HasBool P] [Has
 /-- Failing `.ite .nondet` prefix replay (then side): the chosen branch `tss`
 reaching a *failing* config drives the emitted `init $g; ite $g` prefix to a
 failing config (havoc value `tt`). -/
-theorem step_ndelim_ite_prefix_fail_true {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
-    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+theorem step_ndelim_ite_prefix_fail {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
+    (b : Bool) (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
     (ρ : Env P) (d : Config P (Cmd P))
     (h_none : ρ.store ident = none)
     (hwf_var : WellFormedSemanticEvalVar ρ.eval)
     (hwfb : WellFormedSemanticEvalBool ρ.eval)
     (h_branch : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts tss ({ ρ with store := storeWith ρ.store ident HasBool.tt } : Env P)) d)
+      (.stmts (if b then tss else ess)
+        ({ ρ with store := storeWith ρ.store ident (if b then HasBool.tt else HasBool.ff) } : Env P)) d)
     (hd : d.getEnv.hasFailure = true) :
     ∃ d', StepStmtStar P (EvalCmd P) extendEval
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
                .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ) d'
       ∧ d'.getEnv.hasFailure = true := by
-  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.tt }
+  let v : P.Expr := if b then HasBool.tt else HasBool.ff
+  let ρg : Env P := { ρ with store := storeWith ρ.store ident v }
   have h1 : StepStmtStar P (EvalCmd P) extendEval
       (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
                .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
       (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
     stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
-      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.tt md ρ h_none hwf_var)
-  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.tt :=
-    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.tt hwf_var
-  -- The single-statement `.ite` enters the then-branch, which reaches `d` (failing).
+      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy v md ρ h_none hwf_var)
+  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some v :=
+    eval_mkFvar_storeWith ρ.eval ρ.store ident v hwf_var
+  -- The single-statement `.ite` enters the chosen branch, which reaches `d` (failing).
   have h_ite : StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) d :=
-    .step _ _ _ (.step_ite_true h_guard hwfb) h_branch
-  obtain ⟨d', h2, hd'⟩ :=
-    stmt_to_singleton_stmts_fail (extendEval := extendEval)
-      (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg d h_ite hd
-  exact ⟨d', ReflTrans_Transitive _ _ _ _ h1 h2, hd'⟩
-
-/-- Failing `.ite .nondet` prefix replay (else side). -/
-theorem step_ndelim_ite_prefix_fail_false {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
-    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
-    (ρ : Env P) (d : Config P (Cmd P))
-    (h_none : ρ.store ident = none)
-    (hwf_var : WellFormedSemanticEvalVar ρ.eval)
-    (hwfb : WellFormedSemanticEvalBool ρ.eval)
-    (h_branch : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts ess ({ ρ with store := storeWith ρ.store ident HasBool.ff } : Env P)) d)
-    (hd : d.getEnv.hasFailure = true) :
-    ∃ d', StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ) d'
-      ∧ d'.getEnv.hasFailure = true := by
-  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.ff }
-  have h1 : StepStmtStar P (EvalCmd P) extendEval
-      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
-               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
-      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
-    stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
-      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.ff md ρ h_none hwf_var)
-  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.ff :=
-    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.ff hwf_var
-  have h_ite : StepStmtStar P (EvalCmd P) extendEval
-      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) d :=
-    .step _ _ _ (.step_ite_false h_guard hwfb) h_branch
+      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) d := by
+    cases b with
+    | true => exact .step _ _ _ (.step_ite_true h_guard hwfb) h_branch
+    | false => exact .step _ _ _ (.step_ite_false h_guard hwfb) h_branch
   obtain ⟨d', h2, hd'⟩ :=
     stmt_to_singleton_stmts_fail (extendEval := extendEval)
       (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg d h_ite hd
@@ -2869,7 +2818,7 @@ private theorem nondetElim_stmt_gen {P : PureExpr} [HasFvar P] [HasNot P]
       refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_eval', ?_⟩
       · rw [Stmt.nondetElimM_ite_nondet_out]
         simp only [hgen]
-        exact step_ndelim_ite_prefix_true_outcome (extendEval := extendEval) (HasIdent.ident (P := P) g)
+        exact step_ndelim_ite_prefix_outcome (extendEval := extendEval) true (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
           ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwfb_t h_run
       · simp only [Stmt.nondetElimM, hgen]
@@ -2905,7 +2854,7 @@ private theorem nondetElim_stmt_gen {P : PureExpr} [HasFvar P] [HasNot P]
       refine ⟨h_fresh', ρ_out, ?_, h_off', h_fail', h_eval', ?_⟩
       · rw [Stmt.nondetElimM_ite_nondet_out]
         simp only [hgen]
-        exact step_ndelim_ite_prefix_false_outcome (extendEval := extendEval) (HasIdent.ident (P := P) g)
+        exact step_ndelim_ite_prefix_outcome (extendEval := extendEval) false (HasIdent.ident (P := P) g)
           (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
           ρ_tgt ρ_out oc h_tgt_g_none hwf_var_t hwfb_t h_run
       · simp only [Stmt.nondetElimM, hgen]
@@ -4443,7 +4392,7 @@ private theorem nondetElim_stmt_to_fail_gen {P : PureExpr} [HasFvar P] [HasNot P
           h_wf₁ h_src_fresh h_fresh_g h_no_writes_t h_nofd'.1
           (Stmt.loopHasNoInvariants_branch_then h_lhni) hrest h_c_fail
       rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
-      exact step_ndelim_ite_prefix_fail_true (extendEval := extendEval) (HasIdent.ident (P := P) g)
+      exact step_ndelim_ite_prefix_fail (extendEval := extendEval) true (HasIdent.ident (P := P) g)
         (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
         ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwfb_t h_run_tgt hd_tgt_fail
     | step_ite_nondet_false =>
@@ -4467,7 +4416,7 @@ private theorem nondetElim_stmt_to_fail_gen {P : PureExpr} [HasFvar P] [HasNot P
           h_wf₂ h_src_fresh h_fresh_g h_no_writes_e h_nofd'.2
           (Stmt.loopHasNoInvariants_branch_else h_lhni) hrest h_c_fail
       rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
-      exact step_ndelim_ite_prefix_fail_false (extendEval := extendEval) (HasIdent.ident (P := P) g)
+      exact step_ndelim_ite_prefix_fail (extendEval := extendEval) false (HasIdent.ident (P := P) g)
         (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
         ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwfb_t h_run_tgt hd_tgt_fail
   | .loop (.det e) m inv body md, h_no_writes, h_nofd, h_lhni, h_reach =>
