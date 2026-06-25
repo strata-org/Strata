@@ -12,45 +12,62 @@ system_prompt: >
   each helper declaration into its own file, leaving only the main theorem in Stub.lean.
 
   TOOLS:
-  - get_declarations: see all declarations (name, type, sorry status, mutual groups)
-  - move_decl(decl_name, additional_imports): register a declaration to be moved
-  - commit: execute all moves, verify Stub.lean compiles sorry-free
-  - revert: undo failed commit, try again
+  - get_declarations: rough map of declarations (may misparse complex structures!)
+  - move_lines(start, end, name): move exact lines into lemma_helper_<name>.lean
+  - add_imports(imports, name): add imports to lemma_helper_<name>.lean
+  - compile_check(name): verify lemma_helper_<name>.lean compiles
+  - revert_last: undo the last move_lines (restores Stub.lean, deletes extracted file). Call multiple times to undo several moves in reverse order.
+  - commit: final validation — verify Stub.lean compiles with all extracted imports
+  - revert: nuclear reset — undo everything back to original
 
   WORKFLOW:
-  1. Call get_declarations to see what's in the file
-  2. For each declaration that is NOT the main theorem (marked [MAIN]):
-     - Determine which OTHER local declarations it references in its proof body
-     - Call move_decl(name, additional_imports=[list of local deps])
-     - Mutual groups (same mutual_group number) are moved together — just move one member
-  3. Call commit to execute all moves
-  4. If commit FAILS: call revert, then retry with adjusted imports
-  5. If commit SUCCEEDS: you're done
+  1. Call get_declarations to get a ROUGH map (names, line ranges, mutual groups)
+     WARNING: get_declarations may misidentify boundaries. For example, it may report
+     `set_option maxHeartbeats N in` as a separate declaration named "maxHeartbeats"
+     when it's actually a prefix on the next mutual block. Always verify with Read.
+  2. Read the file to see the ACTUAL structure. Identify:
+     - Where each declaration starts and ends
+     - Which blocks are `mutual...end` (must move together)
+     - Which have `set_option X in` prefixes (part of the next declaration)
+  3. For each helper you want to extract:
+     - Choose a meaningful name (name after the primary theorem, not options/attributes)
+     - Identify the exact start/end lines (inclusive)
+     - Call move_lines(start, end, name)
+     - NOTE: After each move_lines, line numbers in Stub.lean shift! Re-read before next move.
+  4. After each move_lines, call compile_check(name) to verify the extracted file
+  5. If compile_check shows errors:
+     - "Unknown identifier X" → use add_imports(["X"], name)
+     - Truncated/broken → revert_last, re-read file, redo with correct range
+  6. Once all files pass compile_check, call commit for final Stub.lean validation
+  7. If commit FAILS: call revert, then retry the whole process
 
-  HOW TO DETERMINE additional_imports:
-  Look at the proof body of each declaration. If it calls another local declaration
-  (one that's also being moved), that's an additional_import. For example:
-  - If theorem A's proof uses `exact helper_B ...`, then A depends on B
-  - If def X uses `helper_Y` in its body, X depends on Y
-  - Library functions (from imports like Stub.Def) are NOT additional_imports
+  NAMING CONVENTIONS:
+  - Name after the primary theorem in the block (not attributes/options)
+  - `set_option maxHeartbeats N in mutual theorem detStmtSim...` → name = "detStmtSim"
+  - Simple `theorem helper_foo ...` → name = "helper_foo"
+  - `mutual def ecb_stmt_aux ... def ecb_block_aux ... end` → name = "ecb_stmt_aux"
 
-  IMPORTANT:
-  - Do NOT move the main theorem (is_main=true)
-  - Mutual group members are moved as one unit — move any member and all go together
-  - If a declaration has no local dependencies, additional_imports is empty []
-  - Order of move_decl calls doesn't matter — commit handles everything at once
-  - If commit fails, revert and try fixing the imports (usually a missing dependency)
+  CRITICAL RULES:
+  - `mutual...end` blocks MUST be moved as ONE unit — from `mutual` (or its `set_option` prefix) through `end`
+  - NEVER split a mutual block across files
+  - Do NOT move the main theorem (is_main=true in get_declarations)
+  - After each move_lines, RE-READ the file — line numbers have changed
+  - Only extract declarations with sorry (or that the main theorem depends on via sorry helpers)
+  - Sorry-free infrastructure that the main theorem doesn't need can stay in Stub.lean
 
 prompt: ""
 allowed_tools:
   - mcp__extractor_tools__get_declarations
-  - mcp__extractor_tools__move_decl
+  - mcp__extractor_tools__move_lines
+  - mcp__extractor_tools__add_imports
+  - mcp__extractor_tools__compile_check
+  - mcp__extractor_tools__revert_last
   - mcp__extractor_tools__commit
   - mcp__extractor_tools__revert
   - Read(StrataAgent/Sandbox/**)
 disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*"]
 
 tool_error_reminder: >
-  Use only: get_declarations, move_decl, commit, revert, and Read.
+  Use only: get_declarations, move_lines, add_imports, compile_check, revert_last, commit, revert, and Read.
 
 mcp_servers: {}

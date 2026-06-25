@@ -390,8 +390,83 @@ def create_extractor_mcp_server(session: "MoveSession"):
         result = session.revert()
         return {"content": [{"type": "text", "text": result}]}
 
+    @tool(
+        name="move_lines",
+        description=(
+            "Move lines start-end (1-indexed, inclusive) from Stub.lean into lemma_helper_<name>.lean. "
+            "Use this when move_decl fails (e.g. for set_option...in mutual blocks, or complex declarations). "
+            "The agent reads the file, identifies the exact line range, and moves it. "
+            "IMPORTANT: Move entire mutual blocks together (from 'mutual' or 'set_option' to 'end')."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "start": {"type": "integer", "description": "Start line (1-indexed, inclusive)"},
+                "end": {"type": "integer", "description": "End line (1-indexed, inclusive)"},
+                "name": {"type": "string", "description": "Name for the helper (creates lemma_helper_<name>.lean)"},
+            },
+            "required": ["start", "end", "name"],
+        },
+    )
+    async def move_lines_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.move_lines(input["start"], input["end"], input["name"])
+        return {"content": [{"type": "text", "text": result}]}
+
+    @tool(
+        name="add_imports",
+        description=(
+            "Add imports to lemma_helper_<name>.lean. "
+            "Pass helper names (e.g. 'detBlockSim') — they resolve to the correct module path automatically. "
+            "Or pass full module paths (e.g. 'StrataAgent.Sandbox.Stub.Def')."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "imports": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Helper names or full module paths to import",
+                },
+                "name": {"type": "string", "description": "Target helper name (the file to add imports to)"},
+            },
+            "required": ["imports", "name"],
+        },
+    )
+    async def add_imports_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.add_imports(input["imports"], input["name"])
+        return {"content": [{"type": "text", "text": result}]}
+
+    @tool(
+        name="compile_check",
+        description=(
+            "Check if lemma_helper_<name>.lean compiles. "
+            "Returns 'OK: compiles (has sorry)' or 'OK: compiles (sorry-free)' or error details. "
+            "Use after move_lines/add_imports to verify before final commit."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Helper name to check"},
+            },
+            "required": ["name"],
+        },
+    )
+    async def compile_check_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.compile_check(input["name"])
+        return {"content": [{"type": "text", "text": result}]}
+
+    @tool(
+        name="revert_last",
+        description="Undo the last move_lines: restores Stub.lean to its state before that move and deletes the extracted file. Can be called multiple times to undo several moves in reverse order.",
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def revert_last_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.revert_last()
+        return {"content": [{"type": "text", "text": result}]}
+
     return create_sdk_mcp_server(
         name="extractor_tools",
         version="1.0.0",
-        tools=[get_declarations_tool, move_decl_tool, commit_tool, revert_tool],
+        tools=[get_declarations_tool, move_decl_tool, move_lines_tool,
+               add_imports_tool, compile_check_tool, revert_last_tool, commit_tool, revert_tool],
     )

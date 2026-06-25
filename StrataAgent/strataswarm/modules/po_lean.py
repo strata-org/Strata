@@ -175,6 +175,7 @@ class MoveSession:
         self._split: SplitResult | None = None
         self._backup: str | None = None  # original file content
         self._committed = False
+        self._move_stack: list[tuple[str, str]] = []  # [(name, stub_content_before_move), ...]
 
     def get_declarations(self) -> list[dict]:
         """Return declaration info for the LLM to see. Also takes backup."""
@@ -392,10 +393,164 @@ class MoveSession:
 
         # Reset state for retry
         self._moves.clear()
+        self._move_stack.clear()
         self._committed = False
         self._split = None
 
         return "OK: reverted to original"
+
+    def move_lines(self, start: int, end: int, name: str) -> str:
+        """Move lines start-end (1-indexed, inclusive) from Stub.lean into lemma_helper_<name>.lean.
+
+        Creates the file if it doesn't exist (with header from Stub.lean), or appends.
+        Removes those lines from Stub.lean and adds an import.
+        Snapshots Stub.lean before modifying (for revert_move).
+        """
+        root = self._tools._root
+        source = root / self._file_path
+        if self._backup is None:
+            self._backup = source.read_text()
+
+        # Save state before this move (for revert_last)
+        safe_name = name.replace(" ", "_").replace("/", "_")
+        self._move_stack.append((safe_name, source.read_text()))
+
+        lines = source.read_text().splitlines()
+        if start < 1 or end > len(lines) or start > end:
+            return f"Error: invalid range {start}-{end} (file has {len(lines)} lines)"
+
+        # Extract the block (1-indexed → 0-indexed)
+        block_lines = lines[start - 1:end]
+        block_text = "\n".join(block_lines)
+
+        # Determine output path
+        out_path = root / self._workspace / self._output_subdir
+        out_path.mkdir(parents=True, exist_ok=True)
+        safe_name = name.replace(" ", "_").replace("/", "_")
+        target_file = out_path / f"lemma_helper_{safe_name}.lean"
+
+        if target_file.exists():
+            # Append to existing file
+            existing = target_file.read_text()
+            target_file.write_text(existing.rstrip() + "\n\n" + block_text + "\n")
+        else:
+            # Create with header (imports + open + variable from Stub.lean)
+            header_lines = []
+            for l in lines:
+                stripped = l.strip()
+                if stripped.startswith("import ") or stripped.startswith("open ") or stripped.startswith("variable ") or stripped == "":
+                    header_lines.append(l)
+                elif stripped.startswith("set_option") or stripped.startswith("section") or stripped.startswith("namespace"):
+                    header_lines.append(l)
+                else:
+                    break
+            header = "\n".join(header_lines)
+            target_file.write_text(header + "\n\n" + block_text + "\n")
+
+        # Remove lines from source and add import
+        remaining = lines[:start - 1] + lines[end:]
+        module_path = f"{self._workspace}.{self._output_subdir}.lemma_helper_{safe_name}".replace("/", ".")
+        import_line = f"import {module_path}"
+
+        # Add import if not already present
+        if import_line not in "\n".join(remaining):
+            # Insert after last existing import
+            insert_pos = 0
+            for i, l in enumerate(remaining):
+                if l.strip().startswith("import "):
+                    insert_pos = i + 1
+            remaining.insert(insert_pos, import_line)
+
+        source.write_text("\n".join(remaining))
+        rel_target = str(target_file.relative_to(root))
+        return f"OK: moved lines {start}-{end} to {rel_target}"
+
+    def add_imports(self, imports: list[str], name: str) -> str:
+        """Add import statements to lemma_helper_<name>.lean.
+
+        Each entry in imports should be a full module path (e.g. 'StrataAgent.Sandbox.Stub.Def')
+        or a helper name (e.g. 'detBlockSim' → resolved to the decomposed module path).
+        """
+        root = self._tools._root
+        out_path = root / self._workspace / self._output_subdir
+        safe_name = name.replace(" ", "_").replace("/", "_")
+        target_file = out_path / f"lemma_helper_{safe_name}.lean"
+
+        if not target_file.exists():
+            return f"Error: lemma_helper_{safe_name}.lean does not exist"
+
+        content = target_file.read_text()
+        lines = content.splitlines()
+
+        added = []
+        for imp in imports:
+            # If it's a short name, resolve to decomposed module path
+            if "." not in imp:
+                imp_safe = imp.replace(" ", "_").replace("/", "_")
+                module_path = f"{self._workspace}.{self._output_subdir}.lemma_helper_{imp_safe}".replace("/", ".")
+            else:
+                module_path = imp
+
+            import_line = f"import {module_path}"
+            if import_line not in content:
+                # Insert after last import
+                insert_pos = 0
+                for i, l in enumerate(lines):
+                    if l.strip().startswith("import "):
+                        insert_pos = i + 1
+                lines.insert(insert_pos, import_line)
+                added.append(module_path)
+
+        if added:
+            target_file.write_text("\n".join(lines))
+            return f"OK: added {len(added)} imports to lemma_helper_{safe_name}.lean: {added}"
+        return f"OK: all imports already present in lemma_helper_{safe_name}.lean"
+
+    def revert_last(self) -> str:
+        """Undo the last move_lines: restore Stub.lean and delete the extracted file."""
+        if not self._move_stack:
+            return "Error: nothing to revert (no moves on stack)"
+
+        root = self._tools._root
+        out_path = root / self._workspace / self._output_subdir
+        safe_name, prev_content = self._move_stack.pop()
+
+        # Restore Stub.lean to state before that move
+        source = root / self._file_path
+        source.write_text(prev_content)
+
+        # Delete the extracted file
+        target_file = out_path / f"lemma_helper_{safe_name}.lean"
+        if target_file.exists():
+            target_file.unlink()
+
+        return f"OK: reverted last move (lemma_helper_{safe_name}), Stub.lean restored"
+
+    def compile_check(self, name: str) -> str:
+        """Check if lemma_helper_<name>.lean compiles. Returns errors or 'OK'."""
+        root = self._tools._root
+        out_path = root / self._workspace / self._output_subdir
+        safe_name = name.replace(" ", "_").replace("/", "_")
+        target_file = out_path / f"lemma_helper_{safe_name}.lean"
+
+        if not target_file.exists():
+            return f"Error: lemma_helper_{safe_name}.lean does not exist"
+
+        rel_path = str(target_file.relative_to(root))
+        cr = self._tools.check_compiles(rel_path)
+        if cr.success:
+            has_sorry = self._tools.has_sorry(rel_path)
+            return f"OK: compiles{' (has sorry)' if has_sorry else ' (sorry-free)'}"
+        else:
+            # Get diagnostic errors
+            import subprocess
+            module = rel_path.replace("/", ".").removesuffix(".lean")
+            result = subprocess.run(
+                ["lake", "build", module], cwd=str(root),
+                capture_output=True, text=True, timeout=120,
+            )
+            errors = [l for l in (result.stdout + "\n" + result.stderr).splitlines() if ": error:" in l]
+            return f"ERRORS:\n" + "\n".join(errors[:10])
 
     def finalize(self) -> str:
         """Confirm extraction is done. Remove backup, extraction is permanent."""
