@@ -456,6 +456,100 @@ theorem step_ndelim_ite_prefix_false_outcome {P : PureExpr} [HasFvar P] [HasBool
     exact seq_nil_outcome (extendEval := extendEval) _ _ oc h_branch
   exact ReflTrans_Transitive _ _ _ _ h1 h2
 
+/-- From a *clean*-start statement run reaching a *failing* config, the run takes
+at least one step.  (A refl run would keep the config at `.stmt s ρ`, whose
+`getEnv` is the clean `ρ`, contradicting the failing flag.)  Exposes the first
+step and residual. -/
+theorem clean_stmt_first_step {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {s : Stmt P (Cmd P)} {ρ : Env P} {c : Config P (Cmd P)}
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) c)
+    (hc : c.getEnv.hasFailure = true)
+    (h_clean : ρ.hasFailure = false) :
+    ∃ cfg, StepStmt P (EvalCmd P) extendEval (.stmt s ρ) cfg ∧
+      StepStmtStar P (EvalCmd P) extendEval cfg c := by
+  cases h_reach with
+  | refl => exact absurd (by simpa [Config.getEnv] using hc) (by rw [h_clean]; simp)
+  | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
+
+/-- Singleton-list failing lift: a single statement reaching a *failing* config
+(not necessarily terminal/exiting) yields the singleton list reaching a failing
+config.  The residual `d` is wrapped as `.seq d []`, whose `getEnv` (hence failure
+flag) is `d`'s. -/
+theorem stmt_to_singleton_stmts_fail {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (s : Stmt P (Cmd P)) (ρ : Env P) (d : Config P (Cmd P))
+    (h : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts [s] ρ) d'
+      ∧ d'.getEnv.hasFailure = true :=
+  ⟨.seq d ([] : List (Stmt P (Cmd P))),
+    .step _ _ _ StepStmt.step_stmts_cons (seq_inner_star P (EvalCmd P) extendEval _ _ _ h),
+    by simpa [Config.getEnv] using hd⟩
+
+/-- Failing `.ite .nondet` prefix replay (then side): the chosen branch `tss`
+reaching a *failing* config drives the emitted `init $g; ite $g` prefix to a
+failing config (havoc value `tt`). -/
+theorem step_ndelim_ite_prefix_fail_true {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
+    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ : Env P) (d : Config P (Cmd P))
+    (h_none : ρ.store ident = none)
+    (hwf_var : WellFormedSemanticEvalVar ρ.eval)
+    (hwfb : WellFormedSemanticEvalBool ρ.eval)
+    (h_branch : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts tss ({ ρ with store := storeWith ρ.store ident HasBool.tt } : Env P)) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ∃ d', StepStmtStar P (EvalCmd P) extendEval
+      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
+               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ) d'
+      ∧ d'.getEnv.hasFailure = true := by
+  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.tt }
+  have h1 : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
+               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
+      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
+    stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
+      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.tt md ρ h_none hwf_var)
+  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.tt :=
+    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.tt hwf_var
+  -- The single-statement `.ite` enters the then-branch, which reaches `d` (failing).
+  have h_ite : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) d :=
+    .step _ _ _ (.step_ite_true h_guard hwfb) h_branch
+  obtain ⟨d', h2, hd'⟩ :=
+    stmt_to_singleton_stmts_fail (extendEval := extendEval)
+      (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg d h_ite hd
+  exact ⟨d', ReflTrans_Transitive _ _ _ _ h1 h2, hd'⟩
+
+/-- Failing `.ite .nondet` prefix replay (else side). -/
+theorem step_ndelim_ite_prefix_fail_false {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] {extendEval : ExtendEval P}
+    (ident : P.Ident) (tss ess : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ : Env P) (d : Config P (Cmd P))
+    (h_none : ρ.store ident = none)
+    (hwf_var : WellFormedSemanticEvalVar ρ.eval)
+    (hwfb : WellFormedSemanticEvalBool ρ.eval)
+    (h_branch : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts ess ({ ρ with store := storeWith ρ.store ident HasBool.ff } : Env P)) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ∃ d', StepStmtStar P (EvalCmd P) extendEval
+      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
+               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ) d'
+      ∧ d'.getEnv.hasFailure = true := by
+  let ρg : Env P := { ρ with store := storeWith ρ.store ident HasBool.ff }
+  have h1 : StepStmtStar P (EvalCmd P) extendEval
+      (.stmts [.cmd (HasInit.init ident HasBool.boolTy (.nondet) md),
+               .ite (.det (HasFvar.mkFvar ident)) tss ess md] ρ)
+      (.stmts [.ite (.det (HasFvar.mkFvar ident)) tss ess md] ρg) :=
+    stmts_cons_step P (EvalCmd P) extendEval _ _ ρ ρg
+      (step_init_havoc_to (extendEval := extendEval) ident HasBool.boolTy HasBool.ff md ρ h_none hwf_var)
+  have h_guard : ρg.eval ρg.store (HasFvar.mkFvar ident) = some HasBool.ff :=
+    eval_mkFvar_storeWith ρ.eval ρ.store ident HasBool.ff hwf_var
+  have h_ite : StepStmtStar P (EvalCmd P) extendEval
+      (.stmt (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg) d :=
+    .step _ _ _ (.step_ite_false h_guard hwfb) h_branch
+  obtain ⟨d', h2, hd'⟩ :=
+    stmt_to_singleton_stmts_fail (extendEval := extendEval)
+      (.ite (.det (HasFvar.mkFvar ident)) tss ess md) ρg d h_ite hd
+  exact ⟨d', ReflTrans_Transitive _ _ _ _ h1 h2, hd'⟩
+
 /-! ### ReflTransT decomposition helpers (for the loop fuel induction)
 
 These are pure structured-semantics facts about `StepStmt`/`ReflTransT` (the
@@ -742,6 +836,45 @@ theorem loop_nondet_step_first_inv {P : PureExpr} [HasFvar P] [HasBool P] [HasNo
       have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
       subst h_no
       exact .inr ⟨hrest, by simp only [ReflTransT.len]; omega⟩
+
+/-- Failing-config first-step inversion of a *nondeterministic* loop run reaching
+an arbitrary config `c` (with `c.getEnv.hasFailure = true`).  Same shape as
+`loop_nondet_step_first_inv` but keyed on a failing config rather than an
+outcome, with one extra disjunct for the *refl* run (the loop start is itself the
+failing config, forcing `ρ.hasFailure = true`): the run is either reflexive
+(no step taken, `ρ` already failing), or its first step is `step_loop_nondet_exit`
+(residual from `.terminal (ρ + false)`) or `step_loop_nondet_enter` (residual from
+`.seq (.block .none ρ.store (.stmts body (ρ + false))) [loop]`), with the
+residual carrying the failing config and a strict len-decrease. -/
+theorem loop_nondet_step_first_inv_fail {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {m : Option P.Expr}
+    {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    {ρ : Env P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (.loop .nondet m ([] : List (String × P.Expr)) body md) ρ) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ρ.hasFailure = true ∨
+    (∃ (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.terminal ({ ρ with hasFailure := ρ.hasFailure || false } : Env P)) c),
+      hrest.len < hstar.len) ∨
+    (∃ (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+        (.seq (.block .none ρ.store (.stmts body
+            ({ ρ with hasFailure := ρ.hasFailure || false } : Env P)))
+          [.loop .nondet m ([] : List (String × P.Expr)) body md]) c),
+      hrest.len < hstar.len) := by
+  match hstar with
+  | .refl _ =>
+    exact .inl (by simpa [Config.getEnv] using hc)
+  | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure _ hff_iff) hrest =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    subst h_no
+    exact .inr (.inl ⟨hrest, by simp only [ReflTransT.len]; omega⟩)
+  | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
+      hasInvFailure _ hff_iff) hrest =>
+    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
+    subst h_no
+    exact .inr (.inr ⟨hrest, by simp only [ReflTransT.len]; omega⟩)
 
 /-! ### Slot-definedness frame (the gen guard survives the rewritten body)
 
@@ -3437,5 +3570,1284 @@ theorem nondetElim_sound_kind_exit {P : PureExpr} [HasFvar P] [HasNot P]
     (Q := ndelimKind) ndelimKind_gen
     extendEval ss ρ₀ ρ'
     hwfb hwfv hwf_def hwf_congr hwf_var h_no_gen_suffix h_no_writes h_nofd h_lhni lbl h_exit
+
+/-! ## Failing-config forward simulation (`nondetElim_to_fail`)
+
+`nondetElim_simulation` and its kind/exit wrappers are *endpoint*-keyed: each
+consumes a source run reaching a terminal/exiting outcome.  A reachable *failing*
+configuration need not lie on such a run (an `assert` only OR-s the cumulative
+`hasFailure` flag and continues, so a failing run may diverge or get stuck).  The
+`_to_fail` siblings below remove the endpoint demand: a reachable failing source
+configuration is matched by a reachable failing configuration of
+`Block.nondetElim ss`, running both from the same start.
+
+The construction mirrors the terminal simulation but keys on the *failing
+configuration* as the halting condition.  Each statement / loop iteration that
+*completed before the failure* terminated, so the existing terminal simulation
+applies to it verbatim and advances the store relation; only the single statement
+/ iteration that *contains* the failure is transported by a bare failing-config
+reach (no terminal demand).  The loop arms induct on a `Nat` fuel bounding the
+*source* run length — finite because failure is monotone — never on the loop's
+termination. -/
+
+/-- Deterministic-loop failing-config iteration: from a source loop
+`.loop (.det e) m [] body md` reaching a failing config `a'`, build a failing run
+of the rewritten target loop `.loop (.det e) m [] body' md`.
+
+Inducts on a `Nat` fuel bounding the source run length (finite by failure
+monotonicity), NOT on the loop terminating.  Each COMPLETED iteration (case B)
+terminated at the body-block boundary — the loop re-entered it — so the terminal
+body simulation `h_body_sim` applies and advances `AgreeOffGen`/`GenFreshStore` to
+seed the next iteration at strictly smaller fuel.  The FAILING iteration (case A)
+is a partial body run to the failing command, discharged by the body-level
+failing provider `h_body_sim_fail` with NO terminal demand.  The guard-false
+(`step_loop_exit`) base case reaches a terminal whose failure flag equals
+`ρ_pre'.hasFailure`; if failing, the loop head is already a failing target config,
+so the loop terminating is never used. -/
+private theorem nondetElim_loop_det_to_fail_iteration {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (extendEval : ExtendEval P)
+    (e : P.Expr) (m : Option P.Expr)
+    (body body' : List (Stmt P (Cmd P))) (md : MetaData P)
+    (σ σ_out : StringGenState)
+    -- Terminal per-iteration body simulation (the existing simulation shape,
+    -- specialized to `body`/`body'`/`σ`), used for COMPLETED iterations.  Its
+    -- trailing freshness conjunct is at the (unused) advanced state `σ_out`.
+    (h_body_sim : ∀ (oc_b : Option String) (ρb_src ρb' ρb_tgt : Env P),
+      ρb_tgt.eval = ρb_src.eval →
+      ρb_tgt.hasFailure = ρb_src.hasFailure →
+      AgreeOffGen Q ρb_src.store ρb_tgt.store →
+      WellFormedSemanticEvalBool ρb_src.eval →
+      WellFormedSemanticEvalVal ρb_src.eval →
+      WellFormedSemanticEvalDef ρb_src.eval →
+      WellFormedSemanticEvalExprCongr ρb_src.eval →
+      WellFormedSemanticEvalVar ρb_src.eval →
+      StringGenState.WF σ →
+      (∀ t, Q t →
+        ρb_src.store (HasIdent.ident (P := P) t) = none) →
+      GenFreshStore Q σ ρb_tgt.store →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) (outcomeConfig oc_b ρb') →
+      (∀ t, Q t →
+          ρb'.store (HasIdent.ident (P := P) t) = none)
+        ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body' ρb_tgt) (outcomeConfig oc_b ρb_out)
+          ∧ AgreeOffGen Q ρb'.store ρb_out.store
+          ∧ ρb_out.hasFailure = ρb'.hasFailure
+          ∧ ρb_out.eval = ρb'.eval
+          ∧ GenFreshStore Q σ_out ρb_out.store)
+    -- Failing per-iteration body simulation, used for the FAILING iteration.
+    (h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
+      ρb_tgt.eval = ρb_src.eval →
+      ρb_tgt.hasFailure = ρb_src.hasFailure →
+      AgreeOffGen Q ρb_src.store ρb_tgt.store →
+      WellFormedSemanticEvalBool ρb_src.eval →
+      WellFormedSemanticEvalVal ρb_src.eval →
+      WellFormedSemanticEvalDef ρb_src.eval →
+      WellFormedSemanticEvalExprCongr ρb_src.eval →
+      WellFormedSemanticEvalVar ρb_src.eval →
+      StringGenState.WF σ →
+      (∀ t, Q t →
+        ρb_src.store (HasIdent.ident (P := P) t) = none) →
+      GenFreshStore Q σ ρb_tgt.store →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) d →
+      d.getEnv.hasFailure = true →
+      ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body' ρb_tgt) d'
+        ∧ d'.getEnv.hasFailure = true)
+    (h_nofd_body : Block.noFuncDecl body = true)
+    (ρ_src ρ_tgt : Env P) (a' : Config P (Cmd P)) (n : Nat)
+    (h_eval_eq : ρ_tgt.eval = ρ_src.eval)
+    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
+    (h_agree : AgreeOffGen Q ρ_src.store ρ_tgt.store)
+    (hwfb : WellFormedSemanticEvalBool ρ_src.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ_src.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ_src.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ_src.eval)
+    (h_wf_gen : StringGenState.WF σ)
+    (h_src_fresh : ∀ t, Q t →
+      ρ_src.store (HasIdent.ident (P := P) t) = none)
+    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (hT : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+      (.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body md) ρ_src) a')
+    (h_a'_fail : a'.getEnv.hasFailure = true)
+    (hlen : hT.len ≤ n) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt) d
+      ∧ d.getEnv.hasFailure = true := by
+  induction n generalizing ρ_src ρ_tgt a' with
+  | zero =>
+    match hT, hlen with
+    | .refl _, _ =>
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_a'_fail
+      exact ⟨.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    match hT, hlen with
+    | .refl _, _ =>
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv] using h_a'_fail
+      exact ⟨.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_false hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      -- EXIT: the loop terminates at `ρ_src + false`; the failing config must be
+      -- that terminal env, forcing `ρ_src.hasFailure = true` ⟹ the target loop
+      -- head is already failing.
+      have h_hif : hasInvFailure = false := empty_inv_no_failure hff_iff
+      subst h_hif
+      have ha''_eq : a' = .terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) :=
+        reflTransT_from_terminal P (EvalCmd P) extendEval hrest
+      rw [ha''_eq] at h_a'_fail
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
+      exact ⟨.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
+                    hasInvFailure hg_true hinv_eval hff_iff hwfb_step) hrest, hl_succ =>
+      have h_hif : hasInvFailure = false := empty_inv_no_failure hff_iff
+      subst h_hif
+      have h_body_init_eq :
+          ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) = ρ_src := by
+        simp [Bool.or_false]
+      -- Target reads guard tt (AgreeOffGen on the guard's source-defined vars).
+      have h_def_e : isDefined ρ_src.store (HasVarsPure.getVars e) :=
+        hwf_def e HasBool.tt ρ_src.store hg_true
+      have h_pw : ∀ x ∈ HasVarsPure.getVars e, ρ_src.store x = ρ_tgt.store x :=
+        agreeOffGen_pointwise_on_expr_vars ρ_src.store ρ_tgt.store e h_agree h_src_fresh h_def_e
+      have h_cond_t : ρ_tgt.eval ρ_tgt.store e = some HasBool.tt := by
+        rw [h_eval_eq, ← hg_true]; exact (hwf_congr e ρ_src.store ρ_tgt.store h_pw).symm
+      -- The target enters its loop: one step to the body-block context.
+      have h_step_enter : StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt)
+          (.seq (.block .none ρ_tgt.store (.stmts body'
+            ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+            [.loop (.det e) m ([] : List (String × P.Expr)) body' md]) :=
+        .step _ _ _ (StepStmt.step_loop_enter (hasInvFailure := false)
+          h_cond_t (by simp) (by simp) (h_eval_eq ▸ hwfb)) (.refl _)
+      rcases seqT_reaches_failing' P (EvalCmd P) extendEval hrest h_a'_fail with hA | hB
+      · -- CASE A: the failure is inside THIS iteration's body block.
+        obtain ⟨d_blk, h_blk_run, hd_blk_fail, _⟩ := hA
+        have ⟨d_body, h_body_run, hd_body_fail, _⟩ :=
+          blockT_none_reaches_failing' P (EvalCmd P) extendEval h_blk_run hd_blk_fail
+        rw [h_body_init_eq] at h_body_run
+        have ⟨d', h_body_tgt, hd'_fail⟩ :=
+          h_body_sim_fail ρ_src ρ_tgt d_body h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def
+            hwf_congr hwf_var h_wf_gen h_src_fresh h_tgt_fresh
+            (reflTransT_to_prop h_body_run) hd_body_fail
+        -- Lift the failing body' run into the body-block, reaching a failing config.
+        -- The body-block context starts at `ρ_tgt + false = ρ_tgt`; the lifted
+        -- block config `.block .none _ d'` keeps `d'`'s failure flag, as does the
+        -- enclosing `.seq _ [loop']` frame (both read `getEnv` from the inner).
+        have h_body_tgt' : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body' ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)) d' := by
+          have he : ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P) = ρ_tgt := by
+            simp [Bool.or_false]
+          rw [he]; exact h_body_tgt
+        have h_blk_tgt : StepStmtStar P (EvalCmd P) extendEval
+            (.block .none ρ_tgt.store (.stmts body'
+              ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+            (.block .none ρ_tgt.store d') :=
+          block_inner_star P (EvalCmd P) extendEval _ _ .none ρ_tgt.store h_body_tgt'
+        refine ⟨.seq (.block .none ρ_tgt.store d')
+          [.loop (.det e) m ([] : List (String × P.Expr)) body' md],
+          ReflTrans_Transitive _ _ _ _ h_step_enter
+            (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_blk_tgt), ?_⟩
+        simpa [Config.getEnv] using hd'_fail
+      · -- CASE B: this iteration's body terminated; recurse on the next iteration.
+        obtain ⟨ρ_blk_inner, d_rest, h_blk_term, h_loop_rest, hd_rest_fail, hlen_rest⟩ := hB
+        have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
+          blockT_none_reaches_terminal (extendEval := extendEval) h_blk_term
+        subst heq_ρ_block
+        rw [h_body_init_eq] at h_inner_term
+        have h_body_run : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body ρ_src) (outcomeConfig none ρ_inner) := reflTransT_to_prop h_inner_term
+        obtain ⟨h_inner_fresh, ρ_inner_tgt, h_body_tgt, h_off_inner, h_fail_inner,
+            h_eval_inner, h_fresh_inner⟩ :=
+          h_body_sim none ρ_src ρ_inner ρ_tgt h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def
+            hwf_congr hwf_var h_wf_gen h_src_fresh h_tgt_fresh h_body_run
+        -- The target body-block terminates at the projected env.
+        have h_blk_tgt_term : StepStmtStar P (EvalCmd P) extendEval
+            (.block .none ρ_tgt.store (.stmts body'
+              ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+            (.terminal ({ ρ_inner_tgt with store := projectStore ρ_tgt.store ρ_inner_tgt.store } : Env P)) := by
+          have h_body_tgt' : StepStmtStar P (EvalCmd P) extendEval
+              (.stmts body' ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P))
+              (.terminal ρ_inner_tgt) := by
+            have he : ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P) = ρ_tgt := by
+              simp [Bool.or_false]
+            rw [he]; simpa only [outcomeConfig] using h_body_tgt
+          refine ReflTrans_Transitive _ _ _ _
+            (block_inner_star P (EvalCmd P) extendEval _ _ .none ρ_tgt.store h_body_tgt') ?_
+          exact .step _ _ _ StepStmt.step_block_done (.refl _)
+        -- The target reaches `.stmts [loop'] (projected target env)` after this iteration.
+        have h_step_after_iter : StepStmtStar P (EvalCmd P) extendEval
+            (.stmt (.loop (.det e) m ([] : List (String × P.Expr)) body' md) ρ_tgt)
+            (.stmts [.loop (.det e) m ([] : List (String × P.Expr)) body' md]
+              ({ ρ_inner_tgt with store := projectStore ρ_tgt.store ρ_inner_tgt.store } : Env P)) :=
+          ReflTrans_Transitive _ _ _ _ h_step_enter
+            (ReflTrans_Transitive _ _ _ _
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_blk_tgt_term)
+              (.step _ _ _ StepStmt.step_seq_done (.refl _)))
+        -- Source next-iteration env (projected through ρ_src) = `ρ_blk_inner`, already
+        -- substituted; the target counterpart projects through `ρ_tgt`.
+        let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
+        let ρ_tgt_next : Env P := { ρ_inner_tgt with store := projectStore ρ_tgt.store ρ_inner_tgt.store }
+        -- WF-eval facts at ρ_src_next (eval = ρ_inner.eval = ρ_src.eval).
+        have h_eval_inner_src : ρ_inner.eval = ρ_src.eval :=
+          block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ_src ρ_inner h_nofd_body
+            (by simpa only [outcomeConfig] using h_body_run)
+        have h_eval_next : ρ_src_next.eval = ρ_src.eval := h_eval_inner_src
+        have hwfb_next : WellFormedSemanticEvalBool ρ_src_next.eval := by rw [h_eval_next]; exact hwfb
+        have hwfv_next : WellFormedSemanticEvalVal ρ_src_next.eval := by rw [h_eval_next]; exact hwfv
+        have hwf_def_next : WellFormedSemanticEvalDef ρ_src_next.eval := by rw [h_eval_next]; exact hwf_def
+        have hwf_congr_next : WellFormedSemanticEvalExprCongr ρ_src_next.eval := by rw [h_eval_next]; exact hwf_congr
+        have hwf_var_next : WellFormedSemanticEvalVar ρ_src_next.eval := by rw [h_eval_next]; exact hwf_var
+        have h_eval_eq_next : ρ_tgt_next.eval = ρ_src_next.eval := by
+          show ρ_inner_tgt.eval = ρ_inner.eval; exact h_eval_inner
+        have h_fail_eq_next : ρ_tgt_next.hasFailure = ρ_src_next.hasFailure := by
+          show ρ_inner_tgt.hasFailure = ρ_inner.hasFailure; exact h_fail_inner
+        have h_agree_next : AgreeOffGen Q ρ_src_next.store ρ_tgt_next.store := by
+          intro x h_nongen
+          show projectStore ρ_tgt.store ρ_inner_tgt.store x
+            = projectStore ρ_src.store ρ_inner.store x
+          show (if (ρ_tgt.store x).isSome then ρ_inner_tgt.store x else none)
+            = (if (ρ_src.store x).isSome then ρ_inner.store x else none)
+          rw [h_agree x h_nongen, h_off_inner x h_nongen]
+        have h_src_fresh_next : ∀ t, Q t →
+            ρ_src_next.store (HasIdent.ident (P := P) t) = none := by
+          intro t h_suf
+          show projectStore ρ_src.store ρ_inner.store (HasIdent.ident (P := P) t) = none
+          show (if (ρ_src.store (HasIdent.ident (P := P) t)).isSome
+              then ρ_inner.store (HasIdent.ident (P := P) t) else none) = none
+          by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
+          · rw [if_pos hp]; exact h_inner_fresh t h_suf
+          · rw [if_neg hp]
+        have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          intro s h_suf h_notin
+          show projectStore ρ_tgt.store ρ_inner_tgt.store (HasIdent.ident (P := P) s) = none
+          show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
+              then ρ_inner_tgt.store (HasIdent.ident (P := P) s) else none) = none
+          rw [h_tgt_fresh s h_suf h_notin]; rfl
+        -- Decompose the residual loop-tail run (`[loop]` singleton) for the IH.
+        have ⟨d_loop, h_loop_stmt, hd_loop_fail, hlen_loop⟩ :=
+          stmts_singleton_reaches_failing' P (EvalCmd P) extendEval h_loop_rest hd_rest_fail
+        have h_inner_le_n : h_loop_stmt.len ≤ n := by
+          simp only [ReflTransT.len] at hl_succ; omega
+        obtain ⟨d, h_run_recurse, hd_fail⟩ :=
+          ih ρ_src_next ρ_tgt_next d_loop h_eval_eq_next h_fail_eq_next h_agree_next
+            hwfb_next hwfv_next hwf_def_next hwf_congr_next hwf_var_next
+            h_src_fresh_next h_tgt_fresh_next h_loop_stmt hd_loop_fail h_inner_le_n
+        -- Lift the recursive `.stmt loop'` failing run into `.stmts [loop']`: the
+        -- residual `d` need not be terminal, so wrap it as `.seq d []` whose
+        -- `getEnv` (hence failure flag) is `d`'s.
+        have h_run_recurse_stmts : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts [.loop (.det e) m ([] : List (String × P.Expr)) body' md] ρ_tgt_next)
+            (.seq d ([] : List (Stmt P (Cmd P)))) :=
+          .step _ _ _ StepStmt.step_stmts_cons
+            (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_run_recurse)
+        refine ⟨.seq d ([] : List (Stmt P (Cmd P))),
+          ReflTrans_Transitive _ _ _ _ h_step_after_iter h_run_recurse_stmts, ?_⟩
+        simpa [Config.getEnv] using hd_fail
+
+/-- Nondeterministic-loop failing-config iteration: from a source loop
+`.loop .nondet m [] body md` reaching a failing config (via the first-decision
+disjunction `h_src_first`), build a failing run of the rewritten target
+deterministic loop `.loop (.det $g) m [] (body' ++ [havoc $g]) md`, where `$g` is
+the generated guard, `init`'d to match the first decision and re-havoced at each
+body tail to match the next decision.
+
+Inducts on the `Nat` fuel bounding the source run length.  The EXIT first step
+forces the source loop to terminate at `ρ_src + false`; the failing config is
+that terminal env, so `ρ_src.hasFailure = true` and the target loop head is
+already a failing config (the guard-false exit step is never needed).  The ENTER
+first step runs one body iteration: if the body itself fails (case A), the
+body-level failing provider supplies a failing `body'` run lifted into the loop
+body-block (the trailing havoc is never reached); otherwise (case B) the terminal
+body provider advances the iteration and the loop tail's first step
+(`loop_nondet_step_first_inv_fail`) selects the re-havoc value for the recursive
+call at strictly smaller fuel. -/
+private theorem nondetElim_loop_nondet_to_fail_iteration {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (extendEval : ExtendEval P)
+    (g : String) (m : Option P.Expr)
+    (body body' : List (Stmt P (Cmd P))) (md : MetaData P)
+    (σ σ_out : StringGenState)
+    (h_body_sim : ∀ (oc_b : Option String) (ρb_src ρb' ρb_tgt : Env P),
+      ρb_tgt.eval = ρb_src.eval →
+      ρb_tgt.hasFailure = ρb_src.hasFailure →
+      AgreeOffGen Q ρb_src.store ρb_tgt.store →
+      WellFormedSemanticEvalBool ρb_src.eval →
+      WellFormedSemanticEvalVal ρb_src.eval →
+      WellFormedSemanticEvalDef ρb_src.eval →
+      WellFormedSemanticEvalExprCongr ρb_src.eval →
+      WellFormedSemanticEvalVar ρb_src.eval →
+      StringGenState.WF σ →
+      (∀ t, Q t →
+        ρb_src.store (HasIdent.ident (P := P) t) = none) →
+      GenFreshStore Q σ ρb_tgt.store →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) (outcomeConfig oc_b ρb') →
+      (∀ t, Q t →
+          ρb'.store (HasIdent.ident (P := P) t) = none)
+        ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body' ρb_tgt) (outcomeConfig oc_b ρb_out)
+          ∧ AgreeOffGen Q ρb'.store ρb_out.store
+          ∧ ρb_out.hasFailure = ρb'.hasFailure
+          ∧ ρb_out.eval = ρb'.eval
+          ∧ GenFreshStore Q σ_out ρb_out.store)
+    (h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
+      ρb_tgt.eval = ρb_src.eval →
+      ρb_tgt.hasFailure = ρb_src.hasFailure →
+      AgreeOffGen Q ρb_src.store ρb_tgt.store →
+      WellFormedSemanticEvalBool ρb_src.eval →
+      WellFormedSemanticEvalVal ρb_src.eval →
+      WellFormedSemanticEvalDef ρb_src.eval →
+      WellFormedSemanticEvalExprCongr ρb_src.eval →
+      WellFormedSemanticEvalVar ρb_src.eval →
+      StringGenState.WF σ →
+      (∀ t, Q t →
+        ρb_src.store (HasIdent.ident (P := P) t) = none) →
+      GenFreshStore Q σ ρb_tgt.store →
+      StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) d →
+      d.getEnv.hasFailure = true →
+      ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body' ρb_tgt) d'
+        ∧ d'.getEnv.hasFailure = true)
+    (h_g_gen : Q g)
+    (h_nofd_body : Block.noFuncDecl body = true)
+    (ρ_src ρ_tgt : Env P) (a' : Config P (Cmd P)) (n : Nat)
+    (h_eval_eq : ρ_tgt.eval = ρ_src.eval)
+    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
+    (h_agree : AgreeOffGen Q ρ_src.store ρ_tgt.store)
+    (hwfb : WellFormedSemanticEvalBool ρ_src.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ_src.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ_src.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ_src.eval)
+    (h_wf_gen : StringGenState.WF σ)
+    (h_src_fresh : ∀ t, Q t →
+      ρ_src.store (HasIdent.ident (P := P) t) = none)
+    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (entering : Bool)
+    (h_guard_def : ρ_tgt.store (HasIdent.ident (P := P) g)
+      = some (if entering then HasBool.tt else HasBool.ff))
+    (h_a'_fail : a'.getEnv.hasFailure = true)
+    (h_src_first :
+      (entering = false ∧ ∃ (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+          (.terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P)) a'),
+        hrest.len ≤ n) ∨
+      (entering = true ∧ ∃ (hrest : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+          (.seq (.block .none ρ_src.store (.stmts body
+              ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P)))
+            [.loop .nondet m ([] : List (String × P.Expr)) body md]) a'),
+        hrest.len ≤ n)) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+          ([] : List (String × P.Expr))
+          (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt) d
+      ∧ d.getEnv.hasFailure = true := by
+  induction n generalizing ρ_src ρ_tgt a' entering with
+  | zero =>
+    rcases h_src_first with ⟨h_ent, hrest, hl⟩ | ⟨h_ent, hrest, hl⟩
+    · -- EXIT: terminal residual; failing forces `ρ_src.hasFailure = true`.
+      have ha'_eq : a' = .terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) :=
+        reflTransT_from_terminal P (EvalCmd P) extendEval hrest
+      rw [ha'_eq] at h_a'_fail
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
+      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+        ([] : List (String × P.Expr))
+        (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+    · -- ENTER with fuel 0: the residual is refl, so `a'` is the body-block entry
+      -- whose env is `ρ_src + false`; failing forces `ρ_src.hasFailure = true`.
+      subst h_ent
+      have ha'_eq : a' = .seq (.block .none ρ_src.store (.stmts body
+          ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P)))
+          [.loop .nondet m ([] : List (String × P.Expr)) body md] := by
+        match hrest, hl with
+        | .refl _, _ => rfl
+        | .step _ _ _ _ _, hl => simp only [ReflTransT.len] at hl; omega
+      rw [ha'_eq] at h_a'_fail
+      have : ρ_src.hasFailure = true := by
+        simpa [Config.getEnv, Bool.or_false] using h_a'_fail
+      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+        ([] : List (String × P.Expr))
+        (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+  | succ n ih =>
+    rcases h_src_first with ⟨h_ent, hrest, hl⟩ | ⟨h_ent, hrest, hl⟩
+    · -- EXIT: as in the `zero` case.
+      have ha'_eq : a' = .terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) :=
+        reflTransT_from_terminal P (EvalCmd P) extendEval hrest
+      rw [ha'_eq] at h_a'_fail
+      have : ρ_src.hasFailure = true := by simpa [Config.getEnv, Bool.or_false] using h_a'_fail
+      exact ⟨.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+        ([] : List (String × P.Expr))
+        (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt, .refl _,
+        by simpa [Config.getEnv] using (h_fail_eq.trans this)⟩
+    · -- ENTER: one body iteration, then recurse or finish.
+      subst h_ent
+      simp only [if_true] at h_guard_def
+      have h_guard_tt : ρ_tgt.eval ρ_tgt.store (HasFvar.mkFvar (HasIdent.ident (P := P) g))
+          = some HasBool.tt := by
+        have h := hwf_var (HasFvar.mkFvar (P := P) (HasIdent.ident (P := P) g))
+          (HasIdent.ident (P := P) g) ρ_tgt.store
+          (LawfulHasFvar.getFvar_mkFvar (HasIdent.ident (P := P) g))
+        rw [h_eval_eq, h, h_guard_def]
+      have hρ_src'_eq : ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P) = ρ_src := by
+        simp [Bool.or_false]
+      -- The target enters: one step to the body-block context.
+      have h_step_enter : StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+            ([] : List (String × P.Expr))
+            (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt)
+          (.seq (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+            ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+            [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m ([] : List (String × P.Expr))
+              (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md]) :=
+        .step _ _ _ (StepStmt.step_loop_enter (hasInvFailure := false)
+          h_guard_tt (by simp) (by simp) (h_eval_eq ▸ hwfb)) (.refl _)
+      have h_g_some_tgt : (ρ_tgt.store (HasIdent.ident (P := P) g)).isSome = true := by
+        rw [h_guard_def]; rfl
+      rcases seqT_reaches_failing' P (EvalCmd P) extendEval hrest h_a'_fail with hA | hB
+      · -- CASE A: failure inside THIS iteration's body block (before the havoc).
+        obtain ⟨d_blk, h_blk_run, hd_blk_fail, _⟩ := hA
+        have ⟨d_body, h_body_run, hd_body_fail, _⟩ :=
+          blockT_none_reaches_failing' P (EvalCmd P) extendEval h_blk_run hd_blk_fail
+        rw [hρ_src'_eq] at h_body_run
+        have ⟨d', h_body_tgt, hd'_fail⟩ :=
+          h_body_sim_fail ρ_src ρ_tgt d_body h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def
+            hwf_congr hwf_var h_wf_gen h_src_fresh h_tgt_fresh
+            (reflTransT_to_prop h_body_run) hd_body_fail
+        -- `body'` reaches a failing config ⟹ `body' ++ [havoc]` reaches one.
+        obtain ⟨d'', h_body_tail_fail, hd''_fail⟩ :=
+          stmts_prefix_failing_append P (EvalCmd P) extendEval
+            body' [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)] ρ_tgt d' h_body_tgt hd'_fail
+        have h_body_tail_fail' : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+              ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)) d'' := by
+          have he : ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P) = ρ_tgt := by
+            simp [Bool.or_false]
+          rw [he]; exact h_body_tail_fail
+        have h_blk_tgt : StepStmtStar P (EvalCmd P) extendEval
+            (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+              ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+            (.block .none ρ_tgt.store d'') :=
+          block_inner_star P (EvalCmd P) extendEval _ _ .none ρ_tgt.store h_body_tail_fail'
+        refine ⟨.seq (.block .none ρ_tgt.store d'')
+          [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m ([] : List (String × P.Expr))
+            (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md],
+          ReflTrans_Transitive _ _ _ _ h_step_enter
+            (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_blk_tgt), ?_⟩
+        simpa [Config.getEnv] using hd''_fail
+      · -- CASE B: this iteration's body terminated; recurse on the next iteration.
+        obtain ⟨ρ_blk_inner, d_rest, h_blk_term, h_loop_rest, hd_rest_fail, hlen_rest⟩ := hB
+        have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
+          blockT_none_reaches_terminal (extendEval := extendEval) h_blk_term
+        subst heq_ρ_block
+        rw [hρ_src'_eq] at h_inner_term
+        have h_body_run : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body ρ_src) (outcomeConfig none ρ_inner) := reflTransT_to_prop h_inner_term
+        obtain ⟨h_inner_fresh, ρ_inner_tgt, h_body_tgt, h_off_inner, h_fail_inner,
+            h_eval_inner, h_fresh_inner⟩ :=
+          h_body_sim none ρ_src ρ_inner ρ_tgt h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def
+            hwf_congr hwf_var h_wf_gen h_src_fresh h_tgt_fresh h_body_run
+        have h_eval_inner_src : ρ_inner.eval = ρ_src.eval :=
+          block_noFuncDecl_preserves_eval P (EvalCmd P) extendEval body ρ_src ρ_inner h_nofd_body
+            (by simpa only [outcomeConfig] using h_body_run)
+        -- The target body' terminates at ρ_inner_tgt; lift to the block context.
+        have h_body_tgt_term : StepStmtStar P (EvalCmd P) extendEval
+            (.stmts body' ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P))
+            (.terminal ρ_inner_tgt) := by
+          have he : ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P) = ρ_tgt := by
+            simp [Bool.or_false]
+          rw [he]; simpa only [outcomeConfig] using h_body_tgt
+        -- $g stays defined through body' (parent-defined slot survives the block).
+        have h_g_some_inner : (ρ_inner_tgt.store (HasIdent.ident (P := P) g)).isSome = true :=
+          stmts_preserves_isSome (extendEval := extendEval) h_body_tgt_term
+            (by simpa using h_g_some_tgt)
+        obtain ⟨v', hv'⟩ := Option.isSome_iff_exists.mp h_g_some_inner
+        have hwf_var_inner : WellFormedSemanticEvalVar ρ_inner_tgt.eval := by
+          rw [h_eval_inner, h_eval_inner_src]; exact hwf_var
+        -- Projected source next-iteration env (already substituted via `heq_ρ_block`).
+        let ρ_src_next : Env P := { ρ_inner with store := projectStore ρ_src.store ρ_inner.store }
+        -- Peel the residual loop-tail (`[loop]` singleton) to a `.stmt loop` run.
+        have ⟨d_loop, h_loop_stmt, hd_loop_fail, hlen_loop⟩ :=
+          stmts_singleton_reaches_failing' P (EvalCmd P) extendEval h_loop_rest hd_rest_fail
+        -- Re-havoc $g and assemble per chosen next-decision bool.  A unified
+        -- continuation: given the chosen re-havoc bool `next_ent` and the next
+        -- `h_src_first`, build the per-iteration block run (body' then havoc to
+        -- `next_ent`), the projected target env, the next-iteration agreements, then
+        -- recurse via `ih`.
+        have step_assemble : ∀ (next_ent : Bool),
+            (entering_next_src_first : (next_ent = false ∧ ∃ (hr : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                  (.terminal ({ ρ_src_next with hasFailure := ρ_src_next.hasFailure || false } : Env P)) d_loop),
+                hr.len ≤ n) ∨
+              (next_ent = true ∧ ∃ (hr : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+                  (.seq (.block .none ρ_src_next.store (.stmts body
+                      ({ ρ_src_next with hasFailure := ρ_src_next.hasFailure || false } : Env P)))
+                    [.loop .nondet m ([] : List (String × P.Expr)) body md]) d_loop),
+                hr.len ≤ n)) →
+            ∃ d, StepStmtStar P (EvalCmd P) extendEval
+                (.stmt (.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+                  ([] : List (String × P.Expr))
+                  (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md) ρ_tgt) d
+              ∧ d.getEnv.hasFailure = true := by
+          intro next_ent hsfirst_next
+          let bval : P.Expr := if next_ent then HasBool.tt else HasBool.ff
+          -- The body tail havoc sets $g := bval, terminating at the re-havoced env.
+          have h_tail : StepStmtStar P (EvalCmd P) extendEval
+              (.stmt (.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)) ρ_inner_tgt)
+              (.terminal ({ ρ_inner_tgt with store := storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval } : Env P)) :=
+            step_havoc_set_to (extendEval := extendEval) (HasIdent.ident (P := P) g) bval md ρ_inner_tgt v' hv'
+              hwf_var_inner
+          have h_body_tail : StepStmtStar P (EvalCmd P) extendEval
+              (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+                ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P))
+              (.terminal ({ ρ_inner_tgt with store := storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval } : Env P)) :=
+            ReflTrans_Transitive _ _ _ _
+              (stmts_prefix_terminal_append P (EvalCmd P) extendEval _ _ _ ρ_inner_tgt h_body_tgt_term)
+              (stmt_to_singleton_stmts (extendEval := extendEval) _ ρ_inner_tgt _ h_tail)
+          let ρ_tgt_next : Env P := { ρ_inner_tgt with store := projectStore ρ_tgt.store (storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval) }
+          have h_guard_next : ρ_tgt_next.store (HasIdent.ident (P := P) g)
+              = some (if next_ent then HasBool.tt else HasBool.ff) := by
+            show (if (ρ_tgt.store (HasIdent.ident (P := P) g)).isSome
+                then storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval
+                  (HasIdent.ident (P := P) g) else none) = some (if next_ent then HasBool.tt else HasBool.ff)
+            rw [if_pos h_g_some_tgt]; simp [storeWith, bval]
+          -- WF facts / agreements at the projected next envs.
+          have h_eval_next : ρ_src_next.eval = ρ_src.eval := h_eval_inner_src
+          have hwfb_next : WellFormedSemanticEvalBool ρ_src_next.eval := by rw [h_eval_next]; exact hwfb
+          have hwfv_next : WellFormedSemanticEvalVal ρ_src_next.eval := by rw [h_eval_next]; exact hwfv
+          have hwf_def_next : WellFormedSemanticEvalDef ρ_src_next.eval := by rw [h_eval_next]; exact hwf_def
+          have hwf_congr_next : WellFormedSemanticEvalExprCongr ρ_src_next.eval := by rw [h_eval_next]; exact hwf_congr
+          have hwf_var_next : WellFormedSemanticEvalVar ρ_src_next.eval := by rw [h_eval_next]; exact hwf_var
+          have h_eval_eq_next : ρ_tgt_next.eval = ρ_src_next.eval := by
+            show ρ_inner_tgt.eval = ρ_inner.eval; exact h_eval_inner
+          have h_fail_eq_next : ρ_tgt_next.hasFailure = ρ_src_next.hasFailure := by
+            show ρ_inner_tgt.hasFailure = ρ_inner.hasFailure; exact h_fail_inner
+          have h_agree_next : AgreeOffGen Q ρ_src_next.store ρ_tgt_next.store := by
+            intro x h_nongen
+            have h_x_ne : x ≠ HasIdent.ident (P := P) g := by
+              rintro rfl; exact (h_nongen g rfl) h_g_gen
+            show projectStore ρ_tgt.store
+                (storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval) x
+              = projectStore ρ_src.store ρ_inner.store x
+            show (if (ρ_tgt.store x).isSome then
+                (if x = HasIdent.ident (P := P) g then some bval else ρ_inner_tgt.store x)
+                else none)
+              = (if (ρ_src.store x).isSome then ρ_inner.store x else none)
+            rw [if_neg h_x_ne, h_agree x h_nongen, h_off_inner x h_nongen]
+          have h_src_fresh_next : ∀ t, Q t →
+              ρ_src_next.store (HasIdent.ident (P := P) t) = none := by
+            intro t h_suf
+            show (if (ρ_src.store (HasIdent.ident (P := P) t)).isSome
+                then ρ_inner.store (HasIdent.ident (P := P) t) else none) = none
+            by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
+            · rw [if_pos hp]; exact h_inner_fresh t h_suf
+            · rw [if_neg hp]
+          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+            intro s h_suf h_notin
+            show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
+                then storeWith ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval
+                  (HasIdent.ident (P := P) s) else none) = none
+            rw [h_tgt_fresh s h_suf h_notin]; rfl
+          obtain ⟨d, h_run_recurse, hd_fail⟩ :=
+            ih ρ_src_next ρ_tgt_next d_loop h_eval_eq_next h_fail_eq_next h_agree_next
+              hwfb_next hwfv_next hwf_def_next hwf_congr_next hwf_var_next
+              h_src_fresh_next h_tgt_fresh_next next_ent h_guard_next hd_loop_fail hsfirst_next
+          -- Assemble: enter (guard tt), block runs body'++[havoc], step_seq_done, recurse.
+          have h_block_run : StepStmtStar P (EvalCmd P) extendEval
+              (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+                ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+              (.terminal ρ_tgt_next) := by
+            refine ReflTrans_Transitive _ _ _ _
+              (block_inner_star P (EvalCmd P) extendEval _ _ .none ρ_tgt.store h_body_tail) ?_
+            exact .step _ _ _ StepStmt.step_block_done (.refl _)
+          -- The recursive `.stmt loop'` failing run wrapped into `.stmts [loop']`.
+          have h_run_recurse_stmts : StepStmtStar P (EvalCmd P) extendEval
+              (.stmts [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m
+                ([] : List (String × P.Expr))
+                (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md] ρ_tgt_next)
+              (.seq d ([] : List (Stmt P (Cmd P)))) :=
+            .step _ _ _ StepStmt.step_stmts_cons
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_run_recurse)
+          refine ⟨.seq d ([] : List (Stmt P (Cmd P))),
+            ReflTrans_Transitive _ _ _ _ h_step_enter
+              (ReflTrans_Transitive _ _ _ _
+                (ReflTrans_Transitive _ _ _ _
+                  (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_block_run)
+                  (.step _ _ _ StepStmt.step_seq_done (.refl _)))
+                h_run_recurse_stmts), ?_⟩
+          simpa [Config.getEnv] using hd_fail
+        -- Invert the peeled loop-tail's first step to pick the next re-havoc value.
+        rcases loop_nondet_step_first_inv_fail (extendEval := extendEval)
+            h_loop_stmt hd_loop_fail with
+          h_refl | ⟨hrest_next, hlen_next⟩ | ⟨hrest_next, hlen_next⟩
+        · -- LOOP TAIL is refl: the loop start (= this iteration's post-env) is itself
+          -- the failing config, so `ρ_inner.hasFailure = true`, hence `ρ_inner_tgt`
+          -- (the target body' terminal) is failing.  Running `body' ++ [havoc]` reaches
+          -- a failing config (the `body'` prefix already terminates failing); lift it
+          -- into the loop body-block — already failing, no recursion needed.
+          have h_inner_fail : ρ_inner.hasFailure = true := by
+            simpa [ρ_src_next, Config.getEnv] using h_refl
+          have h_inner_tgt_fail : ρ_inner_tgt.hasFailure = true := by
+            rw [h_fail_inner]; exact h_inner_fail
+          obtain ⟨d'', h_body_tail_fail, hd''_fail⟩ :=
+            stmts_prefix_failing_append P (EvalCmd P) extendEval
+              body' [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]
+              ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)
+              (.terminal ρ_inner_tgt) h_body_tgt_term
+              (by simpa [Config.getEnv] using h_inner_tgt_fail)
+          have h_blk_tgt : StepStmtStar P (EvalCmd P) extendEval
+              (.block .none ρ_tgt.store (.stmts (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)])
+                ({ ρ_tgt with hasFailure := ρ_tgt.hasFailure || false } : Env P)))
+              (.block .none ρ_tgt.store d'') :=
+            block_inner_star P (EvalCmd P) extendEval _ _ .none ρ_tgt.store h_body_tail_fail
+          refine ⟨.seq (.block .none ρ_tgt.store d'')
+            [.loop (.det (HasFvar.mkFvar (HasIdent.ident (P := P) g))) m ([] : List (String × P.Expr))
+              (body' ++ [.cmd (HasHavoc.havoc (HasIdent.ident (P := P) g) md)]) md],
+            ReflTrans_Transitive _ _ _ _ h_step_enter
+              (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_blk_tgt), ?_⟩
+          simpa [Config.getEnv] using hd''_fail
+        · -- NEXT = EXIT: re-havoc $g := ff, recurse with entering = false.
+          exact step_assemble false (.inl ⟨rfl, hrest_next, by omega⟩)
+        · -- NEXT = ENTER: re-havoc $g := tt, recurse with entering = true.
+          exact step_assemble true (.inr ⟨rfl, hrest_next, by omega⟩)
+
+mutual
+/-- Statement-level failing-config simulation (the `_to_fail` analogue of
+`nondetElim_stmt_gen`): a failing source run of a single statement `s` is matched
+by a failing run of the rewritten block `(Stmt.nondetElimM s σ).1`.  Each nested
+structure (block body, `ite` branch, loop body) recurses through the list-level
+`_to_fail`; completed iterations of a loop use the *terminal* simulation, the
+failing iteration uses this `_to_fail` recursion. -/
+private theorem nondetElim_stmt_to_fail_gen {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (extendEval : ExtendEval P)
+    (s : Stmt P (Cmd P)) (σ : StringGenState)
+    (ρ_src ρ_tgt : Env P) (c : Config P (Cmd P))
+    (h_eval_eq : ρ_tgt.eval = ρ_src.eval)
+    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
+    (h_agree : AgreeOffGen Q ρ_src.store ρ_tgt.store)
+    (hwfb : WellFormedSemanticEvalBool ρ_src.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ_src.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ_src.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ_src.eval)
+    (h_wf_gen : StringGenState.WF σ)
+    (h_src_fresh : ∀ t, Q t →
+      ρ_src.store (HasIdent.ident (P := P) t) = none)
+    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_no_writes : NoGenSuffix (P := P) Q (Stmt.definedVars s ++ Stmt.modifiedVars s))
+    (h_nofd : Stmt.noFuncDecl s = true)
+    (h_lhni : Stmt.loopHasNoInvariants s = true)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ_src) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Stmt.nondetElimM s σ).1 ρ_tgt) d
+      ∧ d.getEnv.hasFailure = true := by
+  -- Shortcut: if the source is already failing, the target start config (its
+  -- `getEnv` is `ρ_tgt`, failing by the failure-flag agreement) is itself a failing
+  -- reachable config (refl).  This handles the refl source-run and every base case.
+  by_cases h_ρsrc_fail : ρ_src.hasFailure = true
+  · exact ⟨.stmts (Stmt.nondetElimM s σ).1 ρ_tgt, .refl _,
+      by simpa [Config.getEnv] using (h_fail_eq.trans h_ρsrc_fail)⟩
+  have h_ρsrc_nofail : ρ_src.hasFailure = false := by simpa using h_ρsrc_fail
+  match s, h_no_writes, h_nofd, h_lhni, h_reach with
+  | .cmd c0, h_no_writes, _, _, h_reach =>
+    -- `.cmd c0` reaches only `.terminal`; with `ρ_src` clean the failure appears at
+    -- the post-command terminal `ρ_mid`.  Replay `c0` on the agreeing target store to
+    -- a terminal carrying the same (true) failure flag.
+    have h_no_writes_c : NoGenSuffix (P := P) Q (Cmd.definedVars c0 ++ Cmd.modifiedVars c0) := by
+      have h_dv : Stmt.definedVars (P := P) (.cmd c0) = Cmd.definedVars c0 := by with_unfolding_all rfl
+      have h_mv : Stmt.modifiedVars (P := P) (.cmd c0) = Cmd.modifiedVars c0 := by with_unfolding_all rfl
+      rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
+    -- The clean source forces a genuine step; the post-env is the failing terminal.
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    cases hstep with
+    | step_cmd hcmd =>
+      rename_i σ' hasAssertFailure
+      -- The post-command terminal env is the failing `c`.
+      have h_c_eq := reflTransT_from_terminal P (EvalCmd P) extendEval (reflTrans_to_T hrest)
+      have h_mid_fail :
+          ({ ρ_src with store := σ', hasFailure := ρ_src.hasFailure || hasAssertFailure } : Env P).hasFailure
+          = true := by rw [h_c_eq] at h_c_fail; simpa [Config.getEnv] using h_c_fail
+      have h_term_src : StepStmtStar P (EvalCmd P) extendEval (.stmt (.cmd c0) ρ_src)
+          (.terminal ({ ρ_src with store := σ', hasFailure := ρ_src.hasFailure || hasAssertFailure } : Env P)) :=
+        .step _ _ _ (StepStmt.step_cmd hcmd) (.refl _)
+      obtain ⟨_, ρ_tgt', h_run, _, h_fail', _, _⟩ :=
+        cmd_replay_agreement_offgen extendEval c0 ρ_src
+          ({ ρ_src with store := σ', hasFailure := ρ_src.hasFailure || hasAssertFailure } : Env P) ρ_tgt σ
+          h_eval_eq h_fail_eq h_agree hwf_def hwf_congr h_src_fresh h_tgt_fresh
+          h_no_writes_c h_term_src
+      refine ⟨.terminal ρ_tgt', ?_, by simpa [Config.getEnv, h_fail'] using h_mid_fail⟩
+      simp only [Stmt.nondetElimM]
+      exact stmt_to_singleton_stmts (extendEval := extendEval) (.cmd c0) ρ_tgt ρ_tgt' h_run
+  | .block lbl bss md, h_no_writes, h_nofd, h_lhni, h_reach =>
+    -- `.block`: the failure is inside the body `bss`; recurse on `bss` via the
+    -- list-level `_to_fail`, then wrap the failing inner config in the block frame.
+    have h_dv : Stmt.definedVars (P := P) (.block lbl bss md) = Block.definedVars bss := by
+      with_unfolding_all rfl
+    have h_mv : Stmt.modifiedVars (P := P) (.block lbl bss md) = Block.modifiedVars bss := by
+      with_unfolding_all rfl
+    have h_no_writes_bss : SrcNoGenWrites (P := P) Q bss := by
+      show NoGenSuffix (P := P) Q (Block.definedVars bss ++ Block.modifiedVars bss)
+      rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
+    have h_nofd_bss : Block.noFuncDecl bss = true := by simpa only [Stmt.noFuncDecl] using h_nofd
+    have h_lhni_bss : Block.loopHasNoInvariants bss = true := Stmt.loopHasNoInvariants_block_body h_lhni
+    -- Source: step into the block context, then the inner body reaches a failing config.
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    cases hstep with
+    | step_block =>
+      have ⟨d_body, h_body_run, hd_body_fail⟩ :=
+        block_reaches_failing' P (EvalCmd P) extendEval hrest h_c_fail
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval bss σ ρ_src ρ_tgt d_body
+          h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf_gen h_src_fresh h_tgt_fresh h_no_writes_bss h_nofd_bss h_lhni_bss
+          h_body_run hd_body_fail
+      -- Target: step into the block over `(Block.nondetElimM bss σ).1`, lift the inner
+      -- failing run, wrap as the block then seq config (each reads `getEnv` from the
+      -- inner failing config).
+      rw [Stmt.nondetElimM_block_out]
+      have h_block_stmt : StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.block lbl (Block.nondetElimM bss σ).1 md) ρ_tgt)
+          (.block (some lbl) ρ_tgt.store d_tgt) :=
+        .step _ _ _ StepStmt.step_block
+          (block_inner_star P (EvalCmd P) extendEval _ _ (some lbl) ρ_tgt.store h_run_tgt)
+      exact stmt_to_singleton_stmts_fail (extendEval := extendEval)
+        (.block lbl (Block.nondetElimM bss σ).1 md) ρ_tgt
+        (.block (some lbl) ρ_tgt.store d_tgt) h_block_stmt
+        (by simpa [Config.getEnv] using hd_tgt_fail)
+  | .ite (.det e) tss ess md, h_no_writes, h_nofd, h_lhni, h_reach =>
+    -- `.ite (.det e)`: the guard reads the same value in the target; the failure is
+    -- in the taken branch; recurse on it via the list-level `_to_fail`.
+    have h_dv : Stmt.definedVars (P := P) (.ite (.det e) tss ess md)
+        = Block.definedVars tss ++ Block.definedVars ess := rfl
+    have h_mv : Stmt.modifiedVars (P := P) (.ite (.det e) tss ess md)
+        = Block.modifiedVars tss ++ Block.modifiedVars ess := rfl
+    have h_nofd' : Block.noFuncDecl tss = true ∧ Block.noFuncDecl ess = true := by
+      have : (Block.noFuncDecl tss && Block.noFuncDecl ess) = true := by
+        simpa only [Stmt.noFuncDecl] using h_nofd
+      exact Bool.and_eq_true _ _ |>.mp this
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.eval := h_eval_eq ▸ hwf_var
+    cases hstep with
+    | step_ite_true h_cond hwfb_s =>
+      have h_no_writes_t : SrcNoGenWrites (P := P) Q tss := by
+        intro x hx t heq
+        rcases List.mem_append.mp hx with hd | hm
+        · exact h_no_writes x (by rw [h_dv]; exact List.mem_append_left _ (List.mem_append_left _ hd)) t heq
+        · exact h_no_writes x (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_left _ hm)) t heq
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval tss σ ρ_src ρ_tgt c
+          h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf_gen h_src_fresh h_tgt_fresh h_no_writes_t h_nofd'.1
+          (Stmt.loopHasNoInvariants_branch_then h_lhni) hrest h_c_fail
+      have h_def_e : isDefined ρ_src.store (HasVarsPure.getVars e) :=
+        hwf_def e HasBool.tt ρ_src.store h_cond
+      have h_pw : ∀ x ∈ HasVarsPure.getVars e, ρ_src.store x = ρ_tgt.store x :=
+        agreeOffGen_pointwise_on_expr_vars ρ_src.store ρ_tgt.store e h_agree h_src_fresh h_def_e
+      have h_cond_t : ρ_tgt.eval ρ_tgt.store e = some HasBool.tt := by
+        rw [h_eval_eq, ← h_cond]; exact (hwf_congr e ρ_src.store ρ_tgt.store h_pw).symm
+      rw [Stmt.nondetElimM_ite_det_out]
+      refine ⟨.seq d_tgt [], ?_, by simpa [Config.getEnv] using hd_tgt_fail⟩
+      refine .step _ _ _ StepStmt.step_stmts_cons ?_
+      exact seq_inner_star P (EvalCmd P) extendEval _ _ []
+        (.step _ _ _ (StepStmt.step_ite_true h_cond_t (h_eval_eq ▸ hwfb)) h_run_tgt)
+    | step_ite_false h_cond hwfb_s =>
+      have h_no_writes_e : SrcNoGenWrites (P := P) Q ess := by
+        intro x hx t heq
+        rcases List.mem_append.mp hx with hd | hm
+        · exact h_no_writes x (by rw [h_dv]; exact List.mem_append_left _ (List.mem_append_right _ hd)) t heq
+        · exact h_no_writes x (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_right _ hm)) t heq
+      have h_wf₁ : StringGenState.WF (Block.nondetElimM tss σ).2 :=
+        (Block.nondetElimM_genStep tss σ).wf_mono h_wf_gen
+      have h_tgt_fresh₁ : GenFreshStore Q (Block.nondetElimM tss σ).2 ρ_tgt.store :=
+        GenFreshStore.mono (Block.nondetElimM_genStep tss σ) h_tgt_fresh
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval ess (Block.nondetElimM tss σ).2 ρ_src ρ_tgt c
+          h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf₁ h_src_fresh h_tgt_fresh₁ h_no_writes_e h_nofd'.2
+          (Stmt.loopHasNoInvariants_branch_else h_lhni) hrest h_c_fail
+      have h_def_e : isDefined ρ_src.store (HasVarsPure.getVars e) :=
+        hwf_def e HasBool.ff ρ_src.store h_cond
+      have h_pw : ∀ x ∈ HasVarsPure.getVars e, ρ_src.store x = ρ_tgt.store x :=
+        agreeOffGen_pointwise_on_expr_vars ρ_src.store ρ_tgt.store e h_agree h_src_fresh h_def_e
+      have h_cond_t : ρ_tgt.eval ρ_tgt.store e = some HasBool.ff := by
+        rw [h_eval_eq, ← h_cond]; exact (hwf_congr e ρ_src.store ρ_tgt.store h_pw).symm
+      rw [Stmt.nondetElimM_ite_det_out]
+      refine ⟨.seq d_tgt [], ?_, by simpa [Config.getEnv] using hd_tgt_fail⟩
+      refine .step _ _ _ StepStmt.step_stmts_cons ?_
+      exact seq_inner_star P (EvalCmd P) extendEval _ _ []
+        (.step _ _ _ (StepStmt.step_ite_false h_cond_t (h_eval_eq ▸ hwfb)) h_run_tgt)
+  | .ite .nondet tss ess md, h_no_writes, h_nofd, h_lhni, h_reach =>
+    -- `.ite .nondet`: generated guard `$g`; the taken branch fails; recurse with the
+    -- matching havoc value, then drive the emitted `init $g; ite $g` prefix.
+    rcases hgen : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
+    have h_g_gen : Q g := by have := hQmint.1 σ; rw [hgen] at this; exact this
+    have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
+      have := GenFreshStore.gen_slot_none ndelimItePrefix h_tgt_fresh h_wf_gen (hQmint.1 σ)
+      rw [hgen] at this; exact this
+    have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.eval := h_eval_eq ▸ hwf_var
+    have hwfb_t : WellFormedSemanticEvalBool ρ_tgt.eval := h_eval_eq ▸ hwfb
+    have h_step01 : StringGenState.GenStep σ σ₁ := by
+      have := StringGenState.GenStep.of_gen ndelimItePrefix σ; rw [hgen] at this; exact this
+    have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
+    have h_dv : Stmt.definedVars (P := P) (.ite .nondet tss ess md)
+        = Block.definedVars tss ++ Block.definedVars ess := rfl
+    have h_mv : Stmt.modifiedVars (P := P) (.ite .nondet tss ess md)
+        = Block.modifiedVars tss ++ Block.modifiedVars ess := rfl
+    have h_nofd' : Block.noFuncDecl tss = true ∧ Block.noFuncDecl ess = true := by
+      have : (Block.noFuncDecl tss && Block.noFuncDecl ess) = true := by
+        simpa only [Stmt.noFuncDecl] using h_nofd
+      exact Bool.and_eq_true _ _ |>.mp this
+    have h_no_writes_t : SrcNoGenWrites (P := P) Q tss := by
+      intro x hx t heq
+      rcases List.mem_append.mp hx with hd | hm
+      · exact h_no_writes x (by rw [h_dv]; exact List.mem_append_left _ (List.mem_append_left _ hd)) t heq
+      · exact h_no_writes x (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_left _ hm)) t heq
+    have h_no_writes_e : SrcNoGenWrites (P := P) Q ess := by
+      intro x hx t heq
+      rcases List.mem_append.mp hx with hd | hm
+      · exact h_no_writes x (by rw [h_dv]; exact List.mem_append_left _ (List.mem_append_right _ hd)) t heq
+      · exact h_no_writes x (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_right _ hm)) t heq
+    -- Invert the source nondet-ite to the failing branch.
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    cases hstep with
+    | step_ite_nondet_true =>
+      -- True branch fired: choose havoc value tt.
+      have h_off_g : AgreeOffGen Q ρ_src.store
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) :=
+        AgreeOffGen.storeWith_gen h_agree h_g_gen
+      have h_fresh_g : GenFreshStore Q σ₁
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) := by
+        have := GenFreshStore.storeWith_gen (P := P) ndelimItePrefix HasBool.tt h_tgt_fresh
+        rw [hgen] at this; exact this
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval tss σ₁
+          ρ_src ({ ρ_tgt with store := storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt } : Env P) c
+          h_eval_eq h_fail_eq h_off_g hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf₁ h_src_fresh h_fresh_g h_no_writes_t h_nofd'.1
+          (Stmt.loopHasNoInvariants_branch_then h_lhni) hrest h_c_fail
+      rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
+      exact step_ndelim_ite_prefix_fail_true (extendEval := extendEval) (HasIdent.ident (P := P) g)
+        (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
+        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwfb_t h_run_tgt hd_tgt_fail
+    | step_ite_nondet_false =>
+      have h_step12 : StringGenState.GenStep σ₁ (Block.nondetElimM tss σ₁).2 :=
+        Block.nondetElimM_genStep tss σ₁
+      have h_wf₂ : StringGenState.WF (Block.nondetElimM tss σ₁).2 := h_step12.wf_mono h_wf₁
+      have h_off_g : AgreeOffGen Q ρ_src.store
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
+        AgreeOffGen.storeWith_gen h_agree h_g_gen
+      have h_fresh_g1 : GenFreshStore Q σ₁
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) := by
+        have := GenFreshStore.storeWith_gen (P := P) ndelimItePrefix HasBool.ff h_tgt_fresh
+        rw [hgen] at this; exact this
+      have h_fresh_g : GenFreshStore Q (Block.nondetElimM tss σ₁).2
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
+        GenFreshStore.mono h_step12 h_fresh_g1
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval ess (Block.nondetElimM tss σ₁).2
+          ρ_src ({ ρ_tgt with store := storeWith ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff } : Env P) c
+          h_eval_eq h_fail_eq h_off_g hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf₂ h_src_fresh h_fresh_g h_no_writes_e h_nofd'.2
+          (Stmt.loopHasNoInvariants_branch_else h_lhni) hrest h_c_fail
+      rw [Stmt.nondetElimM_ite_nondet_out]; simp only [hgen]
+      exact step_ndelim_ite_prefix_fail_false (extendEval := extendEval) (HasIdent.ident (P := P) g)
+        (Block.nondetElimM tss σ₁).1 (Block.nondetElimM ess (Block.nondetElimM tss σ₁).2).1 md
+        ρ_tgt d_tgt h_tgt_g_none hwf_var_t hwfb_t h_run_tgt hd_tgt_fail
+  | .loop (.det e) m inv body md, h_no_writes, h_nofd, h_lhni, h_reach =>
+    have h_inv_nil : inv = [] := Stmt.loopHasNoInvariants_loop_invs h_lhni
+    subst h_inv_nil
+    have h_lhni_body : Block.loopHasNoInvariants body = true :=
+      Stmt.loopHasNoInvariants_loop_body_rec h_lhni
+    have h_nofd_body : Block.noFuncDecl body = true := by simpa only [Stmt.noFuncDecl] using h_nofd
+    have h_no_writes_body : SrcNoGenWrites (P := P) Q body := by
+      have h_dv : Stmt.definedVars (P := P) (.loop (.det e) m ([] : List (String × P.Expr)) body md)
+          = Block.definedVars body := rfl
+      have h_mv : Stmt.modifiedVars (P := P) (.loop (.det e) m ([] : List (String × P.Expr)) body md)
+          = Block.modifiedVars body := rfl
+      show NoGenSuffix (P := P) Q (Block.definedVars body ++ Block.modifiedVars body)
+      rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
+    have h_body_sim : ∀ (oc_b : Option String) (ρb_src ρb' ρb_tgt : Env P),
+        ρb_tgt.eval = ρb_src.eval → ρb_tgt.hasFailure = ρb_src.hasFailure →
+        AgreeOffGen Q ρb_src.store ρb_tgt.store →
+        WellFormedSemanticEvalBool ρb_src.eval → WellFormedSemanticEvalVal ρb_src.eval →
+        WellFormedSemanticEvalDef ρb_src.eval → WellFormedSemanticEvalExprCongr ρb_src.eval →
+        WellFormedSemanticEvalVar ρb_src.eval → StringGenState.WF σ →
+        (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
+        GenFreshStore Q σ ρb_tgt.store →
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) (outcomeConfig oc_b ρb') →
+        (∀ t, Q t → ρb'.store (HasIdent.ident (P := P) t) = none)
+          ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P) extendEval
+              (.stmts (Block.nondetElimM body σ).1 ρb_tgt) (outcomeConfig oc_b ρb_out)
+            ∧ AgreeOffGen Q ρb'.store ρb_out.store ∧ ρb_out.hasFailure = ρb'.hasFailure
+            ∧ ρb_out.eval = ρb'.eval ∧ GenFreshStore Q (Block.nondetElimM body σ).2 ρb_out.store :=
+      fun oc_b ρb_src ρb' ρb_tgt h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf hrun =>
+        nondetElim_simulation_gen hQmint extendEval body σ ρb_src ρb' ρb_tgt
+          h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf
+          h_no_writes_body h_nofd_body h_lhni_body oc_b hrun
+    have h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
+        ρb_tgt.eval = ρb_src.eval → ρb_tgt.hasFailure = ρb_src.hasFailure →
+        AgreeOffGen Q ρb_src.store ρb_tgt.store →
+        WellFormedSemanticEvalBool ρb_src.eval → WellFormedSemanticEvalVal ρb_src.eval →
+        WellFormedSemanticEvalDef ρb_src.eval → WellFormedSemanticEvalExprCongr ρb_src.eval →
+        WellFormedSemanticEvalVar ρb_src.eval → StringGenState.WF σ →
+        (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
+        GenFreshStore Q σ ρb_tgt.store →
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) d → d.getEnv.hasFailure = true →
+        ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts (Block.nondetElimM body σ).1 ρb_tgt) d'
+          ∧ d'.getEnv.hasFailure = true :=
+      fun ρb_src ρb_tgt d h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf hrun hdfail =>
+        nondetElim_to_fail_gen hQmint extendEval body σ ρb_src ρb_tgt d
+          h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf
+          h_no_writes_body h_nofd_body h_lhni_body hrun hdfail
+    obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+      nondetElim_loop_det_to_fail_iteration extendEval e m body (Block.nondetElimM body σ).1 md σ
+        (Block.nondetElimM body σ).2
+        h_body_sim h_body_sim_fail h_nofd_body ρ_src ρ_tgt c (reflTrans_to_T h_reach).len
+        h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+        h_wf_gen h_src_fresh h_tgt_fresh (reflTrans_to_T h_reach) h_c_fail (Nat.le_refl _)
+    rw [Stmt.nondetElimM_loop_det_out]
+    refine ⟨.seq d_tgt [], ?_, by simpa [Config.getEnv] using hd_tgt_fail⟩
+    refine .step _ _ _ StepStmt.step_stmts_cons ?_
+    exact seq_inner_star P (EvalCmd P) extendEval _ _ [] h_run_tgt
+  | .loop .nondet m inv body md, h_no_writes, h_nofd, h_lhni, h_reach =>
+    have h_inv_nil : inv = [] := Stmt.loopHasNoInvariants_loop_invs h_lhni
+    subst h_inv_nil
+    have h_lhni_body : Block.loopHasNoInvariants body = true :=
+      Stmt.loopHasNoInvariants_loop_body_rec h_lhni
+    have h_nofd_body : Block.noFuncDecl body = true := by simpa only [Stmt.noFuncDecl] using h_nofd
+    have h_no_writes_body : SrcNoGenWrites (P := P) Q body := by
+      have h_dv : Stmt.definedVars (P := P) (.loop .nondet m ([] : List (String × P.Expr)) body md)
+          = Block.definedVars body := rfl
+      have h_mv : Stmt.modifiedVars (P := P) (.loop .nondet m ([] : List (String × P.Expr)) body md)
+          = Block.modifiedVars body := rfl
+      show NoGenSuffix (P := P) Q (Block.definedVars body ++ Block.modifiedVars body)
+      rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
+    rcases hgen : StringGenState.gen ndelimLoopPrefix σ with ⟨g, σ₁⟩
+    have h_g_gen : Q g := by have := hQmint.2 σ; rw [hgen] at this; exact this
+    have h_step01 : StringGenState.GenStep σ σ₁ := by
+      have := StringGenState.GenStep.of_gen ndelimLoopPrefix σ; rw [hgen] at this; exact this
+    have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
+    have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
+      have := GenFreshStore.gen_slot_none ndelimLoopPrefix h_tgt_fresh h_wf_gen (hQmint.2 σ)
+      rw [hgen] at this; exact this
+    have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.eval := h_eval_eq ▸ hwf_var
+    have h_body_sim : ∀ (oc_b : Option String) (ρb_src ρb' ρb_tgt : Env P),
+        ρb_tgt.eval = ρb_src.eval → ρb_tgt.hasFailure = ρb_src.hasFailure →
+        AgreeOffGen Q ρb_src.store ρb_tgt.store →
+        WellFormedSemanticEvalBool ρb_src.eval → WellFormedSemanticEvalVal ρb_src.eval →
+        WellFormedSemanticEvalDef ρb_src.eval → WellFormedSemanticEvalExprCongr ρb_src.eval →
+        WellFormedSemanticEvalVar ρb_src.eval → StringGenState.WF σ₁ →
+        (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
+        GenFreshStore Q σ₁ ρb_tgt.store →
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) (outcomeConfig oc_b ρb') →
+        (∀ t, Q t → ρb'.store (HasIdent.ident (P := P) t) = none)
+          ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P) extendEval
+              (.stmts (Block.nondetElimM body σ₁).1 ρb_tgt) (outcomeConfig oc_b ρb_out)
+            ∧ AgreeOffGen Q ρb'.store ρb_out.store ∧ ρb_out.hasFailure = ρb'.hasFailure
+            ∧ ρb_out.eval = ρb'.eval ∧ GenFreshStore Q (Block.nondetElimM body σ₁).2 ρb_out.store :=
+      fun oc_b ρb_src ρb' ρb_tgt h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf hrun =>
+        nondetElim_simulation_gen hQmint extendEval body σ₁ ρb_src ρb' ρb_tgt
+          h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf
+          h_no_writes_body h_nofd_body h_lhni_body oc_b hrun
+    have h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
+        ρb_tgt.eval = ρb_src.eval → ρb_tgt.hasFailure = ρb_src.hasFailure →
+        AgreeOffGen Q ρb_src.store ρb_tgt.store →
+        WellFormedSemanticEvalBool ρb_src.eval → WellFormedSemanticEvalVal ρb_src.eval →
+        WellFormedSemanticEvalDef ρb_src.eval → WellFormedSemanticEvalExprCongr ρb_src.eval →
+        WellFormedSemanticEvalVar ρb_src.eval → StringGenState.WF σ₁ →
+        (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
+        GenFreshStore Q σ₁ ρb_tgt.store →
+        StepStmtStar P (EvalCmd P) extendEval (.stmts body ρb_src) d → d.getEnv.hasFailure = true →
+        ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts (Block.nondetElimM body σ₁).1 ρb_tgt) d'
+          ∧ d'.getEnv.hasFailure = true :=
+      fun ρb_src ρb_tgt d h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf hrun hdfail =>
+        nondetElim_to_fail_gen hQmint extendEval body σ₁ ρb_src ρb_tgt d
+          h_ev h_fl h_ag hb hv hd hc hvar hwfg hsf htf
+          h_no_writes_body h_nofd_body h_lhni_body hrun hdfail
+    -- Invert the source loop's first decision to seed the iteration (the start
+    -- env `ρ_tgt + (g↦b)` matches the first enter/exit choice), then drive the
+    -- iteration to a failing target loop config and prepend the `init $g := *` step.
+    have hstarT := reflTrans_to_T h_reach
+    have h_finish : ∀ (entering : Bool) (b : P.Expr)
+        (_h_b : b = (if entering then HasBool.tt else HasBool.ff))
+        (h_first :
+          (entering = false ∧ ∃ (hr : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.terminal ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P)) c),
+            hr.len ≤ hstarT.len) ∨
+          (entering = true ∧ ∃ (hr : ReflTransT (StepStmt P (EvalCmd P) extendEval)
+              (.seq (.block .none ρ_src.store (.stmts body
+                  ({ ρ_src with hasFailure := ρ_src.hasFailure || false } : Env P)))
+                [.loop .nondet m ([] : List (String × P.Expr)) body md]) c),
+            hr.len ≤ hstarT.len)),
+        ∃ d, StepStmtStar P (EvalCmd P) extendEval
+            (.stmts (Stmt.nondetElimM (.loop .nondet m ([] : List (String × P.Expr)) body md) σ).1 ρ_tgt) d
+          ∧ d.getEnv.hasFailure = true := by
+      intro entering b h_b h_first
+      have h_off_g : AgreeOffGen Q ρ_src.store
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) b) :=
+        AgreeOffGen.storeWith_gen h_agree h_g_gen
+      have h_fresh_g : GenFreshStore Q σ₁
+          (storeWith ρ_tgt.store (HasIdent.ident (P := P) g) b) := by
+        have := GenFreshStore.storeWith_gen (P := P) ndelimLoopPrefix b h_tgt_fresh
+        rw [hgen] at this; exact this
+      have h_guard_def : (({ ρ_tgt with store := storeWith ρ_tgt.store (HasIdent.ident (P := P) g) b } : Env P).store)
+          (HasIdent.ident (P := P) g) = some (if entering then HasBool.tt else HasBool.ff) := by
+        subst h_b; simp [storeWith]
+      obtain ⟨d_tgt, h_loop_run, hd_tgt_fail⟩ :=
+        nondetElim_loop_nondet_to_fail_iteration extendEval g m body (Block.nondetElimM body σ₁).1 md σ₁
+          (Block.nondetElimM body σ₁).2
+          h_body_sim h_body_sim_fail h_g_gen h_nofd_body ρ_src
+          ({ ρ_tgt with store := storeWith ρ_tgt.store (HasIdent.ident (P := P) g) b } : Env P)
+          c hstarT.len h_eval_eq h_fail_eq h_off_g hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf₁ h_src_fresh h_fresh_g entering h_guard_def h_c_fail h_first
+      -- Prepend `init $g := *` (choosing value `b`), then the loop run.
+      rw [Stmt.nondetElimM_loop_nondet_out]; simp only [hgen]
+      have h_init : StepStmtStar P (EvalCmd P) extendEval
+          (.stmt (.cmd (HasInit.init (HasIdent.ident (P := P) g) HasBool.boolTy .nondet md)) ρ_tgt)
+          (.terminal ({ ρ_tgt with store := storeWith ρ_tgt.store (HasIdent.ident (P := P) g) b } : Env P)) :=
+        step_init_havoc_to (extendEval := extendEval) (HasIdent.ident (P := P) g) HasBool.boolTy b md ρ_tgt
+          h_tgt_g_none hwf_var_t
+      refine ⟨.seq d_tgt ([] : List (Stmt P (Cmd P))), ?_, by simpa [Config.getEnv] using hd_tgt_fail⟩
+      refine ReflTrans_Transitive _ _ _ _
+        (stmts_cons_step P (EvalCmd P) extendEval _ _ ρ_tgt _ h_init) ?_
+      exact .step _ _ _ StepStmt.step_stmts_cons (seq_inner_star P (EvalCmd P) extendEval _ _ [] h_loop_run)
+    -- Invert the source loop's first step to choose the matched guard value.
+    rcases loop_nondet_step_first_inv_fail (extendEval := extendEval) hstarT h_c_fail with
+      h_refl | ⟨hrest, hl⟩ | ⟨hrest, hl⟩
+    · -- Refl: `ρ_src` already failing — excluded by the clean-source branch.
+      exact absurd h_refl h_ρsrc_fail
+    · exact h_finish false HasBool.ff (by simp) (.inl ⟨rfl, hrest, Nat.le_of_lt hl⟩)
+    · exact h_finish true HasBool.tt (by simp) (.inr ⟨rfl, hrest, Nat.le_of_lt hl⟩)
+  | .exit lbl md, _, _, _, h_reach =>
+    -- `.exit lbl` steps to `.exiting lbl ρ_src`; with `ρ_src` clean the exiting env
+    -- is also clean, contradicting `h_c_fail`.
+    exfalso
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    cases hstep with
+    | step_exit =>
+      have h_c_eq : c = .exiting lbl ρ_src :=
+        reflTransT_from_exiting P (EvalCmd P) extendEval (reflTrans_to_T hrest)
+      rw [h_c_eq] at h_c_fail
+      exact absurd (by simpa [Config.getEnv] using h_c_fail) h_ρsrc_fail
+  | .funcDecl d md, _, h_nofd, _, _ => exact absurd h_nofd (by simp [Stmt.noFuncDecl])
+  | .typeDecl t md, _, _, _, h_reach =>
+    -- `.typeDecl` is a no-op: steps to `.terminal ρ_src`; with `ρ_src` clean this
+    -- cannot be the failing config.
+    exfalso
+    obtain ⟨cfg0, hstep, hrest⟩ := clean_stmt_first_step (extendEval := extendEval) h_reach h_c_fail h_ρsrc_nofail
+    cases hstep with
+    | step_typeDecl =>
+      have h_c_eq : c = .terminal ρ_src :=
+        reflTransT_from_terminal P (EvalCmd P) extendEval (reflTrans_to_T hrest)
+      rw [h_c_eq] at h_c_fail
+      exact absurd (by simpa [Config.getEnv] using h_c_fail) h_ρsrc_fail
+  termination_by sizeOf s
+
+/-- Statement-list-level failing-config simulation (the `_to_fail` analogue of
+`nondetElim_simulation_gen`): a failing source run of `ss` is matched by a failing
+run of the rewritten block `(Block.nondetElimM ss σ).1`.  Decomposes the source
+run with `stmts_cons_reaches_failing'`: either the head statement already fails
+(handled by the statement-level `_to_fail`), or it terminates (handled by the
+existing *terminal* `nondetElim_stmt_gen`) and the tail fails (recursion). -/
+private theorem nondetElim_to_fail_gen {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
+    (ρ_src ρ_tgt : Env P) (c : Config P (Cmd P))
+    (h_eval_eq : ρ_tgt.eval = ρ_src.eval)
+    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
+    (h_agree : AgreeOffGen Q ρ_src.store ρ_tgt.store)
+    (hwfb : WellFormedSemanticEvalBool ρ_src.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ_src.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ_src.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ_src.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ_src.eval)
+    (h_wf_gen : StringGenState.WF σ)
+    (h_src_fresh : ∀ t, Q t →
+      ρ_src.store (HasIdent.ident (P := P) t) = none)
+    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_no_writes : SrcNoGenWrites (P := P) Q ss)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ_src) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.nondetElimM ss σ).1 ρ_tgt) d
+      ∧ d.getEnv.hasFailure = true := by
+  -- Already-failing source ⟹ the target start config is failing (refl).
+  by_cases h_ρsrc_fail : ρ_src.hasFailure = true
+  · exact ⟨.stmts (Block.nondetElimM ss σ).1 ρ_tgt, .refl _,
+      by simpa [Config.getEnv] using (h_fail_eq.trans h_ρsrc_fail)⟩
+  have h_ρsrc_nofail : ρ_src.hasFailure = false := by simpa using h_ρsrc_fail
+  match ss, h_no_writes, h_nofd, h_lhni with
+  | [], _, _, _ =>
+    -- Clean `.stmts [] ρ_src` reaches only `.terminal ρ_src` (clean): no failing config.
+    exfalso
+    have h_c_env : c.getEnv = ρ_src := by
+      match h_reach with
+      | .refl _ => rfl
+      | .step _ _ _ hstep hrest =>
+        cases hstep with
+        | step_stmts_nil =>
+          have := reflTransT_from_terminal P (EvalCmd P) extendEval (reflTrans_to_T hrest)
+          rw [this]; rfl
+    rw [h_c_env] at h_c_fail
+    exact absurd (by simpa [Config.getEnv] using h_c_fail) h_ρsrc_fail
+  | s :: rest, h_no_writes, h_nofd, h_lhni =>
+    have h_no_writes_s : NoGenSuffix (P := P) Q (Stmt.definedVars s ++ Stmt.modifiedVars s) := by
+      intro x hx t heq
+      rcases List.mem_append.mp hx with hd | hm
+      · exact h_no_writes x (List.mem_append_left _ (List.mem_append_left _ hd)) t heq
+      · exact h_no_writes x (List.mem_append_right _ (List.mem_append_left _ hm)) t heq
+    have h_no_writes_rest : SrcNoGenWrites (P := P) Q rest := by
+      intro x hx t heq
+      rcases List.mem_append.mp hx with hd | hm
+      · exact h_no_writes x (List.mem_append_left _ (List.mem_append_right _ hd)) t heq
+      · exact h_no_writes x (List.mem_append_right _ (List.mem_append_right _ hm)) t heq
+    have h_nofd_pair : Stmt.noFuncDecl s = true ∧ Block.noFuncDecl rest = true := by
+      have : (Stmt.noFuncDecl s && Block.noFuncDecl rest) = true := by
+        simpa only [Block.noFuncDecl] using h_nofd
+      exact Bool.and_eq_true _ _ |>.mp this
+    have h_lhni_pair : Stmt.loopHasNoInvariants s = true ∧ Block.loopHasNoInvariants rest = true :=
+      Block.loopHasNoInvariants_cons_iff.mp h_lhni
+    -- The target output prefix-decomposes as `(Stmt.nondetElimM s σ).1 ++ (rest output)`.
+    have h_out_eq : (Block.nondetElimM (s :: rest) σ).1
+        = (Stmt.nondetElimM s σ).1 ++ (Block.nondetElimM rest (Stmt.nondetElimM s σ).2).1 := by
+      rw [Block.nondetElimM]
+      rcases hh : Stmt.nondetElimM s σ with ⟨ss_s, σ_s⟩
+      rcases hk : Block.nondetElimM rest σ_s with ⟨ss_r, σ_r⟩
+      simp only [hh, hk]
+    rw [h_out_eq]
+    rcases stmts_cons_reaches_failing' P (EvalCmd P) extendEval (reflTrans_to_T h_reach) h_c_fail with
+      hA | hB
+    · -- CASE A: the head statement already fails.  Its rewritten block is the output
+      -- prefix; lift its failing run to the appended list.
+      obtain ⟨d_head, h_head_run, hd_head_fail⟩ := hA
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_stmt_to_fail_gen hQmint extendEval s σ ρ_src ρ_tgt d_head
+          h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf_gen h_src_fresh h_tgt_fresh h_no_writes_s h_nofd_pair.1 h_lhni_pair.1
+          h_head_run hd_head_fail
+      exact stmts_prefix_failing_append P (EvalCmd P) extendEval
+        (Stmt.nondetElimM s σ).1 (Block.nondetElimM rest (Stmt.nondetElimM s σ).2).1
+        ρ_tgt d_tgt h_run_tgt hd_tgt_fail
+    · -- CASE B: the head terminates at ρ_mid (clean, else covered by A's failing reach
+      -- of the head), then `rest` fails.  Use the *terminal* head simulation to advance
+      -- the relation, then recurse on `rest`.
+      obtain ⟨ρ_mid, d_rest, h_head_term, h_rest_run, hd_rest_fail⟩ := hB
+      obtain ⟨h_mid_fresh, ρ_mid_tgt, h_s_tgt, h_off_mid, h_fail_mid, h_eval_mid, h_fresh_mid⟩ :=
+        nondetElim_stmt_gen hQmint extendEval s σ ρ_src ρ_mid ρ_tgt
+          h_eval_eq h_fail_eq h_agree hwfb hwfv hwf_def hwf_congr hwf_var
+          h_wf_gen h_src_fresh h_tgt_fresh h_no_writes_s h_nofd_pair.1 h_lhni_pair.1 none h_head_term
+      -- Advance the generator and WF-eval facts to ρ_mid.
+      have h_wf₁ : StringGenState.WF (Stmt.nondetElimM s σ).2 :=
+        (Stmt.nondetElimM_genStep s σ).wf_mono h_wf_gen
+      have h_eval_mid_src : ρ_mid.eval = ρ_src.eval :=
+        smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendEval s ρ_src ρ_mid h_nofd_pair.1 h_head_term
+      have hwfb_mid : WellFormedSemanticEvalBool ρ_mid.eval := h_eval_mid_src ▸ hwfb
+      have hwfv_mid : WellFormedSemanticEvalVal ρ_mid.eval := h_eval_mid_src ▸ hwfv
+      have hwf_def_mid : WellFormedSemanticEvalDef ρ_mid.eval := h_eval_mid_src ▸ hwf_def
+      have hwf_congr_mid : WellFormedSemanticEvalExprCongr ρ_mid.eval := h_eval_mid_src ▸ hwf_congr
+      have hwf_var_mid : WellFormedSemanticEvalVar ρ_mid.eval := h_eval_mid_src ▸ hwf_var
+      obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
+        nondetElim_to_fail_gen hQmint extendEval rest (Stmt.nondetElimM s σ).2 ρ_mid ρ_mid_tgt d_rest
+          h_eval_mid h_fail_mid h_off_mid hwfb_mid hwfv_mid hwf_def_mid hwf_congr_mid hwf_var_mid
+          h_wf₁ h_mid_fresh h_fresh_mid h_no_writes_rest h_nofd_pair.2 h_lhni_pair.2
+          h_rest_run hd_rest_fail
+      -- Concatenate: head output runs to terminal ρ_mid_tgt, then rest output fails.
+      exact ⟨d_tgt, ReflTrans_Transitive _ _ _ _
+        (stmts_prefix_terminal_append P (EvalCmd P) extendEval _ _ ρ_tgt ρ_mid_tgt h_s_tgt)
+        h_run_tgt, hd_tgt_fail⟩
+  termination_by sizeOf ss
+end
+
+/-- **Failing-config forward simulation (gen-parametric top form).** Every
+reachable *failing* source configuration of `ss` is matched by a reachable
+failing configuration of `Block.nondetElim ss` (same `ρ₀`, no endpoint demand).
+Instantiates the gen-level `_to_fail` at `ρ_tgt = ρ₀` and the empty generator. -/
+private theorem nondetElim_simulation_to_fail {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    {Q : String → Prop}
+    (hQmint : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) (c : Config P (Cmd P))
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_no_gen_suffix : ∀ s, Q s → ρ₀.store (HasIdent.ident (P := P) s) = none)
+    (h_no_writes : SrcNoGenWrites (P := P) Q ss)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.nondetElim ss) ρ₀) d
+      ∧ d.getEnv.hasFailure = true := by
+  have h_tgt_fresh : GenFreshStore Q StringGenState.emp ρ₀.store := by
+    intro s h_suf _; exact h_no_gen_suffix s h_suf
+  exact nondetElim_to_fail_gen hQmint extendEval ss StringGenState.emp ρ₀ ρ₀ c
+    rfl rfl (AgreeOffGen.refl _) hwfb hwfv hwf_def hwf_congr hwf_var
+    StringGenState.wf_emp h_no_gen_suffix h_tgt_fresh h_no_writes h_nofd h_lhni h_reach h_c_fail
+
+/-- **`Block.nondetElim` failing-config preservation (at `Q := ndelimKind`).**  A
+reachable failing source configuration of `ss` is matched by a reachable failing
+configuration of `Block.nondetElim ss`, with no terminal/exiting endpoint
+required.  This is the `_to_fail` sibling of `nondetElim_sound_kind`; the
+`NoGenStore`/`SrcNoGenWrites` preconditions are exactly those the terminal
+soundness theorems already consume, so it composes into the structured-pass
+failing bridge identically. -/
+theorem nondetElim_to_fail {P : PureExpr} [HasFvar P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+    [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P]
+    [LawfulHasIntOrder P] [LawfulHasNot P]
+    (extendEval : ExtendEval P)
+    (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) (c : Config P (Cmd P))
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfv : WellFormedSemanticEvalVal ρ₀.eval)
+    (hwf_def : WellFormedSemanticEvalDef ρ₀.eval)
+    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.eval)
+    (hwf_var : WellFormedSemanticEvalVar ρ₀.eval)
+    (h_no_gen_suffix : NoGenStore (P := P) ndelimKind ρ₀)
+    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_nofd : Block.noFuncDecl ss = true)
+    (h_lhni : Block.loopHasNoInvariants ss = true)
+    (h_reach : StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ₀) c)
+    (h_c_fail : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (Block.nondetElim ss) ρ₀) d
+      ∧ d.getEnv.hasFailure = true :=
+  nondetElim_simulation_to_fail (Q := ndelimKind) ndelimKind_gen
+    extendEval ss ρ₀ c hwfb hwfv hwf_def hwf_congr hwf_var
+    h_no_gen_suffix h_no_writes h_nofd h_lhni h_reach h_c_fail
 
 end Imperative

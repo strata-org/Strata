@@ -11,6 +11,7 @@ public import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
 public import Strata.DL.Util.Relations
+import all Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
@@ -941,6 +942,274 @@ theorem StepStmtStar_hasFailure_monotone
   induction hstar with
   | refl => exact hf
   | step _ _ _ hstep _ ih => exact ih (step_hasFailure_monotone P EvalCmd extendEval hstep hf)
+
+/-! ### Failing-config source-semantics decomposition helpers
+
+These are the `_to_fail` siblings of the terminal/exiting `ReflTransT`
+decomposition helpers.  They peel a multi-step run that reaches a *failing*
+configuration (`getEnv.hasFailure = true`) — possibly an intermediate one on a
+run that never terminates — into the constituent piece that already fails,
+exposing a length bound where the recursion needs one.  Because failure is
+monotone (`StepStmtStar_hasFailure_monotone`: `updateFailure` only OR-s the flag
+in), a failing config is always reached in finitely many steps, so these split
+along the same constructor structure as the terminal helpers.
+
+They are pure source-semantics facts (`StepStmt`/`ReflTransT`/`Config.getEnv`,
+independent of any program transform), so every structured pass that needs to
+transport a failing configuration reuses them. -/
+
+/-- A `ReflTransT` run starting at a stuck `.terminal ρ` stays at `.terminal ρ`. -/
+theorem reflTransT_from_terminal {ρ : Env P} {c : Config P CmdT}
+    (h : ReflTransT (StepStmt P EvalCmd extendEval) (.terminal ρ) c) : c = .terminal ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- A `ReflTransT` run starting at a stuck `.exiting l ρ` stays at `.exiting l ρ`. -/
+theorem reflTransT_from_exiting {l : String} {ρ : Env P} {c : Config P CmdT}
+    (h : ReflTransT (StepStmt P EvalCmd extendEval) (.exiting l ρ) c) : c = .exiting l ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- Failing-config inversion for a `.seq inner ss` frame.  Either the failure is
+inside `inner` (it reaches a failing config), or `inner` terminates at `ρ₁` and the
+continuation `.stmts ss ρ₁` reaches a failing config — with strictly decreasing
+derivation length in the second case (the seq prefix is consumed). -/
+theorem seqT_reaches_failing'
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {c : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inner ss) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner d),
+        d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) d),
+        d.getEnv.hasFailure = true ∧ h1.len + h2.len < hstar.len) := by
+  suffices H : ∀ n (inn : Config P CmdT)
+      (h : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inn ss) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      (∃ d, ∃ (h' : ReflTransT (StepStmt P EvalCmd extendEval) inn d),
+          d.getEnv.hasFailure = true ∧ h'.len ≤ h.len) ∨
+      (∃ (ρ₁ : Env P), ∃ d,
+        ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inn (.terminal ρ₁)),
+        ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) d),
+          d.getEnv.hasFailure = true ∧ h1.len + h2.len < h.len) by
+    exact H hstar.len inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.seq inner₁ _) _ (.step_seq_inner h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      rcases ih inner₁ hrest hlen' hc' with hA | hB
+      · obtain ⟨d, h', hd, hlen''⟩ := hA
+        exact .inl ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+      · obtain ⟨ρ₁, d, h1, h2, hd, hlen''⟩ := hB
+        exact .inr ⟨ρ₁, d, .step _ _ _ h_inner_step h1, h2, hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_seq_done hrest, hl =>
+      rename_i ρ'
+      exact .inr ⟨ρ', _, .refl _, hrest, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ .step_seq_exit hrest, hl =>
+      rename_i label ρ'
+      left
+      refine ⟨.exiting label ρ', .refl _, ?_, by simp [ReflTransT.len]⟩
+      match hrest with
+      | .refl _ => exact hc'
+      | .step _ _ _ h' _ => exact nomatch h'
+
+/-- Failing-config inversion for a `.block .none σ_parent inner` frame: the failure
+is inside the block body (`inner` reaches a failing config), with derivation length
+bounded by the original.  The block-done / exit-propagation cases reduce to the inner
+body's already-reached failing endpoint. -/
+theorem blockT_none_reaches_failing'
+    {inner : Config P CmdT} {σ_parent : SemanticStore P} {c : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block .none σ_parent inner) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  suffices H : ∀ n (σ_p : SemanticStore P) (inn : Config P CmdT)
+      (h : ReflTransT (StepStmt P EvalCmd extendEval) (.block .none σ_p inn) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      ∃ d, ∃ (h' : ReflTransT (StepStmt P EvalCmd extendEval) inn d),
+        d.getEnv.hasFailure = true ∧ h'.len ≤ h.len by
+    exact H hstar.len σ_parent inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.block _ _ inner₁) _ (.step_block_body h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      have ⟨d, h', hd, hlen''⟩ := ih σ_p inner₁ hrest hlen' hc'
+      exact ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_block_done hrest, hl =>
+      have hz := reflTransT_from_terminal P EvalCmd extendEval hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'
+      simpa [Config.getEnv] using hc'
+    | .step _ _ _ (.step_block_exit_match heq) hrest, hl => exact (nomatch heq)
+    | .step _ _ _ (.step_block_exit_mismatch hne) hrest, hl =>
+      have hz := reflTransT_from_exiting P EvalCmd extendEval hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'
+      simpa [Config.getEnv] using hc'
+
+/-- Failing-config inversion for a general `.block l σ_parent inner` frame (any
+label, `.none` or `.some`): the failure is inside the block body, so `inner`
+reaches a failing config.  The block-done / exit-match cases reduce to the inner
+body's already-reached failing endpoint (a matched exit terminates the block at a
+projected env whose failure flag is the inner exiting env's); the exit-mismatch
+case propagates the inner exiting env unchanged.  Prop-level (no length bound)
+since the `.block` arm only needs the recursive body's failing reach, not a
+decreasing measure. -/
+theorem block_reaches_failing'
+    {l : Option String} {inner : Config P CmdT} {σ_parent : SemanticStore P}
+    {c : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent inner) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P EvalCmd extendEval inner d ∧ d.getEnv.hasFailure = true := by
+  suffices H : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+      ∀ (lp : Option String) (σ_p : SemanticStore P) (inn : Config P CmdT),
+      src = .block lp σ_p inn → tgt.getEnv.hasFailure = true →
+      ∃ d, StepStmtStar P EvalCmd extendEval inn d ∧ d.getEnv.hasFailure = true by
+    exact H _ _ hstar l σ_parent inner rfl hc
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl =>
+    intro lp σ_p inn hsrc hc'
+    subst hsrc
+    exact ⟨inn, .refl _, by simpa [Config.getEnv] using hc'⟩
+  | step _ mid _ hstep hrest ih =>
+    intro lp σ_p inn hsrc hc'
+    subst hsrc
+    cases hstep with
+    | step_block_body h_inner_step =>
+      rename_i inner₁
+      have ⟨d, h', hd⟩ := ih _ _ _ rfl hc'
+      exact ⟨d, .step _ _ _ h_inner_step h', hd⟩
+    | step_block_done =>
+      have hz := reflTransT_from_terminal P EvalCmd extendEval (reflTrans_to_T hrest)
+      rw [hz] at hc'
+      exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+    | step_block_exit_match heq =>
+      have hz := reflTransT_from_terminal P EvalCmd extendEval (reflTrans_to_T hrest)
+      rw [hz] at hc'
+      exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+    | step_block_exit_mismatch hne =>
+      have hz := reflTransT_from_exiting P EvalCmd extendEval (reflTrans_to_T hrest)
+      rw [hz] at hc'
+      exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+
+/-- Singleton-list peel for the failing case: from `.stmts [s] ρ₀ ⟶* c` (failing),
+recover `.stmt s ρ₀ ⟶* d` reaching a failing config of no-greater length.  Used to
+recurse one loop iteration on the residual `[.loop ...]` singleton. -/
+theorem stmts_singleton_reaches_failing'
+    {s : Stmt P CmdT} {ρ₀ : Env P} {c : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts [s] ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₀) d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  match hstar with
+  | .refl _ =>
+    exact ⟨.stmt s ρ₀, .refl _, hc, by simp [ReflTransT.len]⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' P EvalCmd extendEval hrest hc with hA | hB
+    · obtain ⟨d, h, hd, hlen⟩ := hA
+      exact ⟨d, h, hd, by simp [ReflTransT.len]; omega⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, hlen⟩ := hB
+      refine ⟨.terminal ρ₁, h1, ?_, by simp [ReflTransT.len]; omega⟩
+      have hρ₁ : ρ₁.hasFailure = true := by
+        have : d.getEnv = ρ₁ := by
+          match h2 with
+          | .refl _ => rfl
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h' _ => exact nomatch h'
+        rw [this] at hd
+        exact hd
+      simpa [Config.getEnv] using hρ₁
+
+/-- Cons-list peel for the failing case: from `.stmts (s :: rest) ρ₀ ⟶* c` (failing),
+either the head statement `.stmt s ρ₀` already reaches a failing config, or it
+terminates at `ρ₁` and `.stmts rest ρ₁` reaches a failing config.  This is the
+generic decomposition shared by every cons-arm of a structured `_to_fail`
+simulation: the head's failing-reach routes into the head-specific discharge, the
+terminate-then-rest case recurses on `rest`. -/
+theorem stmts_cons_reaches_failing'
+    {s : Stmt P CmdT} {rest : List (Stmt P CmdT)} {ρ₀ : Env P} {c : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts (s :: rest) ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) d ∧
+        d.getEnv.hasFailure = true) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      StepStmtStar P EvalCmd extendEval (.stmt s ρ₀) (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd extendEval (.stmts rest ρ₁) d ∧
+        d.getEnv.hasFailure = true) := by
+  match hstar with
+  | .refl _ =>
+    exact .inl ⟨.stmt s ρ₀, .refl _, by simpa [Config.getEnv] using hc⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' P EvalCmd extendEval hrest hc with hA | hB
+    · obtain ⟨d, h, hd, _⟩ := hA
+      exact .inl ⟨d, reflTransT_to_prop h, hd⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, _⟩ := hB
+      exact .inr ⟨ρ₁, d, reflTransT_to_prop h1, reflTransT_to_prop h2, hd⟩
+
+/-- If a prefix of a statement list reaches a *failing* configuration, the full
+    list reaches a failing configuration (the failure cannot be undone, so the
+    suffix never clears it — and if the prefix terminates first, the suffix
+    inherits the prefix's set flag).  This is the failing-config analogue of
+    `stmts_prefix_terminal_append` / `stmts_prefix_exiting_append`, used to lift a
+    failing rewritten loop body into `body ++ [havoc]`. -/
+theorem stmts_prefix_failing_append
+    (pfx sfx : List (Stmt P CmdT)) (ρ : Env P) (c : Config P CmdT)
+    (h : StepStmtStar P EvalCmd extendEval (.stmts pfx ρ) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ c', StepStmtStar P EvalCmd extendEval (.stmts (pfx ++ sfx) ρ) c'
+      ∧ c'.getEnv.hasFailure = true := by
+  induction pfx generalizing ρ c with
+  | nil =>
+    -- `.stmts [] ρ` reaches only `.terminal ρ`; failing forces `ρ.hasFailure = true`.
+    have h_c_env : c.getEnv = ρ := by
+      cases h with
+      | refl => rfl
+      | step _ _ _ h_step h_rest =>
+        cases h_step with
+        | step_stmts_nil =>
+          have := reflTransT_from_terminal P EvalCmd extendEval (reflTrans_to_T h_rest)
+          rw [this]; rfl
+    have hρ : ρ.hasFailure = true := by rw [h_c_env] at hc; simpa [Config.getEnv] using hc
+    -- The empty suffix-prepended list `.stmts ([] ++ sfx) ρ = .stmts sfx ρ` starts at ρ failing.
+    refine ⟨Config.stmts sfx ρ, ?_, by simpa [Config.getEnv] using hρ⟩
+    simpa using ReflTrans.refl (Config.stmts ([] ++ sfx) ρ)
+  | cons s rest ih =>
+    rcases stmts_cons_reaches_failing' P EvalCmd extendEval (reflTrans_to_T h) hc with
+      ⟨d, h_head, hd⟩ | ⟨ρ₁, d, h_head_term, h_rest_run, hd⟩
+    · -- Head already fails: lift the head's failing run into `.stmts (s :: (rest ++ sfx))`,
+      -- wrapping the residual as `.seq d _` to keep its failure flag.
+      refine ⟨.seq d (rest ++ sfx),
+        .step _ _ _ StepStmt.step_stmts_cons
+          (seq_inner_star P EvalCmd extendEval _ _ _ h_head), ?_⟩
+      simpa [Config.getEnv] using hd
+    · -- Head terminates at ρ₁; recurse on `rest` from ρ₁.
+      obtain ⟨c', h_rest_full, hc'⟩ := ih ρ₁ d h_rest_run hd
+      exact ⟨c', ReflTrans_Transitive _ _ _ _
+        (stmts_cons_step P EvalCmd extendEval s (rest ++ sfx) ρ ρ₁ h_head_term) h_rest_full, hc'⟩
 
 theorem EvalStmtSmall_hasFailure_irrel
   {ρ ρ' : Env P} {s : Stmt P CmdT} :
