@@ -1322,7 +1322,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     let (e', elseTy) ← Synth.resolveStmtExpr e
     let ctx := (← get).typeLattice
     let ty ←
-      if isConsistent ctx thenTy elseTy then
+      if thenTy.val == .TVoid || elseTy.val == .TVoid then
+        pure { val := .TVoid, source := source }
+      else if isConsistent ctx thenTy elseTy then
         pure ((join ctx thenTy elseTy).getD thenTy)
       else
         let diag := diagnosticFromSource source

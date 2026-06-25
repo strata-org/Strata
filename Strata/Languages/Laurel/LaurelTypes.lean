@@ -68,9 +68,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
             | .TFloat64  => ⟨ .TFloat64, source ⟩
             | .TReal => ⟨ .TReal, source ⟩
             | .TInt => ⟨ .TInt, source ⟩
-            | _ => ⟨ .TCore "unknown", source ⟩
+            | _ => ⟨ .UserDefined "unknown", source ⟩
         | .StrConcat => ⟨ .TString, source ⟩
-      | _ => ⟨ .TCore "unknown", source ⟩
+      | _ => ⟨ .UserDefined "unknown", source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with

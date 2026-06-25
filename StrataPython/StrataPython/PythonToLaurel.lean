@@ -190,7 +190,7 @@ def mkHighTypeMdWithLoc (ty : HighType) (source : Option FileRange) : HighTypeMd
   { val := ty, source := source }
 
 def mkCoreType (s: String): HighTypeMd :=
-  {val := .TCore s, source := none }
+  {val := .UserDefined (mkId s), source := none }
 
 /-- Create a StmtExprMd with default metadata -/
 def mkStmtExprMd (expr : StmtExpr) : StmtExprMd :=
@@ -406,8 +406,9 @@ def wrapFieldInAny (ty : HighType) (expr : StmtExprMd) : Except TranslationError
   | .TFloat64 => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TReal => .ok <| mkStmtExprMd (.StaticCall "from_float" [expr])
   | .TString => .ok <| mkStmtExprMd (.StaticCall "from_str" [expr])
-  | .TCore "Any" => .ok expr
-  | .UserDefined name => .error (.unsupportedConstruct
+  | .UserDefined name =>
+    if name.text == "Any" then .ok expr
+    else .error (.unsupportedConstruct
     s!"Coercion from user-defined class '{name.text}' to Any is not yet supported" name.text)
   | other => .error (.typeError s!"wrapFieldInAny: no Any constructor for field type '{repr other}'")
 
@@ -2731,7 +2732,6 @@ def getHighTypeName : Laurel.HighType → String
   | .TString => "string"
   | .TVoid => "void"
   | .TFloat64 => "real"
-  | .TCore s => s
   | .UserDefined name => name.text
   | .TSet _ => "Map"
   | .TMap _ _ => "Map"

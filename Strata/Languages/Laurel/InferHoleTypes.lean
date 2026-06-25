@@ -118,7 +118,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           -- (e.g. when the first arg is a Hole).
           let computed := computeExprType model expr
           match computed.val with
-          | .TCore _ | .Unknown => expectedType
+          | .Unknown => expectedType
           | _ => computed
       return ⟨.PrimitiveOp op (← inferArgs args argType), source⟩
   | .StaticCall callee args =>
