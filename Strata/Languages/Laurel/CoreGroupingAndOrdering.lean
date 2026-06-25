@@ -5,7 +5,9 @@
 -/
 
 module
-public import Strata.Languages.Laurel.TransparencyPass
+public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.DL.Lambda.LExpr
 import StrataDDM.Util.Graph.Tarjan
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -27,6 +29,7 @@ declarations before they are emitted as Strata Core declarations.
 namespace Strata.Laurel
 
 open Lambda (LMonoTy LExpr)
+open Std (Format ToFormat)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
@@ -56,7 +59,7 @@ def collectStaticCallNames (expr : StmtExprMd) : List String :=
   match val with
   | .StaticCall callee args =>
       callee.text :: args.flatMap (fun a => collectStaticCallNames a)
-  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a)
+  | .PrimitiveOp _ args _ => args.flatMap (fun a => collectStaticCallNames a)
   | .IfThenElse cond t e =>
       collectStaticCallNames cond ++
       collectStaticCallNames t ++
@@ -120,18 +123,18 @@ Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
 as a list of procedures paired with a flag indicating whether the SCC is recursive.
 Results are in reverse topological order: dependencies before dependents.
 
-Procedures with `invokeOn` are placed as early as possible — before
+Procedures with axioms are placed as early as possible — before
 unrelated procedures without them — by stably partitioning them first before building
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
 -/
 public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List Procedure × Bool) :=
-  -- Stable partition: procedures with invokeOn come first, preserving relative
+  -- Stable partition: procedures with axioms come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
   let allProcs := program.functions ++ program.coreProcedures
-  let (withInvokeOn, withoutInvokeOn) :=
-    allProcs.partition (fun p => p.invokeOn.isSome)
-  let orderedProcs : List Procedure := withInvokeOn ++ withoutInvokeOn
+  let (withAxioms, withoutAxioms) :=
+    allProcs.partition (fun p => !p.axioms.isEmpty)
+  let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
 
   -- Build a call-graph over all procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
@@ -149,7 +152,8 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
       | _ => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions.map (·.condition) ++
-      proc.invokeOn.toList
+      proc.invokeOn.toList ++
+      proc.axioms
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.
@@ -232,7 +236,7 @@ Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
-public def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
+def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
@@ -260,5 +264,17 @@ where
     OutGraph.tarjan g |>.toList.filterMap fun comp =>
       let members := comp.toList.filterMap fun idx => dtsArr[idx]?
       if members.isEmpty then none else some members
+
+public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
+  name := "OrderingPass"
+  comesBefore := []
+  documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
+computing a combined ordering of functions and proofs using the call graph,
+then collecting datatypes and constants.
+Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
+as individual `procedure` decls. Both participate in the topological ordering
+so that axioms are available to functions that need them."
+  run := fun _ p _ =>
+    (orderFunctionsAndProcedures p, [], {})
 
 end Strata.Laurel

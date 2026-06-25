@@ -117,10 +117,10 @@ op errorSummary(msg: Str): ErrorSummary => " summary " msg;
 
 // If-else
 category ElseBranch;
-op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] " else " stmts;
+op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "\nelse " stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
-  @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond "\nthen " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;

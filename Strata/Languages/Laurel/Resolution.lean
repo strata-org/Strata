@@ -6,8 +6,8 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
-public import Strata.Languages.Laurel.TransparencyPass
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
@@ -2707,8 +2707,8 @@ def resolveOutputParameter (inputNames : List String) (param : Parameter) : Reso
   else
     resolveParameter param
 
-/-- Resolve a procedure body by synthesizing its impl block (if any).
-    Bodies without an impl block (`Abstract`, `External`) resolve
+/-- Resolve a procedure body by synthesizing its body (if any).
+    Bodies without an body (`Abstract`, `External`) resolve
     postconditions only. -/
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
@@ -2760,10 +2760,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- (e.g. destructive assignments) inside a transparent body. So there is
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -2795,16 +2797,14 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
     let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
-    if !proc.isFunctional && body'.isTransparent && !proc.name.text.any (· == '$') then
-      let diag := diagnosticFromSource proc.name.source
-        s!"transparent statement bodies are not supported. Add 'opaque' to make the procedure opaque"
-      modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
+    let axioms' ← proc.axioms.mapM resolveStmtExpr
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             axioms := axioms',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -2858,7 +2858,12 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         -- parameter's own name should stay unqualified.
         let destructorId := { p.name with uniqueId := resolved.uniqueId }
         return ⟨ destructorId, ty' ⟩
-      return { name := ctorName', args := args' : DatatypeConstructor }
+      -- Resolve the tester name so its uniqueId is set.
+      let testerResolved ← resolveRef (dt.testerName ctor)
+      let testerName' := { ctor.testerName with
+        text := testerResolved.text
+        uniqueId := testerResolved.uniqueId }
+      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
@@ -2873,6 +2878,28 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
   return { name := name', type := ty', initializer := init' }
 
 /-! ## Phase 2: Build refToDef map from the resolved program -/
+
+/-- Generate a virtual tester procedure for a single constructor of a datatype.
+    The tester takes a single argument of the datatype's type and returns `bool`.
+    Used during resolution to synthesize the scope entry for tester calls
+    (e.g. `IntList..isNil(x)`) without requiring a separate AST pass. -/
+private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : Procedure :=
+  let tName := dt.testerName ctor
+  let inputParam : Parameter := {
+    name := mkId "value"
+    type := { val := .UserDefined dt.name, source := none }
+  }
+  let outputParam : Parameter := {
+    name := mkId "$result"
+    type := { val := .TBool, source := none }
+  }
+  { name := mkId tName
+    inputs := [inputParam]
+    outputs := [outputParam]
+    preconditions := []
+    decreases := none
+    isFunctional := true
+    body := .External }
 
 /-- Insert a definition into the refToDef map using the ID already on the identifier. -/
 private def register (map : Std.HashMap Nat ResolvedNode) (iden : Identifier) (node : ResolvedNode)
@@ -3023,6 +3050,9 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     let map := register map dt.name (.datatypeDefinition dt)
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
+      -- Register the tester function in the refToDef map.
+      let testerProc := mkTesterProcedure dt ctor
+      let map := register map ctor.testerName (.staticProcedure testerProc)
       ctor.args.foldl (fun map p =>
         -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
         -- is the shared uniqueId of the safe/unsafe destructor scope entries,
@@ -3203,13 +3233,11 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     | .Datatype dt =>
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
-        -- Register the tester override first; the second call reuses the
-        -- returned Identifier (now carrying a uniqueId) so the unprefixed
-        -- constructor name and the `TypeName..isCtor` tester name resolve to
-        -- the same uniqueId, which `buildRefToDef` in turn maps to
-        -- `.datatypeConstructor`.
-        let ctorName ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor) (some (dt.testerName ctor))
-        let _ ← defineNameCheckDup ctorName (.datatypeConstructor dt.name ctor)
+        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
+        -- Register the tester function (e.g. `IntList..isNil`) as a static procedure.
+        let testerProc := mkTesterProcedure dt ctor
+        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
+          (.staticProcedure testerProc) (some (dt.testerName ctor))
         for p in ctor.args do
           -- Same chaining trick for the safe and unsafe destructor names: both
           -- point to the same uniqueId so `IntList..head` and `IntList..head!`
@@ -3454,10 +3482,10 @@ but they are because certain type references have incorrectly not been updated.
 public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
-    : UnorderedCoreWithLaurelTypes × SemanticModel :=
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
   let fnProgram := unorderedCoreToProgram uc additionalTypes
   let fnResolveResult := resolve fnProgram existingModel
-  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model)
+  (fromResolvedProgram fnResolveResult.program, fnResolveResult.model, fnResolveResult.errors)
 
 end -- public section
 end Strata.Laurel

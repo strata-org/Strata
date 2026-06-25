@@ -142,6 +142,7 @@ triggers heap parameterization. -/
 def isHeapRelevantType (ty : HighType) : Bool :=
   (classifyModifiesHighType ty).isSome
 
+
 end Strata.Laurel
 
 end

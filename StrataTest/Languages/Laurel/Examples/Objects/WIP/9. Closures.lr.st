@@ -87,6 +87,7 @@ so in affect there no longer are any variables captured by a closure.
 
 // Option A: first class procedures
 procedure hasClosure() returns (r: int)
+  opaque
   ensures r == 7
 {
   var x = 3;

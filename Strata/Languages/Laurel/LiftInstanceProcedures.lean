@@ -125,11 +125,11 @@ end -- public section
 
 /-- Pipeline pass: lift instance procedures to top-level static procedures
     and rewrite call sites to use the lifted names. -/
-public def liftInstanceProceduresPass : LaurelPass where
+public def liftInstanceProceduresPass : LoweringPass where
   name := "LiftInstanceProcedures"
   documentation := "Lifts every procedure declared inside a `composite` block to a top-level static procedure named `<CompositeName>$<methodName>` and rewrites call sites resolved to an instance procedure (including `obj#method(args)` surface syntax) to point at the lifted name. Clears `instanceProcedures` on every composite. Must run before HeapParameterization."
   needsResolves := true
-  run := fun p m => (liftInstanceProcedures m p, [], {})
-  comesBefore := [⟨ eliminateValueInReturnsPass, "eliminateValueInReturns only applies to static methods, hence all instance methods must have been lifted before." ⟩]
+  run := fun _ p m => (liftInstanceProcedures m p, [], {})
+  comesBefore := [⟨ eliminateValueInReturnsPass.meta, "eliminateValueInReturns only applies to static methods, hence all instance methods must have been lifted before." ⟩]
 
 end Strata.Laurel

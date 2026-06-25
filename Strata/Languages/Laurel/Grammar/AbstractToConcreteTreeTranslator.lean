@@ -267,7 +267,14 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
-      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
+      -- For functions, the body is implicitly wrapped in a Return by ConcreteToAbstract;
+      -- unwrap it here so the concrete output doesn't show an explicit `return`.
+      let emitBody := if proc.isFunctional then
+        match body.val with
+        | .Return (some inner) => inner
+        | _ => body
+      else body
+      (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg emitBody])))
     | .Opaque postconds impl modifies =>
       let ens := postconds.map ensuresClauseToArg |>.toArray
       let mods := if modifies.isEmpty then #[] else modifiesClausesToArgs modifies

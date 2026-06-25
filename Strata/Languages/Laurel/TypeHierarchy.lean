@@ -10,6 +10,7 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -187,11 +188,12 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   mapProgramHighTypes (compositeRefToComposite compositeSet) transformed
 
 /-- Pipeline pass: type hierarchy transform. -/
-public def typeHierarchyTransformPass : LaurelPass where
+public def typeHierarchyTransformPass : LoweringPass where
   name := "TypeHierarchyTransform"
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
-  run := fun p m =>
+  comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
+  run := fun _ p m =>
     (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel

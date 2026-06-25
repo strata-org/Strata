@@ -90,10 +90,10 @@ def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
 end -- public section
 
 /-- Pipeline pass: eliminate deterministic holes. -/
-public def eliminateDeterministicHolesPass : LaurelPass where
+public def eliminateDeterministicHolesPass : LoweringPass where
   name := "EliminateDeterministicHoles"
   documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
-  run := fun p _m =>
+  run := fun _ p _m =>
     let (p', stats) := eliminateDeterministicHoles p
     (p', [], stats)
 

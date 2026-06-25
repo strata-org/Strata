@@ -404,9 +404,9 @@ public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
-public def translateCombinedLaurel (combined : Laurel.Program)
+public def translateCombinedLaurel (combined : Laurel.Program) (keepAllFilesPrefix : Option String := none)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined
+  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined keepAllFilesPrefix
   return (coreOption, errors)
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,

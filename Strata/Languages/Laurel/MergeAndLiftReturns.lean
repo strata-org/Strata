@@ -6,124 +6,95 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
+import Strata.Languages.Laurel.EliminateValueInReturns
 public import Strata.Languages.Laurel.LaurelPass
 
 /-!
-# Eliminate Returns in Expression Position
 
-Rewrites functional procedure bodies so that `return` statements are removed
-and early-return guard patterns become if-then-else expressions. This makes
-the body a pure expression tree suitable for translation to a Core function.
-
-The algorithm walks a block backwards (from last statement to first),
-accumulating a result expression:
-
-- The last statement is converted via `lastStmtToExpr` which strips `return`,
-  recurses into blocks, and handles if-then-else.
-- Each preceding statement wraps around the accumulated result via `stmtsToExpr`:
-  - `if (cond) { body }` (no else) becomes `if cond then lastStmtToExpr(body) else acc`
-  - Other statements are kept in a two-element block with the accumulator.
+Given a transparent body, merge the returns into a single outer return.
+Emits a diagnostic if it fails at any step.
 
 -/
 
 namespace Strata.Laurel
 
-/-- Appending a singleton strictly increases `sizeOf`. -/
-private theorem List.sizeOf_lt_append_singleton [SizeOf α] (xs : List α) (y : α) :
-    sizeOf xs < sizeOf (xs ++ [y]) := by
-  induction xs with
-  | nil => simp_all; omega
-  | cons hd tl ih => simp_all [List.cons_append]
+/-- Recurse into a statement, applying the guard-return rewrite inside blocks and branches.
+    Returns `Except DiagnosticModel StmtExprMd` so that unsupported statement forms produce
+    a diagnostic instead of panicking. -/
+def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
+  match _h : stmt.val with
+  | .Return (some expr) => .ok expr
+  | .Block [head] _ => removeReturns head
+  | .Block (head :: tail) label => do
+    let newTail ← removeReturns ⟨.Block tail none, stmt.source⟩
+    let passThrough: StmtExprMd :=
+      let tailList := match newTail.val with
+        | .Block stmts _ => stmts
+        | _ => [newTail]
+      ⟨ .Block (head :: tailList) label, stmt.source ⟩
+    match _hhead : head.val with
+    | .IfThenElse cond thenBr none =>
+      let newThen ← removeReturns thenBr
+      .ok ⟨ .IfThenElse cond newThen newTail, head.source ⟩
+    | .Assign _ _ => .ok passThrough
+    | .Assume _ => .ok passThrough
+    | .Assert _ => .ok passThrough
+    | .Block _ _ => .ok passThrough
+    | .IfThenElse _ _ (some _) => .error (diagnosticFromSource head.source "in a transparent body, if-then-else is only supported as the last statement in a block")
+    | _ => .error (diagnosticFromSource head.source
+        s!"unsupported statement {head.val.constructorName} in block head")
+  | .IfThenElse cond thenBr (some elseBr) => do
+      let thenExpr ← removeReturns thenBr
+      let elseExpr ← removeReturns elseBr
+      .ok ⟨ .IfThenElse cond thenExpr (some elseExpr), stmt.source⟩
+  | _ => .error (diagnosticFromSource stmt.source
+      s!"ending a transparent body with a {stmt.val.constructorName} statement is not supported")
+termination_by sizeOf stmt.val
+decreasing_by
+  all_goals
+    simp only [_h, StmtExpr.Block.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec,
+      List.cons.sizeOf_spec, List.nil.sizeOf_spec, Option.none.sizeOf_spec,
+      Option.some.sizeOf_spec]
+    try have hhd := AstNode.sizeOf_val_lt head
+    try have htb := AstNode.sizeOf_val_lt thenBr
+    try have heb := AstNode.sizeOf_val_lt elseBr
+    try simp only [_hhead, StmtExpr.IfThenElse.sizeOf_spec, Option.none.sizeOf_spec] at hhd
+    omega
 
-/-- `dropLast` of a non-empty list has strictly smaller `sizeOf`. -/
-private theorem List.sizeOf_dropLast_lt [SizeOf α] {l : List α} (h_ne : l ≠ []) :
-    sizeOf l.dropLast < sizeOf l := by
-  have h_concat := List.dropLast_concat_getLast h_ne
-  have : sizeOf l = sizeOf (l.dropLast ++ [l.getLast h_ne]) := by rw [h_concat]
-  rw [this]
-  exact List.sizeOf_lt_append_singleton l.dropLast (l.getLast h_ne)
-
-mutual
-
-/--
-Fold a list of preceding statements (right-to-left) around an accumulator
-expression. Each `if-then` (no else) guard wraps as
-`if cond then lastStmtToExpr(body) else acc`; other statements produce
-`Block [stmt, acc]`.
--/
-def stmtsToExpr (stmts : List StmtExprMd) (acc : StmtExprMd)
-    : StmtExprMd :=
-  match stmts with
-  | [] => acc
-  | s :: rest =>
-    let acc' := stmtsToExpr rest acc
-    match s with
-    | ⟨.IfThenElse cond thenBr none, ssrc⟩ =>
-      ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some acc'), ssrc⟩
-    | _ =>
-      { val := .Block [s, acc'] none, source := none }
-  termination_by (sizeOf stmts, 1)
-
-/--
-Convert the last statement of a block into an expression.
-- `return expr` → `expr`
-- A non-empty block → process last element, fold preceding statements
-- `if cond then A else B` → recurse into both branches
-- Anything else → kept as-is
--/
-def lastStmtToExpr (stmt : StmtExprMd) : StmtExprMd :=
-  match stmt with
-  | ⟨.Return (some val), _⟩ => val
-  | ⟨.Block stmts _, _⟩ =>
-    match h_last : stmts.getLast? with
-    | some last =>
-      have := List.mem_of_getLast? h_last
-      let lastExpr := lastStmtToExpr last
-      let dropped := stmts.dropLast
-      have h : sizeOf stmts.dropLast < sizeOf stmts :=
-        List.sizeOf_dropLast_lt (by intro h; simp [h] at h_last)
-      stmtsToExpr dropped lastExpr
-    | none => stmt
-  | ⟨.IfThenElse cond thenBr (some elseBr), source⟩ =>
-    ⟨.IfThenElse cond (lastStmtToExpr thenBr) (some (lastStmtToExpr elseBr)), source⟩
-  | _ => stmt
-  termination_by (sizeOf stmt, 0)
-  decreasing_by
-    all_goals (simp_all; term_by_mem)
-
-end
-
-/--
-Apply return elimination to a functional procedure's body.
-The entire body is treated as an expression to be converted.
--/
-def eliminateReturnsInExpression (proc : Procedure) : Procedure :=
-  if !proc.isFunctional then proc
-  else
-    match proc.body with
-    | .Transparent bodyExpr =>
-      { proc with body := .Transparent (lastStmtToExpr bodyExpr) }
-    | .Opaque postconds (some impl) modif =>
-      { proc with body := .Opaque postconds (some (lastStmtToExpr impl)) modif }
-    | _ => proc
+/-- Transform a single procedure by applying the guard-return elimination to its body.
+    Returns the procedure and any diagnostic emitted on failure. -/
+private def eliminateReturnsInExpression (proc : Procedure) : Procedure × List DiagnosticModel :=
+  match proc.body with
+  | .Transparent body =>
+    match removeReturns body with
+    | .ok result => ({ proc with body := .Transparent ⟨.Return result, body.source ⟩ }, [])
+    | .error diag => (proc, [diag])
+  | _ => (proc, [])
 
 public section
 
 /--
-Transform a program by eliminating returns in all functional procedure bodies.
+Transform a program by eliminating returns in all procedure bodies.
 -/
-def mergeAndLiftReturns (program : Program) : Program :=
-  { program with staticProcedures := program.staticProcedures.map eliminateReturnsInExpression }
+def mergeAndLiftReturns (program : Program) : Program × List DiagnosticModel :=
+  let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
+    let (proc', procDiags) := eliminateReturnsInExpression proc
+    (proc' :: ps, ds ++ procDiags)
+  ) ([], [])
+  ({ program with staticProcedures := procs.reverse }, diags)
 
 end -- public section
 
 /-- Pipeline pass: merge and lift returns. -/
-public def mergeAndLiftReturnsPass : LaurelPass where
+public def mergeAndLiftReturnsPass : LoweringPass where
   name := "MergeAndLiftReturns"
   documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
   needsResolves := true
-  run := fun p _m =>
-    (mergeAndLiftReturns p, [], {})
+  comesBefore := [⟨ eliminateValueInReturnsPass.meta, "Lifts returns with a value, so the value should not yet have been lowered."⟩]
+  run := fun _ p _m =>
+    let (p', diags) := mergeAndLiftReturns p
+    (p', diags, {})
 
 end Laurel

@@ -8,30 +8,15 @@ module
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.HeapParameterizationConstants
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-
-Modifies clause transformation (Laurel → Laurel).
-
-Transforms procedures with modifies clauses by generating a frame condition
-and conjoining it with the postcondition. After this pass, the modifies list
-is cleared since its semantics have been absorbed into the postcondition.
-
-This pass should run after heap parameterization, which has already:
-- Added explicit heap parameter ($heap as inout)
-- Transformed field accesses to readField/updateField calls
-- Collected field constants
-
-The frame condition states: for every object not mentioned in the modifies clause,
-all field values are preserved between the input and output heaps.
-
-Generates:
-  forall $obj: Composite, $fld: Field =>
-    $obj < old($heap).nextReference && notModified($obj) ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
-
-where `notModified($obj)` is the conjunction of `$obj != e` for each single entry `e`,
-and `!(select(s, $obj))` for each set entry `s`.
+Modifies clause transformation (Laurel → Laurel), run after heap parameterization:
+generate a frame per `modifies` clause and clear it. Under array theory with only
+individual refs, callers assume a quantifier-free frame and the body checks it per exit.
 -/
 
 namespace Strata.Laurel
@@ -90,45 +75,64 @@ def conjoinAll (exprs : List StmtExprMd) : StmtExprMd :=
   | first :: rest => rest.foldl (fun acc e => mkMd <| .PrimitiveOp .And [acc, e]) first
 
 /--
-Build the modifies frame condition as a Laurel StmtExpr.
-
-Generates a single quantified formula:
+Quantified (pointwise) frame: every allocated object the `modifies` clause does not name keeps
+all of its field values across the call.
 
   forall $obj: Composite, $fld: Field =>
     notModified($obj) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
-
-Returns `none` if there are no entries.
 -/
-def buildModifiesEnsures (proc: Procedure) (model: SemanticModel) (modifiesExprs : List StmtExprMd)
-    (heapName : Identifier) : Option StmtExprMd :=
-  let entries := extractModifiesEntries model modifiesExprs
+def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
+    (heapIn heapOut : StmtExprMd) : StmtExprMd :=
   let objName : Identifier := "$modifies_obj"
   let fldName : Identifier := "$modifies_fld"
   let obj := mkMd <| .Var (.Local objName)
   let fld := mkMd <| .Var (.Local fldName)
-  let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapName)))
-  let heapOut := mkMd <| .Var (.Local heapName)
-      -- Build the "obj is allocated" condition: Composite..ref($obj) < old($heap).nextReference
   let heapCounter := mkMd <| .StaticCall "Heap..nextReference!" [heapIn]
   let objRef := mkMd <| .StaticCall "Composite..ref!" [obj]
   let objAllocated := mkMd <| .PrimitiveOp .Lt [objRef, heapCounter]
   let antecedent := if entries.isEmpty
     then objAllocated
     else
-      -- Build the "not modified" precondition from all entries
-      -- Combine: $obj < old($heap).nextReference && notModified($obj)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj))
       mkMd <| .PrimitiveOp .And [objAllocated, notModified]
-  -- Build: readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
   let readIn := mkMd <| .StaticCall "readField" [heapIn, obj, fld]
   let readOut := mkMd <| .StaticCall "readField" [heapOut, obj, fld]
   let heapUnchanged := mkMd <| .PrimitiveOp .Eq [readIn, readOut]
-  -- Build: antecedent ==> heapUnchanged
   let implBody := mkMd <| .PrimitiveOp .Implies [antecedent, heapUnchanged]
-  -- Build: forall $obj: Composite, $fld: Field => ...
   let innerForall := mkMd <| .Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := none } ⟩ none implBody
-  let outerForall : StmtExprMd := { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
-  some outerForall
+  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := none } ⟩ none innerForall, source := proc.name.source }
+
+/-- Quantifier-free frame: output `data` equals input with only the named rows
+overwritten, and `nextReference` is monotone. -/
+def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
+    (heapIn heapOut : StmtExprMd) : StmtExprMd :=
+  let data h := mkMd <| .StaticCall "Heap..data!" [h]
+  let nextRef h := mkMd <| .StaticCall "Heap..nextReference!" [h]
+  let dataOut := data heapOut
+  let modifiedRefs := entries.filterMap fun e => match e with | .single r => some r | _ => none
+  let framedData := modifiedRefs.foldr
+    (fun ref acc => mkMd <| .StaticCall "update" [acc, ref, mkMd <| .StaticCall "select" [dataOut, ref]])
+    (data heapIn)
+  let dataPreserved := mkMd <| .PrimitiveOp .Eq [dataOut, framedData]
+  let refsMonotone := mkMd <| .PrimitiveOp .Leq [nextRef heapIn, nextRef heapOut]
+  { val := .PrimitiveOp .And [dataPreserved, refsMonotone], source := proc.name.source }
+
+/-- True when the `modifies` clause is non-empty and names only individual references
+(no set-valued entries), so the enumerated frame applies. -/
+def onlyIndividualRefs (entries : List ModifiesEntry) : Bool :=
+  !entries.isEmpty && entries.all fun e => match e with | .single _ => true | _ => false
+
+/-- Assert `frame` before every exit of `body` (`return` and body-block `exit`) and at its end. -/
+def insertFrameChecks (proc : Procedure) (frame : StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
+  let src := proc.name.source
+  let check : StmtExprMd := { val := .Assert { condition := frame, summary := "modifies clause" }, source := src }
+  let wrap (e : StmtExprMd) : StmtExprMd := { val := .Block [check, e] none, source := e.source }
+  let beforeExits := mapStmtExpr (fun e =>
+    match e.val with
+    | .Return _ => wrap e
+    | .Exit l => if l == bodyLabel then wrap e else e
+    | _ => e) body
+  { val := .Block [beforeExits, check] none, source := src }
 
 /--
 Check whether a procedure has a `$heap` output parameter,
@@ -137,35 +141,32 @@ indicating it mutates the heap.
 def hasHeapOut (proc : Procedure) : Bool :=
   proc.outputs.any (fun p => p.name.text == "$heap")
 
-/--
-Transform a single procedure: if it has modifies clauses, generate the frame
-condition and conjoin it with the postcondition, then clear the modifies list.
-
-If the procedure has `modifies *`, no frame condition is generated (the procedure
-may modify anything on the heap), and the modifies list is simply cleared.
-
-If the procedure has a `$heap` but no modifies clause, adds a postcondition
-that all allocated objects are preserved between heaps:
-  `forall $obj: Composite, $fld: Field => $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)`
-
-If the modifies clause uses a wildcard (`*`), the frame condition is skipped
-entirely — the procedure may modify anything.
--/
+/-- Build and attach `proc`'s modifies frame, then clear the clause. -/
 def transformModifiesClauses (model: SemanticModel)
-    (proc : Procedure) : Except (Array DiagnosticModel) Procedure :=
+    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array DiagnosticModel) Procedure :=
   match proc.body with
   | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
       if hasModifiesWildcard modifiesExprs then
-        -- modifies * means the procedure can modify anything; no frame condition
         .ok { proc with body := .Opaque postconds impl [] }
       else if hasHeapOut proc then
-        let heapName := heapVarName
-        let frameCondition := buildModifiesEnsures proc model modifiesExprs heapName
-        let postconds' := match frameCondition with
-          | some frame => postconds ++ [{ condition := frame, summary := "modifies clause" }]
-          | none => postconds
-        .ok { proc with body := .Opaque postconds' impl [] }
+        let entries := extractModifiesEntries model modifiesExprs
+        let heapIn := mkMd <| .Old (mkMd (.Var (.Local heapVarName)))
+        let heapOut := mkMd <| .Var (.Local heapVarName)
+        if useEnumeratedFrame && onlyIndividualRefs entries then
+          -- Callers assume the quantifier-free frame; the body re-checks the
+          -- pointwise frame at every exit.
+          let pointwise := buildQuantifiedFrame proc entries heapIn heapOut
+          let framePost : Condition :=
+            { condition := buildEnumeratedFrame proc entries heapIn heapOut,
+              summary := "modifies clause", free := true }
+          let impl' := impl.map (insertFrameChecks proc pointwise)
+          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl' [] }
+        else
+          let framePost : Condition :=
+            { condition := buildQuantifiedFrame proc entries heapIn heapOut,
+              summary := "modifies clause" }
+          .ok { proc with body := .Opaque (postconds ++ [framePost]) impl [] }
       else
         .ok proc
   | _ => .ok proc
@@ -222,9 +223,9 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) : Program × List DiagnosticModel :=
+def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List DiagnosticModel :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
-    match transformModifiesClauses model proc with
+    match transformModifiesClauses model proc useEnumeratedFrame with
     | .ok proc' => (acc ++ [proc'], errs)
     | .error newErrs => (acc ++ [proc], errs ++ newErrs.toList)
   ) ([], [])
@@ -233,20 +234,21 @@ def modifiesClausesTransform (model: SemanticModel) (program : Program) : Progra
 end -- public section
 
 /-- Pipeline pass: filter non-composite modifies clauses. -/
-public def filterNonCompositeModifiesPass : LaurelPass where
+public def filterNonCompositeModifiesPass : LoweringPass where
   name := "FilterNonCompositeModifies"
   documentation := "Filters modifies clauses that refer to non-composite types (e.g. primitives), which cannot be heap-parameterized. Emits a warning for each removed clause. Should run before heap parameterization so that phase remains agnostic to modifies clauses."
-  run := fun p m =>
+  run := fun _ p m =>
     let (p', diags) := filterNonCompositeModifies m p
     (p', diags, {})
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
-public def modifiesClausesTransformPass : LaurelPass where
+public def modifiesClausesTransformPass : LoweringPass where
   name := "ModifiesClausesTransform"
-  documentation := "Translates modifies clauses into additional ensures clauses. The modifies clause of a procedure is translated into a quantified assertion that states objects not mentioned in the modifies clause have their field values preserved between the input and output heap."
+  documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
-  run := fun p m =>
-    let (p', diags) := modifiesClausesTransform m p
+  comesAfter := [⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩]
+  run := fun options p m =>
+    let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})
 
 end Strata.Laurel

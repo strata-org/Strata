@@ -18,6 +18,7 @@ composite Immutable {
   // fields of Immutable are considered mutable inside this procedure
   // and invariants of Immutable are not visible
   // can only call procedures that are also constructing Immutable
+    opaque
     constructs Immutable
     modifies this
   {
