@@ -65,7 +65,10 @@ open StructuredToUnstructuredCorrect (extendStoreOne extendStoreOne_self extendS
 open OptEStepBProvider (StmtSimE
   BodySimES StmtSimES bodySimES_cons bodySimES_nil bodySimES_to_bodySimSum
   stmtSimE_to_stmtSimES_of_noExit cmd_stmt_no_exit exit_stmtSimES
-  block_stmtSimES ite_stmtSimES ite_nondet_stmtSimES nestedLoop_stmtSimES)
+  block_stmtSimES ite_stmtSimES ite_nondet_stmtSimES nestedLoop_stmtSimES
+  BodySimFail StmtSimFail bodySimFail_nil bodySimFail_cons
+  cmd_stmtSimFail typeDecl_stmtSimFail exit_stmtSimFail
+  ite_stmtSimFail ite_nondet_stmtSimFail block_stmtSimFail nestedLoop_stmtSimFail)
 
 variable {P : PureExpr}
 
@@ -393,6 +396,60 @@ theorem BodyTransport.noFuncDecl_h [HasFvar P] [HasSubstFvar P] [HasVarsPure P P
   | loop _ _ _ ih_lbody ih_rest =>
     simp only [Block.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true]
     exact ⟨by simpa [Block.noFuncDecl] using ih_lbody, ih_rest⟩
+
+/-! ## Singleton-body `BodySimES` → `StmtSimES`.
+
+A `BodySimES A B subst [s] [s']` is exactly a `StmtSimES A B subst s s'`: a
+`.stmts [s] ρ` run reaches a terminal/exiting config iff the corresponding
+`.stmt s ρ` run does (the singleton-list wrapper steps `step_stmts_cons` /
+`step_seq_done` / `step_stmts_nil` around the single statement, and back).  The
+`_to_fail` induction uses this to recover each arm's head `StmtSimES` (needed by
+`bodySimFail_cons`'s head-terminates case) by running `Block.bodyTransport` on the
+singleton head transport. -/
+theorem bodySimES_singleton_to_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)} {s s' : Stmt P (Cmd P)}
+    (h : BodySimES (extendEval := extendEval) A B subst [s] [s']) :
+    StmtSimES (extendEval := extendEval) A B subst s s' := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  obtain ⟨h_term, h_exit⟩ := h ρ_s ρ_h h_hinv h_eval h_hf h_bnd
+  refine ⟨?_, ?_⟩
+  · -- terminal: lift `.stmt s ρ_s → .terminal ρ_s'` to `.stmts [s] ρ_s → .terminal`,
+    -- apply the singleton body's terminal clause, then peel the hoist `.stmts [s']` run.
+    intro ρ_s' h_run
+    have h_stmts : StepStmtStar P (EvalCmd P) extendEval (.stmts [s] ρ_s) (.terminal ρ_s') :=
+      .step _ _ _ StepStmt.step_stmts_cons
+        (ReflTrans_Transitive _ _ _ _ (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_run)
+          (.step _ _ _ StepStmt.step_seq_done
+            (.step _ _ _ StepStmt.step_stmts_nil (.refl _))))
+    obtain ⟨ρ_h', h_h_run, h_hinv', h_hf', h_bnd', h_eval'⟩ := h_term ρ_s' h_stmts
+    refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+    -- peel `.stmts [s'] ρ_h → .terminal ρ_h'` back to `.stmt s' ρ_h → .terminal ρ_h'`.
+    obtain ⟨ρ_mid, h_head, h_nil⟩ := stmts_cons_terminal_inv (extendEval := extendEval) h_h_run
+    have : ρ_mid = ρ_h' := by
+      cases h_nil with
+      | step _ _ _ hd hr => cases hd; cases hr with
+        | refl => rfl
+        | step _ _ _ hd' _ => exact nomatch hd'
+    rw [this] at h_head; exact h_head
+  · intro l ρ_s' h_run
+    have h_stmts : StepStmtStar P (EvalCmd P) extendEval (.stmts [s] ρ_s) (.exiting l ρ_s') :=
+      .step _ _ _ StepStmt.step_stmts_cons
+        (ReflTrans_Transitive _ _ _ _ (seq_inner_star P (EvalCmd P) extendEval _ _ _ h_run)
+          (.step _ _ _ StepStmt.step_seq_exit (.refl _)))
+    obtain ⟨ρ_h', h_h_run, h_hinv', h_hf', h_bnd', h_eval'⟩ := h_exit l ρ_s' h_stmts
+    refine ⟨ρ_h', ?_, h_hinv', h_hf', h_bnd', h_eval'⟩
+    -- peel `.stmts [s'] ρ_h → .exiting l ρ_h'` back to `.stmt s' ρ_h → .exiting l ρ_h'`.
+    cases h_h_run with
+    | step _ _ _ hd hr =>
+      cases hd
+      rcases seq_reaches_exiting P (EvalCmd P) extendEval hr with
+        h_head | ⟨ρ_mid, _, h_tail⟩
+      · exact h_head
+      · -- the tail `.stmts [] ρ_mid` cannot reach `.exiting`.
+        exact absurd h_tail (by
+          intro h; cases h with
+          | step _ _ _ hd2 hr2 => cases hd2; cases hr2 with
+            | step _ _ _ hd3 _ => exact nomatch hd3)
 
 /-! ## The body transport: `BodyTransport` derivation → `BodySimES`.
 
@@ -980,6 +1037,169 @@ theorem Block.bodyTransport [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBo
     -- A `.exit lbl md` is left literally unchanged by the rename; its base sim is
     -- the banked `exit_stmtSimES`.
     exact bodySimES_cons (exit_stmtSimES A B subst lbl md) ih_rest
+
+/-! ## The failing body transport: `BodyTransport` → `BodySimFail`.
+
+The `_to_fail` sibling of `Block.bodyTransport`, by the SAME induction on the
+`BodyTransport` derivation but producing `BodySimFail` (a failing source-body run
+is matched by a failing hoist-body run).  Each arm sequences via `bodySimFail_cons`,
+which needs the head's `StmtSimES` (for the case where the head terminates and the
+TAIL fails) and the head's `StmtSimFail` (for the case where the head fails).
+
+The head `StmtSimES` per arm is recovered by running `Block.bodyTransport` on the
+SINGLETON head transport (`<ctor> args BodyTransport.nil`) and projecting via
+`bodySimES_singleton_to_stmtSimES`.  The head `StmtSimFail` is the matching per-kind
+producer: atomic (`.cmd`/`.typeDecl`/`.exit`) lift from the head `StmtSimES`; the
+`.block`/`.ite`/nested-`.loop` producers consume the inner body's `BodySimFail` (the
+recursive IH), and the nested loop also consumes the inner `BodySimSum`
+(`bodySimES_to_bodySimSum` of the inner `Block.bodyTransport`). -/
+theorem Block.bodyTransport_to_fail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {body_src body_h : List (Stmt P (Cmd P))}
+    (hrw : BodyTransport (P := P) A B subst body_src body_h)
+    (h_subst_fst_A : ∀ a ∈ subst.map Prod.fst, a ∈ A)
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_subst_snd_B : ∀ b ∈ subst.map Prod.snd, b ∈ B)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval) :
+    BodySimFail (extendEval := extendEval) A B subst body_src body_h := by
+  classical
+  -- Local abbreviation: the head `StmtSimES` from a singleton head transport.
+  have head_es : ∀ {s s' : Stmt P (Cmd P)},
+      BodyTransport (P := P) A B subst [s] [s'] →
+      StmtSimES (extendEval := extendEval) A B subst s s' := fun hsingle =>
+    bodySimES_singleton_to_stmtSimES
+      (Block.bodyTransport hsingle h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef)
+  induction hrw with
+  | nil => exact bodySimFail_nil A B subst
+  | @init_set a b τ rhs md body_src body_h h_pair h_a_in_A h_b_in_B
+      h_unique_a h_unique_b h_B_fresh_rhs _ ih =>
+    exact bodySimFail_cons
+      (head_es (.init_set h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b h_B_fresh_rhs .nil))
+      (cmd_stmtSimFail
+        (head_es (.init_set h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b h_B_fresh_rhs .nil)))
+      ih
+  | @init_nondet a b τ md body_src body_h h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b _ ih =>
+    exact bodySimFail_cons
+      (head_es (.init_nondet h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b .nil))
+      (cmd_stmtSimFail
+        (head_es (.init_nondet h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b .nil)))
+      ih
+  | @set_renamed a b rhs md body_src body_h h_pair h_a_in_A h_b_in_B
+      h_unique_a h_unique_b h_B_fresh_rhs _ ih =>
+    exact bodySimFail_cons
+      (head_es (.set_renamed h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b h_B_fresh_rhs .nil))
+      (cmd_stmtSimFail
+        (head_es (.set_renamed h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b h_B_fresh_rhs .nil)))
+      ih
+  | @set_renamed_nondet a b md body_src body_h h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b _ ih =>
+    exact bodySimFail_cons
+      (head_es (.set_renamed_nondet h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b .nil))
+      (cmd_stmtSimFail
+        (head_es (.set_renamed_nondet h_pair h_a_in_A h_b_in_B h_unique_a h_unique_b .nil)))
+      ih
+  | @set name rhs md body_src body_h h_name_notin_A h_name_notin_B h_B_fresh_rhs _ ih =>
+    exact bodySimFail_cons
+      (head_es (.set h_name_notin_A h_name_notin_B h_B_fresh_rhs .nil))
+      (cmd_stmtSimFail (head_es (.set h_name_notin_A h_name_notin_B h_B_fresh_rhs .nil)))
+      ih
+  | @set_nondet name md body_src body_h h_name_notin_A h_name_notin_B _ ih =>
+    exact bodySimFail_cons
+      (head_es (.set_nondet h_name_notin_A h_name_notin_B .nil))
+      (cmd_stmtSimFail (head_es (.set_nondet h_name_notin_A h_name_notin_B .nil)))
+      ih
+  | @assert lbl e md body_src body_h h_B_fresh_e _ ih =>
+    exact bodySimFail_cons
+      (head_es (.assert h_B_fresh_e .nil))
+      (cmd_stmtSimFail (head_es (.assert h_B_fresh_e .nil)))
+      ih
+  | @assume lbl e md body_src body_h h_B_fresh_e _ ih =>
+    exact bodySimFail_cons
+      (head_es (.assume h_B_fresh_e .nil))
+      (cmd_stmtSimFail (head_es (.assume h_B_fresh_e .nil)))
+      ih
+  | @cover lbl e md body_src body_h _ ih =>
+    exact bodySimFail_cons
+      (head_es (.cover .nil))
+      (cmd_stmtSimFail (head_es (.cover .nil)))
+      ih
+  | @typeDecl tc md body_src body_h _ ih =>
+    exact bodySimFail_cons
+      (head_es (.typeDecl .nil))
+      (typeDecl_stmtSimFail (head_es (.typeDecl .nil)))
+      ih
+  | @block lbl md inner_src inner_h body_src body_h h_inner h_rest ih_inner ih_rest =>
+    have inner_es : BodySimES (extendEval := extendEval) A B subst inner_src inner_h :=
+      Block.bodyTransport h_inner h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    exact bodySimFail_cons
+      (block_stmtSimES inner_es)
+      (block_stmtSimFail ih_inner)
+      ih_rest
+  | @ite g md tss_src tss_h ess_src ess_h body_src body_h
+      h_B_fresh_g h_then h_else h_rest ih_then ih_else ih_rest =>
+    have h_guard_eq : ∀ (ρ_s ρ_h : Env P),
+        HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+        (∃ w, ρ_s.eval ρ_s.store g = some w) →
+        ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store (substFvarMany g subst) := by
+      intro ρ_s ρ_h h_hinv h_eval ⟨w, h_g_w⟩
+      have h := cond_transport' (δ := ρ_s.eval) (e := g) (σ_s := ρ_s.store) (σ_h := ρ_h.store)
+        h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup
+        h_B_fresh_g h_hinv
+        (read_vars_def_of_eval (h_wfdef ρ_s) h_g_w)
+        (h_wfcongr ρ_s) (h_wfsubst ρ_s)
+      rw [h, h_eval]
+    have then_es : BodySimES (extendEval := extendEval) A B subst tss_src tss_h :=
+      Block.bodyTransport h_then h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    have else_es : BodySimES (extendEval := extendEval) A B subst ess_src ess_h :=
+      Block.bodyTransport h_else h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    exact bodySimFail_cons
+      (ite_stmtSimES h_guard_eq then_es else_es)
+      (ite_stmtSimFail h_guard_eq ih_then ih_else)
+      ih_rest
+  | @ite_nondet md tss_src tss_h ess_src ess_h body_src body_h
+      h_then h_else h_rest ih_then ih_else ih_rest =>
+    have then_es : BodySimES (extendEval := extendEval) A B subst tss_src tss_h :=
+      Block.bodyTransport h_then h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    have else_es : BodySimES (extendEval := extendEval) A B subst ess_src ess_h :=
+      Block.bodyTransport h_else h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    exact bodySimFail_cons
+      (ite_nondet_stmtSimES then_es else_es)
+      (ite_nondet_stmtSimFail ih_then ih_else)
+      ih_rest
+  | @loop g md lbody_src lbody_h body_src body_h
+      h_B_fresh_g h_lbody h_rest ih_lbody ih_rest =>
+    have inner_es : BodySimES (extendEval := extendEval) A B subst lbody_src lbody_h :=
+      Block.bodyTransport h_lbody h_subst_fst_A h_A_subst_fst h_subst_snd_B
+        h_src_nodup h_disjoint h_tgt_nodup h_wfvar h_wfcongr h_wfsubst h_wfdef
+    have inner_sim : LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval) A B subst
+        lbody_src lbody_h := bodySimES_to_bodySimSum inner_es
+    exact bodySimFail_cons
+      (nestedLoop_stmtSimES (A := A) (B := B) (subst := subst)
+        h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_B_fresh_g
+        h_wfvar h_wfcongr h_wfsubst h_wfdef inner_sim
+        h_lbody.noFuncDecl_src h_lbody.noFuncDecl_h)
+      (nestedLoop_stmtSimFail (A := A) (B := B) (subst := subst)
+        h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_B_fresh_g
+        h_wfvar h_wfcongr h_wfsubst h_wfdef inner_sim ih_lbody
+        h_lbody.noFuncDecl_src h_lbody.noFuncDecl_h)
+      ih_rest
+  | @exit lbl md body_src body_h h_rest ih_rest =>
+    exact bodySimFail_cons
+      (exit_stmtSimES A B subst lbl md)
+      (exit_stmtSimFail A B subst lbl md)
+      ih_rest
 
 end LoopInitHoistBodyTransport
 end Imperative
