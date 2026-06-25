@@ -71,7 +71,6 @@ private def fmtHighType : HighType → String
   | .Pure _ => "Pure"
   | .Intersection _ => "Intersection"
   | .TBv n => s!"TBv({n})"
-  | .TCore s => s!"TCore({s})"
   | .Unknown => "Unknown"
   | .MultiValuedExpr _ => "MultiValuedExpr"
 
