@@ -2144,8 +2144,8 @@ final store (source on the left).  A real composition of the three terminal
 `_sound_kind` theorems via `StoreAgreement.trans`.
 
 This is the terminal-only restatement the dual `pipeline_sound`'s terminal arm
-delegates to; it is also what `pipeline_overapproximates` consumes to discharge
-its terminal clause, since that clause needs a *terminal* CFG witness directly
+delegates to; it is also what the refinement statements consume to discharge
+their terminal clause, since that clause needs a *terminal* CFG witness directly
 (the dual theorem's disjunctive conclusion cannot be projected to its terminal
 disjunct without a target-IR determinism principle, which the development does
 not carry). -/
@@ -2313,8 +2313,8 @@ final store (source on the left).  A real composition of the three
 label `lbl` through each pass (the pipeline preserves the escaping label).
 
 This is the exiting-only restatement the dual `pipeline_sound`'s exiting arm
-delegates to; it is also what `pipeline_overapproximates` consumes to discharge
-its exiting clause, since that clause needs an *exiting* CFG witness for the
+delegates to; it is also what the refinement statements consume to discharge
+their exiting clause, since that clause needs an *exiting* CFG witness for the
 *same* `lbl` directly (the dual theorem's disjunctive conclusion cannot be
 projected to its exiting disjunct without a target-IR determinism principle,
 which is not a theorem of the CFG semantics — the per-config evaluator binders
@@ -2551,8 +2551,8 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   -- EXITING ARM — the source run reaches `.exiting lbl ρ'` (an uncaught
   -- top-level exit); delegate to the exiting-only helper, which composes the
   -- three banked `_sound_kind_exit` siblings (the sum-typed loop-body drivers),
-  -- threading the escaping label `lbl` through.  Factored out so
-  -- `pipeline_overapproximates` can consume an exiting CFG witness directly.
+  -- threading the escaping label `lbl` through.  Factored out so the refinement
+  -- statements can consume an exiting CFG witness directly.
   -- =========================================================================
   case inr =>
     right
@@ -2567,7 +2567,7 @@ theorem pipeline_sound [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIden
   -- =========================================================================
   -- TERMINAL ARM — the source run reaches `.terminal ρ'`; delegate to the
   -- terminal-only helper, which composes the three terminal `_sound_kind`
-  -- lemmas (the single-outcome proof, factored out so `pipeline_overapproximates`
+  -- lemmas (the single-outcome proof, factored out so the refinement statements
   -- can consume a terminal CFG witness directly).
   -- =========================================================================
   left
@@ -2931,90 +2931,6 @@ theorem pipeline_to_fail
     h_store_mints_s2u_ext
     h_step3_iv h_step3_mv
     h_reach' h_c'_fail
-
-/-- **Pipeline soundness, restated as a refinement.** Under the
-`PipelinePre` bundle, `fun ss => some (pipeline ss)` overapproximates the
-source statement-list language `Lang.imperativeBlock` by the unstructured CFG
-language `Lang.cfg`, allowing the target to introduce extra variables (the
-`StoreAgreement` store relation, source on the left).
-
-Both arms of the refinement are discharged:
-
-* **terminal** — directly from `pipeline_sound_terminal` (the terminal half of
-  the dual `pipeline_sound`): its `⟨σ_cfg, h_run, h_agree⟩` supplies the target
-  witness `ρ_t := { store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure }`.
-  `R ρ'.store ρ_t.store` is `h_agree`, `ρ_t.hasFailure = ρ'.hasFailure` is `rfl`,
-  and the target run definitionally matches `h_run` (the placeholder CFG in
-  `terminalCfg.1` is discarded by `Lang.cfg.star`, which reads the cfg index from
-  `stmtCfg.1 = pipeline ss`).  The terminal helper, rather than the dual
-  `pipeline_sound`, is consumed here because this clause needs a *terminal* CFG
-  witness directly: the dual theorem's disjunctive conclusion (from `Or.inl
-  h_term`) cannot be projected to its terminal disjunct without a target-IR
-  determinism principle the development does not carry.
-* **exiting** — directly from `pipeline_sound_exiting` (the exiting half of the
-  dual `pipeline_sound`): for an escaping source run to `.exiting lbl ρ'`, its
-  `⟨σ_cfg, h_run, h_agree⟩` supplies the target witness
-  `ρ_t := { store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure }` and a
-  genuine `.exiting lbl σ_cfg` CFG run for the *same* `lbl`.  `R ρ'.store
-  ρ_t.store` is `h_agree`, `ρ_t.hasFailure = ρ'.hasFailure` is `rfl`, and the
-  target run definitionally matches `h_run` (the now-real `exitingCfg lbl ρ_t`
-  carries the `CFGConfig.exiting lbl ρ_t.store ρ_t.hasFailure` shape).  The
-  exiting helper, rather than the dual `pipeline_sound`, is consumed here for the
-  same reason as the terminal arm: this clause needs an *exiting* CFG witness for
-  the same `lbl` directly, and the dual theorem's disjunctive conclusion cannot
-  be projected to its exiting disjunct without a target-IR determinism principle
-  that is not a theorem of the CFG semantics.
-
-This `OverapproximatesAllowingExtraVarsWhen` form (a store-on-store relation,
-two arms) and the unconditional `OverapproximatesUptoWhen PipelineEnvRel` form
-`pipeline_overapproximates_upto` (a whole-env relation, four arms additionally
-covering `CanFail`-preservation and target `initEnvWF`) are kept side by side
-deliberately: bridging between them is not definitional — the precondition
-arities differ (statement-only vs statement-and-env), the relation domains
-differ (env-relation vs store-relation), and recovering the store-relation arms
-from the env-relation ones would discard the `CanFail`/`initEnvWF` conjuncts and
-re-introduce the explicit well-formed-evaluator hypotheses, which is a separate
-proof rather than a corollary. -/
-theorem pipeline_overapproximates [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P]
-    [HasIdent P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
-    [LawfulHasFvar P] [LawfulHasBool P] [LawfulHasIdent P] [LawfulHasIntOrder P]
-    [LawfulHasNot P] [HasSubstFvar P] [LawfulHasSubstFvar P]
-    (extendEval : ExtendEval P) :
-    Specification.Transform.OverapproximatesAllowingExtraVarsWhen
-      (Specification.Transform.Lang.imperativeBlock (P := P) (CmdT := Cmd P) (EvalCmd P) extendEval (isAtAssert P))
-      (Lang.cfg extendEval)
-      (fun ss ρ₀ => PipelinePre extendEval ss ρ₀)
-      (fun ss => some (pipeline ss)) := by
-  intro ss cfg ht ρ₀ ρ' hpre _ _ _
-  -- `ht : some (pipeline ss) = some cfg` identifies `cfg` with `pipeline ss`.
-  simp only [Option.some.injEq] at ht
-  subst ht
-  refine ⟨?_, ?_⟩
-  · -- terminal arm: discharged by `pipeline_sound_terminal` (the terminal half
-    -- of the dual `pipeline_sound`), which yields a terminal CFG witness directly.
-    intro h_term
-    obtain ⟨σ_cfg, h_run, h_agree⟩ :=
-      pipeline_sound_terminal extendEval ss ρ₀ ρ'
-        hpre.hwfb hpre.hwfv hpre.hwfvar' hpre.hwfcongr' hpre.hwfsubst' hpre.hwfdef'
-        hpre.h_store_inits hpre.h_store_mints_ndelim hpre.h_store_mints_hoist
-        hpre.h_store_mints_s2u hpre.h_nofd hpre.h_lhni hpre.h_nml
-        hpre.h_unique hpre.h_fresh hpre.h_disj hpre.h_ndelim_writes hpre.h_ndelim_exprs
-        hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars h_term
-    exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
-      h_agree, rfl, h_run⟩
-  · -- exiting arm: discharged by `pipeline_sound_exiting` (the exiting half of
-    -- the dual `pipeline_sound`), which yields an exiting CFG witness for the
-    -- *same* `lbl` directly — non-vacuous, no covered-exit assumption needed.
-    intro lbl hexit
-    obtain ⟨σ_cfg, h_run, h_agree⟩ :=
-      pipeline_sound_exiting extendEval ss ρ₀ ρ'
-        hpre.hwfb hpre.hwfv hpre.hwfvar' hpre.hwfcongr' hpre.hwfsubst' hpre.hwfdef'
-        hpre.h_store_inits hpre.h_store_mints_ndelim hpre.h_store_mints_hoist
-        hpre.h_store_mints_s2u hpre.h_nofd hpre.h_lhni hpre.h_nml
-        hpre.h_unique hpre.h_fresh hpre.h_disj hpre.h_ndelim_writes hpre.h_ndelim_exprs
-        hpre.h_hoist_exprs hpre.h_disj_initVars hpre.h_disj_modVars lbl hexit
-    exact ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure },
-      h_agree, rfl, h_run⟩
 
 /-- **Covered-exit no-escape.** When every `.exit` in the source `ss` is caught
 by an enclosing labeled block (`Block.exitsCoveredByBlocks [] ss`), no source
