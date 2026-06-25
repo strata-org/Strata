@@ -633,6 +633,16 @@ function Any_enumerate_to_Any (v: Any) : Any;
 function Any_dict_to_Any (v: Any) : Any;
 function Any_sum_to_Any (v: Any) : Any;
 function Any_isinstance_to_bool (v: Any, t: Any) : bool;
+// Unmodeled builtins the resolver remaps to (Resolution.lean builtinContext): declared
+// as uninterpreted stubs (sound) so the elaborator's lookupFuncSig finds a signature —
+// otherwise a `type(e)`/`abs(x)`/etc. is a hard elaboration failure instead of an opaque
+// Any. Arities match the resolver's mkBuiltinSig; params are `Any` per prelude convention.
+function Any_type_to_Any (obj: Any) : Any;
+function Any_abs_to_Any (x: Any) : Any;
+function Any_chr_to_Any (i: Any) : Any;
+function Any_ord_to_Any (c: Any) : Any;
+function Any_getattr_to_Any (obj: Any, name: Any) : Any;
+function Any_setattr_to_Any (obj: Any, name: Any, value: Any) : Any;
 function to_int_any (v: Any) : Any;
 function to_float_any (v: Any) : Any;
 function PDiv (v1: Any, v2: Any) : Any;
