@@ -2033,6 +2033,7 @@ open LoopInitHoistLoopDriver (BodySimSum BodySimUSFSum
   loopDet_lift_sf_undef_TE_recovers_single
   loopDet_lift_sf_undef_E_recovers_single
   loopDet_lift_sf_2g_undef_F_fuel
+  compose_union_fail
   prelude_bridge_list_md_frame)
 
 open OptEStepBProvider (BodySimFail)
@@ -2563,6 +2564,201 @@ theorem loop_arm_close [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPu
       · exact h_post_hf
       · intro y hy
         exact h_post_bnd y (List.mem_append.mpr (Or.inl hy))
+
+/-- The FAILING-config sibling of `loop_arm_close`: a source loop run reaching a
+failing config is matched by a failing run of the hoisted residual
+`havocStmts' entries ++ [loop g body₃]`.  Reuses `loop_arm_close`'s prelude bridge,
+terminal composed sim (`composed`, for COMPLETED iterations), and guard transports;
+adds the failing composed sim (`composed_fail`, via `compose_union_fail` from the
+failing Step A `stepA_fail` and failing Step B `stepB_fail`) and dispatches to the
+failing-target driver `loopDet_lift_sf_2g_undef_F_fuel`.  The havoc prelude never
+fails, so the failure surfaces inside the hoisted loop. -/
+theorem loop_arm_close_fail [HasIdent P] [HasFvar P] [DecidableEq P.Ident] [HasVarsPure P P.Expr] [HasBool P] [HasNot P]
+    [HasVal P] [HasBoolVal P] [HasIntOrder P] [HasSubstFvar P]
+    {Q : String → Prop}
+    {extendEval : ExtendEval P}
+    {g : P.Expr}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {Vs : List P.Ident} {σ_sf : StringGenState}
+    {body body₁ body₃ : List (Stmt P (Cmd P))} {md : MetaData P}
+    {entries : List (Entry P)}
+    {ρ_src ρ_hoist : Env P} {a' : Config P (Cmd P)}
+    (stepA : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vs, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.terminal ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.terminal ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+    (stepA_exit : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vs, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (l : String) (ρ_s' : Env P),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) (.exiting l ρ_s') →
+         ∃ ρ_h' : Env P,
+           StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) (.exiting l ρ_h') ∧
+           HoistInv (P := P) A B subst ρ_s'.store ρ_h'.store ∧
+           ρ_s'.hasFailure = ρ_h'.hasFailure ∧ (∀ y ∈ B, ρ_h'.store y ≠ none))
+    (stepA_fail : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       (∀ y ∈ Vs, ρ_s.store y = none) → (∀ y ∈ Vs, ρ_h.store y = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_s.store (HasIdent.ident (P := P) str) = none) →
+       (∀ str : String, Q str →
+          str ∉ StringGenState.stringGens σ_sf → ρ_h.store (HasIdent.ident (P := P) str) = none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body₁ ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true)
+    (stepB : BodySimSum (extendEval := extendEval)
+       (sourcesOf' entries) (targetsOf' entries) (substOf' entries) body₁ body₃)
+    (stepB_fail : BodySimFail (extendEval := extendEval)
+       (sourcesOf' entries) (targetsOf' entries) (substOf' entries) body₁ body₃)
+    (h_entry_Vs : ∀ y ∈ Vs, ρ_src.store y = none)
+    (h_entry_Vh : ∀ y ∈ Vs, ρ_hoist.store y = none)
+    (h_arm_src_sf : ∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → ρ_src.store (HasIdent.ident (P := P) str) = none)
+    (h_sf_notA : ∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → HasIdent.ident (P := P) str ∉ A)
+    (h_sf_notB : ∀ str : String, Q str →
+       str ∉ StringGenState.stringGens σ_sf → HasIdent.ident (P := P) str ∉ B)
+    (h_Vs_notA : ∀ y ∈ Vs, y ∉ A) (h_Vs_notB : ∀ y ∈ Vs, y ∉ B)
+    (h_Vs_notBs : ∀ y ∈ Vs, y ∉ targetsOf' entries)
+    (h_subst_wf : ∀ a b, (a, b) ∈ subst → a ∈ A ∧ b ∈ B)
+    (h_ss_wf : ∀ a b, (a, b) ∈ substOf' entries →
+       a ∈ sourcesOf' entries ∧ b ∈ targetsOf' entries)
+    (h_As_notA : ∀ x ∈ sourcesOf' entries, x ∉ A)
+    (h_As_notB : ∀ x ∈ sourcesOf' entries, x ∉ B)
+    (h_B_notAs : ∀ b ∈ B, b ∉ sourcesOf' entries)
+    (h_B_notBs : ∀ b ∈ B, b ∉ targetsOf' entries)
+    (_h_Bs_notB : ∀ b ∈ targetsOf' entries, b ∉ B)
+    (h_g_A_fresh : ∀ x ∈ A, x ∉ HasVarsPure.getVars g)
+    (h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g)
+    (h_g_As_minus_Vs_fresh : ∀ x ∈ sourcesOf' entries, x ∉ Vs → x ∉ HasVarsPure.getVars g)
+    (h_g_Bs_fresh : ∀ x ∈ targetsOf' entries, x ∉ HasVarsPure.getVars g)
+    (h_src_As_undef : ∀ a ∈ sourcesOf' entries, ρ_src.store a = none)
+    (h_nofd_src : Block.noFuncDecl body = true)
+    (h_nofd_h : Block.noFuncDecl body₃ = true)
+    (h_tgt_nodup : (targetsOf' entries).Nodup)
+    (h_src_undef_h : ∀ e ∈ entries, ρ_hoist.store e.1 = none)
+    (h_tgt_undef_h : ∀ e ∈ entries, ρ_hoist.store e.2.1 = none)
+    (h_wfvar : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run_src : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body md) ρ_src) a')
+    (h_a'_fail : a'.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmts (havocStmts' entries ++ [.loop (.det g) none [] body₃ md]) ρ_hoist) d
+      ∧ d.getEnv.hasFailure = true := by
+  classical
+  obtain ⟨ρ_pre, h_prelude_run, h_pre_hinv, h_pre_eval, h_pre_hf, h_pre_bnd,
+          h_pre_frame⟩ :=
+    prelude_bridge_list_md_frame (A := A) entries ρ_hoist ρ_hoist rfl rfl rfl
+      h_src_undef_h h_tgt_undef_h h_tgt_nodup h_wfvar
+  -- Terminal composed sim (for the COMPLETED iterations the F driver advances).
+  have composed : BodySimUSFSum (extendEval := extendEval) Q Vs Vs σ_sf
+      (A ++ sourcesOf' entries) (B ++ targetsOf' entries) (subst ++ substOf' entries)
+      body body₃ :=
+    compose_union_sf_sum stepA stepA_exit stepB
+      h_subst_wf h_ss_wf h_As_notA h_As_notB h_B_notAs h_B_notBs
+      (fun _ hy => hy)
+      (fun ρ_s ρ_h h he hf hb hVh hsf =>
+        bridge_in_guarded_undef_sf h_subst_wf h_ss_wf h_As_notA h_As_notB h_Vs_notA h_Vs_notB
+          h_sf_notA h_sf_notB ρ_s ρ_h h he hf hb hVh hsf)
+  -- Failing composed sim (for the FAILING iteration).
+  have composed_fail := compose_union_fail (Q := Q) (Vs := Vs) (Vh := Vs) (σ_sf := σ_sf)
+      (Ao := A) (Bo := B) (As := sourcesOf' entries) (Bs := targetsOf' entries)
+      (so := subst) (ss := substOf' entries) (body := body) (body₁ := body₁) (body₃ := body₃)
+      stepA_fail
+      (fun ρ_s ρ_h hi he hf hb d hrun hd => stepB_fail ρ_s ρ_h hi he hf hb d hrun hd)
+      (fun _ hy => hy)
+      (fun ρ_s ρ_h h he hf hb hVh hsf =>
+        bridge_in_guarded_undef_sf h_subst_wf h_ss_wf h_As_notA h_As_notB h_Vs_notA h_Vs_notB
+          h_sf_notA h_sf_notB ρ_s ρ_h h he hf hb hVh hsf)
+  have h_union_entry : HoistInv (P := P)
+      (A ++ sourcesOf' entries) (B ++ targetsOf' entries) (subst ++ substOf' entries)
+      ρ_src.store ρ_pre.store :=
+    union_entry_hinv h_hinv h_pre_hinv h_subst_wf h_ss_wf h_As_notA h_As_notB
+      h_B_notBs h_src_As_undef h_pre_frame
+  have h_union_eval : ρ_src.eval = ρ_pre.eval := h_eval.trans h_pre_eval
+  have h_union_hf : ρ_src.hasFailure = ρ_pre.hasFailure := h_hf.trans h_pre_hf
+  have h_union_bnd : ∀ y ∈ B ++ targetsOf' entries, ρ_pre.store y ≠ none := by
+    intro y hy
+    rcases List.mem_append.mp hy with hyB | hyBs
+    · have : ρ_pre.store y = ρ_hoist.store y := h_pre_frame y (h_B_notBs y hyB)
+      rw [this]; exact h_bound y hyB
+    · exact h_pre_bnd y hyBs
+  -- guard transports (identical to `loop_arm_close`).
+  have h_guard_agree : ∀ (ρ_s ρ_h : Env P),
+      HoistInv (P := P) (A ++ sourcesOf' entries) (B ++ targetsOf' entries)
+        (subst ++ substOf' entries) ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+      (∀ y ∈ Vs, ρ_s.store y = none) →
+      (∀ x ∈ HasVarsPure.getVars g, ρ_s.store x ≠ none) →
+      ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store g := by
+    intro ρ_s ρ_h hi he h_Vs_undef h_read_def
+    have h_store_agree : ∀ x ∈ HasVarsPure.getVars g, ρ_s.store x = ρ_h.store x := by
+      intro x hx
+      refine hi.1 x ?_ ?_ (h_read_def x hx)
+      · intro h; rcases List.mem_append.mp h with h | h
+        · exact h_g_A_fresh x h hx
+        · by_cases hxVs : x ∈ Vs
+          · exact absurd (h_Vs_undef x hxVs) (h_read_def x hx)
+          · exact h_g_As_minus_Vs_fresh x h hxVs hx
+      · intro h; rcases List.mem_append.mp h with h | h
+        · exact h_g_B_fresh x h hx
+        · exact h_g_Bs_fresh x h hx
+    rw [he]; exact (h_wfcongr ρ_h) g ρ_s.store ρ_h.store h_store_agree
+  have h_guard_tt : ∀ (ρ_s ρ_h : Env P),
+      HoistInv (P := P) (A ++ sourcesOf' entries) (B ++ targetsOf' entries)
+        (subst ++ substOf' entries) ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+      (∀ y ∈ Vs, ρ_s.store y = none) →
+      ρ_s.eval ρ_s.store g = .some HasBool.tt → ρ_h.eval ρ_h.store g = .some HasBool.tt := by
+    intro ρ_s ρ_h hi he hVs ht
+    rw [← h_guard_agree ρ_s ρ_h hi he hVs (read_vars_def_of_eval (h_wfdef ρ_s) ht)]; exact ht
+  have h_entry_Vh_pre : ∀ y ∈ Vs, ρ_pre.store y = none := by
+    intro y hy
+    rw [h_pre_frame y (h_Vs_notBs y hy)]; exact h_entry_Vh y hy
+  -- Run the failing-target driver from the prelude post env.
+  obtain ⟨d, h_loop_h_run, hd_fail⟩ :=
+    loopDet_lift_sf_2g_undef_F_fuel (g_s := g) (g_h := g)
+      (A := A ++ sourcesOf' entries) (B := B ++ targetsOf' entries)
+      (subst := subst ++ substOf' entries) (Vs := Vs) (Vh := Vs) (σ_sf := σ_sf)
+      h_guard_tt (fun _ _ he hwfb => he ▸ hwfb)
+      (bodySimUSFSum_is_driver_slot _ _ _ _ _ _ _ _ composed)
+      composed_fail
+      h_nofd_src h_nofd_h
+      (reflTrans_to_T h_run_src).len
+      h_union_entry h_union_eval h_union_hf h_union_bnd
+      h_entry_Vs h_entry_Vh_pre h_arm_src_sf
+      (reflTrans_to_T h_run_src) h_a'_fail (Nat.le_refl _)
+  -- Prepend the (terminating) havoc prelude before the failing hoisted loop.
+  refine ⟨.seq d ([] : List (Stmt P (Cmd P))), ?_, by simpa [Config.getEnv] using hd_fail⟩
+  have h_pfx := stmts_prefix_terminal_append P (EvalCmd P) extendEval
+    (havocStmts' entries) [Stmt.loop (.det g) none [] body₃ md] ρ_hoist ρ_pre h_prelude_run
+  refine ReflTrans_Transitive _ _ _ _ h_pfx ?_
+  refine ReflTrans.step _ _ _ .step_stmts_cons ?_
+  exact seq_inner_star P (EvalCmd P) extendEval _ _ _ h_loop_h_run
 
 end LoopInitHoistLoopArmWF
 end Imperative
