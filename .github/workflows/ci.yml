@@ -64,8 +64,8 @@ jobs:
         with:
           use-github-cache: false
           test: false
-      - name: Run tests (excluding Python)
-        run: lake test -- --exclude Languages.Python
+      - name: Run tests
+        run: lake test
       - name: Verify generated editor syntax files are up to date
         run: |
           lake env lean --run editors/GenSyntax.lean all
