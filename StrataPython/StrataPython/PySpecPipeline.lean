@@ -527,9 +527,9 @@ private def pyTypeKey : Laurel.HighType → String
 /-- Python REALIZER for the abstract `Coercion` verdict. Transcribes the gradual
     (inject/project) rows of the elaborator's `subtype` table (Elaborate.lean:483-521)
     into concrete prelude calls. `inject` boxes a concrete value into `Any` by the
-    SOURCE type; `project` unboxes/casts out of `Any` by the TARGET type. `upcast`
-    (nominal) and `refl` are identity. Truthiness/numeric-widening are NOT here —
-    they are not subtyping (handled by `pythonToBool` / inside prelude ops). -/
+    SOURCE type; `project` unboxes/casts out of `Any` by the TARGET type; `truthify`
+    converts a concrete value to `bool` by Python truthiness, keyed on the SOURCE
+    type. `upcast` (nominal) and `refl` are identity. -/
 public def pythonRealizeCoercion : Laurel.Coercion → Laurel.StmtExprMd → Laurel.StmtExprMd
   | .refl, e => e
   | .upcast, e => e
@@ -554,17 +554,11 @@ public def pythonRealizeCoercion : Laurel.Coercion → Laurel.StmtExprMd → Lau
     | "DictStrAny" => pyCoerceCall "Any..as_Dict!" e
     | "Composite" => pyCoerceCall "Any..as_Composite!" e
     | _ => e
-
-/-- Python truthiness coercion for boolean context (`if`/`while`/`assert`/`assume`/
-    bool-ops). Truthiness is NOT subtyping (a `str` is not a `bool`), so it lives
-    here, keyed on the operand's synthesized type — transcribing the `T ≤ TBool`
-    rows of the elaborator's `subtype` table (Elaborate.lean): `Any→Any_to_bool`,
-    `int→int_to_bool`, `str→str_to_bool`, `float→float_to_bool`, list/dict likewise;
-    a class instance / void are always truthy / falsy; an already-`bool` is identity;
-    an `Unknown` (synth gap) is left as-is (gradual). -/
-public def pythonToBool : Laurel.StmtExprMd → Laurel.HighType → Laurel.StmtExprMd
-  | e, ty =>
-    match pyTypeKey ty with
+  -- Truthiness `T → bool` (boolean context), keyed on the SOURCE type. Transcribes
+  -- the `T ≤ TBool` rows of the elaborator's `subtype` table (Elaborate.lean):
+  -- `Any→Any_to_bool`, `int→int_to_bool`, `str→str_to_bool`, etc.
+  | .truthify source, e =>
+    match pyTypeKey source with
     | "bool" => e
     | "Any" => pyCoerceCall "Any_to_bool" e
     | "int" => pyCoerceCall "int_to_bool" e
@@ -587,8 +581,7 @@ private def translateCombinedLaurelV2 (combined : Laurel.Program)
       { inlineFunctionsWhenPossible := true
         externalNames := allExternal
         gradualTypes := pythonGradualTypes
-        realizeCoercion := some pythonRealizeCoercion
-        toBool := some pythonToBool }
+        realizeCoercion := some pythonRealizeCoercion }
       combined
   return (coreOption.map appendCorePartOfRuntime, errors)
 
