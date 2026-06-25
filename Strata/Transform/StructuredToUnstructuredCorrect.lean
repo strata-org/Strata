@@ -5498,6 +5498,34 @@ private theorem stmts_singleton_reaches_failing' {P : PureExpr} [HasFvar P] [Has
         exact hd
       simpa [Config.getEnv] using hρ₁
 
+/-- Cons-list peel for the failing case: from `.stmts (s :: rest) ρ₀ ⟶* c` (failing),
+either the head statement `.stmt s ρ₀` already reaches a failing config, or it
+terminates at `ρ₁` and `.stmts rest ρ₁` reaches a failing config.  This is the
+generic decomposition shared by every cons-arm of `stmtsToBlocks_simulation_to_fail`:
+the head's failing-reach routes into the head-specific discharge, the
+terminate-then-rest case recurses on `rest`. -/
+private theorem stmts_cons_reaches_failing' {P : PureExpr} [HasFvar P] [HasBool P] [HasNot P]
+    [HasVarsPure P P.Expr]
+    (extendEval : ExtendEval P)
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P) extendEval) (.stmts (s :: rest) ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) d ∧
+        d.getEnv.hasFailure = true) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      StepStmtStar P (EvalCmd P) extendEval (.stmt s ρ₀) (.terminal ρ₁) ∧
+      StepStmtStar P (EvalCmd P) extendEval (.stmts rest ρ₁) d ∧
+        d.getEnv.hasFailure = true) := by
+  match hstar with
+  | .refl _ =>
+    exact .inl ⟨.stmt s ρ₀, .refl _, by simpa [Config.getEnv] using hc⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' extendEval hrest hc with hA | hB
+    · obtain ⟨d, h, hd, _⟩ := hA
+      exact .inl ⟨d, reflTransT_to_prop h, hd⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, _⟩ := hB
+      exact .inr ⟨ρ₁, d, reflTransT_to_prop h1, reflTransT_to_prop h2, hd⟩
+
 /-- Iterate the deterministic loop until a FAILING configuration is reached (the
 `_to_fail` analogue of `loop_iterations_det`).  Inducts on a `Nat` fuel bounding the
 length of the finite structured run that reaches the failing config `a'` (finite by
