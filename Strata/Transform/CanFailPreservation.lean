@@ -275,8 +275,28 @@ instance specialises to identity-input pipeline soundness. -/
   ∧ ρ₀.hasFailure = ρ₀'.hasFailure
   ∧ ρ₀'.eval = ρ₀.eval
 
+omit [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+  [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasBool P]
+  [LawfulHasIdent P] [LawfulHasIntOrder P] [LawfulHasNot P] [HasSubstFvar P]
+  [LawfulHasSubstFvar P] in
 theorem PipelineEnvRel.refl (ρ₀ : Env P) : PipelineEnvRel ρ₀ ρ₀ :=
   ⟨StoreAgreement.refl _, rfl, rfl⟩
+
+omit [HasFvar P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasIntOrder P]
+  [HasVarsPure P P.Expr] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasBool P]
+  [LawfulHasIdent P] [LawfulHasIntOrder P] [LawfulHasNot P] [HasSubstFvar P]
+  [LawfulHasSubstFvar P] in
+/-- `PipelineEnvRel` is transitive: store agreement chains via `StoreAgreement.trans`,
+the failure flags and evaluators by equality transitivity (the evaluator conjunct is
+oriented right-to-left, `ρ₀'.eval = ρ₀.eval`, so it composes in the reverse order).
+Together with `PipelineEnvRel.refl` this makes `PipelineEnvRel` a preorder, which is
+exactly the input to `OverapproximatesUptoWhen.comp_preorder` for chaining the
+overapproximation instance with another pass relating environments by the same
+relation. -/
+theorem PipelineEnvRel.trans {ρ₁ ρ₂ ρ₃ : Env P}
+    (h₁ : PipelineEnvRel ρ₁ ρ₂) (h₂ : PipelineEnvRel ρ₂ ρ₃) :
+    PipelineEnvRel ρ₁ ρ₃ :=
+  ⟨StoreAgreement.trans h₁.1 h₂.1, h₁.2.1.trans h₂.2.1, h₂.2.2.trans h₁.2.2⟩
 
 /-- **Phase 4: pipeline overapproximation up to `PipelineEnvRel` (unconditional).**
 `fun ss => some (pipeline ss)` overapproximates the source statement-list language
@@ -328,8 +348,12 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
         hpre.h_disj_initVars hpre.h_disj_modVars h_term
     refine ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure }, ?_, ?_⟩
     · exact ⟨h_agree, rfl, rfl⟩
-    · -- target run: Lang.cfg.star (stmtCfg (pipeline ss) ρ₀') (terminalCfg ρ_t)
-      simp only [Lang.cfg]
+    · -- target run: `Lang.cfg.star`/`.stmtCfg`/`.terminalCfg` are an `abbrev`, hence
+      -- defeq to `StepDetCFGStar`/`.atBlock _ ρ₀'.store ρ₀'.hasFailure`/`.terminal _`.
+      -- `change` exposes that reduced shape so the failure flag `ρ₀'.hasFailure` can be
+      -- rewritten to `h_run`'s `ρ₀.hasFailure` via `hR_hf`.
+      change StepDetCFGStar extendEval (pipeline ss)
+        (.atBlock (pipeline ss).entry ρ₀'.store ρ₀'.hasFailure) _
       rw [← hR_hf]
       exact h_run
   · -- ===== EXITING ARM =====
@@ -345,7 +369,10 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
         hpre.h_disj_initVars hpre.h_disj_modVars lbl h_exit
     refine ⟨{ store := σ_cfg, eval := ρ'.eval, hasFailure := ρ'.hasFailure }, ?_, ?_⟩
     · exact ⟨h_agree, rfl, rfl⟩
-    · simp only [Lang.cfg]
+    · -- As in the terminal arm, `change` exposes the `abbrev`-reduced run shape so the
+      -- start failure flag `ρ₀'.hasFailure` can be rewritten to `h_run`'s `ρ₀.hasFailure`.
+      change StepDetCFGStar extendEval (pipeline ss)
+        (.atBlock (pipeline ss).entry ρ₀'.store ρ₀'.hasFailure) _
       rw [← hR_hf]
       exact h_run
   · -- ===== CanFail ARM (CanFail L₁ ss ρ₀ → CanFail L₂ (pipeline ss) ρ₀') =====
@@ -359,7 +386,8 @@ theorem pipeline_overapproximates_upto (extendEval : ExtendEval P) :
       have h_ρ₀'_fail : ρ₀'.hasFailure = true := hR_hf ▸ h_ρ₀_fail
       refine ⟨(⟨"", []⟩, .atBlock (pipeline ss).entry ρ₀'.store ρ₀'.hasFailure),
         by simpa [Lang.cfg, CFGConfig.getFailure] using h_ρ₀'_fail, ?_⟩
-      simp only [Lang.cfg]
+      -- The start and target CFG configs coincide (defeq via the `Lang.cfg` abbrev), so
+      -- the reflexive run closes the goal directly.
       exact ReflTrans.refl _
     · -- ρ₀ clean: run `pipeline_to_fail` from ρ₀ with σ_ext := ρ₀'.store.  The
       -- structured-pass failing bridge is discharged inside `pipeline_to_fail`.
