@@ -28,10 +28,6 @@ structure LaurelTranslateOptions where
       rewritten term carrying the concrete box/unbox call. `none` = identity
       (native Laurel inserts no coercion). Threaded onto `TypeLattice`. -/
   realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
-  /-- Frontend-supplied truthiness coercion for boolean context (`if`/`while`/
-      `assert`/`assume`/bool-ops): term + its synthesized type → to-bool-wrapped
-      term. `none` = identity. Threaded onto `TypeLattice`. -/
-  toBool : Option (StmtExprMd → HighType → StmtExprMd) := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

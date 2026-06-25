@@ -139,7 +139,7 @@ private def runLaurelPasses
 
   -- Initial resolution (with optional pre-registered external names from the frontend)
   let result := resolve program (externalNames := options.externalNames) (gradualTypes := options.gradualTypes)
-                  (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+                  (realizeCoercion := options.realizeCoercion)
   let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
@@ -156,7 +156,7 @@ private def runLaurelPasses
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model) (externalNames := options.externalNames) (gradualTypes := options.gradualTypes)
-                      (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+                      (realizeCoercion := options.realizeCoercion)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>

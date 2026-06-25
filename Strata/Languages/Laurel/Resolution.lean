@@ -3282,8 +3282,7 @@ public def resolveWithExternalNames (program : Program) (externalNames : Std.Has
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
     (externalNames : Std.HashSet String := {})
     (gradualTypes : Std.HashSet String := {})
-    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
-    (toBool : Option (StmtExprMd → HighType → StmtExprMd) := none) : ResolutionResult :=
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none) : ResolutionResult :=
   -- Phase 1: pre-register external names, then all top-level names, then resolve references
   let phase1 : ResolveM Program := do
     preRegisterExternalNames externalNames
@@ -3296,7 +3295,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'

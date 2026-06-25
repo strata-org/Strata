@@ -620,12 +620,6 @@ structure TypeLattice where
       vocabulary. This REALIZES an already-decided verdict; it makes no subtyping
       decision, so it can never disagree with `coerce`. -/
   realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
-  /-- Caller-supplied truthiness coercion for BOOLEAN CONTEXT (`if`/`while`/`assert`/
-      `assume`/bool-ops). `T → bool` truthiness is NOT subtyping (a value of type `T`
-      is not a `bool`), so it lives here, not in `coerce`. Given the term and its
-      synthesized type, returns the term wrapped in the frontend's to-bool coercion.
-      `none` (native Laurel) means identity. -/
-  toBool : Option (StmtExprMd → HighType → StmtExprMd) := none
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
