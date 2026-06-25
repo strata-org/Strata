@@ -1,0 +1,11 @@
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - (withdraw requires) Type constraint of balance
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - (withdraw requires) Type constraint of amount
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - Check PGe exception
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - withdraw_assert(698)_12
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - Check PGt exception
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - withdraw_assert(727)_14
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - Check PSub exception
+test_user_pre_post_no_msg.py(16, 4): ✔️ always true if reached - assert(798)♯2
+test_user_pre_post_no_msg.py(15, 14): ✔️ always true if reached - (main ensures) Return type constraint
+DETAIL: 9 passed, 0 failed, 0 inconclusive
+RESULT: Analysis success

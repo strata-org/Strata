@@ -54,6 +54,8 @@ structure TranslateState where
       Used by the `.Old (Var (Local n))` arm to defensively check `n` against
       the procedure's inout list. Empty when not translating a procedure body. -/
   currentProcInouts : List String := []
+  /-- Assume/assert labels already used in the current procedure. -/
+  procStmtLabels : Std.HashSet String := {}
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -118,6 +120,20 @@ private def freshId : TranslateM Nat := do
   let id := s.nextId
   set { s with nextId := id + 1 }
   return id
+
+/-- Return `base` if unused in the current procedure, else `s!"{base}♯{n}"`
+    with the smallest `n ≥ 1` that is unused. Records the chosen label. -/
+private def freshStmtLabel (base : String) : TranslateM String := do
+  let s ← get
+  let label :=
+    if !s.procStmtLabels.contains base then base
+    else Id.run do
+      for n in [1 : s.procStmtLabels.size + 2] do
+        let candidate := s!"{base}♯{n}"
+        if !s.procStmtLabels.contains candidate then return candidate
+      return base
+  modify fun s => { s with procStmtLabels := s.procStmtLabels.insert label }
+  return label
 
 /-- Throw a hard diagnostic error, aborting the current translation -/
 def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
@@ -429,10 +445,12 @@ def translateStmt (stmt : StmtExprMd)
       let md' := match cond.summary with
         | some msg => md.pushElem Imperative.MetaData.propertySummary (.msg msg)
         | none => md
-      return [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md']
+      let label ← freshStmtLabel ("assert" ++ getNameFromMd md)
+      return [Core.Statement.assert label coreExpr md']
   | .Assume cond =>
       let coreExpr ← translateExpr cond [] (isPureContext := true)
-      return [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
+      let label ← freshStmtLabel ("assume" ++ getNameFromMd md)
+      return [Core.Statement.assume label coreExpr md]
   | .Block stmts label =>
       let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
       match label with
@@ -625,7 +643,7 @@ are emitted into the monad state.
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Track inout parameter names for the `.Old (Var (Local n))` defensive check.
   -- Reset to [] after the procedure so siblings start fresh.
-  modify fun s => { s with currentProcInouts := procInoutNames proc }
+  modify fun s => { s with currentProcInouts := procInoutNames proc, procStmtLabels := {} }
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
@@ -685,7 +703,7 @@ Diagnostics for disallowed constructs in the function body are emitted into the 
 def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive: Bool) (proc : Procedure) : TranslateM Core.Decl := do
   -- Functions are pure: no inout parameters, so the `.Old` defensive check
   -- will reject any old(...) reference (which is the correct behavior here).
-  modify fun s => { s with currentProcInouts := [] }
+  modify fun s => { s with currentProcInouts := [], procStmtLabels := {} }
   let inputs ← proc.inputs.mapM translateParameterToCore
   let outputTy ← match proc.outputs.head? with
     | some p => translateType p.type

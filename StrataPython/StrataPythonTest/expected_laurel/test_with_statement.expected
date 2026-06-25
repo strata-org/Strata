@@ -7,7 +7,7 @@ test_with_statement.py(23, 4): ✔️ always true if reached - input is allocate
 test_with_statement.py(23, 4): ✔️ always true if reached - (Resource@__init__ requires) Type constraint of n
 test_with_statement.py(24, 4): ✔️ always true if reached - input is allocated on the heap
 test_with_statement.py(25, 8): ✔️ always true if reached - input is allocated on the heap
-test_with_statement.py(25, 8): ✔️ always true if reached - assert(525)
+test_with_statement.py(25, 8): ✔️ always true if reached - assert(525)♯1
 test_with_statement.py(26, 8): ✔️ always true if reached - assert(558)
 test_with_statement.py(29, 4): ✔️ always true if reached - input is allocated on the heap
 test_with_statement.py(29, 4): ✔️ always true if reached - (Resource@__init__ requires) Type constraint of n
