@@ -71,30 +71,52 @@ theorem update_subst_context (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) (S : S
   simp [CmdType.update]
   exact TEnv.addInNewestContext_singleton_subst_context (T := CoreLParams) Env x ty S h_fresh
 
+/-- Decompose a successful `preprocess` into the underlying `instantiateWithCheck` step.
+    `preprocess` rejects polymorphic annotations (`boundVars != []`), then instantiates and
+    substitutes; on success the input is monomorphic and the result is `forAll []` of the
+    instantiated, substituted monotype. The guard is peeled here so the downstream lemmas
+    need not know about it. (The free-var-rigid check lives in `postprocess`, post-unification.) -/
+theorem preprocess_decompose (C : LContext CoreLParams) (Env : TEnv Unit)
+    (ty ty' : LTy) (Env' : TEnv Unit)
+    (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
+    ∃ mty, ty.boundVars = [] ∧
+      LTy.instantiateWithCheck ty C Env = .ok (mty, Env') ∧
+      ty' = .forAll [] (LMonoTy.subst Env'.stateSubstInfo.subst mty) := by
+  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
+  -- Polymorphic guard: `boundVars != []` ⟹ error. Success is the `else` (isFalse) branch.
+  split at h
+  · simp only [reduceCtorEq] at h
+  · rename_i h_bv
+    rw [Bool.not_eq_true, bne_eq_false_iff_eq] at h_bv
+    -- Collapse the guard's else (`pure ()`) so the next match is `instantiateWithCheck`.
+    simp only [pure, Except.pure] at h
+    -- `instantiateWithCheck` step.
+    split at h
+    · simp only [reduceCtorEq] at h
+    · rename_i v h_iwc
+      obtain ⟨mty, Env_iwc⟩ := v
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_fst, h_snd⟩ := h
+      have h_iwc' : LTy.instantiateWithCheck ty C Env = .ok (mty, Env_iwc) := by
+        revert h_iwc; cases LTy.instantiateWithCheck ty C Env <;> simp
+      subst h_snd
+      exact ⟨mty, h_bv, h_iwc', h_fst.symm⟩
+
 /-- `preprocess` always produces a monomorphic type (`forAll [] mty`). -/
 theorem preprocess_mono (C : LContext CoreLParams) (Env : TEnv Unit)
     (ty ty' : LTy) (Env' : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
     ∃ mty, ty' = .forAll [] mty := by
-  simp [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  elim_err h
-  simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
-  exact ⟨_, h.1.symm⟩
+  obtain ⟨mty, _, _, h_eq⟩ := preprocess_decompose C Env ty ty' Env' h
+  exact ⟨_, h_eq⟩
 
 /-- `preprocess` preserves `stateSubstInfo` (only modifies `genEnv`). -/
 theorem preprocess_preserves_stateSubstInfo (C : LContext CoreLParams) (Env : TEnv Unit)
     (ty ty' : LTy) (Env' : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
     Env'.stateSubstInfo = Env.stateSubstInfo := by
-  simp [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  elim_err h
-  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
-  simp only [Except.ok.injEq, Prod.mk.injEq, pure, Except.pure] at h
-  rw [← h.2]
-  elim_err hiwc
-  cases hiwc
-  rename_i hiwc
-  exact LTy_instantiateWithCheck_preserves_stateSubstInfo ty C Env mty Env_iwc hiwc
+  obtain ⟨mty, _, h_iwc, _⟩ := preprocess_decompose C Env ty ty' Env' h
+  exact LTy_instantiateWithCheck_preserves_stateSubstInfo ty C Env mty Env' h_iwc
 
 /-- `preprocess` produces a monotype satisfying `AnnotCompat` with `openFull xty`. -/
 theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
@@ -103,21 +125,14 @@ theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (h_aw : TContext.AliasesWF Env.context) :
     ∃ tys, tys.length = (LTy.boundVars xty).length ∧
       AnnotCompat Env.context.aliases (LTy.openFull xty tys) mty_pre := by
-  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  elim_err h
-  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
-  elim_err hiwc
-  cases hiwc
-  rename_i hiwc'
-  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-  obtain ⟨h_fst, h_snd⟩ := h
+  obtain ⟨mty, _, h_iwc, h_eq⟩ := preprocess_decompose C Env xty (.forAll [] mty_pre) Env' h
   obtain ⟨tys, h_len, h_ae⟩ :=
-    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env_iwc hiwc' h_aw
+    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env' h_iwc h_aw
   refine ⟨tys, h_len, ?_⟩
-  have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
-    have h_inj := LTy.forAll.inj h_fst; exact h_inj.2.symm
+  have h_mty_pre : mty_pre = LMonoTy.subst Env'.stateSubstInfo.subst mty :=
+    (LTy.forAll.inj h_eq).2
   rw [h_mty_pre]
-  exact AnnotCompat_subst Env_iwc.stateSubstInfo.subst
+  exact AnnotCompat_subst Env'.stateSubstInfo.subst
     (⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h_ae⟩) h_aw
 
 /-- After the unification substitution `S` is applied, `preprocess`'s output satisfies
@@ -133,24 +148,17 @@ theorem preprocess_isInstance_rigidAnnotCompat (C : LContext CoreLParams) (Env E
     ∃ tys, tys.length = (LTy.boundVars xty).length ∧
       RigidAnnotCompat Env.context.aliases C.rigidTypeVars
         (LTy.openFull xty tys) (LMonoTy.subst S mty_pre) := by
-  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  elim_err h
-  rename_i v hiwc; obtain ⟨mty, Env_iwc⟩ := v
-  elim_err hiwc
-  cases hiwc
-  rename_i hiwc'
-  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-  obtain ⟨h_fst, h_snd⟩ := h
-  have h_mty_pre : mty_pre = LMonoTy.subst Env_iwc.stateSubstInfo.subst mty := by
-    have h_inj := LTy.forAll.inj h_fst; exact h_inj.2.symm
+  obtain ⟨mty, _, h_iwc, h_eq⟩ := preprocess_decompose C Env xty (.forAll [] mty_pre) Env' h
+  have h_mty_pre : mty_pre = LMonoTy.subst Env'.stateSubstInfo.subst mty :=
+    (LTy.forAll.inj h_eq).2
   -- instantiateWithCheck preserves stateSubstInfo (only changes genEnv).
-  have h_iwc_subst : Env_iwc.stateSubstInfo = Env.stateSubstInfo :=
-    LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env_iwc hiwc'
+  have h_iwc_subst : Env'.stateSubstInfo = Env.stateSubstInfo :=
+    LTy_instantiateWithCheck_preserves_stateSubstInfo xty C Env mty Env' h_iwc
   obtain ⟨tys, h_len, h_ae⟩ :=
-    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env_iwc hiwc' h_wf.aliasesWF
+    Lambda.LExpr.LTy_instantiateWithCheck_isInstance xty C Env mty Env' h_iwc h_wf.aliasesWF
   refine ⟨tys, h_len, ?_⟩
-  -- Collapse: subst S (subst Env_iwc.subst mty) = subst S mty, since
-  -- Env_iwc.subst = Env.subst (by h_iwc_subst) and S absorbs Env.subst (by h_absorbs).
+  -- Collapse: subst S (subst Env'.subst mty) = subst S mty, since
+  -- Env'.subst = Env.subst (by h_iwc_subst) and S absorbs Env.subst (by h_absorbs).
   rw [h_mty_pre, congrArg (·.subst) h_iwc_subst,
     LMonoTy.subst_absorbs S Env.stateSubstInfo.subst mty h_absorbs]
   exact RigidAnnotCompat_subst S (.of_aliasEquiv h_ae) h_wf.aliasesWF h_rigid
@@ -161,10 +169,15 @@ theorem postprocess_result (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (h : CmdType.postprocess C Env (.forAll [] mty) = .ok (ty', Env')) :
     ty' = .forAll [] (LMonoTy.subst Env.stateSubstInfo.subst mty) ∧
     Env' = Env := by
-  simp only [CmdType.postprocess, LTy.isMonoType, LTy.toMonoType] at h
-  elim_err h
-  simp only [Except.ok.injEq, Prod.mk.injEq] at h
-  exact ⟨h.1.symm, h.2.symm⟩
+  simp only [CmdType.postprocess, LTy.isMonoType, LTy.toMonoType, Bind.bind, Except.bind,
+    pure, Except.pure] at h
+  -- `isMonoType` true branch, then the stray-var guard: only the `else` (no stray) succeeds.
+  split at h
+  · split at h
+    · exact absurd h (by simp)
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      exact ⟨h.1.symm, h.2.symm⟩
+  · exact absurd h (by simp)
 
 /-- After unification, both sides of a mono constraint are equal under the result substitution. -/
 theorem unifyTypes_eq (Env Env' : TEnv Unit)
@@ -308,15 +321,8 @@ theorem preprocess_preserves_context (C : LContext CoreLParams) (Env : TEnv Unit
     (ty : LTy) (ty' : LTy) (Env' : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (ty', Env')) :
     Env'.context = Env.context := by
-  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  elim_err h
-  rename_i v h_iwc
-  obtain ⟨mty, Env1⟩ := v
-  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-  obtain ⟨_, h2⟩ := h; subst h2
-  have h_iwc' : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1) := by
-    revert h_iwc; cases LTy.instantiateWithCheck ty C Env <;> simp
-  exact LTy_instantiateWithCheck_context' ty C Env mty Env1 h_iwc'
+  obtain ⟨mty, _, h_iwc, _⟩ := preprocess_decompose C Env ty ty' Env' h
+  exact LTy_instantiateWithCheck_context' ty C Env mty Env' h_iwc
 
 /-- `preprocess` preserves well-formedness of the type environment. -/
 theorem preprocess_preserves_TEnvWF (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -324,16 +330,8 @@ theorem preprocess_preserves_TEnvWF (C : LContext CoreLParams) (Env : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (ty', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env) :
     TEnvWF (T := CoreLParams) Env' := by
-  simp only [CmdType.preprocess, Bind.bind, Except.bind, Except.mapError] at h
-  split at h
-  · simp at h
-  · rename_i v h_iwc
-    obtain ⟨mty, Env1⟩ := v
-    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨_, h2⟩ := h; subst h2
-    have h_iwc' : LTy.instantiateWithCheck ty C Env = .ok (mty, Env1) := by
-      revert h_iwc; cases LTy.instantiateWithCheck ty C Env <;> simp
-    exact LTy_instantiateWithCheck_TEnvWF ty C Env mty Env1 h_iwc' h_wf
+  obtain ⟨mty, _, h_iwc, _⟩ := preprocess_decompose C Env ty ty' Env' h
+  exact LTy_instantiateWithCheck_TEnvWF ty C Env mty Env' h_iwc h_wf
 
 /-- `inferType` does not change the context. -/
 theorem inferType_preserves_context (C : LContext CoreLParams) (Env Env' : TEnv Unit)

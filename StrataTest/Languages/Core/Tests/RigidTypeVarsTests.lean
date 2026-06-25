@@ -214,16 +214,10 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Strata (TransM translateProgram)
 
--- Q1: `var x : ∀a. a := true` (polymorphic declared type, single statement).
+-- Q1: `var x : ∀a. a := true` (polymorphic declared type) — now rejected (Part A:
+-- var annotations must be monomorphic).
 /--
-info: ok: (procedure Q1 ()
- {
-   var x : bool := true;
- };
- ,
- context:
- types:   ⏎
- aliases: [] state: tyGen: 1 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [($__ty0, bool)])
+info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[a]. a (type variables [a] are bound)
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
@@ -234,11 +228,10 @@ info: ok: (procedure Q1 ()
                     .empty
          return format ans
 
--- Q1 full: `var x : ∀a. a := true; x := x + 1` — the `set` fails because `x : bool`
--- cannot unify with `Int.Add`'s `(int, int) → int` signature.
+-- Q1 full: `var x : ∀a. a := true; x := x + 1` — now rejected at the polymorphic
+-- annotation itself (Part A), before reaching the `set`.
 /--
-info: error: Impossible to unify (arrow int (arrow int int)) with (arrow bool $__ty1).
-First mismatch: int with bool.
+info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[a]. a (type variables [a] are bound)
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck (LContext.default (functions := Core.Factory)) TEnv.default
@@ -263,7 +256,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (6335-6350) Rigid type variable 'a' was refined to 'int' by the initializer -/
+/-- info: error: (6309-6324) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2a_refineRigidVar)).fst
 
@@ -307,7 +300,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (7548-7565) Rigid type variable 'a' was refined to 'int' by the initializer -/
+/-- info: error: (7522-7539) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2c_inferredSideRefine)).fst
 

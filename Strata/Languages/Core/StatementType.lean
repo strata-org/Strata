@@ -69,16 +69,19 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                              Types of {lhs} should have been known."
          | some (lhs_tys, Env) =>
            let _ ← Env.freeVarChecks args |>.mapError DiagnosticModel.fromFormat
-           let (ret_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.outputs |>.mapError DiagnosticModel.fromFormat
-           let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst ret_sig.values
+           -- Instantiate type parameters ONCE and reuse the substitution for
+           -- both inputs and outputs, ensuring a shared type parameter (like T
+           -- in `proc<T>(x:T, out y:T)`) gets the same fresh variable.
+           let (inp_sig, Env, tyArgSubst) ← LMonoTySignature.instantiateWithSubst C Env proc.header.typeArgs proc.header.inputs |>.mapError DiagnosticModel.fromFormat
+           let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
+           let ret_mtys := LMonoTys.subst Env.stateSubstInfo.subst
+             (proc.header.outputs.values.map (LMonoTy.subst tyArgSubst))
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
            let (argsa, Env) ← Lambda.LExpr.resolves C Env args |>.mapError DiagnosticModel.fromFormat
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
-           let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs |>.mapError DiagnosticModel.fromFormat
-           let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
@@ -231,21 +234,27 @@ private def substExprOrNondet (S : Subst) (e : Imperative.ExprOrNondet Expressio
   e.map (LExpr.applySubst · S)
 
 /--
+Apply type substitution `S` to an imperative command (Cmd).
+-/
+def Cmd.subst (S : Subst) (c : Cmd Expression) : Cmd Expression :=
+  match c with
+  | .init x ty e md =>
+    .init x (LTy.subst S ty) (substExprOrNondet S e) md
+  | .set x e md =>
+    .set x (substExprOrNondet S e) md
+  | .assert label b md =>
+    .assert label (b.applySubst S) md
+  | .assume label b md =>
+    .assume label (b.applySubst S) md
+  | .cover label b md =>
+    .cover label (b.applySubst S) md
+
+/--
 Apply type substitution `S` to a command.
 -/
 def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
-  | .cmd c => match c with
-    | .init x ty e md =>
-      .cmd $ .init x (LTy.subst S ty) (substExprOrNondet S e) md
-    | .set x e md =>
-      .cmd $ .set x (substExprOrNondet S e) md
-    | .assert label b md =>
-      .cmd $ .assert label (b.applySubst S) md
-    | .assume label b md =>
-      .cmd $ .assume label (b.applySubst S) md
-    | .cover label b md =>
-      .cmd $ .cover label (b.applySubst S) md
+  | .cmd c => .cmd (Cmd.subst S c)
   | .call pname callArgs md =>
     .call pname (callArgs.map fun
       | .inArg e => .inArg (e.applySubst S)
