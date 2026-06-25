@@ -103,7 +103,7 @@ def eliminateIncrDecr (program : Program) : Program :=
 public def eliminateIncrDecrPass : LoweringPass where
   name := "EliminateIncrDecr"
   documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) into existing Laurel assignment and arithmetic constructs. Prefix forms yield the new value; postfix forms yield the old value. Runs early so that no later pass observes an `.IncrDecr` node."
-  run := fun p _m _ => (eliminateIncrDecr p, [], {})
+  run := fun _ p _m => (eliminateIncrDecr p, [], {})
 
 end -- public section
 end Strata.Laurel

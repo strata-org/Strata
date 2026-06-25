@@ -80,7 +80,7 @@ def pushOldInward (program : Program) : Program × List DiagnosticModel :=
 public def pushOldInwardPass : LoweringPass where
   name := "pushOldInward"
   documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. Warns on `old(e)` where `e` mentions no inout parameter and on nested `old(old(...))`."
-  run := fun p _ _ =>
+  run := fun _ p _ =>
     let (p', diags) := pushOldInward p
     (p', diags, {})
 

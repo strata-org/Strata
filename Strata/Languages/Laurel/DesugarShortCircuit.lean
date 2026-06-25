@@ -59,7 +59,7 @@ end -- public section
 public def desugarShortCircuitPass : LoweringPass where
   name := "DesugarShortCircuit"
   documentation := "Rewrites short-circuit boolean operators (`&&` and `||`) into equivalent conditional expressions. This simplifies subsequent passes and the final translation to Core, which does not have short-circuit semantics built in."
-  run := fun p _ _ =>
+  run := fun _ p _ =>
     (desugarShortCircuit p, [], {})
   comesBefore := [
       ⟨ liftImperativeExpressionsPass.meta, "The desugar short circuit pass introduces if-then-else expressions whose control-flow must be taken into account by the lifting pass."⟩]

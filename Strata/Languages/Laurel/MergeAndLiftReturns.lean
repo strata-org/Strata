@@ -93,7 +93,7 @@ public def mergeAndLiftReturnsPass : LoweringPass where
   documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
   needsResolves := true
   comesBefore := [⟨ eliminateValueInReturnsPass.meta, "Lifts returns with a value, so the value should not yet have been lowered."⟩]
-  run := fun p _m _ =>
+  run := fun _ p _m =>
     let (p', diags) := mergeAndLiftReturns p
     (p', diags, {})
 
