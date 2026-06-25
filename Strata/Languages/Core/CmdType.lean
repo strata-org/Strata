@@ -41,14 +41,34 @@ Preprocess a user-facing type in Core amounts to converting a poly-type (i.e.,
 -/
 def preprocess (C: LContext CoreLParams) (Env : TEnv Unit) (ty : LTy) :
     Except DiagnosticModel (LTy × TEnv Unit) := do
+  -- Variable annotations must be monomorphic. A polymorphic annotation
+  -- (`var x : ∀a. …`) would be instantiated to a fresh type variable, leaking a
+  -- non-rigid free variable into the ambient context — the type-soundness bug
+  -- behind this restriction. A free (but unbound) type variable is fine: it is
+  -- instantiated and unified normally (e.g. CallElim-generated `var f : a := b`
+  -- where `a` is the callee's type parameter, solved against `b`'s type).
+  if ty.boundVars != [] then
+    .error <| DiagnosticModel.fromFormat f!"Variable annotation must be monomorphic, \
+              but got polymorphic type {ty} (type variables {ty.boundVars} are bound)"
   let (mty, Env) ← ty.instantiateWithCheck C Env |>.mapError DiagnosticModel.fromFormat
   let mty := LMonoTy.subst Env.stateSubstInfo.subst mty
   return (.forAll [] mty, Env)
 
-def postprocess (_: LContext CoreLParams) (Env: TEnv Unit) (ty : LTy) :
+def postprocess (C: LContext CoreLParams) (Env: TEnv Unit) (ty : LTy) :
     Except DiagnosticModel (LTy × TEnv Unit) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
+    -- After unification, the stored type's only free type variables may be the
+    -- enclosing procedure's type parameters (rigid). A free variable that survived
+    -- unification (`var x : a := *` with no enclosing `proc<a>`, or any binding whose
+    -- type stayed unsolved) would be stored as `forall [] a` and then generalized by a
+    -- nested `funcDecl` — capturing an ambient type variable (the type-soundness bug).
+    -- A free var that unification solved away (e.g. CallElim's `var f : a := b`, where
+    -- `a` is the callee's type parameter solved against `b`'s type) is already gone here.
+    let stray := (LMonoTy.freeVars ty).filter (· ∉ C.rigidTypeVars)
+    if stray != [] then
+      .error <| DiagnosticModel.fromFormat f!"Variable annotation references type variables \
+                {stray} that are not procedure type parameters"
     .ok (.forAll [] ty, Env)
   else
     .error <| DiagnosticModel.fromFormat f!"[postprocess] Expected mono-type; instead got {ty}"

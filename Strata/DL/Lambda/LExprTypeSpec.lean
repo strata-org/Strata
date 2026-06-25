@@ -4650,7 +4650,7 @@ theorem tconsAlias_eq_simple
 
 mutual
 /-- `AliasEquiv` is preserved under type substitution. -/
-private theorem AliasEquiv_subst (aliases : List TypeAlias)
+theorem AliasEquiv_subst (aliases : List TypeAlias)
     (a b : LMonoTy) (S : Subst) (h : AliasEquiv aliases a b)
     (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
     AliasEquiv aliases (LMonoTy.subst S a) (LMonoTy.subst S b) := by
