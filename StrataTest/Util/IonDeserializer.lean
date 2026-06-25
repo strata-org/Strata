@@ -115,7 +115,7 @@ def deserializeConfig : ByteArray → Except Std.Format Config :=
 
 -- Test structure with Decimal fields
 structure Price where
-  amount : Strata.Decimal
+  amount : StrataDDM.Decimal
 deriving Repr, BEq
 
 def deserializePrice : ByteArray → Except Std.Format Price :=

@@ -88,7 +88,7 @@ private meta def toPascalCase (s : String) : String :=
 
 private meta def isLeafTypeName (name : Name) : Bool :=
   name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
-  name == ``Strata.Decimal
+  name == ``StrataDDM.Decimal
 
 private meta def leafJavaType (name : Name) : Option String :=
   match name with
@@ -97,7 +97,7 @@ private meta def leafJavaType (name : Name) : Option String :=
   | ``Float => some "double"
   | ``String => some "java.lang.String"
   | ``Bool => some "boolean"
-  | ``Strata.Decimal => some "java.math.BigDecimal"
+  | ``StrataDDM.Decimal => some "java.math.BigDecimal"
   | _ => none
 
 private meta def leafSerializeExpr (name : Name) (accessor : String) : Option String :=
@@ -107,7 +107,7 @@ private meta def leafSerializeExpr (name : Name) (accessor : String) : Option St
   | ``Float => some s!"ion.newFloat({accessor})"
   | ``String => some s!"ion.newString({accessor})"
   | ``Bool => some s!"ion.newBool({accessor})"
-  | ``Strata.Decimal => some s!"ion.newDecimal({accessor})"
+  | ``StrataDDM.Decimal => some s!"ion.newDecimal({accessor})"
   | _ => none
 
 /-! ## Type info extraction -/
@@ -248,7 +248,7 @@ where
     | .leaf ``Nat | .leaf ``Int => "Long"
     | .leaf ``Float => "Double"
     | .leaf ``Bool => "Boolean"
-    | .leaf ``Strata.Decimal => "java.math.BigDecimal"
+    | .leaf ``StrataDDM.Decimal => "java.math.BigDecimal"
     | .leaf ``String => "java.lang.String"
     | other => javaTypeForInfo other
 

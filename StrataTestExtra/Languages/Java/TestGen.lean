@@ -162,7 +162,7 @@ elab "#testCompile" : command => do
     Lean.logError "Test failed: javac not found"
     return
 
-  let jarPath := "StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
+  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
     Lean.logError s!"Test failed: ion-java jar not found at {jarPath}"
     return
@@ -204,7 +204,7 @@ elab "#testRoundtrip" : command => do
     Lean.logError "Roundtrip test skipped: javac not found"
     return
 
-  let jarPath := "StrataTestExtra/DDM/Integration/Java/testdata/ion-java-1.11.11.jar"
+  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
   if !(← System.FilePath.pathExists jarPath) then
     Lean.logError s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
     return

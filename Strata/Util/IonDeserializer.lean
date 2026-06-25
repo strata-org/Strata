@@ -74,10 +74,10 @@ def readFloat (v : Ion SymbolId) : Except Std.Format Float :=
   | .int i => .ok (Float.ofInt i)
   | _ => .error f!"Expected float, got {repr v}"
 
-def readDecimal (v : Ion SymbolId) : Except Std.Format Strata.Decimal :=
+def readDecimal (v : Ion SymbolId) : Except Std.Format StrataDDM.Decimal :=
   match v.app with
   | .decimal d => .ok d
-  | .int i => .ok (Strata.Decimal.ofInt i)
+  | .int i => .ok (StrataDDM.Decimal.ofInt i)
   | _ => .error f!"Expected decimal, got {repr v}"
 
 def readList (readElem : Ion SymbolId → SymbolTable → Except Std.Format α)
@@ -144,7 +144,7 @@ end -- public section
 /-- Leaf type names that should not be treated as nested inductives. -/
 private meta def isLeafTypeName (name : Name) : Bool :=
   name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
-  name == ``Strata.Decimal
+  name == ``StrataDDM.Decimal
 
 /-- Generate a unique reader function name for a type. -/
 private meta def readerName (typeName : Name) : Name :=
@@ -173,7 +173,7 @@ private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term
   | some ``String => `(Strata.Util.IonDeserializer.readString $valExpr tbl)
   | some ``Bool => `(Strata.Util.IonDeserializer.readBool $valExpr)
   | some ``Float => `(Strata.Util.IonDeserializer.readFloat $valExpr)
-  | some ``Strata.Decimal => `(Strata.Util.IonDeserializer.readDecimal $valExpr)
+  | some ``StrataDDM.Decimal => `(Strata.Util.IonDeserializer.readDecimal $valExpr)
   | some ``List =>
     let args := fieldType'.getAppArgs
     if h : args.size > 0 then
