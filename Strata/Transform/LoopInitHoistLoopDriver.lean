@@ -1293,6 +1293,107 @@ public theorem loopDet_lift_renamedGuard_TE [HasFvar P] [HasBool P] [HasNot P] [
     rw [← h, ← he]; exact hf
   · intro ρ_s ρ_h he hwfb; exact he ▸ hwfb
 
+/-- Prop-level wrapper of `loopDet_lift_sf_2g_undef_F_fuel` with the store-shape
+carriers specialised away (`Vs = Vh = []`, `Q = ⊥`).  This is the raw two-guard
+FAILING-target driver: a source loop run reaching a failing config is matched by a
+hoist (possibly renamed-guard) loop run reaching a failing config.  The carrier
+hypotheses become vacuous (no `Vs`/`Vh` members; no `Q`-kind names) so the guard
+transports drop to the bare `HoistInv`-keyed form. -/
+public theorem loopDet_lift_2g_F [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g_s g_h : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_guard_transport : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       ρ_s.eval ρ_s.store g_s = .some HasBool.tt → ρ_h.eval ρ_h.store g_h = .some HasBool.tt)
+    (h_wfb_transport : ∀ (ρ_s ρ_h : Env P),
+       ρ_s.eval = ρ_h.eval → WellFormedSemanticEvalBool ρ_s.eval →
+       WellFormedSemanticEvalBool ρ_h.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (body_sim_fail : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist : Env P} {a' : Config P (Cmd P)}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_s) none [] body_src md_s) ρ_src) a')
+    (h_a'_fail : a'.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g_h) none [] body_h md_h) ρ_hoist) d
+      ∧ d.getEnv.hasFailure = true :=
+  loopDet_lift_sf_2g_undef_F_fuel (Q := fun _ => False) (Vs := []) (Vh := [])
+    (σ_sf := StringGenState.emp)
+    (fun ρ_s ρ_h hi he _ ht => h_guard_transport ρ_s ρ_h hi he ht)
+    h_wfb_transport
+    (fun ρ_s ρ_h hi he hf hb _ _ _ => body_sim ρ_s ρ_h hi he hf hb)
+    (fun ρ_s ρ_h hi he hf hb _ _ _ d hrun hd => body_sim_fail ρ_s ρ_h hi he hf hb d hrun hd)
+    h_src_body_nofd h_h_body_nofd
+    (reflTrans_to_T h_run).len h_hinv h_eval h_hf h_bound
+    (by intro y hy; exact absurd hy (by simp)) (by intro y hy; exact absurd hy (by simp))
+    (by intro str hQ _; exact absurd hQ (by simp))
+    (reflTrans_to_T h_run) h_a'_fail (Nat.le_refl _)
+
+/-- The renamed-guard FAILING-target driver: a thin wrapper over `loopDet_lift_2g_F`
+discharging the renamed-guard transport (the failing companion of
+`loopDet_lift_renamedGuard_TE` / `_E`).  A source loop run reaching a failing config
+is matched by a hoist loop run (whose guard is `substFvarMany g subst`) reaching a
+failing config.  Consumes a sum-typed `BodySimSum` for completed iterations and a
+failing body provider for the failing iteration. -/
+public theorem loopDet_lift_renamedGuard_F [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P] [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g : P.Expr} {body_src body_h : List (Stmt P (Cmd P))} {md_s md_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_g_B_fresh : ∀ x ∈ B, x ∉ HasVarsPure.getVars g)
+    (_h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (body_sim : BodySimSum (extendEval := extendEval) A B subst body_src body_h)
+    (body_sim_fail : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store →
+       ρ_s.eval = ρ_h.eval → ρ_s.hasFailure = ρ_h.hasFailure →
+       (∀ y ∈ B, ρ_h.store y ≠ none) →
+       ∀ (d : Config P (Cmd P)),
+         StepStmtStar P (EvalCmd P) extendEval (.stmts body_src ρ_s) d →
+         d.getEnv.hasFailure = true →
+         ∃ d', StepStmtStar P (EvalCmd P) extendEval (.stmts body_h ρ_h) d'
+           ∧ d'.getEnv.hasFailure = true)
+    (h_src_body_nofd : Block.noFuncDecl body_src = true)
+    (h_h_body_nofd : Block.noFuncDecl body_h = true)
+    {ρ_src ρ_hoist : Env P} {a' : Config P (Cmd P)}
+    (h_hinv : HoistInv (P := P) A B subst ρ_src.store ρ_hoist.store)
+    (h_eval : ρ_src.eval = ρ_hoist.eval) (h_hf : ρ_src.hasFailure = ρ_hoist.hasFailure)
+    (h_bound : ∀ y ∈ B, ρ_hoist.store y ≠ none)
+    (h_run : StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det g) none [] body_src md_s) ρ_src) a')
+    (h_a'_fail : a'.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) extendEval
+        (.stmt (.loop (.det (substFvarMany g subst)) none [] body_h md_h) ρ_hoist) d
+      ∧ d.getEnv.hasFailure = true := by
+  refine loopDet_lift_2g_F (g_s := g) (g_h := substFvarMany g subst)
+    ?_ ?_ body_sim body_sim_fail h_src_body_nofd h_h_body_nofd
+    h_hinv h_eval h_hf h_bound h_run h_a'_fail
+  · intro ρ_s ρ_h hi he ht
+    have h := renamed_guard_eval_same_delta (δ := ρ_h.eval) (g := g)
+      h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_g_B_fresh
+      hi (read_vars_def_of_eval (h_wfdef ρ_h) (he ▸ ht)) (h_wfcongr ρ_h) (h_wfsubst ρ_h)
+    rw [← h, ← he]; exact ht
+  · intro ρ_s ρ_h he hwfb; exact he ▸ hwfb
+
 /-! ## Entries-from-lift structural bridge.
 
 `Entry P = P.Ident × P.Ident × P.Ty × MetaData P`, `e = (y, y', ty, md)`:
