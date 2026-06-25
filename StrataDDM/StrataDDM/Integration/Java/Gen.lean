@@ -164,8 +164,14 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
   let some (.ctorInfo ci) := env.find? ctorName
     | throwError "Cannot find constructor {ctorName}"
   let mut ty := ci.type
+  -- Substitute parameters with dummy constants to avoid loose bvars
   for _ in List.range ci.numParams do
-    match ty with | .forallE _ _ b _ => ty := b | _ => break
+    match ty with
+    | .forallE _ _ b _ =>
+      -- Create a placeholder expression for the parameter
+      let placeholder := mkSort levelZero  -- dummy; we only inspect names, not values
+      ty := b.instantiate1 placeholder
+    | _ => break
   let mut fields := #[]
   for i in List.range ci.numFields do
     match ty with
@@ -177,7 +183,7 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
           let s := n.toString (escape := false)
           if s.startsWith "_" && s.length > 1 then s!"field{i}" else s
       fields := fields.push { name, typeInfo }
-      ty := b
+      ty := b.instantiate1 (mkSort levelZero)
     | _ => break
   return fields
 
@@ -204,7 +210,12 @@ private meta partial def extractCompoundNamesFromExpr (env : Environment) (t : E
     if h : args.size > 0 then extractCompoundNamesFromExpr env args[0]
     else return #[]
   | some n =>
-    if isCompoundType env n then return #[n] else return #[]
+    let mut result := #[]
+    if isCompoundType env n then result := result.push n
+    -- Also recurse into type arguments to find nested compound types
+    for arg in t.getAppArgs do
+      result := result ++ (← extractCompoundNamesFromExpr env arg)
+    return result
   | none => return #[]
 
 private meta def collectNestedTypes (env : Environment) (rootName : Name) : MetaM (Array Name) := do
@@ -226,13 +237,15 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) : Meta
       let some (.ctorInfo ci) := env.find? ctorName | continue
       let mut ty := ci.type
       for _ in List.range ci.numParams do
-        match ty with | .forallE _ _ b _ => ty := b | _ => break
+        match ty with
+        | .forallE _ _ b _ => ty := b.instantiate1 (mkSort levelZero)
+        | _ => break
       for _ in List.range ci.numFields do
         match ty with
         | .forallE _ t b _ =>
           for n in ← extractCompoundNamesFromExpr env t do
             if !visited.contains n then queue := queue.push n
-          ty := b
+          ty := b.instantiate1 (mkSort levelZero)
         | _ => break
   return result
 

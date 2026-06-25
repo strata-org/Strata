@@ -21,16 +21,14 @@ Example:
 
 open Strata.Java
 
-private def placeholderPackage := "___placeholder___"
-
 /-- Pre-computed Java files for the Laurel `Program` type. -/
-private def laurelFiles : GeneratedFiles := getIonSerializer% Strata.Laurel.Program placeholderPackage
+private def laurelFiles : GeneratedFiles := getIonSerializer% Strata.Laurel.Program "___placeholder___"
 
 def main (args : List String) : IO Unit := do
   match args with
   | [package, outputDir] =>
     let files := laurelFiles.files.map fun (name, content) =>
-      (name, content.replace s!"package {placeholderPackage};" s!"package {package};")
+      (name, content.replace "package ___placeholder___;" s!"package {package};")
     writeJavaFiles outputDir package { files }
     IO.println s!"Generated {files.size} Java files in {outputDir}"
   | _ =>
