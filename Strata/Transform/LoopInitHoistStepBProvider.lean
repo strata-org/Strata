@@ -783,6 +783,192 @@ theorem exit_stmtSimES [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr]
     refine ⟨ρ_h, ?_, h_hinv, h_hf, h_bnd, h_eval⟩
     exact ReflTrans.step _ _ _ StepStmt.step_exit (ReflTrans.refl _)
 
+/-! ## The remaining FAILING `StmtSimFail` producers. -/
+
+/-- A `.typeDecl` run reaching a failing config: either `refl` (start fails) or one
+no-op step to a failing `.terminal` (the env is unchanged, so the flag is `ρ`'s). -/
+theorem typeDecl_endpoint_inv [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (tc : TypeConstructor) (md : MetaData P) (ρ : Env P) (d : Config P (Cmd P))
+    (h_run : StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ρ.hasFailure = true ∨
+    (∃ ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) (.terminal ρ') ∧
+       ρ'.hasFailure = true) ∨
+    (∃ l ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.typeDecl tc md) ρ) (.exiting l ρ') ∧
+       ρ'.hasFailure = true) := by
+  match h_run with
+  | .refl _ => exact Or.inl (by simpa [Config.getEnv] using hd)
+  | .step _ _ _ StepStmt.step_typeDecl hr1 =>
+    match hr1 with
+    | .refl _ =>
+      exact Or.inr (Or.inl ⟨_, .step _ _ _ StepStmt.step_typeDecl (.refl _),
+        by simpa [Config.getEnv] using hd⟩)
+    | .step _ _ _ hd' _ => exact nomatch hd'
+
+theorem typeDecl_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)} {tc : TypeConstructor} {md : MetaData P}
+    (h_es : StmtSimES (extendEval := extendEval) A B subst (.typeDecl tc md) (.typeDecl tc md)) :
+    StmtSimFail (extendEval := extendEval) A B subst (.typeDecl tc md) (.typeDecl tc md) :=
+  stmtSimFail_of_stmtSimES_atomic (typeDecl_endpoint_inv tc md) h_es
+
+/-- A `.exit lbl md` run reaching a failing config: either `refl` (start fails) or one
+`step_exit` to a failing `.exiting lbl` (env unchanged, flag is `ρ`'s). -/
+theorem exit_endpoint_inv [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (lbl : String) (md : MetaData P) (ρ : Env P) (d : Config P (Cmd P))
+    (h_run : StepStmtStar P (EvalCmd P) extendEval (.stmt (.exit lbl md) ρ) d)
+    (hd : d.getEnv.hasFailure = true) :
+    ρ.hasFailure = true ∨
+    (∃ ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.exit lbl md) ρ) (.terminal ρ') ∧
+       ρ'.hasFailure = true) ∨
+    (∃ l ρ', StepStmtStar P (EvalCmd P) extendEval (.stmt (.exit lbl md) ρ) (.exiting l ρ') ∧
+       ρ'.hasFailure = true) := by
+  match h_run with
+  | .refl _ => exact Or.inl (by simpa [Config.getEnv] using hd)
+  | .step _ _ _ StepStmt.step_exit hr1 =>
+    match hr1 with
+    | .refl _ =>
+      exact Or.inr (Or.inr ⟨lbl, _, .step _ _ _ StepStmt.step_exit (.refl _),
+        by simpa [Config.getEnv] using hd⟩)
+    | .step _ _ _ hd' _ => exact nomatch hd'
+
+theorem exit_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVarsPure P P.Expr] {extendEval : ExtendEval P}
+    (A B : List P.Ident) (subst : List (P.Ident × P.Ident)) (lbl : String) (md : MetaData P) :
+    StmtSimFail (extendEval := extendEval) A B subst (.exit lbl md) (.exit lbl md) :=
+  stmtSimFail_of_stmtSimES_atomic (exit_endpoint_inv lbl md) (exit_stmtSimES A B subst lbl md)
+
+/-- The det-guard `.ite` failing arm: a failing run peels the guard step, the taken
+branch fails, discharged by that branch's `BodySimFail`; the hoist replays the same
+branch with the transported guard. -/
+theorem ite_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {g : P.Expr} {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h_guard_eq : ∀ (ρ_s ρ_h : Env P),
+       HoistInv (P := P) A B subst ρ_s.store ρ_h.store → ρ_s.eval = ρ_h.eval →
+       (∃ w, ρ_s.eval ρ_s.store g = some w) →
+       ρ_s.eval ρ_s.store g = ρ_h.eval ρ_h.store (substFvarMany g subst))
+    (then_fail : BodySimFail (extendEval := extendEval) A B subst tss_s tss_h)
+    (else_fail : BodySimFail (extendEval := extendEval) A B subst ess_s ess_h) :
+    StmtSimFail (extendEval := extendEval) A B subst
+      (.ite (.det g) tss_s ess_s md)
+      (.ite (.det (substFvarMany g subst)) tss_h ess_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  have guard_h : ∀ {bv : P.Expr}, ρ_s.eval ρ_s.store g = .some bv →
+      ρ_h.eval ρ_h.store (substFvarMany g subst) = .some bv := by
+    intro bv hg
+    have := h_guard_eq ρ_s ρ_h h_hinv h_eval ⟨_, hg⟩
+    rw [hg] at this; exact this.symm
+  -- Either the source `.ite` start is failing (refl), or it steps into a branch.
+  cases h_run with
+  | refl =>
+    refine ⟨.stmt (.ite (.det (substFvarMany g subst)) tss_h ess_h md) ρ_h, .refl _, ?_⟩
+    have : ρ_s.hasFailure = true := by simpa [Config.getEnv] using hd
+    simpa [Config.getEnv] using (h_hf ▸ this)
+  | step _ _ _ h1 hr1 =>
+    cases h1 with
+    | step_ite_true hg hwf =>
+      obtain ⟨d', h_branch_h, hd'⟩ :=
+        then_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d hr1 hd
+      exact ⟨d', .step _ _ _ (StepStmt.step_ite_true (guard_h hg) (h_eval ▸ hwf)) h_branch_h, hd'⟩
+    | step_ite_false hg hwf =>
+      obtain ⟨d', h_branch_h, hd'⟩ :=
+        else_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d hr1 hd
+      exact ⟨d', .step _ _ _ (StepStmt.step_ite_false (guard_h hg) (h_eval ▸ hwf)) h_branch_h, hd'⟩
+
+/-- The nondet-guard `.ite` failing arm: a failing run peels the nondet branch step,
+the chosen branch fails, discharged by that branch's `BodySimFail`; the hoist replays
+the SAME branch choice. -/
+theorem ite_nondet_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {tss_s tss_h ess_s ess_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (then_fail : BodySimFail (extendEval := extendEval) A B subst tss_s tss_h)
+    (else_fail : BodySimFail (extendEval := extendEval) A B subst ess_s ess_h) :
+    StmtSimFail (extendEval := extendEval) A B subst
+      (.ite .nondet tss_s ess_s md) (.ite .nondet tss_h ess_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  cases h_run with
+  | refl =>
+    refine ⟨.stmt (.ite .nondet tss_h ess_h md) ρ_h, .refl _, ?_⟩
+    have : ρ_s.hasFailure = true := by simpa [Config.getEnv] using hd
+    simpa [Config.getEnv] using (h_hf ▸ this)
+  | step _ _ _ h1 hr1 =>
+    cases h1 with
+    | step_ite_nondet_true =>
+      obtain ⟨d', h_branch_h, hd'⟩ := then_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d hr1 hd
+      exact ⟨d', .step _ _ _ StepStmt.step_ite_nondet_true h_branch_h, hd'⟩
+    | step_ite_nondet_false =>
+      obtain ⟨d', h_branch_h, hd'⟩ := else_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d hr1 hd
+      exact ⟨d', .step _ _ _ StepStmt.step_ite_nondet_false h_branch_h, hd'⟩
+
+/-- The `.block` failing arm: a failing run peels the block-enter step; the failure is
+inside the body (`block_reaches_failing'`), discharged by the inner body's `BodySimFail`;
+the hoist enters its block and the lifted inner failing run keeps the flag. -/
+theorem block_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    {lbl : String} {inner inner_h : List (Stmt P (Cmd P))} {md : MetaData P}
+    (inner_fail : BodySimFail (extendEval := extendEval) A B subst inner inner_h) :
+    StmtSimFail (extendEval := extendEval) A B subst
+      (.block lbl inner md) (.block lbl inner_h md) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  cases h_run with
+  | refl =>
+    refine ⟨.stmt (.block lbl inner_h md) ρ_h, .refl _, ?_⟩
+    have : ρ_s.hasFailure = true := by simpa [Config.getEnv] using hd
+    simpa [Config.getEnv] using (h_hf ▸ this)
+  | step _ _ _ h1 hr1 =>
+    cases h1 with
+    | step_block =>
+      -- The failure is inside the body block; `block_reaches_failing'` exposes the
+      -- inner-config (`.stmts inner ρ_s`) failing run directly.
+      obtain ⟨d_inner, h_inner_run, hd_inner⟩ :=
+        block_reaches_failing' P (EvalCmd P) extendEval hr1 hd
+      obtain ⟨d', h_inner_h_run, hd'⟩ :=
+        inner_fail ρ_s ρ_h h_hinv h_eval h_hf h_bnd d_inner h_inner_run hd_inner
+      -- Lift the failing inner run into the hoist block.
+      refine ⟨.block (.some lbl) ρ_h.store d', ?_, by simpa [Config.getEnv] using hd'⟩
+      exact .step _ _ _ StepStmt.step_block
+        (block_inner_star P (EvalCmd P) extendEval _ _ (.some lbl) ρ_h.store h_inner_h_run)
+
+/-- The nested-loop failing arm: a failing run of `.loop (.det g2) none [] inner`
+peels into the failing loop driver `loopDet_lift_renamedGuard_F`, with the inner
+body's SUM-TYPED sim for completed iterations and the inner body's `BodySimFail` for
+the failing iteration; the hoist loop (renamed guard) reaches a failing config. -/
+theorem nestedLoop_stmtSimFail [HasFvar P] [HasBool P] [HasNot P] [HasVal P] [HasBoolVal P]
+    [HasIdent P] [HasSubstFvar P] [HasIntOrder P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
+    {extendEval : ExtendEval P}
+    {g2 : P.Expr} {inner inner_h : List (Stmt P (Cmd P))} {md2_s md2_h : MetaData P}
+    {A B : List P.Ident} {subst : List (P.Ident × P.Ident)}
+    (h_A_subst_fst : ∀ a ∈ A, a ∈ subst.map Prod.fst)
+    (h_src_nodup : (subst.map Prod.fst).Nodup)
+    (h_disjoint : ∀ a ∈ subst.map Prod.fst, a ∉ subst.map Prod.snd)
+    (h_tgt_nodup : (subst.map Prod.snd).Nodup)
+    (h_g_B_fresh : ∀ z ∈ B, z ∉ HasVarsPure.getVars g2)
+    (h_wfvar   : ∀ ρ : Env P, WellFormedSemanticEvalVar ρ.eval)
+    (h_wfcongr : ∀ ρ : Env P, WellFormedSemanticEvalExprCongr ρ.eval)
+    (h_wfsubst : ∀ ρ : Env P, WellFormedSemanticEvalSubstFvar ρ.eval)
+    (h_wfdef   : ∀ ρ : Env P, WellFormedSemanticEvalDef ρ.eval)
+    (inner_sim : LoopInitHoistLoopDriver.BodySimSum (extendEval := extendEval) A B subst inner inner_h)
+    (inner_fail : BodySimFail (extendEval := extendEval) A B subst inner inner_h)
+    (h_nofd_src : Block.noFuncDecl inner = true)
+    (h_nofd_h : Block.noFuncDecl inner_h = true) :
+    StmtSimFail (extendEval := extendEval) A B subst
+      (.loop (.det g2) none [] inner md2_s)
+      (.loop (.det (substFvarMany g2 subst)) none [] inner_h md2_h) := by
+  intro ρ_s ρ_h h_hinv h_eval h_hf h_bnd d h_run hd
+  exact LoopInitHoistLoopDriver.loopDet_lift_renamedGuard_F (A := A) (B := B) (subst := subst)
+    h_A_subst_fst h_src_nodup h_disjoint h_tgt_nodup h_g_B_fresh
+    h_wfvar h_wfcongr h_wfsubst h_wfdef
+    inner_sim
+    (fun ρ_s' ρ_h' hi he hf hb d' hrun' hd' =>
+      inner_fail ρ_s' ρ_h' hi he hf hb d' hrun' hd')
+    h_nofd_src h_nofd_h
+    h_hinv h_eval h_hf h_bnd h_run hd
+
 end OptEStepBProvider
 end Imperative
 
