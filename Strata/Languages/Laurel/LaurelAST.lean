@@ -583,6 +583,9 @@ deriving instance BEq for HighType
 structure TypeLattice where
   unfoldMap : Std.HashMap String HighTypeMd := {}
   extendingMap : Std.HashMap String (List String) := {}
+  /-- Type names that are treated as the gradual/dynamic top type (consistent with everything).
+      Set by language frontends (e.g. Python pipeline registers `"Any"` here). -/
+  gradualTypes : Std.HashSet String := {}
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
@@ -686,10 +689,13 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
-    match a'.val, b'.val with
-    | .Unknown, _ | _, .Unknown => true
-    | .TCore _, _ | _, .TCore _ => true
-    | _, _ => highEq a' b'
+    let isGradual (t : HighType) := match t with
+      | .Unknown => true
+      | .TCore _ => true
+      | .UserDefined id => ctx.gradualTypes.contains id.text
+      | _ => false
+    if isGradual a'.val || isGradual b'.val then true
+    else highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)

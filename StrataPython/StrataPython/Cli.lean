@@ -251,6 +251,9 @@ def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischarge
               takesArg := .arg "file" },
             { name := "skip-verification",
               help := "Run Python-to-Laurel and Laurel-to-Core translation only (skip SMT verification).",
+              takesArg := .none },
+            { name := "v2",
+              help := "Use the V2 pipeline (Resolution → Translation → Elaboration → Core).",
               takesArg := .none }]
   help := "Verify a Python Ion program via the Laurel pipeline. Translates Python to Laurel to Core, then runs SMT verification."
   callback := fun v pflags => do
@@ -310,6 +313,7 @@ def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischarge
       else if quiet then .quiet
       else .default
     let skipVerification := pflags.getBool "skip-verification"
+    let useV2 := pflags.getBool "v2"
 
     let (outcome, laurelPassStats, pctx) ← StrataPython.Pipeline.runPyAnalyzePipeline {
       filePath, specDir
@@ -319,6 +323,7 @@ def pyAnalyzeLaurelCommand (mkDischarge : Core.MkDischargeFn := Core.mkDischarge
       entryPoint, isBugFinding
       outputMode, skipVerification
       metricsHandle, mkDischarge
+      useV2
     }
 
     let msgs ← pctx.getMessages

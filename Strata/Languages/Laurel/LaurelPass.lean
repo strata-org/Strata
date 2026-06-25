@@ -17,6 +17,12 @@ structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
   keepAllFilesPrefix : Option String := none
+  /-- Names to pre-register as `.unresolved` before resolution. Used by language
+      frontends to inject unmodeled external names without patching the resolver. -/
+  externalNames : Std.HashSet String := {}
+  /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
+      Used by language frontends (e.g. Python registers "Any" here). -/
+  gradualTypes : Std.HashSet String := {}
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

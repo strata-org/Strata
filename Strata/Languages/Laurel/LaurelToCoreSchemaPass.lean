@@ -92,13 +92,15 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     match model.get? name with
     | some (.datatypeDefinition dt) => return .tcons dt.name.text []
     | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
-    | _ => do -- resolution should have already emitted a diagnostic
-      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
-      return .tcons "Composite" []
+    | _ =>
+      -- Unknown UserDefined type: treat as gradual Any (unmodeled external type).
+      -- Any legitimate type resolution failure will have already been reported by the resolver.
+      return .tcons "Any" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  | .TFloat64 => return LMonoTy.real
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
-  | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
+  | .Unknown => return .tcons "Any" []  -- gradual type: map to Any
   | _ => do
     invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
 

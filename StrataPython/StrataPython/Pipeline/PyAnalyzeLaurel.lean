@@ -43,40 +43,60 @@ public structure PyAnalyzeConfig where
   profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
   mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn
+  /-- When true, route Python→Core through the V2 pipeline (Resolution → Translation →
+      Elaboration → resolve+coerce → laurel passes → Core), bypassing the old
+      `pythonAndSpecToLaurel`. -/
+  useV2 : Bool := false
 
 private def runPipeline (config : PyAnalyzeConfig)
     : PipelineM (PyAnalyzeOutcome × Statistics) := do
-  let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
-    StrataPython.pythonAndSpecToLaurel
-      (specDir := config.specDir)
-      config.filePath config.dispatchModules config.pyspecModules config.sourcePath
-
-  if config.outputMode == .verbose then
-    let _ ← (show IO Unit from do
-      IO.println "---- BEGIN Laurel Program ----"
-      IO.println (toString (Std.format combinedLaurel))
-      IO.println "---- END Laurel Program ----").toBaseIO
-
   let uri := config.sourcePath.getD config.filePath
 
-  let (coreProgram, laurelPassStats) ← withPhase "laurelToCore" do
-    let ctx ← read
-    let laurelResult ←
-      StrataPython.translateCombinedLaurelWithLowered combinedLaurel
-        (keepAllFilesPrefix := config.keepAllFilesPrefix)
-        (pipelineCtx := some ctx) |>.toBaseIO
-    match laurelResult with
-    | .ok (coreOpt, diags, _, stats) =>
-      let phase ← getPhase
-      for msg in PipelineMessage.fromDiagnostics phase diags do
-        addMessage msg
-        if msg.kind.impact.isFatal then throw ()
-      match coreOpt with
-      | some core => pure (core, stats)
-      | none =>
-        emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
-    | .error e =>
-      emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
+  let (coreProgram, laurelPassStats) ←
+    if config.useV2 then
+      withPhase "pyAnalyzeV2ToCore" do
+        let v2Result ← StrataPython.pyAnalyzeV2ToCore config.filePath config.sourcePath |>.toBaseIO
+        match v2Result with
+        | .ok (.ok (some core, diags)) =>
+          let phase ← getPhase
+          for msg in PipelineMessage.fromDiagnostics phase diags do
+            addMessage msg
+            if msg.kind.impact.isFatal then throw ()
+          pure (core, ({} : Statistics))
+        | .ok (.ok (none, diags)) =>
+          emitMessageAndAbort (file := uri) .laurelToCoreError s!"V2 pipeline produced no Core: {diags}"
+        | .ok (.error msg) =>
+          emitMessageAndAbort (file := uri) .laurelToCoreError s!"V2 pipeline failed: {msg}"
+        | .error e =>
+          emitMessageAndAbort (file := uri) .laurelToCoreError s!"V2 pipeline IO error: {e}"
+    else do
+      let combinedLaurel ← withPhase "pythonAndSpecToLaurel" do
+        StrataPython.pythonAndSpecToLaurel
+          (specDir := config.specDir)
+          config.filePath config.dispatchModules config.pyspecModules config.sourcePath
+      if config.outputMode == .verbose then
+        let _ ← (show IO Unit from do
+          IO.println "---- BEGIN Laurel Program ----"
+          IO.println (toString (Std.format combinedLaurel))
+          IO.println "---- END Laurel Program ----").toBaseIO
+      withPhase "laurelToCore" do
+        let ctx ← read
+        let laurelResult ←
+          StrataPython.translateCombinedLaurelWithLowered combinedLaurel
+            (keepAllFilesPrefix := config.keepAllFilesPrefix)
+            (pipelineCtx := some ctx) |>.toBaseIO
+        match laurelResult with
+        | .ok (coreOpt, diags, _, stats) =>
+          let phase ← getPhase
+          for msg in PipelineMessage.fromDiagnostics phase diags do
+            addMessage msg
+            if msg.kind.impact.isFatal then throw ()
+          match coreOpt with
+          | some core => pure (core, stats)
+          | none =>
+            emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel to Core translation failed: {diags}"
+        | .error e =>
+          emitMessageAndAbort (file := uri) .laurelToCoreError s!"Laurel translation error: {e}"
 
   if config.outputMode == .verbose then
     let _ ← (show IO Unit from do

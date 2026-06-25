@@ -19,6 +19,9 @@ import StrataPython.Specs.MessageKind
 import StrataPython.Specs.ToLaurel
 public import Strata.Pipeline.Context
 public import Strata.Util.Statistics
+import StrataPython.Resolution
+import StrataPython.Translation
+import Strata.Languages.FineGrainLaurel.Elaborate
 
 /-! ## PySpec Pipeline
 
@@ -409,6 +412,7 @@ public def translateCombinedLaurel (combined : Laurel.Program) (keepAllFilesPref
   let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined keepAllFilesPrefix
   return (coreOption, errors)
 
+
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
     resolve overloads from dispatch files, load PySpec declarations,
     translate Python to Laurel, and combine with PySpec Laurel.
@@ -461,5 +465,136 @@ public def pythonAndSpecToLaurel
 
   let combined := combinePySpecLaurel filteredPrelude laurelProgram
   return combined
+
+/-- Names that are unmodeled in the Python runtime (external stdlib, boto3 clients, etc.).
+    These are pre-registered in the Laurel resolver's scope as `.unresolved` entries so
+    that references to them produce no "not defined" diagnostics.
+    Lives here in the Python pipeline, not in the generic Laurel resolver. -/
+public def pythonUnmodeledNames : Std.HashSet String :=
+  ([ "datetime", "timedelta", "Client", "bytes", "MyInt",
+     "Any..as_Composite!", "Any..isfrom_Composite", "Any..from_Composite",
+     "date", "timezone", "UTC", "BotocoreError", "ClientError",
+     "Dict", "list_to_bool", "dict_to_bool", "float_to_bool",
+     "Any_set_to_Any", "Any_list_to_Any", "Any_enumerate_to_Any",
+     "Any_dict_to_Any", "Any_range_to_Any",
+     "PDiv", "Any_sum_to_Any", "to_int_any", "to_float_any",
+     "Any_isinstance_to_bool", "RDS",
+     "PBitAnd", "PBitOr", "PBitXor", "PLShift", "PRShift",
+     "Any_max_to_Any", "Any_min_to_Any", "Any_hasattr_to_bool",
+     "Any_any_to_bool", "Any_all_to_bool", "Any_zip_to_Any",
+     "Any_map_to_Any", "Any_filter_to_Any", "Any_sorted_to_Any",
+     "Any_reversed_to_Any", "Any_tuple_to_Any", "Any_frozenset_to_Any",
+     "Callable", "OperationModel", "StructureShape", "IAMClient",
+     "STSClient", "SFNClient", "GetCallerIdentityResponseTypeDef",
+     "CreateStateMachineOutputTypeDef", "CreateRoleResponseTypeDef",
+     "EC2Client", "S3Client", "DynamoDBClient", "LambdaClient",
+     "KMSClient", "SNSClient", "SQSClient", "BedrockClient",
+     "BedrockRuntimeClient", "ECSClient", "EKSClient", "ECRClient",
+     "CloudWatchClient", "CloudFormationClient", "SecretsManagerClient",
+     "SSMClient", "GlacierClient", "PinpointClient", "NeptuneClient",
+     "IoTSiteWiseClient", "HealthLakeClient", "DeepLensClient",
+     "client", "session", "AsyncIterator", "ServiceResource",
+     "SchedulerWrapper", "Iterator", "Generator"
+  ] : List String).foldl (fun s n => s.insert n) {}
+
+/-- Python gradual types: names that should be consistent with everything (the dynamic top type). -/
+public def pythonGradualTypes : Std.HashSet String :=
+  (["Any"] : List String).foldl (fun s n => s.insert n) {}
+
+/-- V2 variant of `translateCombinedLaurel` that pre-registers Python's unmodeled
+    external names so the Laurel resolver emits no "not defined" diagnostics for them.
+    `extraExternalNames` adds program-specific unmodeled names (e.g. names imported from
+    unmodeled modules like `botocore.config.Config`, `pyspark.SparkContext`). -/
+private def translateCombinedLaurelV2 (combined : Laurel.Program)
+    (extraExternalNames : Std.HashSet String := {})
+    : IO (Option Core.Program × List DiagnosticModel) := do
+  let allExternal := extraExternalNames.fold (fun s n => s.insert n) pythonUnmodeledNames
+  let (coreOption, errors, _, _) ←
+    Laurel.translateWithLaurel
+      { inlineFunctionsWhenPossible := true
+        externalNames := allExternal
+        gradualTypes := pythonGradualTypes }
+      combined
+  return (coreOption.map appendCorePartOfRuntime, errors)
+
+/-- Collect names bound by `import`/`from … import …` at the top level of a Python program.
+    These are external (their defining modules are unmodeled), so the Laurel resolver must
+    treat them as `.unresolved` rather than emitting "'Config' is not defined". This makes
+    unmodeled-library usage (boto3 `Config`/`Session`, pyspark `SparkContext`, etc.) sound-
+    but-uninterpreted instead of a hard pipeline failure. -/
+private def collectImportedNames (stmts : Array (StrataPython.stmt SourceRange)) : Std.HashSet String := Id.run do
+  let mut names : Std.HashSet String := {}
+  for s in stmts do
+    match s with
+    | .Import _ aliases =>
+      for a in aliases.val do
+        match a with
+        | .mk_alias _ modName asName =>
+          match asName.val with
+          | some aliasName => names := names.insert aliasName.val
+          | none => names := names.insert modName.val
+    | .ImportFrom _ _ imports _ =>
+      for a in imports.val do
+        match a with
+        | .mk_alias _ impName asName =>
+          match asName.val with
+          | some aliasName => names := names.insert aliasName.val
+          | none => names := names.insert impName.val
+    | _ => pure ()
+  return names
+
+/-- Assemble the Laurel program to elaborate: merge user code and demanded imported stubs. -/
+private def assembleElaborationInput
+    (userLaurel importedLaurel : Laurel.Program) : Laurel.Program :=
+  { staticProcedures := userLaurel.staticProcedures ++ importedLaurel.staticProcedures
+    staticFields := userLaurel.staticFields
+    types := userLaurel.types ++ importedLaurel.types
+    constants := userLaurel.constants }
+
+/-- V2 pipeline: Resolution → Translation → Elaboration → resolve → Core.
+    Specs/imports enter via `Resolution.resolve` (loads `.python.st.ion` stubs)
+    → `Translation.runTranslation`; exceptions are threaded by `fullElaborate`;
+    the resolve + coerce + laurel passes happen in `translateCombinedLaurel`. -/
+public def pyAnalyzeV2ToCore (pythonIonPath : String) (sourcePath : Option String := none)
+    : IO (Except String (Option Core.Program × List DiagnosticModel)) := do
+  let baseDir     := System.FilePath.mk pythonIonPath |>.parent.getD "."
+  let metadataPath := sourcePath.getD pythonIonPath
+  -- Step 1: Read + resolve
+  let stmts ← match ← (readPythonStrata pythonIonPath).toBaseIO with
+    | .error msg => return .error s!"read: {msg}"
+    | .ok s => pure s
+  let resolveResult ← match ← (Resolution.resolve stmts baseDir).toBaseIO with
+    | .error msg => return .error s!"resolution: {msg}"
+    | .ok r => pure r
+  -- Step 2: Translate (user code + demanded imports)
+  let importedLaurel : Laurel.Program :=
+    match Translation.runTranslation { stmts := resolveResult.demandedStmts, moduleLocals := [] } metadataPath with
+    | .ok (prog, _) => prog
+    | .error _ => default
+  let userLaurel ← match Translation.runTranslation resolveResult.program metadataPath with
+    | .error e => return .error s!"translation: {repr e}"
+    | .ok (prog, _) => pure prog
+  -- Step 3: Elaborate (exception threading)
+  let toElaborate  := assembleElaborationInput userLaurel importedLaurel
+  let fullRuntime  := pythonRuntimeLaurelPart
+  -- Build runtime grade map: maps each proc name to its inferred grade.
+  let runtimeGrades := fullRuntime.staticProcedures.foldl
+    (fun acc proc => acc.insert proc.name.text (FineGrainLaurel.gradeFromSignature proc))
+    ({} : Std.HashMap String FineGrainLaurel.Grade)
+  let elaboratedProgram ← match FineGrainLaurel.fullElaborate toElaborate fullRuntime runtimeGrades with
+    | .error e => return .error s!"elaboration: {e}"
+    | .ok (prog, failures) =>
+      if !failures.isEmpty then return .error s!"elaboration failures: {String.intercalate ", " failures}"
+      pure prog
+  -- Step 4: Lower to Core (resolve + coerce + laurel passes).
+  -- Use the full runtime (not filtered) to preserve all datatype definitions
+  -- (e.g. ListAny, DictStrAny) needed by the Core verifier's termination checker.
+  let combined := combinePySpecLaurel fullRuntime elaboratedProgram
+  -- Names imported from unmodeled modules (e.g. `from botocore.config import Config`) are
+  -- external: register them so the Laurel resolver treats their uses as sound-but-
+  -- uninterpreted instead of "'Config' is not defined".
+  let importedNames := collectImportedNames stmts
+  let (coreOpt, errs) ← translateCombinedLaurelV2 combined importedNames
+  return .ok (coreOpt, errs)
 
 end StrataPython

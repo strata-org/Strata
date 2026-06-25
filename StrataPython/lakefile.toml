@@ -32,6 +32,11 @@ root = "Scripts.pyAnalyzeLaurel"
 needs = ["StrataPython"]
 
 [[lean_exe]]
+name = "pyAnalyzeV2"
+root = "Scripts.pyAnalyzeV2"
+needs = ["StrataPython"]
+
+[[lean_exe]]
 name = "pyAnalyzeToGoto"
 root = "Scripts.pyAnalyzeToGoto"
 needs = ["StrataPython"]
@@ -64,4 +69,9 @@ needs = ["StrataPython"]
 [[lean_exe]]
 name = "pySpecs"
 root = "Scripts.pySpecs"
+needs = ["StrataPython"]
+
+[[lean_exe]]
+name = "strata"
+root = "StrataMain"
 needs = ["StrataPython"]

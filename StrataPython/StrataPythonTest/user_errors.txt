@@ -1,0 +1,4 @@
+(set-info :file "tests/test_with_void_enter.py")
+(set-info :start 51)
+(set-info :stop 75)
+(set-info :error-message "Resolution failed: 'active' is not defined")
