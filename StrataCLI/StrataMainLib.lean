@@ -9,7 +9,6 @@ import Lean.Parser.Extension
 import Strata.Cli.Framework
 import Strata.Cli.VerifyOptions
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
-import StrataDDM.Integration.Java.Gen
 import Strata.Languages.Core.Verifier
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.C_Simp.Verify
@@ -147,27 +146,6 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-
-def javaGenCommand : Command where
-  name := "javaGen"
-  args := [ "dialect", "package", "output-dir" ]
-  flags := [includeFlag]
-  help := "Generate Java source files from a DDM dialect definition. Accepts a dialect name (e.g. Laurel) or a dialect file path."
-  callback := fun v pflags => do
-    let fm ← pflags.buildDialectFileMap
-    let ld ← fm.getLoaded
-    let d ← if mem : v[0] ∈ ld.dialects then
-      pure ld.dialects[v[0]]
-    else
-      match ← StrataDDM.readStrataFile fm v[0] with
-      | .dialect d => pure d
-      | .program _ => exitFailure "Expected a dialect file, not a program file."
-    match StrataDDM.Java.generateDialect d v[1] with
-    | .ok files =>
-      StrataDDM.Java.writeJavaFiles v[2] v[1] files
-      IO.println s!"Generated Java files for {d.name} in {v[2]}/{StrataDDM.Java.packageToPath v[1]}"
-    | .error msg =>
-      exitFailure s!"Error generating Java: {msg}"
 
 def laurelAnalyzeBinaryCommand : Command where
   name := "laurelAnalyzeBinary"
@@ -542,8 +520,6 @@ def commandGroups : List CommandGroup := [
   { name := "Core"
     commands := [verifyCommand, transformCommand, checkCommand, toIonCommand, printCommand, diffCommand]
     commonFlags := [includeFlag] },
-  { name := "Code Generation"
-    commands := [javaGenCommand] },
   { name := "Python"
     commands := [StrataPython.Cli.pyAnalyzeLaurelCommand,
                  StrataPython.Cli.pyResolveOverloadsCommand,
