@@ -75,6 +75,28 @@ def heapConstants : Program :=
   | .ok program => program
   | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
 
+/- Convert between an `Any` holding a heap reference and a `Composite`.
+   Injected by `typeHierarchyTransform` only when the program defines `Any`. -/
+private def pyspecHeapBridgeDDM :=
+#strata
+program Laurel;
+
+function anyToComposite(a: Any, tag: TypeTag): Composite {
+  MkComposite(Any..as_ref!(a), tag)
+};
+
+function compositeToAny(c: Composite): Any {
+  from_Reference(Composite..ref!(c))
+};
+
+#end
+
+/-- Parsed Any<->Composite bridge program (see `pyspecHeapBridgeDDM`). -/
+def pyspecHeapBridge : Program :=
+  match Laurel.TransM.run none (Laurel.parseProgram pyspecHeapBridgeDDM) with
+  | .ok program => program
+  | .error e => dbg_trace s!"BUG: Laurel pyspec heap bridge parse error: {e}"; default
+
 end -- public section
 
 end Strata.Laurel
