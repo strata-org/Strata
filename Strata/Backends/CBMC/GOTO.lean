@@ -5,6 +5,7 @@
 -/
 module
 
+import Strata.Backends.CBMC.GOTO.CoreCFGToGOTOPipeline
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.Backends.CBMC.GOTO.DefaultSymbols

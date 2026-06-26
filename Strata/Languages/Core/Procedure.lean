@@ -402,10 +402,7 @@ def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
 -- assume, init, set, cover) is not included in formatted output — formatCmd
 -- discards it. Transfer metadata, however, appears in CFG formatting.
 def DetCFG.stripMetaData (cfg : DetCFG) : DetCFG :=
-  { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
-      (lbl, { blk with transfer := match blk.transfer with
-                          | .condGoto p lt lf _ => .condGoto p lt lf .empty
-                          | .finish _ => .finish .empty }) }
+  Imperative.CFG.stripDetMetaData cfg
 
 def Procedure.eraseTypes (p : Procedure) : Procedure :=
   let body' := match p.body with

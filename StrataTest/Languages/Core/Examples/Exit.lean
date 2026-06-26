@@ -117,48 +117,52 @@ Result: ✅ pass
 info: Entry: block$l1$_2
 
 l1:
-  condGoto true block$l1$_2 block$l1$_2
+  #[<[provenance]: :416-531>] condGoto true block$l1$_2 block$l1$_2
 block$l1$_2:
   assert [a1]: x == x;
-  condGoto true l$_1 l$_1
+  #[<[provenance]: :455-463>] condGoto true l$_1 l$_1
 l$_1:
   assert [a3]: x == x;
-  condGoto true end$_0 end$_0
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true end$_0 end$_0
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 0))
 
 /--
-info: Entry: ite$_5
+info: Entry: ite$_7
 
 l5:
-  condGoto true ite$_5 ite$_5
+  #[<[provenance]: :606-1085>] condGoto true ite$_7 ite$_7
 l4:
-  condGoto true ite$_5 ite$_5
+  #[<[provenance]: :618-1079>] condGoto true ite$_7 ite$_7
 l4_before:
-  condGoto true ite$_5 ite$_5
+  #[<[provenance]: :632-1025>] condGoto true ite$_7 ite$_7
 l3_before:
-  condGoto true ite$_5 ite$_5
+  #[<[provenance]: :655-962>] condGoto true ite$_7 ite$_7
 l1:
-  condGoto true ite$_5 ite$_5
-ite$_5:
+  #[<[provenance]: :680-864>] condGoto true ite$_7 ite$_7
+ite$_7:
   assert [a4]: x == x;
-  condGoto x > 0 block$l5$_2 block$l5$_1
+  #[<[provenance]: :735-850>] condGoto x > 0 block$l3_before$_5 block$l4_before$_6
+block$l3_before$_5:
+  #[<[provenance]: :764-779>] condGoto true block$l5$_2 block$l5$_2
+block$l4_before$_6:
+  #[<[provenance]: :819-834>] condGoto true block$l5$_1 block$l5$_1
 l2:
-  condGoto true l$_3 l$_3
+  #[<[provenance]: :877-950>] condGoto true l$_3 l$_3
 l$_3:
   assert [a5]: !(x == x);
-  condGoto true block$l5$_2 block$l5$_2
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
   assert [a6]: x * 2 > x;
-  condGoto true end$_0 end$_0
+  #[<[provenance]: :1007-1015>] condGoto true end$_0 end$_0
 block$l5$_1:
   assert [a7]: x <= 0;
-  condGoto true end$_0 end$_0
+  #[<[provenance]: :1063-1071>] condGoto true end$_0 end$_0
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 1))

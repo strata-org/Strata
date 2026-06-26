@@ -87,7 +87,8 @@ open Core Imperative Transform
 
   -- ProcBodyVerify expects a structured body: the prefix (inits + assumes) and
   -- suffix (postcondition asserts) are statement-level constructs that embed
-  -- around the body. Unstructured CFG bodies are not supported here.
+  -- around the body. Unstructured CFG bodies require a different verification
+  -- strategy (e.g., encoding the contract directly in the CFG).
   let bodyStmts ← proc.body.getStructured.mapError Strata.DiagnosticModel.fromMessage
   -- Wrap body in labeled block
   let bodyBlock := Stmt.block bodyLabel bodyStmts #[]

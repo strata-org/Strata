@@ -279,7 +279,8 @@ def anfEncodeProgram (p : Program) : Bool × Program :=
         let (body', idx') := anfEncodeBody ss idx
         (.proc { proc with body := .structured body' } md :: acc, idx', changed || idx' > idx)
       | .cfg _ =>
-        -- CFG bodies are not transformed by ANF encoding for now.
+        -- CSE on CFGs would require dominator analysis to determine where to
+        -- place hoisted var declarations. Skipped for now.
         (.proc proc md :: acc, idx, changed)
     | other => (other :: acc, idx, changed)
   ) ([], 0, false)

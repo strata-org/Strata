@@ -30,17 +30,17 @@ where `n` is the total number of blocks in the graph.
 where execution should proceed next, if anywhere. -/
 inductive DetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Transfer to `lt` if `p` is true, or `lf` is `p` is false. -/
-  | condGoto (p : P.Expr) (lt lf : Label) (md : MetaData P := .empty)
+  | condGoto (p : P.Expr) (lt lf : Label) (md : MetaData P)
   /-- Stop execution of the current unstructured program. If in a procedure
   body, this can be interpreted as returning to the caller. -/
-  | finish (md : MetaData P := .empty)
+  | finish (md : MetaData P)
 
 /-- For the moment, we don't have an unconditional jump in the language, and
 model it instead using `condGoto`. By defining this function, we can easily
 create unconditional jumps, and future proof against the possibility of adding
 it as a constructor in the future.  -/
-def DetTransferCmd.goto [HasBool P] (l : Label) : DetTransferCmd Label P :=
-  condGoto HasBool.tt l l
+def DetTransferCmd.goto [HasBool P] (l : Label) (md : MetaData P) : DetTransferCmd Label P :=
+  condGoto HasBool.tt l l md
 
 /-- A `NondetTransfer` command terminates a non-deterministic basic block,
 indicating the list of possible blocks where execution could proceed next, if
@@ -48,7 +48,7 @@ anywhere. -/
 inductive NondetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Transfer to any one of a list of labels, non-deterministically. `goto`
   with no labels is equivalent to `finish` in `DetTransferCmd` -/
-  | goto (ls : List Label) (md : MetaData P := .empty)
+  | goto (ls : List Label) (md : MetaData P)
   deriving Inhabited
 
 def NondetTransferCmd.targets : NondetTransferCmd Label P → List Label
@@ -76,6 +76,26 @@ where execution should start. -/
 structure CFG (Label Block : Type) where
   entry : Label
   blocks : List (Label × Block)
+
+--------
+
+/-- Strip metadata from a deterministic transfer command. -/
+def DetTransferCmd.stripMetaData : DetTransferCmd Label P → DetTransferCmd Label P
+  | .condGoto p lt lf _ => .condGoto p lt lf .empty
+  | .finish _ => .finish .empty
+
+/-- Strip metadata from a non-deterministic transfer command. -/
+def NondetTransferCmd.stripMetaData : NondetTransferCmd Label P → NondetTransferCmd Label P
+  | .goto ls _ => .goto ls .empty
+
+/-- Strip transfer metadata from a deterministic basic block. -/
+def DetBlock.stripMetaData (blk : DetBlock Label Cmd P) : DetBlock Label Cmd P :=
+  { blk with transfer := blk.transfer.stripMetaData }
+
+/-- Strip transfer metadata from all blocks in a deterministic CFG. -/
+def CFG.stripDetMetaData (cfg : CFG Label (DetBlock Label Cmd P)) :
+    CFG Label (DetBlock Label Cmd P) :=
+  { cfg with blocks := cfg.blocks.map fun (lbl, blk) => (lbl, blk.stripMetaData) }
 
 --------
 
