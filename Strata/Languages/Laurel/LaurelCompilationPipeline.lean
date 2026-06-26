@@ -108,7 +108,7 @@ def laurelPipeline : Array LoweringPass := #[
   -- Mono is alias-agnostic (no `.Alias` refs); alias-elim only needs the first resolve, which
   -- precedes the whole pipeline. No `comesBefore` pins their relative order.
   typeAliasElimPass,
-  { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
+  { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass.meta, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
   constrainedTypeElimPass,

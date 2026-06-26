@@ -878,11 +878,11 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   return (program', diags)
 
 /-- Pipeline pass: monomorphize generic composites. -/
-def monomorphizeCompositesPass : LaurelPass where
+def monomorphizeCompositesPass : LoweringPass where
   name := "MonomorphizeComposites"
   needsResolves := true
   documentation := "Lowers generic composites (`composite Box<T>`) by emitting one concrete composite per used instantiation and rewriting `Box<int>` type references and `new Box` allocations to the monomorphic name. Runs before heap parameterization."
-  run := fun p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})
+  run := fun _ p m => let (p', diags) := monomorphizeComposites p m; (p', diags, {})
 
 end -- public section
 end Strata.Laurel

@@ -493,7 +493,6 @@ procedure idp<T>(x: T): T
   opaque
   ensures result == x
 { x };
->>>>>>> 0f75fea51 (feat(laurel): user-level polymorphism — generic composites, procedures, and datatypes)
 #end)
 
 -- Generic type aliases round-trip: `<T>` binders + a Map/composite target emit without
