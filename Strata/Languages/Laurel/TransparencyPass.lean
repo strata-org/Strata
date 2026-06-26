@@ -127,7 +127,15 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, isFunctional := true, body := body }
+  -- The `$asFunction` twin models only the procedure's input/output relation
+  -- (used in the free postcondition `r == foo$asFunction(args)`); it must not
+  -- carry the procedure's preconditions. The procedure already checks those, so a
+  -- precondition on the twin would fire a *duplicate* well-formedness obligation
+  -- at every application. ContractPass retains a procedure's preconditions (as
+  -- free, for the native postcondition WF check), so without this strip the twin
+  -- would inherit them. Genuine functions are not twins and keep their preconditions.
+  let preconditions := if hasProcedureTwin then [] else proc.preconditions
+  { proc with name := funcName, isFunctional := true, body := body, preconditions := preconditions }
 
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the

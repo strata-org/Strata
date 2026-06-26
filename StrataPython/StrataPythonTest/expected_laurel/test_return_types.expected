@@ -14,7 +14,9 @@ test_return_types.py(25, 4): ✅ pass - assert(449)
 test_return_types.py(26, 4): ❓ unknown - get_flag returned wrong value
 test_return_types.py(28, 4): ✅ pass - (add requires) Type constraint of a
 test_return_types.py(28, 4): ✅ pass - (add requires) Type constraint of b
+test_return_types.py(28, 4): ✅ pass - assume_assume(529)_calls_add$post0_0
+test_return_types.py(28, 4): ✅ pass - assume_assume(529)_calls_add$post0_1
 test_return_types.py(28, 4): ✅ pass - assert(529)
 test_return_types.py(29, 4): ❓ unknown - add returned wrong value
-DETAIL: 14 passed, 0 failed, 4 inconclusive
+DETAIL: 16 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

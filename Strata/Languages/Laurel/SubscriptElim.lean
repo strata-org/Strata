@@ -448,11 +448,11 @@ public def subscriptElim (_model : SemanticModel) (program : Program)
   (program', [])
 
 /-- Pipeline pass: subscript elimination. -/
-public def subscriptElimPass : LaurelPass where
+public def subscriptElimPass : LoweringPass where
   name := "SubscriptElim"
   documentation := "Lowers `Seq<T>`/`Array<T>` subscript reads and writes into the underlying map/composite operations. Injects the synthetic `$Array` composite (only when the program uses `Array<T>`) and rewrites subscript expressions in procedures, composite instance procedures, and constant initializers."
   needsResolves := true
-  run := fun p m =>
+  run := fun _ p m =>
     let (p', diags) := subscriptElim m p
     (p', diags, {})
 

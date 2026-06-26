@@ -3,9 +3,13 @@ test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)
 test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)hours_type
 test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_procedure_in_assert.py(5, 4): ✅ pass - (Origin_timedelta_Requires)hours_pos
+test_procedure_in_assert.py(5, 4): ✅ pass - assume_assume(75)_calls_timedelta_func$post0_0
+test_procedure_in_assert.py(5, 4): ✅ pass - assume_assume(75)_calls_timedelta_func$post0_1
+test_procedure_in_assert.py(5, 4): ✅ pass - assume_assume(75)_calls_timedelta_func$post0_2
+test_procedure_in_assert.py(5, 4): ✅ pass - assume_assume(75)_calls_timedelta_func$post0_3
 test_procedure_in_assert.py(5, 17): ✅ pass - Check PSub exception
 test_procedure_in_assert.py(6, 4): ✅ pass - assert(117)
 test_procedure_in_assert.py(7, 4): ✅ pass - should pass
 test_procedure_in_assert.py(3, 14): ✅ pass - (main ensures) Return type constraint
-DETAIL: 9 passed, 0 failed, 0 inconclusive
+DETAIL: 13 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

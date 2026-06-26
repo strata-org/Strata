@@ -1,6 +1,9 @@
 test_function_def_calls.py(6, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_function_def_calls.py(6, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_function_def_calls.py(6, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_function_def_calls.py(6, 4): ❓ unknown - assume_assume(64)_calls_test_helper_procedure$post0_0
+test_function_def_calls.py(6, 4): ✅ pass - assume_assume(64)_calls_test_helper_procedure$post0_1
+test_function_def_calls.py(6, 4): ✅ pass - assume_assume(64)_calls_test_helper_procedure$post0_2
 test_function_def_calls.py(9, 4): ✅ pass - (my_f requires) Type constraint of s
-DETAIL: 3 passed, 0 failed, 1 inconclusive
+DETAIL: 5 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

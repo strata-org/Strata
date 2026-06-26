@@ -1,8 +1,13 @@
 test_datetime.py(13, 0): ✅ pass - (Origin_datetime_date_Requires)d_type
+test_datetime.py(13, 0): ✅ pass - assume_assume(394)_calls_datetime_date$post0_0
 test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)
 test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_type
 test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_datetime.py(14, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
+test_datetime.py(14, 0): ✅ pass - assume_assume(430)_calls_timedelta_func$post0_0
+test_datetime.py(14, 0): ✅ pass - assume_assume(430)_calls_timedelta_func$post0_1
+test_datetime.py(14, 0): ✅ pass - assume_assume(430)_calls_timedelta_func$post0_2
+test_datetime.py(14, 0): ✅ pass - assume_assume(430)_calls_timedelta_func$post0_3
 test_datetime.py(15, 19): ✅ pass - Check PSub exception
 test_datetime.py(21, 7): ✅ pass - Check PLe exception
 test_datetime.py(21, 0): ✅ pass - assert(554)
@@ -10,5 +15,5 @@ test_datetime.py(25, 0): ✅ pass - assert(673)
 test_datetime.py(27, 0): ✅ pass - assert(758)
 test_datetime.py(30, 7): ✅ pass - Check PLe exception
 test_datetime.py(30, 0): ✅ pass - assert(859)
-DETAIL: 12 passed, 0 failed, 0 inconclusive
+DETAIL: 17 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

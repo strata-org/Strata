@@ -111,17 +111,35 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
       | _ => e)
     expr
 
+/-- Conjoin a list of conditions into a single expression with `&&`. -/
+private def conjoin (conds : List Condition) : Option StmtExprMd :=
+  match conds.map (·.condition) with
+  | [] => none
+  | e :: rest => some (rest.foldl (fun acc x => mkMd (.PrimitiveOp .And [acc, x])) e)
+
 /-- Build a postcondition helper function over the procedure's inputs and outputs.
     Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
     identically-named inputs, and the condition body is rewritten to match. -/
 private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
-    (condition : Condition) : Procedure :=
+    (assumedConditions : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
+  -- `assumedConditions` are the procedure's preconditions plus the *earlier*
+  -- postconditions. We carry them as *free* preconditions of the helper (not as
+  -- an `assumedConditions ==> condition` body). Core's function-WF generation
+  -- assumes a function's preconditions, in order, before asserting the WF of its
+  -- body, so a partial op in `condition` is still checked with that context in
+  -- scope — and, unlike the implication form, a call site that applies the helper
+  -- learns `condition` directly rather than `assumedConditions ==> condition`.
+  -- `free` keeps them assumption-only: each condition is asserted by its own
+  -- helper, never re-asserted here. Output-rename so earlier postconditions
+  -- resolve against this helper's `$out` parameters (preconditions reference
+  -- inputs only, so the rename is a no-op for them).
   { name := mkId name
     inputs := inputs ++ renamedOutputs
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := []
+    preconditions := assumedConditions.map (fun (c : Condition) =>
+      { c with condition := renameOutputsInPostExpr outputNames c.condition, free := true })
     decreases := none
     isFunctional := true
     body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
@@ -136,7 +154,23 @@ private structure ContractInfo where
 private def ContractInfo.hasPreCondition (info : ContractInfo) : Bool := !info.preNames.isEmpty
 private def ContractInfo.hasPostCondition (info : ContractInfo) : Bool := !info.postNames.isEmpty
 
-/-- Collect contract info for all procedures with contracts. -/
+/-- Whether a contract condition calls one of the given (non-functional)
+    procedures. Used to decide which preconditions can be retained on the lowered
+    procedure: a precondition that calls a procedure cannot survive as a contract
+    expression (illegal in a pure context), so it is dropped from the spec and
+    enforced only through its `$pre` helper. -/
+private def conditionCallsProc (procNames : Std.HashSet String) (c : Condition) : Bool :=
+  let detect : StateM Bool StmtExprMd :=
+    mapStmtExprM (m := StateM Bool) (fun e => do
+      match e.val with
+      | .StaticCall callee _ =>
+        if procNames.contains callee.text then set true
+        pure e
+      | _ => pure e) c.condition
+  (detect.run false).2
+
+/-- Collect contract info for every non-functional procedure that has a contract.
+    Each such procedure's pre/postconditions are lowered into helper functions. -/
 private def collectContractInfo (procs : List Procedure) : Std.HashMap String ContractInfo :=
   procs.foldl (fun m proc =>
     let postconds := getPostconditions proc.body
@@ -332,12 +366,6 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
     return { proc with body := Body.Opaque posts' impl' mods' }
   | _ => return proc
 
-/-- Conjoin a list of conditions into a single expression with `&&`. -/
-private def conjoin (conds : List Condition) : Option StmtExprMd :=
-  match conds.map (·.condition) with
-  | [] => none
-  | e :: rest => some (rest.foldl (fun acc x => mkMd (.PrimitiveOp .And [acc, x])) e)
-
 /-- Build an axiom expression from `invokeOn` trigger and ensures clauses.
     Produces `∀ p1, ∀ p2, ..., ∀ pn :: { trigger } (preconds => ensures)`.
     The trigger controls when the SMT solver instantiates the axiom. -/
@@ -407,17 +435,23 @@ private def invokeOnOutputRefError (proc : Procedure) : Option DiagnosticModel :
     All procedures with contracts are transformed. -/
 def lowerContracts (program : Program) : Program × List DiagnosticModel :=
   let contractInfoMap := collectContractInfo program.staticProcedures
+  let procNames : Std.HashSet String :=
+    Std.HashSet.ofList (program.staticProcedures.filterMap fun p =>
+      if p.isFunctional then none else some p.name.text)
 
   -- Check for output-referencing ensures in invokeOn procedures
   let diagnostics := program.staticProcedures.filterMap invokeOnOutputRefError
 
-  -- Generate helper procedures for all procedures with contracts
-  let helperProcs := (program.staticProcedures.filter (fun proc => !proc.isFunctional)).flatMap fun proc =>
+  -- Generate the pre/postcondition helper functions for every contracted
+  -- procedure (those in `contractInfoMap`).
+  let helperProcs := (program.staticProcedures.filter
+      (fun proc => !proc.isFunctional && contractInfoMap.contains proc.name.text)).flatMap fun proc =>
     let postconds := getPostconditions proc.body
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs c
+      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs
+        (proc.preconditions ++ postconds.take i) c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
@@ -440,7 +474,23 @@ def lowerContracts (program : Program) : Program × List DiagnosticModel :=
       let proc : Procedure := match contractInfoMap.get? proc.name.text with
         | some info =>
           { proc with
-            preconditions := []
+            -- Only an opaque/abstract procedure retains its postconditions natively
+            -- in `spec.postconditions` (a transparent one lowers them to in-body
+            -- asserts via `transformProcBody`, ending with `spec.postconditions = []`).
+            -- Core's `mkContractWFProc` checks the partial-op WF of those native
+            -- postconditions assuming `spec.preconditions` in order first, so an
+            -- opaque proc must keep its preconditions in scope; a transparent proc
+            -- needs none (its postcondition asserts run after the in-body `$pre`
+            -- assumes, which already supply the context). So for opaque/abstract
+            -- procs we keep the non-procedure-calling preconditions as *free*
+            -- (assumed, never re-asserted — the `$pre` helpers check them at call
+            -- sites); for transparent procs we strip them. Procedure-calling
+            -- preconditions are always dropped (illegal as a contract expression;
+            -- handled solely by their `$pre` helper).
+            preconditions :=
+              if proc.body.isTransparent then []
+              else proc.preconditions.filterMap (fun (c : Condition) =>
+                if conditionCallsProc procNames c then none else some { c with free := true })
             body := transformProcBody proc info }
         | none => proc
       -- Rewrite call sites in the procedure body

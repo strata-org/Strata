@@ -1,14 +1,26 @@
 test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_precondition_verification.py(8, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(8, 4): ✅ pass - assume_assume(104)_calls_test_helper_procedure$post0_0
+test_precondition_verification.py(8, 4): ✅ pass - assume_assume(104)_calls_test_helper_procedure$post0_1
+test_precondition_verification.py(8, 4): ✅ pass - assume_assume(104)_calls_test_helper_procedure$post0_2
 test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_precondition_verification.py(11, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(11, 4): ✅ pass - assume_assume(159)_calls_test_helper_procedure$post0_0
+test_precondition_verification.py(11, 4): ✅ pass - assume_assume(159)_calls_test_helper_procedure$post0_1
+test_precondition_verification.py(11, 4): ✅ pass - assume_assume(159)_calls_test_helper_procedure$post0_2
 test_precondition_verification.py(14, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_precondition_verification.py(14, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_precondition_verification.py(14, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_precondition_verification.py(14, 4): ❓ unknown - assume_assume(230)_calls_test_helper_procedure$post0_0
+test_precondition_verification.py(14, 4): ✅ pass - assume_assume(230)_calls_test_helper_procedure$post0_1
+test_precondition_verification.py(14, 4): ✅ pass - assume_assume(230)_calls_test_helper_procedure$post0_2
 test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_precondition_verification.py(17, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_precondition_verification.py(17, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 10 passed, 0 failed, 2 inconclusive
+test_precondition_verification.py(17, 4): ✅ pass - assume_assume(283)_calls_test_helper_procedure$post0_0
+test_precondition_verification.py(17, 4): ✅ pass - assume_assume(283)_calls_test_helper_procedure$post0_1
+test_precondition_verification.py(17, 4): ❓ unknown - assume_assume(283)_calls_test_helper_procedure$post0_2
+DETAIL: 20 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive
