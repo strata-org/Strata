@@ -28,11 +28,15 @@ private abbrev P : Imperative.PureExpr :=
 
 private abbrev mdB : Lambda.Typed Unit := { underlying := (), type := mty[bool] }
 
+instance : Imperative.HasVal P where
+  value _ := True
+
 instance : Imperative.HasBool P where
   tt := .const mdB (.boolConst true)
   ff := .const mdB (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := mty[bool]
+  boolIsVal := ⟨trivial, trivial⟩
 
 instance : Imperative.HasIdent P where
   ident s := ⟨s, ()⟩
@@ -41,14 +45,30 @@ instance : Imperative.HasFvar P where
   mkFvar := (.fvar mdB · none)
   getFvar | .fvar _ v _ => some v | _ => none
 
-instance : Imperative.HasIntOrder P where
-  eq e1 e2 := .eq mdB e1 e2
-  lt e1 e2 := .app mdB (.app mdB (.op mdB ⟨"Int.Lt", ()⟩ none) e1) e2
+instance : Imperative.HasFvars P where
+  getFvars := Lambda.LExpr.LExpr.getVars
+
+instance : Imperative.HasInt P where
   zero := .intConst mdB 0
   intTy := mty[int]
+  isNumeral
+    | .const _ (.intConst _) => true
+    | _ => false
+  numeralIsValue _ _ := trivial
+  zeroIsNumeral := rfl
+  numeralHasNoFvars n hn := by
+    cases n with
+    | const _ c => cases c <;> first | rfl | simp_all
+    | _ => simp_all
 
-instance : Imperative.HasNot P where
+instance : Imperative.HasIntOps P where
+  eq e1 e2 := .eq mdB e1 e2
+  lt e1 e2 := .app mdB (.app mdB (.op mdB ⟨"Int.Lt", ()⟩ none) e1) e2
+
+instance : Imperative.HasBoolOps P where
   not e := .app mdB (.op mdB ⟨"Bool.Not", ()⟩ none) e
+  and e1 e2 := .app mdB (.app mdB (.op mdB ⟨"Bool.And", ()⟩ none) e1) e2
+  imp e1 e2 := .app mdB (.app mdB (.op mdB ⟨"Bool.Implies", ()⟩ none) e1) e2
 
 instance : Imperative.HasPassiveCmds P (Imperative.Cmd P) where
   assert l e md := .assert l e md
