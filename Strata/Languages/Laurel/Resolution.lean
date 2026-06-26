@@ -301,6 +301,12 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
+  -- For `Any`-typed targets only, resolve the field by name across all type
+  -- scopes. Gating on `Any` keeps a concrete target from binding a foreign field.
+  if typeName? == some "Any" then
+    for (_, fieldScope) in (← get).typeScopes.toList do
+      if let some (defId, _) := fieldScope.get? fieldName.text then
+        return { fieldName with uniqueId := some defId }
   resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
