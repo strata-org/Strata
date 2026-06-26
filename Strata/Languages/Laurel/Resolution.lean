@@ -347,14 +347,15 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
-    -- Resolve WITHOUT an `expected` kind constraint: a `.UserDefined` annotation whose
-    -- name resolves to a non-type (a variable/procedure — e.g. an inferred `x = f(...)`
-    -- where `f` is a function, or stdlib names like `datetime`) is NOT an error; it just
-    -- means the inferred type wasn't really a class. We silently collapse it to `Unknown`
-    -- below (the `kindOk` check) instead of emitting a "resolves to X but expected
-    -- composite" diagnostic. Names that DO resolve to a type stay `.UserDefined` so real
-    -- subtype checking still works. (Passing `expected` here would mis-flag those as errors.)
     let ref' ← resolveRef ref ty.source
+      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
+    -- If the reference failed to resolve (name not defined) or resolved to the
+    -- wrong kind, treat the type as Unknown to avoid cascading errors. The single
+    -- "is not defined" / "wrong kind" diagnostic was already emitted by `resolveRef`;
+    -- collapsing the dangling `UserDefined` to `Unknown` keeps the variable's later
+    -- uses from being type-checked against a phantom type. A name that genuinely
+    -- resolves to a composite/datatype/alias/constrained type stays `UserDefined`
+    -- so real subtype checking still works.
     let s ← get
     let kindOk : Bool := match s.scope.get? ref.text with
       | some (_, node) => node.kind == .unresolved ||
@@ -1548,36 +1549,8 @@ def Synth.assign (exprMd : StmtExprMd)
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  -- Coercer hook: if 1-target expects T but RHS is a proc returning (T, Error),
-  -- synthesize first to get the actual type, then expand to a 2-target assign.
-  let (value', actualTy) ← Synth.resolveStmtExpr value
-  let (targets'', value'') ← match targetTys, actualTy.val with
-    | [_single], .MultiValuedExpr (_ :: rest)
-        =>
-      if rest.all (fun o => match o.val with | .TCore "Error" => true | _ => false) then do
-        -- Coercer: 1-target assignment of (T, Error, ...) proc.
-        -- Use a fresh counter for unique sink names (byte-index is fragile).
-        -- Use nextId (globally unique across the whole resolution pass) for sink names.
-        let extraTargets ← rest.mapIdxM fun i _ => do
-          let n ← get >>= fun s => do
-            modify fun s => { s with nextId := s.nextId + 1 }; pure s.nextId
-          let sinkId : Identifier := { text := s!"$_error_sink_{n}" }
-          let sinkTy : HighTypeMd := { val := .TCore "Error", source := none }
-          let sinkId' ← defineNameCheckDup sinkId (.var sinkId sinkTy)
-          let sinkParam : Parameter := { name := sinkId', type := sinkTy }
-          pure (⟨.Declare sinkParam, none⟩ : VariableMd)
-        pure (targets' ++ extraTargets, value')
-      else
-        pure (targets', value')
-    -- Single concrete target: check + coerce the RHS against the target's type.
-    -- (`var x : T := e` and `x := e` must coerce `e` to `T` — the elaborator no
-    -- longer does this; the resolver owns it. Identity realizer = no-op for native
-    -- Laurel.) Skipped for the `(T, Error)` proc case above, which is its own coercer.
-    | [single], _ =>
-      let value'' ← coerceTo source single actualTy value'
-      pure (targets', value'')
-    | _, _ => pure (targets', value')
-  pure (.Assign targets'' value'', expectedTy)
+  let value' ← Check.resolveStmtExpr value expectedTy
+  pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -1624,30 +1597,10 @@ def Check.assign (exprMd : StmtExprMd)
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let (value', actualTy) ← Synth.resolveStmtExpr value
-  let (targets'', value'') ← match targetTys, actualTy.val with
-    | [_single], .MultiValuedExpr (_ :: rest) =>
-      if rest.all (fun o => match o.val with | .TCore "Error" => true | _ => false) then do
-        -- Use nextId (globally unique across the whole resolution pass) for sink names.
-        let extraTargets ← rest.mapIdxM fun i _ => do
-          let n ← get >>= fun s => do
-            modify fun s => { s with nextId := s.nextId + 1 }; pure s.nextId
-          let sinkId : Identifier := { text := s!"$_error_sink_{n}" }
-          let sinkTy : HighTypeMd := { val := .TCore "Error", source := none }
-          let sinkId' ← defineNameCheckDup sinkId (.var sinkId sinkTy)
-          let sinkParam : Parameter := { name := sinkId', type := sinkTy }
-          pure (⟨.Declare sinkParam, none⟩ : VariableMd)
-        pure (targets' ++ extraTargets, value')
-      else pure (targets', value')
-    -- Single concrete target: check + coerce the RHS against the target's type
-    -- (see the matching arm in `Synth.assign`).
-    | [single], _ =>
-      let value'' ← coerceTo source single actualTy value'
-      pure (targets', value'')
-    | _, _ => pure (targets', value')
+  let value' ← Check.resolveStmtExpr value expectedTy
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
-  pure { val := .Assign targets'' value'', source := source }
+  pure { val := .Assign targets' value', source := source }
   termination_by (exprMd, 0)
   decreasing_by
     all_goals
@@ -3247,7 +3200,6 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
     rather than patching `resolveRef` with a hardcoded list. -/
 public def preRegisterExternalNames (names : Std.HashSet String) : ResolveM Unit := do
   for name in names do
-    let iden : Identifier := { text := name }
     -- Only register if not already in scope (don't clobber real definitions)
     unless (← get).scope.get? name |>.isSome do
       let id ← freshId

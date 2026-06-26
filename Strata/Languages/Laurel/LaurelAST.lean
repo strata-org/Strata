@@ -576,18 +576,12 @@ deriving instance BEq for HighType
     - `project A`— `dynamic-top ≤ A` (e.g. unboxing/downcasting out of `Any` to a
                    concrete `A`). `A` is the target type.
     - `upcast`   — nominal composite ≤ ancestor composite; no runtime operation.
-    - `truthify A` — `A ≤ bool` by the source language's TRUTHINESS (a concrete `A`
-                   used in boolean context: `if`/`while`/`assert`). `A` is the source
-                   type so the realizer picks the predicate (int→int_to_bool,
-                   str→str_to_bool, …). This is a real coercion in a gradual language
-                   where every value has a truthiness; keeping it a `coerce` verdict
-                   (not a side-hook) preserves the one-judgment invariant. -/
+    -- (no `truthify`: truthiness is realized via `project … bool` on the Python side) -/
 inductive Coercion where
   | refl
   | inject (source : HighType)
   | project (target : HighType)
   | upcast
-  | truthify (source : HighType)
   deriving Inhabited
 
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
@@ -803,10 +797,6 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
     else if supBoxable then some (.inject sub'.val)              -- concrete → Any (box)
     else if subBoxable then some (.project sup'.val)             -- Any → concrete (unbox)
     else if highEq sub' sup' then some .refl
-    -- Concrete `T → bool` by truthiness (boolean context). In a gradual language
-    -- every value has a truthiness, so this is a real coercion, not a type error.
-    -- Only fires for a CONCRETE sub (not bool itself — caught by highEq above).
-    else if sup'.val matches .TBool then some (.truthify sub'.val)
     else match sub'.val, sup'.val with
       | .UserDefined subName, .UserDefined supName =>
         if (ctx.ancestors subName.text).contains supName.text then some .upcast else none

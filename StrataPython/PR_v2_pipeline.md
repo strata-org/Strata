@@ -56,7 +56,6 @@ inductive Coercion
   | inject  (source)      -- a concrete value becomes `Any`        (boxing)
   | project (target)      -- an `Any` becomes a concrete type      (unboxing / downcast)
   | upcast                -- a composite becomes one of its ancestors
-  | truthify (source)     -- a concrete value becomes `bool` in boolean context
 
 def coerce (ctx) (sub sup) : Option Coercion
 def isConsistentSubtype (ctx) (sub sup) : Bool := (coerce ctx sub sup).isSome
@@ -69,7 +68,11 @@ succeeds," so the verdict and the coercion come from the same source.
 
 `Any` is the dynamic type that boxes and unboxes (`inject`/`project`). `Unknown` is the
 gradual wildcard for synth gaps and holes; it coerces by `refl`. Composite values relate
-to ancestors by `upcast`. A value used where `bool` is expected coerces by `truthify`.
+to ancestors by `upcast`. Python truthiness is just a `project` to `bool`: a value used
+where `bool` is expected is `Any` (every Python value is boxed), so `coerce Any bool =
+project bool`, which the frontend realizes as `Any_to_bool`. There is no separate
+`truthify` verdict — keeping `bool` out of `coerce`'s concrete cases is what makes the
+generic relation behave identically for non-Python callers (`int ≤ bool` stays false).
 
 ### The frontend realizes the coercion (`StrataPython/PySpecPipeline.lean`)
 
@@ -84,7 +87,7 @@ inject  float      → from_float          project  float      → Any..as_float
 inject  ListAny    → from_ListAny        project  ListAny    → Any..as_ListAny!
 inject  DictStrAny → from_DictStrAny     project  DictStrAny → Any..as_Dict!
 inject  Composite  → from_Composite      project  Composite  → Any..as_Composite!
-truthify int       → int_to_bool         truthify str        → str_to_bool   (etc.)
+                                         project  bool       → Any_to_bool (truthiness)
 refl, upcast       → the value unchanged
 ```
 
@@ -96,12 +99,14 @@ A Laurel-native program supplies no realizer and runs with refl-only coercion.
 `coerceTo` checks `actual ≤ expected` and applies the realized witness to the term. The
 resolver calls it at each check-mode boundary it rebuilds:
 
-- call arguments, return values, and functional bodies (the subsumption path in
-  `Check.resolveStmtExpr`);
-- the right-hand side of an assignment / annotated initializer (`Synth.assign`,
-  `Check.assign`);
+- call arguments, return values, functional bodies, AND assignment / annotated-initializer
+  right-hand sides — all funnel through the one subsumption chokepoint in
+  `Check.resolveStmtExpr` (`Synth.assign`/`Check.assign` resolve the RHS in CHECK mode via
+  `Check.resolveStmtExpr value expectedTy`, which reaches that chokepoint; no bespoke
+  assignment coercion code is needed, and the native check-mode diagnostics are preserved);
 - datatype-constructor arguments (`getCallInfo` supplies the constructor's field types);
-- precondition conditions (checked against `TBool`, so `truthify` applies).
+- precondition conditions (checked against `TBool`; for an `Any`-typed Python condition
+  this is `project bool` → `Any_to_bool`).
 
 The `from_Composite` / `Any..as_Composite!` bridge stubs are typed via the `re_Match`
 composite, which the type-hierarchy pass flattens to the synthesized `Composite`
