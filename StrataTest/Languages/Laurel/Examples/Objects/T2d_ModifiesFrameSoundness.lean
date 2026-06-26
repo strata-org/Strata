@@ -183,7 +183,7 @@ procedure callerModifiedNotPreserved()
   var x: int := c#value;
   var b: bool := bodyModifier(c);
   assert x == c#value
-//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure callerExactValuePreserved()

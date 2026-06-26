@@ -170,9 +170,11 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
     proc.preconditions.zip info.preNames |>.map fun (pc, name, _) =>
       ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
   let postAsserts : List StmtExprMd :=
-    postconds.zip info.postNames |>.map fun (pc, _name, _summary) =>
-      let summary := pc.summary.getD "postcondition"
-      ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
+    postconds.zip info.postNames |>.filterMap fun (pc, _name, _summary) =>
+      if pc.free then none
+      else
+        let summary := pc.summary.getD "postcondition"
+        some ⟨.Assert { condition := pc.condition, summary := some summary }, pc.condition.source⟩
   match proc.body with
   | .Transparent body =>
     .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
