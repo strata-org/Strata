@@ -291,30 +291,33 @@ There are more generic predicates such as `OverapproximatesWhen`,
   ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
     StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) cfg
 
-/-! ## Overapproximation up to a relation on states
+/-! ## Overapproximation up to relations on states
 
-`OverapproximatesUptoWhen R` relates the source and target executions up to a
-single state relation `R`: initial environments are related by `R` and final
-environments by `R`.  This is useful for transformations that
-rename/restructure the state.
+`OverapproximatesUptoWhen₂ Rpre Rpost` relates the source and target executions
+up to two state relations: initial environments are related by the *input*
+relation `Rpre` (a hypothesis) and final environments by the *output* relation
+`Rpost` (an existential).  This separation matters because a relation used as an
+input hypothesis is antitone while one used as an output witness is monotone, so
+a single relation cannot model a transform whose input discipline differs from
+its output discipline — e.g. one that runs from a *fixed* initial store yet
+*extends* the store on output.
 
-`OverapproximatesWhen` (the same-environment version below) is the special case
-`R = (· = ·)`. -/
+`OverapproximatesUptoWhen R` is the diagonal `Rpre = Rpost = R`, and
+`OverapproximatesWhen` (below) is the further special case `R = (· = ·)`. -/
 
-/-- Overapproximation up to a state relation `R`, under a precondition `pre`.
+/-- Overapproximation up to an input relation `Rpre` and an output relation
+    `Rpost`, under a precondition `pre`.
 
     For every transformed pair `T st = some st'`, every source initial env `ρ₀`
-    that is well-formed, and every target initial env `ρ₀'` related to it by `R`:
+    that is well-formed, and every target initial env `ρ₀'` related to it by
+    `Rpre`:
     1. every terminal (resp. exiting) env `ρ'` reachable from `st` in `L₁` has a
-       target counterpart `ρ''` reachable from `st'` in `L₂`, related by `R`;
+       target counterpart `ρ''` reachable from `st'` in `L₂`, related by `Rpost`;
     2. failure is preserved (from `ρ₀` in `L₁` to `ρ₀'` in `L₂`);
     3. the target initial env `ρ₀'` is well-formed (`L₂.initEnvWF params₂`),
-       so the guarantee can be threaded into a further transform.
-
-    `R` is used on both the input (as a hypothesis) and the output (under an
-    existential). -/
-@[expose] public def OverapproximatesUptoWhen
-    (R : Relation (Env P))
+       so the guarantee can be threaded into a further transform. -/
+@[expose] public def OverapproximatesUptoWhen₂
+    (Rpre Rpost : Relation (Env P))
     (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     (pre : L₁.StmtT → Prop)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
@@ -322,21 +325,31 @@ rename/restructure the state.
     T st = some st' →
     pre st →
     ∀ (ρ₀ ρ₀' : Env P),
-      R ρ₀ ρ₀' →
+      Rpre ρ₀ ρ₀' →
       L₁.initEnvWF params₁ st ρ₀ →
-      -- Terminal/exiting envs have an `R`-related target counterpart.
+      -- Terminal/exiting envs have an `Rpost`-related target counterpart.
       (∀ (ρ' : Env P),
         (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
-          ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.terminalCfg ρ''))
+          ∃ ρ'', Rpost ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.terminalCfg ρ''))
         ∧
         (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
-                ∃ ρ'', R ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.exitingCfg lbl ρ'')))
+                ∃ ρ'', Rpost ρ' ρ'' ∧ L₂.star (L₂.stmtCfg st' ρ₀') (L₂.exitingCfg lbl ρ'')))
       ∧
       -- Fail preservation.
       (CanFail L₁ st ρ₀ → CanFail L₂ st' ρ₀')
       ∧
       -- Store WF preservation on the target side, with the target's parameters.
       L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Overapproximation up to a single state relation `R`, used both as the input
+    hypothesis and the output witness: the diagonal `Rpre = Rpost = R` of
+    `OverapproximatesUptoWhen₂`. -/
+@[expose] public def OverapproximatesUptoWhen
+    (R : Relation (Env P))
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesUptoWhen₂ R R L₁ L₂ T pre params₁ params₂
 
 /-- Overapproximation up to a relation `R`, with no precondition. -/
 @[expose] public def OverapproximatesUpto
