@@ -219,7 +219,7 @@ public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes Un
   name := "InlineLocalVariablesPass"
   documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core."
   comesAfter := [⟨ transparencyPass.meta, "Inlining of local variables in functions only makes sense after the transparency pass has created the functions"⟩]
-  run := fun p _ _ =>
+  run := fun _ p _ =>
     let (uc, diags) := inlineLocalVariablesInFunctions p
     (uc, diags, {})
 
