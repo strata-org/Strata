@@ -449,16 +449,14 @@ private def isNumeric (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
   | .TInt | .TReal | .TFloat64 | .TBv _ | .Unknown => true
   | _ => false
 
-/-- Least upper bound of two types under the consistency relation
-    (Siek–Taha). On Laurel's flat lattice the join collapses to the
-    "more informative" side: `Unknown` and `T` yields `T`; equal
-    types (after unfolding) yield themselves; everything else is
-    inconsistent and yields `none`.
+/-- Consistency merge of two types, keeping the more-informative side:
+    `Unknown` with `T` ⇒ `T`; the dynamic `.TCore` (e.g. `Any`) absorbs ⇒ the
+    dynamic side; equal types (after unfolding) ⇒ themselves; else `none`. Not a
+    true LUB: it doesn't walk the inheritance tree, so `none` means "cannot
+    merge structurally", not "inconsistent".
 
-    Used by [⇒] Op-Arith to fold operand types into a single result
-    type: a homogeneous arithmetic expression `1 + 2` yields `TInt`,
-    `1 + <?>` yields `TInt` (Unknown promotes), `<?> + <?>` yields
-    `Unknown`, and `1 + 2.0` is rejected. -/
+    Op-Arith examples: `1 + 2` ⇒ `TInt`, `1 + <?>` ⇒ `TInt`,
+    `<?> + <?>` ⇒ `Unknown`, `1 + 2.0` rejected. -/
 private def join (ctx : TypeLattice)
     (a b : HighTypeMd) : Option HighTypeMd :=
   let a' := ctx.unfold a
@@ -466,6 +464,10 @@ private def join (ctx : TypeLattice)
   match a'.val, b'.val with
   | .Unknown, _ => some b
   | _, .Unknown => some a
+  -- Dynamic `.TCore` (e.g. `Any`) absorbs: consistent with anything, so the
+  -- merge is the dynamic side, aligning `join` with `isConsistent` on `.TCore`.
+  | .TCore _, _ => some a
+  | _, .TCore _ => some b
   | _, _ => if highEq a' b' then some a else none
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
@@ -765,7 +767,8 @@ private def elaborateDynamicOp (g : GradualConfig) (op : Operation) (args' : Lis
   unless argTypes.any (fun t => g.isDynamic t.val) do return none
   forcePrelude g op args' argTypes source
 
-/-- LUB of the operand types, or `none` if inconsistent. -/
+/-- Folds `join` over the operands (consistency merge, not a true LUB), or
+    `none` if they cannot be merged. -/
 private def joinAll (ctx : TypeLattice) (argTypes : List HighTypeMd)
     (source : Option FileRange) : Option HighTypeMd :=
   argTypes.foldl
@@ -1624,7 +1627,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     `join` (`Unknown ⊔ T = T`), so a hole branch promotes to the other
     branch's concrete type and the synthesized type is independent of
     branch order. (`isConsistent` stays the accept/reject gate: it admits
-    a lone `TCore` corner where `join` is `none`, for which the result
+    a rare multi-valued corner where `join` is `none`, for which the result
     falls back to the then-branch type, leaving that boundary unchanged.)
     Inconsistent branches (e.g. `if c then 1 else "x"`) emit a diagnostic
     and synthesize `Unknown` to suppress cascading errors. Without an
