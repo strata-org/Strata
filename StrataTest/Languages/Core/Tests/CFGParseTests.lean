@@ -82,7 +82,7 @@ cfg entry {
 /--
 info: Procedure: NondetChoice
   CFG entry: entry, 4 blocks
-  Block 'entry': 0 cmds, branch → left/right
+  Block 'entry': 1 cmds, branch → left/right
   Block 'left': 1 cmds, goto done
   Block 'right': 1 cmds, goto done
   Block 'done': 0 cmds, return
