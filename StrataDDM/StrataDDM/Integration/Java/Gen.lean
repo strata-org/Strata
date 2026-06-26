@@ -114,8 +114,8 @@ private meta def leafSerializeExpr (name : Name) (accessor : String) : Option St
 
 private inductive FieldTypeInfo where
   | leaf (name : Name)
-  | compound (name : Name)
-  | typeParam  -- type parameter (erased); value will have toIon at runtime
+  | compound (name : Name) (typeArgs : Array FieldTypeInfo := #[])
+  | typeParam (paramName : String := "T")  -- type parameter; generates a Java generic
   | list (elem : FieldTypeInfo)
   | option (elem : FieldTypeInfo)
 
@@ -133,16 +133,25 @@ private structure CtorInfo' where
 private meta instance : Inhabited CtorInfo' := ⟨{ name := `unknown, shortName := "", fields := #[] }⟩
 
 private inductive TypeShape where
-  | struct (name : Name) (javaName : String) (fields : Array FieldInfo)
-  | singleCtor (name : Name) (javaName : String) (ctor : CtorInfo')
-  | multiCtor (name : Name) (javaName : String) (ctors : Array CtorInfo')
+  | struct (name : Name) (javaName : String) (fields : Array FieldInfo) (typeParams : Array String := #[])
+  | singleCtor (name : Name) (javaName : String) (ctor : CtorInfo') (typeParams : Array String := #[])
+  | multiCtor (name : Name) (javaName : String) (ctors : Array CtorInfo') (typeParams : Array String := #[])
 
 private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
   !isLeafTypeName name &&
     ((getStructureInfo? env name).isSome ||
       match env.find? name with | some (.inductInfo _) => true | _ => false)
 
-private meta partial def classifyFieldType (env : Environment) (ty : Expr) : MetaM FieldTypeInfo := do
+/-- Extract Java type parameter name from a tagged level, if it is one. -/
+private meta def extractTypeParamName : Level → Option String
+  | .param n =>
+    let s := n.toString (escape := false)
+    if s.startsWith "__javaTypeParam_" then some (s.drop "__javaTypeParam_".length)
+    else none
+  | _ => none
+
+private meta partial def classifyFieldType (env : Environment) (ty : Expr)
+    (paramNames : Array String := #[]) : MetaM FieldTypeInfo := do
   let ty ← whnf ty
   -- Strip optParam/autoParam wrappers (fields with default values)
   let ty := match ty.getAppFn.constName? with
@@ -157,38 +166,55 @@ private meta partial def classifyFieldType (env : Environment) (ty : Expr) : Met
   match name with
   | some ``List =>
     let args := ty.getAppArgs
-    if h : args.size > 0 then return .list (← classifyFieldType env args[0])
+    if h : args.size > 0 then return .list (← classifyFieldType env args[0] paramNames)
     else return .leaf `unknown
   | some ``Option =>
     let args := ty.getAppArgs
-    if h : args.size > 0 then return .option (← classifyFieldType env args[0])
+    if h : args.size > 0 then return .option (← classifyFieldType env args[0] paramNames)
     else return .leaf `unknown
   | some n =>
-    if isCompoundType env n then return .compound n
+    if isCompoundType env n then
+      -- Collect type arguments as FieldTypeInfo
+      let args := ty.getAppArgs
+      let numParams := match env.find? n with
+        | some (.inductInfo indInfo) => indInfo.numParams
+        | _ => args.size
+      let typeArgs ← args[:numParams].toArray.mapM (classifyFieldType env · paramNames)
+      return .compound n typeArgs
     else return .leaf n
   | none =>
-    -- Type parameters (substituted as Sort or fvar) should serialize via toIon
+    -- Check for tagged type parameter sorts
+    if let .sort level := ty then
+      if let some pName := extractTypeParamName level then
+        return .typeParam pName
     if ty.isSort || ty.isFVar then return .typeParam
     return .leaf `unknown
 
 private meta def extractCtorFields (env : Environment) (ctorName : Name)
-    (fieldNames? : Option (Array Name) := none) : MetaM (Array FieldInfo) := do
+    (fieldNames? : Option (Array Name) := none) : MetaM (Array String × Array FieldInfo) := do
   let some (.ctorInfo ci) := env.find? ctorName
     | throwError "Cannot find constructor {ctorName}"
   let mut ty := ci.type
-  -- Substitute parameters with dummy constants to avoid loose bvars
+  -- Collect parameter names and substitute with unique level-tagged sorts
+  let mut paramNames : Array String := #[]
   for _ in List.range ci.numParams do
     match ty with
-    | .forallE _ _ b _ =>
-      -- Create a placeholder expression for the parameter
-      let placeholder := mkSort levelZero  -- dummy; we only inspect names, not values
+    | .forallE n dom b _ =>
+      let pName := n.toString (escape := false)
+      let jName := toPascalCase pName
+      paramNames := paramNames.push jName
+      -- Use a tagged sort as placeholder; only substitute Type-valued params
+      let placeholder := if dom.isSort then
+        mkSort (mkLevelParam (Name.mkStr .anonymous s!"__javaTypeParam_{jName}"))
+      else
+        mkSort levelZero
       ty := b.instantiate1 placeholder
     | _ => break
   let mut fields := #[]
   for i in List.range ci.numFields do
     match ty with
     | .forallE n t b _ =>
-      let typeInfo ← classifyFieldType env t
+      let typeInfo ← classifyFieldType env t paramNames
       let name := match fieldNames? with
         | some names => names[i]!.toString (escape := false)
         | none =>
@@ -197,21 +223,23 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
       fields := fields.push { name, typeInfo }
       ty := b.instantiate1 (mkSort levelZero)
     | _ => break
-  return fields
+  return (paramNames, fields)
 
 private meta def analyzeType (env : Environment) (typeName : Name) : MetaM TypeShape := do
   let javaName := escapeJavaName (toPascalCase (typeName.getString!))
   if let some sinfo := getStructureInfo? env typeName then
-    let fields ← extractCtorFields env (sinfo.structName ++ `mk) (some sinfo.fieldNames)
-    return .struct typeName javaName fields
+    let (paramNames, fields) ← extractCtorFields env (sinfo.structName ++ `mk) (some sinfo.fieldNames)
+    return .struct typeName javaName fields paramNames
   let some (.inductInfo indInfo) := env.find? typeName
     | throwError "{typeName} is not an inductive or structure type"
+  let mut typeParams : Array String := #[]
   let ctors ← indInfo.ctors.toArray.mapM fun ctorName => do
-    let fields ← extractCtorFields env ctorName
+    let (paramNames, fields) ← extractCtorFields env ctorName
+    typeParams := paramNames  -- same for all ctors
     return { name := ctorName, shortName := ctorName.getString!, fields : CtorInfo' }
   if ctors.size == 1 then
-    return .singleCtor typeName javaName ctors[0]!
-  return .multiCtor typeName javaName ctors
+    return .singleCtor typeName javaName ctors[0]! typeParams
+  return .multiCtor typeName javaName ctors typeParams
 
 private meta partial def extractCompoundNamesFromExpr (env : Environment) (t : Expr) : MetaM (Array Name) := do
   let t ← whnf t
@@ -274,8 +302,11 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) : Meta
 
 private meta def javaTypeForInfo : FieldTypeInfo → String
   | .leaf name => (leafJavaType name).getD "java.lang.Object"
-  | .compound name => escapeJavaName (toPascalCase (name.getString!))
-  | .typeParam => "ToIon"
+  | .compound name typeArgs =>
+    let base := escapeJavaName (toPascalCase (name.getString!))
+    if typeArgs.isEmpty then base
+    else s!"{base}<{", ".intercalate (typeArgs.toList.map javaBoxedTypeForInfo)}>"
+  | .typeParam paramName => paramName
   | .list elem => s!"java.util.List<{javaBoxedTypeForInfo elem}>"
   | .option elem => javaBoxedTypeForInfo elem
 where
@@ -292,8 +323,8 @@ private meta def javaTypeFor (f : FieldInfo) : String := javaTypeForInfo f.typeI
 private meta partial def serializeExprForInfo (ti : FieldTypeInfo) (accessor : String) : String :=
   match ti with
   | .leaf name => (leafSerializeExpr name accessor).getD "ion.newNull()"
-  | .compound _ => s!"{accessor}.toIon(ion)"
-  | .typeParam => s!"{accessor}.toIon(ion)"
+  | .compound _ _ => s!"{accessor}.toIon(ion)"
+  | .typeParam _ => s!"{accessor}.toIon(ion)"
   | .list _ =>
     -- List serialization requires multiple statements; handled by toIon body generators.
     -- This branch is used for inner elements of containers (e.g., Option (List T)).
@@ -307,6 +338,14 @@ private meta def serializeExprFor (f : FieldInfo) (accessor : String) : String :
 
 private meta def recordParams (fields : Array FieldInfo) : String :=
   ", ".intercalate (fields.toList.map fun f => s!"{javaTypeFor f} {escapeJavaName f.name}")
+
+private meta def typeParamDecl (typeParams : Array String) : String :=
+  if typeParams.isEmpty then ""
+  else s!"<{", ".intercalate (typeParams.toList.map fun p => s!"{p} extends ToIon")}>"
+
+private meta def typeParamUse (typeParams : Array String) : String :=
+  if typeParams.isEmpty then ""
+  else s!"<{", ".intercalate typeParams.toList}>"
 
 /-- Generate the toIon method body for a struct (Ion struct with field name keys). -/
 private meta def structToIonBody (fields : Array FieldInfo) : String :=
@@ -353,9 +392,9 @@ private meta def multiCtorToIonBody (shortName : String) (fields : Array FieldIn
   s!"        var sexp = ion.newEmptySexp();\n        sexp.add(ion.newSymbol(\"{shortName}\"));\n{"\n".intercalate fieldLines}\n        return sexp;"
 
 private meta def generateRecord (interfaceName : String) (recordName : String)
-    (fields : Array FieldInfo) (toIonBody : String) : String :=
+    (fields : Array FieldInfo) (toIonBody : String) (tpDecl : String := "") : String :=
   let params := recordParams fields
-  s!"    public record {recordName}({params}) implements {interfaceName} \{
+  s!"    public record {recordName}{tpDecl}({params}) implements {interfaceName} \{
         @Override
         public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
 {toIonBody}
@@ -364,38 +403,42 @@ private meta def generateRecord (interfaceName : String) (recordName : String)
 
 private meta def generateTypeFile (package : String) (shape : TypeShape) : String :=
   match shape with
-  | .struct _ javaName fields =>
+  | .struct _ javaName fields typeParams =>
     let toIon := structToIonBody fields
     let params := recordParams fields
+    let tpDecl := typeParamDecl typeParams
     s!"package {package};
 
-public record {javaName}({params}) implements ToIon \{
+public record {javaName}{tpDecl}({params}) implements ToIon \{
     public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
 {toIon}
     }
 }
 "
-  | .singleCtor _ javaName ctor =>
+  | .singleCtor _ javaName ctor typeParams =>
     let toIon := singleCtorToIonBody ctor.fields
     let params := recordParams ctor.fields
+    let tpDecl := typeParamDecl typeParams
     s!"package {package};
 
-public record {javaName}({params}) implements ToIon \{
+public record {javaName}{tpDecl}({params}) implements ToIon \{
     public com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion) \{
 {toIon}
     }
 }
 "
-  | .multiCtor _ javaName ctors =>
+  | .multiCtor _ javaName ctors typeParams =>
+    let tpDecl := typeParamDecl typeParams
+    let tpUse := typeParamUse typeParams
     let recordDefs := ctors.toList.map fun ctor =>
       let recName := escapeJavaName (toPascalCase ctor.shortName)
       let toIon := multiCtorToIonBody ctor.shortName ctor.fields
-      generateRecord javaName recName ctor.fields toIon
+      generateRecord (s!"{javaName}{tpUse}") recName ctor.fields toIon tpDecl
     let permits := ", ".intercalate (ctors.toList.map fun ctor =>
       s!"{javaName}.{escapeJavaName (toPascalCase ctor.shortName)}")
     s!"package {package};
 
-public sealed interface {javaName} extends ToIon permits {permits} \{
+public sealed interface {javaName}{tpDecl} extends ToIon permits {permits} \{
     com.amazon.ion.IonValue toIon(com.amazon.ion.IonSystem ion);
 
 {"\n\n".intercalate recordDefs}
@@ -412,7 +455,7 @@ private meta def generateForType (env : Environment) (package : String) (rootNam
   for typeName in nestedTypes do
     let shape ← analyzeType env typeName
     let javaName := match shape with
-      | .struct _ n _ | .singleCtor _ n _ | .multiCtor _ n _ => n
+      | .struct _ n _ _ | .singleCtor _ n _ _ | .multiCtor _ n _ _ => n
     let content := generateTypeFile package shape
     files := files.push (s!"{javaName}.java", content)
   return { files }
