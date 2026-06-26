@@ -161,9 +161,10 @@ structure GradualConfig where
 structure ResolveState where
   /-- Gradual-typing elaboration config, if the frontend requested it. -/
   gradual : Option GradualConfig := none
-  /-- Whether gradual elaboration is active for the procedure being resolved.
-      Set per-procedure by `resolveProcedure` so only user code is elaborated. -/
-  gradualActive : Bool := false
+  /-- Procedure whose body is being resolved (`none` outside one); with
+      `GradualConfig.shouldElaborate` it gates gradual elaboration to user code.
+      Set/restored by `withProc`. -/
+  currentProc : Option String := none
   /-- Next fresh ID to allocate. -/
   nextId : Nat := 1
   /-- Current lexical scope (name → definition ID). -/
@@ -347,6 +348,15 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
     modify fun s => { s with labelScope := s.labelScope.insert l }
   let result ← action
   modify fun s => { s with labelScope := savedLabels }
+  return result
+
+/-- Run `action` as procedure `name`'s body, tracking it as the current
+    procedure (restored on exit) so `activeGradual` applies correctly. -/
+def withProc (name : String) (action : ResolveM α) : ResolveM α := do
+  let savedProc := (← get).currentProc
+  modify fun s => { s with currentProc := some name }
+  let result ← action
+  modify fun s => { s with currentProc := savedProc }
   return result
 
 /-! ## AST traversal (Phase 1) -/
@@ -666,7 +676,7 @@ termination measure is unaffected. No-ops unless a `GradualConfig` is active. -/
 /-- The active config — `some` only inside a user procedure being elaborated. -/
 private def activeGradual : ResolveM (Option GradualConfig) := do
   let s ← get
-  return if s.gradualActive then s.gradual else none
+  return s.gradual.filter fun g => s.currentProc.elim false g.shouldElaborate
 
 /-- A `name(args)` call with its callee resolved in-pass, so phase 2 sees its id. -/
 private def mkPreludeCall (name : String) (args : List StmtExprMd)
@@ -1082,7 +1092,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     verification annotations, modifies/reads clauses). -/
 def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd := do
   -- In user code, lower primitive ops via synthesis then coerce to `expected`.
-  if (← get).gradualActive && (exprMd.val matches .PrimitiveOp _ _ _) then
+  if (← activeGradual).isSome && (exprMd.val matches .PrimitiveOp _ _ _) then
     let (e', actual) ← Synth.resolveStmtExpr exprMd
     return ← coerceOrCheck expected actual e' exprMd.source
   match h_node: exprMd with
@@ -2856,11 +2866,8 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
     -- so that frontends emitting `Exit bodyLabel` for early-return lowering
     -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let savedGradual := (← get).gradualActive
-    modify fun s => { s with gradualActive :=
-      (s.gradual.elim false fun g => g.shouldElaborate proc.name.text) }
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
-    modify fun s => { s with answerType := savedAnswer, gradualActive := savedGradual }
+    let body' ← withProc proc.name.text <| withLabel (some bodyLabel) <| resolveBody proc.body
+    modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
     -- LaurelToCore translator rejects the genuinely-unsupported constructs
@@ -2902,11 +2909,8 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
     -- See `resolveProcedure` for the rationale on `bodyLabel`.
-    let savedGradual := (← get).gradualActive
-    modify fun s => { s with gradualActive :=
-      (s.gradual.elim false fun g => g.shouldElaborate proc.name.text) }
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
-    modify fun s => { s with answerType := savedAnswer, gradualActive := savedGradual }
+    let body' ← withProc proc.name.text <| withLabel (some bodyLabel) <| resolveBody proc.body
+    modify fun s => { s with answerType := savedAnswer }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     let axioms' ← proc.axioms.mapM resolveStmtExpr
