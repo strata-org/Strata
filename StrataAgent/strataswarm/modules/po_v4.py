@@ -133,6 +133,7 @@ TRANSITIONS: dict[tuple[str, str], str] = {
 
     (Phase.DETECT, Trans.CYCLE_FOUND):     Phase.UPDATE,
     (Phase.DETECT, Trans.NO_CYCLE):        Phase.UPDATE,
+    (Phase.DETECT, Trans.EXTRACT_FAILED):  Phase.UPDATE,
 
     (Phase.UPDATE, Trans.CHECKED):         Phase.CHECK,
 
@@ -490,6 +491,10 @@ async def _do_extract_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Pa
 async def _do_detect_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> Trans:
     """Run cycle detection on extracted helpers."""
     lemma = ledger.get(state.current_lemma_id)
+
+    # Prune stale entries from Stub.lean (helpers that were just extracted out)
+    _register_all_helpers(ledger, lemma, cwd)
+
     result = await _do_detect(agent, state, ledger, lemma, cwd)
     if result == "rejected":
         # Decomposition identical to previous failed one — mark failed, guide retries
@@ -574,7 +579,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
 
     verify_fn = make_proof_writer_verifier(
         stub_rel, original_content, entry.workspace, entry.name,
-        ancestor_modules=ancestor_modules)
+        ancestor_modules=ancestor_modules, ledger=ledger)
 
     # Detect mutual block membership
     init_split = tools.split_theorems(stub_rel)
@@ -1067,47 +1072,78 @@ async def _do_detect(agent, state: PO4State, ledger: LemmaLedger,
     for f in new_files:
         rel = str(f.relative_to(cwd))
         split = tools.split_theorems(rel)
-        if not split.blocks:
-            continue
-        block = split.blocks[0]
-        sig_hash = LemmaLedger.compute_signature_hash(block.text)
-
-        # Check against pruned siblings (fast hash match)
-        if sig_hash in pruned_hashes:
-            matched_pruned_count += 1
-
-        # Depth limit
-        if entry.depth + 1 > MAX_DEPTH:
-            await agent._emit("message", f"[PO4] Depth limit for {block.name}")
+        if not split or not split.blocks:
             continue
 
-        # Run cycle detection
-        det_result = await detect(
-            agent=agent, ledger=ledger, name=block.name,
-            file_path=rel, signature_hash=sig_hash,
-            parent_id=entry.id, cwd=cwd,
-        )
+        # Check ALL public theorems/defs with sorry in each file
+        for block in split.blocks:
+            if block.decl_type not in ("theorem", "def"):
+                continue
+            if "private " in block.text[:50]:
+                continue
+            if not block.has_sorry:
+                continue  # already proved — no cycle/reuse check needed
 
-        verdict = DetectVerdict(
-            file_path=rel,
-            name=block.name,
-            signature_hash=sig_hash,
-            statement=block.text,
-            match_type=det_result.match_type.value,
-            matched_id=det_result.matched_id,
-            matched_name=det_result.matched_name,
-            import_path=det_result.import_path,
-            reason=det_result.reason,
-        )
-        verdicts.append(verdict)
+            sig_hash = LemmaLedger.compute_signature_hash(block.text)
 
-        if det_result.match_type == MatchType.CYCLE:
-            cycles_found = True
-            await agent._emit("message", f"[PO4] CYCLE: {block.name} ↔ {det_result.matched_name}")
-        elif det_result.match_type == MatchType.REUSE:
-            await agent._emit("message", f"[PO4] REUSE: {block.name} ← {det_result.matched_name}")
-        elif det_result.match_type == MatchType.SHARED:
-            pass  # no longer create dependencies on unproved entries
+            # Check against pruned siblings (fast hash match)
+            if sig_hash in pruned_hashes:
+                matched_pruned_count += 1
+
+            # Depth limit
+            if entry.depth + 1 > MAX_DEPTH:
+                await agent._emit("message", f"[PO4] Depth limit for {block.name}")
+                continue
+
+            # Run cycle detection
+            det_result = await detect(
+                agent=agent, ledger=ledger, name=block.name,
+                file_path=rel, signature_hash=sig_hash,
+                parent_id=entry.id, cwd=cwd,
+            )
+
+            verdict = DetectVerdict(
+                file_path=rel,
+                name=block.name,
+                signature_hash=sig_hash,
+                statement=block.text,
+                match_type=det_result.match_type.value,
+                matched_id=det_result.matched_id,
+                matched_name=det_result.matched_name,
+                import_path=det_result.import_path,
+                reason=det_result.reason,
+            )
+            verdicts.append(verdict)
+
+            if det_result.match_type == MatchType.CYCLE:
+                cycles_found = True
+                await agent._emit("message", f"[PO4] CYCLE: {block.name} ↔ {det_result.matched_name}")
+            elif det_result.match_type == MatchType.REUSE:
+                await agent._emit("message", f"[PO4] REUSE: {block.name} ← {det_result.matched_name}")
+
+    # Register sorry-free lemmas from decomposed files (skipped by cycle detection above)
+    for f in new_files:
+        rel = str(f.relative_to(cwd))
+        split = tools.split_theorems(rel)
+        if not split or not split.blocks:
+            continue
+        for block in split.blocks:
+            if block.decl_type not in ("theorem", "def"):
+                continue
+            if "private " in block.text[:50]:
+                continue
+            if block.has_sorry:
+                continue  # handled by verdicts in _do_update
+            # Check not already in a verdict
+            if any(v.name == block.name for v in verdicts):
+                continue
+            verdicts.append(DetectVerdict(
+                file_path=rel,
+                name=block.name,
+                signature_hash=LemmaLedger.compute_signature_hash(block.text),
+                statement=block.text,
+                match_type="none",
+            ))
 
     # Check: if ALL new helpers match pruned siblings → reject decomposition
     if matched_pruned_count > 0 and matched_pruned_count >= len(new_files):
@@ -1159,6 +1195,9 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
 
     All DAG mutations happen here and only here.
     """
+    # 0. Register/cleanup helpers in Stub.lean (prunes moved-out entries, registers new ones)
+    _register_all_helpers(ledger, entry, cwd)
+
     # 1. Apply detect verdicts if any
     verdicts = getattr(state, '_detect_verdicts', None)
     if verdicts:
@@ -1186,12 +1225,25 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
                     ledger.mark_proved(new_entry.id, v.import_path, proved_by="shortcut")
 
             else:
-                ledger.add_lemma(
+                new_entry = ledger.add_lemma(
                     name=v.name, file_path=v.file_path,
                     workspace=v.file_path.removesuffix(".lean"),
                     signature_hash=v.signature_hash, statement=v.statement,
                     parent_id=entry.id,
                 )
+                # Check if already proved (no sorry locally or transitively)
+                if not isinstance(new_entry, str):
+                    tools = get_lean_tools()
+                    if not tools.has_sorry(v.file_path):
+                        cr = tools.check_compiles(v.file_path)
+                        if cr.success and not cr.has_sorry:
+                            # No local sorry + no transitive sorry → proved
+                            ledger.mark_proved(new_entry.id,
+                                               v.file_path.replace("/", ".").removesuffix(".lean"),
+                                               proved_by="direct")
+                        elif cr.success:
+                            # No local sorry but transitive sorry → contingent
+                            ledger.mark_contingent(new_entry.id)
 
         state._detect_verdicts = None
 
@@ -1363,13 +1415,25 @@ def _topo_sort(ledger: LemmaLedger) -> list[str]:
 async def _get_writer(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLedger):
     """Get or create persistent proof_writer for this lemma."""
     from .._ledger_mcp import create_ledger_mcp_server
+    from .._lean_tools_mcp import create_writer_import_server
     attr = f"_writer_{entry.id}"
     if getattr(agent, attr, None) is None:
         ledger_mcp = create_ledger_mcp_server(ledger)
+
+        # Build ancestor modules for safe import checking
+        ancestor_modules = []
+        for anc_id in ledger.get_ancestry(entry.id):
+            anc = ledger.get(anc_id)
+            if anc:
+                ancestor_modules.append(anc.workspace.replace("/", "."))
+
+        stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
+        writer_imports_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger)
+
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace, can_see=["SearchAgent"],
-            extra_mcp_servers={"ledger": ledger_mcp},
+            extra_mcp_servers={"ledger": ledger_mcp, "writer_imports": writer_imports_mcp},
         )
         internal = await ctx.__aenter__()
         setattr(agent, f"{attr}_ctx", ctx)
@@ -1420,6 +1484,66 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
             )
 
     return getattr(agent, attr)
+
+
+def _register_all_helpers(ledger: LemmaLedger, entry: LemmaEntry, cwd: Path):
+    """Register all public theorems/defs in Stub.lean to the ledger.
+
+    Called after extraction. Registers sorry-free helpers that stayed in Stub.lean
+    so they're discoverable by other branches via ledger_search.
+    Also removes stale entries (helpers that were deleted/renamed by the writer).
+    """
+    tools = get_lean_tools()
+    stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
+
+    if not (cwd / stub_rel).exists():
+        return
+
+    split = tools.split_theorems(stub_rel)
+    if not split or split.error:
+        return
+
+    # Current names in the file
+    current_names = set()
+    for block in split.blocks:
+        if block.decl_type in ("theorem", "def") and "private " not in block.text[:50]:
+            current_names.add(block.name)
+
+    # Remove stale entries: registered in ledger with this file_path but no longer in file
+    # PROVED entries cannot be removed — tracked for verifier error
+    for e in ledger.entries():
+        if e.file_path != stub_rel:
+            continue
+        if e.name == entry.name:
+            continue
+        if e.name in current_names:
+            continue
+        if e.status in (LemmaStatus.PENDING, LemmaStatus.CONTINGENT):
+            ledger.prune_branch(e.id, "helper removed/renamed by writer")
+
+    # Register new names
+    existing_names = {e.name for e in ledger.entries()}
+    for block in split.blocks:
+        if block.name in existing_names:
+            continue
+        if block.name == entry.name:
+            continue
+        if block.decl_type not in ("theorem", "def"):
+            continue
+        if "private " in block.text[:50]:
+            continue
+
+        sig_hash = LemmaLedger.compute_signature_hash(block.text)
+        new_entry = ledger.add_lemma(
+            name=block.name, file_path=stub_rel,
+            workspace=entry.workspace, signature_hash=sig_hash,
+            statement=block.text, parent_id=entry.id,
+        )
+        # Sorry-free helpers → mark proved immediately
+        if not isinstance(new_entry, str) and not block.has_sorry:
+            ledger.mark_proved(new_entry.id,
+                               stub_rel.replace("/", ".").removesuffix(".lean"),
+                               proved_by="direct")
 
 
 async def _dump_guide_state(guide, entry: LemmaEntry, cwd: Path):

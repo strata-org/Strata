@@ -32,6 +32,7 @@ def make_proof_writer_verifier(
     workspace: str,
     main_theorem: str = "",
     ancestor_modules: list[str] | None = None,
+    ledger=None,
 ) -> callable:
     """Create a verify function for proof_writer's verified_loop.
 
@@ -42,6 +43,7 @@ def make_proof_writer_verifier(
         main_theorem: Name of the main theorem (optional, for structure check)
         ancestor_modules: Module paths of ancestors in the DAG. If the writer
             imports any of these, it's a circular dependency (not a real proof).
+        ledger: LemmaLedger instance for dedup checks (optional).
 
     Returns:
         Callable that returns None (pass) or error string (fed back to writer).
@@ -67,20 +69,49 @@ def make_proof_writer_verifier(
                 f"This is UNSOUND. Replace with `theorem ... := by sorry`."
             )
 
-        # 3. No circular imports (importing an ancestor = delegating back, not proving)
+        # 3. No circular imports (importing an ancestor's Stub = delegating back, not proving)
         if ancestor_modules:
+            # Build the exact module paths that would be circular:
+            # importing an ancestor's Stub.lean (workspace.Stub) creates a real cycle
+            circular_modules = set()
+            for anc_mod in ancestor_modules:
+                circular_modules.add(f"{anc_mod}.Stub")
             imports = tools.check_imports(target_file)
             if not imports.error:
                 for imp in imports.imports:
-                    for anc_mod in ancestor_modules:
-                        if anc_mod in imp and ".Stub.Def" not in imp:
-                            return (
-                                f"CIRCULAR IMPORT: You imported '{imp}' which is an ancestor "
-                                f"of this lemma in the proof DAG. This creates a circular dependency. "
-                                f"You MUST prove this theorem WITHOUT importing ancestors. "
-                                f"Use induction, structural recursion, or prove directly from "
-                                f"the hypotheses available in this file."
-                            )
+                    if imp in circular_modules:
+                        return (
+                            f"CIRCULAR IMPORT: You imported '{imp}' which is an ancestor's Stub "
+                            f"in the proof DAG. This creates a circular dependency. "
+                            f"You MUST prove this theorem WITHOUT importing ancestor Stubs. "
+                            f"Importing sibling/cousin lemmas from other branches is fine."
+                        )
+
+        # 3.5 Dedup: check new theorem/def names against ledger
+        if ledger:
+            import re as _re
+
+            # Get current names from file
+            split = tools.split_theorems(target_file)
+            current_names = {b.name for b in split.blocks} if split and not split.error else set()
+
+            # Get original names (regex — just need names, not full parse)
+            original_names = set(_re.findall(
+                r'(?:theorem|def|lemma)\s+(\S+)', original_content))
+
+            # Check new names against ledger
+            for name in current_names - original_names:
+                if name == main_theorem:
+                    continue
+                results = ledger.search(name, page_size=5)
+                for hit in results.hits:
+                    if hit.entry.name == name and hit.entry.file_path != target_file:
+                        import_module = hit.entry.file_path.replace("/", ".").removesuffix(".lean")
+                        return (
+                            f"DUPLICATE: theorem '{name}' already exists in the ledger "
+                            f"(module: {import_module}). Delete your copy and add "
+                            f"`import {import_module}` instead of redefining it."
+                        )
 
         # 4. Check if sorry-free (success!)
         if not tools.has_sorry(target_file):

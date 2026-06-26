@@ -241,7 +241,10 @@ class MoveSession:
         """Validate extraction: build all extracted files, then verify Stub.lean compiles.
 
         Does NOT rewrite Stub.lean — move_lines already handles that incrementally.
-        This is validation-only: build everything and report success or errors.
+        Checks:
+        1. Each extracted file has at most one sorry lemma (unless mutual block)
+        2. All extracted files compile
+        3. Stub.lean compiles
         """
         import subprocess
 
@@ -257,17 +260,52 @@ class MoveSession:
         if not created_files:
             return ExtractResult(error="No extracted files found")
 
-        # Build each extracted file
+        # Validate: each file must have at most one sorry lemma (unless mutual)
+        for f in created_files:
+            split = self._tools.split_theorems(f)
+            if not split or split.error:
+                continue
+            sorry_blocks = [b for b in split.blocks if b.has_sorry
+                            and b.decl_type in ("theorem", "def")
+                            and "private " not in b.text[:50]]
+            if len(sorry_blocks) > 1:
+                mutual_groups = {b.mutual_group for b in sorry_blocks if b.mutual_group is not None}
+                if not mutual_groups or len(mutual_groups) > 1 or any(b.mutual_group is None for b in sorry_blocks):
+                    names = [b.name for b in sorry_blocks]
+                    return ExtractResult(
+                        error=f"File {f} has {len(sorry_blocks)} sorry lemmas ({names}) — "
+                              f"each file must have at most 1 sorry lemma (unless they share a mutual block)",
+                        created_files=created_files)
+
+        # Build each extracted file — collect errors
+        all_errors = []
         for f in created_files:
             module = f.replace("/", ".").removesuffix(".lean")
-            subprocess.run(["lake", "build", module],
-                          cwd=str(root), capture_output=True, timeout=120)
+            result = subprocess.run(["lake", "build", module],
+                                    cwd=str(root), capture_output=True, text=True, timeout=120)
+            output = result.stdout + "\n" + result.stderr
+            errors = [l for l in output.splitlines() if ": error:" in l]
+            if errors:
+                all_errors.append(f"{f}: {errors[0]}")
+
+        if all_errors:
+            return ExtractResult(
+                error="Extracted files have compilation errors:\n" + "\n".join(all_errors[:5]),
+                created_files=created_files)
 
         # Verify Stub.lean compiles
         cr = self._tools.check_compiles(self._file_path)
         if not cr.success:
-            return ExtractResult(error="Stub.lean doesn't compile after extraction",
-                                created_files=created_files)
+            # Get actual errors for feedback
+            stub_module = self._file_path.replace("/", ".").removesuffix(".lean")
+            result = subprocess.run(["lake", "build", stub_module],
+                                    cwd=str(root), capture_output=True, text=True, timeout=120)
+            output = result.stdout + "\n" + result.stderr
+            errors = [l for l in output.splitlines() if ": error:" in l]
+            error_detail = errors[0] if errors else "unknown error"
+            return ExtractResult(
+                error=f"Stub.lean doesn't compile: {error_detail}",
+                created_files=created_files)
 
         self._committed = True
         self._created_files = created_files
@@ -392,7 +430,7 @@ class MoveSession:
                 module_path = imp
 
             import_line = f"import {module_path}"
-            if import_line not in content:
+            if import_line not in [l.strip() for l in lines]:
                 # Insert after last import
                 insert_pos = 0
                 for i, l in enumerate(lines):

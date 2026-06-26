@@ -470,3 +470,83 @@ def create_extractor_mcp_server(session: "MoveSession"):
         tools=[get_declarations_tool, move_decl_tool, move_lines_tool,
                add_imports_tool, compile_check_tool, revert_last_tool, commit_tool, revert_tool],
     )
+
+
+def create_writer_import_server(target_file: str, ancestor_modules: list[str], ledger=None):
+    """Create an MCP server with a safe import tool for proof_writer.
+
+    The writer calls add_import_safely instead of manually editing the import section.
+    The tool checks: not circular, module exists, file compiles after adding.
+    """
+    from .modules.po_lean import get_lean_tools
+
+    @tool(
+        name="add_import_safely",
+        description=(
+            "Safely add an import to your file. Checks that the import is not circular "
+            "(doesn't import an ancestor in the proof DAG), verifies the module exists, "
+            "and confirms the file still compiles after adding. "
+            "Use this instead of manually editing imports. "
+            "Pass either a full module path (e.g. 'StrataAgent.Sandbox.decomposed.lemma_helper_foo') "
+            "or search the ledger first and pass the module path from there."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "module_path": {
+                    "type": "string",
+                    "description": "Full module path to import (e.g. 'StrataAgent.Sandbox.decomposed.lemma_helper_sim_stmt_terminal')",
+                },
+            },
+            "required": ["module_path"],
+        },
+    )
+    async def add_import_safely_tool(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+        module_path = input["module_path"]
+        import_line = f"import {module_path}"
+
+        # Check circularity: is this an ancestor's Stub?
+        circular_modules = {f"{anc}.Stub" for anc in ancestor_modules}
+        if module_path in circular_modules:
+            return {"content": [{"type": "text", "text":
+                f"BLOCKED: '{module_path}' is an ancestor's Stub in the proof DAG. "
+                f"Importing it would create a circular dependency. "
+                f"You must prove this without importing ancestors."}]}
+
+        # Check if already imported
+        root = tools._root
+        source = root / target_file
+        if not source.exists():
+            return {"content": [{"type": "text", "text": f"Error: {target_file} does not exist"}]}
+
+        content = source.read_text()
+        lines = content.splitlines()
+        if import_line in [l.strip() for l in lines]:
+            return {"content": [{"type": "text", "text": f"OK: already imported ({module_path})"}]}
+
+        # Add the import after the last existing import
+        insert_pos = 0
+        for i, l in enumerate(lines):
+            if l.strip().startswith("import "):
+                insert_pos = i + 1
+        lines.insert(insert_pos, import_line)
+        source.write_text("\n".join(lines))
+
+        # Verify it compiles
+        cr = tools.check_compiles(target_file)
+        if not cr.success:
+            # Revert
+            source.write_text(content)
+            return {"content": [{"type": "text", "text":
+                f"FAILED: Adding '{import_line}' breaks compilation. Reverted. "
+                f"The module may not exist or has errors."}]}
+
+        return {"content": [{"type": "text", "text":
+            f"OK: added '{import_line}' — file compiles."}]}
+
+    return create_sdk_mcp_server(
+        name="writer_imports",
+        version="1.0.0",
+        tools=[add_import_safely_tool],
+    )
