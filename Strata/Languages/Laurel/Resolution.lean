@@ -804,7 +804,11 @@ private def reportMultiValued (a : StmtExprMd) (aTy : HighTypeMd) : ResolveM Boo
     pure true
   | _ => pure false
 
-/-- A candidate lowering: `some` if it applies, else `none`. -/
+/-- A candidate `PrimitiveOp` lowering, one entry in the list `firstElab` walks:
+    `none` declines (try the next), `some (expr, ty)` commits; all `none` falls
+    back to the native default. E.g. lowering `a + b`: `Any + TInt` commits via
+    `elaborateDynamicOp`, `TString + TString` via `strConcatAlt`, `TInt + TInt`
+    falls back to `nativeArith`. -/
 private abbrev OpAlt := ResolveM (Option (StmtExpr × HighTypeMd))
 
 /-- The first applicable candidate lowering, else the native `dflt`. -/
