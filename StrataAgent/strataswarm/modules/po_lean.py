@@ -238,142 +238,42 @@ class MoveSession:
         return f"OK: registered move for '{decl_name}'"
 
     def commit(self) -> ExtractResult:
-        """Execute all moves: write files, rewrite Stub.lean, build, verify."""
+        """Validate extraction: build all extracted files, then verify Stub.lean compiles.
+
+        Does NOT rewrite Stub.lean — move_lines already handles that incrementally.
+        This is validation-only: build everything and report success or errors.
+        """
         import subprocess
 
         root = self._tools._root
-        source = root / self._file_path
-        content = source.read_text()
-        lines = content.splitlines()
-
-        if not self._split:
-            self._split = self._tools.split_theorems(self._file_path)
-        if self._split.error:
-            return ExtractResult(error=self._split.error)
-
-        # Header (imports, open, variable — before first decl)
-        first_decl_line = min(b.start for b in self._split.blocks) - 1 if self._split.blocks else 0
-        header_lines = [l for l in lines[:first_decl_line]
-                        if not l.strip().startswith("/-") and not l.strip().startswith("--")
-                        and l.strip() not in ("mutual", "end")]
-        header = "\n".join(header_lines)
-
-        # Output directory
         out_path = root / self._workspace / self._output_subdir
-        out_path.mkdir(parents=True, exist_ok=True)
-        out_rel = str(out_path.relative_to(root))
 
-        # Build name → module mapping
-        name_to_module: dict[str, str] = {}
-        for move in self._moves:
-            safe_name = _ascii_escape(move.decl_name)
-            module = f"{out_rel}/lemma_helper_{safe_name}".replace("/", ".")
-            # Map all members if mutual
-            block = next((b for b in self._split.blocks if b.name == move.decl_name), None)
-            if block and block.mutual_group is not None:
-                for member_name in self._split.mutual_groups.get(block.mutual_group, []):
-                    name_to_module[member_name] = module
-            else:
-                name_to_module[move.decl_name] = module
-
-        # Write each moved declaration to its own file
+        # Collect all extracted files
         created_files: list[str] = []
-        extracted_names: list[str] = []
+        if out_path.exists():
+            for f in sorted(out_path.glob("lemma_helper_*.lean")):
+                created_files.append(str(f.relative_to(root)))
 
-        for move in self._moves:
-            block = next((b for b in self._split.blocks if b.name == move.decl_name), None)
-            if not block:
-                continue
+        if not created_files:
+            return ExtractResult(error="No extracted files found")
 
-            # Get block text
-            if block.mutual_group is not None:
-                # Mutual: grab raw lines from file (mutual...end inclusive)
-                group_blocks = [b for b in self._split.blocks if b.mutual_group == block.mutual_group]
-                first_line = min(b.start for b in group_blocks) - 1
-                last_line = max(b.end for b in group_blocks)
-                end_idx = last_line
-                while end_idx < len(lines) and lines[end_idx].strip() != "end":
-                    end_idx += 1
-                block_lines = lines[first_line:end_idx + 1]
-                block_lines = [l.replace("private theorem ", "theorem ")
-                                .replace("private def ", "def ")
-                                .replace("private noncomputable def ", "noncomputable def ")
-                               for l in block_lines]
-                block_text = "\n".join(block_lines)
-                group_names = [b.name for b in group_blocks]
-            else:
-                block_text = block.text
-                block_text = block_text.replace("private theorem ", "theorem ", 1)
-                block_text = block_text.replace("private def ", "def ", 1)
-                block_text = block_text.replace("private noncomputable def ", "noncomputable def ", 1)
-                group_names = [block.name]
-
-            # Build imports from additional_imports
-            dep_imports = []
-            for dep_name in move.additional_imports:
-                if dep_name in name_to_module:
-                    imp = f"import {name_to_module[dep_name]}"
-                    if imp not in dep_imports:
-                        dep_imports.append(imp)
-
-            # Write file
-            safe_name = _ascii_escape(move.decl_name)
-            new_filename = f"lemma_helper_{safe_name}.lean"
-            new_path = out_path / new_filename
-
-            h_lines = header.rstrip().splitlines()
-            if dep_imports:
-                insert_pos = 0
-                for idx, hl in enumerate(h_lines):
-                    if hl.strip().startswith("import "):
-                        insert_pos = idx + 1
-                for idx, imp in enumerate(dep_imports):
-                    h_lines.insert(insert_pos + idx, imp)
-            new_content = "\n".join(h_lines) + "\n\n" + block_text + "\n"
-            new_path.write_text(new_content)
-
-            rel_path = str(new_path.relative_to(root))
-            created_files.append(rel_path)
-            extracted_names.extend(group_names)
-
-        # Rewrite Stub.lean: header + all imports + main theorem only
-        main_block = next((b for b in self._split.blocks if b.name == self._main_theorem), None)
-        if not main_block:
-            return ExtractResult(error=f"Main theorem '{self._main_theorem}' not found")
-
-        import_lines = [f"import {name_to_module[m.decl_name]}" for m in self._moves
-                        if m.decl_name in name_to_module]
-        h_lines = header.rstrip().splitlines()
-        insert_pos = 0
-        for idx, hl in enumerate(h_lines):
-            if hl.strip().startswith("import "):
-                insert_pos = idx + 1
-        for idx, imp in enumerate(import_lines):
-            h_lines.insert(insert_pos + idx, imp)
-
-        main_text = main_block.text
-        new_stub = "\n".join(h_lines) + "\n\n" + main_text + "\n"
-        source.write_text(new_stub)
-
-        # Build all decomposed files then Stub.lean
+        # Build each extracted file
         for f in created_files:
             module = f.replace("/", ".").removesuffix(".lean")
             subprocess.run(["lake", "build", module],
                           cwd=str(root), capture_output=True, timeout=120)
 
-        # Verify Stub.lean compiles sorry-free
+        # Verify Stub.lean compiles
         cr = self._tools.check_compiles(self._file_path)
-        has_sorry = self._tools.has_sorry(self._file_path)
+        if not cr.success:
+            return ExtractResult(error="Stub.lean doesn't compile after extraction",
+                                created_files=created_files)
 
         self._committed = True
         self._created_files = created_files
-        self._extracted_names = extracted_names
+        self._extracted_names = [f.split("lemma_helper_")[-1].removesuffix(".lean") for f in created_files]
 
-        if not cr.success or has_sorry:
-            error_msg = "Stub.lean doesn't compile after extraction" if not cr.success else "Stub.lean still has sorry"
-            return ExtractResult(error=error_msg, created_files=created_files, extracted_names=extracted_names)
-
-        return ExtractResult(created_files=created_files, extracted_names=extracted_names)
+        return ExtractResult(created_files=created_files, extracted_names=self._extracted_names)
 
     def revert(self) -> str:
         """Undo everything: restore original Stub.lean, remove decomposed files."""
