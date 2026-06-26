@@ -291,7 +291,18 @@ where
 
         let valTy := (model.get fieldName).getType
         let selectTarget' ← recurseOne selectTarget
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
+        -- Unbox an `Any`-typed target to a `Composite` using the field's
+        -- owning-class tag; other targets pass through unchanged.
+        let targetTy := (computeExprType model selectTarget).val
+        let selectComposite : StmtExprMd :=
+          match targetTy with
+          | .UserDefined n =>
+            if n.text == "Any" then
+              let owner := (qualifiedName.splitOn ".").head!
+              mkMd (.StaticCall "anyToComposite" [selectTarget', mkMd (.StaticCall (owner ++ "_TypeTag") [])])
+            else selectTarget'
+          | _ => selectTarget'
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectComposite, mkMd (.StaticCall qualifiedName [])], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]

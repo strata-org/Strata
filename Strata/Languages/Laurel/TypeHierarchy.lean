@@ -173,9 +173,24 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
           else c }
       else td
     | _ => td
+  -- Inject the bridge only when the program defines `Any`; it needs the 2-arg
+  -- `MkComposite` and `TypeTag` produced by this pass.
+  let definesAny : Bool := program.types.any fun td =>
+    match td with
+    | .Datatype d => d.name.text == "Any"
+    | _ => false
+  let bridgeProcs : List Procedure :=
+    if definesAny then pyspecHeapBridge.staticProcedures else []
+  -- Fill each `__box_<C>` marker with a `compositeToAny(c)` body.
+  let procsBodied := procs'.map fun p =>
+    if p.name.text.startsWith "__box_" then
+      match p.inputs with
+      | [inp] => { p with body := .Transparent (mkMd (.StaticCall "compositeToAny" [mkMd (.Var (.Local inp.name))])) }
+      | _ => p
+    else p
   let transformed : Program :=
     { program with
-      staticProcedures := procs',
+      staticProcedures := procsBodied ++ bridgeProcs,
       types := [typeTagDatatype] ++ remainingTypes,
       constants := program.constants ++ typeHierarchyConstants }
   -- Now that `New`/`IsType` have been lowered (they needed the original
