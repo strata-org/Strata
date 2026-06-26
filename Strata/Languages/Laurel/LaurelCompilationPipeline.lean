@@ -149,7 +149,7 @@ private def runLaurelPasses
   let mut allStats : Statistics := {}
 
   for pass in laurelPipeline do
-    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run program model options)
+    let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
     allDiags := allDiags ++ diags
     allStats := allStats.merge stats
@@ -209,14 +209,14 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   if passDiags.any (·.type != .Warning) then
     return (none, passDiags, program, stats)
 
-  let unorderedCore := (transparencyPass.run program model options).1
+  let unorderedCore := (transparencyPass.run options program model).1
   emit "transparencyPass" "core.st" unorderedCore
   let mut unorderedCore := unorderedCore
   let mut fnModel := model
   let mut ucDiags : List DiagnosticModel := []
 
   for pass in unorderedCorePipeline do
-    let (uc, passPassDiags, _) := pass.run unorderedCore fnModel options
+    let (uc, passPassDiags, _) := pass.run options unorderedCore fnModel
     unorderedCore := uc
     ucDiags := ucDiags ++ passPassDiags
     if pass.needsResolves then
@@ -238,10 +238,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   if ucDiags.any (·.type != .Warning) then
     return (none, passDiags ++ ucDiags, program, stats)
 
-  let coreWithLaurelTypes := (orderingPass.run unorderedCore model options).1
+  let coreWithLaurelTypes := (orderingPass.run options unorderedCore model).1
 
   emit "CoreWithLaurelTypes" "core.st" coreWithLaurelTypes
-  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run coreWithLaurelTypes fnModel options
+  let (coreProgram, coreDiagnostics, _) := laurelToCoreSchemaPass.run options coreWithLaurelTypes fnModel
   let mut allDiagnostics: List DiagnosticModel := passDiags ++ ucDiags ++ coreDiagnostics;
 
   emit "Core" "core.st" coreProgram

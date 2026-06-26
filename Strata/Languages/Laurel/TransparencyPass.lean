@@ -256,8 +256,13 @@ For each procedure:
   - Generate a function with the same signature, named `foo$asFunction`
   - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
   - If the function has a body, add a free postcondition equating the procedure output to the function"
-  run := fun p _ opts =>
+<<<<<<< HEAD
+  run := fun opts p _ =>
     (createFunctionsForTransparentBodies p opts, [], {})
+=======
+  run := fun _ p _ =>
+    (createFunctionsForTransparentBodies p, [], {})
+>>>>>>> origin/reviewed-kbd-will-merge-to-main
 
 end -- public section
 end Strata.Laurel

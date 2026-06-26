@@ -95,6 +95,6 @@ end -- public section
 public def eliminateValueInReturnsPass : LoweringPass where
   name := "EliminateValueInReturns"
   documentation := "Rewrites `return expr` into `outParam := expr; return` for imperative procedures that have an output parameter. This decouples the return-value assignment from the final Core translation, which no longer needs to know about output parameters when translating returns."
-  run := fun p _m _ => (eliminateValueInReturnsTransform p, [], {})
+  run := fun _ p _m => (eliminateValueInReturnsTransform p, [], {})
 
 end Laurel

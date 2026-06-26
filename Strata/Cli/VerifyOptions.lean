@@ -176,8 +176,7 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
     { base.translateOptions with
       keepAllFilesPrefix
       overflowChecks := verifyOptions.overflowChecks
-      alwaysCallCoreFunctions :=
-        pflags.getBool "always-call-core-functions" || base.translateOptions.alwaysCallCoreFunctions }
+      enumeratedModifiesClauses := verifyOptions.useArrayTheory }
   return { translateOptions, verifyOptions }
 
 end -- public section
