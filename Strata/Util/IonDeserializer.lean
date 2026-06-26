@@ -146,16 +146,29 @@ private meta def isLeafTypeName (name : Name) : Bool :=
   name == ``Nat || name == ``Int || name == ``String || name == ``Bool || name == ``Float ||
   name == ``StrataDDM.Decimal
 
-/-- Generate a unique reader function name for a type. -/
-private meta def readerName (typeName : Name) : Name :=
-  -- Use a hash to avoid issues with module-qualified private names
-  Name.mkSimple s!"_ionRead_{typeName.hash}"
-
 /-- Check if a type name refers to a non-leaf inductive or structure in the environment. -/
 private meta def isCompoundType (env : Environment) (name : Name) : Bool :=
   !isLeafTypeName name &&
     ((getStructureInfo? env name).isSome ||
       match env.find? name with | some (.inductInfo _) => true | _ => false)
+
+/-- Canonical string key for a fully-applied type expression: "Name arg1 arg2 ...". -/
+private meta partial def typeKey (t : Expr) : String :=
+  let fn := t.getAppFn
+  let args := t.getAppArgs
+  let base := match fn.constName? with
+    | some n => n.toString (escape := false)
+    | none => "?"
+  if args.isEmpty then base
+  else s!"{base}[{",".intercalate (args.toList.map typeKey)}]"
+
+/-- Generate a unique reader function name for a fully-applied type. -/
+private meta def readerNameExpr (t : Expr) : Name :=
+  Name.mkSimple s!"_ionRead_{(typeKey t).hash}"
+
+/-- Legacy: reader name from a bare Name (no type args). -/
+private meta def readerName (typeName : Name) : Name :=
+  readerNameExpr (mkConst typeName)
 
 /--
 Generate a read expression for a value of the given type.
@@ -164,9 +177,8 @@ Returns syntax of type `Except Std.Format T`.
 -/
 private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term) :
     TermElabM (TSyntax `term) := do
-  let origName := fieldType.getAppFn.constName?
   let fieldType' ← whnf fieldType
-  let name := origName <|> fieldType'.getAppFn.constName?
+  let name := fieldType'.getAppFn.constName?
   match name with
   | some ``Nat => `(Strata.Util.IonDeserializer.readNat $valExpr)
   | some ``Int => `(Strata.Util.IonDeserializer.readInt $valExpr)
@@ -190,11 +202,11 @@ private meta partial def mkValueRead (fieldType : Expr) (valExpr : TSyntax `term
     else throwError "getIonDeserializer%: Option without type argument"
   | some n =>
     if isCompoundType (← getEnv) n then
-      let readerId := mkIdent (readerName n)
+      let readerId := mkIdent (readerNameExpr fieldType')
       `($readerId $valExpr tbl)
     else
-      throwError "getIonDeserializer%: unsupported field type {fieldType}"
-  | _ => throwError "getIonDeserializer%: unsupported field type {fieldType}"
+      throwError "getIonDeserializer%: unsupported field type {fieldType'}"
+  | _ => throwError "getIonDeserializer%: unsupported field type {fieldType'}"
 
 /--
 Generate a read expression for a field accessed via `lookupField` (struct context).
@@ -219,31 +231,33 @@ private meta def mkIndexRead (fieldType : Expr) (idx : Nat) :
     then (fun _iv => $readExpr) args[$(idxLit)]
     else .error f!"Missing argument at index {$(idxLit)}")
 
-private meta def getCtorFieldTypes (env : Environment) (ctorName : Name) :
-    TermElabM (Nat × Nat × Array Expr) := do
+private meta def getCtorFieldTypes (env : Environment) (ctorName : Name)
+    (typeArgs : Array Expr := #[]) : TermElabM (Nat × Nat × Array Expr) := do
   let some (.ctorInfo ci) := env.find? ctorName
     | throwError "getIonDeserializer%: cannot find constructor {ctorName}"
   let mut ty := ci.type
-  for _ in List.range ci.numParams do
+  for i in List.range ci.numParams do
     match ty with
-    | .forallE _ _ b _ => ty := b
+    | .forallE _ _ b _ =>
+      let sub := if h : i < typeArgs.size then typeArgs[i] else mkSort levelZero
+      ty := b.instantiate1 sub
     | _ => throwError "getIonDeserializer%: unexpected type shape"
   let mut result := #[]
   for _ in List.range ci.numFields do
     match ty with
     | .forallE _ t b _ =>
       result := result.push t
-      ty := b
+      ty := b.instantiate1 (mkSort levelZero)
     | _ => throwError "getIonDeserializer%: unexpected type shape"
   return (ci.numParams, ci.numFields, result)
 
 /-- Generate the body of a reader for a struct type. -/
-private meta def mkStructReaderBody (sinfo : StructureInfo) :
+private meta def mkStructReaderBody (sinfo : StructureInfo) (typeArgs : Array Expr := #[]) :
     TermElabM (TSyntax `term) := do
   let env ← getEnv
   let fieldNames := sinfo.fieldNames
   let ctorName := sinfo.structName ++ `mk
-  let (_, _, fieldTypes) ← getCtorFieldTypes env ctorName
+  let (_, _, fieldTypes) ← getCtorFieldTypes env ctorName typeArgs
   let ctorId := mkIdent ctorName
   let mut ctorArgs : Array (TSyntax `term) := #[]
   for fieldName in fieldNames do
@@ -260,9 +274,9 @@ private meta def mkStructReaderBody (sinfo : StructureInfo) :
   `(Except.bind (Strata.Util.IonDeserializer.asStruct v) (fun fields => $body))
 
 /-- Generate the body of a reader for a single-constructor inductive. -/
-private meta def mkSingleCtorReaderBody (ctorName : Name) :
+private meta def mkSingleCtorReaderBody (ctorName : Name) (typeArgs : Array Expr := #[]) :
     TermElabM (TSyntax `term) := do
-  let (_, numFields, fieldTypes) ← getCtorFieldTypes (← getEnv) ctorName
+  let (_, numFields, fieldTypes) ← getCtorFieldTypes (← getEnv) ctorName typeArgs
   let ctorId := mkIdent ctorName
   let mut ctorArgs : Array (TSyntax `term) := #[]
   for i in List.range numFields do
@@ -276,7 +290,8 @@ private meta def mkSingleCtorReaderBody (ctorName : Name) :
   `(Except.bind (Strata.Util.IonDeserializer.asStruct v) (fun fields => $body))
 
 /-- Generate the body of a reader for a multi-constructor inductive. -/
-private meta def mkMultiCtorReaderBody (typeName : Name) (ctors : List Name) :
+private meta def mkMultiCtorReaderBody (typeName : Name) (ctors : List Name)
+    (typeArgs : Array Expr := #[]) :
     TermElabM (TSyntax `term) := do
   let env ← getEnv
   let typeNameStr := typeName.toString
@@ -285,7 +300,7 @@ private meta def mkMultiCtorReaderBody (typeName : Name) (ctors : List Name) :
   for ctorName in ctors.reverse do
     let shortName := ctorName.getString!
     let ctorId := mkIdent ctorName
-    let (_, numFields, fieldTypes) ← getCtorFieldTypes env ctorName
+    let (_, numFields, fieldTypes) ← getCtorFieldTypes env ctorName typeArgs
     let mut ctorArgs : Array (TSyntax `term) := #[]
     for i in List.range numFields do
       ctorArgs := ctorArgs.push (← `($(mkIdent (Name.mkSimple s!"_a{i}"))))
@@ -307,74 +322,118 @@ private meta def mkMultiCtorReaderBody (typeName : Name) (ctors : List Name) :
            | _ => Except.error (f!"Expected symbol or string tag" : Std.Format))
           (fun tag => $body)))
 
-/-- Generate the body of a reader function for a given type name. -/
-private meta def mkReaderBody (env : Environment) (typeName : Name) :
+/-- Generate the body of a reader function for a given (possibly applied) type. -/
+private meta def mkReaderBody (env : Environment) (typeExpr : Expr) :
     TermElabM (TSyntax `term) := do
+  let typeName := typeExpr.getAppFn.constName?.getD Name.anonymous
+  let typeArgs := typeExpr.getAppArgs
   if let some sinfo := getStructureInfo? env typeName then
-    mkStructReaderBody sinfo
+    mkStructReaderBody sinfo typeArgs
   else
     let some (.inductInfo indInfo) := env.find? typeName
       | throwError "getIonDeserializer%: {typeName} is not an inductive or structure type"
     if indInfo.ctors.length == 1 then
-      mkSingleCtorReaderBody indInfo.ctors.head!
+      mkSingleCtorReaderBody indInfo.ctors.head! typeArgs
     else
-      mkMultiCtorReaderBody typeName indInfo.ctors
+      mkMultiCtorReaderBody typeName indInfo.ctors typeArgs
 
-/-- Extract compound type names from a type expression, looking through List/Option. -/
-private meta partial def extractCompoundNames (env : Environment) (t : Expr) : TermElabM (Array Name) := do
+/-- Extract fully-applied compound type expressions from a field type, looking through List/Option. -/
+private meta partial def extractCompoundExprs (env : Environment) (t : Expr) : TermElabM (Array Expr) := do
   let t ← whnf t
   let name := t.getAppFn.constName?
   match name with
   | some ``List | some ``Option =>
     let args := t.getAppArgs
-    if h : args.size > 0 then extractCompoundNames env args[0]
+    if h : args.size > 0 then extractCompoundExprs env args[0]
     else return #[]
   | some n =>
-    if isCompoundType env n then return #[n] else return #[]
+    if isCompoundType env n then
+      -- Return the full applied type, and recurse into type arguments
+      let mut result := #[t]
+      for arg in t.getAppArgs do
+        result := result ++ (← extractCompoundExprs env arg)
+      return result
+    else return #[]
   | none => return #[]
 
-/-- Collect all nested inductive/structure type names reachable from a type's fields. -/
-private meta def collectNestedTypes (env : Environment) (rootName : Name) :
-    TermElabM (Array Name) := do
-  let mut visited : Std.HashSet Name := {}
-  let mut queue : Array Name := #[rootName]
-  let mut result : Array Name := #[]
+/-- Collect all nested fully-applied type expressions reachable from a type's fields. -/
+private meta def collectNestedTypeExprs (env : Environment) (rootExpr : Expr) :
+    TermElabM (Array Expr) := do
+  let mut visited : Std.HashSet String := {}
+  let mut queue : Array Expr := #[rootExpr]
+  let mut result : Array Expr := #[]
   while h : queue.size > 0 do
-    let name := queue[0]
+    let typeExpr := queue[0]
     queue := queue.extract 1 queue.size
-    if visited.contains name then continue
-    visited := visited.insert name
-    result := result.push name
-    let ctors := if let some sinfo := getStructureInfo? env name then
+    let key := typeKey typeExpr
+    if visited.contains key then continue
+    visited := visited.insert key
+    result := result.push typeExpr
+    let typeName := typeExpr.getAppFn.constName?.getD Name.anonymous
+    let typeArgs := typeExpr.getAppArgs
+    let ctors := if let some sinfo := getStructureInfo? env typeName then
       [sinfo.structName ++ `mk]
-    else match env.find? name with
+    else match env.find? typeName with
       | some (.inductInfo indInfo) => indInfo.ctors
       | _ => []
     for ctorName in ctors do
       let some (.ctorInfo ci) := env.find? ctorName | continue
       let mut ty := ci.type
-      for _ in List.range ci.numParams do
-        match ty with | .forallE _ _ b _ => ty := b | _ => break
+      for i in List.range ci.numParams do
+        match ty with
+        | .forallE _ _ b _ =>
+          let sub := if h2 : i < typeArgs.size then typeArgs[i] else mkSort levelZero
+          ty := b.instantiate1 sub
+        | _ => break
       for _ in List.range ci.numFields do
         match ty with
         | .forallE _ t b _ =>
-          for n in ← extractCompoundNames env t do
-            if !visited.contains n then queue := queue.push n
-          ty := b
+          for texpr in ← extractCompoundExprs env t do
+            let tkey := typeKey texpr
+            if !visited.contains tkey then queue := queue.push texpr
+          ty := b.instantiate1 (mkSort levelZero)
         | _ => break
   return result
 
-/-- Build a `let rec` term binding. -/
-private meta def mkLetRec (fnName : Ident) (type : TSyntax `term)
-    (body : TSyntax `term) (innerBody : TSyntax `term) : TermElabM (TSyntax `term) := do
-  let letIdDecl ← `(Lean.Parser.Term.letIdDecl| $fnName : $type := $body)
-  let letDecl := mkNode ``Lean.Parser.Term.letDecl #[letIdDecl]
+/-- Build a `let rec` term with multiple mutually-recursive bindings. -/
+private meta def mkMutualLetRec (bindings : Array (Ident × TSyntax `term × TSyntax `term))
+    (innerBody : TSyntax `term) : TermElabM (TSyntax `term) := do
+  if bindings.isEmpty then return innerBody
   let termSuffix := mkNode ``Lean.Parser.Termination.suffix #[mkNullNode, mkNullNode]
-  let letRecDecl := mkNode ``Lean.Parser.Term.letRecDecl
-    #[mkNullNode, mkNullNode, letDecl, termSuffix]
-  `(term| (
-    let rec $letRecDecl:letRecDecl
-    $innerBody))
+  let mut declNodes : Array Syntax := #[]
+  for (fnName, type, body) in bindings do
+    let letIdDecl ← `(Lean.Parser.Term.letIdDecl| $fnName : $type := $body)
+    let letDecl := mkNode ``Lean.Parser.Term.letDecl #[letIdDecl]
+    let letRecDecl := mkNode ``Lean.Parser.Term.letRecDecl
+      #[mkNullNode, mkNullNode, letDecl, termSuffix]
+    declNodes := declNodes.push letRecDecl
+  -- Build comma-separated array: [decl0, ",", decl1, ",", decl2, ...]
+  let mut sepElems : Array Syntax := #[]
+  for i in List.range declNodes.size do
+    if i > 0 then sepElems := sepElems.push (mkAtom ",")
+    sepElems := sepElems.push declNodes[i]!
+  let sepArray := mkNullNode sepElems
+  let letRecDecls := mkNode ``Lean.Parser.Term.letRecDecls #[sepArray]
+  let letrec := mkNode ``Lean.Parser.Term.letrec
+    #[mkNullNode, letRecDecls, mkNullNode, innerBody]
+  return ⟨letrec⟩
+
+/-- Convert a type Expr to syntax for use in type annotations. -/
+private meta partial def exprToTypeSyntax (e : Expr) : TermElabM (TSyntax `term) := do
+  let fn := e.getAppFn
+  let args := e.getAppArgs
+  if args.isEmpty then
+    if let some n := fn.constName? then
+      `($(mkIdent n))
+    else
+      `(_)
+  else
+    let fnStx ← exprToTypeSyntax fn
+    let mut result := fnStx
+    for arg in args do
+      let argStx ← exprToTypeSyntax arg
+      result ← `($result $argStx)
+    return result
 
 public section
 
@@ -392,10 +451,11 @@ meta def getIonDeserializerElab : TermElab := fun stx _expectedType? => do
   | `(getIonDeserializer% $typeId) => do
     let typeName ← resolveGlobalConstNoOverload typeId
     let env ← getEnv
-    let nestedTypes ← collectNestedTypes env typeName
-    -- Check if any field type is a compound type (including self-references)
-    let mut hasCompoundFields : Bool := nestedTypes.size > 1
-    if !hasCompoundFields then
+    let rootExpr := Lean.mkConst typeName
+    let nestedTypes ← collectNestedTypeExprs env rootExpr
+    if nestedTypes.size <= 1 then
+      -- Simple case: no nested types, check for compound fields
+      let mut hasCompoundFields := false
       let ctors := if let some sinfo := getStructureInfo? env typeName then
         [sinfo.structName ++ `mk]
       else match env.find? typeName with
@@ -405,33 +465,31 @@ meta def getIonDeserializerElab : TermElab := fun stx _expectedType? => do
         if let some (.ctorInfo ci) := env.find? ctorName then
           let mut ty := ci.type
           for _ in List.range ci.numParams do
-            match ty with | .forallE _ _ b _ => ty := b | _ => break
+            match ty with | .forallE _ _ b _ => ty := b.instantiate1 (mkSort levelZero) | _ => break
           for _ in List.range ci.numFields do
             match ty with
             | .forallE _ t b _ =>
               if let some n := t.getAppFn.constName? then
                 if isCompoundType env n then hasCompoundFields := true
-              ty := b
+              ty := b.instantiate1 (mkSort levelZero)
             | _ => break
-    if !hasCompoundFields then
-      -- Simple case: no nested types, generate inline
-      let readerBody ← mkReaderBody env typeName
-      let resultStx ← `(Strata.Util.IonDeserializer.deserializeWith (fun v tbl => $readerBody))
-      elabTerm resultStx _expectedType?
-    else
-      -- Nested/recursive types: generate let rec bindings
-      -- Dependencies must be defined outermost, root type innermost
-      let rootReaderId := mkIdent (readerName typeName)
-      let mut finalExpr ← `(Strata.Util.IonDeserializer.deserializeWith $rootReaderId)
-      -- Build from inside out: root type first (innermost let rec), then dependencies
-      for name in nestedTypes do
-        let readerId := mkIdent (readerName name)
-        let body ← mkReaderBody env name
-        let typeId := mkIdent name
-        let readerType ← `(Ion SymbolId → SymbolTable → Except Std.Format $typeId)
-        let readerBody ← `(fun v tbl => $body)
-        finalExpr ← mkLetRec readerId readerType readerBody finalExpr
-      elabTerm finalExpr _expectedType?
+      if !hasCompoundFields then
+        let readerBody ← mkReaderBody env rootExpr
+        let resultStx ← `(Strata.Util.IonDeserializer.deserializeWith (fun v tbl => $readerBody))
+        return ← elabTerm resultStx _expectedType?
+    -- Nested/recursive types: generate a single mutual let rec block
+    let rootReaderId := mkIdent (readerNameExpr rootExpr)
+    let mut bindings : Array (Ident × TSyntax `term × TSyntax `term) := #[]
+    for typeExpr in nestedTypes do
+      let readerId := mkIdent (readerNameExpr typeExpr)
+      let body ← mkReaderBody env typeExpr
+      let typeStx ← exprToTypeSyntax typeExpr
+      let readerType ← `(Ion SymbolId → SymbolTable → Except Std.Format $typeStx)
+      let readerBody ← `(fun v tbl => $body)
+      bindings := bindings.push (readerId, readerType, readerBody)
+    let innerExpr ← `(Strata.Util.IonDeserializer.deserializeWith $rootReaderId)
+    let finalExpr ← mkMutualLetRec bindings innerExpr
+    elabTerm finalExpr _expectedType?
   | _ => throwUnsupportedSyntax
 
 end
