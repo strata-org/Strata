@@ -6,6 +6,13 @@ Usually the expected output is specified through inline comments that follow a s
 
 Every feature in Laurel should be tested through the EndToEndTests folder.
 
+The EndToEndTest are divided into three folders:
+- Execution. This folder should contains tests for all features that don't relate to verification. These tests should be able to give the expected output by:
+    - Executing all procedures without arguments. (Currently these tests are not actually executed, but we will do it once we have a Laurel interpreter)
+    - Verifying all procedures
+- Resolution. This folder should contain tests for all features. These tests give the expected output by running the Laurel resolver on them.
+- Verification. This folder should contain tests for features that relate to verification, such as assertions and contracts. These tests only give their expected output by running unbounded symbolic verification on them.
+
 ## Debugging
 
 If an E2E test fails, the likely cause is one of Laurel's lowering passes. We can figure out which of the passes is to blame by using the Laurel semantics. If the output of running the Laurel's type checker or interpreter changes between passes, then this pass is to blame. Another method of investigation is to manually inspect the Laurel program between each pass to see where it changes its meaning.
@@ -19,3 +26,7 @@ Having an idiomaticity test per pass is recommend but not required.
 # UnitTests
 
 The folder UnitTests contains tests that require calling internal Laurel APIs. Adding unit tests is recommend for utility functions such as the generic Laurel traversal code that's in MapStmtExprTest.
+
+# CBMB
+
+WIP.
