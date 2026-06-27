@@ -68,7 +68,26 @@ op mkKwargsDecl(name : Ident, kwargsType : SpecType) : KwargsDecl =>
 
 category SpecExprDecl;
 op placeholderExpr() : SpecExprDecl => "placeholder";
+op trueLitExpr() : SpecExprDecl => "trueLit";
+op falseLitExpr() : SpecExprDecl => "falseLit";
+op noneLitExpr() : SpecExprDecl => "noneLit";
 op varExpr(name : Ident) : SpecExprDecl => name;
+op eqExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "eq" "(" lhs ", " rhs ")";
+op addExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "add" "(" lhs ", " rhs ")";
+op subExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "sub" "(" lhs ", " rhs ")";
+op mulExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "mul" "(" lhs ", " rhs ")";
+op floorDivExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "floorDiv" "(" lhs ", " rhs ")";
+op modExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "mod" "(" lhs ", " rhs ")";
+op powExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "pow" "(" lhs ", " rhs ")";
+op negExpr(operand : SpecExprDecl) : SpecExprDecl =>
+  "neg" "(" operand ")";
 op getIndexExpr(subject : SpecExprDecl, field : Ident) : SpecExprDecl =>
   @[prec(50)] subject "[" field "]";
 op isInstanceOfExpr(subject : SpecExprDecl, typeName : Str) : SpecExprDecl =>
@@ -97,6 +116,12 @@ op impliesExpr(condition : SpecExprDecl, body : SpecExprDecl) : SpecExprDecl =>
   @[prec(10), rightassoc] condition " => " body;
 op notExpr(e : SpecExprDecl) : SpecExprDecl =>
   "not" "(" e ")";
+op andExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "and" "(" lhs ", " rhs ")";
+op orExpr(lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "or" "(" lhs ", " rhs ")";
+op pcmpExpr(opName : Str, lhs : SpecExprDecl, rhs : SpecExprDecl) : SpecExprDecl =>
+  "pcmp" "(" opName ", " lhs ", " rhs ")";
 op forallListExpr(list : SpecExprDecl, varName : Ident, body : SpecExprDecl) : SpecExprDecl =>
   "forall" "(" list ", " varName ", " body ")";
 op forallDictExpr(dict : SpecExprDecl, keyVar : Ident,
@@ -263,7 +288,17 @@ def Arg.toDDM (d : Arg) : DDM.ArgDecl SourceRange :=
 protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   match e with
   | .placeholder loc => .placeholderExpr loc
+  | .boolLit b loc => if b then .trueLitExpr loc else .falseLitExpr loc
+  | .noneLit loc => .noneLitExpr loc
   | .var name loc => .varExpr loc ⟨loc, name⟩
+  | .eq lhs rhs loc => .eqExpr loc lhs.toDDM rhs.toDDM
+  | .add lhs rhs loc => .addExpr loc lhs.toDDM rhs.toDDM
+  | .sub lhs rhs loc => .subExpr loc lhs.toDDM rhs.toDDM
+  | .mul lhs rhs loc => .mulExpr loc lhs.toDDM rhs.toDDM
+  | .floorDiv lhs rhs loc => .floorDivExpr loc lhs.toDDM rhs.toDDM
+  | .mod lhs rhs loc => .modExpr loc lhs.toDDM rhs.toDDM
+  | .pow lhs rhs loc => .powExpr loc lhs.toDDM rhs.toDDM
+  | .neg operand loc => .negExpr loc operand.toDDM
   | .getIndex subj field loc => .getIndexExpr loc subj.toDDM ⟨loc, field⟩
   | .isInstanceOf subj tn loc => .isInstanceOfExpr loc subj.toDDM ⟨loc, tn⟩
   | .stringLen subj loc => .stringLenExpr loc subj.toDDM
@@ -283,6 +318,9 @@ protected def SpecExpr.toDDM (e : SpecExpr) : DDM.SpecExprDecl SourceRange :=
   | .implies cond body loc =>
     .impliesExpr loc cond.toDDM body.toDDM
   | .not e loc => .notExpr loc e.toDDM
+  | .and lhs rhs loc => .andExpr loc lhs.toDDM rhs.toDDM
+  | .or lhs rhs loc => .orExpr loc lhs.toDDM rhs.toDDM
+  | .pcmp op lhs rhs loc => .pcmpExpr loc ⟨loc, op⟩ lhs.toDDM rhs.toDDM
   | .forallList list varName body loc =>
     .forallListExpr loc list.toDDM ⟨loc, varName⟩ body.toDDM
   | .forallDict dict keyVar valVar body loc =>
@@ -419,7 +457,18 @@ def DDM.ArgDecl.fromDDM (d : DDM.ArgDecl SourceRange) : FromDDM Specs.Arg := do
 def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr :=
   match d with
   | .placeholderExpr loc => .placeholder loc
+  | .trueLitExpr loc => .boolLit true loc
+  | .falseLitExpr loc => .boolLit false loc
+  | .noneLitExpr loc => .noneLit loc
   | .varExpr loc ⟨_, name⟩ => .var name loc
+  | .eqExpr loc lhs rhs => .eq lhs.fromDDM rhs.fromDDM loc
+  | .addExpr loc lhs rhs => .add lhs.fromDDM rhs.fromDDM loc
+  | .subExpr loc lhs rhs => .sub lhs.fromDDM rhs.fromDDM loc
+  | .mulExpr loc lhs rhs => .mul lhs.fromDDM rhs.fromDDM loc
+  | .floorDivExpr loc lhs rhs => .floorDiv lhs.fromDDM rhs.fromDDM loc
+  | .modExpr loc lhs rhs => .mod lhs.fromDDM rhs.fromDDM loc
+  | .powExpr loc lhs rhs => .pow lhs.fromDDM rhs.fromDDM loc
+  | .negExpr loc operand => .neg operand.fromDDM loc
   | .getIndexExpr loc subj ⟨_, field⟩ => .getIndex subj.fromDDM field loc
   | .isInstanceOfExpr loc subj ⟨_, tn⟩ => .isInstanceOf subj.fromDDM tn loc
   | .lenExpr loc subj => .stringLen subj.fromDDM loc
@@ -435,6 +484,9 @@ def DDM.SpecExprDecl.fromDDM (d : DDM.SpecExprDecl SourceRange) : Specs.SpecExpr
   | .containsKeyExpr loc container ⟨_, key⟩ => .containsKey container.fromDDM key loc
   | .impliesExpr loc cond body => .implies cond.fromDDM body.fromDDM loc
   | .notExpr loc e => .not e.fromDDM loc
+  | .andExpr loc lhs rhs => .and lhs.fromDDM rhs.fromDDM loc
+  | .orExpr loc lhs rhs => .or lhs.fromDDM rhs.fromDDM loc
+  | .pcmpExpr loc ⟨_, op⟩ lhs rhs => .pcmp op lhs.fromDDM rhs.fromDDM loc
   | .forallListExpr loc list ⟨_, varName⟩ body =>
     .forallList list.fromDDM varName body.fromDDM loc
   | .forallDictExpr loc dict ⟨_, keyVar⟩ ⟨_, valVar⟩ body =>
