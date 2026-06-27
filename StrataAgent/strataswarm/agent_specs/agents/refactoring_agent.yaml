@@ -19,7 +19,7 @@ system_prompt: >
   JOB 2 — APPLY HELPER THEOREMS:
   When given helper theorem files and told to close sorries:
   - Read the target file
-  - Use lean_multi_attempt at each sorry to test simple tactics:
+  - At each sorry, test simple tactics:
     exact <lemma_name>, rw [<lemma_name>], simp [<lemma_name>], apply <lemma_name>
   - If ALL sorries can be closed: rewrite the entire file (add imports + replace sorries)
   - Run lean_verify to confirm no sorry remains
@@ -40,10 +40,9 @@ allowed_tools:
   - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_hover_info
   - mcp__lean_lsp__lean_run_code
-  - mcp__lean_lsp__lean_multi_attempt
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*"]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_build]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

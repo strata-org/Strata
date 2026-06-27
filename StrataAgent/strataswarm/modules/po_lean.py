@@ -477,18 +477,9 @@ class MoveSession:
         rel_path = str(target_file.relative_to(root))
         cr = self._tools.check_compiles(rel_path)
         if cr.success:
-            has_sorry = self._tools.has_sorry(rel_path)
-            return f"OK: compiles{' (has sorry)' if has_sorry else ' (sorry-free)'}"
+            return f"OK: compiles{' (has sorry)' if cr.has_sorry else ' (sorry-free)'}"
         else:
-            # Get diagnostic errors
-            import subprocess
-            module = rel_path.replace("/", ".").removesuffix(".lean")
-            result = subprocess.run(
-                ["lake", "build", module], cwd=str(root),
-                capture_output=True, text=True, timeout=120,
-            )
-            errors = [l for l in (result.stdout + "\n" + result.stderr).splitlines() if ": error:" in l]
-            return f"ERRORS:\n" + "\n".join(errors[:10])
+            return f"ERRORS:\n{cr.error or 'unknown compilation error'}"
 
     def finalize(self) -> str:
         """Confirm extraction is done. Remove backup, extraction is permanent."""
@@ -669,13 +660,12 @@ class SwarmLeanTools:
         return ImportsResult(imports=result.get("imports", []))
 
     def check_compiles(self, file_path: str) -> CompileResult:
-        """Check if a file compiles. Uses lake build for reliable dependency handling.
+        """Check if a file compiles. Uses lake build + return code.
 
-        Falls back to lake env lean if lake build can't determine the module name.
+        Returns CompileResult with error details in the `error` field when compilation fails.
         """
         import subprocess
         try:
-            # Prefer lake build (handles olean rebuilds)
             module_name = file_path.replace("/", ".").removesuffix(".lean")
             result = subprocess.run(
                 ["lake", "build", module_name],
@@ -684,28 +674,22 @@ class SwarmLeanTools:
                 text=True,
                 timeout=120,
             )
-            # If lake build fails, fall back to lake env lean for error diagnostics
-            if result.returncode != 0:
-                result = subprocess.run(
-                    ["lake", "env", "lean", file_path],
-                    cwd=str(self._root),
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-            # Lean outputs diagnostics on stdout; check both stdout and stderr
             output = result.stdout + "\n" + result.stderr
             has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
-            has_error = any(
-                ": error:" in line and "sorry" not in line
-                for line in output.splitlines()
-            )
-            # Also treat non-zero exit code as error (unless only sorry warnings)
-            if result.returncode != 0 and not has_error:
-                # Check if the only issues are sorry warnings
-                has_error = result.returncode != 0 and not has_sorry
-            success = not has_error
-            return CompileResult(success=success, has_sorry=has_sorry, has_error=has_error)
+
+            if result.returncode == 0:
+                return CompileResult(success=True, has_sorry=has_sorry, has_error=False)
+
+            # Non-zero return code — check if it's just sorry warnings or real errors
+            error_lines = [l for l in output.splitlines()
+                           if "error" in l.lower() or "unknown" in l.lower() or "failed" in l.lower()]
+            # If only sorry-related, treat as success with sorry
+            if not error_lines or all("sorry" in l for l in error_lines):
+                if has_sorry:
+                    return CompileResult(success=True, has_sorry=True, has_error=False)
+
+            error_detail = "\n".join(error_lines[:10]) if error_lines else output.strip()[-300:]
+            return CompileResult(success=False, has_sorry=has_sorry, has_error=True, error=error_detail)
         except subprocess.TimeoutExpired:
             return CompileResult(error="compilation timed out (120s)")
         except Exception as e:

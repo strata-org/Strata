@@ -376,15 +376,39 @@ def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
                         f"parent '{parent.name}' re-decomposing (child '{entry.name}' failed)")
                     pruned_count += len(pruned)
 
-            # Re-activate parent with priority boost + restore clean Stub
+            # Re-activate parent with priority boost + restore clean Stub + remove old decomposed
+            # But if already re-activated too many times, mark FAILED (path exhausted)
+            parent.attempts += 1
+            if parent.attempts >= parent.max_attempts:
+                parent.status = LemmaStatus.FAILED
+                parent.failure_reason = (
+                    f"Decomposition failed {parent.attempts} times — all attempts produced failing children")
+                parents_reactivated.add(parent.id)
+                continue
+
             parent.status = LemmaStatus.PENDING
             parent.priority_boost = True
             parents_reactivated.add(parent.id)
             if cwd:
+                # Remove old decomposed/ so stale imports don't pollute next attempt
+                old_decomposed = cwd / parent.workspace / "decomposed"
+                if old_decomposed.exists():
+                    idx = 0
+                    while (cwd / parent.workspace / f"decomposed_old_{idx}").exists():
+                        idx += 1
+                    old_decomposed.rename(cwd / parent.workspace / f"decomposed_old_{idx}")
+
+                # Strip stale decomposed imports from Stub.clean.lean before restoring
                 clean = cwd / parent.workspace / "Stub.clean.lean"
                 stub = cwd / parent.workspace / "Stub.lean"
                 if clean.exists():
-                    shutil.copy2(clean, stub)
+                    clean_content = clean.read_text()
+                    clean_lines = [l for l in clean_content.splitlines()
+                                   if not (l.strip().startswith("import ") and ".decomposed." in l)]
+                    clean_content = "\n".join(clean_lines)
+                    stub.write_text(clean_content)
+                    # Also update Stub.clean.lean itself so future restores are clean
+                    clean.write_text(clean_content)
 
         elif entry.status == LemmaStatus.CYCLE:
             # CYCLE: node X recreates ancestor A. The entire sub-graph under A

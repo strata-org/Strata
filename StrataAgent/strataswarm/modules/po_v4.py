@@ -729,7 +729,7 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
         )
 
         action, reason, turns = _parse_guide_verdict(verdict_result.raw_result or "")
-        if turns:
+        if turns is not None:
             chunk_budget = turns
 
         if action == "give_up":
@@ -740,6 +740,9 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             await agent._emit("message", f"[PO4] Decompose: {reason}")
             await _dump_guide_state(guide, entry, cwd)
             break  # → grace phase → extraction
+        elif turns == 0:
+            await agent._emit("message", f"[PO4] Guide says done (turns=0): {reason}")
+            break  # → grace phase → extraction (main is sorry-free, stubs remain)
 
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
@@ -789,14 +792,28 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 await agent._emit("message", f"[PO4] No progress ({cur_sorry} sorry) — consulting guide")
                 advice_result = await guide.run_ai(
                     inp=f"Writer stuck at max depth. File: {stub_rel}\n"
-                        f"Sorry count: {cur_sorry}. Advise a different approach.",
+                        f"Sorry count: {cur_sorry}. Advise a different approach.\n"
+                        f"If this is hopeless, say so clearly.",
                 )
                 advice = advice_result.raw_result or ""
-                deep_action = f"STRATEGY ADVICE:\n{advice}\n\n{deep_action}"
-                # If no progress for 3 consecutive attempts, give up
-                if deep_attempt >= 10 and cur_sorry >= prev_sorry:
-                    ledger.mark_failed(entry.id, f"Max depth, no progress after {deep_attempt} attempts")
+
+                # Ask guide for verdict at max depth too
+                verdict_result = await guide.run_ai(
+                    inp=(
+                        "What should happen next? (We are at MAX DEPTH — no further decomposition possible.)\n\n"
+                        "- continue: Keep trying, theorem is provable in this file.\n"
+                        "- give_up: Cannot be proved at this depth. Mark as failed.\n\n"
+                        "Reply: ACTION: <continue|give_up>\nTURNS: <number>\nREASON: <one sentence>"
+                    ),
+                    max_turns=1,
+                )
+                deep_action_str, deep_reason, _ = _parse_guide_verdict(verdict_result.raw_result or "")
+                if deep_action_str == "give_up":
+                    await agent._emit("message", f"[PO4] Guide gives up at max depth: {deep_reason}")
+                    ledger.mark_failed(entry.id, f"Max depth, guide gave up: {deep_reason}")
                     return "failed"
+
+                deep_action = f"STRATEGY ADVICE:\n{advice}\n\n{deep_action}"
             else:
                 await agent._emit("message", f"[PO4] Sorry: {prev_sorry} → {cur_sorry}")
             prev_sorry = cur_sorry

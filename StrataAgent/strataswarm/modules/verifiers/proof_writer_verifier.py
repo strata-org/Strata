@@ -113,6 +113,18 @@ def make_proof_writer_verifier(
                             f"`import {import_module}` instead of redefining it."
                         )
 
+        # 3.6 No private helpers with sorry (they can't be extracted/reused)
+        if split and not split.error:
+            for block in split.blocks:
+                if block.name == main_theorem:
+                    continue
+                if block.has_sorry and "private " in block.text[:50]:
+                    return (
+                        f"PRIVATE SORRY: '{block.name}' is private and has sorry. "
+                        f"Remove the `private` keyword — helpers with sorry will be "
+                        f"extracted to separate files and must be public for reuse."
+                    )
+
         # 4. Check if sorry-free (success!)
         if not tools.has_sorry(target_file):
             return None  # fully proved!
@@ -137,6 +149,16 @@ def make_proof_writer_verifier(
                     pass
 
         # File compiles, has sorry but made progress — acceptable for now
+        # Report private count as info (not an error)
+        if split and not split.error:
+            private_count = sum(1 for b in split.blocks
+                                if b.name != main_theorem and "private " in b.text[:50])
+            if private_count > 3:
+                return (
+                    f"TOO MANY PRIVATE: You have {private_count} private helpers. "
+                    f"Consider making them public (remove `private`) so they can be "
+                    f"reused by other proof branches. Only use private for truly local utilities."
+                )
         return None
 
     return verify

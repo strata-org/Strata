@@ -51,6 +51,7 @@ system_prompt: >
   - `mutual...end` blocks MUST be moved as ONE unit — from `mutual` (or its `set_option` prefix) through `end`
   - NEVER split a mutual block across files
   - Do NOT move the main theorem (is_main=true in get_declarations)
+  - Do NOT move private lemmas — they cannot be imported from other files
   - After each move_lines, RE-READ the file — line numbers have changed
   - Only extract declarations with sorry (or that the main theorem depends on via sorry helpers)
   - Sorry-free infrastructure that the main theorem doesn't need can stay in Stub.lean

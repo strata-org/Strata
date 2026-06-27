@@ -19,6 +19,7 @@ PID_FILE = Path(__file__).parent / "temp" / "dashboard.pid"
 def kill_stale_process():
     """Kill any stale dashboard process using our port or PID file."""
     # Try PID file first
+    print(f"[CLEANUP] Checking for stale dashboard process using PID file {PID_FILE}")
     if PID_FILE.exists():
         try:
             old_pid = int(PID_FILE.read_text().strip())

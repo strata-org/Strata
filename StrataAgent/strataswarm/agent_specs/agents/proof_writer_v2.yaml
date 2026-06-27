@@ -58,6 +58,8 @@ system_prompt: >
   - Use add_import_safely to add imports (NEVER edit imports manually)
   - Do NOT create separate files
   - Do NOT recreate a theorem that already exists in the ledger — import it
+  - Prefer PUBLIC helpers over private ones — public helpers can be reused by other
+    proof branches. Only use `private` for tiny one-off utilities that nobody else would want.
 
 prompt: ""
 allowed_tools:
