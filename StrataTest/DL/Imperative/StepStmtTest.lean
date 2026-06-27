@@ -398,7 +398,7 @@ instance : HasFvar MiniPureExpr where
     `getFvar` always returns `none`. -/
 theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) miniEval := by
   unfold WellFormedSemanticEvalVar
-  intro e v σ hfv
+  intro e v σ _hwfs hfv
   simp [HasFvar.getFvar] at hfv
 
 /-- The standard `EvalCmd` for `Cmd MiniPureExpr`. -/
