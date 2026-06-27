@@ -728,25 +728,13 @@ private def makeComparison
     (floatCtor intCtor : SpecExpr → SpecExpr → SpecExpr)
     (subj : SpecExpr) (subjType : SpecType) (bound : SpecExpr) (boundType : SpecType)
     : Option SpecExpr :=
-  if subjType.isFloatType then
+  if subjType.isFloatType || boundType.isFloatType then
+    -- float comparison; coerce an int-literal operand to float
     match bound with
-    | .floatLit .. => some (floatCtor subj bound)
     | .intLit v loc => some (floatCtor subj (.floatLit (toString v) (loc := loc)))
-    | _ => none
-  else if subjType.isIntType then
-    match bound with
-    | .intLit .. => some (intCtor subj bound)
-    | _ => none
-  else if boundType.isFloatType then
-    match bound with
-    | .floatLit .. => some (floatCtor subj bound)
-    | _ => none
-  else if boundType.isIntType then
-    match bound with
-    | .intLit .. => some (intCtor subj bound)
-    | _ => none
+    | _ => some (floatCtor subj bound)
   else
-    none
+    some (intCtor subj bound)
 
 private def transCompare (loc : SourceRange)
     (lhsExpr : SpecExpr) (lhsType : SpecType)
@@ -777,14 +765,25 @@ private def transCompare (loc : SourceRange)
       return some lhsExpr
     | _, _ => pure ()
   | _ => pure ()
-  -- subject == "A" (single enum value)
+  -- subject == "A" (single enum value), otherwise a general equality `a == b`.
   match ops[0] with
   | .Eq _ =>
     match comparators[0] with
     | .Constant _ (.ConString _ ⟨_, strVal⟩) _ =>
       return some (.enumMember lhsExpr #[strVal] (loc := loc))
-    | _ => pure ()
+    | _ =>
+      let (clean, (rhsExpr, _)) ← runNoWarn (transExpr comparators[0])
+      if clean then
+        return some (.eq lhsExpr rhsExpr (loc := loc))
   | _ => pure ()
+
+  -- `x is None` / `x is not None` -> PEq/PNEq against None.
+  match ops[0], comparators[0] with
+  | .Is _, .Constant _ (.ConNone _) _ =>
+    return some (.pcmp "PEq" lhsExpr (.noneLit loc) (loc := loc))
+  | .IsNot _, .Constant _ (.ConNone _) _ =>
+    return some (.pcmp "PNEq" lhsExpr (.noneLit loc) (loc := loc))
+  | _, _ => pure ()
 
   -- subject >= N / subject <= N (type-checked: int or float)
   let (clean, (boundExpr, boundType)) ← runNoWarn (transExpr comparators[0])
@@ -796,6 +795,12 @@ private def transCompare (loc : SourceRange)
     return makeComparison (.floatGe · · (loc := loc)) (.intGe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
   | .LtE _ =>
     return makeComparison (.floatLe · · (loc := loc)) (.intLe · · (loc := loc)) lhsExpr lhsType boundExpr boundType
+  | .Gt _ => return some (.pcmp "PGt" lhsExpr boundExpr (loc := loc))
+  | .Lt _ => return some (.pcmp "PLt" lhsExpr boundExpr (loc := loc))
+  | .NotEq _ => return some (.pcmp "PNEq" lhsExpr boundExpr (loc := loc))
+  -- `x in c` / `x not in c` -> PIn/PNotIn membership.
+  | .In _ => return some (.pcmp "PIn" lhsExpr boundExpr (loc := loc))
+  | .NotIn _ => return some (.pcmp "PNotIn" lhsExpr boundExpr (loc := loc))
   | _ =>
     return none
 
@@ -837,11 +842,43 @@ partial def transExpr (e : expr SourceRange)
       else
         specWarning loc s!"subscript subject is not a TypedDict"
     return (.getIndex innerExpr fieldName (loc := loc), fieldTp.getD anyType)
+  -- Attribute access `obj.field` (e.g. `self.x`) -> getIndex(obj, "field").
+  | .Attribute _ value ⟨_, attrName⟩ (.Load _) =>
+    let (valueExpr, _valueTp) ← transExpr value
+    return (.getIndex valueExpr attrName (loc := loc), anyType)
+  -- Binary arithmetic `lhs <op> rhs` -> the matching arithmetic ctor.
+  | .BinOp _ lhs op rhs => do
+    let binArith (ctor : SpecExpr → SpecExpr → SourceRange → SpecExpr)
+        : SpecAssertionM (SpecExpr × SpecType) := do
+      let (lclean, (lhsExpr, _)) ← runNoWarn (transExpr lhs)
+      let (rclean, (rhsExpr, _)) ← runNoWarn (transExpr rhs)
+      if lclean && rclean then
+        return (ctor lhsExpr rhsExpr loc, intType)
+      specWarning loc s!"unsupported binary operation: {eformat e.toAst}"
+      return placeholder
+    match op with
+    | .Add _ => binArith (.add · · ·)
+    | .Sub _ => binArith (.sub · · ·)
+    | .Mult _ => binArith (.mul · · ·)
+    | .FloorDiv _ => binArith (.floorDiv · · ·)
+    | .Mod _ => binArith (.mod · · ·)
+    | .Pow _ => binArith (.pow · · ·)
+    -- TODO: LShift/RShift and bitwise ops (BitAnd/BitOr/BitXor, Invert) unsupported.
+    | _ =>
+      specWarning loc s!"unsupported expression: {eformat e.toAst}"
+      return placeholder
   -- Integer literal
   | .Constant _ (.ConPos _ ⟨_, n⟩) _ =>
     return (.intLit (Int.ofNat n) (loc := loc), intType)
   | .Constant _ (.ConNeg _ ⟨_, n⟩) _ =>
     return (.intLit (Int.negOfNat n) (loc := loc), intType)
+  -- Boolean / None literals
+  | .Constant _ (.ConTrue _) _ =>
+    return (.boolLit true (loc := loc), boolType)
+  | .Constant _ (.ConFalse _) _ =>
+    return (.boolLit false (loc := loc), boolType)
+  | .Constant _ (.ConNone _) _ =>
+    return (.noneLit (loc := loc), SpecType.noneType loc)
   -- Float literal
   | .Constant _ (.ConFloat _ ⟨_, s⟩) _ =>
     return (.floatLit s (loc := loc), floatType)
@@ -850,6 +887,13 @@ partial def transExpr (e : expr SourceRange)
     return (.intLit (Int.negOfNat n) (loc := loc), intType)
   | .UnaryOp _ (.USub _) (.Constant _ (.ConFloat _ ⟨_, s⟩) _) =>
     return (.floatLit s!"-{s}" (loc := loc), floatType)
+  -- UnaryOp(USub) on a non-literal -> `.neg` (PNeg); placed after the literal arms above.
+  | .UnaryOp _ (.USub _) operand =>
+    let (clean, (operandExpr, operandTp)) ← runNoWarn (transExpr operand)
+    if clean then
+      return (.neg operandExpr (loc := loc), operandTp)
+    specWarning loc s!"unsupported unary minus: {eformat e.toAst}"
+    return placeholder
   -- String literal (extract value for use in messages)
   | .Constant _ (.ConString _ ⟨_, _s⟩) _ =>
     return (.placeholder (loc := loc), SpecType.ident loc .builtinsStr)
@@ -906,7 +950,19 @@ partial def transExpr (e : expr SourceRange)
       | none => pure ()
     specWarning loc s!"unsupported comparison: {eformat e.toAst}"
     return placeholder
-  -- BoolOp(Or): try to merge enum values
+  -- BoolOp(And): general conjunction
+  | .BoolOp _ (.And _) ⟨_, values⟩ =>
+    let (clean, branches) ← runNoWarn <|
+      values.attach.mapM fun ⟨v, _⟩ => transExpr v
+    if clean then
+      match branches.toList with
+      | (b0, _) :: rest =>
+        let conj := rest.foldl (init := b0) fun acc (b, _) => SpecExpr.and acc b (loc := loc)
+        return (conj, boolType)
+      | [] => pure ()
+    specWarning loc s!"unsupported and-expression: {eformat e.toAst}"
+    return placeholder
+  -- BoolOp(Or): try to merge enum values, else general disjunction
   | .BoolOp _ (.Or _) ⟨_, values⟩ =>
     let (clean, branches) ← runNoWarn <|
       values.attach.mapM fun ⟨v, _⟩ => transExpr v
@@ -924,7 +980,19 @@ partial def transExpr (e : expr SourceRange)
         | _ => none
       if let some (subj, vals) := merged then
         return (.enumMember subj vals (loc := loc), boolType)
+      match branches.toList with
+      | (b0, _) :: rest =>
+        let disj := rest.foldl (init := b0) fun acc (b, _) => SpecExpr.or acc b (loc := loc)
+        return (disj, boolType)
+      | [] => pure ()
     specWarning loc s!"unsupported or-expression: {eformat e.toAst}"
+    return placeholder
+  -- UnaryOp(Not): boolean negation
+  | .UnaryOp _ (.Not _) operand =>
+    let (clean, (inner, _)) ← runNoWarn (transExpr operand)
+    if clean then
+      return (.not inner (loc := loc), boolType)
+    specWarning loc s!"unsupported not-expression: {eformat e.toAst}"
     return placeholder
   | _ =>
     specWarning loc s!"unsupported expression: {eformat e.toAst}"
