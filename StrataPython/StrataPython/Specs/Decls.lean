@@ -515,6 +515,30 @@ inductive SpecExpr where
 | forallDict (dict : SpecExpr) (keyVar : String) (valVar : String) (body : SpecExpr) (loc : SourceRange)
 deriving Inhabited
 
+/-- True when `placeholder` appears ANYWHERE in the expression tree, including
+    buried inside a translated wrapper (e.g. `getIndex placeholder "f"`). A
+    contract whose translation contains a placeholder is not fully supported and
+    is dropped rather than stored. -/
+def SpecExpr.containsPlaceholder : SpecExpr → Bool
+  | .placeholder _ => true
+  | .var .. => false
+  | .intLit .. => false
+  | .floatLit .. => false
+  | .getIndex s _ _ => s.containsPlaceholder
+  | .isInstanceOf s _ _ => s.containsPlaceholder
+  | .stringLen s _ => s.containsPlaceholder
+  | .intGe s b _ => s.containsPlaceholder || b.containsPlaceholder
+  | .intLe s b _ => s.containsPlaceholder || b.containsPlaceholder
+  | .floatGe s b _ => s.containsPlaceholder || b.containsPlaceholder
+  | .floatLe s b _ => s.containsPlaceholder || b.containsPlaceholder
+  | .enumMember s _ _ => s.containsPlaceholder
+  | .regexMatch s _ _ => s.containsPlaceholder
+  | .containsKey c _ _ => c.containsPlaceholder
+  | .implies c b _ => c.containsPlaceholder || b.containsPlaceholder
+  | .not e _ => e.containsPlaceholder
+  | .forallList l _ b _ => l.containsPlaceholder || b.containsPlaceholder
+  | .forallDict d _ _ b _ => d.containsPlaceholder || b.containsPlaceholder
+
 /-- Structural equality ignoring source locations. -/
 def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
   | .placeholder _, .placeholder _ => true
@@ -549,6 +573,27 @@ structure Assertion where
   formula : SpecExpr
 deriving Inhabited
 
+/-- A pre-state value captured by `@snapshot(lambda …: capture, name="n")`,
+    referenced inside `@ensures` lambdas as `OLD.n`. The `capture` expression is
+    evaluated in the procedure's pre-state; the lowering layer realizes
+    `OLD.n` against this capture (e.g. via Core's two-state `old()`). -/
+structure Snapshot where
+  name : String
+  capture : SpecExpr
+  loc : SourceRange
+deriving Inhabited
+
+/-- A spec-only ghost variable declared by `@ghost(name="g", …)`. Carries an
+    optional declared type and/or initializer expression. Ghosts are auxiliary
+    state usable in other contracts; they are not part of the executable
+    signature. -/
+structure Ghost where
+  name : String
+  type : Option SpecType := none
+  init : Option SpecExpr := none
+  loc : SourceRange
+deriving Inhabited
+
 structure FunctionDecl where
   loc : SourceRange
   nameLoc : SourceRange
@@ -558,6 +603,17 @@ structure FunctionDecl where
   isOverload : Bool
   preconditions : Array Assertion
   postconditions : Array SpecExpr
+  /-- Pre-state captures from `@snapshot`; `OLD.<name>` references in
+      postconditions resolve against these. Recognized + round-tripped;
+      lowering is deferred. -/
+  snapshots : Array Snapshot := #[]
+  /-- Frame condition from `@modifies`: the lvalue targets (e.g. `self.x`, a
+      global name) this procedure is permitted to modify. Recognized +
+      round-tripped; lowering is deferred. -/
+  modifies : Array SpecExpr := #[]
+  /-- Spec-only ghost variables declared by `@ghost`. Recognized +
+      round-tripped; lowering is deferred. -/
+  ghosts : Array Ghost := #[]
 deriving Inhabited
 
 structure ClassField where
@@ -584,6 +640,11 @@ structure ClassDef where
       Calls to unlisted methods are flagged as "Unknown method".
       Set via `@exhaustive` decorator on the pyspec class body. -/
   exhaustive : Bool := false
+  /-- Class invariants from `@invariant(lambda self: …)` decorators, translated
+      to `SpecExpr` via the assertion translator (`self.<field>` reads become
+      `getIndex`). Recognized and round-tripped; enforcement lowering (asserting
+      each invariant on method entry/exit) is deferred. -/
+  invariants : Array SpecExpr := #[]
 deriving Inhabited
 
 structure TypeDef where

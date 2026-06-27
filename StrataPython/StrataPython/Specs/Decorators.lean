@@ -60,16 +60,34 @@ public def lambdaBinderNames (lamArgs : arguments SourceRange) : Array String :=
   let .mk_arguments _ ⟨_, posonly⟩ ⟨_, pos⟩ _ ⟨_, kwonly⟩ _ _ _ := lamArgs
   (posonly ++ pos ++ kwonly).map fun a => let .mk_arg _ ⟨_, n⟩ _ _ := a; n
 
+/-- All parameter names of a function's argument list, including the `*args`
+    (vararg) and `**kwargs` (kwarg) names. Used to compute the set of valid
+    contract-lambda binders, so a binder matching the function's `**kwargs`
+    parameter is not flagged as unbound. -/
+public def functionParamNames (a : arguments SourceRange) : Array String :=
+  let .mk_arguments _ ⟨_, posonly⟩ ⟨_, pos⟩ ⟨_, vararg⟩ ⟨_, kwonly⟩ _ ⟨_, kwarg⟩ _ := a
+  let names := (posonly ++ pos ++ kwonly).map fun arg => let .mk_arg _ ⟨_, n⟩ _ _ := arg; n
+  let names := match vararg with
+    | some (.mk_arg _ ⟨_, n⟩ _ _) => names.push n
+    | none => names
+  match kwarg with
+    | some (.mk_arg _ ⟨_, n⟩ _ _) => names.push n
+    | none => names
+
 /-- Pull the lambda body and its binder names from `args[0]` of a decorator
     call. Reports a failure (severity chosen by the caller via `report`) and
-    returns `none` when the argument is missing or is not a lambda. -/
-public def expectLambda? {m : Type → Type} [Monad m]
+    returns `none` when the argument is missing or is not a lambda. Warns (but
+    still succeeds) when there are extra positional arguments after the lambda. -/
+public def expectLambda? {m : Type → Type} [Monad m] [PySpecMClass m]
     (report : SourceRange → String → m Unit)
     (what : String) (loc : SourceRange) (args : Array (expr SourceRange))
     : m (Option (expr SourceRange × Array String)) := do
   if h : args.size ≥ 1 then
     match args[0] with
-    | .Lambda _ lamArgs lamBody => return some (lamBody, lambdaBinderNames lamArgs)
+    | .Lambda _ lamArgs lamBody =>
+      if args.size > 1 then
+        specWarning loc s!"{what} ignores extra positional arguments after the lambda"
+      return some (lamBody, lambdaBinderNames lamArgs)
     | _ => report loc s!"{what} expects a lambda as its first argument"; return none
   else
     report loc s!"{what} requires at least one argument"
@@ -101,6 +119,33 @@ public def stringKeyword? {m : Type → Type} [Monad m] [PySpecMClass m]
         | _ => specError kw.value.ann s!"{what}: {key}= must be a string literal"
     | _ => pure ()
   return value
+
+/-- Read an optional keyword `key=<expr>` whose value may be any expression (used
+    for `@ghost(type=…, init=…)`, whose values are resolved later). Reports a
+    duplicate via a `what`-prefixed error; returns `none` when the keyword is
+    absent. -/
+public def exprKeyword? {m : Type → Type} [Monad m] [PySpecMClass m]
+    (what : String) (key : String) (kwargs : Array (keyword SourceRange))
+    : m (Option (expr SourceRange)) := do
+  let mut value : Option (expr SourceRange) := none
+  for kw in kwargs do
+    match kw.arg with
+    | ⟨_, some ⟨_, k⟩⟩ =>
+      if k == key then
+        if value.isSome then
+          specError kw.value.ann s!"{what}: duplicate {key}= keyword"
+        value := some kw.value
+    | _ => pure ()
+  return value
+
+/-- True when a keyword argument named `key` is present (regardless of its
+    value). Used to distinguish an absent keyword from one present with an
+    invalid value, so the two cases are not double-reported. -/
+public def hasKeyword (key : String) (kwargs : Array (keyword SourceRange)) : Bool :=
+  kwargs.any fun kw =>
+    match kw.arg with
+    | ⟨_, some ⟨_, k⟩⟩ => k == key
+    | _ => false
 
 /-- Report each keyword argument whose name is not in `allowed`, at a severity
     chosen by the caller via `report`. -/

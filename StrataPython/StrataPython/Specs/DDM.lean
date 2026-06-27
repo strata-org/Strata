@@ -115,6 +115,30 @@ category PostconditionEntry;
 op mkPostconditionEntry(expr : SpecExprDecl) : PostconditionEntry =>
   expr "\n";
 
+category SnapshotDecl;
+op mkSnapshotDecl(name : Str, capture : SpecExprDecl) : SnapshotDecl =>
+  "snapshot " name " = " capture "\n";
+
+category GhostDecl;
+op mkGhostDecl(name : Str, ghostType : Option SpecType, ghostInit : Option SpecExprDecl) : GhostDecl =>
+  "ghost " name " [type= " ghostType "] [init= " ghostInit "]\n";
+
+category SnapshotsClause;
+op mkSnapshotsClause(snapshots : Seq SnapshotDecl) : SnapshotsClause =>
+  "snapshots" ": " "[\n" indent(2, snapshots) "]\n";
+
+category ModifiesClause;
+op mkModifiesClause(targets : Seq PostconditionEntry) : ModifiesClause =>
+  "modifies" ": " "[\n" indent(2, targets) "]\n";
+
+category GhostsClause;
+op mkGhostsClause(ghosts : Seq GhostDecl) : GhostsClause =>
+  "ghosts" ": " "[\n" indent(2, ghosts) "]\n";
+
+category InvariantsClause;
+op mkInvariantsClause(invariants : Seq PostconditionEntry) : InvariantsClause =>
+  "invariants" ": " "[\n" indent(2, invariants) "]\n";
+
 category FunDecl;
 op mkFunDecl (name : Str,
               args : Seq ArgDecl,
@@ -123,7 +147,10 @@ op mkFunDecl (name : Str,
               returnType : SpecType,
               isOverload : Bool,
               preconditions : Seq Assertion,
-              postconditions : Seq PostconditionEntry)
+              postconditions : Seq PostconditionEntry,
+              snapshots : Option SnapshotsClause,
+              modifiesClause : Option ModifiesClause,
+              ghosts : Option GhostsClause)
     : FunDecl =>
   "function " name "{\n"
   indent(2,
@@ -141,7 +168,10 @@ op mkFunDecl (name : Str,
     "]\n"
     "postconditions" ": " "[\n"
     indent(2, postconditions)
-    "]\n")
+    "]\n"
+    snapshots
+    modifiesClause
+    ghosts)
   "}\n";
 
 category ClassDecl;
@@ -150,7 +180,8 @@ op mkClassDecl(name : Str, bases : Seq Str,
     classVars : Seq ClassVarDecl,
     subclasses : Seq ClassDecl,
     methods : Seq FunDecl,
-    exhaustive : Bool) : ClassDecl =>
+    exhaustive : Bool,
+    invariants : Option InvariantsClause) : ClassDecl =>
   "class " name " {\n"
   indent(2,
     "bases" ": " "[" bases "]\n"
@@ -164,6 +195,7 @@ op mkClassDecl(name : Str, bases : Seq Str,
     indent(2, subclasses)
     "]\n"
     "exhaustive" ": " exhaustive "\n"
+    invariants
     methods)
   "}\n";
 
@@ -312,6 +344,19 @@ def MessagePart.toDDM (p : MessagePart) : DDM.MessagePart SourceRange :=
 def Assertion.toDDM (a : Assertion) : DDM.Assertion SourceRange :=
   .mkAssertion .none a.formula.toDDM ⟨.none, a.message.map (·.toDDM)⟩
 
+def Snapshot.toDDM (s : Snapshot) : DDM.SnapshotDecl SourceRange :=
+  .mkSnapshotDecl .none ⟨.none, s.name⟩ s.capture.toDDM
+
+def Ghost.toDDM (g : Ghost) : DDM.GhostDecl SourceRange :=
+  .mkGhostDecl .none ⟨.none, g.name⟩
+    ⟨.none, g.type.map (·.toDDM)⟩
+    ⟨.none, g.init.map (·.toDDM)⟩
+
+/-- Wrap an array of `SpecExpr` as `PostconditionEntry` rows (used for the
+    `modifies` and `invariants` clauses). -/
+private def specExprsToEntries (es : Array SpecExpr) : Array (DDM.PostconditionEntry SourceRange) :=
+  es.map fun e => .mkPostconditionEntry .none e.toDDM
+
 def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
   .mkFunDecl
     d.loc
@@ -328,6 +373,15 @@ def FunctionDecl.toDDM (d : FunctionDecl) : DDM.FunDecl SourceRange :=
     (postconditions := ⟨.none,
       d.postconditions.map fun e =>
         .mkPostconditionEntry .none e.toDDM⟩)
+    (snapshots := ⟨.none,
+      if d.snapshots.isEmpty then none
+      else some (.mkSnapshotsClause .none ⟨.none, d.snapshots.map (·.toDDM)⟩)⟩)
+    (modifiesClause := ⟨.none,
+      if d.modifies.isEmpty then none
+      else some (.mkModifiesClause .none ⟨.none, specExprsToEntries d.modifies⟩)⟩)
+    (ghosts := ⟨.none,
+      if d.ghosts.isEmpty then none
+      else some (.mkGhostsClause .none ⟨.none, d.ghosts.map (·.toDDM)⟩)⟩)
 
 def ClassVariable.toDDM (cv : ClassVariable) : DDM.ClassVarDecl SourceRange :=
   .mkClassVarDecl .none ⟨.none, cv.name⟩ ⟨.none, cv.value⟩
@@ -342,6 +396,9 @@ partial def ClassDef.toDDMDecl (d : ClassDef) : DDM.ClassDecl SourceRange :=
     ⟨.none, d.subclasses.map (·.toDDMDecl)⟩
     ⟨.none, d.methods.map (·.toDDM)⟩
     ⟨.none, d.exhaustive⟩
+    ⟨.none,
+      if d.invariants.isEmpty then none
+      else some (.mkInvariantsClause .none ⟨.none, specExprsToEntries d.invariants⟩)⟩
 
 def Signature.toDDM (sig : Signature) : DDM.Signature SourceRange :=
   match sig with
@@ -452,13 +509,32 @@ def DDM.Assertion.fromDDM (d : DDM.Assertion SourceRange) : Specs.Assertion :=
 def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : FromDDM Specs.FunctionDecl := do
   let .mkFunDecl loc ⟨nameLoc, name⟩ ⟨_, args⟩ ⟨_, kwonly⟩
                  ⟨_, kwargs⟩ returnType ⟨_, isOverload⟩
-                 ⟨_, preconditions⟩ ⟨_, postconditions⟩ := d
+                 ⟨_, preconditions⟩ ⟨_, postconditions⟩
+                 ⟨_, snapshotsClause⟩ ⟨_, modifiesClause⟩ ⟨_, ghostsClause⟩ := d
   let kwargsOpt : Option (String × Specs.SpecType) ←
     match kwargs with
     | some (.mkKwargsDecl _ ⟨_, kn⟩ tp) =>
       pure <| some (kn, ← tp.fromDDM)
     | none =>
       pure none
+  let snapshots : Array Specs.Snapshot :=
+    match snapshotsClause with
+    | some (.mkSnapshotsClause _ ⟨_, ss⟩) =>
+      ss.map fun (.mkSnapshotDecl _ ⟨_, sn⟩ cap) =>
+        { name := sn, capture := cap.fromDDM, loc := .none }
+    | none => #[]
+  let modifies : Array Specs.SpecExpr :=
+    match modifiesClause with
+    | some (.mkModifiesClause _ ⟨_, ms⟩) =>
+      ms.map fun (.mkPostconditionEntry _ e) => e.fromDDM
+    | none => #[]
+  let ghosts : Array Specs.Ghost ←
+    match ghostsClause with
+    | some (.mkGhostsClause _ ⟨_, gs⟩) =>
+      gs.mapM fun (.mkGhostDecl _ ⟨_, gn⟩ ⟨_, gtp⟩ ⟨_, gini⟩) => do
+        pure { name := gn, type := ← gtp.mapM (·.fromDDM),
+               init := gini.map (·.fromDDM), loc := .none }
+    | none => pure #[]
   pure {
     loc := loc
     nameLoc := nameLoc
@@ -473,11 +549,20 @@ def DDM.FunDecl.fromDDM (d : DDM.FunDecl SourceRange) : FromDDM Specs.FunctionDe
     preconditions := preconditions.map (·.fromDDM)
     postconditions := postconditions.map fun
       | .mkPostconditionEntry _ e => e.fromDDM
+    snapshots := snapshots
+    modifies := modifies
+    ghosts := ghosts
   }
 
 def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : FromDDM Specs.ClassDef := do
   let .mkClassDecl ann ⟨_, name⟩ ⟨_, bases⟩ ⟨_, fields⟩
-    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩ := d
+    ⟨_, classVars⟩ ⟨_, subclasses⟩ ⟨_, methods⟩ ⟨_, exhaustive⟩
+    ⟨_, invariantsClause⟩ := d
+  let invariants : Array Specs.SpecExpr :=
+    match invariantsClause with
+    | some (.mkInvariantsClause _ ⟨_, inv⟩) =>
+      inv.map fun (.mkPostconditionEntry _ e) => e.fromDDM
+    | none => #[]
   pure {
     loc := ann
     name := name
@@ -492,6 +577,7 @@ def DDM.ClassDecl.fromDDM (d : DDM.ClassDecl SourceRange) : FromDDM Specs.ClassD
     subclasses := ← subclasses.mapM (·.fromDDM)
     methods := ← methods.mapM (·.fromDDM)
     exhaustive := exhaustive
+    invariants := invariants
   }
 
 def DDM.Command.fromDDM (cmd : DDM.Command SourceRange) : FromDDM Specs.Signature :=
