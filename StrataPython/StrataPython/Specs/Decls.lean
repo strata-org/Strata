@@ -486,8 +486,28 @@ inductive SpecExpr where
     Used in preconditions like `assert len(name) >= 1`. -/
 | stringLen (subject : SpecExpr) (loc : SourceRange)
 | intLit (value : Int) (loc : SourceRange)
+| boolLit (value : Bool) (loc : SourceRange)
+| noneLit (loc : SourceRange)
 | intGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
 | intLe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
+/-- General equality `lhs == rhs` (non-enum). -/
+| eq (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+/-- Addition `lhs + rhs`. -/
+| add (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+/-- Subtraction / multiplication. -/
+| sub (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| mul (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| floorDiv (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| mod (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+/-- Exponentiation `lhs ** rhs`. -/
+| pow (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+/-- Unary minus `-operand` (non-literal; negative literals fold to int/float). -/
+| neg (operand : SpecExpr) (loc : SourceRange)
+/-- Boolean conjunction / disjunction. -/
+| and (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+| or (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
+/-- Runtime comparison `op(lhs, rhs)`; `op` is a prelude name (`PLt`/`PGt`/`PNEq`). -/
+| pcmp (op : String) (lhs : SpecExpr) (rhs : SpecExpr) (loc : SourceRange)
 /-- A floating-point literal, stored as a string to preserve precision. -/
 | floatLit (value : String) (loc : SourceRange)
 | floatGe (subject : SpecExpr) (bound : SpecExpr) (loc : SourceRange)
@@ -525,6 +545,19 @@ def SpecExpr.softBEq : SpecExpr → SpecExpr → Bool
   | .intLit v₁ _, .intLit v₂ _ => v₁ == v₂
   | .intGe s₁ b₁ _, .intGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .intLe s₁ b₁ _, .intLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
+  | .eq l₁ r₁ _, .eq l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .add l₁ r₁ _, .add l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .sub l₁ r₁ _, .sub l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .mul l₁ r₁ _, .mul l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .floorDiv l₁ r₁ _, .floorDiv l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .mod l₁ r₁ _, .mod l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .pow l₁ r₁ _, .pow l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .neg o₁ _, .neg o₂ _ => o₁.softBEq o₂
+  | .and l₁ r₁ _, .and l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .or l₁ r₁ _, .or l₂ r₂ _ => l₁.softBEq l₂ && r₁.softBEq r₂
+  | .pcmp op₁ l₁ r₁ _, .pcmp op₂ l₂ r₂ _ => op₁ == op₂ && l₁.softBEq l₂ && r₁.softBEq r₂
+  | .boolLit b₁ _, .boolLit b₂ _ => b₁ == b₂
+  | .noneLit _, .noneLit _ => true
   | .floatLit v₁ _, .floatLit v₂ _ => v₁ == v₂
   | .floatGe s₁ b₁ _, .floatGe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂
   | .floatLe s₁ b₁ _, .floatLe s₂ b₂ _ => s₁.softBEq s₂ && b₁.softBEq b₂

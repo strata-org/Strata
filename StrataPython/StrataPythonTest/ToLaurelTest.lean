@@ -1069,7 +1069,8 @@ private def translateFunc (args : Array Arg := #[])
     (postconditions := #[.intGe (.var "result" loc) (.intLit 0 loc) loc])
   assert! errs == 0
   assert! body.contains "assume"
-  assert! body.contains "Any..as_int!"
+  -- `result >= 0` now lowers to runtime `Any_to_bool(PGe(..))`.
+  assert! body.contains "PGe"
 
 -- Precondition and postcondition together
 #eval do
