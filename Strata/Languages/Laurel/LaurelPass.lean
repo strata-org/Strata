@@ -28,7 +28,7 @@ structure LaurelTranslateOptions where
       call produces a fresh symbolic output via the procedural twin).
       Multi-output procedures are left as procedure calls, since a single
       function application cannot fill multiple assignment targets. -/
-  alwaysCallCoreFunctions : Bool := false
+  alwaysCallCoreFunctions : Bool := true
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

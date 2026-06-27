@@ -40,7 +40,6 @@ public structure PyAnalyzeConfig where
   isBugFinding : Bool := true
   outputMode : OutputMode := .default
   skipVerification : Bool := false
-  alwaysCallCoreFunctions : Bool := false
   profilePipeline : Bool := true
   metricsHandle : Option IO.FS.Handle := none
   mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn
@@ -65,8 +64,7 @@ private def runPipeline (config : PyAnalyzeConfig)
     let laurelResult ←
       StrataPython.translateCombinedLaurelWithLowered combinedLaurel
         (keepAllFilesPrefix := config.keepAllFilesPrefix)
-        (pipelineCtx := some ctx)
-        (alwaysCallCoreFunctions := config.alwaysCallCoreFunctions) |>.toBaseIO
+        (pipelineCtx := some ctx) |>.toBaseIO
     match laurelResult with
     | .ok (coreOpt, diags, _, stats) =>
       let phase ← getPhase
