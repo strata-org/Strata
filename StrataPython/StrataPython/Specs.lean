@@ -9,6 +9,8 @@ import all    StrataDDM.Util.Fin
 import        StrataPython.ReadPython
 import        StrataPython.Specs.DDM
 public import StrataPython.Specs.Decls
+public import StrataPython.Specs.Diagnostics
+public import StrataPython.Specs.Decorators
 import StrataPython.Specs.MessageKind
 import        Strata.Util.DecideProp
 
@@ -78,17 +80,6 @@ open Strata.Pipeline
 open StrataDDM (SourceRange eformat Ann)
 
 namespace StrataPython.Specs
-
-/-- Type class for monads that support PySpec error and warning reporting. -/
-public class PySpecMClass (m : Type → Type) where
-  /-- Report an error at a specific source location. -/
-  specError (loc : SourceRange) (message : String) : m Unit
-  /-- Report a warning at a specific source location. -/
-  specWarning (loc : SourceRange) (message : String) : m Unit
-  /-- Run an action and check if any new errors were reported. -/
-  runChecked {α} (act : m α) : m (Bool × α)
-  /-- Run an action and return `true` if no new errors or warnings were reported. -/
-  runNoWarn {α} (act : m α) : m (Bool × α)
 
 open PySpecMClass (specError specWarning runChecked runNoWarn)
 
