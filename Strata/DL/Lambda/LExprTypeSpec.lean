@@ -273,6 +273,100 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
     exact lcAt_varOpen_quant ih (by omega) ihtr
   done
 
+/-- **Γ-congruence for `HasType`.** The typing relation reads the type-context `Γ`
+    only through `Γ.types.find?` (the `tvar`/`tvar_annotated` cases, and `isFresh` in
+    `tgen`) and `Γ.aliases` (the `tvar_annotated`/`tabs`/`tquant`/`talias` cases). So
+    typing is invariant under replacing `Γ₁` by any `Γ₂` that agrees pointwise on
+    `find?` and has the same `aliases`. The output-`Γ₂` is quantified *inside* the
+    conclusion so the binder-extending cases (`tabs`/`tquant`) can re-apply the IH at
+    the *extended* contexts (both sides insert the identical binding, preserving the
+    pointwise `find?` agreement via `Maps.find?_insert_self`/`_insert_ne`).
+
+    Needed by the statement typechecker's soundness proof: `typeCheckAux` types
+    block/branch bodies under `pushEmptyContext` (`Γ = []::Γ₀`), whereas the spec
+    types them under the plain `Γ₀`; the two contexts agree exactly on `find?`. -/
+theorem HasType.find_congr {T : LExprParams} [DecidableEq T.IDMeta]
+    {C : LContext T} {Γ₁ : TContext T.IDMeta}
+    {e : LExpr T.mono} {ty : LTy}
+    (h : HasType C Γ₁ e ty) :
+    ∀ (Γ₂ : TContext T.IDMeta),
+      (∀ x, Γ₂.types.find? x = Γ₁.types.find? x) →
+      Γ₂.aliases = Γ₁.aliases →
+      HasType C Γ₂ e ty := by
+  induction h with
+  | tbool_const Γ m b hk =>
+    intro Γ₂ _ _; exact HasType.tbool_const Γ₂ m b hk
+  | tint_const Γ m n hk =>
+    intro Γ₂ _ _; exact HasType.tint_const Γ₂ m n hk
+  | treal_const Γ m r hk =>
+    intro Γ₂ _ _; exact HasType.treal_const Γ₂ m r hk
+  | tstr_const Γ m s hk =>
+    intro Γ₂ _ _; exact HasType.tstr_const Γ₂ m s hk
+  | tbitvec_const Γ m n b hk =>
+    intro Γ₂ _ _; exact HasType.tbitvec_const Γ₂ m n b hk
+  | tvar Γ m x ty h_find =>
+    intro Γ₂ h_eq _
+    exact HasType.tvar Γ₂ m x ty (by rw [h_eq]; exact h_find)
+  | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_annot =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tvar_annotated Γ₂ m x ty_o ty_s tys ann
+      (by rw [h_eq]; exact h_find) h_len h_open (by rw [h_al]; exact h_annot)
+  | tabs Γ m name x x_ty e e_ty o h_fresh hx he h_body h_o ih_body =>
+    intro Γ₂ h_eq h_al
+    refine HasType.tabs Γ₂ m name x x_ty e e_ty o h_fresh hx he
+      (ih_body { Γ₂ with types := Γ₂.types.insert x.fst x_ty } ?_ h_al) ?_
+    · -- The extended contexts agree on `find?`: both insert `(x.fst, x_ty)`.
+      intro y
+      by_cases h_xy : y = x.fst
+      · -- look up the just-inserted binding on both sides.
+        rw [h_xy]
+        show (Maps.insert Γ₂.types x.fst x_ty).find? x.fst = (Maps.insert Γ.types x.fst x_ty).find? x.fst
+        rw [Maps.find?_insert_self, Maps.find?_insert_self]
+      · show (Maps.insert Γ₂.types x.fst x_ty).find? y = (Maps.insert Γ.types x.fst x_ty).find? y
+        rw [Maps.find?_insert_ne _ _ _ _ h_xy, Maps.find?_insert_ne _ _ _ _ h_xy]; exact h_eq y
+    · rw [h_al]; exact h_o
+  | tapp Γ m e1 e2 t1 t2 h1 h2 h_e1 h_e2 ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tapp Γ₂ m e1 e2 t1 t2 h1 h2 (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | tinst Γ e ty e_ty x x_ty h_e h_eqty ih_e =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tinst Γ₂ e ty e_ty x x_ty (ih_e Γ₂ h_eq h_al) h_eqty
+  | tgen Γ e a ty h_e h_isfresh ih_e =>
+    intro Γ₂ h_eq h_al
+    refine HasType.tgen Γ₂ e a ty (ih_e Γ₂ h_eq h_al) ?_
+    -- `isFresh` reads `Γ.types.find?`; transport along the pointwise agreement.
+    intro y t h_find; rw [h_eq] at h_find; exact h_isfresh y t h_find
+  | tif Γ m c e1 e2 ty h_c h_e1 h_e2 ih_c ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tif Γ₂ m c e1 e2 ty
+      (ih_c Γ₂ h_eq h_al) (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | teq Γ m e1 e2 ty h_e1 h_e2 ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.teq Γ₂ m e1 e2 ty (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | tquant Γ m k name tr tr_ty x x_ty e o h_fresh hx h_body h_tr h_o ih_body ih_tr =>
+    intro Γ₂ h_eq h_al
+    have h_ext : ∀ y, (({ Γ₂ with types := Γ₂.types.insert x.fst x_ty } : TContext T.IDMeta).types).find? y
+        = (({ Γ with types := Γ.types.insert x.fst x_ty } : TContext T.IDMeta).types).find? y := by
+      intro y
+      by_cases h_xy : y = x.fst
+      · -- look up the just-inserted binding on both sides.
+        rw [h_xy]
+        show (Maps.insert Γ₂.types x.fst x_ty).find? x.fst = (Maps.insert Γ.types x.fst x_ty).find? x.fst
+        rw [Maps.find?_insert_self, Maps.find?_insert_self]
+      · show (Maps.insert Γ₂.types x.fst x_ty).find? y = (Maps.insert Γ.types x.fst x_ty).find? y
+        rw [Maps.find?_insert_ne _ _ _ _ h_xy, Maps.find?_insert_ne _ _ _ _ h_xy]; exact h_eq y
+    exact HasType.tquant Γ₂ m k name tr tr_ty x x_ty e o h_fresh hx
+      (ih_body _ h_ext h_al) (ih_tr _ h_ext h_al) (by rw [h_al]; exact h_o)
+  | top Γ m f op ty h_find h_type =>
+    intro Γ₂ _ _; exact HasType.top Γ₂ m f op ty h_find h_type
+  | top_annotated Γ m f op ty_o ty_s tys ann h_find h_type h_len h_open h_annot =>
+    intro Γ₂ _ h_al
+    exact HasType.top_annotated Γ₂ m f op ty_o ty_s tys ann h_find h_type
+      h_len h_open (by rw [h_al]; exact h_annot)
+  | talias Γ e mty mty' h_equiv h_e ih_e =>
+    intro Γ₂ h_eq h_al
+    exact HasType.talias Γ₂ e mty mty' (by rw [h_al]; exact h_equiv) (ih_e Γ₂ h_eq h_al)
+
 
 section Proofs
 attribute [local simp] Pure.pure Except.pure
@@ -978,35 +1072,25 @@ private theorem Maps.find?_zip_ftvar_mem (ids : List TyIdentifier)
 private theorem LMonoTy.freeVars_subst_closed
     (ids : List TyIdentifier) (freshtvs : List TyIdentifier)
     (h_len : freshtvs.length = ids.length) (mty : LMonoTy)
-    (h_closed : ∀ tv, tv ∈ LMonoTy.freeVars mty → tv ∈ ids)
-    (hSNE : Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] = false) :
+    (h_closed : ∀ tv, tv ∈ LMonoTy.freeVars mty → tv ∈ ids) :
     ∀ tv, tv ∈ LMonoTy.freeVars
         (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty) →
       tv ∈ freshtvs := by
   intro tv h_tv
   induction mty with
   | ftvar x =>
-    simp [LMonoTy.freeVars] at h_closed
-    obtain ⟨ftv', hm, hf⟩ := Maps.find?_zip_ftvar_mem ids freshtvs h_len x h_closed
-    simp [LMonoTy.subst, hSNE, hf, LMonoTy.freeVars] at h_tv
+    have hx : x ∈ ids := h_closed x (by simp [LMonoTy.freeVars])
+    obtain ⟨ftv', hm, hf⟩ := Maps.find?_zip_ftvar_mem ids freshtvs h_len x hx
+    simp only [LMonoTy.subst_unfold, hf, LMonoTy.freeVars, List.mem_singleton] at h_tv
     subst h_tv; exact hm
   | bitvec n =>
-    simp [LMonoTy.subst, LMonoTy.freeVars] at h_tv
+    simp only [LMonoTy.subst_unfold, LMonoTy.freeVars, List.not_mem_nil] at h_tv
   | tcons name args ih =>
-    simp [LMonoTy.subst, hSNE, LMonoTy.freeVars] at h_tv
-    rw [LMonoTys.subst_eq_substLogic] at h_tv
-    simp [LMonoTy.freeVars] at h_closed
-    induction args with
-    | nil => simp [LMonoTys.substLogic, LMonoTys.freeVars] at h_tv
-    | cons a arest arih =>
-      unfold LMonoTys.substLogic at h_tv; simp [hSNE] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h_a | h_rest
-      · exact ih a List.mem_cons_self (fun tv' h' => h_closed tv' (Or.inl h')) h_a
-      · exact arih
-          (fun a' h_mem h_closed' => ih a' (List.mem_cons_of_mem a h_mem) h_closed')
-          (fun tv' h' => h_closed tv' (Or.inr h'))
-          h_rest
+    simp only [LMonoTy.subst_unfold, LMonoTy.freeVars] at h_tv h_closed
+    obtain ⟨mt, hmt, hvmt⟩ := LMonoTys.freeVars_exists h_tv
+    obtain ⟨a, ha, hae⟩ := List.mem_map.mp hmt
+    subst hae
+    exact ih a ha (fun tv' h' => h_closed tv' (LMonoTys.freeVars_mem_subset ha h')) hvmt
 
 /-- Substituting `[zip ids (map ftvar freshtvs)]` into a list of monotypes whose
     free variables are all in `ids` produces types whose free variables are all
@@ -1019,35 +1103,13 @@ private theorem LMonoTys.freeVars_subst_closed
         (LMonoTys.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mtys) →
       tv ∈ freshtvs := by
   intro tv h_tv
-  rw [LMonoTys.subst_eq_substLogic] at h_tv
-  induction mtys with
-  | nil => simp [LMonoTys.substLogic, LMonoTys.freeVars] at h_tv
-  | cons mty mrest ih =>
-    by_cases hSE :
-        Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)]
-    · -- hasEmptyScopes = true means ids = []
-      simp [Subst.hasEmptyScopes, List.all, Map.isEmpty] at hSE
-      have h_ids_nil : ids = [] := by
-        cases ids with
-        | nil => rfl
-        | cons id ids' =>
-          match freshtvs with
-          | [] => simp at h_len
-          | ftv :: ftvs' => simp [List.zip] at hSE
-      subst h_ids_nil; exfalso
-      simp [LMonoTys.substLogic] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h1 | h2
-      · exact ((h_closed tv).1 h1).elim
-      · exact ((h_closed tv).2 h2).elim
-    · have hSNE : Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] = false := by
-        revert hSE; cases Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] <;> simp
-      unfold LMonoTys.substLogic at h_tv; simp [hSNE] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h_mty | h_rest
-      · exact LMonoTy.freeVars_subst_closed ids freshtvs h_len mty
-          (fun tv' h' => h_closed tv' (Or.inl h')) hSNE tv h_mty
-      · exact ih (fun tv' h' => h_closed tv' (Or.inr h')) h_rest
+  -- Wrap the list in a `tcons` so the scalar lemma applies: `subst` distributes
+  -- into `tcons` and `freeVars (tcons _ mtys) = freeVars mtys`.
+  have h_wrap : tv ∈ LMonoTy.freeVars
+      (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] (.tcons "x" mtys)) := by
+    rw [LMonoTy.subst_tcons]; simpa only [LMonoTy.freeVars] using h_tv
+  exact LMonoTy.freeVars_subst_closed ids freshtvs h_len (.tcons "x" mtys)
+    (fun tv' h' => h_closed tv' (by simpa only [LMonoTy.freeVars] using h')) tv h_wrap
 
 mutual
 /-- Free vars of `openVars vars vals body` are contained in `freeVarsList vals`
@@ -1745,6 +1807,37 @@ private theorem SubstFreshForGen.mono (S : SubstInfo) (s s' : TState)
     SubstFreshForGen S s' := by
   intro v hv n hn; exact h v hv n (Nat.le_trans h_le hn)
 
+/-- Applying a gen-fresh substitution to a gen-fresh monotype yields a gen-fresh
+    monotype: every free var of `subst S mty` is either a free var of `mty`
+    (fresh by `h_mty`) or comes from a substitution value (fresh by `h_S`). This
+    is the reusable kernel behind the per-case output-type-freshness arguments in
+    `resolveAux_properties_aux` (the `app`/`eq`/`ite` cases). -/
+theorem freeVars_subst_genFresh
+    (S : SubstInfo) (mty : LMonoTy) (state : TState)
+    (h_S : SubstFreshForGen S state)
+    (h_mty : ∀ v, v ∈ LMonoTy.freeVars mty →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.subst S.subst mty) →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst mty hv) with h | h
+  · exact h_mty v h n hn
+  · exact h_S v (Or.inr h) n hn
+
+/-- List version of `freeVars_subst_genFresh`: applying a gen-fresh substitution
+    to a list of gen-fresh monotypes yields gen-fresh outputs. -/
+theorem LMonoTys.freeVars_subst_genFresh
+    (S : SubstInfo) (mtys : LMonoTys) (state : TState)
+    (h_S : SubstFreshForGen S state)
+    (h_mtys : ∀ v, v ∈ LMonoTys.freeVars mtys →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    ∀ v, v ∈ LMonoTys.freeVars (LMonoTys.subst S.subst mtys) →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  rcases List.mem_append.mp (LMonoTys.freeVars_of_subst_subset S.subst mtys hv) with h | h
+  · exact h_mtys v h n hn
+  · exact h_S v (Or.inr h) n hn
+
 /-- `Constraints.unify` preserves `SubstFreshForGen` when constraint free vars
     also satisfy the freshness condition.
 
@@ -1783,6 +1876,31 @@ private theorem unify_preserves_SubstFreshForGen
     rcases List.mem_append.mp (h_incl h_fv) with h | h
     · exact h_fresh_cs v h n hn
     · exact h_fresh_S v (Or.inr h) n hn
+
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- **`TEnvWF` is preserved through `updateSubst`-of-`unify`.** Replacing the
+    running substitution with the result of `Constraints.unify` keeps every
+    `TEnvWF` field: the context and generator are untouched (so `aliasesWF`,
+    `ctxFreshForGen`, `boundVarsNodup`, `boundVarsFresh` transfer directly), and
+    `substFreshForGen` is re-established by `unify_preserves_SubstFreshForGen`
+    provided the constraint's free vars are gen-fresh for the input state.
+
+    This is the public bridge consumed by the command-level
+    `Cmd.typeCheck_preserves` / `typeCheckCmd_call_preserves` lemmas (the
+    `unifyTypes`/`updateSubst` step). -/
+theorem TEnvWF.of_unify_updateSubst
+    {cs : Constraints} {S' : SubstInfo} {Env : TEnv T.IDMeta}
+    (h_wf : TEnvWF Env)
+    (h_unify : Constraints.unify cs Env.stateSubstInfo = .ok S')
+    (h_cs_fresh : ∀ v, v ∈ Constraints.freeVars cs →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    TEnvWF (Env.updateSubst S') where
+  aliasesWF := h_wf.aliasesWF
+  substFreshForGen :=
+    unify_preserves_SubstFreshForGen h_unify h_wf.substFreshForGen h_cs_fresh
+  ctxFreshForGen := h_wf.ctxFreshForGen
+  boundVarsNodup := h_wf.boundVarsNodup
+  boundVarsFresh := h_wf.boundVarsFresh
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for
@@ -2248,7 +2366,7 @@ theorem LMonoTy_instantiateWithCheck_context'
   exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem LTy_instantiateWithCheck_freeVars_fresh
+theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
     ∀ v, v ∈ LMonoTy.freeVars mty →
@@ -2796,6 +2914,47 @@ theorem TEnvWF.of_typeBoundVar
     ctxFreshForGen := h_inv.ctxFreshForGen
     boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env' h h_envwf.boundVarsNodup
     boundVarsFresh := h_inv.boundVarsFresh }
+
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- **`TEnvWF` is preserved through `addInNewestContext` of a monomorphic binding.**
+    Adding `[(x, forAll [] mty)]` keeps the generator and substitution untouched, so
+    `substFreshForGen` is unchanged; the only new context type variables are the free
+    vars of `mty`, which `h_mty_fresh` says are gen-fresh; and the new binding has
+    empty `boundVars`, so the bound-var fields are immediate. This is the `update`
+    step of the command typechecker (`CmdType.update = addInNewestContext`). -/
+theorem TEnvWF.of_addInNewestContext_mono
+    (Env : TEnv T.IDMeta) (x : T.Identifier) (mty : LMonoTy)
+    (h_envwf : TEnvWF Env)
+    (h_mty_fresh : ∀ v, v ∈ LMonoTy.freeVars mty →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    TEnvWF (Env.addInNewestContext [(x, .forAll [] mty)]) where
+  substFreshForGen := by
+    simp only [TEnv.addInNewestContext, TEnv.updateContext]
+    exact h_envwf.substFreshForGen
+  ctxFreshForGen := by
+    simp only [TEnv.addInNewestContext, TEnv.updateContext]
+    intro v hv n hn
+    rcases knownTypeVars_addInNewestContext_cases Env x (.forAll [] mty) v hv with h_old | h_new
+    · exact h_envwf.ctxFreshForGen v h_old n hn
+    · simp [LTy.freeVars, List.removeAll] at h_new
+      exact h_mty_fresh v h_new n hn
+  aliasesWF := by
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.AliasesWF]
+    exact h_envwf.aliasesWF
+  boundVarsNodup := by
+    intro y ty h_find
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find; simp [LTy.boundVars]
+    · rw [h_old] at h_find; exact h_envwf.boundVarsNodup y ty h_find
+  boundVarsFresh := by
+    intro y ty h_find v hv n hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find hn
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find; simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find; exact h_envwf.boundVarsFresh y ty h_find v hv n hn
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
@@ -3412,14 +3571,12 @@ private theorem resolveAux_properties_aux :
             simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
             obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
             exact ⟨ty, Maps.values_remove_subset _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
-    · -- Output type freshness
-      intro v hv k hk; simp [toLMonoTy] at hv
-      have hv_in := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name) hv
-      simp [LMonoTy.freeVars] at hv_in
-      rcases hv_in with hv_fresh | hv_fv
-      · rw [hv_fresh, h_gen_name]
-        exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState (by omega) k hk
-      · exact h_sf4 v (Or.inr hv_fv) k hk
+    · -- Output type freshness: the inferred type is `subst v4.subst (ftvar fresh_name)`,
+      -- so `freeVars_subst_genFresh` reduces it to freshness of `fresh_name` itself.
+      refine freeVars_subst_genFresh v4 (.ftvar fresh_name) Env3.genEnv.genState h_sf4 ?_
+      intro w hw m hm
+      simp [LMonoTy.freeVars] at hw; rw [hw, h_gen_name]
+      exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState (by omega) m hm
   | .abs m _ bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     elim_err h

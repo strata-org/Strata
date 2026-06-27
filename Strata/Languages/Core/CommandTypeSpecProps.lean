@@ -38,7 +38,22 @@ def ProcHeaderClosed (proc : Procedure) : Prop :=
   (∀ mty, mty ∈ proc.header.outputs.values →
     ∀ a, a ∈ LMonoTy.freeVars mty → a ∈ proc.header.typeArgs)
 
+/-- Program-level closedness: every procedure reachable via `Procedure.find?` has
+    a closed header. Stated as a predicate on the program so it threads uniformly
+    through the command/statement recursion (the `go`/`goBlock` loops). -/
+def CalledProcsClosed (P : Program) : Prop :=
+  ∀ pname proc, Program.Procedure.find? P pname = some proc → ProcHeaderClosed proc
+
 /-! ### Auxiliary lemmas for bridge -/
+
+/-- `Constraints.freeVars` distributes over list append. -/
+theorem Constraints.freeVars_append (l1 l2 : Constraints) :
+    Constraints.freeVars (l1 ++ l2) =
+    Constraints.freeVars l1 ++ Constraints.freeVars l2 := by
+  induction l1 with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [List.cons_append, Constraints.freeVars, ih, List.append_assoc]
 
 /-- The `i`-th pair of `as.zip bs` is `(as[i], bs[i])` and is a member of the zip. -/
 theorem zip_getElem_mem {α β : Type} (as : List α) (bs : List β) (i : Nat)
@@ -207,6 +222,114 @@ theorem instantiateWithSubst_preserves_context (C : LContext CoreLParams)
   rw [← h]
   rw [instantiateWithSubst_go_context C _ Env₁ (newtys, Env₂) h_go]
   exact instantiateEnvWithSubst_context tyArgs (ListMap.values sig) Env (mtys, Env₁, S) h_env
+
+/-- The `instantiateWithSubst.go` loop never decreases the generator counter. -/
+private theorem instantiateWithSubst_go_genState_mono (C : LContext CoreLParams)
+    (tys : LTys) :
+    ∀ (Env : TEnv Unit) (result : LMonoTys × TEnv Unit),
+      LMonoTySignature.instantiateWithSubst.go C Env tys = .ok result →
+      result.2.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  induction tys with
+  | nil =>
+    intro Env result h
+    simp only [LMonoTySignature.instantiateWithSubst.go] at h
+    injection h with h'; rw [← h']; exact Nat.le_refl _
+  | cons t tr ih =>
+    intro Env result h
+    simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    injection h with h'; rw [← h']
+    exact Nat.le_trans
+      (LTy_instantiateWithCheck_tyGen_mono t C Env mt Env_mid h_iwc)
+      (ih Env_mid (mtrest, Env_end) h_rest)
+
+/-- `instantiateEnvWithSubst` never decreases the generator counter (only `genEnv`
+    changes, via `genTyVars`). -/
+private theorem instantiateEnvWithSubst_genState_mono
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv Unit)
+    (result : LMonoTys × TEnv Unit × Subst)
+    (h : LMonoTys.instantiateEnvWithSubst ids mtys Env = .ok result) :
+    result.2.fst.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
+  simp only [Except.ok.injEq] at h
+  rw [← h]
+  show genEnv'.genState.tyGen ≥ Env.genEnv.genState.tyGen
+  exact genTyVars_tyGen_mono ids.length Env.genEnv freshtvs genEnv' h_gen
+
+/-- `instantiateWithSubst` never decreases the generator counter. -/
+theorem instantiateWithSubst_genState_mono (C : LContext CoreLParams)
+    (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
+    (result : LMonoTySignature × TEnv Unit × Subst)
+    (h : LMonoTySignature.instantiateWithSubst C Env tyArgs sig = .ok result) :
+    result.2.fst.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  simp only [Except.ok.injEq] at h
+  rw [← h]
+  exact Nat.le_trans
+    (instantiateEnvWithSubst_genState_mono tyArgs (ListMap.values sig) Env (mtys, Env₁, S) h_env)
+    (instantiateWithSubst_go_genState_mono C _ Env₁ (newtys, Env₂) h_go)
+
+/-- Every type produced by the `instantiateWithSubst.go` loop is gen-fresh at the
+    loop's final generator state: each output element is an `instantiateWithCheck`
+    result (fresh at its step output via `LTy_instantiateWithCheck_freeVars_fresh`),
+    lifted across the remaining steps by `instantiateWithSubst_go_genState_mono`. -/
+private theorem instantiateWithSubst_go_values_fresh (C : LContext CoreLParams)
+    (tys : LTys) :
+    ∀ (Env : TEnv Unit) (result : LMonoTys × TEnv Unit),
+      LMonoTySignature.instantiateWithSubst.go C Env tys = .ok result →
+      ∀ mt, mt ∈ result.1 → ∀ v, v ∈ LMonoTy.freeVars mt →
+        ∀ n, n ≥ result.2.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  induction tys with
+  | nil =>
+    intro Env result h
+    simp only [LMonoTySignature.instantiateWithSubst.go] at h
+    injection h with h'; rw [← h']
+    intro mt h_mt; simp at h_mt
+  | cons t tr ih =>
+    intro Env result h
+    simp only [LMonoTySignature.instantiateWithSubst.go, Bind.bind, Except.bind] at h
+    elim_err h with v1 h_iwc; obtain ⟨mt0, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    injection h with h'; rw [← h']
+    intro mt' h_mt v hv n hn
+    cases List.mem_cons.mp h_mt with
+    | inl h_eq =>
+      subst h_eq
+      -- mt' is fresh at Env_mid; lift to Env_end via go mono.
+      have h_mt0_fresh := Lambda.LExpr.LTy_instantiateWithCheck_freeVars_fresh
+        t C Env mt' Env_mid h_iwc
+      exact h_mt0_fresh v hv n
+        (Nat.le_trans (instantiateWithSubst_go_genState_mono C tr Env_mid (mtrest, Env_end) h_rest) hn)
+    | inr h_in =>
+      exact ih Env_mid (mtrest, Env_end) h_rest mt' h_in v hv n hn
+
+/-- Every instantiated signature value (`values v2.fst`) produced by
+    `instantiateWithSubst` is gen-fresh at its output generator state. The output
+    signature is `sig.keys.zip newtys`, whose values are exactly the go-loop
+    output `newtys`. Consumed by the `.call` `h_cs_fresh` obligation (the input-sig
+    list `B`). -/
+theorem instantiateWithSubst_values_fresh (C : LContext CoreLParams)
+    (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
+    (result : LMonoTySignature × TEnv Unit × Subst)
+    (h : LMonoTySignature.instantiateWithSubst C Env tyArgs sig = .ok result) :
+    ∀ mt, mt ∈ ListMap.values result.fst → ∀ v, v ∈ LMonoTy.freeVars mt →
+      ∀ n, n ≥ result.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_env; obtain ⟨mtys, Env₁, S⟩ := v1
+  elim_err h with v2 h_go; obtain ⟨newtys, Env₂⟩ := v2
+  simp only [Except.ok.injEq] at h
+  rw [← h]
+  -- `result.fst = sig.keys.zip newtys`, whose values are a sublist of `newtys`.
+  intro mt h_mt v hv n hn
+  have h_mt_newtys : mt ∈ newtys := by
+    rw [ListMap.values_eq_map_snd] at h_mt
+    obtain ⟨p, hp, hpe⟩ := List.mem_map.mp h_mt
+    subst hpe; exact (List.of_mem_zip hp).2
+  exact instantiateWithSubst_go_values_fresh C _ Env₁ (newtys, Env₂) h_go mt h_mt_newtys v hv n hn
 
 /-- `stateSubstInfo` preservation for the `go` loop inside `instantiateWithSubst`. -/
 private theorem instantiateWithSubst_go_stateSubstInfo (C : LContext CoreLParams)
@@ -409,6 +532,152 @@ theorem instantiateAndSubsts_preserves_wf (xs : List CoreLParams.Identifier)
           Identifier_instantiateAndSubst_TEnvWF x C Env Env_mid xty h_step h_wf
         exact ih Env_mid xtys Env_end h_rest h_mid_wf
 
+/-- A single `LTy.instantiateAndSubst` never decreases the generator counter (the
+    `subst` step leaves the env unchanged, so this reduces to `instantiateWithCheck`). -/
+private theorem LTy_instantiateAndSubst_genState_mono
+    (ty : LTy) (C : LContext CoreLParams) (E E' : TEnv Unit) (m : LMonoTy)
+    (h : LTy.instantiateAndSubst ty C E = .ok (m, E')) :
+    E'.genEnv.genState.tyGen ≥ E.genEnv.genState.tyGen := by
+  simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
+  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨_, he⟩ := h; rw [← he]
+  exact LTy_instantiateWithCheck_tyGen_mono ty C E mt Emid h_iwc
+
+/-- A single `Identifier.instantiateAndSubst` never decreases the generator counter. -/
+private theorem Identifier_instantiateAndSubst_genState_mono
+    (x : CoreLParams.Identifier) (C : LContext CoreLParams) (E E' : TEnv Unit) (m : LMonoTy)
+    (h : Identifier.instantiateAndSubst x C E = .ok (some (m, E'))) :
+    E'.genEnv.genState.tyGen ≥ E.genEnv.genState.tyGen := by
+  simp only [Identifier.instantiateAndSubst] at h
+  split at h
+  · rename_i ty h_find
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v1 h_ias; obtain ⟨mt, Emid⟩ := v1
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, he⟩ := h; rw [← he]
+    exact LTy_instantiateAndSubst_genState_mono ty C E Emid mt h_ias
+  · simp [pure, Except.pure] at h
+
+/-- `Identifier.instantiateAndSubsts` never decreases the generator counter. -/
+theorem instantiateAndSubsts_genState_mono (xs : List CoreLParams.Identifier)
+    (C : LContext CoreLParams) (Env : TEnv Unit) (tys : List LMonoTy) (Env' : TEnv Unit)
+    (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (tys, Env')))
+    (h_wf : TEnvWF (T := CoreLParams) Env) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  induction xs generalizing Env tys Env' with
+  | nil =>
+    simp only [Identifier.instantiateAndSubsts, pure, Except.pure, Except.ok.injEq,
+      Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, he⟩ := h; rw [← he]; exact Nat.le_refl _
+  | cons x xrest ih =>
+    simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
+    elim_err h with ans h_step; cases ans with
+    | none => simp [pure, Except.pure] at h
+    | some p =>
+      obtain ⟨xty, Env_mid⟩ := p
+      simp only at h
+      elim_err h with ans2 h_rest; cases ans2 with
+      | none => simp [pure, Except.pure] at h
+      | some p2 =>
+        obtain ⟨xtys, Env_end⟩ := p2
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨_, he⟩ := h; rw [← he]
+        have h_mid_wf : TEnvWF (T := CoreLParams) Env_mid :=
+          Identifier_instantiateAndSubst_TEnvWF x C Env Env_mid xty h_step h_wf
+        exact Nat.le_trans
+          (Identifier_instantiateAndSubst_genState_mono x C Env Env_mid xty h_step)
+          (ih Env_mid xtys Env_end h_rest h_mid_wf)
+
+/-- Output-freshness for a single `LTy.instantiateAndSubst`: the produced type
+    `m = subst E'.subst mt` (where `mt` is the `instantiateWithCheck` result) has
+    gen-fresh free vars at the output state. `mt` is fresh via
+    `LTy_instantiateWithCheck_freeVars_fresh`; `E'.subst` is fresh via `TEnvWF E'`;
+    `freeVars_subst_genFresh` composes them. -/
+private theorem LTy_instantiateAndSubst_output_fresh
+    (ty : LTy) (C : LContext CoreLParams) (E E' : TEnv Unit) (m : LMonoTy)
+    (h : LTy.instantiateAndSubst ty C E = .ok (m, E'))
+    (h_wf : TEnvWF (T := CoreLParams) E) :
+    ∀ v, v ∈ LMonoTy.freeVars m →
+      ∀ n, n ≥ E'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  simp only [LTy.instantiateAndSubst, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_iwc; obtain ⟨mt, Emid⟩ := v1
+  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨h_m, he⟩ := h
+  -- `E' = Emid` and `m = subst Emid.subst mt`.
+  subst he
+  have h_iwc' : LTy.instantiateWithCheck ty C E = .ok (mt, Emid) := h_iwc
+  have h_wf_mid : TEnvWF (T := CoreLParams) Emid :=
+    LTy_instantiateWithCheck_TEnvWF ty C E mt Emid h_iwc' h_wf
+  have h_mt_fresh := Lambda.LExpr.LTy_instantiateWithCheck_freeVars_fresh ty C E mt Emid h_iwc'
+  rw [← h_m]
+  exact Lambda.LExpr.freeVars_subst_genFresh Emid.stateSubstInfo mt
+    Emid.genEnv.genState h_wf_mid.substFreshForGen h_mt_fresh
+
+/-- Output-freshness for a single `Identifier.instantiateAndSubst`. -/
+private theorem Identifier_instantiateAndSubst_output_fresh
+    (x : CoreLParams.Identifier) (C : LContext CoreLParams) (E E' : TEnv Unit) (m : LMonoTy)
+    (h : Identifier.instantiateAndSubst x C E = .ok (some (m, E')))
+    (h_wf : TEnvWF (T := CoreLParams) E) :
+    ∀ v, v ∈ LMonoTy.freeVars m →
+      ∀ n, n ≥ E'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  simp only [Identifier.instantiateAndSubst] at h
+  split at h
+  · rename_i ty h_find
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v1 h_ias; obtain ⟨mt, Emid⟩ := v1
+    simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_m, he⟩ := h; subst he; rw [← h_m]
+    exact LTy_instantiateAndSubst_output_fresh ty C E Emid mt h_ias h_wf
+  · simp [pure, Except.pure] at h
+
+/-- Output-freshness for `Identifier.instantiateAndSubsts`: every produced lhs
+    type is gen-fresh at the **final** generator state. Freshness is forward-
+    monotone in the counter (each accumulated type stays fresh as later steps only
+    grow the counter, via `Identifier_instantiateAndSubst_TEnvWF`'s implied
+    monotonicity through `instantiateAndSubsts_preserves_stateSubstInfo`); each new
+    element is fresh at its step output via the single-step lemma. Consumed by the
+    `.call` `h_cs_fresh` obligation (the lhs list `C`). -/
+theorem instantiateAndSubsts_values_fresh (xs : List CoreLParams.Identifier)
+    (C : LContext CoreLParams) (Env : TEnv Unit) (tys : List LMonoTy) (Env' : TEnv Unit)
+    (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (tys, Env')))
+    (h_wf : TEnvWF (T := CoreLParams) Env) :
+    ∀ mt, mt ∈ tys → ∀ v, v ∈ LMonoTy.freeVars mt →
+      ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  induction xs generalizing Env tys Env' with
+  | nil =>
+    simp only [Identifier.instantiateAndSubsts, pure, Except.pure, Except.ok.injEq,
+      Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_tys, _⟩ := h
+    intro mt h_mt; rw [← h_tys] at h_mt; simp at h_mt
+  | cons x xrest ih =>
+    simp only [Identifier.instantiateAndSubsts, Bind.bind, Except.bind] at h
+    elim_err h with ans h_step; cases ans with
+    | none => simp [pure, Except.pure] at h
+    | some p =>
+      obtain ⟨xty, Env_mid⟩ := p
+      simp only at h
+      elim_err h with ans2 h_rest; cases ans2 with
+      | none => simp [pure, Except.pure] at h
+      | some p2 =>
+        obtain ⟨xtys, Env_end⟩ := p2
+        simp only [pure, Except.pure, Except.ok.injEq, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_tys, he⟩ := h; subst he
+        have h_mid_wf : TEnvWF (T := CoreLParams) Env_mid :=
+          Identifier_instantiateAndSubst_TEnvWF x C Env Env_mid xty h_step h_wf
+        intro mt h_mt v hv n hn
+        rw [← h_tys] at h_mt
+        cases List.mem_cons.mp h_mt with
+        | inl h_eq =>
+          subst h_eq
+          -- xty is fresh at Env_mid; lift to Env_end via the tail's genState mono.
+          have h_xty_fresh := Identifier_instantiateAndSubst_output_fresh x C Env Env_mid mt h_step h_wf
+          have h_tail_mono : Env_end.genEnv.genState.tyGen ≥ Env_mid.genEnv.genState.tyGen :=
+            instantiateAndSubsts_genState_mono xrest C Env_mid xtys Env_end h_rest h_mid_wf
+          exact h_xty_fresh v hv n (Nat.le_trans h_tail_mono hn)
+        | inr h_in =>
+          exact ih Env_mid xtys Env_end h_rest h_mid_wf mt h_in v hv n hn
+
 /-- WF preservation for `instantiateEnvWithSubst`: only `genEnv` changes (via
     `genTyVars`), the context and `stateSubstInfo` are untouched, and genState
     is monotone. -/
@@ -528,6 +797,177 @@ theorem resolves_preserves_length (C : LContext CoreLParams) (Env Env' : TEnv Un
   have := resolves_go_length C es Env Env' [] ets h
   simpa using this
 
+/-- `resolve` never decreases the generator counter. Lifts
+    `resolveAux_properties.genState_mono` across `resolve`'s `Env0` scope-init step
+    (which leaves `genState` untouched). -/
+theorem resolve_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (e : LExpr CoreLParams.mono) (et : LExprT CoreLParams.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+    else Env) = Env0 at h
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h
+  | .ok (et0, Env_out) =>
+    simp [h_res] at h
+    obtain ⟨_, h_env'⟩ := h
+    subst h_env'
+    have h_envwf0 : TEnvWF (T := CoreLParams) Env0 :=
+      h_init ▸ Lambda.TEnvWF_resolve_init (T := CoreLParams) Env h_wf
+    have h_ne0 : Env0.context.types ≠ [] := by
+      subst h_init; split
+      · exact List.cons_ne_nil _ _
+      · rename_i h_not_empty; intro h_abs; simp_all [Maps.isEmpty]
+    have h_props := resolveAux_properties e et0 C Env0 Env_out h_res h_ne0
+      h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
+      h_envwf0.boundVarsFresh
+    have h_gen_eq : Env0.genEnv.genState = Env.genEnv.genState := by
+      subst h_init; split <;> simp [TEnv.updateContext]
+    rw [← h_gen_eq]; exact h_props.genState_mono
+
+/-- The free variables of `resolve`'s output type are gen-fresh for the output
+    generator state. Mirrors `CmdType.inferType_output_fresh` but on the raw
+    `LExpr.resolve` (no `inferType` `freeVarCheck` wrapper): the output is
+    `applySubstT et Env'.subst`, so `applySubstT_toLMonoTy` rewrites its monotype
+    to `subst Env'.subst et.toLMonoTy`, and `freeVars_subst_genFresh` composes the
+    raw-type freshness (`resolveAux_properties.preserves.2`) with the substitution
+    freshness (`Env'`'s `TEnvWF`). -/
+theorem resolve_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (e : LExpr CoreLParams.mono) (et : LExprT CoreLParams.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions) :
+    ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+      ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  generalize h_init : (if Env.context.types.isEmpty = true then
+      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+    else Env) = Env0 at h
+  match h_res : resolveAux C Env0 e with
+  | .error _ => simp [h_res] at h
+  | .ok (et0, Env_out) =>
+    simp [h_res] at h
+    obtain ⟨h_et, h_env'⟩ := h
+    subst h_env'
+    have h_envwf0 : TEnvWF (T := CoreLParams) Env0 :=
+      h_init ▸ Lambda.TEnvWF_resolve_init (T := CoreLParams) Env h_wf
+    have h_ne0 : Env0.context.types ≠ [] := by
+      subst h_init; split
+      · exact List.cons_ne_nil _ _
+      · rename_i h_not_empty; intro h_abs; simp_all [Maps.isEmpty]
+    have h_props := resolveAux_properties e et0 C Env0 Env_out h_res h_ne0
+      h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
+      h_envwf0.boundVarsFresh
+    have h_envwf_out : TEnvWF (T := CoreLParams) Env_out :=
+      Lambda.resolveAux_TEnvWF e et0 C Env0 Env_out h_res h_envwf0 h_ne0 h_fwf
+    -- `et = applySubstT et0 Env_out.subst`, so `et.toLMonoTy = subst Env_out.subst et0.toLMonoTy`.
+    rw [← h_et, Lambda.LExpr.applySubstT_toLMonoTy]
+    exact Lambda.LExpr.freeVars_subst_genFresh Env_out.stateSubstInfo et0.toLMonoTy
+      Env_out.genEnv.genState h_envwf_out.substFreshForGen h_props.preserves.2
+
+/-- Accumulator-generalized output-freshness for `resolves.go`: every element of
+    the final result list (whether carried in `acc` or freshly resolved) has a
+    gen-fresh monotype at the **final** generator state, provided every
+    accumulated element is already gen-fresh at the input state. Freshness is
+    forward-monotone in the counter (`resolve_genState_mono` lifts the accumulated
+    facts), and each freshly-resolved element is fresh at its step's output via
+    `resolve_output_fresh`, then lifted across the remaining steps. -/
+private theorem resolves_go_output_fresh (C : LContext CoreLParams)
+    (es : List (LExpr CoreLParams.mono)) :
+    ∀ (Env Env' : TEnv Unit) (acc ets : List (LExprT CoreLParams.mono)),
+      LExpr.resolves.go C Env es acc = .ok (ets, Env') →
+      TEnvWF (T := CoreLParams) Env →
+      FactoryWF C.functions →
+      (∀ et, et ∈ acc → ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) →
+      ∀ et, et ∈ ets → ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  induction es with
+  | nil =>
+    intro Env Env' acc ets h h_wf h_fwf h_acc
+    simp only [LExpr.resolves.go, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, h2⟩ := h
+    subst h1; subst h2
+    intro et h_et v hv n hn
+    have h_et_acc : et ∈ acc := by simpa using h_et
+    exact h_acc et h_et_acc v hv n hn
+  | cons e erest ih =>
+    intro Env Env' acc ets h h_wf h_fwf h_acc
+    simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
+    elim_err h with v_step h_step
+    obtain ⟨et, Env_mid⟩ := v_step
+    -- Per-step facts for `e`.
+    have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid :=
+      Lambda.resolve_TEnvWF e et C Env Env_mid h_step h_wf h_fwf
+    have h_mono_step : Env_mid.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
+      resolve_genState_mono C Env Env_mid e et h_step h_wf h_fwf
+    have h_et_fresh : ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+        ∀ n, n ≥ Env_mid.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+      resolve_output_fresh C Env Env_mid e et h_step h_wf h_fwf
+    -- The new accumulator `et :: acc` is fresh at `Env_mid`'s state.
+    have h_acc_mid : ∀ et', et' ∈ (et :: acc) →
+        ∀ v, v ∈ LMonoTy.freeVars et'.toLMonoTy →
+          ∀ n, n ≥ Env_mid.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      intro et' h_et' v hv n hn
+      cases List.mem_cons.mp h_et' with
+      | inl h_eq => subst h_eq; exact h_et_fresh v hv n hn
+      | inr h_in => exact h_acc et' h_in v hv n (Nat.le_trans h_mono_step hn)
+    exact ih Env_mid Env' (et :: acc) ets h h_wf_mid h_fwf h_acc_mid
+
+/-- `resolves.go` never decreases the generator counter. -/
+private theorem resolves_go_genState_mono (C : LContext CoreLParams)
+    (es : List (LExpr CoreLParams.mono)) :
+    ∀ (Env Env' : TEnv Unit) (acc ets : List (LExprT CoreLParams.mono)),
+      LExpr.resolves.go C Env es acc = .ok (ets, Env') →
+      TEnvWF (T := CoreLParams) Env →
+      FactoryWF C.functions →
+      Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  induction es with
+  | nil =>
+    intro Env Env' acc ets h h_wf h_fwf
+    simp only [LExpr.resolves.go, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, h2⟩ := h; subst h2; exact Nat.le_refl _
+  | cons e erest ih =>
+    intro Env Env' acc ets h h_wf h_fwf
+    simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
+    elim_err h with v_step h_step
+    obtain ⟨et, Env_mid⟩ := v_step
+    have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid :=
+      Lambda.resolve_TEnvWF e et C Env Env_mid h_step h_wf h_fwf
+    have h_mono_step : Env_mid.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
+      resolve_genState_mono C Env Env_mid e et h_step h_wf h_fwf
+    exact Nat.le_trans h_mono_step (ih Env_mid Env' (et :: acc) ets h h_wf_mid h_fwf)
+
+/-- `resolves` never decreases the generator counter. -/
+theorem resolves_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (es : List (LExpr CoreLParams.mono)) (ets : List (LExprT CoreLParams.mono))
+    (h : LExpr.resolves C Env es = .ok (ets, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions) :
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  simp only [LExpr.resolves] at h
+  exact resolves_go_genState_mono C es Env Env' [] ets h h_wf h_fwf
+
+/-- Output-freshness for `resolves`: every resolved type is gen-fresh at the
+    final generator state. Consumed by the `.call` `h_cs_fresh` obligation (the
+    resolved input types `map toLMonoTy v3.fst`). -/
+theorem resolves_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
+    (es : List (LExpr CoreLParams.mono)) (ets : List (LExprT CoreLParams.mono))
+    (h : LExpr.resolves C Env es = .ok (ets, Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions) :
+    ∀ et, et ∈ ets → ∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy →
+      ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  simp only [LExpr.resolves] at h
+  exact resolves_go_output_fresh C es Env Env' [] ets h h_wf h_fwf
+    (fun et h_et => absurd h_et (List.not_mem_nil))
+
 /-- `LTy.instantiateWithCheck` on a `forAll []` scheme reduces to
     `LMonoTy.resolveAliases` (the `instantiate` step is a no-op for nil binders). -/
 private theorem instantiateWithCheck_forAll_nil_resolveAliases
@@ -554,14 +994,85 @@ private theorem instantiateEnvWithSubst_decompose
       TGenEnv.genTyVars ids.length Env.genEnv = .ok (freshtvs, genEnv') ∧
       result.1 = LMonoTys.subst [ids.zip (freshtvs.map LMonoTy.ftvar)] mtys ∧
       result.2.2 = [ids.zip (freshtvs.map LMonoTy.ftvar)] ∧
-      result.2.1.context = Env.context := by
+      result.2.1.context = Env.context ∧
+      result.2.1.genEnv = genEnv' := by
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
   elim_err h with v1 h_gen; obtain ⟨freshtvs, genEnv'⟩ := v1
   simp only [Except.ok.injEq] at h
   subst h
-  refine ⟨freshtvs, genEnv', h_gen, rfl, rfl, ?_⟩
+  refine ⟨freshtvs, genEnv', h_gen, rfl, rfl, ?_, rfl⟩
   show genEnv'.context = Env.context
   exact TGenEnv.genTyVars_context ids.length Env.genEnv freshtvs genEnv' h_gen
+
+/-- **Output-signature freshness for the call's `tyArgSubst` step (case D).** When
+    `instantiateWithSubst` is run for `typeArgs`/inputs, its returned substitution
+    `v2.2.snd = [typeArgs.zip (freshtvs.map ftvar)]` maps every `typeArgs` variable
+    to a fresh generated variable. So for any monotype `s` whose free vars are all
+    declared `typeArgs` (the `ProcHeaderClosed` condition on the procedure's output
+    signature), `subst v2.2.fst.subst (subst v2.2.snd s)` is gen-fresh at
+    `v2.2.fst`'s generator state: the inner substitution sends `s`'s free vars into
+    `freshtvs` (gen-fresh by `genTyVars_genFresh'`, lifted across the go loop), and
+    the outer `v2.2.fst.subst` preserves freshness (`freeVars_subst_genFresh`).
+
+    This is the lemma the output list `D` of the `.call` unify constraint rests on
+    — the only one of the four constraint sub-lists not produced by
+    `instantiateWithCheck`/`resolve` (the output formals skip the per-element check,
+    so their freshness must come from closedness under `typeArgs`). -/
+theorem instantiateWithSubst_tyArgSubst_output_fresh (C : LContext CoreLParams)
+    (Env_lhs : TEnv Unit) (typeArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
+    (v2 : (@LMonoTySignature Unit) × TEnv Unit × Subst)
+    (h : LMonoTySignature.instantiateWithSubst C Env_lhs typeArgs sig = .ok v2)
+    (h_wf : TEnvWF (T := CoreLParams) Env_lhs)
+    (s : LMonoTy)
+    (h_closed : ∀ a, a ∈ LMonoTy.freeVars s → a ∈ typeArgs) :
+    ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.subst v2.2.fst.stateSubstInfo.subst
+        (LMonoTy.subst v2.2.snd s)) →
+      ∀ n, n ≥ v2.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  -- Decompose: the returned substitution `S = v2.2.snd` is the instantiateEnv one,
+  -- generated from `Env_lhs.genEnv` for `typeArgs.length` fresh vars.
+  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v_env h_env; obtain ⟨mtys, Env_e, S⟩ := v_env
+  elim_err h with v_go h_go; obtain ⟨newtys, Env₂⟩ := v_go
+  simp only [Except.ok.injEq] at h
+  subst h
+  -- `v2.2.snd = S`, `v2.2.fst = Env₂`.
+  obtain ⟨freshtvs, genEnv', h_gen, _, h_S, _, h_genEnv⟩ :=
+    instantiateEnvWithSubst_decompose typeArgs (ListMap.values sig) Env_lhs (mtys, Env_e, S) h_env
+  simp only at h_S h_genEnv
+  -- `S = [typeArgs.zip (freshtvs.map ftvar)]`.
+  have h_fv_len : freshtvs.length = typeArgs.length :=
+    TGenEnv.genTyVars_length typeArgs.length Env_lhs.genEnv freshtvs genEnv' h_gen
+  -- TEnvWF of the output env (for the outer subst freshness).
+  have h_wf_v2 : TEnvWF (T := CoreLParams) Env₂ :=
+    instantiateWithSubst_go_TEnvWF C _ Env_e (newtys, Env₂) h_go
+      (instantiateEnvWithSubst_TEnvWF typeArgs (ListMap.values sig) Env_lhs (mtys, Env_e, S) h_env h_wf)
+  -- genState chain: genEnv' (right after genTyVars) = Env_e ≤ Env₂.
+  have h_mono_e : Env_e.genEnv.genState.tyGen ≥ genEnv'.genState.tyGen := by
+    rw [h_genEnv]; exact Nat.le_refl _
+  have h_mono_go : Env₂.genEnv.genState.tyGen ≥ Env_e.genEnv.genState.tyGen :=
+    instantiateWithSubst_go_genState_mono C _ Env_e (newtys, Env₂) h_go
+  -- `freshtvs` are gen-fresh at genEnv', hence at Env₂.
+  have h_fresh_freshtvs : ∀ tv, tv ∈ freshtvs →
+      ∀ n, n ≥ Env₂.genEnv.genState.tyGen → tv ≠ TState.tyPrefix ++ toString n := by
+    intro tv h_tv n hn
+    have h_chain : n ≥ genEnv'.genState.tyGen :=
+      Nat.le_trans (Nat.le_trans h_mono_e h_mono_go) hn
+    exact genTyVars_genFresh' (T := CoreLParams) typeArgs.length Env_lhs.genEnv freshtvs genEnv'
+      h_gen tv h_tv n h_chain
+  -- The inner substitution sends `s`'s free vars into `freshtvs`, so `subst S s`
+  -- is gen-fresh at Env₂.
+  have h_inner_fresh : ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.subst S s) →
+      ∀ n, n ≥ Env₂.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+    intro v hv n hn
+    rw [h_S] at hv
+    -- `freeVars_subst_closed` now holds without an empty-scopes precondition: any
+    -- free var of `subst [zip ids (map ftvar freshtvs)] s` lands in `freshtvs`.
+    have h_in_fresh := LMonoTy.freeVars_subst_closed typeArgs freshtvs h_fv_len s h_closed v hv
+    exact h_fresh_freshtvs v h_in_fresh n hn
+  -- Outer subst by `Env₂.subst` preserves freshness.
+  intro v hv n hn
+  exact Lambda.LExpr.freeVars_subst_genFresh Env₂.stateSubstInfo (LMonoTy.subst S s)
+    Env₂.genEnv.genState h_wf_v2.substFreshForGen h_inner_fresh v hv n hn
 
 /-- The `go` loop of `instantiateWithSubst` maps `instantiateWithCheck` over
     `forAll []`-wrapped monotypes, so each output is alias-equivalent to the
@@ -632,7 +1143,7 @@ theorem instantiateWithSubst_elem_aliasEquiv (C : LContext CoreLParams)
   subst h
   -- Decompose instantiateEnvWithSubst: S = [zip typeArgs (map ftvar freshtvs)],
   -- mtys = subst S sig.values, and only genEnv changes.
-  obtain ⟨freshtvs, genEnv', h_gen, h_mtys, h_S, h_ctx⟩ :=
+  obtain ⟨freshtvs, genEnv', h_gen, h_mtys, h_S, h_ctx, _⟩ :=
     instantiateEnvWithSubst_decompose typeArgs (ListMap.values sig) Env₁ (mtys, Env_e, S) h_env
   simp only at h_mtys h_S h_ctx
   -- The go loop maps `instantiateWithCheck` over `mtys.map (forAll [] ·)`.
@@ -1512,7 +2023,8 @@ theorem typeCheckCmd_call_inversion (C : LContext CoreLParams) (Env : TEnv Unit)
       (CallArg.getInputExprs callArgs).length = proc.header.inputs.length ∧
       (CallArg.getLhs callArgs).length = proc.header.outputs.length ∧
       (∀ v, v ∈ CallArg.getLhs callArgs → (Env.context.types.find? v).isSome) ∧
-      Statement.areInoutArgsValid proc (CallArg.getInputExprs callArgs) = true := by
+      Statement.areInoutArgsValid proc (CallArg.getInputExprs callArgs) = true ∧
+      CmdType.checkAnnotCompat C (v3.snd.updateSubst v4) = .ok () := by
   unfold Statement.typeCheckCmd at h
   simp only [Bind.bind, Except.bind] at h
   split at h
@@ -1534,8 +2046,9 @@ theorem typeCheckCmd_call_inversion (C : LContext CoreLParams) (Env : TEnv Unit)
     elim_err h_eq with v2 h_fvc
     elim_err h_eq with v3 h_inst_inputs
     elim_err h_eq with v4 h_resolves
+    elim_err h_eq with h_rigid_check
     cases h_eq
-    refine ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, h_cmd.symm, h_env.symm, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, h_cmd.symm, h_env.symm, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- The shared fact bundle, via the raw (mapError-stripped) step equations.
       have h_unify : Constraints.unify
           ((List.map toLMonoTy v3.fst).zip
@@ -1572,6 +2085,11 @@ theorem typeCheckCmd_call_inversion (C : LContext CoreLParams) (Env : TEnv Unit)
     · -- inout args valid
       revert h_inout_check
       cases Statement.areInoutArgsValid proc (CallArg.getInputExprs callArgs) <;> simp
+    · -- rigid-compatibility check succeeded
+      revert h_rigid_check
+      cases h_cac : CmdType.checkAnnotCompat C (v3.snd.updateSubst v4) with
+      | error e => simp
+      | ok u => cases u; simp
 
 /-! ### Context preservation for call typechecking -/
 
@@ -1594,6 +2112,230 @@ theorem typeCheckCmd_call_preserves_context (C : LContext CoreLParams) (Env : TE
   rw [show (v3.snd.updateSubst v4).context = v3.snd.context from rfl,
     h_res_sound.2.1, F.ctx_eq]
 
+/-- Threading preservation for the `.call` case of `typeCheckCmd`. The output
+    `Env' = v3.snd.updateSubst v4` shares its context with `Env` (calls do not
+    touch the type-scope), and the call's unifier refines the substitution. The
+    rigid clause holds because the `.call` branch now runs `checkAnnotCompat`
+    after unification (mirroring the other commands). -/
+theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (pname : String) (callArgs : List (CallArg Expression))
+    (md : MetaData Expression) (cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P (.call pname callArgs md) = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
+    (h_closed : CalledProcsClosed P) :
+    TEnvWF (T := CoreLParams) Env' ∧
+    Env'.context.types ≠ [] ∧
+    ContextMono Env'.context ∧
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst ∧
+    (∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v) := by
+  obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, _, h_env, F,
+      _, _, _, _, h_cac⟩ :=
+    typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+  have h_proc_closed : ProcHeaderClosed proc := h_closed _ proc heq_find
+  -- Context is preserved (calls don't touch the type-scope), giving `ne`/`mono`.
+  have h_ctx : Env'.context = Env.context :=
+    typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+  have h_ne' : Env'.context.types ≠ [] := h_ctx ▸ h_ne
+  have h_mono' : ContextMono Env'.context := by rw [h_ctx]; exact h_mono
+  -- `Env' = v3.snd.updateSubst v4`, so `Env'.subst = v4.subst`.
+  have h_subst' : Env'.stateSubstInfo.subst = v4.subst := by rw [h_env]; rfl
+  -- The final substitution refines the input one.
+  have h_abs' : Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+    rw [h_subst', ← F.subst_v2_env]; exact F.absorbs_v2
+  -- Rigid-identity at the output substitution, from the post-unification check.
+  have h_cac' : CmdType.checkAnnotCompat C Env' = .ok () := by rw [h_env]; exact h_cac
+  have h_rigid' : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v :=
+    CmdType.checkAnnotCompat_rigid C Env' h_cac'
+  -- TEnvWF of the output environment.
+  -- `Env' = v3.snd.updateSubst v4`, and `v4 = unify cs v3.snd.subst`, so
+  -- `TEnvWF.of_unify_updateSubst` applies: WF of `v3.snd` is free from resolves,
+  -- and the constraint free vars must be gen-fresh for `v3.snd`'s generator state.
+  have h_wf_v3snd : TEnvWF (T := CoreLParams) v3.snd :=
+    (resolves_HasType_core C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
+      F.resolves_raw F.wf_v2 h_fwf F.ne_v2 F.ws F.len).1
+  have h_cs_fresh : ∀ v, v ∈ Constraints.freeVars
+      ((List.map toLMonoTy v3.fst).zip
+        (LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst)) ++
+        v1.zip (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+          (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs)))) →
+      ∀ n, n ≥ v3.snd.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+    -- `LMonoTys.subst` unfolds to a `List.map` of the scalar `subst`.
+    have subst_map : ∀ (S : Subst) (l : LMonoTys),
+        LMonoTys.subst S l = l.map (LMonoTy.subst S) := by
+      intro S l
+      induction l with
+      | nil =>
+        rw [LMonoTys.subst_eq_substLogic]
+        cases he : S.hasEmptyScopes <;> simp [LMonoTys.substLogic, he]
+      | cons hd tl ih =>
+        by_cases he : S.hasEmptyScopes
+        · have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS he)
+          rw [h_id, List.map_id, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
+          simp [he]
+        · rw [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
+          simp only [he, Bool.false_eq_true, if_false, List.map_cons]
+          rw [← LMonoTys.subst_eq_substLogic, ih]
+    -- Generator-state monotonicity along the call's stages.
+    have h_mono_v2v3 : v3.snd.genEnv.genState.tyGen ≥ v2.2.fst.genEnv.genState.tyGen :=
+      resolves_genState_mono C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
+        F.resolves_raw F.wf_v2 h_fwf
+    have h_mono_lhsv2 : v2.2.fst.genEnv.genState.tyGen ≥ h_inst_lhs.genEnv.genState.tyGen :=
+      instantiateWithSubst_genState_mono C h_inst_lhs proc.header.typeArgs proc.header.inputs v2
+        F.inst_inp_raw
+    -- Freshness of list A (resolved input types) at `v3.snd`'s gen-state.
+    have h_A : ∀ v, v ∈ LMonoTys.freeVars (List.map toLMonoTy v3.fst) →
+        ∀ n, n ≥ v3.snd.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      intro v hv n hn
+      obtain ⟨ty, h_ty_mem, h_v_ty⟩ := LMonoTys.freeVars_exists hv
+      obtain ⟨et, h_et_mem, h_et_eq⟩ := List.mem_map.mp h_ty_mem
+      subst h_et_eq
+      exact resolves_output_fresh C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
+        F.resolves_raw F.wf_v2 h_fwf et h_et_mem v h_v_ty n hn
+    -- Freshness of list B (instantiated input signature) at `v2.2.fst`'s gen-state.
+    have h_B : ∀ v, v ∈ LMonoTys.freeVars
+        (LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst)) →
+        ∀ n, n ≥ v2.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      have h_mtys : ∀ v, v ∈ LMonoTys.freeVars (ListMap.values v2.fst) →
+          ∀ n, n ≥ v2.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+        intro v hv n hn
+        obtain ⟨mt, h_mt_mem, h_v_mt⟩ := LMonoTys.freeVars_exists hv
+        exact instantiateWithSubst_values_fresh C h_inst_lhs proc.header.typeArgs
+          proc.header.inputs v2 F.inst_inp_raw mt h_mt_mem v h_v_mt n hn
+      exact LMonoTys.freeVars_subst_genFresh v2.2.fst.stateSubstInfo (ListMap.values v2.fst)
+        v2.2.fst.genEnv.genState F.wf_v2.substFreshForGen h_mtys
+    -- Freshness of list C (lhs types) at `h_inst_lhs`'s gen-state.
+    have h_C : ∀ v, v ∈ LMonoTys.freeVars v1 →
+        ∀ n, n ≥ h_inst_lhs.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      intro v hv n hn
+      obtain ⟨mt, h_mt_mem, h_v_mt⟩ := LMonoTys.freeVars_exists hv
+      exact instantiateAndSubsts_values_fresh (CallArg.getLhs callArgs) C Env v1 h_inst_lhs
+        F.inst_lhs_raw h_wf mt h_mt_mem v h_v_mt n hn
+    -- Freshness of list D (instantiated output signature) at `v2.2.fst`'s gen-state.
+    have h_D : ∀ v, v ∈ LMonoTys.freeVars
+        (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
+          (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs))) →
+        ∀ n, n ≥ v2.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+      intro v hv n hn
+      rw [subst_map] at hv
+      obtain ⟨ty, h_ty_mem, h_v_ty⟩ := LMonoTys.freeVars_exists hv
+      obtain ⟨a, h_a_mem, h_a_eq⟩ := List.mem_map.mp h_ty_mem
+      obtain ⟨s, h_s_mem, h_s_eq⟩ := List.mem_map.mp h_a_mem
+      subst h_s_eq; subst h_a_eq
+      have h_closed_s : ∀ x, x ∈ LMonoTy.freeVars s → x ∈ proc.header.typeArgs :=
+        h_proc_closed.2 s h_s_mem
+      exact instantiateWithSubst_tyArgSubst_output_fresh C h_inst_lhs proc.header.typeArgs
+        proc.header.inputs v2 F.inst_inp_raw F.wf_lhs s h_closed_s v h_v_ty n hn
+    -- Assemble: split the constraint free-var set into the four lists.
+    intro v hv n hn
+    rw [Constraints.freeVars_append, List.mem_append] at hv
+    rcases hv with hv | hv
+    · rcases List.mem_append.mp (Constraints.freeVars_of_zip_subset hv) with hv | hv
+      · exact h_A v hv n hn
+      · exact h_B v hv n (Nat.le_trans h_mono_v2v3 hn)
+    · rcases List.mem_append.mp (Constraints.freeVars_of_zip_subset hv) with hv | hv
+      · exact h_C v hv n (Nat.le_trans (Nat.le_trans h_mono_lhsv2 h_mono_v2v3) hn)
+      · exact h_D v hv n (Nat.le_trans h_mono_v2v3 hn)
+  have h_wf' : TEnvWF (T := CoreLParams) Env' := by
+    rw [h_env]
+    exact TEnvWF.of_unify_updateSubst h_wf_v3snd F.unify h_cs_fresh
+  exact ⟨h_wf', h_ne', h_mono', h_abs', h_rigid'⟩
+
+/-- **Structural shape preservation for the `.call` case.** A successful call leaves
+    the full context unchanged (so the stack tail and aliases are trivially preserved)
+    and is gen-counter monotone along its `instantiateAndSubsts`/`instantiateWithSubst`/
+    `resolves` stages (`updateSubst` leaves `genState` fixed). No well-scoping. -/
+theorem typeCheckCmd_call_preserves_shape (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (pname : String) (callArgs : List (CallArg Expression))
+    (md : MetaData Expression) (cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P (.call pname callArgs md) = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ []) :
+    Maps.pop Env'.context.types = Maps.pop Env.context.types ∧
+    Env'.context.aliases = Env.context.aliases ∧
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  have h_ctx : Env'.context = Env.context :=
+    typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+  obtain ⟨proc, Env_lhs, v1, v2, v3, v4, _, _, h_env, F, _, _, _, _⟩ :=
+    typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+  refine ⟨by rw [h_ctx], by rw [h_ctx], ?_⟩
+  -- `Env' = v3.snd.updateSubst v4`, and `updateSubst` leaves `genState` untouched.
+  have h_env_gen : Env'.genEnv.genState.tyGen = v3.snd.genEnv.genState.tyGen := by
+    rw [h_env]; rfl
+  rw [h_env_gen]
+  -- Chain: Env →(instantiateAndSubsts lhs)→ Env_lhs →(instantiateWithSubst)→ v2.2.fst
+  --        →(resolves)→ v3.snd.
+  have h_mono_lhs : Env_lhs.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
+    instantiateAndSubsts_genState_mono (CallArg.getLhs callArgs) C Env v1 Env_lhs
+      F.inst_lhs_raw h_wf
+  have h_mono_v2 : v2.2.fst.genEnv.genState.tyGen ≥ Env_lhs.genEnv.genState.tyGen :=
+    instantiateWithSubst_genState_mono C Env_lhs proc.header.typeArgs proc.header.inputs v2
+      F.inst_inp_raw
+  have h_mono_v3 : v3.snd.genEnv.genState.tyGen ≥ v2.2.fst.genEnv.genState.tyGen :=
+    resolves_genState_mono C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
+      F.resolves_raw F.wf_v2 h_fwf
+  exact Nat.le_trans h_mono_lhs (Nat.le_trans h_mono_v2 h_mono_v3)
+
+/-- **Whole-command threading preservation for `typeCheckCmd`.** A successful
+    `typeCheckCmd` step preserves the environment well-formedness invariants and
+    refines the substitution. The `LContext` `C` is unchanged by commands, so only
+    the `Env`-side facts are stated. This is the per-step building block consumed by
+    the statement-level `go` preservation induction (`cmd` case).
+
+    * `TEnvWF Env'`, `Env'.context.types ≠ []`, `ContextMono Env'.context` — the
+      threaded invariants;
+    * `Subst.absorbs Env'.subst Env.subst` — the substitution is refined;
+    * rigid-identity is preserved at the output substitution. -/
+theorem typeCheckCmd_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
+    (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context)
+    (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
+    (h_closed : CalledProcsClosed P) :
+    TEnvWF (T := CoreLParams) Env' ∧
+    Env'.context.types ≠ [] ∧
+    ContextMono Env'.context ∧
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst ∧
+    (∀ v, v ∈ C.rigidTypeVars →
+      LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v) ∧
+    Maps.pop Env'.context.types = Maps.pop Env.context.types ∧
+    Env'.context.aliases = Env.context.aliases ∧
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  cases cmd with
+  | cmd c =>
+    -- `.cmd` delegates to `Imperative.Cmd.typeCheck`; `C` is unchanged.
+    unfold Statement.typeCheckCmd at h
+    simp only [Bind.bind, Except.bind] at h
+    elim_err h with v h_tc
+    obtain ⟨c', Env_inner⟩ := v
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_cmd_eq, h_env_eq⟩ := h
+    subst h_env_eq
+    obtain ⟨h_wf', h_ne', h_mono', h_abs'⟩ :=
+      Core.TypeSpec.Cmd.typeCheck_preserves C Env c c' Env_inner h_tc h_wf h_fwf h_ne h_mono
+    have h_rigid' := Core.Cmd.typeCheck_preserves_rigid_inv C Env c c' Env_inner h_tc h_rigid_inv
+    obtain ⟨h_pop', h_al', h_gen'⟩ :=
+      Core.TypeSpec.Cmd.typeCheck_preserves_shape C Env c c' Env_inner h_tc h_wf h_fwf h_ne
+    exact ⟨h_wf', h_ne', h_mono', h_abs', h_rigid', h_pop', h_al', h_gen'⟩
+  | call pname callArgs md =>
+    obtain ⟨h_wf', h_ne', h_mono', h_abs', h_rigid'⟩ :=
+      typeCheckCmd_call_preserves C Env P pname callArgs md cmd' Env' h
+        h_wf h_fwf h_ne h_mono h_rigid_inv h_closed
+    obtain ⟨h_pop', h_al', h_gen'⟩ :=
+      typeCheckCmd_call_preserves_shape C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+    exact ⟨h_wf', h_ne', h_mono', h_abs', h_rigid', h_pop', h_al', h_gen'⟩
+
 /-! ### Call case auxiliary -/
 
 /-- Core lemma for the `.call` case: if `typeCheckCmd` succeeds on a call,
@@ -1615,7 +2357,7 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
           (.call pname callArgs md)
           (TContext.subst Env.context S) := by
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, _, h_env, F,
-      h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid⟩ :=
+      h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   subst h_env
   refine ⟨proc, heq_find, ?_⟩
@@ -2105,7 +2847,7 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
         (Statement.Command.subst S cmd')
         (TContext.subst Env.context S) := by
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, h_cmd, h_env, F,
-      h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid⟩ :=
+      h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   subst h_cmd; subst h_env
   intro S hS_abs hS_wf

@@ -546,6 +546,370 @@ theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     Env'.stateSubstInfo.subst (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF)
     Env'.stateSubstInfo.isWF h_rigid'
 
+/-- **Whole-`Cmd.typeCheck` threading preservation.** A successful `Cmd.typeCheck`
+    step preserves the environment well-formedness invariants threaded by the
+    statement-level `go` induction, and refines the running substitution:
+
+    * `TEnvWF Env'` — the output environment is still well-formed;
+    * `Env'.context.types ≠ []` — the type-scope stays non-empty;
+    * `ContextMono Env'.context` — context types stay monomorphic;
+    * `Subst.absorbs Env'.subst Env.subst` — the substitution only grows.
+
+    Rigid-identity preservation is separate (`Cmd.typeCheck_preserves_rigid_inv`).
+    The `LContext` `C` is unchanged by commands, so it is not mentioned. -/
+theorem Cmd.typeCheck_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ [])
+    (h_mono : ContextMono Env.context) :
+    TEnvWF (T := CoreLParams) Env' ∧
+    Env'.context.types ≠ [] ∧
+    ContextMono Env'.context ∧
+    Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst := by
+  cases cmd with
+  | init x xty e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i h_lookup
+    split at h
+    · -- det: preprocess → inferType → unifyTypes → checkAnnotCompat → postprocess → update
+      rename_i expr _
+      elim_err h; rename_i h_not_in_fv
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check
+      elim_err h; rename_i v3 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
+        TypeContext.postprocess, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.freeVars, TypeContext.checkAnnotCompat] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨e', ety, Env_infer⟩ := v2
+      -- preprocess output type is `forAll [] mty_pre`.
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      -- WF chain: Env →pre Env_pre →infer Env_infer →unify Env_unified →update Env'.
+      have h_wf_pre : TEnvWF (T := CoreLParams) Env_pre :=
+        CmdType.preprocess_preserves_TEnvWF C Env xty _ Env_pre h_preprocess h_wf
+      -- inferType output type is `forAll [] mty_inf`, fresh at Env_infer.
+      obtain ⟨mty_inf, h_ety_eq, h_inf_fresh⟩ :=
+        CmdType.inferType_output_fresh C Env_pre Env_infer _ _ e' ety h_infer h_wf_pre h_fwf
+      subst h_ety_eq
+      have h_wf_infer : TEnvWF (T := CoreLParams) Env_infer :=
+        CmdType.inferType_TEnvWF C Env_pre Env_infer _ _ e' (.forAll [] mty_inf) h_infer h_wf_pre h_fwf
+      -- preprocess output type fresh at Env_pre, lifted to Env_infer.
+      have h_pre_fresh : ∀ v, v ∈ LMonoTy.freeVars mty_pre →
+          ∀ n, n ≥ Env_pre.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        CmdType.preprocess_output_fresh C Env xty mty_pre Env_pre h_preprocess h_wf
+      have h_infer_mono : Env_infer.genEnv.genState.tyGen ≥ Env_pre.genEnv.genState.tyGen :=
+        CmdType.inferType_genState_mono C Env_pre Env_infer _ _ e' (.forAll [] mty_inf) h_infer h_wf_pre h_fwf
+      have h_pre_fresh' : ∀ v, v ∈ LMonoTy.freeVars mty_pre →
+          ∀ n, n ≥ Env_infer.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        fun v hv n hn => h_pre_fresh v hv n (Nat.le_trans h_infer_mono hn)
+      have h_wf_unified : TEnvWF (T := CoreLParams) Env_unified :=
+        CmdType.unifyTypes_TEnvWF Env_infer Env_unified mty_pre mty_inf h_unify h_wf_infer
+          h_pre_fresh' h_inf_fresh
+      -- postprocess output type is `forAll [] (subst Env_unified.subst mty_pre)`, env unchanged.
+      obtain ⟨v3fst, v3snd⟩ := v3
+      obtain ⟨h_v3_fst, h_v3_snd⟩ := CmdType.postprocess_result C Env_unified v3snd mty_pre v3fst
+        (by rw [h_postprocess])
+      -- `v3snd = Env_unified` and `v3fst = forAll [] (subst Env_unified.subst mty_pre)`.
+      rw [h_v3_snd, h_v3_fst]
+      -- Env' = update Env_unified x (forAll [] (subst Env_unified.subst mty_pre)).
+      have h_ctx_unify : Env_unified.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env_unified _ h_unify
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      have h_ne_pre : Env_pre.context.types ≠ [] := h_ctx_pre ▸ h_ne
+      have h_ctx_infer : Env_infer.context = Env_pre.context :=
+        CmdType.inferType_preserves_context C Env_pre Env_infer _ _ e' (.forAll [] mty_inf)
+          h_infer h_wf_pre h_ne_pre h_fwf
+      -- update step. The stored type's freeVars are gen-fresh at Env_unified.
+      have h_unify_mono : Env_unified.genEnv.genState.tyGen ≥ Env_infer.genEnv.genState.tyGen := by
+        rw [CmdType.unifyTypes_preserves_genState Env_infer Env_unified _ h_unify]
+        exact Nat.le_refl _
+      have h_stored_fresh : ∀ v, v ∈ LMonoTy.freeVars
+          (LMonoTy.subst Env_unified.stateSubstInfo.subst mty_pre) →
+          ∀ n, n ≥ Env_unified.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        Lambda.LExpr.freeVars_subst_genFresh Env_unified.stateSubstInfo mty_pre
+          Env_unified.genEnv.genState h_wf_unified.substFreshForGen
+          (fun v hv n hn => h_pre_fresh' v hv n (Nat.le_trans h_unify_mono hn))
+      refine ⟨CmdType.update_TEnvWF Env_unified x _ h_wf_unified h_stored_fresh,
+        CmdType.update_types_ne Env_unified x _, ?_, ?_⟩
+      · exact CmdType.update_ContextMono Env_unified x _
+          (h_ctx_unify ▸ h_ctx_infer ▸ h_ctx_pre ▸ h_mono)
+      · -- absorbs: subst chain Env →pre Env_infer →unify Env_unified →(update preserves)→ Env'.
+        rw [CmdType.update_preserves_subst]
+        have h_pre_subst : Env_pre.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+          congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty _ Env_pre h_preprocess)
+        have h_infer_abs := CmdType.inferType_absorbs C Env_pre Env_infer _ _ e'
+          (.forAll [] mty_inf) h_infer h_wf_pre h_fwf
+        have h_unify_abs := CmdType.unifyTypes_absorbs Env_infer Env_unified _ h_unify
+        exact Subst.absorbs_trans _ _ _
+          (h_pre_subst ▸ h_infer_abs) h_unify_abs
+    · -- nondet: preprocess → postprocess → update
+      rename_i _
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.preprocess, TypeContext.postprocess] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      have h_wf_pre : TEnvWF (T := CoreLParams) Env_pre :=
+        CmdType.preprocess_preserves_TEnvWF C Env xty _ Env_pre h_preprocess h_wf
+      have h_pre_fresh : ∀ v, v ∈ LMonoTy.freeVars mty_pre →
+          ∀ n, n ≥ Env_pre.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        CmdType.preprocess_output_fresh C Env xty mty_pre Env_pre h_preprocess h_wf
+      obtain ⟨v2fst, v2snd⟩ := v2
+      obtain ⟨h_v2_fst, h_v2_snd⟩ := CmdType.postprocess_result C Env_pre v2snd mty_pre v2fst
+        (by rw [h_postprocess])
+      rw [h_v2_snd, h_v2_fst]
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      have h_stored_fresh : ∀ v, v ∈ LMonoTy.freeVars
+          (LMonoTy.subst Env_pre.stateSubstInfo.subst mty_pre) →
+          ∀ n, n ≥ Env_pre.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        Lambda.LExpr.freeVars_subst_genFresh Env_pre.stateSubstInfo mty_pre
+          Env_pre.genEnv.genState h_wf_pre.substFreshForGen h_pre_fresh
+      refine ⟨CmdType.update_TEnvWF Env_pre x _ h_wf_pre h_stored_fresh,
+        CmdType.update_types_ne Env_pre x _, ?_, ?_⟩
+      · exact CmdType.update_ContextMono Env_pre x _ (h_ctx_pre ▸ h_mono)
+      · rw [CmdType.update_preserves_subst]
+        have h_pre_subst : Env_pre.stateSubstInfo.subst = Env.stateSubstInfo.subst :=
+          congrArg (·.subst) (CmdType.preprocess_preserves_stateSubstInfo C Env xty _ Env_pre h_preprocess)
+        rw [h_pre_subst]; exact Subst.absorbs_refl _ Env.stateSubstInfo.isWF
+  | set x e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i xty h_lookup
+    cases e with
+    | det expr =>
+      simp only [] at h
+      elim_err h; rename_i v h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check; cases h
+      simp only [TypeContext.lookup, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.checkAnnotCompat] at *
+      obtain ⟨e', ety, Env_infer⟩ := v
+      have h_find := (CmdType.lookup_some_iff_find_some Env x xty).mp h_lookup
+      -- The context type `xty` is monomorphic (ContextMono) and gen-fresh (ctxFreshForGen).
+      have h_xty_bv : LTy.boundVars xty = [] := h_mono x xty h_find
+      obtain ⟨xs, mty_x⟩ := xty
+      simp only [LTy.boundVars] at h_xty_bv; subst h_xty_bv
+      -- inferType output type is `forAll [] mty_inf`, fresh at Env_infer.
+      obtain ⟨mty_inf, h_ety_eq, h_inf_fresh⟩ :=
+        CmdType.inferType_output_fresh C Env Env_infer (.set x (.det expr) md) expr e' ety
+          h_infer h_wf h_fwf
+      subst h_ety_eq
+      have h_wf_infer : TEnvWF (T := CoreLParams) Env_infer :=
+        CmdType.inferType_TEnvWF C Env Env_infer _ expr e' (.forAll [] mty_inf) h_infer h_wf h_fwf
+      have h_ctx_infer : Env_infer.context = Env.context :=
+        CmdType.inferType_preserves_context C Env Env_infer _ expr e' (.forAll [] mty_inf)
+          h_infer h_wf h_ne h_fwf
+      -- The context type's freeVars are gen-fresh at Env (ctxFreshForGen), lifted to Env_infer.
+      have h_xty_fresh : ∀ v, v ∈ LMonoTy.freeVars mty_x →
+          ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+        intro v hv n hn
+        refine h_wf.ctxFreshForGen v ?_ n hn
+        refine TContext.mem_knownTypeVars_of_find h_find ?_
+        have h_fv : LTy.freeVars (.forAll [] mty_x) = LMonoTy.freeVars mty_x := by
+          simp [LTy.freeVars, List.removeAll, List.filter_eq_self]
+        rw [h_fv]; exact hv
+      have h_infer_mono : Env_infer.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
+        CmdType.inferType_genState_mono C Env Env_infer _ expr e' (.forAll [] mty_inf) h_infer h_wf h_fwf
+      have h_xty_fresh' : ∀ v, v ∈ LMonoTy.freeVars mty_x →
+          ∀ n, n ≥ Env_infer.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+        fun v hv n hn => h_xty_fresh v hv n (Nat.le_trans h_infer_mono hn)
+      have h_wf_unified : TEnvWF (T := CoreLParams) Env' :=
+        CmdType.unifyTypes_TEnvWF Env_infer Env' mty_x mty_inf h_unify h_wf_infer
+          h_xty_fresh' h_inf_fresh
+      have h_ctx_unify : Env'.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env' _ h_unify
+      refine ⟨h_wf_unified, ?_, ?_, ?_⟩
+      · rw [h_ctx_unify, h_ctx_infer]; exact h_ne
+      · rw [h_ctx_unify, h_ctx_infer]; exact h_mono
+      · have h_infer_abs := CmdType.inferType_absorbs C Env Env_infer _ expr e'
+          (.forAll [] mty_inf) h_infer h_wf h_fwf
+        have h_unify_abs := CmdType.unifyTypes_absorbs Env_infer Env' _ h_unify
+        exact Subst.absorbs_trans _ _ _ h_infer_abs h_unify_abs
+    | nondet =>
+      simp at h; cases h
+      exact ⟨h_wf, h_ne, h_mono, Subst.absorbs_refl _ Env.stateSubstInfo.isWF⟩
+  | assert label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    refine ⟨CmdType.inferType_TEnvWF C Env Env_infer _ e e' ety h_infer h_wf h_fwf, ?_, ?_, ?_⟩
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_ne
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_mono
+    · exact CmdType.inferType_absorbs C Env Env_infer _ e e' ety h_infer h_wf h_fwf
+  | assume label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    refine ⟨CmdType.inferType_TEnvWF C Env Env_infer _ e e' ety h_infer h_wf h_fwf, ?_, ?_, ?_⟩
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_ne
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_mono
+    · exact CmdType.inferType_absorbs C Env Env_infer _ e e' ety h_infer h_wf h_fwf
+  | cover label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    refine ⟨CmdType.inferType_TEnvWF C Env Env_infer _ e e' ety h_infer h_wf h_fwf, ?_, ?_, ?_⟩
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_ne
+    · rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
+      exact h_mono
+    · exact CmdType.inferType_absorbs C Env Env_infer _ e e' ety h_infer h_wf h_fwf
+
+/-- **Structural shape preservation** for `Imperative.Cmd.typeCheck`: a successful
+    run preserves the *tail* of the `types` stack (`Maps.pop`), the alias list, and is
+    gen-counter monotone. No well-scoping assumption — every context mutation is
+    either a full preservation (preprocess/infer/unify/postprocess) or an
+    `addInNewestContext` (`update`), and `Maps.pop (addInNewest …) = Maps.pop …`. This
+    is what lets `block`/`goBlock` recover the input context after `popContext`. -/
+theorem Cmd.typeCheck_preserves_shape (C : LContext CoreLParams) (Env : TEnv Unit)
+    (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
+    (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_ne : Env.context.types ≠ []) :
+    Maps.pop Env'.context.types = Maps.pop Env.context.types ∧
+    Env'.context.aliases = Env.context.aliases ∧
+    Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
+  cases cmd with
+  | init x xty e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i h_lookup
+    split at h
+    · -- det: preprocess → inferType → unifyTypes → checkAnnotCompat → postprocess → update
+      rename_i expr _
+      elim_err h; rename_i h_not_in_fv
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check
+      elim_err h; rename_i v3 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.lookup, TypeContext.preprocess,
+        TypeContext.postprocess, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.freeVars, TypeContext.checkAnnotCompat] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨e', ety, Env_infer⟩ := v2
+      obtain ⟨v3fst, v3snd⟩ := v3
+      -- `postprocess` leaves the env unchanged: `v3snd = Env_unified`.
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      obtain ⟨_, h_v3_snd⟩ := CmdType.postprocess_result C Env_unified v3snd mty_pre v3fst
+        (by rw [h_postprocess])
+      rw [h_v3_snd]
+      -- Context-equality chain Env →pre →infer →unify (all full-preservation steps).
+      have h_wf_pre : TEnvWF (T := CoreLParams) Env_pre :=
+        CmdType.preprocess_preserves_TEnvWF C Env xty _ Env_pre h_preprocess h_wf
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      have h_ne_pre : Env_pre.context.types ≠ [] := h_ctx_pre ▸ h_ne
+      have h_ctx_infer : Env_infer.context = Env_pre.context :=
+        CmdType.inferType_preserves_context C Env_pre Env_infer _ _ e' ety
+          h_infer h_wf_pre h_ne_pre h_fwf
+      have h_ctx_unify : Env_unified.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env_unified _ h_unify
+      have h_ctx_chain : Env_unified.context = Env.context := by
+        rw [h_ctx_unify, h_ctx_infer, h_ctx_pre]
+      refine ⟨?_, ?_, ?_⟩
+      · rw [CmdType.update_types_pop, h_ctx_chain]
+      · rw [CmdType.update_aliases, h_ctx_chain]
+      · -- tyGen chain: pre-mono, infer-mono, unify-eq, update-eq.
+        rw [CmdType.update_tyGen]
+        have h_pre_mono := CmdType.preprocess_genState_mono C Env xty _ Env_pre h_preprocess
+        have h_infer_mono := CmdType.inferType_genState_mono C Env_pre Env_infer _ _ e' ety
+          h_infer h_wf_pre h_fwf
+        have h_unify_eq := CmdType.unifyTypes_preserves_genState Env_infer Env_unified _ h_unify
+        rw [h_unify_eq]
+        exact Nat.le_trans h_pre_mono h_infer_mono
+    · -- nondet: preprocess → postprocess(=id) → update
+      rename_i _
+      elim_err h; rename_i v1 h_preprocess
+      elim_err h; rename_i v2 h_postprocess; cases h
+      simp only [TypeContext.update, TypeContext.preprocess, TypeContext.postprocess] at *
+      obtain ⟨v1ty, Env_pre⟩ := v1
+      obtain ⟨v2fst, v2snd⟩ := v2
+      obtain ⟨mty_pre, h_mty_pre⟩ := CmdType.preprocess_mono C Env xty v1ty Env_pre h_preprocess
+      subst h_mty_pre
+      obtain ⟨_, h_v2_snd⟩ := CmdType.postprocess_result C Env_pre v2snd mty_pre v2fst
+        (by rw [h_postprocess])
+      rw [h_v2_snd]
+      have h_ctx_pre : Env_pre.context = Env.context :=
+        CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
+      refine ⟨?_, ?_, ?_⟩
+      · rw [CmdType.update_types_pop, h_ctx_pre]
+      · rw [CmdType.update_aliases, h_ctx_pre]
+      · rw [CmdType.update_tyGen]
+        exact CmdType.preprocess_genState_mono C Env xty _ Env_pre h_preprocess
+  | set x e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i xty h_lookup
+    cases e with
+    | det expr =>
+      simp only [] at h
+      elim_err h; rename_i v h_infer
+      elim_err h; rename_i Env_unified h_unify
+      elim_err h; rename_i _u h_check; cases h
+      simp only [TypeContext.lookup, TypeContext.inferType, TypeContext.unifyTypes,
+        TypeContext.checkAnnotCompat] at *
+      obtain ⟨e', ety, Env_infer⟩ := v
+      -- `set` only re-types an existing var: context is fully preserved.
+      have h_ctx_infer : Env_infer.context = Env.context :=
+        CmdType.inferType_preserves_context C Env _ _ expr e' ety h_infer h_wf h_ne h_fwf
+      have h_ctx_unify : Env'.context = Env_infer.context :=
+        CmdType.unifyTypes_preserves_context Env_infer Env' _ h_unify
+      have h_ctx : Env'.context = Env.context := by rw [h_ctx_unify, h_ctx_infer]
+      refine ⟨by rw [h_ctx], by rw [h_ctx], ?_⟩
+      have h_infer_mono := CmdType.inferType_genState_mono C Env _ _ expr e' ety h_infer h_wf h_fwf
+      rw [CmdType.unifyTypes_preserves_genState Env_infer Env' _ h_unify]
+      exact h_infer_mono
+    | nondet =>
+      simp at h; cases h
+      exact ⟨rfl, rfl, Nat.le_refl _⟩
+  | assert label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    have h_ctx := CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf
+    exact ⟨by rw [h_ctx], by rw [h_ctx],
+      CmdType.inferType_genState_mono C Env Env_infer _ e e' ety h_infer h_wf h_fwf⟩
+  | assume label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    have h_ctx := CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf
+    exact ⟨by rw [h_ctx], by rw [h_ctx],
+      CmdType.inferType_genState_mono C Env Env_infer _ e e' ety h_infer h_wf h_fwf⟩
+  | cover label e md =>
+    simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
+    elim_err h; rename_i v h_infer
+    elim_err h; rename_i _u h_check
+    elim_err h; cases h
+    obtain ⟨e', ety, Env_infer⟩ := v
+    have h_ctx := CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf
+    exact ⟨by rw [h_ctx], by rw [h_ctx],
+      CmdType.inferType_genState_mono C Env Env_infer _ e e' ety h_infer h_wf h_fwf⟩
+
+/-! ## Part II — Annotated soundness (`Cmd.typeCheck_annotated_sound`) -/
+
 /-! ## Part II — Annotated soundness (`Cmd.typeCheck_annotated_sound`) -/
 
 -- Lemmas about [getVars] preservation for freshness hypothesis

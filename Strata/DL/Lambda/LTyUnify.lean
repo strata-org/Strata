@@ -769,6 +769,14 @@ theorem LMonoTy.subst_bool (S : Subst) : LMonoTy.subst S LMonoTy.bool = LMonoTy.
   intro h
   simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
 
+/--
+Substitution on `LMonoTy.int` is the identity (ground type).
+-/
+theorem LMonoTy.subst_int (S : Subst) : LMonoTy.subst S LMonoTy.int = LMonoTy.int := by
+  simp [LMonoTy.int, LMonoTy.subst]
+  intro h
+  simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
+
 /-- Substitution distributes over a 2-element `tcons`, giving component-wise results. -/
 theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMonoTy) :
     LMonoTy.subst S (.tcons name [a, b]) = .tcons name [LMonoTy.subst S a, LMonoTy.subst S b] := by
