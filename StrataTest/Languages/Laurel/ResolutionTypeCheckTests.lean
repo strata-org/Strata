@@ -284,6 +284,35 @@ function foo(c: bool): bool {
 };
 #end
 
+/-! ## `if` branch join with a dynamic `Core Any` branch is symmetric
+
+`Core Any` (the gradual dynamic type, `TCore "Any"`) is consistent with every
+type, so an `if` with one `Core Any` branch and one `int` branch must
+synthesize the *same* type regardless of branch order — the dynamic type
+absorbs (`Any ⊔ int = Any`), just as a hole promotes to the concrete type.
+Both orders therefore feed a non-numeric `Core Any` into `<` and report the
+*same* diagnostic. (Before `join` handled `.TCore`, the then-first order
+returned `Any` and errored while the else-first order returned `int` and was
+silently accepted — an order-dependent type.) -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+function foo(c: bool, a: Core Any): bool {
+  (if c then a else 1) < 1
+// ^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'Core Any'
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+function foo(c: bool, a: Core Any): bool {
+  (if c then 1 else a) < 1
+// ^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'Core Any'
+};
+#end
+
 /-! ## `if` branch join recovers precision from a hole
 
 When one branch is a hole (`Unknown`) and the other is a concrete numeric
@@ -387,5 +416,32 @@ procedure useUndef() opaque {
   var x: UndefinedType := 0;
 //       ^^^^^^^^^^^^^ error: 'UndefinedType' is not defined
   var y: int := x + 2
+};
+#end
+
+/-! ## Datatype-constructor argument type checks
+
+Constructor arguments are now type-checked against the declared parameter types,
+so `Wrap(true)` for `Wrap(v: int)` is rejected (it was silently accepted before). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box { Wrap(v: int) }
+function foo(): Box {
+  Wrap(true)
+//     ^^^^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! A correctly-typed constructor call still resolves cleanly (no
+over-rejection): `Wrap(1)` matches the declared `int` field. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box { Wrap(v: int) }
+function foo(): Box {
+  Wrap(1)
 };
 #end
