@@ -751,8 +751,26 @@ class SwarmLeanTools:
                 text=r.text,
             ))
 
-        # Detect mutual groups by finding mutual...end ranges in the source
+        # Extend block boundaries to include termination_by/decreasing_by clauses
         content = (self._root / file_path).read_text()
+        file_lines = content.splitlines()
+        for block in blocks:
+            # Check lines after block.end for termination_by/decreasing_by
+            idx = block.end  # 1-indexed, so file_lines[idx] is the line AFTER block.end
+            while idx < len(file_lines):
+                line = file_lines[idx].strip()
+                if line.startswith("termination_by") or line.startswith("decreasing_by"):
+                    block.end = idx + 1  # extend (1-indexed)
+                    idx += 1
+                elif line == "" or line.startswith("--"):
+                    idx += 1  # skip blank/comment lines between them
+                else:
+                    break
+            # Re-derive text and has_sorry with extended boundaries
+            block.text = "\n".join(file_lines[block.start - 1:block.end])
+            block.has_sorry = "sorry" in block.text
+
+        # Detect mutual groups by finding mutual...end ranges in the source
         file_lines = content.splitlines()
         mutual_ranges: list[tuple[int, int]] = []  # (mutual_line, end_line) both 1-indexed
         i = 0
@@ -847,12 +865,14 @@ class SwarmLeanTools:
 
         theorems = []
         for b in (split.blocks if not split.error else []):
+            # Use get_sorries_by_theorem as ground truth (not parser's has_sorry)
+            thm_has_sorry = len(sorry_by_thm.get(b.name, [])) > 0
             entry = {
                 "name": b.name,
-                "status": "sorry" if b.has_sorry else "proved",
+                "status": "sorry" if thm_has_sorry else "proved",
                 "start_line": b.start,
                 "end_line": b.end,
-                "has_sorry": b.has_sorry,
+                "has_sorry": thm_has_sorry,
                 "sorry_positions": sorry_by_thm.get(b.name, []),
             }
             mid = get_mutual_id(b)
@@ -869,6 +889,18 @@ class SwarmLeanTools:
             if mg is not None:
                 mutual_groups.setdefault(mg, []).append(t["name"])
 
+        # Consistency: if file has sorry but no theorem claims it, attribute to main
+        main_sorry_free = (not main_thm["has_sorry"]) if main_thm else False
+        if main_sorry_free and sorry_info.total > 0:
+            # Sorry exists in the file but not attributed to any theorem —
+            # likely in decreasing_by/termination_by/where clause. Attribute to main.
+            all_thm_sorry = sum(len(t["sorry_positions"]) for t in theorems)
+            if all_thm_sorry == 0:
+                main_sorry_free = False
+                if main_thm:
+                    main_thm["has_sorry"] = True
+                    main_thm["status"] = "sorry"
+
         result = {
             "theorems": theorems,
             "sorry_count": sorry_info.total,
@@ -876,7 +908,8 @@ class SwarmLeanTools:
             "has_error": has_error,
             "errors": errors,
             "main_theorem": main_thm["name"] if main_thm else None,
-            "main_theorem_sorry_free": (not main_thm["has_sorry"]) if main_thm else False,
+            "main_theorem_sorry_free": main_sorry_free,
+            "file_has_sorry": has_sorry,
         }
         if mutual_groups:
             result["mutual_groups"] = mutual_groups
@@ -923,8 +956,6 @@ class SwarmLeanTools:
         # block.start/end from itp_interface TacticParser are 1-indexed
         result = {}
         for block in split.blocks:
-            if not block.has_sorry:
-                continue
             if filter_names and block.name not in filter_names:
                 continue
 

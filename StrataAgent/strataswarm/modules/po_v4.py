@@ -741,8 +741,20 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             await _dump_guide_state(guide, entry, cwd)
             break  # → grace phase → extraction
         elif turns == 0:
-            await agent._emit("message", f"[PO4] Guide says done (turns=0): {reason}")
-            break  # → grace phase → extraction (main is sorry-free, stubs remain)
+            # Only accept if the file truly has no sorry in the protected block
+            split_check = tools.split_theorems(stub_rel)
+            protected_sorry = False
+            if split_check and not split_check.error:
+                for block in split_check.blocks:
+                    if block.name in protected_names and block.has_sorry:
+                        protected_sorry = True
+                        break
+            if not protected_sorry and not tools.has_sorry(stub_rel):
+                await agent._emit("message", f"[PO4] Guide says done (turns=0): {reason}")
+                break  # → grace phase → extraction
+            # File still has sorry — guide is wrong, continue proving
+            await agent._emit("message",
+                f"[PO4] Guide says done but file still has sorry — continuing")
 
         action = f"STRATEGY ADVICE from your proof guide:\n{advice}\n\nApply this advice and continue the proof."
 
