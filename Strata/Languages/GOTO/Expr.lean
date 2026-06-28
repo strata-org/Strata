@@ -58,6 +58,8 @@ inductive Unary where
   | Typecast
   /-- `unary_minus_overflow_exprt` -/
   | UnaryMinusOverflow
+  /-- `dereference_exprt` (`*p`) -/
+  | Dereference
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat Unary where
@@ -70,6 +72,7 @@ instance : ToFormat Unary where
     | .ArrayOf => "array_of"
     | .Typecast => "typecast"
     | .UnaryMinusOverflow => "overflow-unary-"
+    | .Dereference => "dereference"
 
 /--
 Representation of identifiers specific to binary expressions,
@@ -177,12 +180,16 @@ inductive SideEffect where
   | Nondet
   /-- `side_effect_expr_assignt` -/
   | Assign
+  /-- `side_effect_exprt` with `ID_allocate` (native dynamic-object allocation;
+      `operands = [size, zeroInitFlag]`, type is the result pointer). -/
+  | Allocate
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToFormat SideEffect where
   format s := match s with
     | .Nondet => "nondet"
     | .Assign => "assign"
+    | .Allocate => "allocate"
 
 end Identifier
 
@@ -325,6 +332,16 @@ def unary_minus_overflow (operand : Expr) : Expr :=
 /-- Typecast expression -/
 def typecast (operand : Expr) (targetType : Ty) : Expr :=
   { id := .unary .Typecast, type := targetType, operands := [operand] }
+
+/-- Dereference (`*ptr`) yielding a value of type `pointee`. -/
+def dereference (ptr : Expr) (pointee : Ty) : Expr :=
+  { id := .unary .Dereference, type := pointee, operands := [ptr] }
+
+/-- Native dynamic-object allocation (`side_effect ID_allocate`): allocate
+    `size` bytes, optionally zero-initialized, returning a pointer of type
+    `ptrTy`. Mirrors CBMC's `__CPROVER_allocate`. -/
+def allocate (size zeroFlag : Expr) (ptrTy : Ty) : Expr :=
+  { id := .side_effect .Allocate, type := ptrTy, operands := [size, zeroFlag] }
 
 /-- Cast a bitvector expression to its signed interpretation. -/
 def toSigned (e : Expr) : Expr :=

@@ -70,6 +70,11 @@ def tyToJson (ty : Ty) : Json :=
       ("id", "array"),
       ("sub", Json.arr #[tyToJson elemTy])
     ]
+  | .Pointer pointee => Json.mkObj [
+      ("id", "pointer"),
+      ("namedSub", Json.mkObj [("width", Json.mkObj [("id", "64")])]),
+      ("sub", Json.arr #[tyToJson pointee])
+    ]
   | { id := .code, subtypes := retTy :: paramTypes, .. } =>
     let paramSubs := paramTypes.map fun pTy =>
       Json.mkObj [("namedSub", Json.mkObj [("type", tyToJson pTy)])]
