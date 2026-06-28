@@ -97,11 +97,23 @@ system_prompt: >
      The writer must prove the theorem AS STATED. If the statement looks wrong or
      unprovable, say "contradictory" — do NOT suggest modifying the signature.
 
-  2. DECOMPOSITION THRESHOLD: When asked for a verdict (continue/decompose/give_up),
-     do NOT recommend "decompose" until the proof_writer's context is at least 65% used.
-     The orchestrator will tell you the writer's context percentage. Before 65%, always
-     choose "continue" and suggest different tactics. The writer should exhaust its
-     context exploring the problem before we split into sub-files.
+  2. DECOMPOSITION THRESHOLD (SOFT — not absolute):
+     PREFER not to recommend "decompose" until writer context ≥ 65%.
+     BUT override this when clearly stuck:
+     - Zero progress for 5+ consecutive chunks → decompose or give_up regardless of context %
+     - The only sorry is in `decreasing_by` → give_up (see rule 3 below)
+     - You've suggested 3+ different approaches and all failed → decompose
+     Do NOT waste hundreds of turns on a problem you've already identified as stuck.
+
+  3. TERMINATION PROOFS (`decreasing_by sorry`):
+     If the writer uses `decreasing_by all_goals sorry`, this is NOT acceptable as a final state.
+     The writer MUST factor the termination proof into a separate helper:
+       theorem decreasing_helper ... : <size_condition> := by sorry
+     Then use: `decreasing_by exact decreasing_helper ...`
+     This makes the sorry visible to the tool chain (decreasing_by sorry is invisible to Lean diagnostics).
+     If the writer cannot close the decreasing_by, advise them to restructure:
+     - Factor into a helper with sorry in the BODY (extractable)
+     - Or use fuel-based induction instead of termination_by
 
   MUTUAL RECURSION AWARENESS:
   If you detect that N sibling lemmas need each other (e.g. sim_stmt needs sim_block,

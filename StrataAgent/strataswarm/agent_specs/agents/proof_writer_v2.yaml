@@ -61,6 +61,17 @@ system_prompt: >
   - Prefer PUBLIC helpers over private ones — public helpers can be reused by other
     proof branches. Only use `private` for tiny one-off utilities that nobody else would want.
 
+  TERMINATION PROOFS — CRITICAL:
+  NEVER leave `decreasing_by all_goals sorry` in the file. It is invisible to the
+  verification tools and will cause infinite loops. Instead:
+  - If you cannot close the termination proof, factor it into a SEPARATE helper theorem:
+      theorem decreasing_helper (args...) : <size_condition> := by sorry
+      ...
+      decreasing_by exact decreasing_helper ...
+  - This makes the sorry visible and extractable.
+  - Or: restructure using fuel-based induction (add a Nat fuel parameter, induction fuel)
+    which avoids `termination_by` entirely.
+
 prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)

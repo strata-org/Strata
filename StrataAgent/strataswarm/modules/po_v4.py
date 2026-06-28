@@ -1251,7 +1251,12 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
                 )
                 if not isinstance(new_entry, str):
                     ledger.add_parent(new_entry.id, v.matched_id)
-                    ledger.mark_proved(new_entry.id, v.import_path, proved_by="shortcut")
+                    # Only mark proved if matched entry is still truly proved (no transitive sorry)
+                    matched = ledger.get(v.matched_id)
+                    if matched and matched.status == LemmaStatus.PROVED:
+                        ledger.mark_proved(new_entry.id, v.import_path, proved_by="shortcut")
+                    else:
+                        ledger.mark_contingent(new_entry.id)
 
             else:
                 new_entry = ledger.add_lemma(
@@ -1568,11 +1573,15 @@ def _register_all_helpers(ledger: LemmaLedger, entry: LemmaEntry, cwd: Path):
             workspace=entry.workspace, signature_hash=sig_hash,
             statement=block.text, parent_id=entry.id,
         )
-        # Sorry-free helpers → mark proved immediately
+        # Sorry-free helpers → check transitive sorry before marking proved
         if not isinstance(new_entry, str) and not block.has_sorry:
-            ledger.mark_proved(new_entry.id,
-                               stub_rel.replace("/", ".").removesuffix(".lean"),
-                               proved_by="direct")
+            cr = tools.check_compiles(stub_rel)
+            if cr.success and not cr.has_sorry:
+                ledger.mark_proved(new_entry.id,
+                                   stub_rel.replace("/", ".").removesuffix(".lean"),
+                                   proved_by="direct")
+            elif cr.success:
+                ledger.mark_contingent(new_entry.id)
 
 
 async def _dump_guide_state(guide, entry: LemmaEntry, cwd: Path):

@@ -889,27 +889,33 @@ class SwarmLeanTools:
             if mg is not None:
                 mutual_groups.setdefault(mg, []).append(t["name"])
 
-        # Consistency: if file has sorry but no theorem claims it, attribute to main
-        main_sorry_free = (not main_thm["has_sorry"]) if main_thm else False
-        if main_sorry_free and sorry_info.total > 0:
-            # Sorry exists in the file but not attributed to any theorem —
-            # likely in decreasing_by/termination_by/where clause. Attribute to main.
-            all_thm_sorry = sum(len(t["sorry_positions"]) for t in theorems)
-            if all_thm_sorry == 0:
+        # Text-based local sorry check (catches decreasing_by sorry)
+        local_has_sorry = "sorry" in content if content else False
+
+        # main_theorem_sorry_free: check if "sorry" appears anywhere from the main
+        # theorem's start line onwards (catches decreasing_by, termination_by, etc.)
+        main_sorry_free = True
+        if main_thm and content:
+            main_start = main_thm.get("start_line", 1) - 1  # 0-indexed
+            main_and_below = "\n".join(file_lines[main_start:])
+            if "sorry" in main_and_below:
                 main_sorry_free = False
-                if main_thm:
-                    main_thm["has_sorry"] = True
-                    main_thm["status"] = "sorry"
+                main_thm["has_sorry"] = True
+                main_thm["status"] = "sorry"
+        elif main_thm:
+            main_sorry_free = not main_thm["has_sorry"]
 
         result = {
             "theorems": theorems,
-            "sorry_count": sorry_info.total,
+            "sorry_count_diagnostic": sorry_info.total,
+            "sorry_count_local": int(local_has_sorry),
+            "has_sorry_local": local_has_sorry,
+            "has_sorry_transitive": has_sorry,
             "compiles": success,
             "has_error": has_error,
             "errors": errors,
             "main_theorem": main_thm["name"] if main_thm else None,
             "main_theorem_sorry_free": main_sorry_free,
-            "file_has_sorry": has_sorry,
         }
         if mutual_groups:
             result["mutual_groups"] = mutual_groups
@@ -1051,9 +1057,29 @@ class SwarmLeanTools:
         return reachable
 
     def has_sorry(self, file_path: str) -> bool:
-        """Quick check: does the file have any sorry?"""
+        """Check if file has LOCAL sorry (in its own text, including decreasing_by sorry).
+
+        Uses both LSP diagnostics AND text grep.
+        Does NOT check transitive sorry from imports — use has_sorry_transitive() for that.
+        """
         info = self.count_sorries(file_path)
-        return info.total > 0
+        if info.total > 0:
+            return True
+        # Fallback: text check for sorry that Lean diagnostics miss (decreasing_by)
+        try:
+            content = (self._root / file_path).read_text()
+            return "sorry" in content
+        except OSError:
+            return False
+
+    def has_sorry_transitive(self, file_path: str) -> bool:
+        """Check if file or ANY of its imports has sorry (transitive).
+
+        Uses lake build output — "declaration uses sorry" warnings from deps.
+        More expensive than has_sorry() but gives the complete picture.
+        """
+        cr = self.check_compiles(file_path)
+        return cr.has_sorry
 
     def is_proved(self, file_path: str) -> bool:
         """Quick check: is the file sorry-free?"""

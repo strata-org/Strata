@@ -125,13 +125,44 @@ def make_proof_writer_verifier(
                         f"extracted to separate files and must be public for reuse."
                     )
 
-        # 4. Check if sorry-free (success!)
-        if not tools.has_sorry(target_file):
+        # 3.7 Main theorem must be sorry-free (including termination_by/decreasing_by)
+        # split_theorems extends block boundaries to include these clauses
+        if split and not split.error and main_theorem:
+            main_block = next((b for b in split.blocks if b.name == main_theorem), None)
+            if main_block and main_block.has_sorry:
+                # Find sorry lines in the main theorem's text to give specific feedback
+                root = tools._root
+                current_content = (root / target_file).read_text()
+                file_lines = current_content.splitlines()
+                sorry_context_lines = []
+                for line_idx in range(main_block.start - 1, min(main_block.end, len(file_lines))):
+                    if "sorry" in file_lines[line_idx]:
+                        line_text = file_lines[line_idx].strip()
+                        sorry_context_lines.append(f"  line {line_idx + 1}: {line_text}")
+
+                context_str = "\n".join(sorry_context_lines[:5])
+                if "decreasing_by" in "\n".join(sorry_context_lines):
+                    return (
+                        f"MAIN THEOREM HAS SORRY in termination proof:\n{context_str}\n\n"
+                        f"Factor the termination obligation into a helper theorem:\n"
+                        f"  theorem decreasing_helper (args...) : <size_condition> := by sorry\n"
+                        f"Then use: `decreasing_by exact decreasing_helper ...`\n"
+                        f"Or: restructure using fuel-based induction to avoid termination_by."
+                    )
+                else:
+                    return (
+                        f"MAIN THEOREM HAS SORRY:\n{context_str}\n\n"
+                        f"The main theorem '{main_theorem}' must be sorry-free. "
+                        f"Factor any sorry into a separate helper theorem above."
+                    )
+
+        # 4. Check if file is entirely sorry-free (success — fully proved!)
+        root = tools._root
+        current_content = (root / target_file).read_text()
+        if "sorry" not in current_content:
             return None  # fully proved!
 
         # 5. Check progress was made (file changed from original)
-        root = tools._root
-        current_content = (root / target_file).read_text()
         if current_content.strip() == original_content.strip():
             return (
                 "NO PROGRESS: The file is unchanged from the original. "
