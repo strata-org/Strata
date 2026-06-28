@@ -177,6 +177,23 @@ private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTyp
 ]
 
 /--
+Soundness backstop: a discarded Core program (`none`) MUST carry at least
+one error diagnostic. The downstream pipeline treats a `none` program as
+"nothing to verify", so any translation failure that reaches the verifier
+without an error diagnostic would be reported as a vacuous "0 errors /
+verified". Every known discard site already emits a diagnostic; this
+guarantees the property for any future/unknown path too. Returns `diags`
+unchanged when the program is present or an error is already reported.
+-/
+def ensureDiscardDiagnosed (programPresent : Bool) (diags : List DiagnosticModel)
+    : List DiagnosticModel :=
+  if !programPresent && !diags.any (·.type != .Warning) then
+    diags ++ [DiagnosticModel.fromMessage
+      "internal error: Laurel-to-Core translation produced no program without reporting an error diagnostic"
+      DiagnosticType.StrataBug]
+  else diags
+
+/--
 Translate Laurel Program to Core Program, also returning the lowered Laurel program.
 
 When `keepAllFilesPrefix` is provided, the program state after each named
@@ -246,6 +263,10 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   emit "Core" "core.st" coreProgram
   let coreProgramOption :=
     if coreDiagnostics.isEmpty then some coreProgram else none
+  -- Backstop invariant: if the program was discarded, it must carry at least
+  -- one (non-warning) diagnostic, otherwise the discard is silent. This nets
+  -- any future discard path that forgets to emit a diagnostic.
+  allDiagnostics := ensureDiscardDiagnosed coreProgramOption.isSome allDiagnostics
   return (coreProgramOption, allDiagnostics, program, stats)
 
 /--
