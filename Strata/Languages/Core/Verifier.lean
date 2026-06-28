@@ -516,15 +516,19 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
 
 @[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
-def getSolverPrelude : String → SolverM Unit
-| "z3" => do
-  -- These options are set by the standard Boogie implementation and are
-  -- generally good for the Boogie dialect, too, though we may want to
-  -- have more fine-grained criteria for when to use them.
-  Solver.setOption "smt.mbqi" "false"
-  Solver.setOption "auto_config" "false"
-| "cvc5" => return ()
-| _ => return ()
+def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) : SolverM Unit := do
+  match solver with
+  | "z3" => do
+    -- These options are set by the standard Boogie implementation and are
+    -- generally good for the Boogie dialect, too, though we may want to
+    -- have more fine-grained criteria for when to use them.
+    Solver.setOption "smt.mbqi" "false"
+    Solver.setOption "auto_config" "false"
+  | "cvc5" => pure ()
+  | _ => pure ()
+  -- Apply caller-supplied `--set-option NAME=VALUE`s last, so they override the
+  -- built-in prelude (e.g. `--set-option smt.mbqi=true` for quantified lemmas).
+  solverOptions.forM fun (name, value) => Solver.setOption name value
 
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
@@ -565,7 +569,7 @@ def dischargeObligation
       baseFlags
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
-    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
       assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
       (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
       (pctx := pctx))
@@ -609,11 +613,14 @@ def dischargeObligationIncremental
   let encodeDecl (solver : Strata.SMT.AbstractSolver Term TermType
                             Strata.SMT.IncrementalSolverM) :
       Strata.SMT.IncrementalSolverM Imperative.SMT.EncodedObligation := do
-    let prelude : Strata.SMT.IncrementalSolverM Unit := match options.solver with
+    let prelude : Strata.SMT.IncrementalSolverM Unit := do
+      match options.solver with
       | "z3" => do
         solver.setOption "smt.mbqi" "false"
         solver.setOption "auto_config" "false"
       | _ => pure ()
+      -- Apply caller-supplied `--set-option`s last so they override the prelude.
+      options.solverOptions.forM fun (name, value) => solver.setOption name value
     let (obligationId, ids, estate) ←
       _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
