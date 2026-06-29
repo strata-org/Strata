@@ -16,6 +16,7 @@ import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
+import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.PushOldInward
@@ -141,10 +142,21 @@ program state after each named Laurel pass is written to
 private def runLaurelPasses
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List DiagnosticModel × Statistics) := do
+  -- The always-on prelude: datatypes/functions, "free" for SMT.
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
   }
+
+  -- E1 gating: `BaseException` is a heap-participating composite, so it is
+  -- prepended only when the user program references it (the name itself, or a
+  -- subtype whose `extends` chain names it). Programs that do not use
+  -- exceptions are left untouched, avoiding perturbation of SMT heap reasoning.
+  -- See `docs/design/laurel_extensions.md` (extension E1).
+  let program :=
+    if (referencedNames program).contains baseExceptionTypeName then
+      { program with types := exceptionDefinitionsForLaurel.types ++ program.types }
+    else program
 
   -- Step 0: the input program before any passes
   emit "Initial" "laurel.st" program

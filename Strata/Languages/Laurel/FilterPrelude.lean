@@ -264,6 +264,18 @@ private def collectProgramRefs (prog : Laurel.Program) : CollectState :=
     prog.staticProcedures.forM collectProcDeps
     prog.types.forM collectTypeDefDeps
 
+/-- The set of all names (procedure-call targets and type references) that a
+    user program refers to. Exposed so the compilation pipeline can decide
+    whether an optional, heap-participating prelude fragment (e.g. the E1
+    exception root `BaseException`) needs to be prepended — a fragment that
+    perturbs SMT heap reasoning when injected into programs that never use it.
+
+    Detecting a bare *subtype* reference works for free: the prelude defines only
+    the root, so any subtype is defined in the user program with an `extends`
+    chain that names the root, and `extends` targets are collected here. -/
+public def referencedNames (prog : Laurel.Program) : Std.HashSet String :=
+  (collectProgramRefs prog).allNames
+
 /-- Filter a prelude Laurel program to only include declarations
     transitively needed by the user program. -/
 public def filterPrelude (prelude user : Laurel.Program)

@@ -49,6 +49,46 @@ def coreDefinitionsForLaurel : Program :=
   | .ok program => program
   | .error e => dbg_trace s!"BUG: CoreDefinitionsForLaurel parse error: {e}"; default
 
+/--
+E1: the exceptional-channel root for exception handling.
+See `docs/design/laurel_extensions.md` (extension E1).
+
+`BaseException` is the root of every value that travels on the exceptional
+channel; `throw`'s operand, a `catch` binding, and the `onThrow` binder are all
+typed `BaseException` (or a declared subtype). The prelude defines only the
+root: any catchable-vs-fatal tiering above it is front-end policy, expressed by
+which parent a front-end type `extends` plus the catch predicate.
+
+Unlike `coreDefinitionsForLaurel` (datatypes/functions that are "free" for SMT),
+`BaseException` is a *composite* and therefore participates in the heap model.
+Injecting it into every program would perturb SMT heap reasoning for programs
+that do not use exceptions, so it is kept separate and prepended **only when a
+program references it** (see the pipeline's gating on `baseExceptionTypeName`).
+-/
+def exceptionDefinitionsForLaurelDDM :=
+#strata
+program Laurel;
+
+composite BaseException {
+  var message: string
+}
+
+#end
+
+/--
+The E1 exception prelude as a `Laurel.Program`, parsed at compile time.
+-/
+def exceptionDefinitionsForLaurel : Program :=
+  match TransM.run none (parseProgram exceptionDefinitionsForLaurelDDM) with
+  | .ok program => program
+  | .error e => dbg_trace s!"BUG: ExceptionDefinitionsForLaurel parse error: {e}"; default
+
+/-- Name of the E1 exceptional-channel root composite (`BaseException`).
+    A program "uses exceptions" — and so needs `exceptionDefinitionsForLaurel`
+    prepended — iff it references this name (directly, or transitively via a
+    subtype, whose `extends` chain names it). -/
+def baseExceptionTypeName : String := "BaseException"
+
 end -- public section
 
 end Strata.Laurel
