@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 
 /-!
@@ -18,9 +19,10 @@ body with a non-empty modifies clause. The analysis is transitive over static
 calls: if `A` calls `B` and `B` reads/writes the heap, then so does `A`.
 
 This is the single source of truth for heap-effect classification. It lives in
-its own module (importing only the AST) so that both `HeapParameterization`
-(which uses it to inject `$heap` parameters) and `Resolution` (which uses it to
-diagnose no-op `old(...)` usage) can share it without an import cycle.
+its own module (importing only the AST and the generic `MapStmtExpr` traversal)
+so that both `HeapParameterization` (which uses it to inject `$heap` parameters)
+and `Resolution` (which uses it to diagnose no-op `old(...)` usage) can share it
+without an import cycle.
 -/
 
 public section
@@ -34,55 +36,22 @@ structure AnalysisResult where
   writesHeapDirectly : Bool := false
   callees : List Identifier := []
 
-mutual
-def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
-  termination_by sizeOf expr
-  decreasing_by cases expr; term_by_mem
-
-def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
-  match _: expr with
-  | .Var (.Field target _) =>
-      modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
-  | .InstanceCall target _ args => collectExprMd target; for a in args do collectExprMd a
-  | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExprMd a
-  | .IfThenElse c t e => collectExprMd c; collectExprMd t; if let some x := e then collectExprMd x
-  | .Block stmts _ => for s in stmts do collectExprMd s
-  | .While c invs d b _ => collectExprMd c; collectExprMd b; for inv in invs do collectExprMd inv; if let some x := d then collectExprMd x
-  | .Return v => if let some x := v then collectExprMd x
-  | .Assign assignTargets v =>
-      -- Check if any target is a field assignment (heap write)
-      for ⟨assignTarget, _⟩ in assignTargets.attach do
-        match _hav: assignTarget.val with
-        | .Field target _fieldName =>
-            modify fun s => { s with writesHeapDirectly := true }
-            collectExprMd target
-        | .Local _ | .Declare _ => pure ()
-      collectExprMd v
-  | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
-  | .PrimitiveOp _ args _ => for a in args do collectExprMd a
-  | .New _ => modify fun s => { s with writesHeapDirectly := true }
-  | .ReferenceEquals l r => collectExprMd l; collectExprMd r
-  | .AsType t _ => collectExprMd t
-  | .IsType t _ => collectExprMd t
-  | .Quantifier _ _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
-  | .Assigned n => collectExprMd n
-  | .Old v => collectExprMd v
-  | .Fresh v => collectExprMd v
-  | .Assert ⟨c, _, _⟩ => collectExprMd c
-  | .Assume c => collectExprMd c
-  | .ProveBy v p => collectExprMd v; collectExprMd p
-  | .ContractOf _ f => collectExprMd f
-  | _ => pure ()
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try term_by_mem)
-    -- For target inside Field in assign target list (attach-based loop):
-    all_goals (
-      have := List.sizeOf_lt_of_mem ‹_›
-      have := Variable.sizeOf_field_target_lt_of_eq _hav
-      omega)
-end
+/-- Collect the direct heap effects of an expression (and the static callees
+    needed to propagate them transitively). Recursion into child nodes is handled
+    by `foldStmtExprM`; the visitor only flags the constructors that directly
+    read (`x#f`), write (field assignment, `new`), or call. -/
+def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
+  foldStmtExprM (fun e => do
+    match e.val with
+    | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
+    | .StaticCall callee _ => modify fun s => { s with callees := callee :: s.callees }
+    | .New _ => modify fun s => { s with writesHeapDirectly := true }
+    | .Assign assignTargets _ =>
+        for ⟨assignTarget, _⟩ in assignTargets.attach do
+          match assignTarget.val with
+          | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
+          | .Local _ | .Declare _ => pure ()
+    | _ => pure ()) expr
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let bodyResult := match proc.body with

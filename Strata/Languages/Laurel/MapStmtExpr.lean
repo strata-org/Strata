@@ -324,6 +324,36 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
 
+/-! ## Read-only traversals
+
+`foldStmtExprM` visits every `StmtExprMd` node (pre-order: a node is visited
+before its children, children left-to-right) without rebuilding the tree, so the
+caller can accumulate information in a monad. It is the read-only counterpart of
+`mapStmtExprM`, implemented on top of `mapStmtExprPrePostM` so the child
+enumeration lives in exactly one place.
+
+Analysis passes that care about only a handful of constructors should
+pattern-match those in their visitor and ignore the rest, instead of hand-rolling
+a full structural recursion — which is pure boilerplate for the irrelevant
+constructors and silently skips children if a new constructor is added. -/
+
+/-- Visit every `StmtExprMd` node (pre-order), running `f` for its effect. -/
+def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m Unit := do
+  let _ ← mapStmtExprPrePostM (m := m) (fun e => do f e; pure (none : Option StmtExprMd)) pure expr
+  pure ()
+
+/-- Pure accumulation over every node (pre-order, parent before children). -/
+def foldStmtExpr {β : Type} (f : StmtExprMd → β → β) (init : β) (expr : StmtExprMd) : β :=
+  (foldStmtExprM (m := StateM β) (fun e => modify (f e)) expr).run init |>.snd
+
+/-- `true` iff `p` holds for at least one node in the tree. -/
+def anyStmtExpr (p : StmtExprMd → Bool) (expr : StmtExprMd) : Bool :=
+  foldStmtExpr (fun e acc => acc || p e) false expr
+
+/-- Collect, in pre-order, the concatenation of `f` applied to every node. -/
+def collectStmtExprList {β : Type} (f : StmtExprMd → List β) (expr : StmtExprMd) : List β :=
+  foldStmtExpr (fun e acc => acc ++ f e) [] expr
+
 /-- Apply a monadic transformation to all procedure bodies. -/
 @[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do

@@ -2801,70 +2801,24 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .IfThenElse cond thenBr elseBr =>
-    let map := collectStmtExpr map cond
-    let map := collectStmtExpr map thenBr
-    match elseBr with
-    | some e => collectStmtExpr map e
-    | none => map
-  | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .While cond invs dec body _ =>
-    let map := collectStmtExpr map cond
-    let map := invs.foldl collectStmtExpr map
-    let map := match dec with | some d => collectStmtExpr map d | none => map
-    collectStmtExpr map body
-  | .Return val => match val with | some v => collectStmtExpr map v | none => map
-  | .Var (.Local _) => map
-  | .Var (.Declare param) =>
-    let map := register map param.name (.var param.name param.type)
-    collectHighType map param.type
-  | .Assign targets value =>
-    let map := targets.foldl (fun map t =>
-      match t.val with
-      | .Declare param =>
-        let map := register map param.name (.var param.name param.type)
-        collectHighType map param.type
-      | _ => map) map
-    collectStmtExpr map value
-  | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
-  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
-  | .Var (.Field target _) => collectStmtExpr map target
-  | .PureFieldUpdate target _ newVal =>
-    let map := collectStmtExpr map target
-    collectStmtExpr map newVal
-  | .StaticCall _ args => args.foldl collectStmtExpr map
-  | .PrimitiveOp _ args _ => args.foldl collectStmtExpr map
-  | .ReferenceEquals lhs rhs =>
-    let map := collectStmtExpr map lhs
-    collectStmtExpr map rhs
-  | .AsType target ty =>
-    let map := collectStmtExpr map target
-    collectHighType map ty
-  | .IsType target ty =>
-    let map := collectStmtExpr map target
-    collectHighType map ty
-  | .InstanceCall target _ args =>
-    let map := collectStmtExpr map target
-    args.foldl collectStmtExpr map
-  | .Quantifier _ param trigger body =>
-    let map := register map param.name (.quantifierVar param.name param.type)
-    let map := collectHighType map param.type
-    let map := match trigger with | some t => collectStmtExpr map t | none => map
-    collectStmtExpr map body
-  | .Assigned name => collectStmtExpr map name
-  | .Old val => collectStmtExpr map val
-  | .Fresh val => collectStmtExpr map val
-  | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
-  | .Assume cond => collectStmtExpr map cond
-  | .ProveBy val proof =>
-    let map := collectStmtExpr map val
-    collectStmtExpr map proof
-  | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Abstract | .All | .Hole _ _ => map
+  foldStmtExpr (fun e map =>
+    match e.val with
+    | .Var (.Declare param) =>
+      let map := register map param.name (.var param.name param.type)
+      collectHighType map param.type
+    | .Assign targets _ =>
+      targets.foldl (fun map t =>
+        match t.val with
+        | .Declare param =>
+          let map := register map param.name (.var param.name param.type)
+          collectHighType map param.type
+        | _ => map) map
+    | .Quantifier _ param _ _ =>
+      let map := register map param.name (.quantifierVar param.name param.type)
+      collectHighType map param.type
+    | .AsType _ ty => collectHighType map ty
+    | .IsType _ ty => collectHighType map ty
+    | _ => map) map expr
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
     : Std.HashMap Nat ResolvedNode :=
@@ -2989,61 +2943,25 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
 
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
+Recursion into child nodes is handled by `collectStmtExprList`; the visitor only
+checks the constructors that access a field (`x#f` reads and field assignment/incr-decr targets).
 -/
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
-  | .Var (.Field target fieldName) =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
-    targetErrors ++ fieldError
-  | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
-  | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
-      match _hv : t.val with
-      | .Field target fieldName =>
-        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
-        let fieldError := checkDiamondFieldAccess model target fieldName t.source
-        acc ++ innerErrors ++ fieldError
-      | .Local _ | .Declare _ => acc) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
-  | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model t
-    match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
-    | none => errs
-  | .While c invs _ b _ =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args _ =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
-  | .IncrDecr _ _ target =>
-    match _htgt : target.val with
-    | .Field tgt fieldName =>
-      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
-      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
-      innerErrors ++ fieldError
-    | .Local _ | .Declare _ => []
-  | _ => []
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt expr)
-    all_goals (try have := AstNode.sizeOf_val_lt t)
-    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
-    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
+  collectStmtExprList (fun e =>
+    match e.val with
+    | .Var (.Field target fieldName) =>
+      checkDiamondFieldAccess model target fieldName e.source
+    | .Assign targets _ =>
+      targets.flatMap fun t =>
+        match t.val with
+        | .Field target fieldName => checkDiamondFieldAccess model target fieldName t.source
+        | .Local _ | .Declare _ => []
+    | .IncrDecr _ _ target =>
+      match target.val with
+      | .Field tgt fieldName => checkDiamondFieldAccess model tgt fieldName target.source
+      | .Local _ | .Declare _ => []
+    | _ => []) expr
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.

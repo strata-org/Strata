@@ -353,42 +353,6 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
     let trig := if isInnermost then some trigger else none
     (mkMd (.Quantifier .Forall p trig acc), false)) |>.1
 
-/-- Check whether a `StmtExprMd` tree mentions a local variable by name. -/
-private def exprMentions (name : String) (expr : StmtExprMd) : Bool :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .Var (.Local id) => id.text == name
-  | .StaticCall _ args => args.attach.any (fun x => exprMentions name x.val)
-  | .PrimitiveOp _ args _ => args.attach.any (fun x => exprMentions name x.val)
-  | .IfThenElse c t e => exprMentions name c || exprMentions name t ||
-      match e with | some el => exprMentions name el | none => false
-  | .Block stmts _ => stmts.attach.any (fun x => exprMentions name x.val)
-  | .Quantifier _ _ trigger body => exprMentions name body ||
-      match trigger with | some t => exprMentions name t | none => false
-  | .ReferenceEquals l r => exprMentions name l || exprMentions name r
-  | .Assign _ v => exprMentions name v
-  | .Old v => exprMentions name v
-  | .Fresh v => exprMentions name v
-  | .Assume c => exprMentions name c
-  | .Assert c => exprMentions name c.condition
-  | .Return (some v) => exprMentions name v
-  | .InstanceCall t _ args => exprMentions name t || args.attach.any (fun x => exprMentions name x.val)
-  | .AsType t _ => exprMentions name t
-  | .IsType t _ => exprMentions name t
-  | .PureFieldUpdate t _ v => exprMentions name t || exprMentions name v
-  | .ProveBy v p => exprMentions name v || exprMentions name p
-  | .ContractOf _ f => exprMentions name f
-  | .Assigned n => exprMentions name n
-  | _ => false
-  termination_by expr
-  decreasing_by
-    all_goals (try cases x)
-    all_goals (try simp_all)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals omega
-
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
 def lowerContracts (program : Program) : Program :=
