@@ -130,7 +130,6 @@ def insertFrameChecks (proc : Procedure) (frame : StmtExprMd) (body : StmtExprMd
   let beforeExits := mapStmtExpr (fun e =>
     match e.val with
     | .Return _ => wrap e
-    | .Exit l => if l == bodyLabel then wrap e else e
     | _ => e) body
   { val := .Block [beforeExits, check] none, source := src }
 
