@@ -396,17 +396,21 @@ public def splitProcNames (prog : Core.Program)
 public def translateCombinedLaurelWithLowered (combined : Laurel.Program)
     (keepAllFilesPrefix : Option String := none)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
+    (alwaysCallCoreFunctions : Bool := true)
     : IO (Option Core.Program × List DiagnosticModel × Laurel.Program × Statistics) := do
   let (coreOption, errors, lowered, stats) ←
-    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix }
+    Laurel.translateWithLaurel { inlineFunctionsWhenPossible := true, keepAllFilesPrefix, alwaysCallCoreFunctions }
       combined (pipelineCtx := pipelineCtx)
   return (coreOption.map appendCorePartOfRuntime, errors, lowered, stats)
 
 /-- Translate a combined Laurel program to Core and prepend the full
     runtime prelude. -/
 public def translateCombinedLaurel (combined : Laurel.Program) (keepAllFilesPrefix : Option String := none)
+    (alwaysCallCoreFunctions : Bool := true)
     : IO (Option Core.Program × List DiagnosticModel) := do
-  let (coreOption, errors, _, _) ← translateCombinedLaurelWithLowered combined keepAllFilesPrefix
+  let (coreOption, errors, _, _) ←
+    translateCombinedLaurelWithLowered combined keepAllFilesPrefix
+      (alwaysCallCoreFunctions := alwaysCallCoreFunctions)
   return (coreOption, errors)
 
 /-- Run the pyAnalyzeLaurel pipeline: read a Python Ion program,
