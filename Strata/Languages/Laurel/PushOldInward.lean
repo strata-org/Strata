@@ -12,8 +12,11 @@ public import Strata.Languages.Laurel.LaurelPass
 # Push `Old` Inward
 
 Distribute `StmtExpr.Old` over its sub-expressions until each `Old` immediately
-wraps an inout `Var`. Warns on `old(e)` where `e` mentions no inout, and on
-nested `old(old(...))`.
+wraps an inout `Var`.
+
+No-op `old(...)` usage (an `old` that captures no heap state, or a nested
+`old(old(...))`) is diagnosed by `Resolution.validateOldUsage`, the single
+source of user-program diagnostics — this pass only performs the rewrite.
 -/
 
 namespace Strata
@@ -23,13 +26,8 @@ public section
 
 structure PushOldState where
   inoutNames : List String := []
-  diagnostics : List DiagnosticModel := []
 
 abbrev PushOldM := StateM PushOldState
-
-@[expose]
-def warn (source : Option FileRange) (msg : String) : PushOldM Unit :=
-  modify fun s => { s with diagnostics := s.diagnostics ++ [diagnosticFromSource source msg .Warning] }
 
 @[expose]
 def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
@@ -41,7 +39,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
     else
       return expr
   | .Old inner =>
-    warn expr.source "nested `old(...)` has no effect"
+    -- Nested `old` is redundant; `Resolution` warns. Here we just drop it.
     return inner
   | _ => return expr
 
@@ -49,9 +47,7 @@ def insideOld (expr : StmtExprMd) : StateT Bool PushOldM StmtExprMd := do
 def visitOld (expr : StmtExprMd) : PushOldM (Option StmtExprMd) := do
   match expr.val with
   | .Old inner =>
-    let (inner', changed) ← (mapStmtExprM insideOld inner).run false
-    if !changed then
-      warn expr.source "`old(...)` has no effect: expression contains no inout parameter"
+    let (inner', _changed) ← (mapStmtExprM insideOld inner).run false
     return some inner'
   | _ => return none
 
@@ -70,19 +66,18 @@ def transformProcedurePushOld (proc : Procedure) : PushOldM Procedure := do
   mapProcedureM pushOldInwardExpr proc
 
 /-- Push every `StmtExpr.Old` inward until it immediately wraps an inout
-    variable. Returns the rewritten program and any warnings emitted. -/
-def pushOldInward (program : Program) : Program × List DiagnosticModel :=
-  let (program', finalState) :=
+    variable. (No-op `old` usage is diagnosed by `Resolution`.) -/
+def pushOldInward (program : Program) : Program :=
+  let (program', _finalState) :=
     (program.staticProcedures.mapM transformProcedurePushOld).run {}
-  ({ program with staticProcedures := program' }, finalState.diagnostics)
+  { program with staticProcedures := program' }
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def pushOldInwardPass : LoweringPass where
   name := "pushOldInward"
-  documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. Warns on `old(e)` where `e` mentions no inout parameter and on nested `old(old(...))`."
+  documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. No-op `old(...)` usage is diagnosed by Resolution."
   run := fun p _ _ =>
-    let (p', diags) := pushOldInward p
-    (p', diags, {})
+    (pushOldInward p, [], {})
 
 end -- public section
 end Laurel

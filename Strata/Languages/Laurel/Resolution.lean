@@ -12,6 +12,8 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapAnalysis
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Name Resolution Pass
@@ -3115,6 +3117,71 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 
 /-! ## Entry point -/
 
+/-- Collect a "nested `old(...)` has no effect" warning for every `Old` node
+    inside `operand` (the operand of an enclosing `old`). An `old` nested
+    directly inside another `old` is always redundant. -/
+private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
+  (mapStmtExprM (m := StateM (List DiagnosticModel))
+    (fun n => do
+      match n.val with
+      | .Old _ =>
+        modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .Warning])
+        pure n
+      | _ => pure n)
+    operand |>.run []).2
+
+/-- True when `e` contains a heap read (a composite field access `x#f`), reusing
+    the shared heap-effect analysis so this stays consistent with how
+    `HeapParameterization` classifies expressions. -/
+private def containsHeapRead (e : StmtExprMd) : Bool :=
+  ((collectExprMd e).run {}).2.readsHeapDirectly
+
+/-- Collect no-op `old(...)` warnings for one procedure. `writesHeap` says
+    whether the enclosing procedure (transitively) writes the heap.
+
+    An `old(e)` is a no-op — and warned — when either:
+    - the enclosing procedure does not write the heap (there is no pre/post
+      state distinction for it to capture), or
+    - `e` reads no heap state (so its value is identical pre and post).
+
+    Additionally, any `old` nested inside another `old` is redundant. These are
+    the warnings `PushOldInward` used to emit; they live here so resolution is
+    the single source of user-program diagnostics. The two notions stay in sync
+    because both classify "writes the heap" / "reads the heap" via the shared
+    `HeapAnalysis`. -/
+private def oldWarningsForProc (writesHeap : Bool) (proc : Procedure) : List DiagnosticModel :=
+  let visit (n : StmtExprMd) : StateM (List DiagnosticModel) (Option StmtExprMd) := do
+    match n.val with
+    | .Old inner =>
+      -- Warn on any `old` nested within this one's operand.
+      modify (· ++ nestedOldWarnings inner)
+      if !writesHeap then
+        modify (· ++ [diagnosticFromSource n.source
+          "`old(...)` has no effect: the enclosing procedure does not modify the heap" .Warning])
+      else if !containsHeapRead inner then
+        modify (· ++ [diagnosticFromSource n.source
+          "`old(...)` has no effect: expression contains no heap reads" .Warning])
+      -- Return the node unchanged and stop further descent (nested olds were
+      -- already handled above), matching `PushOldInward`'s pre-order handling.
+      pure (some n)
+    | _ => pure none
+  (mapProcedureM (m := StateM (List DiagnosticModel))
+    (fun e => mapStmtExprPrePostM visit pure e) proc |>.run []).2
+
+/-- Diagnose no-op `old(...)` usage across a program. This is a property of the
+    user's *source* program (it does not depend on the heap-parameterized form),
+    so `resolve` runs it only on the initial resolution. Heap-write status is
+    computed over all procedures (static plus composite instance procedures) so
+    the call-graph analysis matches `HeapParameterization`, which runs after
+    instance procedures have been lifted into the static list. -/
+def validateOldUsage (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let allProcs := program.staticProcedures ++ instanceProcs
+  let writers := computeWritesHeap allProcs
+  allProcs.flatMap fun proc => oldWarningsForProc (writers.contains proc.name) proc
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
@@ -3137,9 +3204,14 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
+  -- resolution: later passes (and their re-resolutions) deliberately rewrite
+  -- `old` into the heap-parameterized form this check is phrased against.
+  let oldUsageWarnings :=
+    if existingModel.isNone then validateOldUsage program' else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors
+    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
