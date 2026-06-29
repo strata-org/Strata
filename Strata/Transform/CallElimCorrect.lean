@@ -225,8 +225,7 @@ Imperative.WellFormedSemanticEvalVal δ →
 δ (updatedState σ k v) e = some v' := by
   intros Hwfv Hwfc Hwfvl Hnin Hsome
   simp [Imperative.WellFormedSemanticEvalVar, Imperative.HasFvar.getFvar] at Hwfv
-  simp [Imperative.WellFormedSemanticEvalVal] at Hwfvl
-  have Hval := Hwfvl.2
+  have Hval := Hwfvl.identityOnValues
   simp [← Hsome] at *
   induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
   case const c | op o ty | bvar b =>
@@ -1006,8 +1005,8 @@ theorem Lambda.LExpr.substFvarCorrect :
   intros Hwfc Hwfvr Hwfvl Hsubst2 Hinv
   induction e <;> simp [Lambda.LExpr.substFvar, createFvar] at *
   case const c | op o ty | bvar x =>
-    rw [Hwfvl.2]
-    rw [Hwfvl.2]
+    rw [Hwfvl.identityOnValues]
+    rw [Hwfvl.identityOnValues]
     constructor
     constructor
   case fvar name ty =>
@@ -1101,8 +1100,8 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   intros Hwfc Hwfvr Hwfvl Hinv
   induction e <;> simp at *
   case const c | op o ty | bvar x =>
-    rw [Hwfvl.2]
-    rw [Hwfvl.2]
+    rw [Hwfvl.identityOnValues]
+    rw [Hwfvl.identityOnValues]
     constructor
     constructor
   case fvar m name ty =>

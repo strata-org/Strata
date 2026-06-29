@@ -96,12 +96,14 @@ def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
 @[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) : Prop :=
     ∀ x v, σ x = some v → HasVal.value v
 
-@[expose] def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
-    (δ : SemanticEval P) : Prop :=
-  -- evaluator only evaluates to values (on well-formed stores)
-    (∀ v v' σ, WellFormedStore σ → δ σ v = some v' → HasVal.value v') ∧
-  -- evaluator is identity on values
-    (∀ v' σ, HasVal.value v' → δ σ v' = some v')
+/-- Well-formedness of a `SemanticEval`'s value behavior, split into named
+    clauses. -/
+structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+    (δ : SemanticEval P) : Prop where
+  /-- The evaluator produces only values (on well-formed stores). -/
+  outputsAreValues : ∀ v v' σ, WellFormedStore σ → δ σ v = some v' → HasVal.value v'
+  /-- The evaluator is the identity on values. -/
+  identityOnValues : ∀ v' σ, HasVal.value v' → δ σ v' = some v'
 
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasVal P] [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ, WellFormedStore σ → HasFvar.getFvar e = some v → δ σ e = σ v)

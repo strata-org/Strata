@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Languages.Core.StatementSemantics
+meta import Strata.Languages.Core.StatementSemantics
 
 /-!
 # A concrete evaluator satisfying the semantic well-formedness conditions
@@ -33,16 +33,16 @@ namespace Core
 open Imperative
 open Lambda (LExpr LConst)
 
-public section
+meta section
 
 /-- A canonical Core value used as the normal form of reducible expressions. -/
-@[expose] def canonicalValue : Expression.Expr := .const () (LConst.intConst 0)
+def canonicalValue : Expression.Expr := .const () (LConst.intConst 0)
 
 theorem canonicalValue_isValue : Value canonicalValue := .const
 
 /-- A concrete `CoreEval`: look up `fvar`s, act as identity on values, and
     reduce everything else to `canonicalValue`. -/
-@[expose] def coreWitnessEval : CoreEval := fun σ e =>
+def coreWitnessEval : CoreEval := fun σ e =>
   match e with
   | .fvar _ x _ => σ x
   | .const _ c  => some (.const () c)
@@ -63,7 +63,7 @@ theorem coreWitnessEval_wfVar : WellFormedSemanticEvalVar coreWitnessEval := by
 /-- Every witness output on a well-formed store is a value, and the witness is
     the identity on values. -/
 theorem coreWitnessEval_wfVal : WellFormedSemanticEvalVal coreWitnessEval := by
-  refine And.intro ?_ ?_
+  refine ⟨?_, ?_⟩
   · -- outputs are values (using well-formedness of the store for the fvar case)
     intro e v σ hwfs heval
     cases e with
