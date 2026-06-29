@@ -275,6 +275,173 @@ private theorem Map.find?_applyLogic_some_h' {new old : SubstOne} {a : TyIdentif
     simp only [Map.find?] at h
     grind
 
+/-- The composite substitution for `subst [s] ∘ subst S`: apply `s` to every value
+    of `S` (`Subst.apply s S`), then append `s` as the lowest-priority scope. -/
+def Subst.compose (s : SubstOne) (S : Subst) : Subst :=
+  Subst.apply s S ++ [s]
+
+/-- Per-key action of `Subst.compose s S`: a key bound by `S` (to `t`) maps to
+    `subst [s] t`; an unbound key falls through to `s`. -/
+private theorem Maps.find?_compose (s : SubstOne) (S : Subst) (x : TyIdentifier) :
+    Maps.find? (Subst.compose s S) x =
+      (match Maps.find? S x with
+       | some t => some (LMonoTy.subst [s] t)
+       | none => Map.find? s x) := by
+  rw [Subst.compose, Maps.find?_append, Subst.find?_apply]
+  have h_single : Maps.find? [s] x = Map.find? s x := by
+    simp only [Maps.find?]; cases Map.find? s x <;> rfl
+  rw [h_single]
+  cases Maps.find? S x <;> simp
+
+/-- **General substitution composition.** Applying an arbitrary `S` then a single
+    scope `[s]` equals applying the single composite `Subst.compose s S`: `S`'s
+    values are pre-substituted by `s` (so no residual `S`-keys survive), and `s`'s
+    own bindings cover keys not bound by `S`. Unconditional (no `SubstWF`, no
+    single-scope restriction on `S`). This is the `Subst`-level composition law
+    Route B uses to fold the fresh→user renaming into the resolve substitution. -/
+theorem LMonoTy.subst_compose (s : SubstOne) (S : Subst) (mty : LMonoTy) :
+    LMonoTy.subst [s] (LMonoTy.subst S mty) =
+    LMonoTy.subst (Subst.compose s S) mty := by
+  induction mty with
+  | ftvar x =>
+    simp only [LMonoTy.subst_unfold, Maps.find?_compose]
+    cases Maps.find? S x with
+    | some t => simp only []
+    | none => simp only [Maps.find?]; cases Map.find? s x <;> rfl
+  | bitvec n => simp only [LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_unfold S (.tcons name args),
+        LMonoTy.subst_unfold [s] (.tcons name _),
+        LMonoTy.subst_unfold (Subst.compose s S) (.tcons name args)]
+    simp only [List.map_map]
+    congr 1
+    apply List.map_congr_left
+    intro a ha
+    exact ih a ha
+
+/-- `Maps.values` of a single scope is `Map.values` of that scope. -/
+private theorem Maps.values_single (s : SubstOne) :
+    Maps.values [s] = Map.values s := by
+  simp [Maps.values]
+
+/-- Free vars of the composite `Subst.compose s S` ⊆ freeVars [s] ++ freeVars S.
+    The `apply` part contributes ⊆ freeVars[s] ++ freeVars S (`freeVars_of_apply_subset_alt`);
+    the trailing `[s]` contributes freeVars[s]. -/
+private theorem Subst.freeVars_compose_subset (s : SubstOne) (S : Subst) :
+    ∀ v, v ∈ Subst.freeVars (Subst.compose s S) →
+      v ∈ Subst.freeVars [s] ++ Subst.freeVars S := by
+  intro v hv
+  rw [Subst.compose, Subst.freeVars] at hv
+  -- `Maps.values (apply s S ++ [s]) = Maps.values (apply s S) ++ Map.values s`.
+  have h_vals : Maps.values (Subst.apply s S ++ [s]) =
+      Maps.values (Subst.apply s S) ++ Map.values s := by
+    rw [Maps.values_append, Maps.values_single]
+  rw [h_vals, List.flatMap_append, List.mem_append] at hv
+  cases hv with
+  | inl h_apply =>
+    have h_val : v ∈ Subst.freeVars (Subst.apply s S) := h_apply
+    exact Subst.freeVars_of_apply_subset_alt s S h_val
+  | inr h_s =>
+    apply List.mem_append_left
+    rw [Subst.freeVars, Maps.values_single]; exact h_s
+
+/-- **`SubstWF` of the composite `Subst.compose s S`** (outer single scope `[s]`,
+    inner arbitrary `S`). Well-formed when both factors are, `S`'s keys are disjoint
+    from `s`'s free variables (range), and `s`'s keys are disjoint from `S`'s free
+    variables (range). For the Route B composite (fresh→user rename ∘ resolve subst)
+    the user names are disjoint from the resolve/inst vars in both directions. -/
+theorem SubstWF.compose (s : SubstOne) (S : Subst)
+    (hs : SubstWF [s]) (hS : SubstWF S)
+    (h_Skeys_sfv : ∀ k ∈ Maps.keys S, k ∉ Subst.freeVars [s])
+    (h_skeys_Sfv : ∀ k ∈ Map.keys s, k ∉ Subst.freeVars S) :
+    SubstWF (Subst.compose s S) := by
+  -- Keys of the composite = keys S ++ keys s.
+  have h_keys : Maps.keys (Subst.compose s S) = Maps.keys S ++ Map.keys s := by
+    rw [Subst.compose, Maps.keys_append, Subst.keys_of_apply_eq]
+    show Maps.keys S ++ Maps.keys [s] = Maps.keys S ++ Map.keys s
+    simp [Maps.keys]
+  simp only [SubstWF, h_keys, List.all_eq_true, decide_eq_true_eq, List.mem_append]
+  intro k hk h_k_fv
+  have h_k_in_split := Subst.freeVars_compose_subset s S k h_k_fv
+  rw [List.mem_append] at h_k_in_split
+  rcases hk with hk_S | hk_s
+  · -- k ∈ keys S: not in freeVars[s] (h_Skeys_sfv) nor freeVars S (hS).
+    rcases h_k_in_split with h_fv_s | h_fv_S
+    · exact h_Skeys_sfv k hk_S h_fv_s
+    · have hS' := hS; simp only [SubstWF, List.all_eq_true, decide_eq_true_eq] at hS'
+      exact hS' k hk_S h_fv_S
+  · -- k ∈ keys s: not in freeVars S (h_skeys_Sfv) nor freeVars[s] (hs).
+    rcases h_k_in_split with h_fv_s | h_fv_S
+    · have hs' := hs; simp only [SubstWF, Maps.keys, List.append_nil, List.all_eq_true,
+        decide_eq_true_eq] at hs'
+      exact hs' k hk_s h_fv_s
+    · exact h_skeys_Sfv k hk_s h_fv_S
+
+/-- **Sharper range bound for `Subst.compose`** that accounts for the `apply`-scrubbing.
+    Every free variable of `Subst.compose s S` is either a free variable of `[s]` OR a free
+    variable of `S` that is *not* a key of `s` — the `apply s` step substitutes away every
+    `s`-key occurring in `S`'s range (`Subst.keys_not_in_apply`). Strictly stronger than
+    `Subst.freeVars_compose_subset`; the `∉ keys s` refinement is what makes `SubstWF` of a
+    composite provable even when the inner `S` is *not* well-formed (e.g. a self-identity
+    entry `(x, ftvar x)` whose key `x` is scrubbed by `s`). -/
+theorem Subst.freeVars_compose_subset_scrub (s : SubstOne) (S : Subst) (hs : SubstWF [s]) :
+    ∀ v, v ∈ Subst.freeVars (Subst.compose s S) →
+      v ∈ Subst.freeVars [s] ∨ (v ∈ Subst.freeVars S ∧ v ∉ Map.keys s) := by
+  intro v hv
+  rw [Subst.compose, Subst.freeVars] at hv
+  have h_mvs : Maps.values [s] = Map.values s := by simp [Maps.values]
+  have h_vals : Maps.values (Subst.apply s S ++ [s]) =
+      Maps.values (Subst.apply s S) ++ Map.values s := by
+    rw [Maps.values_append, h_mvs]
+  rw [h_vals, List.flatMap_append, List.mem_append] at hv
+  cases hv with
+  | inr h_s =>
+    left; rw [Subst.freeVars, h_mvs]; exact h_s
+  | inl h_apply =>
+    have h_apply' : v ∈ Subst.freeVars (Subst.apply s S) := h_apply
+    have h_kna := @Subst.keys_not_in_apply s S hs
+    have hv_not_key : v ∉ Map.keys s := by
+      intro hv_key
+      rw [List.all_eq_true] at h_kna
+      have hd := h_kna v hv_key
+      rw [decide_eq_true_eq] at hd
+      exact hd h_apply'
+    have h_sub := Subst.freeVars_of_apply_subset_alt s S h_apply'
+    rw [List.mem_append] at h_sub
+    cases h_sub with
+    | inl h_fs => left; exact h_fs
+    | inr h_fS => right; exact ⟨h_fS, hv_not_key⟩
+
+/-- **`SubstWF` of `Subst.compose s S` WITHOUT requiring `SubstWF S`.** When the outer single
+    scope `[s]` is well-formed, every `S`-key avoids `[s]`'s range (`hkeys`), and every `S`-key
+    that occurs in `S`'s own range is *covered* by `s` (`hcover`, so `apply s` scrubs it), the
+    composite is well-formed. This is the lemma Route B needs: the inner composite
+    `compose rs₀ v_unify` is NOT itself `SubstWF` (it has a self-identity entry), so the
+    factor-by-factor `SubstWF.compose` cannot apply; the outer renaming `ρ₀` covers the offending
+    key and scrubs it, which is exactly what `hcover` records. Engine: the scrub bound
+    `Subst.freeVars_compose_subset_scrub`. -/
+theorem SubstWF_compose_of_cover (s : SubstOne) (S : Subst)
+    (hs : SubstWF [s])
+    (hkeys : ∀ k ∈ Maps.keys S, k ∉ Subst.freeVars [s])
+    (hcover : ∀ k ∈ Maps.keys S, k ∈ Subst.freeVars S → k ∈ Map.keys s) :
+    SubstWF (Subst.compose s S) := by
+  have h_keys : Maps.keys (Subst.compose s S) = Maps.keys S ++ Map.keys s := by
+    rw [Subst.compose, Maps.keys_append, Subst.keys_of_apply_eq]
+    show Maps.keys S ++ Maps.keys [s] = Maps.keys S ++ Map.keys s
+    simp [Maps.keys]
+  simp only [SubstWF, h_keys, List.all_eq_true, decide_eq_true_eq, List.mem_append]
+  intro k hk h_k_fv
+  have h_scrub := Subst.freeVars_compose_subset_scrub s S hs k h_k_fv
+  rcases hk with hk_S | hk_s
+  · rcases h_scrub with h_fv_s | ⟨h_fv_S, h_not_keys⟩
+    · exact hkeys k hk_S h_fv_s
+    · exact h_not_keys (hcover k hk_S h_fv_S)
+  · rcases h_scrub with h_fv_s | ⟨_, h_not_keys⟩
+    · have hs' := hs
+      simp only [SubstWF, Maps.keys, List.append_nil, List.all_eq_true, decide_eq_true_eq] at hs'
+      exact hs' k hk_s h_fv_s
+    · exact h_not_keys hk_s
+
 -- Helper: applyLogic preserves none bindings.
 private theorem Map.find?_applyLogic_none_h' {new old : SubstOne} {a : TyIdentifier}
     (h : Map.find? old a = none) :

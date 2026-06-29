@@ -1611,6 +1611,46 @@ theorem TGenEnv.genTyVars_allFresh {T : LExprParams} [DecidableEq T.IDMeta]
   exact TContext.isFresh_of_not_mem_knownTypeVars
     (TGenEnv.genTyVars_not_mem_knownTypeVars n Env tvs Env' h tv h_mem)
 
+/-- Every variable produced by `genTyVars` has the *positive* generated-name form
+    `tyPrefix ++ toString k`. (The companion `genTyVars_allFresh`/`_genFresh'` give
+    only the negative "not a future gen-name" property; this exposes the literal
+    prefix, which is what disjointness-from-user-names arguments need: user names
+    never carry the `$__ty` prefix — see `LFuncWF.typeArgs_no_gen_prefix`.) -/
+theorem TGenEnv.genTyVars_prefixed {IDMeta : Type} [ToFormat IDMeta]
+    (n : Nat) (Env : TGenEnv IDMeta) (tvs : List TyIdentifier) (Env' : TGenEnv IDMeta)
+    (h : TGenEnv.genTyVars n Env = .ok (tvs, Env')) :
+    ∀ tv ∈ tvs, ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  induction n generalizing Env tvs Env' with
+  | zero =>
+    simp [TGenEnv.genTyVars] at h
+    obtain ⟨h1, _⟩ := h; subst h1
+    intro tv hm; exact absurd hm List.not_mem_nil
+  | succ n ih =>
+    simp only [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    split at h
+    · simp at h
+    · rename_i v1 h_gen1
+      obtain ⟨hd, Env1⟩ := v1
+      simp only at h
+      split at h
+      · simp at h
+      · rename_i v2 h_rest
+        obtain ⟨tl, Env2⟩ := v2
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_tvs, _⟩ := h; subst h_tvs
+        intro tv h_mem
+        cases List.mem_cons.mp h_mem with
+        | inl h_eq =>
+          subst h_eq
+          simp only [TGenEnv.genTyVar] at h_gen1
+          split at h_gen1
+          · simp at h_gen1
+          · rename_i h_notmem
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h_gen1
+            obtain ⟨h_hd, _⟩ := h_gen1
+            exact ⟨Env.genState.tyGen, by rw [← h_hd]; simp [TState.genTySym, TState.incTyGen]⟩
+        | inr h_rest_mem => exact ih Env1 tl Env2 h_rest tv h_rest_mem
+
 ---------------------------------------------------------------------
 -- tyGen monotonicity lemmas
 ---------------------------------------------------------------------

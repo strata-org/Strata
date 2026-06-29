@@ -717,6 +717,14 @@ theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
   | nil => rfl
   | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
 
+-- Helper: Map.values distributes over append
+theorem Map.values_append {α β : Type} (m1 m2 : Map α β) :
+    Map.values (m1 ++ m2) = Map.values m1 ++ Map.values m2 := by
+  show Map.values (List.append m1 m2) = Map.values m1 ++ Map.values m2
+  induction m1 with
+  | nil => rfl
+  | cons hd tl ih => obtain ⟨_, b⟩ := hd; exact congrArg (b :: ·) ih
+
 /-- Erasing key `a` removes `a` from a single Map's keys. -/
 theorem Map.keys_erase_self_not_mem [DecidableEq α]
     (m : Map α β) (a : α)

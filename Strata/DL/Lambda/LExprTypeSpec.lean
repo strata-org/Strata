@@ -273,6 +273,38 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
     exact lcAt_varOpen_quant ih (by omega) ihtr
   done
 
+/-- `HasType` does not read `C.rigidTypeVars` (rigidity is enforced by the
+    type-checker's post-hoc checks, not by the typing relation). So a judgment
+    proved against a context with an overridden rigid-var set transfers to the
+    original context. Used when a sub-expression (e.g. a function's measure) is
+    type-checked under a temporarily-extended rigid set. -/
+theorem HasType.of_rigidTypeVars_irrel [DecidableEq T.IDMeta] {C : LContext T}
+    {rv : List TyIdentifier} {Γ : TContext T.IDMeta} {e : LExpr T.mono} {ty : LTy}
+    (h : HasType ({C with rigidTypeVars := rv}) Γ e ty) : HasType C Γ e ty := by
+  induction h with
+  | tbool_const Γ m b hk => exact HasType.tbool_const _ _ _ hk
+  | tint_const Γ m n hk => exact HasType.tint_const _ _ _ hk
+  | treal_const Γ m r hk => exact HasType.treal_const _ _ _ hk
+  | tstr_const Γ m s hk => exact HasType.tstr_const _ _ _ hk
+  | tbitvec_const Γ m n b hk => exact HasType.tbitvec_const _ _ _ _ hk
+  | tvar Γ m x ty hf => exact HasType.tvar _ _ _ _ hf
+  | tvar_annotated Γ m x ty_o ty_s tys ann hf hl ho ha =>
+    exact HasType.tvar_annotated _ _ _ _ _ _ _ hf hl ho ha
+  | tabs Γ m name x x_ty e e_ty o hfr hx he ht ho ih =>
+    exact HasType.tabs _ _ _ _ _ _ _ _ hfr hx he ih ho
+  | tapp Γ m e1 e2 t1 t2 h1 h2 ht1 ht2 ih1 ih2 =>
+    exact HasType.tapp _ _ _ _ _ _ h1 h2 ih1 ih2
+  | tinst Γ e ty e_ty x x_ty ht he ih => exact HasType.tinst _ _ _ _ _ _ ih he
+  | tgen Γ e a ty ht hfr ih => exact HasType.tgen _ _ _ _ ih hfr
+  | tif Γ m c e1 e2 ty hc h1 h2 ihc ih1 ih2 => exact HasType.tif _ _ _ _ _ _ ihc ih1 ih2
+  | teq Γ m e1 e2 ty h1 h2 ih1 ih2 => exact HasType.teq _ _ _ _ _ ih1 ih2
+  | tquant Γ m k name tr tr_ty x x_ty e o hfr hx ht htr ho ih ihtr =>
+    exact HasType.tquant _ _ _ _ _ _ _ _ _ _ hfr hx ih ihtr ho
+  | top Γ m f op ty hf ht => exact HasType.top _ _ _ _ _ hf ht
+  | top_annotated Γ m f op ty_o ty_s tys ann hf ht hl ho ha =>
+    exact HasType.top_annotated _ _ _ _ _ _ _ _ hf ht hl ho ha
+  | talias Γ e mty mty' hae ht ih => exact HasType.talias _ _ _ _ hae ih
+
 
 section Proofs
 attribute [local simp] Pure.pure Except.pure
@@ -913,6 +945,36 @@ theorem Constraints.unify_keys_incl
   rename_i relS h_core
   simp at h_unify; subst h_unify
   exact (Constraints.unifyCore_sound cs S relS h_core).keys_incl
+
+/-- **Predicate transfer through `Constraints.unify`.** If a predicate `P` on type
+    variables holds for every free variable of the constraints and for every key and
+    range variable of the input substitution, then it holds for every key and range
+    variable of the unify result. The keys side uses `unify_keys_incl`; the range side
+    uses the `goodSubset` field of the unify relation. Used to thread the
+    "every type variable avoids `func.typeArgs`" invariant through the body's
+    return-type unification (`v_unify`). -/
+theorem Constraints.unify_pred
+    {cs : Constraints} {S S' : SubstInfo}
+    (h_unify : Constraints.unify cs S = .ok S')
+    (P : TyIdentifier → Prop)
+    (h_cs : ∀ v, v ∈ Constraints.freeVars cs → P v)
+    (h_Sk : ∀ v, v ∈ Maps.keys S.subst → P v)
+    (h_Sv : ∀ v, v ∈ Subst.freeVars S.subst → P v) :
+    (∀ v, v ∈ Maps.keys S'.subst → P v) ∧ (∀ v, v ∈ Subst.freeVars S'.subst → P v) := by
+  refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+  · rcases Constraints.unify_keys_incl h_unify v hv with h | h | h
+    · exact h_Sk v h
+    · exact h_cs v h
+    · exact h_Sv v h
+  · have h_incl : Subst.freeVars S'.subst ⊆ Constraints.freeVars cs ++ Subst.freeVars S.subst := by
+      simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
+      elim_err h_unify
+      rename_i relS h_core
+      simp at h_unify; subst h_unify
+      exact relS.goodSubset
+    rcases List.mem_append.mp (h_incl hv) with h | h
+    · exact h_cs v h
+    · exact h_Sv v h
 
 /-- Free variables of a substitution `[zip ids (map ftvar freshtvs)]` are a
     subset of `freshtvs`. -/
@@ -3451,7 +3513,7 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Factory function types produced by `LFunc.type` have `boundVars = func.typeArgs`. -/
-private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
+theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
     LTy.boundVars ty = func.typeArgs := by
   unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
@@ -5316,8 +5378,16 @@ theorem LTy_instantiateWithCheck_inverse
     (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
     (h_aw : TContext.AliasesWF Env.context) :
-    ∃ (ρ : Subst) (Env_r : TEnv T.IDMeta), SubstWF ρ ∧
-      LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe ty) Env = .ok (LMonoTy.subst ρ mty, Env_r) := by
+    -- `ρ` is a *single-scope* renaming `[ρ₀]` (the fresh→user inverse is built as one
+    -- scope; ROUTE B's composite needs this to apply `LMonoTy.subst_compose`).
+    ∃ (ρ₀ : SubstOne) (Env_r : TEnv T.IDMeta), SubstWF [ρ₀] ∧
+      LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe ty) Env = .ok (LMonoTy.subst [ρ₀] mty, Env_r) ∧
+      (∀ x ∈ Map.keys ρ₀, TContext.isFresh (T := T) x Env.context) ∧
+      -- ρ₀-contract for ROUTE B's `SubstWF` (used by `bodyComposite_wf_hyps`):
+      -- C2: ρ₀'s keys cover the instantiation variables (`freeVars mty`);
+      -- C1: ρ₀'s range is the scheme's bound variables (the user type arguments).
+      (∀ v, v ∈ LMonoTy.freeVars mty → v ∈ Map.keys ρ₀) ∧
+      (∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ LTy.boundVars ty) := by
   sorry
 
 /-- The concrete σ produced by composing an inner AnnotCompat substitution with
@@ -5589,7 +5659,7 @@ private theorem SubstWF.key_not_in_LTy_freeVars_subst
       (keys_go_mem S xs a h_key h_not_xs) (SubstWF_go S xs h_wf) h_in_fv
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_go_find_reverse
+theorem TContext_types_subst_go_find_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Map.find? (TContext.types.subst.go S scope) x = some ty) :
     ∃ ty_orig, Map.find? scope x = some ty_orig ∧ ty = LTy.subst S ty_orig := by
@@ -5601,7 +5671,7 @@ private theorem TContext_types_subst_go_find_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_go_find_none_reverse
+theorem TContext_types_subst_go_find_none_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier)
     (h : Map.find? (TContext.types.subst.go S scope) x = none) :
     Map.find? scope x = none := by
@@ -5613,7 +5683,7 @@ private theorem TContext_types_subst_go_find_none_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_find_reverse
+theorem TContext_types_subst_find_reverse
     (types : Maps (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Maps.find? (TContext.types.subst types S) x = some ty) :
     ∃ ty_orig, Maps.find? types x = some ty_orig ∧ ty = LTy.subst S ty_orig := by

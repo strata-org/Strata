@@ -742,6 +742,48 @@ theorem resolve_properties [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       | inl h_orig => exact h_props.preserves.2 v h_orig k hk
       | inr h_val => exact h_props.preserves.1 v (Or.inr h_val) k hk
 
+/-- **Predicate-closure of `resolve`.** For any predicate `P` on type variables that
+    is closed over the input context's known type variables and the input
+    substitution's range, `resolve` keeps `P` holding on (i) every free variable of
+    the resolved output type and (ii) every range variable of the output
+    substitution. This is the *positive* companion to `resolve_properties`'s
+    gen-freshness conjunct: where that says "output vars are not future gen-names",
+    this propagates an *arbitrary* invariant `P`. Instantiated with
+    `P v := v ∉ func.typeArgs`, it shows the body's resolved type never mentions a
+    user type argument (the formals were monomorphized to fresh `$__ty` vars before
+    resolution), which is what makes `v_unify`'s range disjoint from `func.typeArgs`.
+
+    PROOF PLAN (deferred — `sorry` with concrete plan, see ALPHAEQUIV_RENAMESUBST_PLAN.md
+    §10m): lift the existing `resolveAux_properties` size-induction skeleton
+    (LExprTypeSpec:3606) with `P` as an extra threaded invariant. The three and only
+    type-variable entry points each preserve `P`:
+    (i) the context — preserved because `resolveAux` does not change the context
+        (`ResolveAuxProperties.context`) and new bound-var bindings come from
+        `typeBoundVar`/`genTyVar`/`instantiateWithCheck`;
+    (ii) `genTyVar` — fresh `$__ty` vars; for `P = (· ∉ typeArgs)` these satisfy `P`
+        by `genTyVars_prefixed` + `LFuncWF.typeArgs_no_gen_prefix`;
+    (iii) annotations via `LMonoTy.instantiateWithCheck` — its output freeVars ⊆
+        `freshtvs` by `LMonoTy.freeVars_subst_closed`, hence `$__ty`, hence `P`;
+        `resolveAliases` introduces no new var (`TypeAlias.WF.fvs_closed` +
+        `TypeAlias.expand` ⟹ `freeVars(expand) ⊆ freeVars(args)`).
+    The `app`/`eq`/`ite` cases compose recursion with `Constraints.unify_pred`
+    (the unify step preserves `P` from constraint+input-subst to result-subst). -/
+theorem resolve_freeVars_pred [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : LExpr.resolve C Env e = .ok (e_typed, Env'))
+    (h_envwf : TEnvWF Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (P : TyIdentifier → Prop)
+    (h_ctx : ∀ v, v ∈ TContext.knownTypeVars Env.context → P v)
+    (h_sub : ∀ v, (v ∈ Maps.keys Env.stateSubstInfo.subst ∨
+                    v ∈ Subst.freeVars Env.stateSubstInfo.subst) → P v) :
+    (∀ v, v ∈ LMonoTy.freeVars e_typed.toLMonoTy → P v) ∧
+    (∀ v, (v ∈ Maps.keys Env'.stateSubstInfo.subst ∨
+            v ∈ Subst.freeVars Env'.stateSubstInfo.subst) → P v) := by
+  sorry
+
 /-! ### Layer 3: Main induction -/
 
 /-- Core soundness lemma: for any substitution `S` absorbing the output substitution,

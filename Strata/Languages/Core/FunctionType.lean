@@ -25,6 +25,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
   let origTypeArgs := func.typeArgs
+  -- Ambient context types, for the #1399 generalization check (preserved by instantiation).
+  let ambientTypes := Env.context.types
   let type ← func.type
   let undeclaredVars := LTy.freeVars type
   if undeclaredVars != [] then
@@ -75,6 +77,9 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
     let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
+    -- Save this initial context (formals pushed, before the body's unification)
+    -- so the measure can be type-checked independently against the same context.
+    let measureBaseEnv := Env
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
@@ -106,6 +111,16 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       .error f!"Function '{func.name}': rigid type variable '{v}' was refined to \
                 '{inferred}' by the body"
     | none => pure ()
+    -- Generalization side condition (#1399): may only generalize over `ftv(τ) \ ftv(Γ)`.
+    let ambientFreeVars := Lambda.TContext.types.knownTypeVars
+      (Lambda.TContext.types.subst ambientTypes Sb)
+    let genVars := (LMonoTy.subst Sb monoty).freeVars
+    match genVars.find? (fun v => ambientFreeVars.contains v) with
+    | some v =>
+      .error f!"Function '{func.name}': type variable '{v}' is free in the enclosing \
+                context and cannot be generalized; the body pins a declared type \
+                parameter to an ambient type"
+    | none => pure ()
     -- Apply S to the body, then rename type variables to match the
     -- instantiated typeArgs so that body annotations are consistent.
     let bodya := LExpr.applySubstT bodya S.subst
@@ -121,12 +136,30 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       match measure with
       | .fvar _ _ _ => pure func.measure
       | _ =>
-        let (measurea, _) ← LExpr.resolve C Env measure
+        -- Type-check the measure independently of the body, against the SAME
+        -- initial context (formals at their declared types). The signature's
+        -- type parameters (`func.typeArgs`, now fresh instantiation vars) are
+        -- rigid here, exactly as in the body: the measure may not specialize
+        -- the function's polymorphic signature. Without this, a measure like
+        -- `decreases (x + 0)` for `f<a>(x:a)` would pin `a := int` while the
+        -- signature stays polymorphic, so the formal `x : a` would not actually
+        -- carry an int-typed measure.
+        let measureRigid := func.typeArgs ++ C.rigidTypeVars
+        let Cm := { C with rigidTypeVars := measureRigid }
+        let (measurea, measureEnv) ← LExpr.resolve Cm measureBaseEnv measure
+        let Sm := measureEnv.stateSubstInfo.subst
         let measurety := measurea.toLMonoTy
         if measurety != .int then
           .error f!"recursive function '{func.name}': non-variable decreases expression must have type int, got '{measurety}'. For structural recursion, use a parameter name"
         else
-          pure (some (LExpr.applySubstT measurea userSubst).unresolved)
+          match measureRigid.find? (fun v => LMonoTy.subst Sm (.ftvar v) != .ftvar v) with
+          | some v =>
+            let inferred := LMonoTy.subst Sm (.ftvar v)
+            .error f!"recursive function '{func.name}': decreases expression refines type \
+                      variable '{v}' to '{inferred}'; a measure may not constrain the \
+                      function's polymorphic signature or an enclosing rigid type variable"
+          | none =>
+            pure (some (LExpr.applySubstT measurea userSubst).unresolved)
     | none => pure none
     let Env := TEnv.popContext Env
     -- Rename back to user type variable names.
