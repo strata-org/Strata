@@ -92,7 +92,7 @@ procedure implicitEquality()
 procedure useBool() returns (r: bool)
   opaque
 {
-  var c: Container := new Container();
+  var c: Container := new Container;
   r := c#boolValue
 };
 
