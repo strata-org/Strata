@@ -209,9 +209,14 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
   -- `$asFunction` version: `mkFreePostcondition` only equates a single output
   -- to the function, and a single function application can only fill one
   -- assignment target. Multi-output procedures are excluded.
+  -- Procedures whose sole output is `$heap` are also excluded: redirecting
+  -- heap-threading calls to their pure function version makes the heap encoding
+  -- opaque to the array theory, defeating the quantifier-free modifies frame.
   let singleOutputNames : Std.HashSet String :=
     imperativeProcs.foldl (fun s p =>
-      if p.outputs.length == 1 then s.insert p.name.text else s) {}
+      match p.outputs with
+      | [o] => if o.name.text != "$heap" then s.insert p.name.text else s
+      | _ => s) {}
   -- $asFunction copies for procedures that have a procedural twin;
   -- transparent-only procedures keep their original name.
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
