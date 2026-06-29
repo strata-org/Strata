@@ -563,6 +563,27 @@ instance : BEq HighTypeMd where
 
 deriving instance BEq for HighType
 
+/-- The abstract verdict of the proof-relevant subtyping judgment `coerce`.
+    GENERIC — it names the KIND of coercion, never a source-language runtime
+    function. A language frontend supplies a `realizeCoercion` (on `TypeLattice`)
+    that turns each verdict into a concrete term; the generic resolver never
+    mentions `from_int`, `Any..as_Composite!`, etc.
+
+    - `refl`     — types equal after unfolding (and the both-gradual case); identity.
+    - `inject A` — `A ≤ dynamic-top` (e.g. boxing a concrete value into the gradual
+                   `Any`). `A` is the source type, so the realizer can pick the
+                   right injector (int→from_int, a class→from_Composite, …).
+    - `project A`— `dynamic-top ≤ A` (e.g. unboxing/downcasting out of `Any` to a
+                   concrete `A`). `A` is the target type.
+    - `upcast`   — nominal composite ≤ ancestor composite; no runtime operation.
+    -- (no `truthify`: truthiness is realized via `project … bool` on the Python side) -/
+inductive Coercion where
+  | refl
+  | inject (source : HighType)
+  | project (target : HighType)
+  | upcast
+  deriving Inhabited
+
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
     the program's `TypeDefinition`s by the resolution pass:
     - `unfoldMap` maps an alias or constrained type's name to the type it
@@ -583,6 +604,16 @@ deriving instance BEq for HighType
 structure TypeLattice where
   unfoldMap : Std.HashMap String HighTypeMd := {}
   extendingMap : Std.HashMap String (List String) := {}
+  /-- Type names that are treated as the gradual/dynamic top type (consistent with everything).
+      Set by language frontends (e.g. Python pipeline registers `"Any"` here). -/
+  gradualTypes : Std.HashSet String := {}
+  /-- Caller-supplied REALIZER for an abstract `Coercion` verdict: maps the verdict
+      plus the term being coerced to a rewritten term carrying the concrete runtime
+      coercion call. `none` (the default, for native Laurel) means "identity" — no
+      coercion term is inserted. The Python frontend sets this to its box/unbox
+      vocabulary. This REALIZES an already-decided verdict; it makes no subtyping
+      decision, so it can never disagree with `coerce`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
   deriving Inhabited
 
 /-- Unfold aliases and constrained types to their underlying type.
@@ -686,34 +717,102 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
-    match a'.val, b'.val with
-    | .Unknown, _ | _, .Unknown => true
-    | .TCore _, _ | _, .TCore _ => true
-    | _, _ => highEq a' b'
+    let isGradual (t : HighType) := match t with
+      | .Unknown => true
+      | .TCore _ => true
+      | .UserDefined id => ctx.gradualTypes.contains id.text
+      | _ => false
+    if isGradual a'.val || isGradual b'.val then true
+    else highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
     all_goals (cases a; cases b; try term_by_mem)
     cases t1; term_by_mem
 
-/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
-    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+/-- Test whether a type is gradual (consistent with everything): `Unknown`, any
+    `TCore _` (pending removal from the representation), or a frontend-registered
+    gradual `UserDefined` (e.g. Python `Any`). Mirrors the `isGradual` local inside
+    `isConsistent` so `coerce`'s DECISION classifies identically. -/
+private def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighType) : Bool :=
+  match t with
+  | .Unknown => true
+  | .TCore _ => true
+  | .UserDefined id => ctx.gradualTypes.contains id.text
+  | _ => false
 
-    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
-    choice is what makes the system *gradual*: an expression of type
-    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
-    into any typed slot, and any expression flows freely into a slot of
-    type `Unknown`. Strict checking is applied between fully-known types
-    only.
+/-- Test whether a type is the BOXABLE dynamic type — Python `Any`, which appears
+    BOTH as `.TCore "Any"` (the erased/runtime form, the common case) and as a
+    frontend-registered gradual `.UserDefined "Any"`. This is the SUBSET of
+    `isGradualTop` that has a runtime representation you can inject into / project
+    out of. `Unknown` and OTHER `.TCore _` (`Heap`, `Box`, `Error`, …) are gradual
+    *wildcards* (a synth gap, a hole, an unresolved accessor, internal plumbing):
+    they flow freely but carry NO box/unbox coercion, so a coercion against them is
+    `refl` (identity) — coercing them would wrap concrete-typed prelude code
+    (`ListAny..tail!` synth'd as `Unknown`) or heap plumbing in a bogus box/unbox. -/
+private def TypeLattice.isDynamicBoxable (ctx : TypeLattice) (t : HighType) : Bool :=
+  match t with
+  | .TCore "Any" => true
+  | .UserDefined id => ctx.gradualTypes.contains id.text
+  | _ => false
 
-    A previous iteration was synth-only with two *bivariantly-compatible*
-    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
-    load-bearing: no assignment, call argument, or comparison involving a
-    user type was ever rejected. The bidirectional design retires that
-    carve-out — user-defined types are now a regular participant in `<:`,
-    with `isSubtype` walking inheritance chains and unwrapping aliases
-    and constrained types to deliver real checking on user-defined code. -/
+/-- PROOF-RELEVANT consistent subtyping: the ONE subtyping judgment. Returns the
+    abstract `Coercion` verdict witnessing `sub ≤ sup`, or `none` when unrelated.
+    Its `.isSome` is exactly the old boolean `isConsistentSubtype` (`isConsistent ∨
+    isSubtype`), so every boolean call site is unchanged — but a check-mode site
+    that rebuilds the term can now obtain the witness and realize it. GENERIC: the
+    verdict names the KIND of coercion (inject/project/upcast/refl), never a runtime
+    function; the frontend's `realizeCoercion` turns it into a concrete term.
+
+    The gradual cases split by WHICH gradual: only the boxable dynamic type (`Any`)
+    yields a runtime `inject`/`project`; a bare wildcard (`Unknown`/`TCore`) yields
+    `refl` (it flows with no coercion). The DECISION (`.isSome`) is unchanged either
+    way — both are `some` — so `isConsistentSubtype` matches the old boolean exactly.
+
+    Case-for-case (mirrors `isConsistent ∨ isSubtype` for the decision):
+    - `MultiValuedExpr` (proc-output tuples): delegate to `isConsistent`; `refl`.
+    - equal after unfold → `refl`.
+    - `sup` is `Any`, `sub` concrete → `inject sub'` (box into the dynamic type).
+    - `sub` is `Any`, `sup` concrete → `project sup'` (unbox/downcast out of it).
+    - either side a bare wildcard (`Unknown`/`TCore`) → `refl` (gradual, no runtime op).
+    - both `UserDefined` with `sub`'s ancestors ∋ `sup` → `upcast` (nominal). -/
+def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
+  match sub.val, sup.val with
+  | .MultiValuedExpr _, .MultiValuedExpr _ =>
+    if isConsistent ctx sub sup then some .refl else none
+  | _, _ =>
+    let sub' := ctx.unfold sub
+    let sup' := ctx.unfold sup
+    let subBoxable := ctx.isDynamicBoxable sub'.val
+    let supBoxable := ctx.isDynamicBoxable sup'.val
+    -- `Unknown` is the only PURE wildcard: a synth gap / hole / unresolved accessor
+    -- with no runtime form, so a coercion against it is `refl` (it flows freely, no
+    -- box/unbox). NB this is narrower than `isGradualTop` (which also treats every
+    -- `.TCore _` as gradual for the *decision*): a concrete `.TCore` container like
+    -- `ListAny`/`DictStrAny` is NOT a wildcard — it is a real type that boxes/unboxes
+    -- against `Any` (`from_ListAny`/`Any..as_ListAny!`). Distinguishing them here is
+    -- what lets `Any ↔ ListAny` insert a witness while `Any ↔ <hole>` stays `refl`.
+    let isWildcard (t : HighType) : Bool := match t with | .Unknown => true | _ => false
+    if subBoxable && supBoxable then some .refl                  -- Any ↔ Any
+    else if isWildcard sub'.val || isWildcard sup'.val then some .refl  -- wildcard: no op
+    else if supBoxable then some (.inject sub'.val)              -- concrete → Any (box)
+    else if subBoxable then some (.project sup'.val)             -- Any → concrete (unbox)
+    else if highEq sub' sup' then some .refl
+    else match sub'.val, sup'.val with
+      | .UserDefined subName, .UserDefined supName =>
+        if (ctx.ancestors subName.text).contains supName.text then some .upcast else none
+      -- Two distinct gradual `.TCore` names (e.g. `Heap`/`Box` plumbing, or a
+      -- `.TCore` that is consistent-but-not-coercible) — consistent, no runtime op.
+      | _, _ =>
+        if ctx.isGradualTop sub'.val || ctx.isGradualTop sup'.val then some .refl else none
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. DERIVED from the
+    proof-relevant `coerce` so the yes/no answer and the inserted coercion can
+    never disagree (ONE judgment). Used by rule `[⇐] Sub` and every bespoke check
+    rule. That single choice is what makes the system *gradual*: an expression of
+    type `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely into
+    any typed slot, and any expression flows freely into a slot of type `Unknown`. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
-  isConsistent ctx sub sup || isSubtype ctx sub sup
+  (coerce ctx sub sup).isSome
 
 def HighType.isBool : HighType → Bool
   | TBool => true

@@ -137,8 +137,9 @@ private def runLaurelPasses
   -- Step 0: the input program before any passes
   emit "Initial" "laurel.st" program
 
-  -- Initial resolution
-  let result := resolve program
+  -- Initial resolution (with optional pre-registered external names from the frontend)
+  let result := resolve program (externalNames := options.externalNames) (gradualTypes := options.gradualTypes)
+                  (realizeCoercion := options.realizeCoercion)
   let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
@@ -154,7 +155,8 @@ private def runLaurelPasses
     allStats := allStats.merge stats
     -- Run resolve after the pass if needed
     if pass.needsResolves then
-      let result := resolve program (some model)
+      let result := resolve program (some model) (externalNames := options.externalNames) (gradualTypes := options.gradualTypes)
+                      (realizeCoercion := options.realizeCoercion)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
@@ -216,7 +218,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     unorderedCore := (pass.run options unorderedCore fnModel).1
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
+      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes options.externalNames options.gradualTypes
       if !errors.isEmpty then
         let newDiags := errors.toList.map fun d =>
           { d with message :=

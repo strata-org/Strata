@@ -44,6 +44,8 @@ import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
 import Strata.Languages.Laurel.FilterPrelude
+import Strata.Languages.FineGrainLaurel.FineGrainLaurel
+import Strata.Languages.FineGrainLaurel.Elaborate
 
 /- DDM -/
 import StrataDDM

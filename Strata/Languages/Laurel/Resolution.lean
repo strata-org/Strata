@@ -210,6 +210,7 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
       currentScopeNames := s.currentScopeNames.insert resolutionName }
     return name'
 
+
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
     When `expected` is provided, emits a diagnostic if the resolved node's kind is not
@@ -227,6 +228,10 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
       modify fun s => { s with errors := s.errors.push diag }
     return name'
   | none =>
+    -- TODO: Move this list to the Python pipeline using `resolveWithExternalNames`.
+    -- For now, names registered via `preRegisterExternalNames` will resolve silently
+    -- (they'll be in scope as `.unresolved`). This fallback catches names that were not
+    -- pre-registered.
     let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
@@ -301,7 +306,18 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName source
+  -- Field name (an ATTRIBUTE, not a variable) didn't resolve in any type scope.
+  -- Distinguish two cases:
+  --  • the receiver's type is UNKNOWN/Any (typeName? = none, no instance type) — this is a
+  --    legitimate DYNAMIC field access (`err.response`, `client.foo().bar`). It is sound-
+  --    but-uninterpreted, NOT an error; leave it unresolved with no diagnostic. (v2 routed
+  --    this through `resolveRef`, which mis-treats the attribute as a variable and emits a
+  --    spurious "not defined" — the dominant benchmark failure on boto3-style code.)
+  --  • the receiver's type IS a known composite but lacks this field — that is a REAL bug
+  --    (typo'd attribute). Preserve the diagnostic via `resolveRef` so it is still caught.
+  match typeName?, (← get).instanceTypeName with
+  | none, none => return { fieldName with uniqueId := none }
+  | _, _ => resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -394,14 +410,58 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
   let diag := diagnosticFromSource source s!"{constructor}{problem}{suffix}"
   modify fun s => { s with errors := s.errors.push diag }
 
+/-- Coercer hook at the `[⇐] Sub` boundary: when a multi-output proc `(T, Error, ...)`
+    is used in a single-output position, strip the trailing Error outputs and use `T`.
+    This is the standard Laurel coercion for exception-threaded procs. -/
+private def stripTrailingErrors (actual : HighTypeMd) : HighTypeMd :=
+  match actual.val with
+  | .MultiValuedExpr (first :: rest) =>
+    if rest.all (fun o => match o.val with | .TCore "Error" => true | _ => false)
+    then first else actual
+  | _ => actual
+
+/-- `void` and `()` (unit) are mutually compatible — they both denote "no value." -/
+private def isVoidLikeHT (t : HighType) : Bool := match t with
+  | .TVoid | .TCore "()" | .MultiValuedExpr [] => true | _ => false
+
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
     output) — equivalent to `Check.resolveStmtExpr e expected` but without re-synthesizing. -/
 private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx actual expected do
+  let actual' := stripTrailingErrors actual
+  let compatible :=
+    (isVoidLikeHT actual'.val && isVoidLikeHT expected.val) ||
+    isConsistentSubtype ctx actual' expected
+  unless compatible do
     typeMismatch source none s!"expected '{formatType expected}'" actual
+
+/-- PROOF-RELEVANT `[⇐] Sub`: check `actual ≤ expected` AND, on success, REALIZE the
+    coercion witness onto the rewritten term `e` (returning the coerced term). This
+    is `checkSubtype` plus term-rewriting; use it wherever the resolver holds the
+    expression and rebuilds the AST (subsumption fallback, assignment RHS, …).
+
+    The witness is the abstract `coerce` verdict; the concrete coercion is inserted
+    by the frontend-supplied `ctx.realizeCoercion` (identity for native Laurel, so
+    this is a no-op there). The decision and the realized coercion share the single
+    `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
+    as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
+    position) inserts no coercion. -/
+private def coerceTo (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+    (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let ctx := (← get).typeLattice
+  let actual' := stripTrailingErrors actual
+  if isVoidLikeHT actual'.val && isVoidLikeHT expected.val then
+    pure e
+  else match coerce ctx actual' expected with
+    | some verdict =>
+      match ctx.realizeCoercion with
+      | some realize => pure (realize verdict e)
+      | none => pure e
+    | none =>
+      typeMismatch source none s!"expected '{formatType expected}'" actual
+      pure e
 
 /-- Test whether a type is in the set of numeric primitives
     (`TInt` / `TReal` / `TFloat64` / `TBv`). `Unknown` is
@@ -468,12 +528,16 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     pure (retTy, proc.inputs.map (·.type))
-  | some (_, .datatypeConstructor t _) =>
-    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+  | some (_, .datatypeConstructor t ctor) =>
+    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type.
+    -- A constructor's argument types ARE its parameter types: return them so the
+    -- call rule checks + coerces each argument against them (e.g. `ListAny_cons(1,
+    -- …)` coerces `1` into the `Any` head slot). Previously `[]` was returned and
+    -- the elaborator boxed; the resolver now owns coercion, so supply them here.
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
-      pure ({ val := .UserDefined t, source := callee.source }, [])
+      pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .parameter p) => pure (p.type, [])
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
@@ -828,10 +892,12 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .PrimitiveOp .Implies args skipProof =>
     Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
-    -- Subsumption fallback: synth then check `actual <: expected`.
+    -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
+    -- realize the coercion witness onto the term. This chokepoint covers call
+    -- arguments, return values, functional bodies, and primitive-op subsumption —
+    -- every check-mode boundary without a bespoke rule funnels here.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
-    checkSubtype source expected actual
-    pure e'
+    coerceTo source expected actual e'
   termination_by (exprMd, 3)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
@@ -1322,7 +1388,8 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     let (e', elseTy) ← Synth.resolveStmtExpr e
     let ctx := (← get).typeLattice
     let ty ←
-      if isConsistent ctx thenTy elseTy then
+      if isConsistent ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy) ||
+          isVoidLikeHT (stripTrailingErrors thenTy).val && isVoidLikeHT (stripTrailingErrors elseTy).val then
         pure ((join ctx thenTy elseTy).getD thenTy)
       else
         let diag := diagnosticFromSource source
@@ -2616,7 +2683,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -2662,7 +2735,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3115,10 +3194,50 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 
 /-! ## Entry point -/
 
-/-- Run the full resolution pass on a Laurel program. -/
-public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
-  -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
+/-- Pre-register a set of external/unmodeled names as `.unresolved` scope entries so that
+    `resolveRef` finds them and emits no "not defined" diagnostics. The caller (e.g. the
+    Python pipeline) should use this to register names that are deliberately unmodeled
+    rather than patching `resolveRef` with a hardcoded list. -/
+public def preRegisterExternalNames (names : Std.HashSet String) : ResolveM Unit := do
+  for name in names do
+    -- Only register if not already in scope (don't clobber real definitions)
+    unless (← get).scope.get? name |>.isSome do
+      let id ← freshId
+      modify fun s => {
+        s with
+        scope := s.scope.insert name (id, .unresolved none)
+        idToNode := s.idToNode.insert id (.unresolved none) }
+
+/-- Like `resolve` but pre-registers a set of external/unmodeled names so they resolve
+    silently without "not defined" diagnostics. Used by language frontends (e.g. Python)
+    to inject unmodeled stdlib names without patching the resolver itself. -/
+public def resolveWithExternalNames (program : Program) (externalNames : Std.HashSet String)
+    (existingModel: Option SemanticModel := none)
+    (gradualTypes : Std.HashSet String := {}) : ResolutionResult :=
+  let nextId := existingModel.elim 1 (fun m => m.nextId)
+  let typeLattice := { TypeLattice.ofTypes program.types with gradualTypes := gradualTypes }
   let phase1 : ResolveM Program := do
+    preRegisterExternalNames externalNames
+    preRegisterTopLevel program
+    let types' ← program.types.mapM resolveTypeDefinition
+    let constants' ← program.constants.mapM resolveConstant
+    let staticFields' ← program.staticFields.mapM (resolveField "$static")
+    let staticProcs' ← program.staticProcedures.mapM resolveProcedure
+    return { staticProcedures := staticProcs', staticFields := staticFields',
+             types := types', constants := constants' }
+  let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
+  let refToDef := buildRefToDef program'
+  let semanticModel := { compositeCount := program.types.length, refToDef := refToDef, nextId := finalState.nextId }
+  let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  { program := program', model := semanticModel, errors := finalState.errors ++ diamondErrors }
+
+public def resolve (program : Program) (existingModel: Option SemanticModel := none)
+    (externalNames : Std.HashSet String := {})
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none) : ResolutionResult :=
+  -- Phase 1: pre-register external names, then all top-level names, then resolve references
+  let phase1 : ResolveM Program := do
+    preRegisterExternalNames externalNames
     preRegisterTopLevel program
     let types' ← program.types.mapM resolveTypeDefinition
     let constants' ← program.constants.mapM resolveConstant
@@ -3127,7 +3246,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let typeLattice := TypeLattice.ofTypes program.types
+  let typeLattice := { TypeLattice.ofTypes program.types with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
@@ -3183,9 +3303,11 @@ but they are because certain type references have incorrectly not been updated.
 public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
+    (externalNames : Std.HashSet String := {})
+    (gradualTypes : Std.HashSet String := {})
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
   let fnProgram := unorderedCoreToProgram uc additionalTypes
-  let fnResolveResult := resolve fnProgram existingModel
+  let fnResolveResult := resolve fnProgram existingModel (externalNames := externalNames) (gradualTypes := gradualTypes)
   (fromResolvedProgram fnResolveResult.program, fnResolveResult.model, fnResolveResult.errors)
 
 end -- public section

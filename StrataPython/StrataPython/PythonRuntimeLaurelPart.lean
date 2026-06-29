@@ -545,7 +545,16 @@ function Any_sets! (indices: ListAny, dictOrList: Any, val: Any): Any
     Any_sets!(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
 };
 
+function Any_sets (indices: ListAny, dictOrList: Any, val: Any): Any
+{
+  if ListAny..isListAny_nil(indices) then dictOrList
+  else if ListAny..isListAny_nil(ListAny..tail!(indices)) then Any_set!(dictOrList, ListAny..head!(indices), val)
+  else Any_set!(dictOrList, ListAny..head!(indices),
+    Any_sets(ListAny..tail!(indices), Any_get!(dictOrList, ListAny..head!(indices)), val))
+};
+
 function Any_len (v: Any) : int;
+function Any_range_to_Any (v: Any) : Any;
 
 function Any_len_to_Any (v: Any) : Any {
   from_int(Any_len(v))
@@ -613,6 +622,45 @@ function int_to_real (i: int) : real;
 // Used to in Python binary operators' modelling
 function bool_to_int (bval: bool) : int {if bval then 1 else 0};
 function bool_to_real (b: bool) : real {if b then 1.0 else 0.0};
+function int_to_bool (n: int) : bool { !(n == 0) };
+function str_to_bool (s: string) : bool { !(s == "") };
+function list_to_bool (l: ListAny) : bool { !(l == ListAny_nil()) };
+function dict_to_bool (d: DictStrAny) : bool;
+function float_to_bool (f: real) : bool { !(f == 0.0) };
+function Any_set_to_Any (v: Any) : Any;
+function Any_list_to_Any (v: Any) : Any;
+function Any_enumerate_to_Any (v: Any) : Any;
+function Any_dict_to_Any (v: Any) : Any;
+function Any_sum_to_Any (v: Any) : Any;
+function Any_isinstance_to_bool (v: Any, t: Any) : bool;
+// Unmodeled builtins the resolver remaps to (Resolution.lean builtinContext): declared
+// as uninterpreted stubs (sound) so the elaborator's lookupFuncSig finds a signature —
+// otherwise a `type(e)`/`abs(x)`/etc. is a hard elaboration failure instead of an opaque
+// Any. Arities match the resolver's mkBuiltinSig; params are `Any` per prelude convention.
+function Any_type_to_Any (obj: Any) : Any;
+function Any_abs_to_Any (x: Any) : Any;
+function Any_chr_to_Any (i: Any) : Any;
+function Any_ord_to_Any (c: Any) : Any;
+function Any_getattr_to_Any (obj: Any, name: Any) : Any;
+function Any_setattr_to_Any (obj: Any, name: Any, value: Any) : Any;
+function to_int_any (v: Any) : Any;
+function to_float_any (v: Any) : Any;
+function PDiv (v1: Any, v2: Any) : Any;
+function PBitAnd (v1: Any, v2: Any) : Any;
+function PBitOr (v1: Any, v2: Any) : Any;
+function PBitXor (v1: Any, v2: Any) : Any;
+function Any_max_to_Any (v1: Any, v2: Any) : Any;
+function Any_min_to_Any (v1: Any, v2: Any) : Any;
+function Any_hasattr_to_bool (v: Any, attr: Any) : bool;
+function Any_any_to_bool (v: Any) : bool;
+function Any_all_to_bool (v: Any) : bool;
+function Any_zip_to_Any (v1: Any, v2: Any) : Any;
+function Any_map_to_Any (f: Any, v: Any) : Any;
+function Any_filter_to_Any (f: Any, v: Any) : Any;
+function Any_sorted_to_Any (v: Any) : Any;
+function Any_reversed_to_Any (v: Any) : Any;
+function Any_tuple_to_Any (v: Any) : Any;
+function Any_frozenset_to_Any (v: Any) : Any;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // Modelling of Python unary operations
@@ -750,6 +798,23 @@ function PMul (v1: Any, v2: Any) : Any
   else
     exception(UndefinedError ("Operand Type is not defined"))
 };
+
+function PIs (v1: Any, v2: Any) : bool;
+function PIsNot (v1: Any, v2: Any) : bool;
+function PInvert (v1: Any) : Any;
+
+// Composite ↔ Any bridge stubs (uninterpreted, sound: the value round-trips).
+// The resolver's coercion realizer boxes a class instance into Any via the bare
+// constructor-style `from_Composite` and recovers the pointer via the accessor-style
+// `Any..as_Composite!`. `Composite` cannot be named in the prelude (it is synthesized
+// by heapParameterizationPass), so the parameter is typed via `re_Match` — a named
+// composite that `compositeRefToComposite` (type-hierarchy pass) flattens to the flat
+// `Composite` datatype, so at Core these are `Composite → Any` / `Any → Composite`,
+// matching the boxed/unboxed class pointer. (`from_Composite` is BARE, not `Any..`:
+// the `Any..` prefix triggers accessor `!`-name-mangling for a constructor-style name.)
+function Any..as_Composite! (v: Any) : re_Match;
+function Any..isfrom_Composite (v: Any) : bool;
+function from_Composite (v: re_Match) : Any;
 
 function PFloorDiv (v1: Any, v2: Any) : Any
   requires (Any..isfrom_bool(v2)==>Any..as_bool!(v2)) && (Any..isfrom_int(v2)==>Any..as_int!(v2)!=0)
@@ -1095,10 +1160,13 @@ procedure print(msg : Any, opt : Any, sep : Any, end : Any, file : Any, flush : 
 Parse the Laurel DDM prelude into a Laurel Program.
 -/
 
--- Prelude functions that may return an exception value as Any.
--- We should make sure that all functions in this list propagate the exceptions from their arguments.
-public def AnyMaybeExceptionList := ["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
-   "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
+-- Runtime functions that may propagate exception values encoded as Any.
+-- These functions return `Any` where the value might be `exception(...)`.
+-- Used to determine which procs can elevate their caller's grade to `.err`.
+public def AnyMaybeExceptionList : Std.HashSet String :=
+  (["Any_get!", "Any_set!", "Any_sets!", "PNeg", "PBitNot", "PNot", "PAdd", "PSub", "PMul",
+    "PFloorDiv", "PLt", "PLe", "PGt", "PGe", "PPow", "PMod", "PLShift", "PRShift", "PAnd", "POr"]
+   : List String).foldl (fun s n => s.insert n) {}
 
 public def pythonRuntimeLaurelPart : Laurel.Program :=
   match Laurel.TransM.run (some $ .file "") (Laurel.parseProgram pythonRuntimeLaurelPartDDM) with

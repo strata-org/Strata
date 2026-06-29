@@ -8,6 +8,7 @@ lintDriver = "CheckImports"
 name = "StrataDDM"
 path = "StrataDDM"
 
+
 [[require]]
 name = "plausible"
 git = "https://github.com/leanprover-community/plausible.git"
@@ -47,4 +48,5 @@ root = "Scripts.CheckImports"
 [[lean_exe]]
 name = "ImportStats"
 root = "Scripts.ImportStats"
+
 

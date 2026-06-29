@@ -298,7 +298,13 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return seqCall
     else
       let callResultVar ← freshTempVar
-      let callResultType ← computeType expr
+      let callResultTypeFull ← computeType expr
+      -- Strip trailing Error outputs: `(T, Error, ...)` → `T` for the temp var.
+      let callResultType := match callResultTypeFull.val with
+        | .MultiValuedExpr (first :: rest) =>
+          if rest.all (fun o => match o.val with | .TCore "Error" => true | _ => false)
+          then first else callResultTypeFull
+        | _ => callResultTypeFull
 
       let prepends ← asLifted (transformStmtAssignImperativeCall
         [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)
