@@ -361,6 +361,10 @@ inductive StmtExpr : Type where
   | Assert (condition : Condition)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
+  /-- Throw a value on the exceptional channel (E2). The operand is typed at the
+      prelude root `BaseException` (or a declared subtype). See
+      `docs/design/laurel_extensions.md` (extension E2). -/
+  | Throw (value : AstNode StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
   | ProveBy (value : AstNode StmtExpr) (proof : AstNode StmtExpr)
   /-- Extract the contract (reads, modifies, precondition, or postcondition) of a function. -/
@@ -417,6 +421,7 @@ def StmtExpr.constrName : StmtExpr → String
   | .Fresh ..            => "fresh"
   | .Assert ..           => "assert"
   | .Assume ..           => "assume"
+  | .Throw ..            => "throw"
   | .ProveBy ..          => "by"
   | .ContractOf ..       => "contractOf"
   | .Abstract            => "abstract"
@@ -441,6 +446,17 @@ def StmtExpr.constrName : StmtExpr → String
     exact string rather than each hard-coding it. The leading `$` keeps it
     out of the user-name space (no source identifier can contain `$`). -/
 def bodyLabel : String := "$body"
+
+/-- Name of the E1/E2 exceptional-channel root composite (`BaseException`),
+    defined in the exception prelude (`exceptionDefinitionsForLaurel`).
+
+    Shared here (like `bodyLabel`) so the resolver, the prelude gating, and
+    FilterPrelude's dependency tracking all agree on the exact name:
+    - `throw`'s operand is type-checked against this type (resolution);
+    - any program containing a `throw` (or naming this type) pulls the
+      exception prelude in (gating), since the channel root must be in scope
+      wherever the exceptional channel is used. -/
+def baseExceptionTypeName : String := "BaseException"
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind
@@ -735,6 +751,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Fresh .. => "Fresh"
   | .Assert .. => "Assert"
   | .Assume .. => "Assume"
+  | .Throw .. => "Throw"
   | .ProveBy .. => "ProveBy"
   | .ContractOf .. => "ContractOf"
   | .Abstract => "Abstract"

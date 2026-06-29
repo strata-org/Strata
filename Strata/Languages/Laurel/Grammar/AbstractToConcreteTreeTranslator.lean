@@ -167,6 +167,7 @@ where
         laurelOp "errorSummary" #[.strlit sr msg])
       laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
+    | .Throw value => laurelOp "throw" #[stmtExprToArg value]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
     | .IsType target ty =>

@@ -732,6 +732,9 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Assume cond => do
     let r ← Check.assume exprMd cond source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
+  | .Throw value => do
+    let r ← Check.throw exprMd value source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
@@ -1446,6 +1449,47 @@ def Check.assume (exprMd : StmtExprMd)
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Assume.sizeOf_spec] at hsz
+    omega
+
+/-- (Throw)
+    ```
+    Γ ⊢ value ⇐ BaseException
+    ──────────────────────────────────
+    Γ ⊢ Throw value ⇒ TVoid
+    ```
+    The operand is checked against the exceptional-channel root
+    `BaseException` (E1/E2); any declared subtype is accepted by subsumption.
+    `throw` is a statement: it yields no value, so it synthesizes `TVoid`.
+
+    Typing the operand at `BaseException` requires the type to be in scope; the
+    prelude gating (driven by `FilterPrelude.collectExprNames` treating a
+    `Throw` as a reference to `baseExceptionTypeName`) guarantees the exception
+    prelude is prepended for any program containing a `throw`. -/
+def Check.throw (exprMd : StmtExprMd)
+    (value : StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .Throw value) :
+    ResolveM StmtExprMd := do
+  let (value', actual) ← Synth.resolveStmtExpr value
+  -- The operand must be a `BaseException` (or subtype). This is a check on the
+  -- *original* program: `heapParameterization` later erases every composite —
+  -- including exception values — to the heap `Composite` reference datatype, at
+  -- which point the static BaseException-ness lives only in the runtime type
+  -- tag. So once the operand has been erased to that reference, re-resolution
+  -- must not re-impose the check (it would spuriously fail `Composite <: BaseException`).
+  let isErasedCompositeRef : Bool := match actual.val with
+    -- "Composite" is the heap reference datatype; see `HeapParameterizationConstants`.
+    | .UserDefined ref => ref.text == "Composite"
+    | _ => false
+  unless isErasedCompositeRef do
+    let baseTy ← resolveHighType { val := .UserDefined (mkId baseExceptionTypeName), source := source }
+    checkSubtype value.source baseTy actual
+  pure { val := .Throw value', source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.Throw.sizeOf_spec] at hsz
     omega
 
 -- ### Assignment
@@ -2868,6 +2912,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   | .Fresh val => collectStmtExpr map val
   | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
+  | .Throw value => collectStmtExpr map value
   | .ProveBy val proof =>
     let map := collectStmtExpr map val
     collectStmtExpr map proof

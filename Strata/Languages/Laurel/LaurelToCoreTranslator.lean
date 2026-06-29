@@ -328,6 +328,7 @@ def translateExpr (expr : StmtExprMd)
   | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
   | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
   | .Assume _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
+  | .Throw _ => throwExprDiagnostic $ diagnosticFromSource expr.source "throw is not yet supported (requires generic Result lowering, E7)" DiagnosticType.NotYetImplemented
   | .ProveBy value _ => throwExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
   | .ContractOf _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
   | .Abstract => throwExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" DiagnosticType.NotYetImplemented
@@ -583,6 +584,13 @@ def translateStmt (stmt : StmtExprMd)
       -- Hole in statement position: treat as havoc (no-op).
       -- This can occur when an unmodeled call's Block is flattened.
       return []
+  | .Throw _ =>
+      -- Full `throw` lowering targets a generic `Result<Val, Err>` (E7), which
+      -- Laurel cannot express until it has generic datatypes. Until then, emit a
+      -- diagnostic rather than silently mis-lowering via the wildcard below.
+      throwStmtDiagnostic $ md.toDiagnostic
+        "throw is not yet supported (requires generic Result lowering, E7)"
+        DiagnosticType.NotYetImplemented
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md

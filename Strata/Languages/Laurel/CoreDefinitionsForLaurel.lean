@@ -83,12 +83,6 @@ def exceptionDefinitionsForLaurel : Program :=
   | .ok program => program
   | .error e => dbg_trace s!"BUG: ExceptionDefinitionsForLaurel parse error: {e}"; default
 
-/-- Name of the E1 exceptional-channel root composite (`BaseException`).
-    A program "uses exceptions" — and so needs `exceptionDefinitionsForLaurel`
-    prepended — iff it references this name (directly, or transitively via a
-    subtype, whose `extends` chain names it). -/
-def baseExceptionTypeName : String := "BaseException"
-
 end -- public section
 
 end Strata.Laurel

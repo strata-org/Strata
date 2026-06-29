@@ -87,6 +87,8 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
     pure ⟨.Assert { cond with condition := ← mapStmtExprM f cond.condition }, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprM f cond), source⟩
+  | .Throw value =>
+    pure ⟨.Throw (← mapStmtExprM f value), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source⟩
   | .ContractOf ty func =>
@@ -178,6 +180,8 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assert { cond with condition := ← mapStmtExprPrePostM pre post cond.condition }, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprPrePostM pre post cond), source⟩
+  | .Throw value =>
+    pure ⟨.Throw (← mapStmtExprPrePostM pre post value), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>

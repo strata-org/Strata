@@ -154,6 +154,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
   | .Assume cond =>
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
+  | .Throw v =>
+      return ⟨.Throw (← inferExpr v ⟨ .Unknown, source ⟩), source⟩
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType), source⟩

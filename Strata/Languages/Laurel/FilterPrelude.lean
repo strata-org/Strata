@@ -121,6 +121,11 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
     collectExprNames body
   | .Assert cond => collectExprNames cond.condition
   | .Assume cond => collectExprNames cond
+  -- A `throw` uses the exceptional channel, whose root `BaseException` must be
+  -- in scope wherever it appears. Recording it as a type reference drives both
+  -- the prelude gating and this dependency closure to include the exception
+  -- prelude for any program containing a `throw`.
+  | .Throw value => addTypeName baseExceptionTypeName; collectExprNames value
   | .Return val => val.forM collectExprNames
   | .Old val | .Fresh val | .Assigned val => collectExprNames val
   | .ProveBy val proof => collectExprNames val; collectExprNames proof

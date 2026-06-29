@@ -203,6 +203,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.assume, #[arg0] =>
       let cond ← translateStmtExpr arg0
       return mkStmtExprMd (.Assume cond) src
+    | q`Laurel.throw, #[arg0] =>
+      let value ← translateStmtExpr arg0
+      return mkStmtExprMd (.Throw value) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) src

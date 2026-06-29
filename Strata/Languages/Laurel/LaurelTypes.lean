@@ -91,6 +91,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
     | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
   | .Assert _ => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
+  | .Throw _ => ⟨ .TVoid, source ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, source ⟩
   | .This => default -- TODO: implement
