@@ -607,7 +607,7 @@ statements are in effect position (synthesized and discarded via
 
 Each typing rule is implemented as its own helper inside the mutual
 block below. Helpers are grouped by section to mirror the *Typing
-rules* index in `LaurelDoc.lean`:
+rules* index in `LaurelDesignGuide.lean`:
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Check.varDeclare`

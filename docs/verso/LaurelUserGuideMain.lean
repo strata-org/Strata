@@ -6,7 +6,7 @@
 
 
 
-import LaurelDoc
+import LaurelUserGuide
 open Verso.Genre.Manual (RenderConfig manualMain)
 
 def config : RenderConfig where
@@ -15,4 +15,4 @@ def config : RenderConfig where
   emitHtmlMulti := .no
   htmlDepth := 2
 
-def main := manualMain (%doc LaurelDoc) (config := config)
+def main := manualMain (%doc LaurelUserGuide) (config := config)

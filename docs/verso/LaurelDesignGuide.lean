@@ -24,84 +24,6 @@ open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
-/-- Markdown documentation for all Laurel passes, including their
-    `comesBefore`/`comesAfter` ordering rationales. Note: pass
-    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
-    `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
-    converter); use backticks for inline code instead. -/
-def laurelPipelineDocsMarkdown : String :=
-  let entries := allPasses.map fun pass =>
-    let base := s!"- **{pass.name}**: {pass.documentation}"
-    let beforeDeps := pass.comesBefore.map fun cb =>
-      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
-    let afterDeps := pass.comesAfter.map fun ca =>
-      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
-    let deps := beforeDeps ++ afterDeps
-    if deps.isEmpty then base
-    else base ++ "\n" ++ "\n".intercalate deps
-  "\n".intercalate entries.toList
-
-/-- Markdown dependency graph for the Laurel passes, derived from the
-    `comesBefore`/`comesAfter` properties. -/
-def laurelPipelineDependencyGraphMarkdown : String := Id.run do
-  -- Collect all edges: (source, target, reason) where source comesBefore target
-  let mut edges : List (String × String × String) := []
-  for pass in allPasses do
-    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
-    for cb in pass.comesBefore do
-      edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
-    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
-    for ca in pass.comesAfter do
-      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
-
-  -- Deduplicate edges with the same (source, target), keeping the first reason.
-  edges := edges.foldl (init := []) fun acc e =>
-    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
-
-  -- Build the graph as a markdown list showing dependencies
-  let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
-  if edges.isEmpty then
-    md := md ++ "*No ordering constraints declared.*\n"
-  else
-    for (src, tgt, reason) in edges do
-      md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
-
-  -- Add a textual rendering of the pipeline order with dependency annotations
-  md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
-  md := md ++ "```\n"
-  let mut idx := 1
-  for pass in allPasses do
-    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
-    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
-    let deps := beforeDeps ++ afterDeps
-    let depStr := if deps.isEmpty then "" else String.join deps
-    md := md ++ s!"{idx}. {pass.name}{depStr}\n"
-    idx := idx + 1
-  md := md ++ "```\n"
-  return md
-
-/-- Block command that generates documentation for all Laurel pipeline passes.
-    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
-@[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDocsMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
-/-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` and `comesAfter` properties.
-    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
-@[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDependencyGraphMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
--- A set-apart *example* box. Renders its contents inside a tinted, bordered
 -- panel with an "Example" header, so concrete examples stand out from the
 -- surrounding explanatory prose. Authored via the `:::example` directive below.
 block_extension Block.«example» (title : Option String) where
@@ -166,9 +88,9 @@ def «example» : Verso.Doc.Elab.DirectiveExpanderOf LaurelExampleConfig
     let args ← stxs.mapM Verso.Doc.Elab.elabBlock
     ``(Verso.Doc.Block.other (Block.«example» $(Lean.quote title)) #[ $[ $args ],* ])
 
-#doc (Manual) "The Laurel Language" =>
+#doc (Manual) "The Laurel Language Design Guide" =>
 %%%
-shortTitle := "Laurel"
+shortTitle := "Laurel Design"
 %%%
 
 # Introduction
@@ -957,35 +879,6 @@ named-output assignment.
 
 {docstring Strata.Laurel.resolveInstanceProcedure}
 
-# Implementation
-
-The static semantics of Laurel are defined by `Resolution.lean`. This is where Laurel references are resolved and where type checking is done. Calling `resolve` will produce diagnostics and a `SemanticModel` that can be used to navigate between definitions and references.
-If new references or definitions are created during compilation, `resolve` must be called again to get a complete model.
-
-## Translation Pipeline
-
-The Laurel to Core translation pipeline uses these IRs:
-- Laurel
-- UnorderedCoreWithLaurelTypes
-- CoreWithLaurelTypes
-- Core
-
-Most of the passes are in the Laurel IR.
-The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
-The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
-And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
-
-## Passes
-
-The following passes making up the compilation of Laurel to Core:
-
-{laurelPipelineDocs}
-
-## Pass Dependency Graph
-
-The following graph shows the ordering constraints between passes.
-
-{laurelPipelineDependencyGraph}
 
 # Differences between Laurel and Core
 
@@ -1015,7 +908,3 @@ var y: int;
 var z: int;
 hasThreeOutputs(out x, out y, out z);
 ```
-
-## Implementation
-
-In Laurel, all verification concepts, such as assume statements, pre and postconditions, and transparency of procedures, are part of the language. In Core however, there is the concept of metadata. Concepts that relate to only one or a few analyses might not be considered concepts of the Core language, and will then be represented using metadata instead of being given a typed representation in the AST.

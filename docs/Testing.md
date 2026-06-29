@@ -122,9 +122,9 @@ lifting, constrained-type elimination, …) before translating to Core and
 verifying. Several of those passes re-run `resolve` on their output. So a
 diagnostic that only `testLaurel` surfaces may originate from a later pass,
 not the verifier. The major passes are described in the **Translation
-Pipeline** section of the Laurel language manual — published at
-[strata-org.github.io/Strata](https://strata-org.github.io/Strata/laurel/html-single/),
-source in [`docs/verso/LaurelDoc.lean`](verso/LaurelDoc.lean) — and the full
+Pipeline** section of the Laurel implementation guide — published at
+[strata-org.github.io/Strata](https://strata-org.github.io/Strata/laurelimpl/html-single/),
+source in [`docs/verso/LaurelImplementationGuide.lean`](verso/LaurelImplementationGuide.lean) — and the full
 pass list and exact ordering live in
 [`Strata/Languages/Laurel/LaurelCompilationPipeline.lean`](../Strata/Languages/Laurel/LaurelCompilationPipeline.lean)
 (`laurelPipeline`).

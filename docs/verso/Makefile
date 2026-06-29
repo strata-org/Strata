@@ -1,5 +1,5 @@
 PORT ?= 1080
-BOOKS := ddm langdef laurel transforms
+BOOKS := ddm langdef laureldesign laurelimpl laurelguide transforms
 
 .PHONY: $(BOOKS) all clean build-% serve-%
 
