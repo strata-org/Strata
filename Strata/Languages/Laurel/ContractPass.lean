@@ -389,18 +389,6 @@ private def exprMentions (name : String) (expr : StmtExprMd) : Bool :=
     all_goals (try term_by_mem)
     all_goals omega
 
-/-- True if an `invokeOn` procedure has postconditions referencing its output
-    parameters. Used to skip axiom generation, which would otherwise leave the
-    referenced output unbound (the axiom quantifies over inputs only). This is a
-    narrow defensive guard: `Resolution` independently rejects *every* `invokeOn`
-    procedure that declares outputs, so a well-formed program never reaches here
-    with one. -/
-private def invokeOnReferencesOutputs (proc : Procedure) : Bool :=
-  if proc.invokeOn.isNone then false else
-    let postconds := getPostconditions proc.body
-    proc.outputs.any (fun out =>
-      postconds.any (fun c => exprMentions out.name.text c.condition))
-
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
 def lowerContracts (program : Program) : Program :=
@@ -425,9 +413,6 @@ def lowerContracts (program : Program) : Program :=
         | some trigger =>
           let postconds := getPostconditions proc.body
           if postconds.isEmpty then { proc with invokeOn := none }
-          else if invokeOnReferencesOutputs proc then
-            -- Skip axiom generation; `Resolution` emits the user-facing diagnostic.
-            { proc with invokeOn := none }
           else { proc with
             axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
             invokeOn := none }
