@@ -2620,11 +2620,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
-    -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
-    -- so that frontends emitting `Exit bodyLabel` for early-return lowering
-    -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
+    let body' ← resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
@@ -2665,8 +2661,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    -- See `resolveProcedure` for the rationale on `bodyLabel`.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
+    let body' ← resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
