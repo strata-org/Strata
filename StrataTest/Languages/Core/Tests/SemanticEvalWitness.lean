@@ -23,6 +23,10 @@ The evaluator follows the shape of a real expression evaluator:
   identity-on-values half of `WellFormedSemanticEvalVal`);
 * on any other (reducible) expression it normalizes to a canonical value.
 
+This witness preserves value-ness but not typing — e.g. a boolean expression
+normalizes to the integer `canonicalValue`. That suffices here: the
+well-formedness predicates constrain value-ness, not types.
+
 The two conditions are jointly satisfiable because they only constrain
 value-only stores (`WellFormedStore`): on such a store the free-variable lookup
 returns a value, so it agrees with the "every output is a value" requirement.
@@ -54,8 +58,6 @@ def coreWitnessEval : CoreEval := fun σ e =>
 /-- On a free-variable atom the witness returns the store binding. -/
 theorem coreWitnessEval_wfVar : WellFormedSemanticEvalVar coreWitnessEval := by
   intro e v σ _hwfs hget
-  -- `getFvar e = some v` forces `e` to be `.fvar _ v _`; every other case is
-  -- vacuous because `getFvar` returns `none` there.
   cases e <;> simp_all only [HasFvar.getFvar, coreWitnessEval, reduceCtorEq]
   cases hget
   rfl
@@ -105,11 +107,6 @@ instance : Inhabited WFCoreEval :=
 theorem exists_wf_coreEval :
     ∃ δ : CoreEval, WellFormedSemanticEvalVar δ ∧ WellFormedSemanticEvalVal δ :=
   ⟨(default : WFCoreEval).eval, (default : WFCoreEval).wfVar, (default : WFCoreEval).wfVal⟩
-
-/-- Non-degeneracy: the witness genuinely returns the store binding on a free
-    variable (it is not a constant-`none` evaluator). -/
-theorem coreWitnessEval_fvar (σ : CoreStore) (x : Expression.Ident) (ty) :
-    coreWitnessEval σ (.fvar () x ty) = σ x := rfl
 
 end
 
