@@ -1645,8 +1645,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
   -- Core translation:
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
-  --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
-  if callee == "select" || callee == "update" || callee == "const" then
+  --   * `mapConst(val)`        ⇒ `Map _ (typeof val)` (key type is not recoverable)
+  if callee == "select" || callee == "update" || callee == "mapConst" then
     let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Synth.resolveStmtExpr a)
@@ -1659,7 +1659,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
         | .TMap _ valueTy => pure valueTy
         | _ => pure ⟨ .Unknown, source ⟩
       | "update", mapTy :: _ => pure mapTy
-      | "const", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
+      | "mapConst", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
       | _, _ => pure ⟨ .Unknown, source ⟩
     return (.StaticCall callee args', resultTy)
 

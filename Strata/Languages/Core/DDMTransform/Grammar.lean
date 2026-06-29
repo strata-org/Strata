@@ -103,6 +103,10 @@ fn old (tp : Type, v : tp) : tp => "old " v;
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
+// map_const uses explicit key-type annotation syntax: the key type cannot be
+// inferred from the single value argument, so it is written `mapConst<K>(v)`.
+// The value type V is inferred from `v`.
+fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v ")";
 
 // seq_empty uses explicit type annotation syntax since there are no value
 // arguments to infer the type parameter from.

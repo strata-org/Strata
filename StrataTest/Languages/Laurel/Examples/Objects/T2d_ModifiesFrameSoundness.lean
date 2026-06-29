@@ -293,6 +293,6 @@ procedure callerCannotPinFreshField()
   var c: Container := new Container;
   stashFresh(c);
   assert c#child#value == 42
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

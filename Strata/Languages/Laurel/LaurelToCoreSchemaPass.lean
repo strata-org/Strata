@@ -114,6 +114,18 @@ decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyTy
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
 
+/-- Compute the Core value type `V` of a `mapConst` argument, i.e. the type of
+    `arg`. Nested `mapConst` calls have the `Box` placeholder as their declared
+    return type, so `computeExprType` cannot recover their structural `Map` type;
+    we reconstruct it here (`mapConst(x) : Map TypeTag (typeof x)`). -/
+private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
+  match arg.val with
+  | .StaticCall callee [inner] =>
+      if callee.text == "mapConst" then
+        return Core.mapTy (.tcons "TypeTag" []) (← mapConstValTy model inner)
+      else translateType (computeExprType model arg)
+  | _ => translateType (computeExprType model arg)
+
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
   m s
@@ -234,7 +246,22 @@ def translateExpr (expr : StmtExprMd)
       if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        -- The `mapConst` constant-map builtin has no inferable key type, so we
+        -- annotate its op with the concrete function type `V → Map K V` (from
+        -- the resolved result type). This lets the pretty-printer emit the
+        -- explicit `mapConst<K>(v)` syntax so the program round-trips.
+        let fnOp : Core.Expression.Expr ←
+          if callee.text == "mapConst" then
+            -- `mapConst : V → Map TypeTag V`. Key type is always `TypeTag`
+            -- (the type-tag domain of the ancestor tables); the value type is
+            -- the type of the single argument.
+            match args with
+            | [valArg] =>
+                let vTy ← mapConstValTy model valArg
+                let kTy : LMonoTy := .tcons "TypeTag" []
+                pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+            | _ => pure (.op () ⟨callee.text, ()⟩ none)
+          else pure (.op () ⟨callee.text, ()⟩ none)
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp

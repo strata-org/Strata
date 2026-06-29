@@ -16,7 +16,7 @@ namespace Strata.Laurel
 public section
 
 /--
-Core map operations (`select`, `update`, `const`) expressed in Laurel syntax.
+Core map operations (`select`, `update`, `mapConst`) expressed in Laurel syntax.
 These are polymorphic map primitives used by the Laurel-to-Core translator.
 Since Laurel doesn't have polymorphic types, `int` is used as a placeholder type
 for all parameters — the actual types are inferred during Core translation.
@@ -41,7 +41,7 @@ procedure select(map: int, key: int) : Box
 procedure update(map: int, key: int, value: int) : Box
   external;
 
-procedure const(value: int) : Box
+procedure mapConst(value: int) : Box
   external;
 
 #end
