@@ -180,6 +180,37 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
 
 end ToCSTContext
 
+---------------------------------------------------------------------
+-- MetadataAnn CST construction
+---------------------------------------------------------------------
+
+/-- Convert a MetaData element to a MetadataAnnEntry CST node. -/
+private def metadataElemToEntry {M} [Inhabited M]
+    (elem : Imperative.MetaDataElem Core.Expression) : Option (MetadataAnnEntry M) :=
+  match elem.fld with
+  | .label key =>
+    let keyCst : MetadataAnnKey M := .mdAnnKeyBare default ⟨default, key⟩
+    match elem.value with
+    | .switch true => some (.mdAnnFlag default keyCst)
+    | .switch false => none
+    | .msg s => some (.mdAnnKV default keyCst (.mdAnnValStr default ⟨default, s⟩))
+    | .provenance p => some (.mdAnnKV default keyCst (.mdAnnValStr default ⟨default, toString p⟩))
+    | .expr _ => none  -- expression values not yet supported in grammar
+  | .var _ => none  -- variable-keyed metadata is internal, not surfaced in syntax
+
+/-- Convert MetaData to an Option MetadataAnn CST annotation.
+    Returns none (no annotation) if no emittable metadata is present. -/
+def metadataToAnn {M} [Inhabited M]
+    (md : Imperative.MetaData Core.Expression) : Ann (Option (MetadataAnn M)) M :=
+  let entries := md.filterMap (metadataElemToEntry (M := M))
+  if entries.isEmpty then
+    ⟨default, none⟩
+  else
+    let annEntries : Ann (Array (MetadataAnnEntry M)) M := ⟨default, entries⟩
+    ⟨default, some (.mdAnn default annEntries)⟩
+
+---------------------------------------------------------------------
+
 /-- Monad for AST->CST conversion with context and error collection -/
 @[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
@@ -824,25 +855,18 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
   | .assert label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    let rcAnn : Ann (Option (ReachCheck M)) M :=
-      if Imperative.MetaData.hasReachCheck md then
-        ⟨default, some (.reachCheck default)⟩
-      else
-        ⟨default, none⟩
-    pure (.assert default rcAnn labelAnn exprCST)
-  | .assume label expr _md => do
+    let annotsAnn := metadataToAnn md
+    pure (.assert default annotsAnn labelAnn exprCST)
+  | .assume label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.assume default labelAnn exprCST)
+    let annotsAnn := metadataToAnn md
+    pure (.assume default annotsAnn labelAnn exprCST)
   | .cover label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    let rcAnn : Ann (Option (ReachCheck M)) M :=
-      if Imperative.MetaData.hasReachCheck md then
-        ⟨default, some (.reachCheck default)⟩
-      else
-        ⟨default, none⟩
-    pure (.cover default rcAnn labelAnn exprCST)
+    let annotsAnn := metadataToAnn md
+    pure (.cover default annotsAnn labelAnn exprCST)
   | .call pname coreCallArgs _md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
     let mut callArgs : Array (CoreDDM.CallArg M) := #[]

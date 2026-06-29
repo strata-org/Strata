@@ -133,6 +133,61 @@ def translateReal (arg : Arg) : TransM Decimal := do
 
 ---------------------------------------------------------------------
 
+/- MetadataAnn Translation -/
+
+/-- Translate a MetadataAnnKey to a string (bare or dialect-prefixed). -/
+def translateMetadataAnnKey (arg : Arg) : TransM String := do
+  let .op op := arg
+    | TransM.error s!"translateMetadataAnnKey expected op {repr arg}"
+  match op.name, op.args with
+  | q`Core.mdAnnKeyBare, #[nameArg] =>
+    translateIdent String nameArg
+  | q`Core.mdAnnKeyPrefixed, #[dialectArg, nameArg] =>
+    let dialect ← translateIdent String dialectArg
+    let name ← translateIdent String nameArg
+    return s!"{dialect}.{name}"
+  | _, _ => TransM.error s!"translateMetadataAnnKey: unexpected {repr op.name}"
+
+/-- Translate a MetadataAnnEntry to a MetaDataElem (flags and string values only;
+    expression values are not yet supported). -/
+def translateMetadataAnnEntry (arg : Arg) :
+    TransM (Imperative.MetaDataElem Core.Expression) := do
+  let .op op := arg
+    | TransM.error s!"translateMetadataAnnEntry expected op {repr arg}"
+  match op.name, op.args with
+  | q`Core.mdAnnFlag, #[keyArg] =>
+    let key ← translateMetadataAnnKey keyArg
+    return { fld := .label key, value := .switch true }
+  | q`Core.mdAnnKV, #[keyArg, valArg] =>
+    let key ← translateMetadataAnnKey keyArg
+    let .op valOp := valArg
+      | TransM.error s!"translateMetadataAnnEntry: expected op for value {repr valArg}"
+    match valOp.name, valOp.args with
+    | q`Core.mdAnnValStr, #[strArg] =>
+      let s ← translateStr strArg
+      return { fld := .label key, value := .msg s }
+    | q`Core.mdAnnValExpr, _ =>
+      TransM.error "translateMetadataAnnEntry: expression values not yet supported"
+    | _, _ => TransM.error s!"translateMetadataAnnEntry: unexpected value {repr valOp.name}"
+  | _, _ => TransM.error s!"translateMetadataAnnEntry: unexpected {repr op.name}"
+
+/-- Translate an Option MetadataAnn argument into MetaData.
+    Returns empty metadata if the annotation is absent. -/
+def translateOptionMetadataAnn (arg : Arg) :
+    TransM (Imperative.MetaData Core.Expression) := do
+  let .option _ ann := arg
+    | TransM.error s!"translateOptionMetadataAnn unexpected {repr arg}"
+  match ann with
+  | none => return Imperative.MetaData.empty
+  | some annArg =>
+    let .op annOp := annArg
+      | TransM.error s!"translateOptionMetadataAnn expected op {repr annArg}"
+    let _ ← checkOpArg annArg q`Core.mdAnn 1
+    let entries ← translateCommaSep translateMetadataAnnEntry annOp.args[0]!
+    return entries
+
+---------------------------------------------------------------------
+
 inductive GenKind where
   | var_def | axiom_def | assume_def | assert_def | cover_def
   deriving DecidableEq
@@ -1301,14 +1356,6 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty (.det val) md], { bindings with boundVars := bbindings })
 
-def translateOptionReachCheck (arg : Arg) : TransM Bool := do
-  let .option _ rc := arg
-    | TransM.error s!"translateOptionReachCheck unexpected {repr arg}"
-  match rc with
-  | some f =>
-    let _ ← checkOpArg f q`Core.reachCheck 0
-    return true
-  | none => return false
 
 /-- Translate an ExprOrNondet argument to ExprOrNondet. -/
 private def translateCondBool (p : Program) (bindings : TransBindings) (a : Arg) :
@@ -1369,16 +1416,16 @@ partial def translateFnPreconds (p : Program) (name : Core.CoreIdent) (bindings 
     | _ => TransM.error s!"translateFnPreconds: only requires allowed, got {repr op.name}"
   return preconds.1
 
-/-- Translate an assert/cover statement with optional reachability check. -/
+/-- Translate an assert/cover/assume statement with optional metadata annotations. -/
 partial def translateLabeledCheck (p : Program) (bindings : TransBindings) (op : Operation)
-    (namePrefix : String) (kind : GenKind) (rca la ca : Arg)
+    (namePrefix : String) (kind : GenKind) (annotsArg la ca : Arg)
     (mk : String → Core.Expression.Expr → MetaData Core.Expression → Core.Statement) :
     TransM (List Core.Statement × TransBindings) := do
   let c ← translateExpr p bindings ca
   let (l, bindings) ← nextLabel namePrefix kind la bindings
-  let hasRC ← translateOptionReachCheck rca
+  let annMd ← translateOptionMetadataAnn annotsArg
   let md ← getOpMetaData op
-  let md := if hasRC then md.pushElem MetaData.reachCheck (.switch true) else md
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   return ([mk l c md], bindings)
 
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1403,15 +1450,12 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent Core.CoreIdent ida
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
-  | q`Core.assert, #[rca, la, ca] =>
-    translateLabeledCheck p bindings op "assert" .assert_def rca la ca .assert
-  | q`Core.cover, #[rca, la, ca] =>
-    translateLabeledCheck p bindings op "cover" .cover_def rca la ca .cover
-  | q`Core.assume, #[la, ca] =>
-    let c ← translateExpr p bindings ca
-    let (l, bindings) ← nextLabel "assume" .assume_def la bindings
-    let md ← getOpMetaData op
-    return ([.assume l c md], bindings)
+  | q`Core.assert, #[annotsArg, la, ca] =>
+    translateLabeledCheck p bindings op "assert" .assert_def annotsArg la ca .assert
+  | q`Core.cover, #[annotsArg, la, ca] =>
+    translateLabeledCheck p bindings op "cover" .cover_def annotsArg la ca .cover
+  | q`Core.assume, #[annotsArg, la, ca] =>
+    translateLabeledCheck p bindings op "assume" .assume_def annotsArg la ca .assume
   | q`Core.if_statement, #[ca, ta, fa] =>
     let (tss, thenBindings) ← translateBlock p bindings ta
     let (fss, elseBindings) ← translateElse p { bindings with gen := thenBindings.gen } fa
