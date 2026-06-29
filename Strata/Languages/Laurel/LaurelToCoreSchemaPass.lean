@@ -687,7 +687,19 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         translateChecks postconds s!"postcondition" bodyStmts.isNone
           (defaultSummary := "postcondition")
     | _ => pure []
-  let body : List Core.Statement := bodyStmts.getD []
+  let body : List Core.Statement :=
+    match bodyStmts with
+    | some ss => ss
+    | none =>
+      -- A bodiless procedure (e.g. a generated `$hole`, or any opaque/abstract
+      -- declaration) would otherwise produce an empty structured body, which the
+      -- Core interpreter rejects when called ("has no body"). Emit a single
+      -- `assume true` so the body is non-empty. This is a no-op for both
+      -- verification (such a procedure's postconditions are already marked
+      -- `free`, so there is nothing to check against the body) and concrete
+      -- execution (the outputs stay havoc'd), but it lets the interpreter step
+      -- through the call instead of erroring.
+      [Core.Statement.assume "assume_true" (.true ()) Imperative.MetaData.empty]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
