@@ -90,7 +90,7 @@ end -- public section
 /-- Pipeline pass: merge and lift returns. -/
 public def mergeAndLiftReturnsPass : LoweringPass where
   name := "MergeAndLiftReturns"
-  documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form."
+  documentation := "Attempts to merge and lift returns so that only a single outer return remains, enabling the procedure to be more easily converted to a functional form. TODO: generalize this pass so it can functionalize arbitrary control flow. Then it could run only on Core functions, and LaurelToCore would no longer need to pattern-match assignments that equal the outer return."
   needsResolves := true
   comesBefore := [⟨ eliminateValueInReturnsPass.meta, "Lifts returns with a value, so the value should not yet have been lowered."⟩]
   run := fun p _m _ =>
