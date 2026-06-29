@@ -32,6 +32,24 @@ set_option maxHeartbeats 400000
 #dialect
 dialect Core;
 
+// Metadata annotation syntax: @[key, key = value, ...]
+category MetadataAnnValue;
+op mdAnnValStr (s : Str) : MetadataAnnValue => s;
+op mdAnnValExpr (e : Expr) : MetadataAnnValue => "(" e ")";
+
+category MetadataAnnKey;
+op mdAnnKeyBare (name : Ident) : MetadataAnnKey => name;
+op mdAnnKeyPrefixed (dialect : Ident, name : Ident) : MetadataAnnKey =>
+  dialect "." name;
+
+category MetadataAnnEntry;
+op mdAnnFlag (key : MetadataAnnKey) : MetadataAnnEntry => key;
+op mdAnnKV (key : MetadataAnnKey, value : MetadataAnnValue) : MetadataAnnEntry =>
+  key " = " value;
+
+category MetadataAnn;
+op mdAnn (entries : CommaSepBy MetadataAnnEntry) : MetadataAnn => "@[" entries "]";
+
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
@@ -259,21 +277,20 @@ category Statement;
 category Block;
 category Else;
 category Label;
-category ReachCheck;
 
 op label (l : Ident) : Label => "[" l "]: ";
-op reachCheck () : ReachCheck => "@[reachCheck] ";
 
 @[scope(dl)]
 op varStatement (dl : DeclList) : Statement => "var " dl ";";
 @[declare(v, tp)]
 op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";";
 op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";";
-op assume (label : Option Label, c : bool) : Statement => "assume " label c ";";
-op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "assert " label c ";";
-op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "cover " label c ";";
+op assume (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots "assume " label c ";";
+op assert (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots "assert " label c ";";
+op cover (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots "cover " label c ";";
 category ExprOrNondet;
 op condDet (c : bool) : ExprOrNondet => "(" c ")";
 op condNondet : ExprOrNondet => "*";
