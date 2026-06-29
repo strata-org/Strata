@@ -17,9 +17,7 @@ open Strata
 
 private def arrayTheoryOpts :=
   { defaultLaurelTestOptions with
-    translateOptions := { defaultLaurelTestOptions.translateOptions with
-      enumeratedModifiesClauses := true
-      alwaysCallCoreFunctions := false },
+    translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
     verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }
 
 /-! ## 1. Illegal writes are rejected -/
@@ -295,6 +293,6 @@ procedure callerCannotPinFreshField()
   var c: Container := new Container;
   stashFresh(c);
   assert c#child#value == 42
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
