@@ -389,27 +389,22 @@ private def exprMentions (name : String) (expr : StmtExprMd) : Bool :=
     all_goals (try term_by_mem)
     all_goals omega
 
-/-- Emit a diagnostic if an `invokeOn` procedure has postconditions referencing
-    output parameters (which are not quantified in the axiom). -/
-private def invokeOnOutputRefError (proc : Procedure) : Option DiagnosticModel :=
-  if proc.invokeOn.isNone then none else
+/-- True if an `invokeOn` procedure has postconditions referencing its output
+    parameters. Used to skip axiom generation, which would otherwise leave the
+    referenced output unbound (the axiom quantifies over inputs only). This is a
+    narrow defensive guard: `Resolution` independently rejects *every* `invokeOn`
+    procedure that declares outputs, so a well-formed program never reaches here
+    with one. -/
+private def invokeOnReferencesOutputs (proc : Procedure) : Bool :=
+  if proc.invokeOn.isNone then false else
     let postconds := getPostconditions proc.body
-    let referenced := proc.outputs.filterMap (fun out =>
-      if postconds.any (fun c => exprMentions out.name.text c.condition)
-      then some out.name.text else none)
-    match referenced with
-    | [] => none
-    | names => some (diagnosticFromSource proc.name.source
-        s!"'invokeOn' procedure '{proc.name.text}' has an ensures referencing its output(s) ({String.intercalate ", " names}); the auto-invocation axiom is quantified over inputs only."
-        DiagnosticType.UserError)
+    proc.outputs.any (fun out =>
+      postconds.any (fun c => exprMentions out.name.text c.condition))
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
-def lowerContracts (program : Program) : Program × List DiagnosticModel :=
+def lowerContracts (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
-
-  -- Check for output-referencing ensures in invokeOn procedures
-  let diagnostics := program.staticProcedures.filterMap invokeOnOutputRefError
 
   -- Generate helper procedures for all procedures with contracts
   let helperProcs := (program.staticProcedures.filter (fun proc => !proc.isFunctional)).flatMap fun proc =>
@@ -430,8 +425,8 @@ def lowerContracts (program : Program) : Program × List DiagnosticModel :=
         | some trigger =>
           let postconds := getPostconditions proc.body
           if postconds.isEmpty then { proc with invokeOn := none }
-          else if invokeOnOutputRefError proc |>.isSome then
-            -- Skip axiom generation; diagnostic already emitted
+          else if invokeOnReferencesOutputs proc then
+            -- Skip axiom generation; `Resolution` emits the user-facing diagnostic.
             { proc with invokeOn := none }
           else { proc with
             axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
@@ -446,7 +441,7 @@ def lowerContracts (program : Program) : Program × List DiagnosticModel :=
       -- Rewrite call sites in the procedure body
       rewriteCallSitesInProc contractInfoMap proc).run 0
 
-  ({ program with staticProcedures := helperProcs ++ transformedProcs }, diagnostics)
+  { program with staticProcedures := helperProcs ++ transformedProcs }
 
 public def contractPass : LoweringPass where
   name := "ContractPass"
@@ -454,8 +449,7 @@ public def contractPass : LoweringPass where
   comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute."⟩ ]
   needsResolves := true
   run := fun p _m _ =>
-    let (p', diags) := lowerContracts p
-    (p', diags, {})
+    (lowerContracts p, [], {})
 
 end -- public section
 end Strata.Laurel

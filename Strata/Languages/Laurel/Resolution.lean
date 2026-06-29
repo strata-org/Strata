@@ -3182,6 +3182,18 @@ def validateOldUsage (program : Program) : List DiagnosticModel :=
   let writers := computeWritesHeap allProcs
   allProcs.flatMap fun proc => oldWarningsForProc (writers.contains proc.name) proc
 
+/-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
+    `ContractPass` generates is quantified over the procedure's inputs only, so an
+    output would be unbound. Reported here so resolution stays the single source
+    of user-program diagnostics. -/
+def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
+  program.staticProcedures.filterMap fun proc =>
+    if proc.invokeOn.isSome && !proc.outputs.isEmpty then
+      some (diagnosticFromSource proc.name.source
+        s!"'invokeOn' procedure '{proc.name.text}' may not have output parameters; the auto-invocation axiom is quantified over inputs only."
+        DiagnosticType.UserError)
+    else none
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
@@ -3209,9 +3221,13 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- `old` into the heap-parameterized form this check is phrased against.
   let oldUsageWarnings :=
     if existingModel.isNone then validateOldUsage program' else []
+  -- `invokeOn` procedures may not declare outputs (see `validateInvokeOnOutputRefs`).
+  -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
+  let invokeOnErrors :=
+    if existingModel.isNone then validateInvokeOnOutputRefs program' else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings
+    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
