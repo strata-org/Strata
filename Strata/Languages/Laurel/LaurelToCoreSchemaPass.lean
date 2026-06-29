@@ -584,7 +584,7 @@ def translateStmt (stmt : StmtExprMd)
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
-  | .Return valueOpt =>
+  | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" DiagnosticType.StrataBug
       emitCoreDiagnostic d
       return default
