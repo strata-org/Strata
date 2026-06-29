@@ -769,6 +769,11 @@ def Body.isTransparent : Body → Bool
   | .Transparent _ => true
   | _ => false
 
+def Body.hasNoBody : Body → Bool
+  | .Opaque _ bodyOption _ => bodyOption.isNone
+  | .Abstract _ => true
+  | _ => false
+
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
 
 /--
