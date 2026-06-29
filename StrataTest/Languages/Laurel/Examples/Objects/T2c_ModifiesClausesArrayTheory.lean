@@ -20,7 +20,9 @@ open Strata
 
 #eval testLaurel
     (options := { defaultLaurelTestOptions with
-      translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
+      translateOptions := { defaultLaurelTestOptions.translateOptions with
+        enumeratedModifiesClauses := true
+        alwaysCallCoreFunctions := false },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }) <|
 #strata
 program Laurel;
