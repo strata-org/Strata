@@ -31,6 +31,6 @@ procedure caller()
   var x: int := bodilessProcedure();
   assert x > 0;
   assert false
-//^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end

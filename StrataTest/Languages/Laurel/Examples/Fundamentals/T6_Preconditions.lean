@@ -47,7 +47,7 @@ procedure multipleRequiresCaller()
 {
   var a: int := multipleRequires(1, 2);
   var b: int := multipleRequires(-1, 2)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 #end
