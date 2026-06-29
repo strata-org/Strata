@@ -211,7 +211,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
   -- assignment target. Multi-output procedures are excluded.
   let singleOutputNames : Std.HashSet String :=
     imperativeProcs.foldl (fun s p =>
-      if p.outputs.length == 1 then s.insert p.name.text else s) {}
+      if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
   -- $asFunction copies for procedures that have a procedural twin;
   -- transparent-only procedures keep their original name.
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)

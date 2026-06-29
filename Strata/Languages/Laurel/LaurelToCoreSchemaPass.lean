@@ -587,6 +587,8 @@ def translateStmt (stmt : StmtExprMd)
   | .Return valueOpt =>
       match valueOpt with
       | none =>
+          let d := md.toDiagnostic "Return statemen should have been eliminated by EliminateReturnStatements pass" DiagnosticType.StrataBug
+          emitCoreDiagnostic d
           return [.exit bodyLabel md]
       | some _ =>
           let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
