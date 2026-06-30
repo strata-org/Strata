@@ -155,35 +155,6 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
       }
     else m) {}
 
-/-- Transform a procedure body to add assume/assert for its own contracts. -/
-private def transformProcBody (proc : Procedure) (info : ContractInfo) : Body :=
-  let inputArgs := paramsToArgs proc.inputs
-  let postconds := getPostconditions proc.body
-  -- A precondition is assumed in the body unless it is assert-only (mode `Assert`).
-  let preAssumes : List StmtExprMd :=
-    proc.preconditions.zip info.preNames |>.filterMap fun (pc, name, _) =>
-      if pc.mode.doesAssume then
-        some ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
-      else none
-  match proc.body with
-  | .Transparent body =>
-    -- A postcondition is checked at the end of the body unless it is assume-only
-    -- (mode `Assume`, i.e. a free postcondition).
-    let postAsserts : List StmtExprMd :=
-      postconds.zip info.postNames |>.filterMap fun (pc, _name, _summary) =>
-        if pc.mode.doesAssert then
-          let summary := pc.summary.getD "postcondition"
-          some ⟨.Assert pc.condition (some summary), pc.condition.source⟩
-        else none
-    .Transparent ⟨.Block (preAssumes ++ [body] ++ postAsserts) none, body.source⟩
-  | .Opaque _ (some impl) _ =>
-    .Opaque postconds (some ⟨.Block (preAssumes ++ [impl]) none, impl.source⟩) []
-  | .Opaque _ none mods =>
-    .Opaque postconds none mods
-  | .Abstract _ =>
-    .Abstract postconds
-  | b => b
-
 /-- Monad used by the contract-pass rewriter; carries a global counter for
     generating fresh temporary variable names. -/
 private abbrev ContractM := StateM Nat
@@ -211,6 +182,59 @@ private def mkTempAssignments (args : List StmtExprMd)
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param)] arg, src⟩]
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName)))]
   return (decls, refs)
+
+/-- Transform a procedure body to add assume/assert for its own contracts.
+
+    Preconditions are assumed at the start of the body (unless assert-only) and
+    postconditions are asserted at the end (unless assume-only); both go through
+    the generated helper procedures, so the assertion of `foo$post_i(old inputs,
+    outputs)` mirrors the assumption of `foo$pre_i(inputs)`. Whenever there is an
+    implementation to assert against, the body's own postcondition list is
+    cleared: the contract pass is now solely responsible for lowering it, so
+    leaving stale `ensures` clauses behind would double-count the obligation.
+
+    A postcondition's helper takes the procedure's inputs as its *entry-state*
+    parameters (this is where `old(...)` reads resolve), so the input arguments
+    must be snapshotted into temporaries at the start of the body before any
+    mutation. Otherwise an inout parameter such as `$heap` would be passed in its
+    exit state for both the entry and exit arguments, collapsing e.g. a modifies
+    frame to a trivially-true `old($heap) == $heap`. This mirrors the call-site
+    lowering, which snapshots arguments before the call. -/
+private def transformProcBody (proc : Procedure) (info : ContractInfo) : ContractM Body := do
+  let inputArgs := paramsToArgs proc.inputs
+  let outputArgs := paramsToArgs proc.outputs
+  let postconds := getPostconditions proc.body
+  -- A precondition is assumed in the body unless it is assert-only (mode `Assert`).
+  let preAssumes : List StmtExprMd :=
+    proc.preconditions.zip info.preNames |>.filterMap fun (pc, name, _) =>
+      if pc.mode.doesAssume then
+        some ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
+      else none
+  -- A postcondition is asserted at the end of the body unless it is assume-only
+  -- (mode `Assume`, i.e. a free postcondition). Snapshot the inputs at entry so
+  -- the helper sees the entry state for its input (old) parameters.
+  let postcondsToAssert := postconds.zip info.postNames |>.filter fun (pc, _) => pc.mode.doesAssert
+  let (snapshotDecls, snapshotRefs) ←
+    if postcondsToAssert.isEmpty then pure ([], [])
+    else mkTempAssignments inputArgs proc.inputs proc.name.source
+  let postAsserts : List StmtExprMd :=
+    postcondsToAssert.map fun (pc, name, _) =>
+      ⟨.Assert (mkCall name (snapshotRefs ++ outputArgs)) (some (pc.summary.getD "postcondition")),
+       pc.condition.source⟩
+  match proc.body with
+  | .Transparent body =>
+    return .Transparent ⟨.Block (snapshotDecls ++ preAssumes ++ [body] ++ postAsserts) none, body.source⟩
+  | .Opaque _ (some impl) _ =>
+    -- Postconditions are lowered to body assertions, so drop them from the
+    -- body's postcondition list.
+    return .Opaque [] (some ⟨.Block (snapshotDecls ++ preAssumes ++ [impl] ++ postAsserts) none, impl.source⟩) []
+  | .Opaque _ none mods =>
+    -- Bodiless: there is no implementation to assert against, so the
+    -- postconditions remain as the procedure's (free) spec.
+    return .Opaque postconds none mods
+  | .Abstract _ =>
+    return .Abstract postconds
+  | b => return b
 
 /-- Generate precondition checks (one per precondition) for a call site.
     A precondition is checked at the call site unless it is assume-only
@@ -397,12 +421,11 @@ def lowerContracts (program : Program) : Program :=
             axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
             invokeOn := none }
         | none => proc
-      let proc : Procedure := match contractInfoMap.get? proc.name.text with
+      let proc : Procedure ← match contractInfoMap.get? proc.name.text with
         | some info =>
-          { proc with
-            preconditions := []
-            body := transformProcBody proc info }
-        | none => proc
+          let body ← transformProcBody proc info
+          pure { proc with preconditions := [], body }
+        | none => pure proc
       -- Rewrite call sites in the procedure body
       rewriteCallSitesInProc contractInfoMap proc).run 0
 
