@@ -403,9 +403,12 @@ user-supplied annotation parsed back to a `.provenance` value.
   Translate.lean parses `"path:start-stop"` and `"<synthesized:origin>"` back
   to `.provenance` values. Uses `ToFormat SynthesizedOrigin` as single source
   of truth for origin strings.
-- **Regenerate editor syntax**: `lake env lean --run editors/GenSyntax.lean all`
-- **Tests**: Round-trip, multi-entry, empty, validation.
-- **Inherent key validation**: Not yet implemented in the parser.
+- ~~**Regenerate editor syntax**~~ ✅ No changes needed — annotation tokens
+  (`@[`, `]`) are handled by the DDM parser's static patterns, not the
+  dialect grammar.
+- **Inherent key validation**: Deferred to typechecking (not parse time).
+  Currently, misused keys (e.g., `@[reachCheck = "foo"]`) are silently
+  stored as `.msg` — `hasReachCheck` won't find them, but no error is raised.
 
 ### Build commands (on Cloud Desktop)
 
