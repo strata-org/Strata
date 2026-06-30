@@ -416,15 +416,26 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
 
 -------------------------------------------------------------------------------
 
-/-- Test cover command translates to ASSERT -/
+/-- Test cover command translates to `ASSERT(¬b)`. -/
 def ExampleCover : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
   [.cmd (.cover "reachable" (.const { underlying := (), type := mty[bool] } (.boolConst true)) {})]
 
 /--
-info: ok: #[ASSERT]
+info: ok: #[ASSERT [((not(true : bool)) : bool)]]
 -/
 #guard_msgs in
 #eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testCover" ExampleCover
+          return format ans.instructions
+
+/-- Test nondeterministic `init` translates to DECL + nondet ASSIGN. -/
+def ExampleInitNondet : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] .nondet {})]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])), ASSIGN (assign (x : unsignedbv[32]) (nondet : unsignedbv[32]))]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "testInitNondet" ExampleInitNondet
           return format ans.instructions
 
 -------------------------------------------------------------------------------

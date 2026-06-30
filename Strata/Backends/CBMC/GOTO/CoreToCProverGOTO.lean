@@ -65,8 +65,9 @@ def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := 
   if errors.isEmpty then
     (match (CoreToGOTO.transformToGoto program) with
       | .error e =>
-        dbg_trace s!"{e}"
-        return {}
+        -- Propagate rather than returning empty JSON, which would write `null`
+        -- output files yet exit successfully — no failure signal to callers.
+        throw (IO.userError s!"GOTO translation error: {e}")
       | .ok ctx =>
         IO.ofExcept (CProverGOTO.Context.toJson programName ctx))
   else

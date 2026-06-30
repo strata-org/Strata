@@ -118,9 +118,20 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
                 nextLoc := trans.nextLoc + 2,
                 T := T }
     | .nondet =>
+      -- DECL alone leaves `v` unbound; add a nondet ASSIGN (as `.set v .nondet`
+      -- does) so CBMC doesn't flag reads of `v` as uninitialised.
+      let e_expr :=
+        { id := .side_effect .Nondet,
+          sourceLoc := srcLoc,
+          type := gty,
+        }
+      let assign_inst :=
+        { type := .ASSIGN, locationNum := (trans.nextLoc + 1),
+          sourceLoc := srcLoc,
+          code := Code.assign v_expr e_expr }
       return { trans with
-                instructions := trans.instructions.push decl_inst,
-                nextLoc := trans.nextLoc + 1,
+                instructions := trans.instructions.append #[decl_inst, assign_inst],
+                nextLoc := trans.nextLoc + 2,
                 T := T }
   | .set v (.det e) md =>
     let gty ← G.lookupType T v
@@ -179,10 +190,12 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let expr ← G.toGotoExpr b
     let comment := md.getPropertySummary.getD s!"cover {name}"
     let srcLoc := metadataToSourceLoc md functionName trans.sourceText (comment := comment)
+    -- Encode `cover b` as `ASSERT(¬b)`: a counterexample witnesses a path where
+    -- `b` holds. Asserting `b` directly would invert the cover verdict.
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,
       sourceLoc := srcLoc
-      guard := expr }
+      guard := Expr.not expr }
     return { trans with
               instructions := trans.instructions.push assert_inst,
               nextLoc := trans.nextLoc + 1,
