@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelTypes
 public import Strata.Languages.Laurel.LaurelPass
+public import Strata.Languages.Laurel.SubscriptElimConstants
 import Strata.Util.Tactics
 
 /-!
@@ -389,22 +390,10 @@ private def elimProcedure (model : SemanticModel) (proc : Procedure) : Procedure
     decreases := proc.decreases.map (elimExpr model)
     invokeOn := proc.invokeOn.map (elimExpr model) }
 
-/-- The synthetic `$Array` composite, containing a single `$data: Seq<int>`
-    field.
-
-    The element type is hardcoded as `int`: `Array<T>` with `T ≠ int` is
-    currently rejected by `ValidateSubscriptUsage` (diagnostic 4), so in
-    practice every program reaching this pass uses only `Array<int>`.
-    Relaxing that validator would require deriving the element type here
-    (or switching to a per-element-type composite, similar to the
-    `BoxSeq_{tag}` constructor pattern in HeapParameterization). -/
-private def arrayCompositeDef : TypeDefinition :=
-  .Composite {
-    name := mkId arrayCompositeName
-    extending := []
-    fields := [{ name := mkId arrayDataField, isMutable := true,
-                 type := ⟨.TSeq ⟨.TInt, none⟩, none⟩ }]
-    instanceProcedures := [] }
+/-- The synthetic `$Array` composite. Defined in Laurel source in
+    `SubscriptElimConstants` (see `arrayComposite`) rather than built as a Lean
+    AST value, so the declaration reads as ordinary Laurel. -/
+private def arrayCompositeDef : TypeDefinition := arrayComposite
 
 /-- Eliminate `Subscript` nodes and desugar `Array.length` across a program.
     Conditionally injects the `$Array` synthetic composite when the program
