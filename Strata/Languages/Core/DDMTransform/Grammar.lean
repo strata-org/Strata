@@ -50,6 +50,10 @@ op mdAnnKV (key : MetadataAnnKey, value : MetadataAnnValue) : MetadataAnnEntry =
 category MetadataAnn;
 op mdAnn (entries : CommaSepBy MetadataAnnEntry) : MetadataAnn => "@[" entries "]";
 
+category OptMetadataAnn;
+op noAnn : OptMetadataAnn => ;
+op someAnn (a : MetadataAnn) : OptMetadataAnn => a:0 " ";
+
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
@@ -281,24 +285,24 @@ category Label;
 op label (l : Ident) : Label => "[" l "]: ";
 
 @[scope(dl)]
-op varStatement (dl : DeclList) : Statement => "var " dl ";";
+op varStatement (annots : OptMetadataAnn, dl : DeclList) : Statement => annots:0 "var " dl ";";
 @[declare(v, tp)]
-op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";";
-op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";";
-op assume (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
-  annots "assume " label c ";";
-op assert (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
-  annots "assert " label c ";";
-op cover (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
-  annots "cover " label c ";";
+op initStatement (annots : OptMetadataAnn, tp : Type, v : Ident, e : tp) : Statement => annots:0 "var " v " : " tp " := " e ";";
+op assign (annots : OptMetadataAnn, tp : Type, v : Lhs, e : tp) : Statement => annots:0 v:0 " := " e ";";
+op assume (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "assume " label c ";";
+op assert (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "assert " label c ";";
+op cover (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "cover " label c ";";
 category ExprOrNondet;
 op condDet (c : bool) : ExprOrNondet => "(" c ")";
 op condNondet : ExprOrNondet => "*";
 
-op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0;
+op if_statement (annots : OptMetadataAnn, c : ExprOrNondet, t : Block, f : Else) : Statement => annots:0 "if " c:0 " " t:0 f:0;
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
-op havoc_statement (v : Ident) : Statement => "havoc " v ";";
+op havoc_statement (annots : OptMetadataAnn, v : Ident) : Statement => annots:0 "havoc " v ";";
 
 category Invariant;
 op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
@@ -311,21 +315,21 @@ op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
-op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " c:0 "\n" m:0 is body:0;
+op while_statement (annots : OptMetadataAnn, c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  annots:0 "while " c:0 "\n" m:0 is body:0;
 
 category CallArg;
 op callArgExpr (e : Expr) : CallArg => e;
 op callArgOut (v : Ident) : CallArg => "out " v;
 op callArgInout (v : Ident) : CallArg => "inout " v;
 
-op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
-   "call " f "(" args ")" ";";
+op call_statement (annots : OptMetadataAnn, f : Ident, args : CommaSepBy CallArg) : Statement =>
+   annots:0 "call " f "(" args ")" ";";
 
 @[scope(c)]
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
-op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
-op exit_statement (label : Ident) : Statement => "exit " label ";";
+op block_statement (annots : OptMetadataAnn, label : Ident, b : Block) : Statement => annots:0 label ": " b:0;
+op exit_statement (annots : OptMetadataAnn, label : Ident) : Statement => annots:0 "exit " label ";";
 
 category SpecElt;
 category Free;
@@ -428,19 +432,20 @@ op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
 
 // Function declaration statement
 @[declareFn(name, b, r)]
-op funcDecl_statement (name : Ident,
+op funcDecl_statement (annots : OptMetadataAnn,
+                       name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
                        @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }";
+  annots:0 inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }";
 
 // Type declaration statement
 @[declareScopedType(name, some args)]
-op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
-  "type " name args ";";
+op typeDecl_statement (annots : OptMetadataAnn, name : Ident, args : Option Bindings) : Statement =>
+  annots:0 "type " name args ";";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
   "axiom " label e ";\n";

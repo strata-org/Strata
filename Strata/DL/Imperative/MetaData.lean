@@ -130,6 +130,9 @@ structure MetaDataElem (P : PureExpr) where
   /-- The value of the metadata. -/
   value : MetaDataElem.Value P
 
+instance : Inhabited (MetaDataElem P) :=
+  ⟨{ fld := .label "", value := .switch false }⟩
+
 /-- Metadata is an array of tagged elements. -/
 @[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 

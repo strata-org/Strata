@@ -272,8 +272,10 @@ Grammar (e.g., via a custom Factory), then use `extraFreeVars` to add
 their names globally to the translation and formatting context.
 -/
 def Core.formatProgram (ast : Core.Program)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (finalCtx, cmds) := programToCST ast initCtx
   let header : Std.Format := "program Core;\n\n"
