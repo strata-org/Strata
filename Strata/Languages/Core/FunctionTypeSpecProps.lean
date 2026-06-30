@@ -951,6 +951,8 @@ theorem Function.typeCheck_inputsNodup (C : LContext CoreLParams) (Env : TEnv Un
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -1019,6 +1021,8 @@ theorem Function.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv 
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -1217,6 +1221,8 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -1341,6 +1347,8 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -1458,6 +1466,8 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -1738,6 +1748,8 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   have h_closed : LTy.freeVars type = [] := by
@@ -2421,6 +2433,8 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h
@@ -2837,6 +2851,8 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
   rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
   elim_err h
   rename_i h_undecl
   elim_err h

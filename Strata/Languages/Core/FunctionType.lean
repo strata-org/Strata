@@ -28,6 +28,15 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   -- Ambient context types, for the #1399 generalization check (preserved by instantiation).
   let ambientTypes := Env.context.types
   let type ← func.type
+  -- Reject type arguments that collide with the type-checker's generated-variable
+  -- namespace (`$__ty*`). Instantiation renames each type parameter to a fresh
+  -- `$__ty<n>` variable; a user parameter literally named `$__ty0` would alias one of
+  -- these, so the fresh→user back-renaming could capture. This guarantees the accepted
+  -- function satisfies `LFuncWF.typeArgs_no_gen_prefix`.
+  let genPrefixArgs := func.typeArgs.filter (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList)
+  if genPrefixArgs != [] then
+    .error f!"Function '{func.name}': type variables {genPrefixArgs} use the reserved \
+              generator-variable prefix '{TState.tyPrefix}'; rename them"
   let undeclaredVars := LTy.freeVars type
   if undeclaredVars != [] then
     .error f!"Function '{func.name}': type variables {undeclaredVars} appear in \
