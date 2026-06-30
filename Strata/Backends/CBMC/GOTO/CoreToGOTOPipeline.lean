@@ -158,7 +158,15 @@ private partial def coreStmtsToGoto
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
-        let argExprs ← renamedArgs.mapM toExpr
+        -- Inout args arrive as typeless fvars; `toGotoExprCtx` only accepts
+        -- `(some ty)`, so recover the type from the typing env.
+        let typedArgs := renamedArgs.map fun e => match e with
+          | .fvar m id none =>
+            match trans.T.context.types.find? id with
+            | some lty => Lambda.LExpr.fvar m id (some lty.toMonoTypeUnsafe)
+            | none => e
+          | _ => e
+        let argExprs ← typedArgs.mapM toExpr
         let lhsExpr := match renamedLhs with
           | id :: _ =>
             let name := Core.CoreIdent.toPretty id
@@ -283,7 +291,13 @@ def procedureToGotoCtx
   let formals_tys ← p.header.inputs.values.mapM Lambda.LMonoTy.toGotoType
   let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
-  let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
+  -- Inout params are in both `inputs` and `outputs`; drop them from `outputs`
+  -- so their local-symbol entry can't shadow the formal binding in `rn`.
+  let formalsSet : Std.HashSet String := formals.foldl (·.insert ·) ∅
+  let pureOutputPairs := (p.header.outputs.keys.map Core.CoreIdent.toPretty).zip
+    p.header.outputs.values |>.filter fun (n, _) => !formalsSet.contains n
+  let outputs := pureOutputPairs.map (·.1)
+  let outputTys := pureOutputPairs.map (·.2)
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
@@ -295,7 +309,7 @@ def procedureToGotoCtx
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
-    (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
+    (new_outputs.zip outputTys).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let Env' : Core.Expression.TyEnv :=
     Lambda.TEnv.addInNewestContext (T := ⟨Core.ExpressionMetadata, Unit⟩)
@@ -364,7 +378,7 @@ def procedureToGotoCtx
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
-  let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  let output_tys ← outputTys.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
     (outputs.zip output_tys).foldl (init := {}) fun m (k, v) => m.insert k v
   let ctx : CoreToGOTO.CProverGOTO.Context :=
