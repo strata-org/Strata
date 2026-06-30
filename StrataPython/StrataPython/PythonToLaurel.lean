@@ -1811,11 +1811,16 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
     let (_, bodyStmts) ← translateStmtList loopCtx body.val.toList
     let bodyBlock := mkStmtExprMdWithLoc (StmtExpr.Block bodyStmts (some continueLabel)) md
     let (preamble, condRef) := getExceptionCheckPreamble ctx condExpr s!"$while_cond_{test.toAst.ann.start.byteIdx}"
-    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock) md
+    let whileStmt := mkStmtExprMdWithLoc (StmtExpr.While (Any_to_bool condRef) [] none bodyBlock false) md
     let whileWrapped := mkStmtExprMdWithLoc (StmtExpr.Block [whileStmt] (some breakLabel)) md
     return (loopCtx, preamble ++ [whileWrapped])
 
-  -- Return statement: assign to the LaurelResult output parameter, then exit the body block.
+  -- Return statement: assign to the LaurelResult output parameter, then emit a
+  -- valueless `Return`. We deliberately do *not* jump to `bodyLabel` directly:
+  -- emitting a `.Return` lets `EliminateReturnStatements` redirect it to the
+  -- `$return` block it wraps the body in, so that postcondition assertions the
+  -- ContractPass appends after the body (e.g. return-type `ensures`) remain
+  -- reachable. Jumping straight to `$body` would skip them.
   | .Return _ value => do
     let stmts ← match value.val with
       | some expr => do
@@ -1824,8 +1829,8 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
         -- Coerce Composite return values to Any for LaurelResult : Any
         let eRef ← coerceToAny ctx expr eRef
         let assign := mkStmtExprMdWithLoc (StmtExpr.Assign [mkVariableMd (.Local PyLauFuncReturnVar)] eRef) md
-        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Exit bodyLabel) md]
-      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Exit bodyLabel) md]
+        .ok $ preamble ++ [assign, mkStmtExprMdWithLoc (StmtExpr.Return none) md]
+      | none => .ok [mkStmtExprMdWithLoc (StmtExpr.Return none) md]
     return (ctx, stmts)
 
   -- Assert statement
@@ -1921,7 +1926,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
       | .Block stmts _ => stmts.any fun s => modifiesMaybeExceptVal s.val
       | .IfThenElse _ t e => modifiesMaybeExceptVal t.val ||
           (e.map (modifiesMaybeExceptVal ·.val)).getD false
-      | .While _ _ _ body => modifiesMaybeExceptVal body.val
+      | .While _ _ _ body postTest => modifiesMaybeExceptVal body.val
       | _ => false
     let modifiesMaybeExcept (stmt : StmtExprMd) : Bool :=
       modifiesMaybeExceptVal stmt.val
@@ -2085,7 +2090,7 @@ partial def translateStmt (ctx : TranslationContext) (s : stmt SourceRange)
     let continueBlock := mkStmtExprMd (StmtExpr.Block bodyInner (some continueLabel))
     let bodyStmts := [continueBlock, counterIncrease]
     let whileBody := mkStmtExprMd (StmtExpr.Block bodyStmts none)
-    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none whileBody) md
+    let loopStmt := mkStmtExprMdWithLoc (StmtExpr.While counterLtLen [] none whileBody false) md
     let loopBlock := mkStmtExprMdWithLoc (StmtExpr.Block [loopStmt] (some breakLabel)) md
     let (preamble, _) := getExceptionCheckPreamble ctx iterExpr s!"$for_iter_{iter.toAst.ann.start.byteIdx}"
     return (finalCtx, iterPreamble ++ preamble ++ [counterDecl] ++ [loopBlock])
@@ -2383,7 +2388,6 @@ def translateFunction (ctx : TranslationContext) (sourceRange: SourceRange) (fun
       preconditions := typeConstraintPreconditions
       decreases := none
       body := bodyTrans
-      isFunctional := false
     }
     return (proc, {newCtx with variableTypes := []})
 
@@ -2560,7 +2564,6 @@ def mkDefaultInitDecl (className : String) : PythonFunctionDecl × Procedure :=
     inputs := inputs
     outputs := [{name := "LaurelResult", type := AnyTy}]
     preconditions := [{ condition := mkStmtExprMd (StmtExpr.LiteralBool true) }]
-    isFunctional := false
     decreases := none
     body := .Opaque [] .none wildcardModifies
   }
@@ -2753,7 +2756,7 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
       | _ => s
   procedures :=
     prog.staticProcedures.foldl (init := {}) fun m p =>
-      if p.body.isExternal || p.isFunctional then m
+      if p.body.isExternal then m
       else
         -- Use "Any" for all parameter types to match the Python→Laurel
         -- pipeline's Any-wrapping convention at call sites.
@@ -2776,8 +2779,6 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
             typeTesters := pyLauTypeTesters tys : PyRetInfo }
         some { name := p.name.text, args := args, kwargsName := none, ret := ret }
   functions :=
-    let funcNames := prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal || !p.isFunctional then none else some p.name.text
     let dtFuncs := prog.types.flatMap fun td =>
       match td with
       | .Datatype dt =>
@@ -2789,12 +2790,12 @@ def PreludeInfo.ofLaurelProgram (prog : Laurel.Program) : PreludeInfo where
         let testers := dt.constructors.map fun c => "is" ++ c.name.text
         ctors ++ destrs ++ testers
       | _ => []
-    funcNames ++ dtFuncs
+    dtFuncs
   maybeExceptionFunctions :=  prog.staticProcedures.filterMap fun p =>
     if p.name.text ∈ AnyMaybeExceptionList then some p.name.text else none
   procedureNames :=
     prog.staticProcedures.filterMap fun p =>
-      if p.body.isExternal || p.isFunctional then none else some p.name.text
+      if p.body.isExternal then none else some p.name.text
   callableProcedures :=
     prog.staticProcedures.foldl (init := {}) fun s p =>
       match p.body with
@@ -2978,7 +2979,6 @@ def pythonToLaurel (info : PreludeInfo)
     preconditions := [],
     decreases := none,
     body := .Opaque [] (some bodyBlock) wildcardModifies
-    isFunctional := false
   }
 
   -- Generate $composite_to_string_<type> and $composite_to_string_any_<type>
@@ -2996,16 +2996,14 @@ def pythonToLaurel (info : PreludeInfo)
         outputs := [{ name := "result", type := mkHighTypeMd .TString }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none wildcardModifies
-        isFunctional := false }
+        body := .Opaque [] none wildcardModifies }
     procedures := procedures.push
       { name := { text := compositeToStringAnyName ct.name.text }
         inputs := [selfParam]
         outputs := [{ name := "result", type := AnyTy }]
         preconditions := []
         decreases := none
-        body := .Opaque [] none wildcardModifies
-        isFunctional := false }
+        body := .Opaque [] none wildcardModifies }
 
   let program : Laurel.Program := {
     staticProcedures := (procedures.push mainProc).toList

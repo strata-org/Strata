@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
 public import Strata.Languages.Laurel.PushOldInward
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
+public import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.Resolution
@@ -59,9 +60,14 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
+  procedureNames: Std.HashSet String
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
+
+/-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
+def containsProcedure (name : Identifier) : TranslateM Bool := do
+  return (← get).procedureNames.contains name.text
 
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -107,6 +113,18 @@ decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyTy
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
+
+/-- Compute the Core value type `V` of a `mapConst` argument, i.e. the type of
+    `arg`. Nested `mapConst` calls have the `Box` placeholder as their declared
+    return type, so `computeExprType` cannot recover their structural `Map` type;
+    we reconstruct it here (`mapConst(x) : Map TypeTag (typeof x)`). -/
+private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
+  match arg.val with
+  | .StaticCall callee [inner] =>
+      if callee.text == "mapConst" then
+        return Core.mapTy (.tcons "TypeTag" []) (← mapConstValTy model inner)
+      else translateType (computeExprType model arg)
+  | _ => translateType (computeExprType model arg)
 
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
@@ -225,10 +243,25 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !model.isFunction callee then
+      if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
-        let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
+        -- The `mapConst` constant-map builtin has no inferable key type, so we
+        -- annotate its op with the concrete function type `V → Map K V` (from
+        -- the resolved result type). This lets the pretty-printer emit the
+        -- explicit `mapConst<K>(v)` syntax so the program round-trips.
+        let fnOp : Core.Expression.Expr ←
+          if callee.text == "mapConst" then
+            -- `mapConst : V → Map TypeTag V`. Key type is always `TypeTag`
+            -- (the type-tag domain of the ancestor tables); the value type is
+            -- the type of the single argument.
+            match args with
+            | [valArg] =>
+                let vTy ← mapConstValTy model valArg
+                let kTy : LMonoTy := .tcons "TypeTag" []
+                pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+            | _ => pure (.op () ⟨callee.text, ()⟩ none)
+          else pure (.op () ⟨callee.text, ()⟩ none)
         args.attach.foldlM (fun acc ⟨arg, _⟩ => do
           let re ← translateExpr arg boundVars isPureContext
           return .app () acc re) fnOp
@@ -259,7 +292,7 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source
         "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
   | .While _ _ _ _ _ =>
-      disallowed expr.source "loops are not supported in functions or contracts"
+      disallowed expr.source "loops are not supported in transparent bodies or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
   | .Block (⟨ .Assert _, innerSrc⟩ :: rest) label => do
@@ -272,9 +305,11 @@ def translateExpr (expr : StmtExprMd)
       let valueExpr ← translateExpr initializer boundVars isPureContext
       let bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc } (name :: boundVars) isPureContext
       let coreMonoType ← translateType ty
-      return .app () (.abs () name.text (some coreMonoType) bodyExpr) valueExpr
+      disallowed innerSrc "local variables in transparent bodies are not YET supported"
+      -- This doesn't work because of a limitation in Core.
+      -- return .app () (.abs () (some coreMonoType) bodyExpr) valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
-    _ ← disallowed innerSrc "local variables in functions must have initializers"
+    _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts "
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label =>
     disallowed innerSrc "if-then-else only supported as the last statement in a block"
@@ -419,8 +454,6 @@ Diagnostics are emitted into the monad state.
 -/
 def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
-  let s ← get
-  let model := s.model
   let md := astNodeToCoreMd stmt
   match _h : stmt.val with
   | .Assert cond =>
@@ -493,7 +526,9 @@ def translateStmt (stmt : StmtExprMd)
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
-        if model.isFunction callee then
+        if (← containsProcedure callee) then
+          translateCallTargets callee args
+        else
           -- Function call: translate as a normal expression assignment
           let coreExpr ← translateExpr value
           match targets with
@@ -504,8 +539,6 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
-        else
-          translateCallTargets callee args
       | .InstanceCall _target callee args =>
           translateCallTargets callee args
       | .Hole _ _ =>
@@ -531,7 +564,7 @@ def translateStmt (stmt : StmtExprMd)
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if model.isFunction callee then
+      if !(← containsProcedure callee) then
         -- Function call in statement position: preserve as unused init
         exprAsUnusedInit stmt md
       else
@@ -551,14 +584,10 @@ def translateStmt (stmt : StmtExprMd)
   | .InstanceCall .. =>
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
-  | .Return valueOpt =>
-      match valueOpt with
-      | none =>
-          return [.exit bodyLabel md]
-      | some _ =>
-          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-          emitCoreDiagnostic d
-          return [.exit bodyLabel md]
+  | .Return _ =>
+      let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" DiagnosticType.StrataBug
+      emitCoreDiagnostic d
+      return default
   | .While cond invariants decreasesExpr body postTest =>
       if postTest then
         return ← throwStmtDiagnostic (diagnosticFromSource cond.source
@@ -658,9 +687,19 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         translateChecks postconds s!"postcondition" bodyStmts.isNone
           (defaultSummary := "postcondition")
     | _ => pure []
-  -- Wrap body in a labeled block so early returns (exit) work correctly.
-  -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
-  let body : List Core.Statement := [.block bodyLabel (bodyStmts.getD []) mdWithUnknownLoc]
+  let body : List Core.Statement :=
+    match bodyStmts with
+    | some ss => ss
+    | none =>
+      -- A bodiless procedure (e.g. a generated `$hole`, or any opaque/abstract
+      -- declaration) would otherwise produce an empty structured body, which the
+      -- Core interpreter rejects when called ("has no body"). Emit a single
+      -- `assume true` so the body is non-empty. This is a no-op for both
+      -- verification (such a procedure's postconditions are already marked
+      -- `free`, so there is nothing to check against the body) and concrete
+      -- execution (the outputs stay havoc'd), but it lets the interpreter step
+      -- through the call instead of erroring.
+      [Core.Statement.assume "assume_true" (.true ()) Imperative.MetaData.empty]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
@@ -672,10 +711,15 @@ instance : Inhabited LaurelVerifyOptions where
   default := {}
 
 /-- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
-    `{ result := <expr>; exit "$return" } $return` → `<expr>` -/
+    `{ result := <expr>; exit "$return" } $return` → `<expr>`
+    Also handles an extra wrapping layer from the contract pass:
+    `{ { result := <expr>; exit "$return" } $return } none` → `<expr>`
+    Support for transparent multi-out procedures is not yet available.
+-/
 private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
   match b.val with
-  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel) => value
+  | .Block [⟨.Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel), _⟩] _ => value
   | _ => b
 
 /--
@@ -807,7 +851,13 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
   - Laurel parameter definitions are translated to Core ones.
   - Laurel calling conventions are translated to Core ones."
   run := fun options p fnModel =>
-    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    let initState : TranslateState := {
+      model := fnModel,
+      overflowChecks := options.overflowChecks,
+      procedureNames := p.decls.foldl (fun r d => match d with
+        | .procedure p => r.insert p.name.text
+        | _ => r ) (Std.HashSet.emptyWithCapacity 0)
+    }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
     let diagnostics : List DiagnosticModel :=

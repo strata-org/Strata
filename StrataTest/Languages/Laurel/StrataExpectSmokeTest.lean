@@ -16,6 +16,7 @@ open Strata
 
 /-! ## Positive smoke test -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -37,6 +38,7 @@ procedure foo() opaque {
 
 /-! ## Negative smoke test: a verifier-level diagnostic. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

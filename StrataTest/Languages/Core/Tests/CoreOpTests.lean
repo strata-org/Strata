@@ -67,7 +67,7 @@ private def checkRoundTrip (name : String) : Bool :=
 #guard checkRoundTrip "Re.None"
 
 -- Map ops
-#guard checkRoundTrip "const"
+#guard checkRoundTrip "mapConst"
 #guard checkRoundTrip "select"
 #guard checkRoundTrip "update"
 

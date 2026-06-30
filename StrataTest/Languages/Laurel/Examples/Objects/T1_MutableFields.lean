@@ -9,7 +9,8 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelKeepIntermediates
+#guard_msgs (drop info) in
+#eval testLaurel
 #strata
 program Laurel;
 composite Container {

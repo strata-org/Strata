@@ -15,6 +15,7 @@ These negative tests pin each failing loop invariant's diagnostic to that
 invariant's own source range (per-invariant source ranges threaded through
 loop elimination), rather than the whole loop. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -31,6 +32,7 @@ procedure badInitialInvariant()
 };
 #end
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -50,6 +52,7 @@ procedure secondInvariantFails()
 };
 #end
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;

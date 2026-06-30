@@ -56,7 +56,7 @@ def hasValuedReturn (stmt : StmtExprMd) : Bool :=
 
 /-- Apply value-return elimination to a single procedure. Rewrites `return expr`
     into `outParam := expr; return` for any procedure with exactly one output
-    parameter (functional and non-functional alike).
+    parameter.
     Emits an error if a valued return is used with zero or multiple output parameters. -/
 def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
   match proc.outputs with

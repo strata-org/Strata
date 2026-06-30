@@ -363,18 +363,21 @@ def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `const(d)` returns a map where every key maps to the value `d`. -/
+   `mapConst(d)` returns a map where every key maps to the value `d`.
+   Named `mapConst` (not `const`) to avoid colliding with the `const`
+   declaration keyword in the Core grammar, which would otherwise make
+   pretty-printed programs fail to re-parse. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "const" ["k", "v"]
+  polyUneval "mapConst" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
       esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0)}
+                ((~mapConst : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~mapConst : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/

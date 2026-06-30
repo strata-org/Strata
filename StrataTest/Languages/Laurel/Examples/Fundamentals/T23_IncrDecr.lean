@@ -32,6 +32,7 @@ parameterization which interacts poorly with counterexample search
 for the failing tests in this file).
 -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -132,7 +133,7 @@ procedure forLoopStep()
 
 // --- More complex scenarios -------------------------------------------------
 
-function double(n: int): int { 2 * n };
+procedure double(n: int): int { return 2 * n };
 
 procedure incrementAsFunctionArgument()
   opaque

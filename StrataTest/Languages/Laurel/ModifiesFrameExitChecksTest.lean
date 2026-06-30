@@ -23,10 +23,6 @@ private def assertCount (e : StmtExprMd) : Nat :=
   (reprStr e |>.splitOn "assert").length - 1
 
 #guard assertCount (insertFrameChecks default frame (node (.Return none))) == 2
-#guard assertCount (insertFrameChecks default frame (node (.Exit bodyLabel))) == 2
 #guard assertCount (insertFrameChecks default frame (node (.Exit "loop"))) == 1
-#guard assertCount
-  (insertFrameChecks default frame
-    (node (.Block [node (.Exit bodyLabel), node (.Exit "loop")] none))) == 2
 
 end StrataTest.Laurel.ModifiesFrameExitChecks

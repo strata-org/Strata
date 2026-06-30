@@ -50,7 +50,8 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
 
 /-- Desugar short-circuit operators in a program. -/
 def desugarShortCircuit (program : Program) : Program :=
-  let imperativeCallees := (program.staticProcedures.filter (!·.isFunctional)).map (·.name.text)
+  let imperativeCallees := program.staticProcedures.map (·.name.text)
+  -- TODO shouldn't imperativeCallees always be empty here?
   mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section

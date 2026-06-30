@@ -74,6 +74,45 @@ private def rewriteCallsToFunctional (asFunctionNames : Std.HashSet String) (exp
     | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
 
+/-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
+    to their `$asFunction` versions, leaving everything else (selectors,
+    primitive ops, non-redirected calls) untouched. Unlike
+    `rewriteCallsToFunctional`, this does not adjust selector names or mark
+    primitive ops as proof terms, so it is safe to apply to imperative
+    procedure bodies.
+
+    The callee's `uniqueId` is preserved: it still resolves (via the semantic
+    model) to the base procedure, whose output type matches the `$asFunction`'s
+    return type, so `computeExprType`/`getCallType` continue to type the call
+    correctly. The renamed callee text (`X$asFunction`) is not in
+    `procedureNames`, so the Laurel→Core translator lowers it as a pure function
+    application rather than a procedure call. -/
+private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e =>
+    match e.val with
+    | .StaticCall callee args =>
+      if redirectNames.contains callee.text then
+        let funcCallee := { callee with text := callee.text ++ "$asFunction" }
+        ⟨.StaticCall funcCallee args, e.source⟩
+      else e
+    | _ => e) expr
+
+/-- Apply `redirectCallsToFunctional` to a procedure's implementation and
+    postcondition expressions. Used when `alwaysCallAsFunction` is set so that
+    calls to transparent, single-output procedures become pure function
+    applications at their call sites. -/
+private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Procedure) : Procedure :=
+  let r := redirectCallsToFunctional redirectNames
+  match proc.body with
+  | .Opaque postconds impl modif =>
+    { proc with body := .Opaque (postconds.map fun c => { c with condition := r c.condition })
+                                (impl.map r) modif }
+  | .Transparent body =>
+    { proc with body := .Transparent (r body) }
+  | .Abstract postconds =>
+    { proc with body := .Abstract (postconds.map fun c => { c with condition := r c.condition }) }
+  | .External => proc
+
 /-- Rewrite quantifier bodies like function bodies: strip assert/assume and
     rewrite calls to their `$asFunction` variants. This ensures that calls
     inside quantifiers (e.g. in modifies frame conditions) reference the
@@ -127,7 +166,7 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, isFunctional := true, body := body }
+  { proc with name := funcName, body := body }
 
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
@@ -148,20 +187,66 @@ private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Pr
       { proc with body := .Opaque [freeCond] (some body) [] }
     | _ => proc
 
-def createFunctionsForTransparentBodies (program : Program) : UnorderedCoreWithLaurelTypes :=
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
-  let toUpdateNames : Std.HashSet String := toUpdate.foldl (fun s p => s.insert p.name.text) {}
-  -- $asFunction copies for non-external procedures
+/--
+Transparency pass: translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
+
+For each procedure:
+- Generate a function with the same signature, named `foo$asFunction`
+- If transparent, the function gets a functional body (assertions erased, calls to functional versions)
+- If the function has a body, add a free postcondition equating the procedure output to the function
+-/
+def createFunctionsForTransparentBodies (program : Program) (options : LaurelTranslateOptions := {}) : UnorderedCoreWithLaurelTypes :=
+  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
+  -- A transparent procedure whose body is purely functional (no Assume/Assert
+  -- from contract instrumentation) needs only a function copy, not a procedural
+  -- twin. This matches the old `isFunctional` behavior for condition helpers.
+  let needsProcTwin (p : Procedure) : Bool := match p.body with
+    | .Transparent b => blockContainsAssumeOrAssert b
+    | _ => true
+  let (imperativeProcs, _) := toUpdate.partition needsProcTwin
+  let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
+  -- Names of single-output procedures whose calls can be redirected to their
+  -- `$asFunction` version: `mkFreePostcondition` only equates a single output
+  -- to the function, and a single function application can only fill one
+  -- assignment target. Multi-output procedures are excluded.
+  let singleOutputNames : Std.HashSet String :=
+    imperativeProcs.foldl (fun s p =>
+      if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
+  -- $asFunction copies for procedures that have a procedural twin;
+  -- transparent-only procedures keep their original name.
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
-  let coreProcedures := toUpdate.map fun proc =>
+  let coreProcedures := imperativeProcs.map fun proc =>
     let freePostcondition := mkFreePostcondition proc
-    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+    let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
     let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
+    -- When requested, redirect every call to a single-output twinned procedure
+    -- to its `$asFunction` version so calls stay constant-foldable during
+    -- symbolic evaluation (instead of producing fresh symbolic outputs via the
+    -- procedural twin).
+    let proc := if options.alwaysCallCoreFunctions then redirectCallsInProc singleOutputNames proc else proc
     addFreePostcondition proc freePostcondition
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
   { functions, coreProcedures, datatypes, constants := program.constants }
+where
+  /-- Check if an expression tree contains Assume or Assert statements anywhere.
+      The contract pass inserts these for procedures with contracts. -/
+  blockContainsAssumeOrAssert (e : StmtExprMd) : Bool :=
+    match e with
+    | AstNode.mk val _ =>
+    match val with
+    | .Assume _ | .Assert _ => true
+    | .Block stmts _ => stmts.attach.any fun ⟨s, _⟩ => blockContainsAssumeOrAssert s
+    | .IfThenElse c t f =>
+      blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert t ||
+      match f with | some fe => blockContainsAssumeOrAssert fe | none => false
+    | .StaticCall _ args => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
+    | .Assign _ v => blockContainsAssumeOrAssert v
+    | .While c _ _ b _ => blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert b
+    | .Return v => match v with | some ve => blockContainsAssumeOrAssert ve | none => false
+    | .PrimitiveOp _ args _ => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
+    | _ => false
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "TransparencyPass"
@@ -171,8 +256,8 @@ For each procedure:
   - Generate a function with the same signature, named `foo$asFunction`
   - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
   - If the function has a body, add a free postcondition equating the procedure output to the function"
-  run := fun _ p _ =>
-    (createFunctionsForTransparentBodies p, [], {})
+  run := fun opts p _ =>
+    (createFunctionsForTransparentBodies p opts, [], {})
 
 end -- public section
 end Strata.Laurel

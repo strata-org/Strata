@@ -21,6 +21,7 @@ open Strata
 
 /-! ## Rejected: `++`/`--` on unsupported element types -/
 
+#guard_msgs (drop info) in
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -43,6 +44,7 @@ procedure incrFloat(g: float64) opaque {
 
 /-! ## Accepted: `++`/`--` on an int-based constrained type (e.g. `nat`) -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

@@ -11,6 +11,7 @@ open Strata
 
 /-! ## Failing asserts -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -27,6 +28,7 @@ procedure foo()
 
 /-! ## Assume false makes assert false trivially provable -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;

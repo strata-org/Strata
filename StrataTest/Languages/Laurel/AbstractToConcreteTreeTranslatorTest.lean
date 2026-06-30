@@ -91,7 +91,7 @@ procedure add(x: int, y: int): int
 #end)
 
 /--
-info: function aFunction(x: int): int
+info: procedure aFunction(x: int): int
 {
   x
 };
@@ -100,7 +100,7 @@ info: function aFunction(x: int): int
 #eval do IO.println (← roundtrip
 #strata
 program Laurel;
-function aFunction(x: int): int
+procedure aFunction(x: int): int
 { x };
 #end)
 
@@ -122,8 +122,8 @@ info: procedure test(x: int): int
   opaque
 {
   if x > 0
-  then x
-  else 0 - x
+    then x
+    else 0 - x
 };
 -/
 #guard_msgs in
@@ -335,9 +335,9 @@ info: procedure earlyExit(b: bool)
   opaque
 {
   if b
-  then {
-    return
-  };
+    then {
+      return
+    };
   assert true
 };
 -/

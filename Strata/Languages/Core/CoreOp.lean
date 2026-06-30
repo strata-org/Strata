@@ -199,7 +199,7 @@ inductive MapOpKind where
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def MapOpKind.names : List (MapOpKind × String) :=
-  [(.Const, "const"), (.Select, "select"), (.Update, "update")]
+  [(.Const, "mapConst"), (.Select, "select"), (.Update, "update")]
 
 def MapOpKind.toString (k : MapOpKind) : String := lookupName names k
 instance : ToString MapOpKind := ⟨MapOpKind.toString⟩

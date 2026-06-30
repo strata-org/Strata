@@ -21,6 +21,14 @@ structure LaurelTranslateOptions where
       this option has no effect. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
+  /-- When `true`, calls in procedure bodies to single-output procedures that
+      have a `$asFunction` twin are redirected to that pure function version
+      instead of the procedural twin. This keeps such calls constant-foldable
+      during symbolic evaluation (avoiding the term blowup that occurs when each
+      call produces a fresh symbolic output via the procedural twin).
+      Multi-output procedures are left as procedure calls, since a single
+      function application cannot fill multiple assignment targets. -/
+  alwaysCallCoreFunctions : Bool := true
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

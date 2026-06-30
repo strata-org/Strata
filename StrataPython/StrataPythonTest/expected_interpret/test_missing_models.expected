@@ -1,1 +1,1 @@
-\[ERROR\] expression contains stuck redex
+\[ERROR\] assert \(assert\([0-9]+\)\) condition did not reduce to bool

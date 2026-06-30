@@ -24,7 +24,7 @@ info: 32:16-23  error: call to 'f' expects 1 argument(s) but 2 were provided
 #eval testLaurel (showLocations := true) <|
 #strata
 program Laurel;
-function f(x: int): int { x };
+procedure f(x: int): int { return x };
 
 procedure caller()
   opaque

@@ -32,7 +32,9 @@ open Strata
 -- ∀ frame (array theory off): the chain defeats quantifier instantiation.
 #eval testLaurel
     (options := { defaultLaurelTestOptions with
-      translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := false },
+      translateOptions := { defaultLaurelTestOptions.translateOptions with
+      enumeratedModifiesClauses := false
+      alwaysCallCoreFunctions := false },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := false } }) <|
 #strata
 program Laurel;
@@ -78,7 +80,10 @@ procedure stress()
 -- Quantifier-free frame (--use-array-theory): the same program verifies.
 #eval testLaurel
     (options := { defaultLaurelTestOptions with
-      translateOptions := { defaultLaurelTestOptions.translateOptions with enumeratedModifiesClauses := true },
+      translateOptions := { defaultLaurelTestOptions.translateOptions with
+        enumeratedModifiesClauses := true
+        alwaysCallCoreFunctions := false
+      },
       verifyOptions := { defaultLaurelTestOptions.verifyOptions with useArrayTheory := true } }) <|
 #strata
 program Laurel;

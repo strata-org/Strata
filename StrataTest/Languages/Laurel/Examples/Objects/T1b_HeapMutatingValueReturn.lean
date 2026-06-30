@@ -11,6 +11,7 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -30,6 +31,7 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

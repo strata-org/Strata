@@ -14,6 +14,7 @@ A recursive function over a recursive datatype.
 The `isRecursive` flag should be inferred automatically from the self-call.
 -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;

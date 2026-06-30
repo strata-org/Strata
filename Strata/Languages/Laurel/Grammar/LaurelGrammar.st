@@ -118,7 +118,7 @@ category ElseBranch;
 op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "\nelse " stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
-  @[prec(20)] "if " cond "\nthen " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond indent(2, "\nthen " thenBranch:0 elseBranch:0);
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
@@ -209,15 +209,6 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
   "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
-
-op function (name : Ident, parameters: CommaSepBy Parameter,
-  returnType: Option ReturnType,
-  returnParameters: Option ReturnParameters,
-  requires: Seq RequiresClause,
-  invokeOn: Option InvokeOnClause,
-  opaqueSpec: Option OpaqueSpec,
-  body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

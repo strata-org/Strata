@@ -71,9 +71,9 @@ def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
   constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
 
-/-- Generate a constraint function for a constrained type.
-    For nested types, the function calls the parent's constraint function. -/
-def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
+/-- Generate a constraint procedure for a constrained type.
+    For nested types, the procedure calls the parent's constraint procedure. -/
+def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
   let bodyExpr: StmtExprMd := match ct.base.val with
     | .UserDefined parent =>
@@ -90,7 +90,6 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
     body := .Transparent { val := .Return bodyExpr, source := none }
-    isFunctional := true
     decreases := none
     preconditions := [] }
 
@@ -166,7 +165,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
-  let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+  let outputEnsures : List Condition := proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
   let body' := match proc.body with
@@ -174,8 +173,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     let body := elimStmts ptMap model bodyExpr
     if outputEnsures.isEmpty then .Transparent body
     else
-      let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
-      .Opaque outputEnsures (some retBody) []
+      .Opaque outputEnsures (some body) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map (elimStmts ptMap model)
     .Opaque (postconds ++ outputEnsures) impl' modif
@@ -206,7 +204,6 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     outputs := []
     body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
     preconditions := []
-    isFunctional := false
     decreases := none }
 
 /-- Eliminate constrained types within a composite type definition: resolve
@@ -227,13 +224,9 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let constraintFuncs := program.types.filterMap fun
-    | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
+    | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
-    if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.cons (diagnosticFromSource proc.name.source "constrained return types on functions are not yet supported")
-    else acc
   ({ program with
     staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap model)
                         ++ witnessProcedures
@@ -241,7 +234,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
       | .Constrained _ => none
       | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
       | other => some other },
-   funcDiags)
+   [])
 
 /-- Pipeline pass: constrained type elimination. -/
 public def constrainedTypeElimPass : LoweringPass where

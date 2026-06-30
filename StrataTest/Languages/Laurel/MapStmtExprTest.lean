@@ -8,15 +8,20 @@
 Tests for the generic `mapStmtExprM` traversal. Verifies that `mapStmtExpr id`
 is the identity: applying it to a parsed program produces identical output.
 -/
+module
 
-import StrataTest.Util.TestLaurel
-import Strata.Languages.Laurel.MapStmtExpr
-import Strata.Languages.Laurel.Resolution
+meta import StrataTest.Util.TestLaurel
+meta import Strata.Languages.Laurel.MapStmtExpr
+meta import Strata.Languages.Laurel.Resolution
+meta import Strata.Languages.Laurel.Grammar
+meta import StrataDDM.Integration.Lean.HashCommands
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
+
+meta section
 
 private def parseAndResolve (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
@@ -74,5 +79,7 @@ procedure test(x: int, b: bool) returns (r: int)
   return y
 };
 #end
+
+end
 
 end Strata.Laurel

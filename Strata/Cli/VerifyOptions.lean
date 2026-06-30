@@ -158,7 +158,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
 def laurelTranslateFlags : List Flag := [
   { name := "keep-all-files",
     help := "Store intermediate Laurel and Core programs in <dir>.",
-    takesArg := .arg "dir" }
+    takesArg := .arg "dir" },
+  { name := "always-call-core-functions",
+    help := "Redirect calls to single-output procedures to their pure $asFunction versions (keeps them constant-foldable during symbolic evaluation)." }
 ]
 
 /-- All CLI flags accepted by Laurel verify commands. -/

@@ -3,14 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.Languages.Laurel.Grammar.LaurelGrammar
+public import Strata.Languages.Laurel.LaurelCompilationPipeline
+public import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Elab
 import StrataDDM.BuiltinDialects.Init
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
-import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel
 
 open Strata
@@ -22,7 +24,7 @@ namespace StrataTest.Util
 /-- Translate a `StrataDDM.Program` (typically produced by `#strata`) to a Laurel
     `Program`. Used by tests that need to plug in a custom post-translation
     pipeline stage; throws if translation fails. -/
-def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
+public def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
@@ -48,7 +50,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
 /-- Default options used by `testLaurel` when the caller doesn't override:
     quiet verifier, default solver. Override by passing
     `(options := …)` to `testLaurel`. -/
-def defaultLaurelTestOptions : LaurelVerifyOptions :=
+public def defaultLaurelTestOptions : LaurelVerifyOptions :=
   { verifyOptions := .quiet }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
@@ -342,7 +344,7 @@ private def runAndCheck (block : SourcedProgram)
     file-relative `line:col` range (so a `#guard_msgs` golden can pin the
     localization), and `showSnippet := true` to also append the snippet-relative
     range. (Failure reports always use the file-relative format regardless.) -/
-def testLaurel (block : SourcedProgram)
+public def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block (runLaurelPipelineRaw · options) showLocations showSnippet
@@ -353,7 +355,7 @@ def buildDir : IO String := do
   let cwd ← IO.currentDir
   return s!"{cwd}/.lake/build/intermediatePrograms/"
 
-def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
+public def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
   let dir ← buildDir
   runAndCheck block (runLaurelPipelineRaw · { translateOptions := { keepAllFilesPrefix := dir}})
 
@@ -365,7 +367,7 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     As with `testLaurel`, succeeds silently by default; `showLocations := true`
     echoes each diagnostic's file-relative `line:col` range and
     `showSnippet := true` appends the snippet-relative range. -/
-def testLaurelResolution (block : SourcedProgram)
+public def testLaurelResolution (block : SourcedProgram)
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
   runAndCheck block runLaurelResolutionRaw showLocations showSnippet
 

@@ -31,7 +31,7 @@ procedure voidReturn(x: int)
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(x: int): int {
+procedure foo(x: int): int {
   if x then 1 else 0
 //   ^ error: expected 'bool', got 'int'
 };
@@ -72,7 +72,7 @@ procedure wh() opaque {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(x: int, y: bool): bool {
+procedure foo(x: int, y: bool): bool {
   x && y
 //^ error: expected 'bool', got 'int'
 };
@@ -83,7 +83,7 @@ function foo(x: int, y: bool): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function cmp(x: string, y: int): bool {
+procedure cmp(x: string, y: int): bool {
   x < y
 //^ error: '<' expected a numeric type, got 'string'
 };
@@ -116,8 +116,8 @@ procedure foo(): int {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function bar(x: int): int { x };
-function foo(): int {
+procedure bar(x: int): int { x };
+procedure foo(): int {
   bar(true)
 //    ^^^^ error: expected 'int', got 'bool'
 };
@@ -128,7 +128,7 @@ function foo(): int {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function cmp(x: int, y: string): bool {
+procedure cmp(x: int, y: string): bool {
   x == y
 //^^^^^^ error: cannot compare 'int' with 'string' using '=='
 };
@@ -225,7 +225,7 @@ cleanly (no diagnostics). -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(c: bool): bool {
+procedure foo(c: bool): bool {
   (if c then 1 else 2) == 3
 };
 #end
@@ -233,7 +233,7 @@ function foo(c: bool): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(): bool {
+procedure foo(): bool {
   { 1 } == 1
 };
 #end
@@ -247,7 +247,7 @@ and synthesizes `Unknown` to suppress cascading errors. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(c: bool): bool {
+procedure foo(c: bool): bool {
   (if c then 1 else true) == 3
 // ^^^^^^^^^^^^^^^^^^^^^ error: 'if' branches have incompatible types 'int' and 'bool'
 };
@@ -269,7 +269,7 @@ errored.) -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(c: bool): bool {
+procedure foo(c: bool): bool {
   (if c then <?> else "x") < 1
 // ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
 };
@@ -278,7 +278,7 @@ function foo(c: bool): bool {
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(c: bool): bool {
+procedure foo(c: bool): bool {
   (if c then "x" else <?>) < 1
 // ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
 };
@@ -294,7 +294,7 @@ than collapsing to `Unknown`. So `if c then <?> else 5` synthesizes a usable
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function bar(c: bool): int {
+procedure bar(c: bool): int {
   if c then <?> else 5
 };
 #end
@@ -328,7 +328,7 @@ rejecting `TBv` and emitting a spurious "expected a numeric type" error.) -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function cmp(x: bv 32, y: bv 32): bool {
+procedure cmp(x: bv 32, y: bv 32): bool {
   x < y
 };
 #end
@@ -343,8 +343,8 @@ arguments) is deliberately not flagged. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function foo(x: int): int { x };
-function bar(): int {
+procedure foo(x: int): int { x };
+procedure bar(): int {
   foo(1, 2)
 //^^^^^^^^^ error: call to 'foo' expects 1 argument(s) but 2 were provided
 };
@@ -362,7 +362,7 @@ behavior.) -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function bar(): int {
+procedure bar(): int {
   nope(1, 2)
 //^^^^^^^^^^ error: 'nope' is not defined
 };

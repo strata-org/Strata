@@ -9,6 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -40,15 +41,4 @@ procedure fooProof()
 //  assert x == y;
 };
 
-function aFunction(x: int): int
-{
-  x
-};
-
-procedure aFunctionCaller()
-  opaque
-{
-  var x: int := aFunction(3);
-  assert x == 3
-};
 #end

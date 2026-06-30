@@ -221,8 +221,6 @@ structure Procedure : Type where
   preconditions : List Condition
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
-  /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
-  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
@@ -315,7 +313,7 @@ inductive StmtExpr : Type where
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
-    (postTest : Bool := false)
+    (postTest : Bool)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
@@ -440,21 +438,6 @@ def StmtExpr.constrName : StmtExpr → String
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
 @[expose] abbrev VariableMd := AstNode Variable
-
-/-- The label of the implicit block that wraps every procedure body.
-
-    `LaurelToCoreTranslator` lowers each procedure body to a single
-    `Core.Statement.block bodyLabel …`, and lowers an early `return`
-    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
-    so that jumping to the end of the body falls through past the block.
-    The resolution pass pre-registers this label in scope (via `withLabel`)
-    before walking a body, so those `Exit bodyLabel` jumps resolve even
-    though the label has no syntactic declaration site.
-
-    Shared here so the translator, the resolver, and frontends agree on the
-    exact string rather than each hard-coding it. The leading `$` keeps it
-    out of the user-name space (no source identifier can contain `$`). -/
-def bodyLabel : String := "$body"
 
 theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.val < sizeOf e := by
   cases e; grind

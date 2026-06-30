@@ -192,4 +192,17 @@ procedure liftWithMultipleOutputs() opaque {
   var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
 };
 
+// Regression: When `LiftImperativeExpressions`
+// hoists the imperative `impLen` call out of the then-branch comparison, it
+// must keep the comparison as the branch's value (a `bool`); dropping it leaves
+// the lifted temp as the branch value, which then mismatches the `else true`
+// (`bool`) branch and produces an internal `'if' branches have incompatible
+// types` resolution error after the pass.
+procedure imperativeCall(l: int) returns (r: int)
+  opaque;
+
+procedure imperativeCallInThenBranch(l: int) returns (r: bool)
+  opaque
+if l >= 0 then imperativeCall(l) == l else true;
+
 #end

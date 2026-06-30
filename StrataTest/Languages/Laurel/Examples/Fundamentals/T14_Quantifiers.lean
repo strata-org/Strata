@@ -9,6 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -31,8 +32,8 @@ procedure testQuantifierInContract(n: int)
 {
 };
 
-function P(x: int): int;
-function Q(): int;
+procedure P(x: int): int;
+procedure Q(): int;
 procedure triggers()
   opaque
 {

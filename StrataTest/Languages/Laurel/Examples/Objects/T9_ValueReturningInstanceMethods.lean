@@ -32,6 +32,7 @@ open Strata
 
 /-! ## 1. Basic: instance method body returns a field via `return expr`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -56,6 +57,7 @@ procedure useGet()
 
 /-! ## 2. Return a computed expression. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -80,6 +82,7 @@ procedure useIncd()
 
 /-! ## 3. Return an expression that uses a (non-self) parameter. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -105,6 +108,7 @@ procedure useAddTo()
 /-! ## 4. Conditional / early returns: a valued `return` in each branch of an
     if-then-else inside the method body. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -133,6 +137,7 @@ procedure useClampPos()
 
 /-! ## 5. Method that mutates a field (modifies clause) and then returns. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -161,6 +166,7 @@ procedure useSetAndGet()
 
 /-! ## 6. Boolean return type. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -186,6 +192,7 @@ procedure useIsPos()
 /-! ## 7. Two composites sharing a method name, both with value-returning
     bodies. Confirms lifting + value-return elimination keep them distinct. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -224,6 +231,7 @@ procedure useBoth()
 /-! ## 8. Value-returning method invoked through a field-selected receiver:
     `o#inner#getX()`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -252,6 +260,7 @@ procedure useOuter()
 
 /-! ## 9. Local variable in the body before a valued return. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -278,6 +287,7 @@ procedure useDoubleV()
 /-! ## 10. Negative: valued return in an instance method with NO output
     parameter is rejected by `EliminateValueInReturns`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -295,6 +305,7 @@ composite C {
 /-! ## 11. Negative: valued return in an instance method with MULTIPLE output
     parameters is rejected by `EliminateValueInReturns`. -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;

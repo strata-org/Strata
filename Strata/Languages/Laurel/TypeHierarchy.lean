@@ -43,11 +43,11 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, none⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, none⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
-  -- Start with const(false), then update each composite type's entry
+  -- Start with mapConst(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
-    let emptyInner := mkMd (.StaticCall "const" [falseConst])
+    let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
     composites.foldl (fun acc otherCt =>
       let isAncestor := ancestors.any (·.name == otherCt.name)
       if isAncestor then
@@ -63,8 +63,8 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
       initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := mkMd (.LiteralBool false)
-  let emptyInner := mkMd (.StaticCall "const" [falseConst])
-  let emptyOuter := mkMd (.StaticCall "const" [emptyInner])
+  let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
+  let emptyOuter := mkMd (.StaticCall "mapConst" [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
     let typeConst := mkMd (.StaticCall (mkId $ ct.name.text ++ "_TypeTag") [])
     let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.text}" [])

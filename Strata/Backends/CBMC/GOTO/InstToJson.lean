@@ -236,9 +236,8 @@ def instructionToJson (inst : Instruction) : Except String Json := do
     ("instructionId", Json.str (toString inst.type)),
     ("locationNumber", Json.num inst.locationNum)
   ]
-  let guardField ← if inst.type == .GOTO || !Expr.beq inst.guard Expr.true then do
+  let guardField ← do
     pure [("guard", ← exprToJsonWithNamedFields inst.guard)]
-  else pure []
   let codeField ← if inst.code == Code.skip then pure [] else do
     pure [("code", ← codeToJson inst.code)]
   let targetsField := match inst.type, inst.target with

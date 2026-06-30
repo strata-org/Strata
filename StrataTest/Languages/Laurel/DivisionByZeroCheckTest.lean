@@ -18,6 +18,7 @@ generates verification conditions for these preconditions.
 
 /-! ### Safe paths verify cleanly -/
 
+#guard_msgs (drop info) in
 #eval testLaurel
 #strata
 program Laurel;
@@ -30,10 +31,10 @@ procedure safeDivision()
   assert z == 5
 };
 
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivSafe()
@@ -47,6 +48,7 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -60,19 +62,20 @@ procedure unsafeDivision(x: int)
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

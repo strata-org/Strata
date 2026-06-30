@@ -37,6 +37,7 @@ postfix incr/decr ops (`prec(90)`), so `#` binds tighter than `++` and
 valid; `parenFreeFieldIncrDecr` below covers the paren-free form.
 -/
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
