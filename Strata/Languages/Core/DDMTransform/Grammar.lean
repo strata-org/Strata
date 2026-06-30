@@ -123,7 +123,7 @@ fn as_bv128 (e : int) : bv128 => "as_bv128" "(" e ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => @[prec(2)] "if " c:0 " then " t:0 " else " f:0;
 
 fn old (tp : Type, v : tp) : tp => "old " v;
 

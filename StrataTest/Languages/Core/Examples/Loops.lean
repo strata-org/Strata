@@ -295,7 +295,7 @@ invariant_0_1: if 0 < n@2 then i@2 <= n@2 else true
 invariant_0_2: if 0 < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
 <label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
 Obligation:
-if 0 < n@2 then s@4 else 0 == n@2 * (n@2 + 1) / 2
+(if 0 < n@2 then s@4 else 0) == n@2 * (n@2 + 1) / 2
 
 ---
 info:

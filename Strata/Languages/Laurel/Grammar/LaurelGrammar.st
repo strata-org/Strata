@@ -10,7 +10,7 @@ op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
 op bvType (width: Num): LaurelType => "bv" width;
-// Core type passthrough: parsed as Ident, translated to HighType.TCore
+// Core type passthrough: parsed as Ident, translated to HighType.UserDefined
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;

@@ -61,6 +61,8 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfBool : WellFormedSemanticEvalBool ρ.eval
   wfCong : WellFormedCoreEvalCong ρ.eval
   wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  -- The verification env's store holds only values (true of reachable stores).
+  storeValues : Imperative.WellFormedStore ρ.store
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.

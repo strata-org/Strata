@@ -89,15 +89,24 @@ def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
       (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
       (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
-def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
-    (δ : SemanticEval P) : Prop :=
-  -- evaluator only evaluates to values
-    (∀ v v' σ, δ σ v = some v' → HasVal.value v') ∧
-  -- evaluator is identity on values
-    (∀ v' σ, HasVal.value v' → δ σ v' = some v')
+/-- A store is well-formed when every binding it holds is a value.  The
+    predicates below only constrain such stores, so the value rule and the var
+    rule stay jointly satisfiable (an arbitrary store could bind a variable to a
+    non-value). -/
+@[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) : Prop :=
+    ∀ x v, σ x = some v → HasVal.value v
 
-@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
-    : Prop := (∀ e v σ, HasFvar.getFvar e = some v → δ σ e = σ v)
+/-- Well-formedness of a `SemanticEval`'s value behavior, split into named
+    clauses. -/
+structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+    (δ : SemanticEval P) : Prop where
+  /-- The evaluator produces only values (on well-formed stores). -/
+  outputsAreValues : ∀ v v' σ, WellFormedStore σ → δ σ v = some v' → HasVal.value v'
+  /-- The evaluator is the identity on values. -/
+  identityOnValues : ∀ v' σ, HasVal.value v' → δ σ v' = some v'
+
+@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasVal P] [HasFvar P] (δ : SemanticEval P)
+    : Prop := (∀ e v σ, WellFormedStore σ → HasFvar.getFvar e = some v → δ σ e = σ v)
 
 @[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
     : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e

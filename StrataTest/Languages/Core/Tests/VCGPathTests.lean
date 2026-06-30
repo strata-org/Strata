@@ -115,7 +115,7 @@ Assumptions:
 <label_ite_cond_true: x < 0>: if x@1 < 0 then x@1 < 0 else true
 <label_ite_cond_false: !(x < 0)>: if if x@1 < 0 then false else true then if x@1 < 0 then false else true else true
 Obligation:
-if x@1 < 0 then 0 - x@1 else x@1 >= 0
+(if x@1 < 0 then 0 - x@1 else x@1) >= 0
 
 Label: a
 Property: assert

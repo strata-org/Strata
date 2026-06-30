@@ -2124,17 +2124,18 @@ theorem EvalStatementRefinesContract :
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
     together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
+  WellFormedStore σ →
   WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
   (δ σ e).isSome →
   isDefined σ (HasFvars.getFvars e) := by
-  intros Hwfc Hwfvr Hsome
+  intros Hwfs Hwfc Hwfvr Hsome
   intros v Hin
   simp [WellFormedSemanticEvalVar] at Hwfvr
   induction e generalizing v <;>
     simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
   case fvar m v' ty' =>
-    specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
+    specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ Hwfs
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
   case abs m name ty e ih =>
@@ -2549,11 +2550,20 @@ theorem eval_projectStore_to_full
     {δ : CoreEval} {σ₀ σ : SemanticStore Expression}
     {e : Expression.Expr} {v : Expression.Expr}
     (h_eval : δ (projectStore σ₀ σ) e = some v)
+    (h_wfStore : WellFormedStore σ)
     (h_wfVar : WellFormedSemanticEvalVar δ)
     (h_wfCong : WellFormedCoreEvalCong δ)
     (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ) :
     δ σ e = some v := by
-  have h_def := EvalExpressionIsDefined h_wfCong h_wfVar
+  -- `projectStore σ₀ σ` only ever returns bindings of `σ` (or `none`), so it
+  -- inherits `σ`'s well-formedness.
+  have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) := by
+    intro x w hx
+    simp only [projectStore] at hx
+    split at hx
+    · exact h_wfStore x w hx
+    · exact absurd hx (by simp)
+  have h_def := EvalExpressionIsDefined h_wfStoreProj h_wfCong h_wfVar
     (show (δ (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
   have h_agree : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x = σ x := by
     intro x hx

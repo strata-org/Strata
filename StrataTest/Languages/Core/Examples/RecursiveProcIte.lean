@@ -49,7 +49,7 @@ callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@
 callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
 callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-100 < n@1 ==> if 100 < n@1 then n@1 - 10 else r@3 == n@1 - 10
+100 < n@1 ==> (if 100 < n@1 then n@1 - 10 else r@3) == n@1 - 10
 
 Label: n_le_100_postcond
 Property: assert
@@ -61,7 +61,7 @@ callElimAssume_n_le_100_postcond_7: if if 100 < n@1 then false else true then n@
 callElimAssume_n_gt_100_postcond_2: if if 100 < n@1 then false else true then 100 < r@2 ==> r@3 == r@2 - 10 else true
 callElimAssume_n_le_100_postcond_3: if if 100 < n@1 then false else true then r@2 <= 100 ==> r@3 == 91 else true
 Obligation:
-n@1 <= 100 ==> if 100 < n@1 then n@1 - 10 else r@3 == 91
+n@1 <= 100 ==> (if 100 < n@1 then n@1 - 10 else r@3) == 91
 
 ---
 info:

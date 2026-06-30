@@ -366,6 +366,9 @@ inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → Pure
     EvalExpressions (P:=Expression) δ σ inArgs vals →
     -- pre-call values of lhs, needed to init callee output params
     ReadValues σ lhs oVals →
+    -- caller store holds only values (true of all reachable stores); feeds the
+    -- `WellFormedSemanticEvalVal`/`Var` conditions below
+    WellFormedStore σ →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ →
@@ -477,6 +480,8 @@ inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
     CallArg.getLhs callArgs = lhs →
     EvalExpressions (P:=Core.Expression) δ σ inArgs vals →
     ReadValues σ lhs oVals →
+    -- caller store holds only values (see `EvalCommand.call_sem`)
+    WellFormedStore σ →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ →

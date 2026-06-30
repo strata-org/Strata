@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
@@ -98,14 +99,16 @@ private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
   return id
 
 def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
-  if let .some enc := (← get).base.ufs.get? uf then return enc
+  if let .some enc := (← get).base.functions.get? uf then return enc
   let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
   let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
+  modifyGet fun state => (id, { state with
+    base.functions := state.base.functions.insert uf id
+    base.isFunUninterp := state.base.isFunUninterp.insert uf true })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -231,9 +234,19 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
-  if let .some enc := (← get).base.ufs.get? uf then return enc
-  let id ← uniquify (ufId (← get).base.ufs.size)
+def encodeFunctionDef (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+  if let .some enc := (← get).base.functions.get? uf then
+    -- See `Strata.SMT.Encoder.encodeFunctionDef`: a function already emitted as an
+    -- uninterpreted `declare-fun` (because it was referenced before its
+    -- definition was reached) would silently lose its `define-fun`. Fail loudly
+    -- rather than emit an unsound query.
+    if ((← get).base.isFunUninterp.get? uf).getD false then
+      throw (IO.userError s!"encodeFunctionDef: function '{uf.id}' was already \
+                declared as uninterpreted before its definition was encoded; \
+                function definitions must be ordered callee-before-caller.")
+    else
+      return enc
+  let id ← uniquify (ufId (← get).base.functions.size)
   liftM (solver.comment uf.id)
   let argPairs ← uf.args.mapM fun vt => do
     let s ← liftM (termTypeToSort solver vt.ty)
@@ -241,7 +254,9 @@ def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : A
   let outSort ← liftM (termTypeToSort solver uf.out)
   let bodyEnc ← encodeTerm solver body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
+  modifyGet fun state => (id, { state with
+    base.functions := state.base.functions.insert uf id
+    base.isFunUninterp := state.base.isFunUninterp.insert uf false })
 
 end AbstractEncoder
 
@@ -324,9 +339,10 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
       let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
         { estate with base := { estate.base with
-          ufs := estate.base.ufs.insert uf uf.id
+          functions := estate.base.functions.insert uf uf.id
+          isFunUninterp := estate.base.isFunUninterp.insert uf false
           usedNames := estate.base.usedNames.insert uf.id } }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
+  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     solver.assert id
@@ -344,7 +360,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for id in assumptionIds do
     solver.assert id
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
-  let ids := estate.base.ufs.toList.filterMap fun (uf, id) =>
+  let ids := estate.base.functions.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
   return (obligationId, ids, estate.base)
 
@@ -353,7 +369,6 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
-    (useArrayTheory : Bool := false)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
@@ -367,7 +382,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     prelude
 
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes useArrayTheory
+  ctx.emitDatatypes
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -387,9 +402,10 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
         let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
         managedUfs.foldl (init := estate) fun estate uf =>
           { estate with
-            ufs := estate.ufs.insert uf uf.id
+            functions := estate.functions.insert uf uf.id
+            isFunUninterp := estate.isFunUninterp.insert uf false
             usedNames := estate.usedNames.insert uf.id }
-    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
+    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunctionDef fn.uf fn.body) |>.run estate
     pure estate
 
   let (_axms, estate) ← phase "encodeAxioms" do
@@ -418,7 +434,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (encodeTerm obligationTerm) |>.run estate
 
   let ids ← phase "epilog" do
-    let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    let ids := estate.functions.toList.filterMap fun (uf, id) =>
       if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
     let bothChecks := satisfiabilityCheck && validityCheck
@@ -481,7 +497,7 @@ private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
-    let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    let (ty', _) ← LMonoTy.toSMTType mty ctx
     return (id.name, ty')
 
 @[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
@@ -535,7 +551,7 @@ def dischargeObligation
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
     (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md options.useArrayTheory satisfiabilityCheck validityCheck
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
       (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
       (pctx := pctx))
     (typedVarToSMTFn ctx)
@@ -697,6 +713,29 @@ where
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
     | _ => []
 
+/-- Pre-compute the per-constructor axioms for a recursive function with a
+    `@[cases]` parameter and store them in the function's `axioms` field.
+
+    Previously these axioms were generated on the fly inside the SMT encoder
+    (`toSMTOp` → `Lambda.genRecursiveAxioms`), which forced the encoder to carry
+    an expression evaluator alongside the factory and datatypes. Generating them
+    here — as part of building the obligation program — lets the encoder consume
+    `func.axioms` directly and keeps it independent of transient evaluation
+    state.
+
+    Non-recursive functions, recursive functions without `@[cases]`
+    (e.g. int-recursive functions encoded as pure UFs), and functions that
+    already carry these axioms are returned unchanged. -/
+def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
+    (exprEval : Expression.Expr → Expression.Expr) (func : Lambda.LFunc CoreLParams) :
+    Except DiagnosticModel (Lambda.LFunc CoreLParams) := do
+  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
+    match Lambda.genRecursiveAxioms func tf exprEval () with
+    | .ok recAxioms => .ok { func with axioms := func.axioms ++ recAxioms }
+    | .error msg => throw (DiagnosticModel.fromFormat msg)
+  else
+    .ok func
+
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
     suitable for downstream phases (ANF encoding, SMT encoding). -/
@@ -755,6 +794,11 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size
   let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
+  -- Pre-compute per-constructor axioms for recursive `@[cases]` functions so
+  -- the SMT encoder can consume them directly (via `func.axioms`) instead of
+  -- regenerating them on the fly with an expression evaluator.
+  let evalFuncs ← evalFuncs.mapM
+    (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
   let funcDecls := evalFuncs.map fun func => Decl.func func .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
@@ -1383,7 +1427,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                     if axiomNames.contains label then []
                     else (Lambda.LExpr.getOps e).map CoreIdent.toPretty
                   | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map CoreIdent.toPretty
-                  | .varDecl _ _ .nondet => [])
+                  | .varDecl _ _ .nondet => []
+                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map CoreIdent.toPretty))
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
@@ -1745,8 +1790,12 @@ def verifySingleEnv (oblProgram : Program)
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
     let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
-      let smtCtx := { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames }
-      pure (ProofObligation.toSMTTerms E obligation smtCtx options.useArrayTheory)
+      -- Seed the encoding context: `typeFactory` with the env's datatypes (the
+      -- encoder reads datatype declarations from there) and the encoder flags.
+      let smtCtx := { SMT.Context.default with
+        uniqueBoundNames := options.uniqueBoundNames, typeFactory := E.datatypes,
+        useArrayTheory := options.useArrayTheory }
+      pure (ProofObligation.toSMTTerms E.factory obligation smtCtx)
     match maybeTerms with
     | .error err =>
       let result := { obligation,

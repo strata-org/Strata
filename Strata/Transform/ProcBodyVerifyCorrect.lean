@@ -84,6 +84,25 @@ private theorem prefixInitEnv_store_noninit (s : Statement) (rest : List Stateme
     (prefixInitEnv (s :: rest) ρ).store = (prefixInitEnv rest ρ).store := by
   simp [prefixInitEnv, hs]
 
+/-- `prefixInitEnv` only ever clears bindings (sets them to `none`), so it
+    preserves store well-formedness (value-only-ness). -/
+private theorem prefixInitEnv_store_wf (stmts : List Statement)
+    (ρ : Imperative.Env Expression)
+    (h : Imperative.WellFormedStore ρ.store) :
+    Imperative.WellFormedStore (prefixInitEnv stmts ρ).store := by
+  induction stmts with
+  | nil => exact h
+  | cons s rest ih =>
+    intro y w hy
+    simp only [prefixInitEnv] at hy
+    cases hsv : stmtInitVar s with
+    | none => simp only [hsv] at hy; exact ih y w hy
+    | some x =>
+      simp only [hsv] at hy
+      split at hy
+      · exact absurd hy (by simp)
+      · exact ih y w hy
+
 /-- Recursive predicate: each statement in the list can step correctly
     from its `prefixInitEnv` state. -/
 private def PrefixStepsOK
@@ -304,6 +323,7 @@ private theorem PrefixStepsOK_det_init_cons
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (id : Expression.Ident) (oldG : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
+    (h_wfStore : Imperative.WellFormedStore ρ.store)
     (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
     (h_rest : PrefixStepsOK π φ rest ρ)
     (_h_id_some : ((prefixInitEnv rest ρ).store id).isSome)
@@ -326,7 +346,9 @@ private theorem PrefixStepsOK_det_init_cons
       simp [HasFvar.getFvar]
     have h_eval : ρ.eval (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
         (LExpr.fvar () id none) = some v := by
-      rw [h_wfVar _ _ _ h_getFvar, h_id_val, h_id_eq_old, hv]
+      have h_wfStore' := prefixInitEnv_store_wf
+        (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ h_wfStore
+      rw [h_wfVar _ _ _ h_wfStore' h_getFvar, h_id_val, h_id_eq_old, hv]
     exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
@@ -337,6 +359,7 @@ private theorem PrefixStepsOK_det_init_map
     (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
+    (h_wfStore : Imperative.WellFormedStore ρ.store)
     (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
     (h_defined : ∀ id ∈ entries.map Prod.fst,
       (ρ.store id).isSome)
@@ -358,7 +381,7 @@ private theorem PrefixStepsOK_det_init_map
     simp only [List.map] at h_defined h_old_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
     rw [List.nodup_cons] at h_nodup h_nodup_old
     apply PrefixStepsOK_det_init_cons π φ id (CoreIdent.mkOld id.name)
-      (Lambda.LTy.forAll [] ty) _ ρ h_wfVar
+      (Lambda.LTy.forAll [] ty) _ ρ h_wfStore h_wfVar
     · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_defined i (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_match i (List.mem_cons_of_mem _ hi))
@@ -542,7 +565,7 @@ theorem procToVerifyStmt_structure
       exact absurd hsx.symm (h_wf_proc.ioNotOld x hx id.name)
     constructor
     · -- PrefixStepsOK for oldInoutInits at ρ₀
-      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.wfVar
+      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.storeValues h_wf.wfVar
       · -- inout params are defined in store (they are inputs)
         intro id hid
         rw [← ListMap.keys_eq_map_fst] at hid

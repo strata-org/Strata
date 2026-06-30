@@ -116,7 +116,7 @@ procedure nondetIfTest ()
   assume [pre]: x@1 >= 0;
   assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__nondet_cond_2 then $__nondet_cond_2 else true;
   assume [|<label_ite_cond_false: !($__nondet_cond_2)>|]: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true;
-  assert [post]: if $__nondet_cond_2 then x@1 else x@1 + 1 >= 0;
+  assert [post]: (if $__nondet_cond_2 then x@1 else x@1 + 1) >= 0;
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -222,7 +222,7 @@ procedure blockTest ()
         assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
         assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
         assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-        assert [after_inner]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
+        assert [after_inner]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
       }
     } else {
       assume [pre_x]: x@1 >= 0;
@@ -230,7 +230,7 @@ procedure blockTest ()
       assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
       assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
       assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-      assert [final]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
+      assert [final]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
     }
   } else {
     assume [pre_x]: x@1 >= 0;
@@ -238,7 +238,7 @@ procedure blockTest ()
     assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
     assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
     assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-    assert [post]: if $__nondet_cond_3 then y@1 else x@1 + y@1 >= 0;
+    assert [post]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
   }
 };
 -/

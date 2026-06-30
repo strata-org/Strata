@@ -103,7 +103,7 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.bvType, #[widthArg] =>
       let width ← translateNat widthArg
       return mkHighTypeMd (.TBv width) src
-    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.TCore name) src
+    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.UserDefined name) src
     | q`Laurel.mapType, #[keyArg, valArg] =>
       let keyType ← translateHighType keyArg
       let valType ← translateHighType valArg

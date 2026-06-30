@@ -40,7 +40,6 @@ def collectTypeRefs : HighTypeMd → List String
       collectTypeRefs base ++ args.flatMap collectTypeRefs
   | ⟨.Pure base, _⟩ => collectTypeRefs base
   | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
-  | ⟨.TCore name, _⟩ => [name]
   | _ => []
 
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/

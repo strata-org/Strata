@@ -209,7 +209,7 @@ The CI builds CBMC 6.8.0 from source with four patches applied:
    `String` as a recognized type in CBMC's SMT2 backend, enabling string
    constants and operations to be encoded in SMT-LIB.
 
-2. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/`): Adjusts
+2. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/CBMC`): Adjusts
    bounds checking for the Laurel pipeline.
 
 3. **`cbmc-regex-support.patch`** (`StrataTest/Backends/CBMC/`): Adds `regex`

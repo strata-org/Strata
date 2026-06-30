@@ -32,7 +32,7 @@ theorem eval_tt_is_tt
     (δ : SemanticEval P) (σ : SemanticStore P)
     (hwfv : WellFormedSemanticEvalVal δ) :
     δ σ HasBool.tt = some HasBool.tt :=
-  hwfv.2 HasBool.tt σ HasBool.boolIsVal.1
+  hwfv.identityOnValues HasBool.tt σ HasBool.boolIsVal.1
 
 /-! ## Kleene small-step helpers -/
 
