@@ -148,6 +148,39 @@ def translateMetadataAnnKey (arg : Arg) : TransM String := do
     return s!"{dialect}.{name}"
   | _, _ => TransM.error s!"translateMetadataAnnKey: unexpected {repr op.name}"
 
+/-- Provenance values are the only MetaDataElem.Value variant that carries
+structured data (Uri + byte range, or synthesized origin) serialized as a
+flat string in the grammar. Without re-parsing, they'd be stored as `.msg`
+and break `getProvenance`/`getFileRange`/`getRelatedFileRanges`. -/
+private def parseSynthesizedOrigin (s : String) : Option Strata.SynthesizedOrigin :=
+  open Strata.SynthesizedOrigin in
+  let origins : List SynthesizedOrigin :=
+    [.smtEncode, .nondetIte, .laurelParse, .laurel, .laurelToCore, .structuredToUnstructured]
+  origins.find? fun o => (Std.format o).pretty == s
+
+/-- Parse a provenance string back to a `Provenance` value.
+Format: `"<synthesized:origin>"` or `"path:start-stop"`. -/
+private def parseProvenanceString (s : String) : Option Strata.Provenance :=
+  if s.startsWith "<synthesized:" && s.endsWith ">" then
+    let inner := ((s.drop "<synthesized:".length).dropEnd 1).toString
+    match parseSynthesizedOrigin inner with
+    | some origin => some (.synthesized origin)
+    | none => none
+  else
+    let parts := s.splitOn ":"
+    if parts.length < 2 then none
+    else
+      let rangeStr := parts.getLast!
+      let path := String.intercalate ":" (parts.dropLast)
+      match rangeStr.splitOn "-" with
+      | [startStr, stopStr] =>
+        match startStr.toNat?, stopStr.toNat? with
+        | some start, some stop =>
+          let sr : StrataDDM.SourceRange := { start := ⟨start⟩, stop := ⟨stop⟩ }
+          some (.loc (.file path) sr)
+        | _, _ => none
+      | _ => none
+
 /-- Translate a MetadataAnnEntry to a MetaDataElem (flags and string values only;
     expression values are not yet supported). -/
 def translateMetadataAnnEntry (arg : Arg) :
@@ -165,7 +198,14 @@ def translateMetadataAnnEntry (arg : Arg) :
     match valOp.name, valOp.args with
     | q`Core.mdAnnValStr, #[strArg] =>
       let s ← translateStr strArg
-      return { fld := .label key, value := .msg s }
+      let fld : Imperative.MetaDataElem.Field Core.Expression := .label key
+      if fld == Imperative.MetaData.provenanceField ||
+         fld == Imperative.MetaData.relatedFileRange then
+        match parseProvenanceString s with
+        | some prov => return { fld, value := .provenance prov }
+        | none => return { fld, value := .msg s }
+      else
+        return { fld := .label key, value := .msg s }
     | q`Core.mdAnnValExpr, _ =>
       TransM.error "translateMetadataAnnEntry: expression values not yet supported"
     | _, _ => TransM.error s!"translateMetadataAnnEntry: unexpected value {repr valOp.name}"

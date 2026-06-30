@@ -381,6 +381,17 @@ empty match), which avoids issues with zero-width ops at the command level.
 Presets: `.checks`, `.properties`. Threaded via `ToCSTContext.annFilter`.
 `Core.formatProgram` accepts an `annFilter` parameter.
 
+### Provenance behavior
+
+Explicit `@[provenance = "..."]` annotations are **additive** — they do not
+replace the DDM source-position provenance from `getOpMetaData`. Both entries
+coexist in the metadata array:
+```
+@[provenance = ":4655-4712", provenance = "myfile.st:100-200"] assert [a1]: ...
+```
+The first entry is the DDM parser's byte-offset provenance; the second is the
+user-supplied annotation parsed back to a `.provenance` value.
+
 ### What remains
 
 - ~~**Fix the Option paren/spacing issue**~~ ✅ DONE — `:0` on all `annots`
@@ -388,8 +399,10 @@ Presets: `.checks`, `.properties`. Threaded via `ToCSTContext.annFilter`.
 - ~~**Implement tag-based filter**~~ ✅ DONE
 - ~~**Extend to all Statement ops**~~ ✅ DONE
 - ~~**Extend to Command-level ops**~~ ✅ DONE
-- **Provenance string parsing**: Implement structured string → `Provenance`
-  parser for round-tripping.
+- ~~**Provenance string parsing**~~ ✅ DONE — `parseProvenanceString` in
+  Translate.lean parses `"path:start-stop"` and `"<synthesized:origin>"` back
+  to `.provenance` values. Uses `ToFormat SynthesizedOrigin` as single source
+  of truth for origin strings.
 - **Regenerate editor syntax**: `lake env lean --run editors/GenSyntax.lean all`
 - **Tests**: Round-trip, multi-entry, empty, validation.
 - **Inherent key validation**: Not yet implemented in the parser.

@@ -157,4 +157,36 @@ procedure Test ()
 #guard_msgs in
 #eval formatWithFilter testRoundtrip (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
 
+-------------------------------------------------------------------------------
+-- Provenance string parsing: explicit provenance annotations are parsed back
+-- to .provenance values, and round-trip through format. Note: provenance tags
+-- are additive.
+-------------------------------------------------------------------------------
+
+private def testProvenanceParsing : Program :=
+#strata
+program Core;
+procedure Test()
+{
+  var x : int;
+  @[provenance = "myfile.st:100-200"] assert [a1]: (x > 0);
+  @[provenance = "<synthesized:smt-encode>"] assert [a2]: (x > 0);
+  @[provenance = "foo.st:10-20", relatedFileRange = "bar.st:30-40"] assert [a3]: (x > 0);
+};
+#end
+
+/--
+info: program Core;
+
+@[provenance = ":4619-4872"] procedure Test ()
+{
+  @[provenance = ":4640-4652"] var x : int;
+  @[provenance = ":4655-4712", provenance = "myfile.st:100-200"] assert [a1]: x > 0;
+  @[provenance = ":4715-4779", provenance = "<synthesized:smt-encode>"] assert [a2]: x > 0;
+  @[provenance = ":4782-4869", provenance = "foo.st:10-20", relatedFileRange = "bar.st:30-40"] assert [a3]: x > 0;
+};
+-/
+#guard_msgs in
+#eval formatWithFilter testProvenanceParsing .all
+
 end Strata.Test.MetadataAnn
