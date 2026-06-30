@@ -272,12 +272,9 @@ def programToCST {M} [Inhabited M] (prog : Core.Program)
   let (cmds, finalCtx) := go prog.decls [] initCtx
   (finalCtx, cmds.reverse)
 
-/-- Render `Core.Program` to a format object.
-
-If the Core program is expected to have some constructs not defined in the
-Grammar (e.g., via a custom Factory), then use `extraFreeVars` to add
-their names globally to the translation and formatting context.
--/
+/-- Canonical formatter for `Core.Program`. Controls metadata annotation
+emission via `annFilter` (default `.none` — no annotations emitted).
+To emit annotations, call this directly with a non-default filter. -/
 def Core.formatProgram (ast : Core.Program)
     (extraFreeVars : Array String := #[])
     (annFilter : MetadataAnnFilter := .none) : Std.Format :=
@@ -290,9 +287,11 @@ def Core.formatProgram (ast : Core.Program)
     Std.Format.joinSep (cmds.map fun cmd =>
       (mformat (ArgF.op cmd.toAst) ctx state).format) ""
 
+/-- Uses `Core.formatProgram` with default filter (`.none` — no annotations). -/
 instance instCoreProgramFormat : Std.ToFormat Core.Program where
   format := Core.formatProgram
 
+/-- Uses `Core.formatProgram` with default filter (`.none` — no annotations). -/
 instance instCoreProgramString : ToString Core.Program where
   toString p := toString (Core.formatProgram p)
 
