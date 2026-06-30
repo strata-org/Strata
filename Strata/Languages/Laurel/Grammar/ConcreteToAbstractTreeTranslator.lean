@@ -206,6 +206,29 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.throw, #[arg0] =>
       let value ← translateStmtExpr arg0
       return mkStmtExprMd (.Throw value) src
+    | q`Laurel.tryCatch, #[bodyArg, catchSeqArg, finallyArg] =>
+      let body ← translateStmtExpr bodyArg
+      let catches ← match catchSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op cOp => match cOp.name, cOp.args with
+              | q`Laurel.catchClause, #[bindingArg, guardArg, cBodyArg] => do
+                let binding ← translateIdent bindingArg
+                let predicate ← match guardArg with
+                  | .option _ (some (.op gOp)) => match gOp.name, gOp.args with
+                    | q`Laurel.catchGuard, #[pArg] => translateStmtExpr pArg >>= (pure ∘ some)
+                    | _, _ => pure none
+                  | _ => pure none
+                let cBody ← translateStmtExpr cBodyArg
+                pure ({ binding := binding, predicate := predicate, body := cBody } : CatchClause)
+              | _, _ => TransM.error "Expected catchClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let finally? ← match finallyArg with
+        | .option _ (some (.op fOp)) => match fOp.name, fOp.args with
+          | q`Laurel.finallyClause, #[fBodyArg] => translateStmtExpr fBodyArg >>= (pure ∘ some)
+          | _, _ => pure none
+        | _ => pure none
+      return mkStmtExprMd (.Try body catches finally?) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
       return mkStmtExprMd (.Block stmts none) src

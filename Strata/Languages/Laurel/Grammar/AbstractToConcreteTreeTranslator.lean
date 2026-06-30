@@ -168,6 +168,12 @@ where
       laurelOp "assert" #[stmtExprToArg cond.condition, errOpt]
     | .Assume cond => laurelOp "assume" #[stmtExprToArg cond]
     | .Throw value => laurelOp "throw" #[stmtExprToArg value]
+    | .Try body catches finally? =>
+      let catchArgs := catches.map (fun c =>
+        let guardArg := optionArg (c.predicate.map fun p => laurelOp "catchGuard" #[stmtExprToArg p])
+        laurelOp "catchClause" #[ident c.binding.text, guardArg, stmtExprToArg c.body]) |>.toArray
+      let finallyArg := optionArg (finally?.map fun f => laurelOp "finallyClause" #[stmtExprToArg f])
+      laurelOp "tryCatch" #[stmtExprToArg body, seqArg catchArgs, finallyArg]
     | .New name => laurelOp "new" #[ident name.text]
     | .This => laurelOp "identifier" #[ident "this"]
     | .IsType target ty =>

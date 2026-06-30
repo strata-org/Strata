@@ -255,6 +255,21 @@ structure Condition where
   free : Bool := false
 
 /--
+A `catch` clause (E3): a mandatory binding bound to the caught value (typed
+`BaseException`), an optional predicate guard, and a handler body. A `Try`
+holds an ordered list of these; clauses are tried in order, first-match-wins,
+and an absent predicate is a catch-all. Type dispatch is written as a guard,
+e.g. `catch e when e is T`. See `docs/design/laurel_extensions.md` (extension E3).
+-/
+structure CatchClause where
+  /-- The identifier bound to the caught value (typed `BaseException`). -/
+  binding : Identifier
+  /-- Optional guard predicate (checked at `TBool`); `none` is a catch-all. -/
+  predicate : Option (AstNode StmtExpr) := none
+  /-- The handler body, run when this clause matches. -/
+  body : AstNode StmtExpr
+
+/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -365,6 +380,10 @@ inductive StmtExpr : Type where
       prelude root `BaseException` (or a declared subtype). See
       `docs/design/laurel_extensions.md` (extension E2). -/
   | Throw (value : AstNode StmtExpr)
+  /-- Structured exception handler (E3/E5): a `body`, an ordered list of `catch`
+      clauses (tried first-match-wins), and an optional `finally` arm that runs on
+      every exit path. See `docs/design/laurel_extensions.md` (extensions E3, E5). -/
+  | Try (body : AstNode StmtExpr) (catches : List CatchClause) (finally? : Option (AstNode StmtExpr))
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
   | ProveBy (value : AstNode StmtExpr) (proof : AstNode StmtExpr)
   /-- Extract the contract (reads, modifies, precondition, or postcondition) of a function. -/
@@ -422,6 +441,7 @@ def StmtExpr.constrName : StmtExpr → String
   | .Assert ..           => "assert"
   | .Assume ..           => "assume"
   | .Throw ..            => "throw"
+  | .Try ..              => "try"
   | .ProveBy ..          => "by"
   | .ContractOf ..       => "contractOf"
   | .Abstract            => "abstract"
@@ -462,6 +482,12 @@ theorem AstNode.sizeOf_val_lt {t : Type} [SizeOf t] (e : AstNode t) : sizeOf e.v
   cases e; grind
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_body_lt (c : CatchClause) : sizeOf c.body < 1 + sizeOf c := by
+  cases c; grind
+
+theorem CatchClause.sizeOf_predicate_lt (c : CatchClause) : sizeOf c.predicate < 1 + sizeOf c := by
   cases c; grind
 
 /-- The target expression inside a `Variable.Field` is strictly smaller than the `Field` itself.
@@ -752,6 +778,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Assert .. => "Assert"
   | .Assume .. => "Assume"
   | .Throw .. => "Throw"
+  | .Try .. => "Try"
   | .ProveBy .. => "ProveBy"
   | .ContractOf .. => "ContractOf"
   | .Abstract => "Abstract"

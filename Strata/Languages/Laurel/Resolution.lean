@@ -735,6 +735,9 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Throw value => do
     let r ← Check.throw exprMd value source (by rw [h_node])
     return (r, ⟨ .TVoid, source ⟩)
+  | .Try body catches finally? => do
+    let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
   termination_by (exprMd, 2)
   decreasing_by all_goals first
@@ -1491,6 +1494,44 @@ def Check.throw (exprMd : StmtExprMd)
     rw [h] at hsz
     simp only [StmtExpr.Throw.sizeOf_spec] at hsz
     omega
+
+/-- (Try)
+    The `try` body, each `catch` body, and the `finally` arm are statements
+    (checked in statement position, against `Unknown`). Each `catch` clause
+    opens a fresh scope in which its binding is bound to the caught value, typed
+    at the channel root `BaseException` (E1/E3); the optional guard predicate is
+    checked against `TBool`. `try` is a statement: it synthesizes `TVoid`. See
+    `docs/design/laurel_extensions.md` (extensions E3, E5). -/
+def Check.tryCatch (exprMd : StmtExprMd)
+    (body : StmtExprMd) (catches : List CatchClause) (finally? : Option StmtExprMd)
+    (source : Option FileRange)
+    (h : exprMd.val = .Try body catches finally?) :
+    ResolveM StmtExprMd := do
+  let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
+  let catches' ← catches.attach.mapM fun ⟨c, _⟩ => withScope do
+    let bindTy ← resolveHighType
+      { val := .UserDefined (mkId baseExceptionTypeName), source := c.binding.source }
+    let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+    let predicate' ← c.predicate.attach.mapM fun ⟨p, _⟩ =>
+      Check.resolveStmtExpr p { val := .TBool, source := p.source }
+    let cbody' ← Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
+    pure ({ binding := binding', predicate := predicate', body := cbody' } : CatchClause)
+  let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
+    Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
+  pure { val := .Try body' catches' finally'?, source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.Try.sizeOf_spec] at hsz
+      try (have := List.sizeOf_lt_of_mem ‹_ ∈ catches›)
+      try (have := CatchClause.sizeOf_body_lt ‹_›)
+      try (have hpr := CatchClause.sizeOf_predicate_lt ‹_›)
+      try (rw [Option.mem_def.mp ‹_ ∈ c.predicate›, Option.some.sizeOf_spec] at hpr)
+      try (rw [Option.mem_def.mp ‹_ ∈ finally?›, Option.some.sizeOf_spec] at hsz)
+      omega
 
 -- ### Assignment
 
@@ -2852,7 +2893,7 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map
 
-private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
+private partial def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
   match expr with
   | AstNode.mk val _ =>
@@ -2913,6 +2954,14 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
   | .Assume cond => collectStmtExpr map cond
   | .Throw value => collectStmtExpr map value
+  | .Try body catches finally? =>
+    let map := collectStmtExpr map body
+    let map := catches.foldl (fun map c =>
+      let bindTy : HighTypeMd := ⟨.UserDefined (mkId baseExceptionTypeName), c.binding.source⟩
+      let map := register map c.binding (.var c.binding bindTy)
+      let map := match c.predicate with | some p => collectStmtExpr map p | none => map
+      collectStmtExpr map c.body) map
+    match finally? with | some f => collectStmtExpr map f | none => map
   | .ProveBy val proof =>
     let map := collectStmtExpr map val
     collectStmtExpr map proof

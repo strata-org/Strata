@@ -89,6 +89,13 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
     pure ⟨.Assume (← mapStmtExprM f cond), source⟩
   | .Throw value =>
     pure ⟨.Throw (← mapStmtExprM f value), source⟩
+  | .Try body catches finally? =>
+    pure ⟨.Try (← mapStmtExprM f body)
+      (← catches.attach.mapM fun ⟨c, _⟩ => do
+        pure { c with
+          predicate := (← c.predicate.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e)
+          body := (← mapStmtExprM f c.body) })
+      (← finally?.attach.mapM fun ⟨e, _⟩ => mapStmtExprM f e), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprM f value) (← mapStmtExprM f proof), source⟩
   | .ContractOf ty func =>
@@ -105,6 +112,8 @@ decreasing_by
   all_goals simp_wf
   all_goals (try have := AstNode.sizeOf_val_lt expr)
   all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
   all_goals (try term_by_mem)
   all_goals (cases expr; simp_all; omega)
 
@@ -182,6 +191,13 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assume (← mapStmtExprPrePostM pre post cond), source⟩
   | .Throw value =>
     pure ⟨.Throw (← mapStmtExprPrePostM pre post value), source⟩
+  | .Try body catches finally? =>
+    pure ⟨.Try (← mapStmtExprPrePostM pre post body)
+      (← catches.attach.mapM fun ⟨c, _⟩ => do
+        pure { c with
+          predicate := (← c.predicate.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
+          body := (← mapStmtExprPrePostM pre post c.body) })
+      (← finally?.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
@@ -194,6 +210,8 @@ decreasing_by
   all_goals simp_wf
   all_goals (try have := AstNode.sizeOf_val_lt expr)
   all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
   all_goals (try term_by_mem)
   all_goals (cases expr; simp_all; omega)
 

@@ -126,6 +126,20 @@ op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{\n  " i
 op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label;
 op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
+// Exception handling (E3/E5): try / catch (with optional `when` guard) / finally.
+category CatchGuard;
+op catchGuard (predicate: StmtExpr): CatchGuard => " when " predicate:0;
+
+category CatchClause;
+op catchClause (binding: Ident, guard: Option CatchGuard, body: StmtExpr): CatchClause
+  => "\n  catch " binding guard " " body:0;
+
+category FinallyClause;
+op finallyClause (body: StmtExpr): FinallyClause => "\n  finally " body:0;
+
+op tryCatch (body: StmtExpr, catches: Seq CatchClause, finallyClause: Option FinallyClause): StmtExpr
+  => @[prec(0)] "try " body:0 catches finallyClause;
+
 // While loops
 category InvariantClause;
 op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;

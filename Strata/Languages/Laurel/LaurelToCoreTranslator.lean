@@ -329,6 +329,7 @@ def translateExpr (expr : StmtExprMd)
   | .Assert _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
   | .Assume _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
   | .Throw _ => throwExprDiagnostic $ diagnosticFromSource expr.source "throw is not yet supported (requires generic Result lowering, E7)" DiagnosticType.NotYetImplemented
+  | .Try _ _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "try/catch is not yet supported (requires generic Result lowering, E7)" DiagnosticType.NotYetImplemented
   | .ProveBy value _ => throwExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
   | .ContractOf _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
   | .Abstract => throwExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" DiagnosticType.NotYetImplemented
@@ -590,6 +591,12 @@ def translateStmt (stmt : StmtExprMd)
       -- diagnostic rather than silently mis-lowering via the wildcard below.
       throwStmtDiagnostic $ md.toDiagnostic
         "throw is not yet supported (requires generic Result lowering, E7)"
+        DiagnosticType.NotYetImplemented
+  | .Try _ _ _ =>
+      -- `try`/`catch`/`finally` lowering (E3/E5) builds on the same `Result`
+      -- lowering as `throw` (E7), so it is likewise blocked on generic datatypes.
+      throwStmtDiagnostic $ md.toDiagnostic
+        "try/catch is not yet supported (requires generic Result lowering, E7)"
         DiagnosticType.NotYetImplemented
   | _ =>
       -- Expression in statement position: preserve as an unused variable init

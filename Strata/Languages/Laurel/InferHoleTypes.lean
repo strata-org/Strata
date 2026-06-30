@@ -156,6 +156,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
   | .Throw v =>
       return ⟨.Throw (← inferExpr v ⟨ .Unknown, source ⟩), source⟩
+  -- NOTE: `Try` is intentionally not handled here; it falls through to the
+  -- wildcard below (returned unchanged). Recursing into the catch-clause list
+  -- would force this mutual block from structural onto well-founded recursion.
+  -- Consequence: holes inside `try`/`catch`/`finally` arms are not type-inferred
+  -- yet. Revisit if holes in those positions need inference.
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr (← get).currentOutputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType), source⟩

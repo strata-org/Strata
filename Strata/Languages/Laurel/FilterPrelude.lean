@@ -126,6 +126,15 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   -- the prelude gating and this dependency closure to include the exception
   -- prelude for any program containing a `throw`.
   | .Throw value => addTypeName baseExceptionTypeName; collectExprNames value
+  -- A `try`/`catch` likewise uses the exceptional channel (the catch binding is
+  -- typed `BaseException`), so record the root and recurse into every arm.
+  | .Try body catches finally? =>
+    addTypeName baseExceptionTypeName
+    collectExprNames body
+    catches.forM (fun c => do
+      c.predicate.forM collectExprNames
+      collectExprNames c.body)
+    finally?.forM collectExprNames
   | .Return val => val.forM collectExprNames
   | .Old val | .Fresh val | .Assigned val => collectExprNames val
   | .ProveBy val proof => collectExprNames val; collectExprNames proof
