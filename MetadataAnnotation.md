@@ -347,106 +347,48 @@ lake env lean --run editors/GenSyntax.lean all
 
 ### Current state (2026-06-30)
 
-**Branch**: `shilpi/meta-annotations` in the Strata package (2 commits pushed to origin, further uncommitted changes)
+**Branch**: `shilpi/meta-annotations`
 
-**Commit 1** (`667bdad`): Grammar changes
-- File: `Strata/Languages/Core/DDMTransform/Grammar.lean`
-- Added `MetadataAnnValue`, `MetadataAnnKey`, `MetadataAnnEntry`, `MetadataAnn`
-  categories and ops (`mdAnnValStr`, `mdAnnValExpr`, `mdAnnKeyBare`,
-  `mdAnnKeyPrefixed`, `mdAnnFlag`, `mdAnnKV`, `mdAnn`) at the top of the
-  grammar (right after `dialect Core;`).
-- Removed `category ReachCheck` and `op reachCheck`.
-- Changed `assert`, `cover`, `assume` to take `annots : Option MetadataAnn`
-  as first arg instead of `reachCheck? : Option ReachCheck`.
-- This commit built successfully on the Cloud Desktop.
+**Commits**:
+- `667bdad`: Grammar — added MetadataAnn categories/ops, removed ReachCheck,
+  added `annots : Option MetadataAnn` to `assert`/`cover`/`assume`.
+- `dea7fe7`: Translate + FormatCore — `translateMetadataAnnKey`,
+  `translateMetadataAnnEntry`, `translateOptMetadataAnn`; `metadataElemToEntry`,
+  `metadataToAnn`; `translateLabeledCheck` uses annotations.
+- `0e6dd83`: Extend to all statements, fix paren/spacing, add filter.
 
-**Commit 2** (`dea7fe7`): Translate + FormatCore changes
-- File: `Strata/Languages/Core/DDMTransform/Translate.lean`
-  - Added `translateMetadataAnnKey`, `translateMetadataAnnEntry`,
-    `translateOptionMetadataAnn` after `translateStr` (around line 129).
-  - `translateLabeledCheck` now takes `annotsArg`, calls
-    `translateOptionMetadataAnn annotsArg`, and folds the result into `md`.
+**Uncommitted changes (2026-06-30)**: Extend `Option MetadataAnn` to all Commands.
 
-- File: `Strata/Languages/Core/DDMTransform/FormatCore.lean`
-  - Added `metadataElemToEntry` and `metadataToAnn` after `end ToCSTContext`.
-  - `assert`, `cover`, `assume` cases call `metadataToAnn md`.
+All statement ops and all command ops now take `annots : Option MetadataAnn`
+as first arg with `:0` precedence in format strings. The `mdAnn` format is
+`"@[" entries "] "` (trailing space). The DDM framework's `Option` paren
+wrapping is suppressed by `:0`.
 
-**Uncommitted changes (2026-06-30)**: Step 5 — extend `Option MetadataAnn` to ALL statements
+**Key design decision**: We use `Option MetadataAnn` (not a custom
+`OptMetadataAnn` category). The original paren/spacing bug was caused by
+missing `:0` precedence annotations, not by `Option` itself. Using `Option`
+gives us the DDM framework's native handling for parsing (position tracking,
+empty match), which avoids issues with zero-width ops at the command level.
 
-- File: `Strata/DL/Imperative/MetaData.lean`
-  - Added `Inhabited` instance for `MetaDataElem P`.
+### Tag-based filter
 
-- File: `Strata/Languages/Core/DDMTransform/Grammar.lean`
-  - Added `annots : Option MetadataAnn` as first arg to ALL statement ops:
-    `varStatement`, `initStatement`, `assign`, `if_statement`, `havoc_statement`,
-    `while_statement`, `call_statement`, `block_statement`, `exit_statement`,
-    `funcDecl_statement`, `typeDecl_statement`.
-  - Changed `mdAnn` format to `"@[" entries "] "` (trailing space) — BUT THIS
-    DOESN'T WORK due to the Option paren wrapping issue (see below).
+`MetadataAnnFilter` in FormatCore.lean controls emission:
+- `.none` — emit nothing (default, preserves existing behavior)
+- `.all` — emit all metadata as annotations
+- `.only keys` — emit only listed keys
+- `.allExcept keys` — emit all except listed keys
 
-- File: `Strata/Languages/Core/DDMTransform/Translate.lean`
-  - Updated ALL `translateStmt` match arms for new arg counts (each now has
-    `annotsArg` as first element in the pattern array).
-  - Updated `translateVarStatement` signature: now takes `annotsArg : Arg` before
-    `decls`, calls `translateOptionMetadataAnn` and merges into `md`.
-  - Updated `translateInitStatement` signature: now takes `annotsArg : Arg` before
-    `args`, calls `translateOptionMetadataAnn` and merges into `md`.
-  - Each other arm (`assign`, `havoc`, `if`, `while`, `call`, `block`, `exit`,
-    `funcDecl`, `typeDecl`) extracts `annotsArg`, calls
-    `translateOptionMetadataAnn`, and folds result into `md` with:
-    `let md := annMd.foldl (init := md) fun acc elem => acc.push elem`
-
-- File: `Strata/Languages/Core/DDMTransform/FormatCore.lean`
-  - Updated ALL `stmtToCST` match arms to call `metadataToAnn md` and pass
-    the resulting `annotsAnn` to the CST constructor.
-  - Changed `funcDeclToStatement` signature to accept
-    `annotsAnn : Ann (Option (MetadataAnn M)) M` as first parameter.
-  - Used `.provenance p` → `(Std.format p).pretty` in `metadataElemToEntry`.
-
-### BLOCKING ISSUE: Option paren wrapping and spacing
-
-The DDM grammar framework wraps `Option T` values in parentheses when formatting:
-`Some x` prints as `(formatted_x)`, `None` prints as nothing.
-
-This means annotations currently render as: `(@[reachCheck] )assert [label]: expr;`
-
-The parens come from the Option wrapper, not from our code. The trailing space
-in `mdAnn` format (`"@[" entries "] "`) ends up inside the parens.
-
-**Desired output**: `@[reachCheck] assert [label]: expr;`
-
-**Possible solutions** (not yet attempted):
-1. Don't use `Option` in the grammar for annotations — use a separate empty
-   op (like `nilInvariants` pattern) so formatting is direct, not Option-wrapped.
-2. Investigate if the DDM framework has a way to suppress parens on Option formatting.
-3. Handle the space in the format string of each op rather than in `mdAnn` itself
-   (but still need to solve the parens problem first).
-
-### Known test failures (56+ files)
-
-All failures are `#guard_msgs` mismatches because provenance/relatedFileRange
-metadata is now being emitted in formatted output. These will be fixed by the
-tag-based filter (suppress provenance and relatedFileRange in `metadataElemToEntry`).
-
-Two roundtrip tests (`RoundtripTest.lean:167,222`) fail with "Parse errors"
-because formatted output contains `(@[provenance = "..."] )` which can't be
-re-parsed. Same root cause — once provenance is suppressed, these pass.
+Presets: `.checks`, `.properties`. Threaded via `ToCSTContext.annFilter`.
+`Core.formatProgram` accepts an `annFilter` parameter.
 
 ### What remains
 
-- ~~**Fix the Option paren/spacing issue**~~ ✅ DONE — replaced `Option MetadataAnn`
-  with a dedicated `OptMetadataAnn` category (`noAnn`/`someAnn`) and added `:0`
-  precedence annotations to all `annots` references in format strings.
-- ~~**Implement tag-based filter**~~ ✅ DONE — `MetadataAnnFilter` inductive with
-  `.none`/`.all`/`.only`/`.allExcept` variants, threaded through `ToCSTContext.annFilter`
-  (default `.none`). `metadataElemToEntry` checks `filter.shouldEmit key` before emitting.
-  `Core.formatProgram` accepts an `annFilter` parameter. Presets: `.checks`, `.properties`.
-- **Extend to Command-level ops**: `command_procedure`, `command_typedecl`,
-  `command_typesynonym`, `command_constdecl`, `command_fndecl`, `command_fndef`,
-  `command_recfndefs`, `command_axiom`, `command_distinct`, `command_datatypes`,
-  `command_cfg_procedure` — every `Decl` constructor in `Core/Program.lean`
-  has `MetaData` storage
-- **Provenance string parsing**: Implement the structured string → `Provenance`
+- ~~**Fix the Option paren/spacing issue**~~ ✅ DONE — `:0` on all `annots`
+  format references suppresses DDM paren wrapping.
+- ~~**Implement tag-based filter**~~ ✅ DONE
+- ~~**Extend to all Statement ops**~~ ✅ DONE
+- ~~**Extend to Command-level ops**~~ ✅ DONE
+- **Provenance string parsing**: Implement structured string → `Provenance`
   parser for round-tripping.
 - **Regenerate editor syntax**: `lake env lean --run editors/GenSyntax.lean all`
 - **Tests**: Round-trip, multi-entry, empty, validation.

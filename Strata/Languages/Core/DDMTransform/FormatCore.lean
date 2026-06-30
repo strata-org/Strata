@@ -232,17 +232,17 @@ private def metadataElemToEntry {M} [Inhabited M] (filter : MetadataAnnFilter)
       | .expr _ => none
   | .var _ => none
 
-/-- Convert MetaData to an OptMetadataAnn CST node.
-    Returns noAnn if no emittable metadata is present (or filter is `.none`). -/
+/-- Convert MetaData to an Option MetadataAnn CST annotation.
+    Returns none if no emittable metadata is present (or filter is `.none`). -/
 def metadataToAnn {M} [Inhabited M]
     (md : Imperative.MetaData Core.Expression)
-    (filter : MetadataAnnFilter := .none) : OptMetadataAnn M :=
+    (filter : MetadataAnnFilter := .none) : Ann (Option (MetadataAnn M)) M :=
   let entries := md.filterMap (metadataElemToEntry (M := M) filter)
   if entries.isEmpty then
-    .noAnn default
+    ⟨default, none⟩
   else
     let annEntries : Ann (Array (MetadataAnnEntry M)) M := ⟨default, entries⟩
-    .someAnn default (.mdAnn default annEntries)
+    ⟨default, some (.mdAnn default annEntries)⟩
 
 ---------------------------------------------------------------------
 
@@ -791,7 +791,7 @@ def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (Type
     ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
 
 /-- Convert a function declaration to a statement -/
-def funcDeclToStatement {M} [Inhabited M] (annotsAnn : OptMetadataAnn M)
+def funcDeclToStatement {M} [Inhabited M] (annotsAnn : Ann (Option (MetadataAnn M)) M)
     (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
   modify ToCSTContext.pushScope
@@ -1007,7 +1007,8 @@ N.B.: We don't add the procedure name to the freeVars in the context.
 private inductive FormatParamKind where
   | inParam | outParam | inoutParam
 
-def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
+def procToCST {M} [Inhabited M] (proc : Core.Procedure)
+    (md : Imperative.MetaData Core.Expression := .empty) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs := mkTypeArgsAnn proc.header.typeArgs
@@ -1068,7 +1069,8 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
-  pure (.command_procedure default name typeArgs arguments spec body)
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  pure (.command_procedure default annotsAnn name typeArgs arguments spec body)
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.
@@ -1166,7 +1168,7 @@ def Core.formatProcedure (proc : Core.Procedure)
     (extraFreeVars : Array String := #[]) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
-  let (cst, finalCtx) := procToCST proc initCtx
+  let (cst, finalCtx) := (procToCST proc) initCtx
   formatWithDDM finalCtx fun ctx state =>
     (mformat (ArgF.op cst.toAst) ctx state).format
 

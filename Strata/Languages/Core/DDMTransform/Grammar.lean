@@ -48,11 +48,7 @@ op mdAnnKV (key : MetadataAnnKey, value : MetadataAnnValue) : MetadataAnnEntry =
   key " = " value;
 
 category MetadataAnn;
-op mdAnn (entries : CommaSepBy MetadataAnnEntry) : MetadataAnn => "@[" entries "]";
-
-category OptMetadataAnn;
-op noAnn : OptMetadataAnn => ;
-op someAnn (a : MetadataAnn) : OptMetadataAnn => a:0 " ";
+op mdAnn (entries : CommaSepBy MetadataAnnEntry) : MetadataAnn => "@[" entries "] ";
 
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
@@ -285,24 +281,24 @@ category Label;
 op label (l : Ident) : Label => "[" l "]: ";
 
 @[scope(dl)]
-op varStatement (annots : OptMetadataAnn, dl : DeclList) : Statement => annots:0 "var " dl ";";
+op varStatement (annots : Option MetadataAnn, dl : DeclList) : Statement => annots:0 "var " dl ";";
 @[declare(v, tp)]
-op initStatement (annots : OptMetadataAnn, tp : Type, v : Ident, e : tp) : Statement => annots:0 "var " v " : " tp " := " e ";";
-op assign (annots : OptMetadataAnn, tp : Type, v : Lhs, e : tp) : Statement => annots:0 v:0 " := " e ";";
-op assume (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+op initStatement (annots : Option MetadataAnn, tp : Type, v : Ident, e : tp) : Statement => annots:0 "var " v " : " tp " := " e ";";
+op assign (annots : Option MetadataAnn, tp : Type, v : Lhs, e : tp) : Statement => annots:0 v:0 " := " e ";";
+op assume (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
   annots:0 "assume " label c ";";
-op assert (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+op assert (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
   annots:0 "assert " label c ";";
-op cover (annots : OptMetadataAnn, label : Option Label, c : bool) : Statement =>
+op cover (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
   annots:0 "cover " label c ";";
 category ExprOrNondet;
 op condDet (c : bool) : ExprOrNondet => "(" c ")";
 op condNondet : ExprOrNondet => "*";
 
-op if_statement (annots : OptMetadataAnn, c : ExprOrNondet, t : Block, f : Else) : Statement => annots:0 "if " c:0 " " t:0 f:0;
+op if_statement (annots : Option MetadataAnn, c : ExprOrNondet, t : Block, f : Else) : Statement => annots:0 "if " c:0 " " t:0 f:0;
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
-op havoc_statement (annots : OptMetadataAnn, v : Ident) : Statement => annots:0 "havoc " v ";";
+op havoc_statement (annots : Option MetadataAnn, v : Ident) : Statement => annots:0 "havoc " v ";";
 
 category Invariant;
 op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
@@ -315,7 +311,7 @@ op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
-op while_statement (annots : OptMetadataAnn, c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+op while_statement (annots : Option MetadataAnn, c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
   annots:0 "while " c:0 "\n" m:0 is body:0;
 
 category CallArg;
@@ -323,13 +319,13 @@ op callArgExpr (e : Expr) : CallArg => e;
 op callArgOut (v : Ident) : CallArg => "out " v;
 op callArgInout (v : Ident) : CallArg => "inout " v;
 
-op call_statement (annots : OptMetadataAnn, f : Ident, args : CommaSepBy CallArg) : Statement =>
+op call_statement (annots : Option MetadataAnn, f : Ident, args : CommaSepBy CallArg) : Statement =>
    annots:0 "call " f "(" args ")" ";";
 
 @[scope(c)]
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
-op block_statement (annots : OptMetadataAnn, label : Ident, b : Block) : Statement => annots:0 label ": " b:0;
-op exit_statement (annots : OptMetadataAnn, label : Ident) : Statement => annots:0 "exit " label ";";
+op block_statement (annots : Option MetadataAnn, label : Ident, b : Block) : Statement => annots:0 label ": " b:0;
+op exit_statement (annots : Option MetadataAnn, label : Ident) : Statement => annots:0 "exit " label ";";
 
 category SpecElt;
 category Free;
@@ -356,13 +352,14 @@ category Bindings;
 @[scope(bindings)]
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
-op command_procedure (name : Ident,
+op command_procedure (annots : Option MetadataAnn,
+                      name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
                       @[scope(b)] s: Option Spec,
                       @[scope(b)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "\n"
+  @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
               s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -371,28 +368,31 @@ op command_procedure (name : Ident,
 // type Array (a : Type);
 // where the former is what Boogie does.
 @[declareType(name, some args)]
-op command_typedecl (name : Ident, args : Option Bindings) : Command =>
-  "type " name args ";\n";
+op command_typedecl (annots : Option MetadataAnn, name : Ident, args : Option Bindings) : Command =>
+  annots:0 "type " name args ";\n";
 
 @[aliasType(name, some args, rhs)]
-op command_typesynonym (name : Ident,
+op command_typesynonym (annots : Option MetadataAnn,
+                        name : Ident,
                         args : Option Bindings,
                         targs : Option TypeArgs,
                         @[scope(args)] rhs : Type) : Command =>
-  "type " name args " := " targs rhs ";\n";
+  annots:0 "type " name args " := " targs rhs ";\n";
 
 @[declare(name, r)]
-op command_constdecl (name : Ident,
+op command_constdecl (annots : Option MetadataAnn,
+                      name : Ident,
                       typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  "const " name ":" typeArgs r ";\n";
+  annots:0 "const " name ":" typeArgs r ";\n";
 
 @[declareFn(name, b, r)]
-op command_fndecl (name : Ident,
+op command_fndecl (annots : Option MetadataAnn,
+                   name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope(typeArgs)] r : Type) : Command =>
-  "function " name typeArgs b " : " r ";\n";
+  annots:0 "function " name typeArgs b " : " r ";\n";
 
 category Inline;
 op inline () : Inline => "inline ";
@@ -400,7 +400,8 @@ op inline () : Inline => "inline ";
 // Note: when editing command_fndef, consider whether recfn_decl needs
 // matching edits.
 @[declareFn(name, b, r)]
-op command_fndef (name : Ident,
+op command_fndef (annots : Option MetadataAnn,
+                  name : Ident,
                   typeArgs : Option TypeArgs,
                   @[scope(typeArgs)] b : Bindings,
                   @[scope(typeArgs)] r : Type,
@@ -410,7 +411,7 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
+  annots:0 inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
 // Recursive (and mutually recursive) function declarations.
 // A single recursive function is a 1-element block, just like datatypes.
@@ -427,12 +428,12 @@ op recfn_decl (name : Ident,
   "function " name typeArgs b " : " r indent(2, preconds) "\n" indent(2, decreases) "{\n  " indent(2, c) "\n}";
 
 @[scope(recfns), preRegisterFunctions(recfns)]
-op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
-  "rec " recfns ";\n";
+op command_recfndefs (annots : Option MetadataAnn, recfns : NewlineSepBy RecFnDecl) : Command =>
+  annots:0 "rec " recfns ";\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]
-op funcDecl_statement (annots : OptMetadataAnn,
+op funcDecl_statement (annots : Option MetadataAnn,
                        name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
@@ -444,14 +445,14 @@ op funcDecl_statement (annots : OptMetadataAnn,
 
 // Type declaration statement
 @[declareScopedType(name, some args)]
-op typeDecl_statement (annots : OptMetadataAnn, name : Ident, args : Option Bindings) : Statement =>
+op typeDecl_statement (annots : Option MetadataAnn, name : Ident, args : Option Bindings) : Statement =>
   annots:0 "type " name args ";";
 
-op command_axiom (label : Option Label, e : bool) : Command =>
-  "axiom " label e ";\n";
+op command_axiom (annots : Option MetadataAnn, label : Option Label, e : bool) : Command =>
+  annots:0 "axiom " label e ";\n";
 
-op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
-  "distinct " label "[" exprs "]" ";\n";
+op command_distinct (annots : Option MetadataAnn, label : Option Label, exprs : CommaSepBy Expr) : Command =>
+  annots:0 "distinct " label "[" exprs "]" ";\n";
 
 // Top-level block command for parsing statements directly
 op command_block (b : Block) : Command =>
@@ -497,8 +498,8 @@ op datatype_decl (name : Ident,
 // `@[nonempty]` is load-bearing: see
 // https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
-  datatypes ";\n";
+op command_datatypes (annots : Option MetadataAnn, @[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  annots:0 datatypes ";\n";
 
 // =====================================================================
 // CFG (Unstructured Control Flow) Syntax
@@ -544,13 +545,14 @@ op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
   "cfg " entry " {\n" indent(2, blocks) "\n}";
 
 // Procedure with CFG body
-op command_cfg_procedure (name : Ident,
+op command_cfg_procedure (annots : Option MetadataAnn,
+                          name : Ident,
                           typeArgs : Option TypeArgs,
                           @[scope(typeArgs)] b : Bindings,
                           @[scope(b)] s : Option Spec,
                           @[scope(b)] body : CFGBody) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "\n"
+  @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
               s body ";\n";
 
 #end

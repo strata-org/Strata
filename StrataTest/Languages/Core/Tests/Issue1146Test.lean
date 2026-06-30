@@ -42,7 +42,7 @@ function Len (xs : List) : int
 /-! ## Stray trailing `;` after a function body is a parse error -/
 
 /--
-error: unexpected token ';'; expected 'function', Core.Block or expected at least one element
+error: unexpected token ';'; expected 'axiom', 'const', 'distinct', 'function', 'rec', 'type', Core.Block or expected at least one element
 -/
 #guard_msgs in
 def strayTrailingSemi : StrataDDM.Program :=

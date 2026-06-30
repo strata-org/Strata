@@ -175,17 +175,16 @@ def translateMetadataAnnEntry (arg : Arg) :
     Returns empty metadata if the annotation is absent (noAnn). -/
 def translateOptMetadataAnn (arg : Arg) :
     TransM (Imperative.MetaData Core.Expression) := do
-  let .op op := arg
+  let .option _ ann := arg
     | TransM.error s!"translateOptMetadataAnn unexpected {repr arg}"
-  match op.name, op.args with
-  | q`Core.noAnn, #[] => return Imperative.MetaData.empty
-  | q`Core.someAnn, #[annArg] =>
+  match ann with
+  | none => return Imperative.MetaData.empty
+  | some annArg =>
     let .op annOp := annArg
       | TransM.error s!"translateOptMetadataAnn expected op {repr annArg}"
     let _ ← checkOpArg annArg q`Core.mdAnn 1
     let entries ← translateCommaSep translateMetadataAnnEntry annOp.args[0]!
     return entries
-  | _, _ => TransM.error s!"translateOptMetadataAnn: unexpected {repr op.name}"
 
 ---------------------------------------------------------------------
 
@@ -376,8 +375,9 @@ def translateTypeArgs (op : Arg) : TransM (Array TyIdentifier) := do
 
 def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typesynonym 4
-  let name ← translateIdent TyIdentifier op.args[0]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typesynonym 5
+  let annotsArg := op.args[0]!
+  let name ← translateIdent TyIdentifier op.args[1]!
   let (targs, bindings) ←
     translateOption
       (fun maybearg =>
@@ -392,17 +392,20 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
                     return (arr.toList, bindings)
                   | _ => TransM.error
                           s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
-  let typedef ← translateLMonoTy bindings op.args[3]!
+                    op.args[2]!
+  let typedef ← translateLMonoTy bindings op.args[4]!
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   let decl := Core.Decl.type (.syn { name := name, typeArgs := targs, type := typedef }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 
 def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 2
-  let name ← translateIdent TyIdentifier op.args[0]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 3
+  let annotsArg := op.args[0]!
+  let name ← translateIdent TyIdentifier op.args[1]!
   let params ←
     translateOption
       (fun maybearg =>
@@ -417,8 +420,10 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
                   translateIdent String bindArgs[0]!
               | _ => TransM.error
                       s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
-                    op.args[1]!
+                    op.args[2]!
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   let decl := Core.Decl.type (.con { name := name, params := params }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
@@ -1740,10 +1745,11 @@ partial def translateSpec (p : Program) (name : Core.CoreIdent) (bindings : Tran
 
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 5
-  let pname ← translateIdent Core.CoreIdent op.args[0]!
-  let typeArgs ← translateTypeArgs op.args[1]!
-  let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
+  let annotsArg := op.args[0]!
+  let pname ← translateIdent Core.CoreIdent op.args[1]!
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let (sig, ret) ← translateBindingsPartitioned bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
     (fun (v, ty) => (LExpr.fvar () v ty))
@@ -1751,15 +1757,17 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let origBindings := bindings
   let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
   let bindings := { bindings with boundVars := bbindings }
-  let .option _ speca := op.args[3]!
-    | TransM.error s!"translateProcedure spec. expected here: {repr op.args[3]!}"
+  let .option _ speca := op.args[4]!
+    | TransM.error s!"translateProcedure spec. expected here: {repr op.args[4]!}"
   let (requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
-  let .option _ bodya := op.args[4]!
-    | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
+  let .option _ bodya := op.args[5]!
+    | TransM.error s!"translateProcedure body expected here: {repr op.args[5]!}"
   let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
   let origBindings := { origBindings with gen := bindings.gen }
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
                               inputs := sig,
@@ -1885,10 +1893,11 @@ partial def translateCFGBody (p : Program) (bindings : TransBindings) (arg : Arg
 /-- Translate a procedure with CFG body -/
 def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 5
-  let pname ← translateIdent Core.CoreIdent op.args[0]!
-  let typeArgs ← translateTypeArgs op.args[1]!
-  let (sig, ret) ← translateBindingsPartitioned bindings op.args[2]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_cfg_procedure 6
+  let annotsArg := op.args[0]!
+  let pname ← translateIdent Core.CoreIdent op.args[1]!
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let (sig, ret) ← translateBindingsPartitioned bindings op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
     (fun (v, ty) => (LExpr.fvar () v ty))
@@ -1896,13 +1905,15 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
   let origBindings := bindings
   let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
   let bindings := { bindings with boundVars := bbindings }
-  let .option _ speca := op.args[3]!
-    | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[3]!}"
+  let .option _ speca := op.args[4]!
+    | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[4]!}"
   let (requires, ensures) ←
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [])
-  let (cfg, bindings) ← translateCFGBody p bindings op.args[4]!
+  let (cfg, bindings) ← translateCFGBody p bindings op.args[5]!
   let origBindings := { origBindings with gen := bindings.gen }
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
                               inputs := sig,
@@ -1918,11 +1929,14 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
 
 def translateConstant (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
-  let cname ← translateIdent Core.CoreIdent op.args[0]!
-  let typeArgs ← translateTypeArgs op.args[1]!
-  let ret ← translateLMonoTy bindings op.args[2]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 4
+  let annotsArg := op.args[0]!
+  let cname ← translateIdent Core.CoreIdent op.args[1]!
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let ret ← translateLMonoTy bindings op.args[3]!
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   let decl := .func { name := cname,
                       typeArgs := typeArgs.toList,
                       inputs := [],
@@ -1935,20 +1949,26 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
 
 def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom 2
-  let (l, bindings) ← nextLabel "axiom" .axiom_def op.args[0]! bindings
-  let e ← translateExpr p bindings op.args[1]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom 3
+  let annotsArg := op.args[0]!
+  let (l, bindings) ← nextLabel "axiom" .axiom_def op.args[1]! bindings
+  let e ← translateExpr p bindings op.args[2]!
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   return (.ax (Core.Axiom.mk l e) md, bindings)
 
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 2
-  let (l, bindings) ← nextLabel "axiom_distinct" .axiom_def op.args[0]! bindings
-  let es ← translateCommaSep (translateExpr p bindings) op.args[1]!
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 3
+  let annotsArg := op.args[0]!
+  let (l, bindings) ← nextLabel "axiom_distinct" .axiom_def op.args[1]! bindings
+  let es ← translateCommaSep (translateExpr p bindings) op.args[2]!
   if !(es.all LExpr.isOp) then
     TransM.error s!"arguments to `distinct` must all be constant names: {es}"
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   return (.distinct l es.toList md, bindings)
 
 ---------------------------------------------------------------------
@@ -1971,24 +1991,27 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     7
-    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    4
-  let fname ← translateIdent Core.CoreIdent op.args[0]!
-  let typeArgs ← translateTypeArgs op.args[1]!
-  let sig ← translateBindings bindings op.args[2]!
-  let ret ← translateLMonoTy bindings op.args[3]!
+    | .Definition           => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef     8
+    | .Declaration          => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl    5
+  let annotsArg := op.args[0]!
+  let fname ← translateIdent Core.CoreIdent op.args[1]!
+  let typeArgs ← translateTypeArgs op.args[2]!
+  let sig ← translateBindings bindings op.args[3]!
+  let ret ← translateLMonoTy bindings op.args[4]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   let orig_bbindings := bindings.boundVars
   let bbindings := bindings.boundVars ++ in_bindings
   let bindings := { bindings with boundVars := bbindings }
   let (preconds, body, inline?) ← match status with
     | .Definition =>
-      let preconds ← translateFnPreconds p fname bindings op.args[4]!
-      let e ← translateExpr p bindings op.args[5]!
-      let inline? ← translateOptionInline op.args[6]!
+      let preconds ← translateFnPreconds p fname bindings op.args[5]!
+      let e ← translateExpr p bindings op.args[6]!
+      let inline? ← translateOptionInline op.args[7]!
       pure (preconds, some e, inline?)
     | .Declaration => pure ([], none, #[])
+  let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
+  let md := annMd.foldl (init := md) fun acc elem => acc.push elem
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
                       isRecursive := false,
@@ -2048,10 +2071,11 @@ Translate a `command_recfndefs` block (one or more mutually recursive functions)
 -/
 partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndefs 1
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_recfndefs 2
+  let annotsArg := op.args[0]!
 
-  let .seq _ _ declarations := op.args[0]!
-    | TransM.error s!"translateRecFuncBlock expected sequence: {repr op.args[0]!}"
+  let .seq _ _ declarations := op.args[1]!
+    | TransM.error s!"translateRecFuncBlock expected sequence: {repr op.args[1]!}"
 
   let fnOps := declarations.filterMap fun arg =>
     match arg with
@@ -2082,7 +2106,9 @@ partial def translateRecFuncBlock (p : Program) (bindings : TransBindings) (op :
       pure (func :: acc, siblings.push func.opExpr)
     let funcs := funcsRev.reverse
 
+    let annMd ← translateOptMetadataAnn annotsArg
     let md ← getOpMetaData op
+    let md := annMd.foldl (init := md) fun acc elem => acc.push elem
     let decl := Core.Decl.recFuncBlock funcs md
 
     -- Replace placeholder freeVars with the real combined decl.
@@ -2217,10 +2243,11 @@ type names are pre-registered in the DDM GlobalContext before processing.
 -/
 def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Core.Decl × TransBindings) := do
-  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatypes 1
+  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatypes 2
+  let annotsArg := op.args[0]!
 
-  let .seq _ _ declarations := op.args[0]!
-    | TransM.error s!"translateDatatypes expected sequence: {repr op.args[0]!}"
+  let .seq _ _ declarations := op.args[1]!
+    | TransM.error s!"translateDatatypes expected sequence: {repr op.args[1]!}"
 
   let datatypeOps := declarations.filterMap fun arg =>
     match arg with
@@ -2273,7 +2300,9 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
 
     let allFuncDecls ← genDatatypeFactory ldatatypes
 
+    let annMd ← translateOptMetadataAnn annotsArg
     let md ← getOpMetaData op
+    let md := annMd.foldl (init := md) fun acc elem => acc.push elem
     let typeDecl := Core.Decl.type (.data ldatatypes) md
 
     let mut finalBindings := bindings

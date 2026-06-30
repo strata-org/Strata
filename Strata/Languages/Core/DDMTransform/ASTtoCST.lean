@@ -33,15 +33,16 @@ open Strata.CoreDDM
 section ToCST
 
 def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   let name : Ann String M := ⟨default, tcons.name⟩
   modify (·.addGlobalFreeVars #[name.val])
   let args := typeConArgsToCST (M := M) tcons
-  pure (.command_typedecl default name args)
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  pure (.command_typedecl default annotsAnn name args)
 
 /-- Convert a datatype declaration to CST -/
 def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibility))
-    (_md : Imperative.MetaData Expression) : ToCSTM M (List (Command M)) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (List (Command M)) := do
   -- Register datatype names first, then constructor/tester/destructor names.
   -- For mutual datatypes, names may already be in context from forward
   -- declarations.
@@ -108,12 +109,13 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
     pure (DatatypeDecl.datatype_decl default name args constrList)
 
   let decls ← datatypes.mapM processDatatype
-  let datatypesCmd := Command.command_datatypes default ⟨default, decls.toArray⟩
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  let datatypesCmd := Command.command_datatypes default annotsAnn ⟨default, decls.toArray⟩
   pure [datatypesCmd]
 
 /-- Convert a type synonym declaration to CST -/
 def typeSynToCST {M} [Inhabited M] (syn : Core.TypeSynonym)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, syn.name⟩
   modify (·.addGlobalFreeVars #[name.val])
@@ -129,12 +131,13 @@ def typeSynToCST {M} [Inhabited M] (syn : Core.TypeSynonym)
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
   let rhs ← lmonoTyToCoreType syn.type
   modify ToCSTContext.popScope
-  pure (.command_typesynonym default name args targs rhs)
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  pure (.command_typesynonym default annotsAnn name args targs rhs)
 
 /-- Convert a recursive function to a RecFnDecl CST node -/
 def recFnDeclToCST {M} [Inhabited M]
     (func : Lambda.LFunc Core.CoreLParams)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (RecFnDecl M) := do
+    : ToCSTM M (RecFnDecl M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
   let typeArgs := mkTypeArgsAnn func.typeArgs
@@ -172,7 +175,7 @@ def recFnDeclToCST {M} [Inhabited M]
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]
     (func : Lambda.LFunc Core.CoreLParams)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
   let typeArgs := mkTypeArgsAnn func.typeArgs
@@ -187,8 +190,9 @@ def funcToCST {M} [Inhabited M]
   let paramNames := results.map (·.2)
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lmonoTyToCoreType func.output
+  let annotsAnn := metadataToAnn md (← get).annFilter
   let result ← match func.body with
-  | none => pure (.command_fndecl default name typeArgs b r)
+  | none => pure (.command_fndecl default annotsAnn name typeArgs b r)
   | some body => do
     -- Add formals to the context.
     modify (·.addScopedBoundVars (reverse? := false) paramNames)
@@ -198,7 +202,7 @@ def funcToCST {M} [Inhabited M]
     let inline? : Ann (Option (Inline M)) M :=
       if func.attr.any (· == .inline) then ⟨default, some (.inline default)⟩
       else ⟨default, none⟩
-    pure (.command_fndef default name typeArgs b r preconds bodyExpr inline?)
+    pure (.command_fndef default annotsAnn name typeArgs b r preconds bodyExpr inline?)
   modify ToCSTContext.popScope
   -- Register function name as free variable.
   modify (·.addGlobalFreeVars #[name.val])
@@ -206,19 +210,21 @@ def funcToCST {M} [Inhabited M]
 
 /-- Convert an axiom to CST -/
 def axiomToCST {M} [Inhabited M] (ax : Core.Axiom)
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨
       default, some (.label default ⟨default, ax.name⟩)⟩
   let exprCST ← lexprToExpr ax.e 0
-  pure (.command_axiom default labelAnn exprCST)
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  pure (.command_axiom default annotsAnn labelAnn exprCST)
 
 /-- Convert a distinct declaration to CST -/
 def distinctToCST {M} [Inhabited M] (name : Core.CoreIdent) (es : List (Lambda.LExpr Core.CoreLParams.mono))
-    (_md : Imperative.MetaData Expression) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name.toPretty⟩)⟩
   let exprsCST ← es.mapM (fun a => lexprToExpr a 0)
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
-  pure (.command_distinct default labelAnn exprsAnn)
+  let annotsAnn := metadataToAnn md (← get).annFilter
+  pure (.command_distinct default annotsAnn labelAnn exprsAnn)
 
 /-- Convert a `Core.Decl` to a Core `Command` -/
 def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M)) :=
@@ -234,8 +240,8 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
   | .func func md => do
     let cmd ← funcToCST func md
     pure [cmd]
-  | .proc proc _md => do
-    let cmd ← procToCST proc
+  | .proc proc md => do
+    let cmd ← procToCST proc md
     pure [cmd]
   | .ax ax md => do
     let cmd ← axiomToCST ax md
@@ -247,8 +253,9 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     -- Register function names as free variables so self/sibling calls resolve
     let fnNames := funcs.map (·.name.name)
     modify (·.addGlobalFreeVars fnNames.toArray)
-    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func md
-    let cmd := Command.command_recfndefs default ⟨default, recFnDecls.toArray⟩
+    let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func
+    let annotsAnn := metadataToAnn md (← get).annFilter
+    let cmd := Command.command_recfndefs default annotsAnn ⟨default, recFnDecls.toArray⟩
     pure [cmd]
 
 /-- Convert `Core.Program` to a list of CST `Commands` -/
