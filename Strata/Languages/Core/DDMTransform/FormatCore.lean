@@ -97,11 +97,10 @@ inductive MetadataAnnFilter where
 namespace MetadataAnnFilter
 
 def checks : MetadataAnnFilter :=
-  .only (Std.HashSet.ofList ["reachCheck", "fullCheck", "validityCheck", "satisfiabilityCheck"])
+  .only (Std.HashSet.ofList Imperative.MetaData.checkKeys)
 
 def properties : MetadataAnnFilter :=
-  .only (Std.HashSet.ofList ["reachCheck", "fullCheck", "validityCheck", "satisfiabilityCheck",
-                             "propertyType", "propertySummary"])
+  .only (Std.HashSet.ofList Imperative.MetaData.propertyKeys)
 
 def shouldEmit (filter : MetadataAnnFilter) (key : String) : Bool :=
   match filter with

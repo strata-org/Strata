@@ -23,6 +23,9 @@ inductive Uri where
 instance : Std.ToFormat Uri where
  format fr := private match fr with | .file path => path
 
+instance : Hashable SourceRange where
+  hash sr := mixHash (hash sr.start) (hash sr.stop)
+
 structure FileRange where
   file: Uri
   range: SourceRange

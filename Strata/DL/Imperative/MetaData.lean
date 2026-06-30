@@ -192,6 +192,10 @@ abbrev MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
 @[match_pattern]
 abbrev MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
 
+/-- Key names for check-related metadata fields. -/
+def MetaData.checkKeys : List String :=
+  ["reachCheck", "fullCheck", "validityCheck", "satisfiabilityCheck"]
+
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
   | some elem =>
@@ -368,6 +372,10 @@ def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) :
 /-- Push a property summary into metadata. -/
 def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
   md.pushElem MetaData.propertySummary (.msg msg)
+
+/-- Key names for property-related metadata fields (checks + propertyType/propertySummary). -/
+def MetaData.propertyKeys : List String :=
+  MetaData.checkKeys ++ ["propertyType", "propertySummary"]
 
 ---------------------------------------------------------------------
 
