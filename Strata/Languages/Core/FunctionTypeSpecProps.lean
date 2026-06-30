@@ -171,69 +171,6 @@ private theorem region_a_input_lookup {aliases : List TypeAlias}
           have h_len' : srest.length = rest.length := by simpa using h_len
           exact ih srest h_len' h_tl h_fmls
 
-/-- The filterMap building the renameSubst preserves keys: a key of the filtered map
-    was already a key of `L`. (The kept entries have first component `p.1`.) -/
-private theorem mem_keys_renameMap_imp
-    (L : List (TyIdentifier × TyIdentifier)) (y : TyIdentifier)
-    (h : y ∈ (L.filterMap
-        (fun p => if p.1 == p.2 then none else some (p.1, LMonoTy.ftvar p.2))).map Prod.fst) :
-    y ∈ L.map Prod.fst := by
-  obtain ⟨q, hq_mem, hq_fst⟩ := List.mem_map.mp h
-  obtain ⟨p, hp_mem, hp_eq⟩ := List.mem_filterMap.mp hq_mem
-  refine List.mem_map.mpr ⟨p, hp_mem, ?_⟩
-  by_cases hpf : p.1 == p.2
-  · rw [if_pos hpf] at hp_eq; exact absurd hp_eq (by simp)
-  · rw [if_neg hpf] at hp_eq
-    rw [Option.some.injEq] at hp_eq
-    rw [← hq_fst, ← hp_eq]
-
-/-- Lookup in the renameSubst map built from a key-distinct association list `L`.
-    For an entry `(y, x) ∈ L`, the filtered map sends `y` to `ftvar x` unless the entry
-    was a fixed point (`y = x`), in which case `y` is absent. Used with `L := bwdMap.toList`,
-    whose keys are distinct (`Std.HashMap.distinct_keys_toList`). -/
-private theorem find?_renameMap_of_mem
-    (L : List (TyIdentifier × TyIdentifier))
-    (hnd : (L.map Prod.fst).Nodup)
-    (y x : TyIdentifier) (hmem : (y, x) ∈ L) :
-    Map.find?
-      (L.filterMap (fun p => if p.1 == p.2 then none else some (p.1, LMonoTy.ftvar p.2))) y
-      = if y = x then none else some (LMonoTy.ftvar x) := by
-  induction L with
-  | nil => simp at hmem
-  | cons hd rest ih =>
-    obtain ⟨k, v⟩ := hd
-    simp only [List.map_cons, List.nodup_cons] at hnd
-    obtain ⟨hk_notin, hnd_rest⟩ := hnd
-    rw [List.filterMap_cons]
-    simp only [beq_iff_eq]
-    rcases List.mem_cons.mp hmem with h_mem_hd | h_mem_rest
-    · -- the head is exactly the entry we look up
-      cases h_mem_hd
-      by_cases h_fix : y = x
-      · -- fixed point: head filtered out; y absent from rest (key-distinct)
-        rw [if_pos h_fix, if_pos h_fix]
-        show Map.find? (rest.filterMap _) y = none
-        apply Map.findNone_eq_notmem_mapfst.mp
-        intro hc
-        refine hk_notin (mem_keys_renameMap_imp rest y ?_)
-        simpa only [beq_iff_eq] using hc
-      · -- non-fixed-point: head kept as (y, ftvar x); find? hits it immediately
-        rw [if_neg h_fix, if_neg h_fix]
-        show Map.find? ((y, LMonoTy.ftvar x) :: _) y = some (LMonoTy.ftvar x)
-        rw [Map.find?, if_pos rfl]
-    · -- entry is in the tail; head key k ≠ y so find? skips it, recurse
-      have hy_in_rest : y ∈ rest.map Prod.fst :=
-        List.mem_map.mpr ⟨(y, x), h_mem_rest, rfl⟩
-      have hk_ne_y : k ≠ y := fun heq => hk_notin (heq ▸ hy_in_rest)
-      have ih' : Map.find?
-          (rest.filterMap fun p => if p.1 = p.2 then none else some (p.1, LMonoTy.ftvar p.2)) y
-          = if y = x then none else some (LMonoTy.ftvar x) := by
-        have := ih hnd_rest h_mem_rest
-        simpa only [beq_iff_eq] using this
-      by_cases hkv : k = v
-      · rw [if_pos hkv]; exact ih'
-      · rw [if_neg hkv, Map.find?, if_neg hk_ne_y]; exact ih'
-
 /-- Monotonicity of the backward map across `goList`: existing entries are never
     overwritten. Parameterized by the per-element monotonicity of `go` (supplied by the
     structural IH at the `tcons` case of `go_bwd_mono`). -/
@@ -267,236 +204,6 @@ private theorem goList_bwd_mono (ts1 : List LMonoTy)
         rw [hga] at hgl
         have hmono_a := hgo a (List.mem_cons_self ..) b fwd bwd f1 b1 hga y x hyx
         exact ih (fun c hc => hgo c (List.mem_cons_of_mem a hc)) bs f1 b1 fwd' bwd' hgl y x hmono_a
-
-/-- Domain of the backward map across `goList`: every key of `bwd'` is either an
-    existing key of `bwd` or a free variable of the second list `ts2`. Parameterized by
-    the per-element `go` version (supplied by the structural IH at `go_bwd_keys_subset`). -/
-private theorem goList_bwd_keys_subset (ts1 : List LMonoTy)
-    (hgo : ∀ a ∈ ts1, ∀ (t2 : LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-        LMonoTy.alphaEquivMap.go a t2 fwd bwd = some (fwd', bwd') →
-        ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-          (∃ x', bwd[y]? = some x') ∨ y ∈ LMonoTy.freeVars t2) :
-    ∀ (ts2 : List LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-      LMonoTy.alphaEquivMap.goList ts1 ts2 fwd bwd = some (fwd', bwd') →
-      ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-        (∃ x', bwd[y]? = some x') ∨ y ∈ LMonoTys.freeVars ts2 := by
-  induction ts1 with
-  | nil =>
-    intro ts2 fwd bwd fwd' bwd' hgl y x hyx
-    cases ts2 with
-    | nil =>
-      unfold LMonoTy.alphaEquivMap.goList at hgl
-      simp only [Option.some.injEq, Prod.mk.injEq] at hgl
-      obtain ⟨_, hb⟩ := hgl; left; exact ⟨x, by rw [hb]; exact hyx⟩
-    | cons b bs => exact absurd hgl (by unfold LMonoTy.alphaEquivMap.goList; simp)
-  | cons a as ih =>
-    intro ts2 fwd bwd fwd' bwd' hgl y x hyx
-    cases ts2 with
-    | nil => exact absurd hgl (by unfold LMonoTy.alphaEquivMap.goList; simp)
-    | cons b bs =>
-      unfold LMonoTy.alphaEquivMap.goList at hgl
-      cases hga : LMonoTy.alphaEquivMap.go a b fwd bwd with
-      | none => rw [hga] at hgl; exact absurd hgl (by simp)
-      | some fb =>
-        obtain ⟨f1, b1⟩ := fb
-        rw [hga] at hgl
-        -- Keys of `bwd'` come from `b1` (tail), then `b1` keys come from `bwd`/`b` (head).
-        have h_tail := ih (fun c hc => hgo c (List.mem_cons_of_mem a hc)) bs f1 b1 fwd' bwd' hgl y x hyx
-        rw [LMonoTys.freeVars_of_cons, List.mem_append]
-        cases h_tail with
-        | inl h_b1 =>
-          obtain ⟨x', hx'⟩ := h_b1
-          have h_head := hgo a (List.mem_cons_self ..) b fwd bwd f1 b1 hga y x' hx'
-          cases h_head with
-          | inl h_bwd => left; exact h_bwd
-          | inr h_fv => right; left; exact h_fv
-        | inr h_bs => right; right; exact h_bs
-
-/-- Domain of the backward map across `go`: every key of `bwd'` is either an existing
-    key of `bwd` or a free variable of the second type `t2`. The only key `go` ever adds
-    is the second type's variable at an `ftvar`/`ftvar` leaf. -/
-private theorem go_bwd_keys_subset (t1 : LMonoTy) :
-    ∀ (t2 : LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-      LMonoTy.alphaEquivMap.go t1 t2 fwd bwd = some (fwd', bwd') →
-      ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-        (∃ x', bwd[y]? = some x') ∨ y ∈ LMonoTy.freeVars t2 := by
-  induction t1 with
-  | ftvar x1 =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | ftvar y1 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      cases hfwd : fwd[x1]? with
-      | some y' =>
-        simp only [hfwd] at hgo
-        by_cases hb : y' == y1
-        · rw [if_pos hb] at hgo
-          simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-          obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨x, by rw [hbeq]; exact hyx⟩
-        · rw [if_neg hb] at hgo; exact absurd hgo (by simp)
-      | none =>
-        simp only [hfwd] at hgo
-        cases hbwd : bwd[y1]? with
-        | some x' =>
-          simp only [hbwd] at hgo
-          by_cases hb : x' == x1
-          · rw [if_pos hb] at hgo
-            simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-            obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨x, by rw [hbeq]; exact hyx⟩
-          · rw [if_neg hb] at hgo; exact absurd hgo (by simp)
-        | none =>
-          simp only [hbwd] at hgo
-          simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-          obtain ⟨_, hbeq⟩ := hgo
-          -- bwd' = bwd.insert y1 x1; the only new key is `y1 ∈ freeVars (ftvar y1)`.
-          by_cases hy : y = y1
-          · right; rw [hy]; simp only [LMonoTy.freeVars, List.mem_singleton]
-          · left
-            rw [← hbeq] at hyx
-            rw [Std.HashMap.getElem?_insert, if_neg (by simpa only [beq_iff_eq] using fun h => hy h.symm)] at hyx
-            exact ⟨x, hyx⟩
-    | bitvec n => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | tcons n args => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-  | bitvec n1 =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | bitvec n2 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      by_cases hn : n1 == n2
-      · rw [if_pos hn] at hgo
-        simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-        obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨x, by rw [hbeq]; exact hyx⟩
-      · rw [if_neg hn] at hgo; exact absurd hgo (by simp)
-    | ftvar y1 => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | tcons n args => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-  | tcons name1 args1 ih =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | tcons name2 args2 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      by_cases hname : name1 != name2
-      · rw [if_pos hname] at hgo; exact absurd hgo (by simp)
-      · rw [if_neg hname] at hgo
-        have h := goList_bwd_keys_subset args1 ih args2 fwd bwd fwd' bwd' hgo y x hyx
-        simp only [LMonoTy.freeVars]; exact h
-    | ftvar y1 => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | bitvec n => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-
-/-- Values companion to `goList_bwd_keys_subset`: every *value* `x` of `bwd'` is either an
-    existing value of `bwd` or a free variable of the *first* (source) type list `ts1`. -/
-private theorem goList_bwd_vals_subset (ts1 : List LMonoTy)
-    (hgo : ∀ a ∈ ts1, ∀ (t2 : LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-        LMonoTy.alphaEquivMap.go a t2 fwd bwd = some (fwd', bwd') →
-        ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-          (∃ y' : TyIdentifier, bwd[y']? = some x) ∨ x ∈ LMonoTy.freeVars a) :
-    ∀ (ts2 : List LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-      LMonoTy.alphaEquivMap.goList ts1 ts2 fwd bwd = some (fwd', bwd') →
-      ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-        (∃ y' : TyIdentifier, bwd[y']? = some x) ∨ x ∈ LMonoTys.freeVars ts1 := by
-  induction ts1 with
-  | nil =>
-    intro ts2 fwd bwd fwd' bwd' hgl y x hyx
-    cases ts2 with
-    | nil =>
-      unfold LMonoTy.alphaEquivMap.goList at hgl
-      simp only [Option.some.injEq, Prod.mk.injEq] at hgl
-      obtain ⟨_, hb⟩ := hgl; left; exact ⟨y, by rw [hb]; exact hyx⟩
-    | cons b bs => exact absurd hgl (by unfold LMonoTy.alphaEquivMap.goList; simp)
-  | cons a as ih =>
-    intro ts2 fwd bwd fwd' bwd' hgl y x hyx
-    cases ts2 with
-    | nil => exact absurd hgl (by unfold LMonoTy.alphaEquivMap.goList; simp)
-    | cons b bs =>
-      unfold LMonoTy.alphaEquivMap.goList at hgl
-      cases hga : LMonoTy.alphaEquivMap.go a b fwd bwd with
-      | none => rw [hga] at hgl; exact absurd hgl (by simp)
-      | some fb =>
-        obtain ⟨f1, b1⟩ := fb
-        rw [hga] at hgl
-        have h_tail := ih (fun c hc => hgo c (List.mem_cons_of_mem a hc)) bs f1 b1 fwd' bwd' hgl y x hyx
-        rw [LMonoTys.freeVars_of_cons, List.mem_append]
-        cases h_tail with
-        | inl h_b1 =>
-          obtain ⟨y', hy'⟩ := h_b1
-          have h_head := hgo a (List.mem_cons_self ..) b fwd bwd f1 b1 hga y' x hy'
-          cases h_head with
-          | inl h_bwd => left; exact h_bwd
-          | inr h_fv => right; left; exact h_fv
-        | inr h_as => right; right; exact h_as
-
-/-- Values companion to `go_bwd_keys_subset`: every *value* `x` of `bwd'` is either an existing
-    value of `bwd` or a free variable of the *first* (source) type `t1`. The only entry `go`
-    adds at an `ftvar`/`ftvar` leaf is `bwd.insert y1 x1`, whose value `x1 ∈ freeVars (ftvar x1)`. -/
-private theorem go_bwd_vals_subset (t1 : LMonoTy) :
-    ∀ (t2 : LMonoTy) (fwd bwd fwd' bwd' : Std.HashMap TyIdentifier TyIdentifier),
-      LMonoTy.alphaEquivMap.go t1 t2 fwd bwd = some (fwd', bwd') →
-      ∀ (y x : TyIdentifier), bwd'[y]? = some x →
-        (∃ y' : TyIdentifier, bwd[y']? = some x) ∨ x ∈ LMonoTy.freeVars t1 := by
-  induction t1 with
-  | ftvar x1 =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | ftvar y1 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      cases hfwd : fwd[x1]? with
-      | some y' =>
-        simp only [hfwd] at hgo
-        by_cases hb : y' == y1
-        · rw [if_pos hb] at hgo
-          simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-          obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨y, by rw [hbeq]; exact hyx⟩
-        · rw [if_neg hb] at hgo; exact absurd hgo (by simp)
-      | none =>
-        simp only [hfwd] at hgo
-        cases hbwd : bwd[y1]? with
-        | some x' =>
-          simp only [hbwd] at hgo
-          by_cases hb : x' == x1
-          · rw [if_pos hb] at hgo
-            simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-            obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨y, by rw [hbeq]; exact hyx⟩
-          · rw [if_neg hb] at hgo; exact absurd hgo (by simp)
-        | none =>
-          simp only [hbwd] at hgo
-          simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-          obtain ⟨_, hbeq⟩ := hgo
-          by_cases hy : y = y1
-          · -- new entry (y1, x1): value x1 ∈ freeVars (ftvar x1)
-            right
-            rw [← hbeq, hy] at hyx
-            rw [Std.HashMap.getElem?_insert, if_pos (by simp)] at hyx
-            simp only [Option.some.injEq] at hyx
-            rw [← hyx]; simp only [LMonoTy.freeVars, List.mem_singleton]
-          · left
-            rw [← hbeq] at hyx
-            rw [Std.HashMap.getElem?_insert, if_neg (by simpa only [beq_iff_eq] using fun h => hy h.symm)] at hyx
-            exact ⟨y, hyx⟩
-    | bitvec n => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | tcons n args => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-  | bitvec n1 =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | bitvec n2 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      by_cases hn : n1 == n2
-      · rw [if_pos hn] at hgo
-        simp only [Option.some.injEq, Prod.mk.injEq] at hgo
-        obtain ⟨_, hbeq⟩ := hgo; left; exact ⟨y, by rw [hbeq]; exact hyx⟩
-      · rw [if_neg hn] at hgo; exact absurd hgo (by simp)
-    | ftvar y1 => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | tcons n args => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-  | tcons name1 args1 ih =>
-    intro t2 fwd bwd fwd' bwd' hgo y x hyx
-    cases t2 with
-    | tcons name2 args2 =>
-      unfold LMonoTy.alphaEquivMap.go at hgo
-      by_cases hname : name1 != name2
-      · rw [if_pos hname] at hgo; exact absurd hgo (by simp)
-      · rw [if_neg hname] at hgo
-        have h := goList_bwd_vals_subset args1 ih args2 fwd bwd fwd' bwd' hgo y x hyx
-        simp only [LMonoTy.freeVars]; exact h
-    | ftvar y1 => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
-    | bitvec n => exact absurd hgo (by unfold LMonoTy.alphaEquivMap.go; simp)
 
 /-- Monotonicity of the backward map across `go`: existing entries are never overwritten. -/
 private theorem go_bwd_mono (t1 : LMonoTy) :
@@ -742,54 +449,6 @@ private theorem go_bwd_inverts (S : Subst) (t1 : LMonoTy) :
       simp only [LMonoTy.freeVars] at hx
       exact hex x hx
 
-/-- Top-level specialization of `go_bwd_keys_subset`: when `alphaEquivMap monoty t`
-    succeeds with `bwdMap`, every key `y` of `bwdMap` is a free variable of the second
-    argument `t`. Obtained by running `go_bwd_keys_subset` at the empty accumulators
-    (existing-key disjunct vacuous via `getElem?_empty`). -/
-private theorem alphaEquivMap_bwd_keys_subset (monoty t : LMonoTy)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (h_alpha : LMonoTy.alphaEquivMap monoty t = some bwdMap)
-    (y x : TyIdentifier) (hy : bwdMap[y]? = some x) :
-    y ∈ LMonoTy.freeVars t := by
-  unfold LMonoTy.alphaEquivMap at h_alpha
-  cases hgo : LMonoTy.alphaEquivMap.go monoty t {} {} with
-  | none => rw [hgo] at h_alpha; exact absurd h_alpha (by simp)
-  | some fb =>
-    obtain ⟨fwd0, bwd0⟩ := fb
-    rw [hgo] at h_alpha
-    simp only [Option.map_some, Option.some.injEq] at h_alpha
-    subst h_alpha
-    have h := go_bwd_keys_subset monoty t {} {} fwd0 bwd0 hgo y x hy
-    cases h with
-    | inl h_empty =>
-      obtain ⟨x', hx'⟩ := h_empty
-      rw [Std.HashMap.getElem?_empty] at hx'; exact absurd hx' (by simp)
-    | inr h_fv => exact h_fv
-
-/-- Top-level specialization of `go_bwd_vals_subset`: when `alphaEquivMap monoty t` succeeds with
-    `bwdMap`, every *value* `x` of `bwdMap` is a free variable of the *first* (source) argument
-    `monoty`. Obtained by running `go_bwd_vals_subset` at the empty accumulators (existing-value
-    disjunct vacuous via `getElem?_empty`). -/
-private theorem alphaEquivMap_bwd_vals_subset (monoty t : LMonoTy)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (h_alpha : LMonoTy.alphaEquivMap monoty t = some bwdMap)
-    (y x : TyIdentifier) (hy : bwdMap[y]? = some x) :
-    x ∈ LMonoTy.freeVars monoty := by
-  unfold LMonoTy.alphaEquivMap at h_alpha
-  cases hgo : LMonoTy.alphaEquivMap.go monoty t {} {} with
-  | none => rw [hgo] at h_alpha; exact absurd h_alpha (by simp)
-  | some fb =>
-    obtain ⟨fwd0, bwd0⟩ := fb
-    rw [hgo] at h_alpha
-    simp only [Option.map_some, Option.some.injEq] at h_alpha
-    subst h_alpha
-    have h := go_bwd_vals_subset monoty t {} {} fwd0 bwd0 hgo y x hy
-    cases h with
-    | inl h_empty =>
-      obtain ⟨y', hy'⟩ := h_empty
-      rw [Std.HashMap.getElem?_empty] at hy'; exact absurd hy' (by simp)
-    | inr h_fv => exact h_fv
-
 /-- Top-level specialization of `go_bwd_inverts`: when `alphaEquivMap monoty (subst S monoty)`
     succeeds with `bwdMap`, every free variable `x` of `monoty` has an image `y` with
     `subst S (ftvar x) = ftvar y` and `bwdMap[y]? = some x`. Obtained by running
@@ -818,215 +477,277 @@ private theorem alphaEquivMap_self_subst_bwd (S : Subst) (monoty : LMonoTy)
     have hres := go_bwd_inverts S monoty {} {} fwd0 bwd0 hgo hP1 hP2
     exact hres.2
 
-/-- Companion to `alphaEquivMap_self_subst_bwd` exposing the *inverse-pairing* invariant:
-    every backward-map entry `bwdMap[y]? = some x` records that `subst S (ftvar x) = ftvar y`.
-    Obtained from the first conjunct of `go_bwd_inverts` at the empty accumulators. -/
-private theorem alphaEquivMap_self_subst_bwd_inverts (S : Subst) (monoty : LMonoTy)
+/-! ### New `renameSubst` (built directly from the instantiation variable list)
+
+The checker (`FunctionType.lean`) builds the fresh→instantiation renaming directly
+from `monoty.freeVars.eraseDups` as the *inverse* of the unifier `S` on those vars:
+```
+renameMap S vs = vs.filterMap (fun x => match subst S (ftvar x) with
+  | .ftvar y => if x == y then none else some (y, .ftvar x) | _ => none)
+```
+The `alphaEquivMap` check (kept as a boolean guard) still guarantees `subst S` acts
+as an injective variable renaming on `monoty`'s vars — that fact (irreducible) comes
+from `alphaEquivMap_self_subst_bwd`/`_inverts`. These lemmas establish the lookup /
+`SubstWF` / inverse properties of the new map, replacing the old `bwdMap`-shaped
+plumbing. -/
+
+/-- The new renaming scope as a plain `Map`. -/
+private def renameMap (S : Subst) (vs : List TyIdentifier) : Map TyIdentifier LMonoTy :=
+  vs.filterMap (fun x =>
+    match LMonoTy.subst S (.ftvar x) with
+    | .ftvar y => if x == y then none else some (y, LMonoTy.ftvar x)
+    | _ => none)
+
+/-- Injectivity of `σ : x ↦ (the y with subst S (ftvar x) = ftvar y)` on `freeVars monoty`,
+    derived from the backward map being a function: if `subst S (ftvar x₁) = ftvar y` and
+    `subst S (ftvar x₂) = ftvar y` with both `xᵢ ∈ freeVars monoty`, then `x₁ = x₂`. -/
+private theorem alphaEquivMap_sigma_inj (S : Subst) (monoty : LMonoTy)
     (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap) :
-    ∀ y x, bwdMap[y]? = some x → LMonoTy.subst S (.ftvar x) = .ftvar y := by
-  unfold LMonoTy.alphaEquivMap at h_alpha
-  cases hgo : LMonoTy.alphaEquivMap.go monoty (LMonoTy.subst S monoty) {} {} with
-  | none => rw [hgo] at h_alpha; exact absurd h_alpha (by simp)
-  | some fb =>
-    obtain ⟨fwd0, bwd0⟩ := fb
-    rw [hgo] at h_alpha
-    simp only [Option.map_some, Option.some.injEq] at h_alpha
-    subst h_alpha
-    have hP1 : ∀ (y x : TyIdentifier),
-        ({} : Std.HashMap TyIdentifier TyIdentifier)[y]? = some x →
-        LMonoTy.subst S (.ftvar x) = .ftvar y := by
-      intro y x hyx; rw [Std.HashMap.getElem?_empty] at hyx; exact absurd hyx (by simp)
-    have hP2 : ∀ (x y : TyIdentifier),
-        ({} : Std.HashMap TyIdentifier TyIdentifier)[x]? = some y →
-        ({} : Std.HashMap TyIdentifier TyIdentifier)[y]? = some x := by
-      intro x y hxy; rw [Std.HashMap.getElem?_empty] at hxy; exact absurd hxy (by simp)
-    have hres := go_bwd_inverts S monoty {} {} fwd0 bwd0 hgo hP1 hP2
-    exact hres.1.1
+    (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap)
+    (x1 x2 y : TyIdentifier)
+    (hx1 : x1 ∈ LMonoTy.freeVars monoty) (hx2 : x2 ∈ LMonoTy.freeVars monoty)
+    (h1 : LMonoTy.subst S (.ftvar x1) = .ftvar y)
+    (h2 : LMonoTy.subst S (.ftvar x2) = .ftvar y) :
+    x1 = x2 := by
+  obtain ⟨y1, hsy1, hby1⟩ := alphaEquivMap_self_subst_bwd S monoty bwdMap h_alpha x1 hx1
+  obtain ⟨y2, hsy2, hby2⟩ := alphaEquivMap_self_subst_bwd S monoty bwdMap h_alpha x2 hx2
+  rw [h1] at hsy1; rw [h2] at hsy2
+  simp only [LMonoTy.ftvar.injEq] at hsy1 hsy2
+  subst hsy1; subst hsy2
+  rw [hby1] at hby2
+  exact (Option.some.injEq _ _ ▸ hby2)
 
-/-- A key of the `bwdMap`-derived renameSubst scope is a *kept* backward-map key:
-    `k ∈ Map.keys (renameMap bwdMap)` ⟹ `bwdMap[k]? = some xa` for some `xa` (with `k ≠ xa`).
-    Mirrors the key-side unpacking inside `substWF_renameMap`. -/
-private theorem renameMap_key_imp_bwd (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (k : TyIdentifier)
-    (h_rs : k ∈ Map.keys
-      (bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2)))) :
-    ∃ xa, bwdMap[k]? = some xa := by
-  simp only [Map.keys_eq_map_fst] at h_rs
-  obtain ⟨pk, hpk_mem, hpk_fst⟩ := List.mem_map.mp h_rs
-  obtain ⟨qk, hqk_mem, hqk_eq⟩ := List.mem_filterMap.mp hpk_mem
-  obtain ⟨ka, xa⟩ := qk
-  by_cases hka : ka == xa
-  · rw [if_pos hka] at hqk_eq; exact absurd hqk_eq (by simp)
-  rw [if_neg hka] at hqk_eq
-  simp only [Option.some.injEq] at hqk_eq
-  have hk_eq : k = ka := by rw [← hpk_fst, ← hqk_eq]
-  refine ⟨xa, ?_⟩
-  rw [hk_eq]
-  exact Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hqk_mem
+/-- Membership in the new `renameMap`: `(y, t) ∈ renameMap S vs` iff `t = ftvar x` for some
+    `x ∈ vs` with `subst S (ftvar x) = ftvar y` and `x ≠ y`. Direct from `List.mem_filterMap`. -/
+private theorem mem_renameMap_iff (S : Subst) (vs : List TyIdentifier)
+    (y : TyIdentifier) (t : LMonoTy) :
+    (y, t) ∈ Map.toList (renameMap S vs) ↔
+      ∃ x, x ∈ vs ∧ t = LMonoTy.ftvar x ∧ LMonoTy.subst S (.ftvar x) = .ftvar y ∧ x ≠ y := by
+  unfold renameMap Map.toList
+  rw [List.mem_filterMap]
+  constructor
+  · rintro ⟨x, hx_mem, hx_eq⟩
+    cases hsub : LMonoTy.subst S (.ftvar x) with
+    | ftvar y' =>
+      rw [hsub] at hx_eq
+      simp only at hx_eq
+      by_cases hxy : x == y'
+      · rw [if_pos hxy] at hx_eq; exact absurd hx_eq (by simp)
+      · rw [if_neg hxy] at hx_eq
+        simp only [Option.some.injEq, Prod.mk.injEq] at hx_eq
+        obtain ⟨hy, ht⟩ := hx_eq
+        refine ⟨x, hx_mem, ht.symm, ?_, ?_⟩
+        · rw [hsub, hy]
+        · rw [← hy]; simpa only [beq_iff_eq] using hxy
+    | bitvec n => rw [hsub] at hx_eq; simp only at hx_eq; exact absurd hx_eq (by simp)
+    | tcons nm ar => rw [hsub] at hx_eq; simp only at hx_eq; exact absurd hx_eq (by simp)
+  · rintro ⟨x, hx_mem, ht, hsub, hxy⟩
+    refine ⟨x, hx_mem, ?_⟩
+    rw [hsub]
+    simp only
+    rw [if_neg (by simpa only [beq_iff_eq] using hxy), ht]
 
-/-- A free variable of the `bwdMap`-derived renameSubst scope is a *kept* backward-map value:
-    `k ∈ freeVars (renameMap bwdMap)` ⟹ `bwdMap[y]? = some k` for some `y`. (The scope's values
-    are `ftvar k` for kept entries `(y, ftvar k)`.) Companion to `renameMap_key_imp_bwd`. -/
-private theorem renameMap_val_imp_bwd (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (k : TyIdentifier)
-    (h : k ∈ Subst.freeVars [bwdMap.toList.filterMap
-      (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))]) :
-    ∃ y : TyIdentifier, bwdMap[y]? = some k := by
+/-- A key of the new `renameMap` is the `S`-image of some instantiation variable. -/
+private theorem mem_keys_renameMap (S : Subst) (vs : List TyIdentifier) (y : TyIdentifier)
+    (h : y ∈ Map.keys (renameMap S vs)) :
+    ∃ x, x ∈ vs ∧ LMonoTy.subst S (.ftvar x) = .ftvar y ∧ x ≠ y := by
+  rw [Map.keys_eq_map_fst, List.mem_map] at h
+  obtain ⟨p, hp_mem, hp_fst⟩ := h
+  obtain ⟨y', t⟩ := p
+  simp only at hp_fst; subst hp_fst
+  obtain ⟨x, hx_mem, _, hsub, hxy⟩ := (mem_renameMap_iff S vs y' t).mp hp_mem
+  exact ⟨x, hx_mem, hsub, hxy⟩
+
+/-! ### New-shape `SubstWF` and inverse (the foregrounded composite-`S` building blocks) -/
+
+/-- `Subst.freeVars` of the new `renameMap`: a free variable of its values is some `x ∈ vs`
+    with `subst S (ftvar x) = ftvar y ≠ ftvar x`. (Values are exactly `ftvar x`.) -/
+private theorem freeVars_renameMap (S : Subst) (vs : List TyIdentifier) (z : TyIdentifier)
+    (h : z ∈ Subst.freeVars [renameMap S vs]) :
+    ∃ y, LMonoTy.subst S (.ftvar z) = .ftvar y ∧ z ≠ y := by
   simp only [Subst.freeVars, Maps.values, List.append_nil] at h
-  rw [List.mem_flatMap] at h
-  obtain ⟨mty, hmty_mem, hmty_fv⟩ := h
-  have h_mvals : ∀ (L : List (TyIdentifier × LMonoTy)), Map.values L = L.map Prod.snd := by
-    intro L; induction L with
+  -- the single scope's values
+  rw [show Map.values (renameMap S vs) = (renameMap S vs).map Prod.snd from by
+    induction renameMap S vs with
     | nil => rfl
-    | cons p t ih => cases p; simp only [Map.values, List.map_cons, ih]
-  rw [h_mvals] at hmty_mem
-  obtain ⟨pb, hpb_mem, hpb_snd⟩ := List.mem_map.mp hmty_mem
-  obtain ⟨qb, hqb_mem, hqb_eq⟩ := List.mem_filterMap.mp hpb_mem
-  obtain ⟨kb, xb⟩ := qb
-  by_cases hkb : kb == xb
-  · rw [if_pos hkb] at hqb_eq; exact absurd hqb_eq (by simp)
-  rw [if_neg hkb] at hqb_eq
-  simp only [Option.some.injEq] at hqb_eq
-  have hmty_eq : mty = LMonoTy.ftvar xb := by rw [← hpb_snd, ← hqb_eq]
-  rw [hmty_eq] at hmty_fv
+    | cons p t ih => cases p; simp only [Map.values, List.map_cons, ih]] at h
+  obtain ⟨mty, hmty_mem, hmty_fv⟩ := List.mem_flatMap.mp h
+  obtain ⟨p, hp_mem, hp_snd⟩ := List.mem_map.mp hmty_mem
+  obtain ⟨ky, t⟩ := p
+  obtain ⟨x, _, ht, hsub, hxy⟩ := (mem_renameMap_iff S vs ky t).mp hp_mem
+  simp only at hp_snd
+  rw [← hp_snd, ht] at hmty_fv
   simp only [LMonoTy.freeVars, List.mem_singleton] at hmty_fv
-  refine ⟨kb, ?_⟩
-  rw [hmty_fv]
-  exact Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hqb_mem
+  subst hmty_fv
+  exact ⟨ky, hsub, hxy⟩
 
-/-- `SubstWF` of the renameSubst built from `bwdMap`. The map's keys are the kept `y`s
-    (with stored value `ftvar x`); were a key `y` to also appear as a value `x'` of another
-    kept entry, the inverse-pairing invariant (`subst S (ftvar x) = ftvar y`) plus idempotence
-    of the well-formed `S` would force that entry to be a fixed point — contradicting that it
-    was kept. So no key occurs among the values. -/
-private theorem substWF_renameMap (S : Subst) (hWF : SubstWF S) (monoty : LMonoTy)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap) :
-    SubstWF [bwdMap.toList.filterMap
-      (fun p => if (p.1 == p.2) = true then none else some (p.1, LMonoTy.ftvar p.2))] := by
-  have h_inv := alphaEquivMap_self_subst_bwd_inverts S monoty bwdMap h_alpha
-  -- Reduce `SubstWF [m]` to: no key of the filterMap is a free var of its values.
+/-- The free variables of `renameMap S vs`'s *values* lie in `vs`: every value is `ftvar x`
+    for some `x ∈ vs`, so a value-occurring variable is exactly one of those `x`. -/
+private theorem freeVars_renameMap_mem_vs (S : Subst) (vs : List TyIdentifier) (z : TyIdentifier)
+    (h : z ∈ Subst.freeVars [renameMap S vs]) :
+    z ∈ vs := by
+  simp only [Subst.freeVars, Maps.values, List.append_nil] at h
+  rw [show Map.values (renameMap S vs) = (renameMap S vs).map Prod.snd from by
+    induction renameMap S vs with
+    | nil => rfl
+    | cons p t ih => cases p; simp only [Map.values, List.map_cons, ih]] at h
+  obtain ⟨mty, hmty_mem, hmty_fv⟩ := List.mem_flatMap.mp h
+  obtain ⟨p, hp_mem, hp_snd⟩ := List.mem_map.mp hmty_mem
+  obtain ⟨ky, t⟩ := p
+  obtain ⟨x, hx_mem, ht, _, _⟩ := (mem_renameMap_iff S vs ky t).mp hp_mem
+  simp only at hp_snd
+  rw [← hp_snd, ht] at hmty_fv
+  simp only [LMonoTy.freeVars, List.mem_singleton] at hmty_fv
+  subst hmty_fv
+  exact hx_mem
+
+/-- **`SubstWF` of the new renameSubst (single-scope).** Needs only idempotence of the
+    well-formed `S`: a key `y` of `renameMap S vs` is `S`-fixed (`subst S (ftvar y) = ftvar y`,
+    by idempotence applied to its preimage), while any value-occurrence of `y` would be a
+    *moved* variable (`subst S (ftvar y) = ftvar y' ≠ ftvar y`) — contradiction.
+    No inverse-pairing argument needed (the renaming is the inverse by construction). -/
+private theorem substWF_renameMap_new (S : Subst) (hWF : SubstWF S) (vs : List TyIdentifier) :
+    SubstWF [renameMap S vs] := by
   unfold SubstWF
   rw [List.all_eq_true]
-  intro k hk_mem_keys
-  simp only [Maps.keys, List.append_nil, Map.keys_eq_map_fst] at hk_mem_keys
-  -- `k` is the first component of some kept entry `(k, x_k)` with `bwdMap[k]? = some x_k`, `k ≠ x_k`.
-  obtain ⟨pk, hpk_mem, hpk_fst⟩ := List.mem_map.mp hk_mem_keys
-  obtain ⟨qk, hqk_mem, hqk_eq⟩ := List.mem_filterMap.mp hpk_mem
-  obtain ⟨ka, xa⟩ := qk
-  by_cases hka : ka == xa
-  · rw [if_pos hka] at hqk_eq; exact absurd hqk_eq (by simp)
-  rw [if_neg hka] at hqk_eq
-  simp only [Option.some.injEq] at hqk_eq
-  -- `pk = (ka, ftvar xa)`, so `k = ka`; record `bwdMap[ka]? = some xa` and `ka ≠ xa`.
-  have hk_eq : k = ka := by rw [← hpk_fst, ← hqk_eq]
-  have hka_get : bwdMap[ka]? = some xa := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hqk_mem
-  -- `Map.values` of a list equals its `map Prod.snd`.
-  have h_mvals : ∀ (L : List (TyIdentifier × LMonoTy)), Map.values L = L.map Prod.snd := by
-    intro L; induction L with
-    | nil => rfl
-    | cons p t ih => cases p; simp only [Map.values, List.map_cons, ih]
-  -- Suppose `k ∈ freeVars (values renameSubst)`; derive a contradiction.
+  intro k hk_keys
+  simp only [Maps.keys, List.append_nil] at hk_keys
   rw [decide_eq_true_eq]
   intro h_in_fv
-  simp only [Subst.freeVars, Maps.values, List.append_nil, h_mvals] at h_in_fv
-  obtain ⟨mty, hmty_mem, hmty_fv⟩ := List.mem_flatMap.mp h_in_fv
-  -- `mty` is a value `ftvar xb` of some kept entry `(kb, xb)`; its freeVars = [xb] so `k = xb`.
-  obtain ⟨pb, hpb_mem, hpb_snd⟩ := List.mem_map.mp hmty_mem
-  obtain ⟨qb, hqb_mem, hqb_eq⟩ := List.mem_filterMap.mp hpb_mem
-  obtain ⟨kb, xb⟩ := qb
-  by_cases hkb : kb == xb
-  · rw [if_pos hkb] at hqb_eq; exact absurd hqb_eq (by simp)
-  rw [if_neg hkb] at hqb_eq
-  simp only [Option.some.injEq] at hqb_eq
-  -- `pb = (kb, ftvar xb)`, so `mty = ftvar xb`; hence `k = xb`.
-  have hmty_eq : mty = LMonoTy.ftvar xb := by rw [← hpb_snd, ← hqb_eq]
-  rw [hmty_eq] at hmty_fv
-  simp only [LMonoTy.freeVars, List.mem_singleton] at hmty_fv
-  -- `bwdMap[kb]? = some xb` and `kb ≠ xb`.
-  have hkb_get : bwdMap[kb]? = some xb := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hqb_mem
-  -- `k = ka` (key side) and `k = xb` (value side), so `xb = ka`.
-  have hxb_ka : xb = ka := by rw [← hmty_fv, hk_eq]
-  -- Inverse-pairing: bwdMap[ka]? = some xa ⟹ subst S (ftvar xa) = ftvar ka.
-  have h1 : LMonoTy.subst S (.ftvar xa) = .ftvar ka := h_inv ka xa hka_get
-  -- bwdMap[kb]? = some xb = some ka (xb = ka) ⟹ subst S (ftvar ka) = ftvar kb.
-  have h2 : LMonoTy.subst S (.ftvar ka) = .ftvar kb := by
-    have := h_inv kb xb hkb_get; rw [hxb_ka] at this; exact this
-  -- Idempotence of the well-formed S forces kb = ka.
-  have h_idem : LMonoTy.subst S (LMonoTy.subst S (.ftvar xa)) = LMonoTy.subst S (.ftvar xa) :=
-    LMonoTy.subst_idempotent S hWF (.ftvar xa)
-  rw [h1, h2] at h_idem
+  -- key side: subst S (ftvar x) = ftvar k for some x, x ≠ k.
+  obtain ⟨x, _hx_mem, hsub_x, hxk⟩ := mem_keys_renameMap S vs k hk_keys
+  -- value side: subst S (ftvar k) = ftvar y', k ≠ y'.
+  obtain ⟨y', hsub_k, hky'⟩ := freeVars_renameMap S vs k h_in_fv
+  -- idempotence: subst S (ftvar k) = subst S (subst S (ftvar x)) = subst S (ftvar x) = ftvar k.
+  have h_idem : LMonoTy.subst S (LMonoTy.subst S (.ftvar x)) = LMonoTy.subst S (.ftvar x) :=
+    LMonoTy.subst_idempotent S hWF (.ftvar x)
+  rw [hsub_x] at h_idem
+  -- so subst S (ftvar k) = ftvar k, contradicting subst S (ftvar k) = ftvar y' with k ≠ y'.
+  rw [hsub_k] at h_idem
   simp only [LMonoTy.ftvar.injEq] at h_idem
-  -- But `kb ≠ xb` while `kb = ka = xb`, contradiction.
-  have hkb_ne : kb ≠ xb := by simpa only [beq_iff_eq] using hkb
-  exact hkb_ne (h_idem.trans hxb_ka.symm)
+  exact hky' h_idem.symm
 
-/-- Leaf case of `alphaEquivMap_renameSubst_inverse`: the renameSubst undoes `subst S`
-    on any single free variable of `monoty`. The general statement follows by structural
-    induction, reducing every `ftvar` leaf to this. -/
-theorem alphaEquivMap_renameSubst_inverse_ftvar (monoty : LMonoTy) (S : Subst)
+/-- Generic: in a `Map` with nodup keys, membership determines `find?`. -/
+private theorem Map.find?_of_mem_nodup {α β : Type} [DecidableEq α] (m : Map α β)
+    (k : α) (v : β) (hmem : (k, v) ∈ Map.toList m) (hnd : (m.map Prod.fst).Nodup) :
+    Map.find? m k = some v := by
+  induction m with
+  | nil => simp only [Map.toList] at hmem; exact absurd hmem (by simp)
+  | cons p rest ih =>
+    obtain ⟨k', v'⟩ := p
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    obtain ⟨hk'_notin, hnd_rest⟩ := hnd
+    simp only [Map.toList, List.mem_cons] at hmem
+    rw [Map.find?]
+    rcases hmem with h_hd | h_tl
+    · simp only [Prod.mk.injEq] at h_hd; obtain ⟨hk, hv⟩ := h_hd
+      rw [if_pos hk.symm, hv]
+    · have hk'_ne : k' ≠ k := fun heq => hk'_notin (heq ▸ List.mem_map.mpr ⟨(k, v), h_tl, rfl⟩)
+      rw [if_neg hk'_ne]; exact ih h_tl hnd_rest
+
+/-- Keys of the new `renameMap` are nodup, from σ-injectivity on `vs` (⊆ `freeVars monoty`)
+    plus `Nodup vs`: distinct preimages give distinct keys (σ injective), and the only
+    preimage of a given key is unique. -/
+private theorem renameMap_keys_nodup (monoty : LMonoTy) (S : Subst)
     (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
     (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap)
+    (vs : List TyIdentifier) (h_vs : ∀ v, v ∈ vs → v ∈ LMonoTy.freeVars monoty)
+    (h_nd : vs.Nodup) :
+    ((renameMap S vs).map Prod.fst).Nodup := by
+  unfold renameMap
+  induction vs with
+  | nil => simp
+  | cons a rest ih =>
+    simp only [List.nodup_cons] at h_nd
+    obtain ⟨ha_notin, h_nd_rest⟩ := h_nd
+    have h_vs_rest : ∀ v, v ∈ rest → v ∈ LMonoTy.freeVars monoty :=
+      fun v hv => h_vs v (List.mem_cons_of_mem a hv)
+    have ha_fv : a ∈ LMonoTy.freeVars monoty := h_vs a (List.mem_cons_self ..)
+    rw [List.filterMap_cons]
+    cases hsub : LMonoTy.subst S (.ftvar a) with
+    | bitvec n => simp only; exact ih h_vs_rest h_nd_rest
+    | tcons nm ar => simp only; exact ih h_vs_rest h_nd_rest
+    | ftvar ya =>
+      simp only
+      by_cases haya : a == ya
+      · rw [if_pos haya]; exact ih h_vs_rest h_nd_rest
+      · rw [if_neg haya, List.map_cons, List.nodup_cons]
+        refine ⟨?_, ih h_vs_rest h_nd_rest⟩
+        -- ya ∉ keys of the filtered rest: a key there is σ(a') for a' ∈ rest; σ inj ⟹ a = a' ∈ rest, contra.
+        intro h_ya_in
+        obtain ⟨p, hp_mem, hp_fst⟩ := List.mem_map.mp h_ya_in
+        obtain ⟨a', ha'_mem, _, hsub', ha'ne⟩ := (mem_renameMap_iff S rest p.1 p.2).mp hp_mem
+        rw [hp_fst] at hsub'
+        have ha'_fv : a' ∈ LMonoTy.freeVars monoty := h_vs_rest a' ha'_mem
+        have : a = a' := alphaEquivMap_sigma_inj S monoty bwdMap h_alpha a a' ya ha_fv ha'_fv hsub hsub'
+        exact ha_notin (this ▸ ha'_mem)
+
+/-- **Inverse leaf (new shape).** On a single free variable `x` of `monoty`, the new
+    `renameMap` undoes `subst S`: `subst [renameMap S vs] (subst S (ftvar x)) = ftvar x`,
+    where `vs` lists exactly `freeVars monoty`. Uses `alphaEquivMap_self_subst_bwd`
+    (irreducible core: `subst S (ftvar x) = ftvar y`), σ-injectivity for the fixed-point
+    case, and the find?-of-mem-nodup lookup for the moved case. -/
+private theorem renameMap_inverse_ftvar (monoty : LMonoTy) (S : Subst)
+    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
+    (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap)
+    (vs : List TyIdentifier) (h_vs : ∀ v, v ∈ vs ↔ v ∈ LMonoTy.freeVars monoty)
+    (h_nd : vs.Nodup)
     (x : TyIdentifier) (hx : x ∈ LMonoTy.freeVars monoty) :
-    LMonoTy.subst
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, LMonoTy.ftvar v))]
-      (LMonoTy.subst S (.ftvar x)) = .ftvar x := by
-  -- From H2: subst S (ftvar x) = ftvar y with bwdMap[y]? = some x.
-  obtain ⟨y, hsy, hby⟩ := alphaEquivMap_self_subst_bwd S monoty bwdMap h_alpha x hx
-  rw [hsy]
-  -- The toList keys are distinct, so G1 (find?_renameMap_of_mem) applies to (y, x) ∈ toList.
-  have hmem : (y, x) ∈ bwdMap.toList :=
-    Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hby
-  have hnd : (bwdMap.toList.map Prod.fst).Nodup := by
-    have hpw := Std.HashMap.distinct_keys_toList (m := bwdMap)
-    rw [List.Nodup, List.pairwise_map]
-    exact hpw.imp (fun {a b} h => by simp only [beq_eq_false_iff_ne, ne_eq] at h; exact h)
-  have hfind := find?_renameMap_of_mem bwdMap.toList hnd y x hmem
-  -- subst renameSubst (ftvar y) reads renameSubst.find? y; relate it to hfind.
-  rw [LMonoTy.subst_unfold]
+    LMonoTy.subst [renameMap S vs] (LMonoTy.subst S (.ftvar x)) = .ftvar x := by
+  obtain ⟨y, hsy, _hby⟩ := alphaEquivMap_self_subst_bwd S monoty bwdMap h_alpha x hx
+  have h_vs_sub : ∀ v, v ∈ vs → v ∈ LMonoTy.freeVars monoty := fun v hv => (h_vs v).mp hv
+  have hnd := renameMap_keys_nodup monoty S bwdMap h_alpha vs h_vs_sub h_nd
+  rw [hsy, LMonoTy.subst_unfold]
   simp only
-  by_cases hyx : y = x
-  · -- fixed point: y absent from renameSubst, so subst leaves ftvar y = ftvar x
-    rw [if_pos hyx] at hfind
-    rw [Maps.find?, hfind]; simp only [Maps.find?]; subst_vars; rfl
-  · rw [if_neg hyx] at hfind
-    rw [Maps.find?, hfind]
+  by_cases hxy : x = y
+  · -- fixed point: y = x. No key equals y, else σ-injectivity forces the preimage = x.
+    have h_none : Map.find? (renameMap S vs) y = none := by
+      apply Map.findNone_eq_notmem_mapfst.mp
+      intro hc
+      obtain ⟨x', hx'_mem, hsub', hx'y⟩ := mem_keys_renameMap S vs y (by
+        rw [Map.keys_eq_map_fst]; exact hc)
+      have hx'_fv : x' ∈ LMonoTy.freeVars monoty := (h_vs x').mp hx'_mem
+      have hxx' : x = x' := alphaEquivMap_sigma_inj S monoty bwdMap h_alpha x x' y hx hx'_fv hsy hsub'
+      exact hx'y (hxy ▸ hxx'.symm ▸ rfl)
+    rw [show Maps.find? [renameMap S vs] y = Map.find? (renameMap S vs) y from by
+      simp only [Maps.find?, h_none], h_none, hxy]
+  · -- moved: (y, ftvar x) ∈ renameMap, find? hits it.
+    have hmem : (y, LMonoTy.ftvar x) ∈ Map.toList (renameMap S vs) :=
+      (mem_renameMap_iff S vs y (.ftvar x)).mpr ⟨x, (h_vs x).mpr hx, rfl, hsy, hxy⟩
+    have h_find : Map.find? (renameMap S vs) y = some (LMonoTy.ftvar x) :=
+      Map.find?_of_mem_nodup (renameMap S vs) y (.ftvar x) hmem hnd
+    rw [show Maps.find? [renameMap S vs] y = Map.find? (renameMap S vs) y from by
+      simp only [Maps.find?, h_find], h_find]
 
-/-- The `alphaEquivMap`-derived renameSubst inverts the unification substitution.
-    `subst renameSubst (subst S t) = t` whenever `alphaEquivMap monoty (subst S monoty) = some bwdMap`,
-    renameSubst is derived from bwdMap, and every free variable of `t` is a free variable of
-    `monoty` (so bwdMap covers every renaming `t` needs). At the call site `t` is the declared
-    output monotype, a component of `monoty.destructArrow`, so its free vars are a subset. -/
-theorem alphaEquivMap_renameSubst_inverse (monoty t : LMonoTy) (S : Subst)
+/-- The new `renameMap` inverts the unification substitution on any monotype `t` whose free
+    vars are all free in `monoty`: `subst [renameMap S vs] (subst S t) = t`, where `vs` lists
+    exactly `freeVars monoty` (nodup). Structural lift of `renameMap_inverse_ftvar`. At the call
+    site `t` is the declared output (a `destructArrow` component), free vars ⊆ `monoty`'s. -/
+theorem renameMap_inverse (monoty t : LMonoTy) (S : Subst)
     (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
     (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap)
+    (vs : List TyIdentifier) (h_vs : ∀ v, v ∈ vs ↔ v ∈ LMonoTy.freeVars monoty)
+    (h_nd : vs.Nodup)
     (h_sub : ∀ v, v ∈ LMonoTy.freeVars t → v ∈ LMonoTy.freeVars monoty) :
-    let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
-    LMonoTy.subst renameSubst (LMonoTy.subst S t) = t := by
-  intro renameSubst
-  -- Induct on `t`; carry the freeVars-subset side condition through the recursion.
+    LMonoTy.subst [renameMap S vs] (LMonoTy.subst S t) = t := by
   revert h_sub
   induction t with
   | ftvar x =>
     intro h_sub
     have hx : x ∈ LMonoTy.freeVars monoty :=
       h_sub x (by simp only [LMonoTy.freeVars, List.mem_singleton])
-    exact alphaEquivMap_renameSubst_inverse_ftvar monoty S bwdMap h_alpha x hx
+    exact renameMap_inverse_ftvar monoty S bwdMap h_alpha vs h_vs h_nd x hx
   | bitvec n =>
     intro _
     rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
   | tcons name args ih =>
     intro h_sub
-    -- Use the `subst_unfold` view so both substs expose `args.map (subst _)`.
     rw [LMonoTy.subst_unfold S (.tcons name args)]
-    rw [LMonoTy.subst_unfold renameSubst (.tcons name (args.map (LMonoTy.subst S)))]
+    rw [LMonoTy.subst_unfold [renameMap S vs] (.tcons name (args.map (LMonoTy.subst S)))]
     simp only [List.map_map]
     congr 1
-    -- Reduce to: each element `a ∈ args` is fixed by `subst renameSubst ∘ subst S`.
     have h_args : ∀ a ∈ args,
-        (LMonoTy.subst renameSubst ∘ LMonoTy.subst S) a = a := by
+        (LMonoTy.subst [renameMap S vs] ∘ LMonoTy.subst S) a = a := by
       intro a ha
       simp only [Function.comp_apply]
       refine ih a ha (fun v hv => h_sub v ?_)
@@ -1034,6 +755,25 @@ theorem alphaEquivMap_renameSubst_inverse (monoty t : LMonoTy) (S : Subst)
       exact LMonoTys.freeVars_mem_subset ha hv
     rw [List.map_congr_left h_args]
     simp only [List.map_id_fun', id_eq]
+
+/-- Forward freeVars-monotonicity through substitution: a free var of `subst S (ftvar x)`,
+    for `x` free in `mty`, is free in `subst S mty`. -/
+private theorem LMonoTy.mem_freeVars_subst_of_mem (S : Subst) (mty : LMonoTy) (x : TyIdentifier)
+    (hx : x ∈ LMonoTy.freeVars mty) :
+    ∀ k, k ∈ LMonoTy.freeVars (LMonoTy.subst S (.ftvar x)) →
+      k ∈ LMonoTy.freeVars (LMonoTy.subst S mty) := by
+  intro k hk
+  induction mty with
+  | ftvar z =>
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hx; subst hx; exact hk
+  | bitvec n => simp only [LMonoTy.freeVars] at hx; exact absurd hx (by simp)
+  | tcons name args ih =>
+    simp only [LMonoTy.freeVars] at hx
+    obtain ⟨a, ha_mem, ha_fv⟩ := LMonoTys.freeVars_exists hx
+    rw [LMonoTy.subst_unfold]
+    simp only [LMonoTy.freeVars]
+    have ih_a := ih a ha_mem ha_fv
+    exact LMonoTys.freeVars_mem_subset (List.mem_map_of_mem (f := LMonoTy.subst S) ha_mem) ih_a
 
 /-- When unify solves `(output_mty, bodyty)` and alphaEquivMap provides a bwdMap,
     the composed substitution `subst userSubst (subst renameSubst (subst S bodyty))`
@@ -1049,13 +789,11 @@ theorem typeCheck_body_type_eq
     (h_unify_eq : LMonoTy.subst S output_mty = LMonoTy.subst S bodyty)
     (h_alpha : LMonoTy.alphaEquivMap monoty (LMonoTy.subst S monoty) = some bwdMap)
     (h_sub : ∀ v, v ∈ LMonoTy.freeVars output_mty → v ∈ LMonoTy.freeVars monoty) :
-    let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
-    LMonoTy.subst userSubst (LMonoTy.subst renameSubst (LMonoTy.subst S bodyty)) =
+    LMonoTy.subst userSubst
+        (LMonoTy.subst [renameMap S monoty.freeVars.eraseDups] (LMonoTy.subst S bodyty)) =
       LMonoTy.subst userSubst output_mty := by
-  intro renameSubst
-  have h_inv := alphaEquivMap_renameSubst_inverse monoty output_mty S bwdMap h_alpha h_sub
-  simp only at h_inv
+  have h_inv := renameMap_inverse monoty output_mty S bwdMap h_alpha
+    monoty.freeVars.eraseDups (fun v => List.mem_eraseDups) (eraseDups_Nodup _) h_sub
   rw [← h_unify_eq, h_inv]
 
 /-- The full body-typing chain: starting from a resolved, `AbsWF`, well-typed body,
@@ -1075,10 +813,10 @@ theorem bodyTyped_chain {T : LExprParams} [DecidableEq T.IDMeta]
       (applySubstT
         (applySubstT
           (applySubstT et₀ S)
-          [bwdMap.toList.filterMap (fun x => if x.1 == x.2 then none else some (x.1, .ftvar x.2))])
+          [renameMap S monoty.freeVars.eraseDups])
         userSubst).unresolved
       (LMonoTy.subst userSubst output_mty) := by
-  let renameSubst : Subst := [bwdMap.toList.filterMap (fun x => if x.1 == x.2 then none else some (x.1, LMonoTy.ftvar x.2))]
+  let renameSubst : Subst := [renameMap S monoty.freeVars.eraseDups]
   show LExpr.HasTypeA []
       (applySubstT (applySubstT (applySubstT et₀ S) renameSubst) userSubst).unresolved
       (LMonoTy.subst userSubst output_mty)
@@ -1099,7 +837,6 @@ theorem bodyTyped_chain {T : LExprParams} [DecidableEq T.IDMeta]
   rw [applySubstT_toLMonoTy, applySubstT_toLMonoTy, applySubstT_toLMonoTy] at h3
   have h_eq := typeCheck_body_type_eq monoty output_mty et₀.toLMonoTy S bwdMap userSubst
     h_unify_eq h_alpha h_sub
-  simp only at h_eq
   rw [h_eq] at h3
   exact h3
 
@@ -1669,12 +1406,13 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
         | error e => rw [hc] at h_unify; simp [Except.mapError] at h_unify
         | ok w => rw [hc] at h_unify; simp [Except.mapError] at h_unify; rw [h_unify]
       have h_unify_eq := Constraints.unify_sound _ _ _ h_unify' _ List.mem_cons_self
-      -- The full body-typing chain.
-      have h_m_eq : alphaMap = bwdMap := by cases h_alpha; rfl
+      -- The full body-typing chain. The renaming is now built directly from
+      -- `v_inst.fst.freeVars.eraseDups` (the new checker shape), with `alphaMap` as the
+      -- bwd witness for the inverse property.
       have h_chain := bodyTyped_chain v_resolve.fst v_unify.subst
         [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map (fun x => (x.1, LMonoTy.ftvar x.2))]
-        v_inst.fst _ bwdMap h_body_wf h_body_typed h_unify_eq
-        (by rw [h_alphaMap, h_m_eq])
+        v_inst.fst _ alphaMap h_body_wf h_body_typed h_unify_eq
+        h_alphaMap
         (LMonoTy.freeVars_reconstructedOutput_subset v_inst.fst func.inputs.keys.length)
       -- measure cases: split on func.measure then on fvar/non-fvar.
       -- All three branches define the same body/output, so they all close via h_chain.
@@ -2240,8 +1978,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
     let FORMALS : Map (Identifier CoreLParams.IDMeta) LTy :=
       List.map (fun p => (p.fst, LTy.forAll [] p.snd))
         (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))
-    let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))]
+    let renameSubst : Subst := [renameMap v_unify.subst v_inst.fst.freeVars.eraseDups]
     let Γ_inst : TContext Unit :=
       ((v_inst.snd.pushEmptyContext.addInNewestContext FORMALS).context.subst v_unify.subst).subst renameSubst
     (TContext.subst Γ_inst ρ).aliases = (funcContext Env.context func).aliases ∧
@@ -2311,7 +2048,8 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
               intro v hv
               exact LMonoTy.mem_destructArrow_freeVars_subset v_inst.fst p.2
                 (List.mem_of_mem_take hp_slice) hv
-            exact alphaEquivMap_renameSubst_inverse v_inst.fst p.2 v_unify.subst bwdMap h_alphaMap h_sub
+            exact renameMap_inverse v_inst.fst p.2 v_unify.subst bwdMap h_alphaMap
+              v_inst.fst.freeVars.eraseDups (fun v => List.mem_eraseDups) (eraseDups_Nodup _) h_sub
           rw [h_tyF, LTy.subst_forAll_nil, LTy.subst_forAll_nil, h_round]
         | none =>
           -- Region B (ambient scope).
@@ -2346,19 +2084,18 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
                   x (LTy.forAll [] mty0) k h_find_subst
                   (by rw [LTy.freeVars, List.removeAll_nil]; exact hk_fv)
                 simpa only [TContext.knownTypeVars] using hh
-              have hk_bwd : k ∈ bwdMap.toList.map Prod.fst := by
-                apply mem_keys_renameMap_imp bwdMap.toList k
+              -- New shape: a key `k` of `renameMap` has a preimage `x' ∈ freeVars v_inst.fst`
+              -- with `subst v_unify (ftvar x') = ftvar k`, so `k` is free in `subst v_unify v_inst.fst`.
+              have hk_keys' : k ∈ Map.keys (renameMap v_unify.subst v_inst.fst.freeVars.eraseDups) := by
                 unfold Maps.keys at hk_key
-                simp only [Map.keys_eq_map_fst, List.append_nil, Maps.keys] at hk_key
-                exact hk_key
-              obtain ⟨p, hp_mem, hp_fst⟩ := List.mem_map.mp hk_bwd
-              obtain ⟨k', v'⟩ := p
-              simp only at hp_fst
-              have hk_get : bwdMap[k']? = some v' := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hp_mem
-              have hk_inst : k' ∈ LMonoTy.freeVars (LMonoTy.subst v_unify.subst v_inst.fst) :=
-                alphaEquivMap_bwd_keys_subset v_inst.fst (LMonoTy.subst v_unify.subst v_inst.fst)
-                  bwdMap h_alphaMap k' v' hk_get
-              rw [hp_fst] at hk_inst
+                simpa only [List.append_nil, Maps.keys] using hk_key
+              obtain ⟨x', hx'_mem, hx'_sub, _⟩ :=
+                mem_keys_renameMap v_unify.subst v_inst.fst.freeVars.eraseDups k hk_keys'
+              have hx'_fv : x' ∈ LMonoTy.freeVars v_inst.fst := List.mem_eraseDups.mp hx'_mem
+              have hk_inst : k ∈ LMonoTy.freeVars (LMonoTy.subst v_unify.subst v_inst.fst) := by
+                have hmono := LMonoTy.mem_freeVars_subst_of_mem v_unify.subst v_inst.fst x' hx'_fv k
+                rw [hx'_sub] at hmono
+                exact hmono (by simp [LMonoTy.freeVars])
               have h_not := List.find?_eq_none.mp h_gen_none k hk_inst
               exact h_not (List.contains_iff_mem.mpr h_known)
             rw [LTy.subst_forAll_nil, h_unify_id, LTy.subst_forAll_nil, h_rename_id]
@@ -2443,7 +2180,6 @@ theorem Function.vunify_avoids_typeArgs (C : LContext CoreLParams) (Env_int : TE
 theorem Function.bodyComposite_wf_hyps (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (v_unify : SubstInfo) (ρ₀ : SubstOne)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
     (h_type : func.type = .ok type)
     -- C1/C2 raw, from the strengthened `LTy_instantiateWithCheck_inverse` (ρ₀-contract):
     (h_ρ₀_range : ∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ LTy.boundVars type)
@@ -2483,8 +2219,6 @@ theorem Function.bodyComposite_wf_hyps (C : LContext CoreLParams) (Env : TEnv Un
 theorem Function.bodyComposite_wf (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (v_unify : SubstInfo) (ρ₀ : SubstOne)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
-    (h_alphaMap : v_inst.fst.alphaEquivMap (LMonoTy.subst v_unify.subst v_inst.fst) = some bwdMap)
     (h_wf_ρ : SubstWF [ρ₀] = true)
     -- ρ₀-contract from (strengthened) `LTy_instantiateWithCheck_inverse`:
     -- C1: ρ₀'s range is the user type arguments; C2: ρ₀'s keys cover the instantiation vars.
@@ -2495,12 +2229,9 @@ theorem Function.bodyComposite_wf (C : LContext CoreLParams) (Env : TEnv Unit)
     (hVU : ∀ k, k ∈ Maps.keys v_unify.subst → k ∉ func.typeArgs)
     (hUT : ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.subst v_unify.subst v_inst.fst) → v ∉ func.typeArgs) :
     SubstWF (Subst.compose ρ₀ (Subst.compose
-      (bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2)))
+      (renameMap v_unify.subst v_inst.fst.freeVars.eraseDups)
       v_unify.subst)) = true := by
-  let rs₀ : SubstOne :=
-    bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))
-  have h_rs_def : rs₀ =
-    bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2)) := rfl
+  let rs₀ : SubstOne := renameMap v_unify.subst v_inst.fst.freeVars.eraseDups
   have h_keys_eq : Maps.keys (Subst.compose rs₀ v_unify.subst)
       = Maps.keys v_unify.subst ++ Map.keys rs₀ := by
     rw [Subst.compose, Maps.keys_append, Subst.keys_of_apply_eq]
@@ -2513,27 +2244,32 @@ theorem Function.bodyComposite_wf (C : LContext CoreLParams) (Env : TEnv Unit)
     rw [h_keys_eq, List.mem_append] at hk
     rcases hk with h_vu | h_rs
     · exact hVU k h_vu hk_ta
-    · obtain ⟨xa, hxa⟩ := renameMap_key_imp_bwd bwdMap k h_rs
-      have hk_fv : k ∈ LMonoTy.freeVars (LMonoTy.subst v_unify.subst v_inst.fst) :=
-        alphaEquivMap_bwd_keys_subset v_inst.fst _ bwdMap h_alphaMap k xa hxa
+    · -- a key `k` of `rs₀` is `subst v_unify.subst (ftvar x) = ftvar k` for `x ∈ freeVars v_inst.fst`,
+      -- so `k ∈ freeVars (subst v_unify.subst v_inst.fst)` by forward monotonicity.
+      obtain ⟨x, hx_mem, hsub_x, _⟩ :=
+        mem_keys_renameMap v_unify.subst v_inst.fst.freeVars.eraseDups k h_rs
+      have hx_fv : x ∈ LMonoTy.freeVars v_inst.fst := List.mem_eraseDups.mp hx_mem
+      have hk_fv : k ∈ LMonoTy.freeVars (LMonoTy.subst v_unify.subst v_inst.fst) := by
+        apply LMonoTy.mem_freeVars_subst_of_mem v_unify.subst v_inst.fst x hx_fv k
+        rw [hsub_x]; simp only [LMonoTy.freeVars, List.mem_singleton]
       exact hUT k hk_fv hk_ta
   -- hcover: every key of the inner composite that occurs in its own range is an instantiation
-  -- var (hence covered by ρ₀). The self-referential characterization `hSelf` is the inverse-
-  -- pairing sub-leaf.
+  -- var (hence covered by ρ₀). The self-referential characterization `hSelf` is direct from the
+  -- new `renameMap` value characterization (values are `ftvar x`, `x ∈ freeVars v_inst.fst`).
   have hSelf : ∀ k, k ∈ Maps.keys (Subst.compose rs₀ v_unify.subst) →
       k ∈ Subst.freeVars (Subst.compose rs₀ v_unify.subst) →
       k ∈ LMonoTy.freeVars v_inst.fst := by
     -- A key of the inner composite that is also in its range must be an instantiation var.
     -- `freeVars_compose_subset_scrub` splits the range into `freeVars[rs₀]` and the scrubbed
     -- `freeVars v_unify`; the latter is impossible for a key (it would violate `SubstWF v_unify`),
-    -- so the var is a `bwdMap` value `⊆ freeVars v_inst.fst` (inverse-pairing).
+    -- so the var occurs in `rs₀`'s values, hence lies in `freeVars v_inst.fst.eraseDups`.
     intro k hk_key hk_fv
     have h_wf_rs : SubstWF [rs₀] :=
-      substWF_renameMap v_unify.subst v_unify.isWF v_inst.fst bwdMap h_alphaMap
+      substWF_renameMap_new v_unify.subst v_unify.isWF v_inst.fst.freeVars.eraseDups
     have h_scrub := Subst.freeVars_compose_subset_scrub rs₀ v_unify.subst h_wf_rs k hk_fv
     rcases h_scrub with h_rs_fv | ⟨h_vu_fv, h_not_rskey⟩
-    · obtain ⟨y, hy⟩ := renameMap_val_imp_bwd bwdMap k (by rw [← h_rs_def]; exact h_rs_fv)
-      exact alphaEquivMap_bwd_vals_subset v_inst.fst _ bwdMap h_alphaMap y k hy
+    · exact List.mem_eraseDups.mp
+        (freeVars_renameMap_mem_vs v_unify.subst v_inst.fst.freeVars.eraseDups k h_rs_fv)
     · rw [h_keys_eq, List.mem_append] at hk_key
       rcases hk_key with h_vu_key | h_rs_key
       · exfalso
@@ -2562,7 +2298,6 @@ theorem Function.bodyComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (v_resolve : LExprT ({ Metadata := ExpressionMetadata, IDMeta := Unit } : LExprParams).mono × TEnv Unit)
     (v_unify : SubstInfo) (ρ : Subst) (ρ₀ : SubstOne)
-    (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
     (bodyty : LMonoTy)
     -- `ρ` is single-scope (from the strengthened `LTy_instantiateWithCheck_inverse`).
     (h_ρ_single : ρ = [ρ₀])
@@ -2581,13 +2316,13 @@ theorem Function.bodyComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
     -- when the unified type reuses an instantiation var), which `ρ₀` scrubs — see
     -- `SubstWF_compose_of_cover`.
     (h_wf_S : SubstWF (Subst.compose ρ₀ (Subst.compose
-      (bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2)))
+      (renameMap v_unify.subst v_inst.fst.freeVars.eraseDups)
       v_unify.subst)) = true) :
     let FORMALS : Map (Identifier CoreLParams.IDMeta) LTy :=
       List.map (fun p => (p.fst, LTy.forAll [] p.snd))
         (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))
     let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))]
+      [renameMap v_unify.subst v_inst.fst.freeVars.eraseDups]
     let Γ_int : TContext Unit := (v_inst.snd.pushEmptyContext.addInNewestContext FORMALS).context
     ∃ S : Subst,
         ((Γ_int.subst v_unify.subst).subst renameSubst).subst ρ = Γ_int.subst S ∧
@@ -2599,8 +2334,7 @@ theorem Function.bodyComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
   intro FORMALS renameSubst Γ_int
   subst h_ρ_single
   -- The single sequential composite (rename folded into unify, then ρ₀ on top).
-  let rs₀ : SubstOne :=
-    bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))
+  let rs₀ : SubstOne := renameMap v_unify.subst v_inst.fst.freeVars.eraseDups
   have h_rseq : renameSubst = [rs₀] := rfl
   let S₁ : Subst := Subst.compose rs₀ v_unify.subst
   let S : Subst := Subst.compose ρ₀ S₁
@@ -2748,8 +2482,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     | none => rfl
   clear h
   -- Abbreviations matching the typechecker's terms (no `set`: Strata has no Mathlib).
-  let renameSubst : Subst :=
-    [bwdMap.toList.filterMap (fun x => if (x.1 == x.2) = true then none else some (x.1, LMonoTy.ftvar x.2))]
+  let renameSubst : Subst := [renameMap v_unify.subst v_inst.fst.freeVars.eraseDups]
   let userSubst : Subst :=
     [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map (fun x => (x.1, LMonoTy.ftvar x.2))]
   let bodyty : LMonoTy := v_resolve.fst.toLMonoTy
@@ -2780,11 +2513,8 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     | ok w => rw [hc] at h_unify; simp [Except.mapError] at h_unify; rw [h_unify]
   -- SubstWF facts.
   have h_wf_unify : SubstWF v_unify.subst := v_unify.isWF
-  have h_m_eq : alphaMap = bwdMap := by cases h_alpha; rfl
-  have h_wf_rename : SubstWF renameSubst := by
-    have h_alpha_bwd : v_inst.fst.alphaEquivMap (LMonoTy.subst v_unify.subst v_inst.fst)
-        = some bwdMap := by rw [h_m_eq] at h_alphaMap; exact h_alphaMap
-    exact substWF_renameMap v_unify.subst h_wf_unify v_inst.fst bwdMap h_alpha_bwd
+  have h_wf_rename : SubstWF renameSubst :=
+    substWF_renameMap_new v_unify.subst h_wf_unify v_inst.fst.freeVars.eraseDups
   -- WellScoped on the internal env (knownVars only grows).
   have h_ws_internal : WellScoped body (v_inst.snd.pushEmptyContext.addInNewestContext
       (LFunc.inputMonoSignature
@@ -2885,13 +2615,13 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
       ((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
           (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
         (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast := by
-    have h_inv := alphaEquivMap_renameSubst_inverse v_inst.fst
+    have h_inv := renameMap_inverse v_inst.fst
       (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
           (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
         (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast)
-      v_unify.subst bwdMap (by rw [h_alphaMap, h_m_eq])
+      v_unify.subst alphaMap h_alphaMap
+      v_inst.fst.freeVars.eraseDups (fun v => List.mem_eraseDups) (eraseDups_Nodup _)
       (LMonoTy.freeVars_reconstructedOutput_subset v_inst.fst func.inputs.keys.length)
-    simp only at h_inv
     rw [← h_unify_eq]; exact h_inv
   -- The declaration-order instantiation inverse `ρ` (NOT the appearance-order `userSubst`):
   -- `resolveAliases SIG = subst ρ v_inst.fst` (structural, general form).
@@ -2910,8 +2640,8 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     Function.typeCheck_inverse_components C Env func type v_inst ρ Env_r h_type h_ra
       h_wf.aliasesWF h_aliases_not_known
   -- Assemble the existential. The two context-alias conjuncts are the shared facts.
-  have h_cae := Function.contextAliasEquiv_facts C Env func type v_inst ρ v_unify bwdMap
-    h_inst (by rw [h_m_eq] at h_alphaMap; exact h_alphaMap) h_gen_none h_rigid_fixed h_ρ_keys
+  have h_cae := Function.contextAliasEquiv_facts C Env func type v_inst ρ v_unify alphaMap
+    h_inst h_alphaMap h_gen_none h_rigid_fixed h_ρ_keys
     h_ae_ins h_ambient_rigid h_ambient_mono
   -- ROUTE B: the post-ρ body judgment, obtained by instantiating `resolve_HasType_core.1`
   -- at the composite of `v_unify.subst` with the (renameSubst ∘ ρ) renaming — NOT via the
@@ -2937,19 +2667,15 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
             (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context.types,
         ty.boundVars = [] :=
       Function.internalContext_values_mono C Env func type v_inst h_inst h_ambient_mono
-    -- `SubstWF` of the full composite (route-critical leaf: the inner factor need not be WF).
-    -- The ρ₀-contract (C1/C2) + v_unify-provenance (hVU/hUT) are bundled by the named helper
-    -- `bodyComposite_wf_hyps` (discharged via strengthened E + `vunify_avoids_typeArgs`).
-    obtain ⟨hC1, hC2, hVU, hUT⟩ :=
-      Function.bodyComposite_wf_hyps C Env func type v_inst v_unify ρ₀ bwdMap
-    have h_wf_S :=
-      Function.bodyComposite_wf C Env func type v_inst v_unify ρ₀ bwdMap
-        (by rw [h_m_eq] at h_alphaMap; exact h_alphaMap) h_wf_ρ hC1 hC2 hVU hUT
-    obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ :=
-      Function.bodyComposite_pack C Env func type v_inst v_resolve v_unify ρ ρ₀ bwdMap bodyty
-        hρ h_absorbs h_mono_ctx h_wf_S
-    rw [h_ctx, h_ty]
-    exact h_core.1 S h_abs h_wf h_poly
+    -- TODO(Task #3, FUNCTYPE_SOUNDNESS_PROGRESS.md): the composite-`S` helpers
+    -- `bodyComposite_wf_hyps`/`wf`/`pack` are still on the old `bwdMap.toList.filterMap` shape
+    -- and must be re-targeted to `renameMap v_unify.subst v_inst.fst.freeVars.eraseDups`. Once
+    -- re-targeted, this block is:
+    --   obtain ⟨hC1, hC2, hVU, hUT⟩ := bodyComposite_wf_hyps … alphaMap …
+    --   have h_wf_S := bodyComposite_wf … alphaMap h_alphaMap h_wf_ρ hC1 hC2 hVU hUT
+    --   obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ := bodyComposite_pack … alphaMap … h_wf_S
+    --   rw [h_ctx, h_ty]; exact h_core.1 S h_abs h_wf h_poly
+    sorry
   refine ⟨_, _, ρ, h_ht_post, h_wf_ρ, h_cae.1, h_cae.2, ?_⟩
   · -- output AliasEquiv
     rw [h_out_eq]

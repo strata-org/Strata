@@ -91,8 +91,14 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- the body cannot force a=int. This is appropriate for an IR where
     -- the user can give annotations as needed.
     let inferredTy := LMonoTy.subst S.subst monoty
-    let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
-      | some m => pure m
+    -- Reject check: the body must not over-constrain the polymorphic signature.
+    -- `alphaEquivMap` succeeds iff `S.subst` acts as a bijective variable renaming on
+    -- `monoty`'s type variables (anything else — e.g. pinning a parameter to a concrete
+    -- type — fails the match). We only consume the success bit here; the renaming itself
+    -- is reconstructed directly from `S.subst` below, as its inverse on `monoty`'s fresh
+    -- instantiation variables.
+    match LMonoTy.alphaEquivMap monoty inferredTy with
+      | some _ => pure ()
       | none =>
         let displayInferred := LMonoTy.subst userSubst inferredTy
         let displayMono := LMonoTy.subst userSubst monoty
@@ -121,12 +127,20 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 context and cannot be generalized; the body pins a declared type \
                 parameter to an ambient type"
     | none => pure ()
-    -- Apply S to the body, then rename type variables to match the
-    -- instantiated typeArgs so that body annotations are consistent.
+    -- Apply S to the body, then rename type variables back to the instantiation
+    -- variables so that body annotations are consistent. The `alphaEquivMap` check
+    -- above guarantees `S.subst` acts as a bijective renaming on `monoty`'s type
+    -- variables, so the renaming is exactly the *inverse* of `S.subst` on those
+    -- variables: each instantiation var `x` is sent by `S.subst` to some `ftvar y`,
+    -- and we map `y ↦ ftvar x` (dropping identity entries `x = y`). Building it
+    -- directly from the instantiation's own variable list `monoty.freeVars.eraseDups`
+    -- makes this inverse definitional, rather than recovering it from `alphaEquivMap`.
     let bodya := LExpr.applySubstT bodya S.subst
-    -- Identity entries are no-ops: bijectivity of bwdMap ensures no other key maps to k.
     let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
+      [monoty.freeVars.eraseDups.filterMap (fun x =>
+        match LMonoTy.subst S.subst (.ftvar x) with
+        | .ftvar y => if x == y then none else some (y, .ftvar x)
+        | _ => none)]
     let bodya := LExpr.applySubstT bodya renameSubst
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck
