@@ -1156,8 +1156,10 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
 
 /-- Render a `Core.Statement` to a format object using the DDM pretty-printer. -/
 def Core.formatStatement (stmt : Core.Statement)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (cst, finalCtx) := stmtToCST stmt initCtx
   formatWithDDM finalCtx fun ctx state =>
@@ -1165,8 +1167,10 @@ def Core.formatStatement (stmt : Core.Statement)
 
 /-- Render a `Core.Procedure` to a format object using the DDM pretty-printer. -/
 def Core.formatProcedure (proc : Core.Procedure)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (cst, finalCtx) := (procToCST proc) initCtx
   formatWithDDM finalCtx fun ctx state =>
@@ -1174,8 +1178,9 @@ def Core.formatProcedure (proc : Core.Procedure)
 
 /-- Render a `Core.Command` (`CmdExt Expression`) to a format object using the DDM pretty-printer. -/
 def Core.formatCommand (cmd : Core.Command)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
-  Core.formatStatement (.cmd cmd) extraFreeVars
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
+  Core.formatStatement (.cmd cmd) extraFreeVars annFilter
 
 /-- Format a single `Core.Expression.Expr` using the DDM pretty-printer. -/
 instance instCoreExprFormat : Std.ToFormat Expression.Expr where
