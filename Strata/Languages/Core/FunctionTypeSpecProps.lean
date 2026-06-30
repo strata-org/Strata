@@ -2382,6 +2382,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
     (h_ws : ∀ body, func.body = some body → WellScoped body Env.context)
     -- TODO(preservation): every context alias name is a non-reserved (non-knownType) name.
     -- This is enforced by `TEnv.addTypeAlias` (LExprTypeEnv:1348, which rejects type decls whose
@@ -2694,8 +2695,10 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     have h_resolved_int : TContext.AliasesResolved
         (v_inst.snd.pushEmptyContext.addInNewestContext
           (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
-            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context := by
-      sorry
+            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context :=
+      (typeCheck_internalEnv_wf type C Env v_inst.fst v_inst.snd
+        (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))
+        (by rw [Prod.eta]; exact h_inst) h_wf h_resolved h_pairs_sig).2
     -- `v_unify` avoids `func.typeArgs` on keys and range.
     obtain ⟨hVU, hVUr⟩ := Function.vunify_avoids_typeArgs C
       (v_inst.snd.pushEmptyContext.addInNewestContext
@@ -2731,6 +2734,7 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
     (h_ws : ∀ body, func.body = some body → WellScoped body Env.context)
     -- TODO(preservation): see `typeCheck_bodyTyped_instantiated`. Context alias names are
     -- non-reserved (enforced by `TEnv.addTypeAlias`); to be discharged as a preserved invariant.
@@ -2752,7 +2756,7 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
       HasType C (funcContext Env.context func) body (.forAll [] func.output) := by
   intro body h_body
   obtain ⟨Γ_inst, output_inst, ρ, h_ht, h_wf_ρ, h_alias_eq, h_ctx_ae, h_out_ae⟩ :=
-    Function.typeCheck_bodyTyped_instantiated C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono body h_body
+    Function.typeCheck_bodyTyped_instantiated C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono body h_body
   -- `h_ht` is ALREADY the post-ρ judgment (ROUTE B: ρ folded into the resolve-core
   -- substitution, no `HasType_TContext_subst`).
   -- Bridge 1: alias-bridge the output type `subst ρ output_inst ↝ func.output`.
@@ -3144,6 +3148,7 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
     (h_ws : ∀ body, func.body = some body → WellScoped body Env.context)
     -- TODO(preservation): see `typeCheck_bodyTyped_instantiated`. Context alias names are
     -- non-reserved (enforced by `TEnv.addTypeAlias`); to be discharged as a preserved invariant.
@@ -3168,7 +3173,7 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     inputsNodup := Function.typeCheck_inputsNodup_orig C Env func func' Env' h
     typeArgsNodup := Function.typeCheck_typeArgsNodup_orig C Env func func' Env' h
     noUndeclaredVars := Function.typeCheck_noUndeclaredVars_orig C Env func func' Env' h
-    bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono
+    bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono
     measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure
   }
 
