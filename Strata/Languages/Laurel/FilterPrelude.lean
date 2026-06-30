@@ -12,7 +12,7 @@ import Strata.Languages.Core.Factory
 
 Restrict the Laurel prelude to only the `staticProcedures` and `types`
 transitively needed by the user program, reducing the Core program size
-for SMT verification.
+handed to verification.
 
 #### Name collection
 
@@ -73,6 +73,8 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TCore _ => pure ()
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
+  | .TSeq et => collectHighTypeNames et
+  | .TArray et => collectHighTypeNames et
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
   | .Pure base => collectHighTypeNames base
@@ -127,6 +129,14 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .ContractOf _ func => collectExprNames func
   | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
   | .Hole _ ty => ty.forM collectHighTypeNames
+  | .Subscript target index update =>
+    collectExprNames target
+    collectExprNames index
+    update.forM collectExprNames
+  | .SubscriptWrite target index value =>
+    collectExprNames target
+    collectExprNames index
+    collectExprNames value
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .This | .Abstract | .All => pure ()
 

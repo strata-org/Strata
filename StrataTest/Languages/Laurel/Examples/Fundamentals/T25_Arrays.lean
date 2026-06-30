@@ -1,0 +1,261 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import StrataTest.Util.TestLaurel
+
+open StrataTest.Util
+open Strata
+
+#eval testLaurel
+#strata
+program Laurel;
+// Basic read/write
+procedure basicReadWrite()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  a[0] := 42;
+  assert a[0] == 42
+};
+
+// Length
+procedure length()
+  opaque
+{
+  var a: Array<int> := [10, 20, 30];
+  assert Array.length(a) == 3
+};
+
+// Empty array
+procedure emptyArray()
+  opaque
+{
+  var a: Array<int> := [];
+  assert Array.length(a) == 0
+};
+
+// Array in contracts
+procedure arrayContract(a: Array<int>)
+  requires Array.length(a) > 0
+  opaque
+{
+  var x: int := a[0];
+  assert x == a[0]
+};
+
+// Multiple writes
+procedure multipleWrites()
+  opaque
+{
+  var a: Array<int> := [0, 0, 0];
+  a[0] := 10;
+  a[1] := 20;
+  a[2] := 30;
+  assert a[0] == 10;
+  assert a[1] == 20;
+  assert a[2] == 30
+};
+
+// Aliasing: mutation through one reference visible through another
+procedure aliasing()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a;
+  b[0] := 99;
+  assert a[0] == 99
+};
+
+// Array in a loop: zero-fill
+procedure arrayLoop()
+  opaque
+  modifies *
+{
+  var a: Array<int> := [1, 2, 3];
+  var i: int := 0;
+  while (i < 3)
+    invariant 0 <= i && i <= 3
+    invariant Array.length(a) == 3
+    invariant forall(j: int) => 0 <= j && j < i ==> a[j] == 0
+  {
+    a[i] := 0;
+    i := i + 1
+  };
+  assert a[0] == 0;
+  assert a[1] == 0;
+  assert a[2] == 0
+};
+
+// Inter-procedural: callee modifies array
+procedure setFirst(a: Array<int>, v: int)
+  requires Array.length(a) > 0
+  opaque
+  ensures Array.length(a) > 0
+  ensures a[0] == v
+  modifies a
+{
+  a[0] := v
+};
+
+procedure callSetFirst()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  setFirst(a, 42);
+  assert a[0] == 42
+};
+
+// Sequence.fromArray takes a snapshot of the array's current contents.
+procedure fromArrayBasic()
+  opaque
+{
+  var a: Array<int> := [10, 20, 30];
+  var s: Seq<int> := Sequence.fromArray(a);
+  assert Sequence.length(s) == 3;
+  assert s[0] == 10
+};
+
+// Snapshot semantics: mutating the array after extraction does not
+// affect the previously-taken sequence.
+procedure fromArraySnapshot()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  var s: Seq<int> := Sequence.fromArray(a);
+  a[0] := 99;
+  assert s[0] == 1;
+  assert a[0] == 99
+};
+#end
+
+/-! Negative cases: misuses of Array<T> flagged by ValidateSubscriptUsage. -/
+
+#eval testLaurel
+#strata
+program Laurel;
+// Diagnostic 1: functional update on Array<T>
+procedure arrayFuncUpdate()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  var b: Array<int> := a[0 := 99]
+//                     ^^^^^^^^^^ error: not supported on `Array
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+// Diagnostic 3: Array.length on a non-Array argument
+procedure arrayLengthWrongArg()
+  opaque
+{
+  var s: Seq<int> := [1, 2, 3];
+  assert Array.length(s) == 3
+//       ^^^^^^^^^^^^^^^ error: requires an argument of type
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+// Diagnostic 4: Array<T> with T other than int
+procedure arrayNonIntElement()
+  opaque
+{
+  var a: Array<bool> := [true, false]
+//       ^^^^^^^^^^^ error: currently only supported
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+// Sequence.fromArray on a non-Array argument
+procedure fromArrayWrongArg()
+  opaque
+{
+  var s: Seq<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(s)
+//                   ^^^^^^^^^^^^^^^^^^^^^ error: requires an argument of type
+};
+#end
+
+/-! Diagnostic 4 in *parameter* position. The variable-declaration form is
+already covered by `arrayNonIntElement`; this exercises the separate
+`validateProcedure → validateHighType` entry on `proc.inputs`. -/
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure arrayNonIntParameter(a: Array<bool>)
+//                                ^^^^^^^^^^^ error: currently only supported
+  opaque
+{
+};
+#end
+
+/-! Arity diagnostics: `Array.length` and `Sequence.fromArray` each take
+exactly one argument. Calls with a different arity get a dedicated
+diagnostic before the user sees a Core type-checker unification error. -/
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure arrayLengthWrongArity()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  assert Array.length(a, a) == 3
+//       ^^^^^^^^^^^^^^^^^^ error: takes exactly one argument
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure fromArrayWrongArity()
+  opaque
+{
+  var a: Array<int> := [1, 2, 3];
+  var t: Seq<int> := Sequence.fromArray(a, a)
+//                   ^^^^^^^^^^^^^^^^^^^^^^^^ error: takes exactly one argument
+};
+#end
+
+/-! A `while` whose body is a single `a[i] := v` (no braces) takes the
+`_hbsub` dispatch arm in `SubscriptElim.elimExpr.While`. With braces
+the body is a `.Block` and goes through the `.Block` arm instead.
+Pinning this case ensures the bare-stmt path stays correct. -/
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure arraySingleStmtWhile()
+  opaque
+  modifies *
+{
+  var a: Array<int> := [1, 2, 3];
+  var i: int := 0;
+  while (i < 3) invariant 0 <= i && i <= 3 invariant Array.length(a) == 3 a[i] := 0;
+  assert a[0] == 0
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+// A destructive write whose value disagrees with the element type is a type
+// error (the value is checked against the array's element type).
+procedure arrayWriteWrongElem()
+  opaque
+  modifies *
+{
+  var a: Array<int> := [1, 2, 3];
+  a[0] := true
+//        ^^^^ error: expected 'int'
+};
+#end

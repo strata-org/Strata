@@ -11,6 +11,7 @@ public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 
 /-!
@@ -260,6 +261,7 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some (_, node) =>
       match node.getType.val with
       | .UserDefined typRef => pure (some typRef.text)
+      | .TArray _ => pure (some arrayCompositeName)
       | _ => pure none
     | none => pure none
   | .Var (.Field inner fieldName) => do
@@ -354,6 +356,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let kt' ← resolveHighType kt
     let vt' ← resolveHighType vt
     pure (.TMap kt' vt')
+  | .TSeq et =>
+    let et' ← resolveHighType et
+    pure (.TSeq et')
+  | .TArray et =>
+    let et' ← resolveHighType et
+    pure (.TArray et')
   | .Applied base args =>
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
@@ -439,6 +447,21 @@ private def isReference (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
   match (ctx.unfold ty).val with
   | .UserDefined _ | .Unknown => true
   | _ => false
+
+/-- Element type of a subscript target, enforcing that it is indexable:
+    `Seq<U>`/`Array<U>` yields `U`; a concrete non-collection is rejected
+    (`expected a sequence or array`, as `Fresh`/`ReferenceEquals` reject a
+    non-reference); a gradual `Unknown`/`TCore` is tolerated silently. The
+    rejected and gradual cases both return `Unknown` to suppress cascades.
+    `construct` only prefixes the diagnostic with the surrounding form. -/
+private def checkSubscriptTarget (ctx : TypeLattice) (construct : StmtExpr)
+    (targetTy : HighTypeMd) (source : Option FileRange) : ResolveM HighTypeMd := do
+  match (ctx.unfold targetTy).val with
+  | .TSeq et | .TArray et => pure et
+  | .Unknown | .TCore _ => pure { val := .Unknown, source := source }
+  | _ =>
+    typeMismatch source (some construct) "expected a sequence or array" targetTy
+    pure { val := .Unknown, source := source }
 
 /-- Get the type of a resolved reference. Prefers the resolved definition by
     `uniqueId` (the post-resolution ground truth, populated as definitions are
@@ -700,6 +723,11 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.proveBy exprMd val proof source (by rw [h_node])
   | .ContractOf ty fn =>
     Synth.contractOf exprMd ty fn source (by rw [h_node])
+  | .Subscript target index update =>
+    Synth.subscript exprMd target index update source (by rw [h_node])
+  | .SubscriptWrite target index value => do
+    let r ← Check.subscriptWrite exprMd target index value source (by rw [h_node])
+    return (r, ⟨ .TVoid, source ⟩)
   | .Abstract => pure (Synth.abstract source)
   | .All => pure (Synth.all source)
   | .IfThenElse cond thenBr elseBr =>
@@ -1638,30 +1666,51 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
-  -- Hack because we use these polymorphic map primitives but Laurel does not
-  -- support polymorphism yet, so they cannot be type-checked against their
-  -- placeholder `int` signatures. Instead we resolve the arguments and infer the
-  -- result type structurally from them, keeping a concrete `HighType` flowing into
-  -- Core translation:
-  --   * `select(map, key)`     ⇒ the map's value type
-  --   * `update(map, key, val)` ⇒ the map type itself
-  --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
-  if callee == "select" || callee == "update" || callee == "const" then
+  -- Polymorphic Map/Sequence/Array primitives: Laurel has no polymorphism, so
+  -- these can't be checked against their placeholder `int` signatures. Instead
+  -- we resolve the arguments and infer the result type structurally, keeping a
+  -- concrete `HighType` flowing into Core translation. `Seq<T>` literals and
+  -- subscripts desugar into the Sequence ops (`SubscriptElim` lowers `s[i]` /
+  -- `s[i := v]` to `Sequence.select` / `Sequence.update`), so they ride the
+  -- same path.
+  --
+  -- `primInfer?` names each op exactly once: it maps the callee to the function
+  -- that computes the result type from the (resolved) argument types, or `none`
+  -- for a non-primitive callee. The `some`/`none` doubles as the "is this a
+  -- prim?" test — keyed on `callee.text` alone, so it's decided before args are
+  -- resolved (a non-prim must take the normal checking path below, not be
+  -- re-resolved here) and there's no separate, drift-prone list of prim names.
+  let unknown : HighTypeMd := ⟨ .Unknown, source ⟩
+  let ctx := (← get).typeLattice
+  let elemOf (ty : HighTypeMd) : HighTypeMd :=
+    match (ctx.unfold ty).val with
+    | .TSeq et | .TArray et => et
+    | _ => unknown
+  let primInfer? : Option (List HighTypeMd → HighTypeMd) :=
+    let arg0 (argTys : List HighTypeMd) := argTys.headD unknown
+    match callee.text with
+    -- Map ops.
+    | "select" => some fun argTys => match (arg0 argTys).val with | .TMap _ v => v | _ => unknown
+    | "update" => some fun argTys => arg0 argTys
+    | "const"  => some fun argTys => ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ (arg0 argTys), source ⟩
+    -- Sequence/Array ops. `empty` (and any unmatched arg shape) is `Unknown`,
+    -- a top-level wildcard so `[]` flows into any `Seq<T>`.
+    | t =>
+      if t == SeqOp.empty then some fun _ => unknown
+      else if t == SeqOp.build then
+        some fun argTys => match argTys with | _ :: v :: _ => ⟨ .TSeq v, source ⟩ | _ => unknown
+      else if t == SeqOp.select then some fun argTys => elemOf (arg0 argTys)
+      else if t == sequenceFromArrayName then some fun argTys => ⟨ .TSeq (elemOf (arg0 argTys)), source ⟩
+      else if t == SeqOp.update || t == SeqOp.append
+           || t == SeqOp.take   || t == SeqOp.drop   then some fun argTys => arg0 argTys
+      else if t == SeqOp.length || t == arrayLengthName then some fun _ => ⟨ .TInt, source ⟩
+      else if t == SeqOp.contains then some fun _ => ⟨ .TBool, source ⟩
+      else none
+  if let some infer := primInfer? then
     let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Synth.resolveStmtExpr a)
-    let args' := resolved.map (·.1)
-    let argTys := resolved.map (·.2)
-    let resultTy : HighTypeMd ←
-      match callee, argTys with
-      | "select", mapTy :: _ =>
-        match mapTy.val with
-        | .TMap _ valueTy => pure valueTy
-        | _ => pure ⟨ .Unknown, source ⟩
-      | "update", mapTy :: _ => pure mapTy
-      | "const", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
-      | _, _ => pure ⟨ .Unknown, source ⟩
-    return (.StaticCall callee args', resultTy)
+    return (.StaticCall callee (resolved.map (·.1)), infer (resolved.map (·.2)))
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
@@ -2189,6 +2238,85 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
+
+-- ### Subscript
+
+/-- (Subscript)
+    ```
+    Γ ⊢ target ⇒ T   Γ ⊢ i ⇐ TInt                            (Subscript-Read)
+    ────────────────────────────────────────────
+    Γ ⊢ Subscript target i none ⇒ elem(T)
+
+    Γ ⊢ target ⇒ T   Γ ⊢ i ⇐ TInt   Γ ⊢ v ⇐ elem(T)         (Subscript-Update)
+    ────────────────────────────────────────────
+    Γ ⊢ Subscript target i (some v) ⇒ T
+    ```
+    `s[i]` reads element `elem(T)`; `s[i := v]` is a *functional* update that
+    yields a new collection of the same type `T` (it does not mutate `target`).
+    Both are values. The index is checked against `TInt` and the update value
+    against the element type (so `s[0 := "x"]` on a `Seq<int>` is rejected). The
+    element type and indexability are decided by `checkSubscriptTarget`: a
+    `Seq`/`Array` gives its element type; a concrete non-collection is rejected
+    (`expected a sequence or array`); a gradual `Unknown`/`TCore` target yields
+    `Unknown`, making the index/value checks vacuous. The Seq-vs-Array-misuse
+    rules (functional update is only valid on `Seq<T>`) are left to the separate
+    `ValidateSubscriptUsage` pass. -/
+def Synth.subscript (exprMd : StmtExprMd)
+    (target index : StmtExprMd) (update : Option StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .Subscript target index update) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (target', targetTy) ← Synth.resolveStmtExpr target
+  let ctx := (← get).typeLattice
+  let elemTy ← checkSubscriptTarget ctx (.Subscript target' index update) targetTy source
+  let index' ← Check.resolveStmtExpr index { val := .TInt, source := index.source }
+  let update' ← update.attach.mapM (fun a => have := a.property;
+    Check.resolveStmtExpr a.val elemTy)
+  let resultTy := match update' with
+    | none   => elemTy
+    | some _ => targetTy
+  pure (.Subscript target' index' update', resultTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.Subscript.sizeOf_spec] at hsz
+      try (rw [Option.mem_def.mp ‹_ ∈ update›, Option.some.sizeOf_spec] at hsz)
+      omega
+
+/-- (SubscriptWrite)
+    ```
+    Γ ⊢ target ⇒ T   Γ ⊢ i ⇐ TInt   Γ ⊢ v ⇐ elem(T)
+    ──────────────────────────────────────────────
+    Γ ⊢ SubscriptWrite target i v ⇒ TVoid
+    ```
+    `a[i] := v` is a destructive in-place write on a mutable `Array<T>`, a
+    statement. The index is checked against `TInt` and the value against the
+    element type (so `a[0] := true` on an `Array<int>` is rejected). As in
+    `Synth.subscript`, `checkSubscriptTarget` supplies the element type and
+    rejects a concrete non-collection target, while a gradual `Unknown`/`TCore`
+    target makes the value check vacuous. The Seq-vs-Array-misuse rule
+    (destructive update is only valid on `Array<T>`, not `Seq<T>`) is left to
+    `ValidateSubscriptUsage`. It yields no value, so it synthesizes `TVoid`. -/
+def Check.subscriptWrite (exprMd : StmtExprMd)
+    (target index value : StmtExprMd) (source : Option FileRange)
+    (h : exprMd.val = .SubscriptWrite target index value) :
+    ResolveM StmtExprMd := do
+  let (target', targetTy) ← Synth.resolveStmtExpr target
+  let ctx := (← get).typeLattice
+  let elemTy ← checkSubscriptTarget ctx (.SubscriptWrite target' index value) targetTy source
+  let index' ← Check.resolveStmtExpr index { val := .TInt, source := index.source }
+  let value' ← Check.resolveStmtExpr value elemTy
+  pure { val := .SubscriptWrite target' index' value', source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      simp only [StmtExpr.SubscriptWrite.sizeOf_spec] at hsz
+      omega
 
 -- ### Verification expressions
 
@@ -2789,6 +2917,8 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | .TMap kt vt =>
     let map := collectHighType map kt
     collectHighType map vt
+  | .TSeq et => collectHighType map et
+  | .TArray et => collectHighType map et
   | .Applied base args =>
     let map := collectHighType map base
     args.foldl collectHighType map
@@ -2861,6 +2991,16 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
+  | .Subscript target index update =>
+    let map := collectStmtExpr map target
+    let map := collectStmtExpr map index
+    match update with
+    | some u => collectStmtExpr map u
+    | none => map
+  | .SubscriptWrite target index value =>
+    let map := collectStmtExpr map target
+    let map := collectStmtExpr map index
+    collectStmtExpr map value
   | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Abstract | .All | .Hole _ _ => map
 
@@ -3113,6 +3253,164 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
   for proc in program.staticProcedures do
     let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
 
+/-! ## Subscript usage validation
+
+Reports misuses of `Seq<T>` and `Array<T>` that would otherwise surface as
+confusing downstream errors. Run from `resolve` (below), alongside
+`validateDiamondFieldAccesses`, so that — like every other non-verification
+diagnostic — these are produced by resolution rather than a separate pipeline
+pass. The diagnostics are:
+
+1. `a[i := v]` on `Array<T>` — arrays are mutable; functional update is only
+   valid for sequences.
+2. `s[i] := v` on `Seq<T>` — sequences are immutable; destructive update is
+   only valid for arrays.
+3. `Array.length(x)` where `x` is not an `Array<T>`.
+4. `Array<T>` where `T ≠ int` (not yet implemented at the Laurel layer).
+5. `Sequence.fromArray(x)` where `x` is not an `Array<T>`.
+-/
+
+private def fmtSubscriptType (t : HighType) : String := (Std.format t).pretty
+
+/-- Message wording. Substrings of these strings appear in the
+    `// ^^^ error: ...` annotations of the Seq/Array example tests;
+    update both sides together if you reword. -/
+private def msgArrayFuncUpdate : String :=
+  "`a[i := v]` is not supported on `Array<T>`: arrays are mutable. " ++
+  "Use `a[i] := v` to update in place, or declare `a` as `Seq<T>` to use `s[i := v]`."
+
+private def msgSeqDestructiveUpdate : String :=
+  "`s[i] := v` is not allowed: sequences (`Seq<T>`) are immutable. " ++
+  "Use `s[i := v]` to produce a new sequence with index `i` set to `v`, " ++
+  "or declare `s` as `Array<T>` to update in place."
+
+private def msgArrayLengthArg (actual : String) : String :=
+  s!"`Array.length` requires an argument of type `Array<T>`, got `{actual}`."
+
+private def msgSequenceFromArrayArg (actual : String) : String :=
+  s!"`Sequence.fromArray` requires an argument of type `Array<T>`, got `{actual}`."
+
+private def msgArrayElementNotInt (actual : String) : String :=
+  s!"`Array<T>` is currently only supported for `T = int`. " ++
+  s!"Support for other element types is not yet implemented. Found: `Array<{actual}>`."
+
+private def msgArrayLengthArity (got : Nat) : String :=
+  s!"`Array.length` takes exactly one argument of type `Array<T>`, got {got}."
+
+private def msgSequenceFromArrayArity (got : Nat) : String :=
+  s!"`Sequence.fromArray` takes exactly one argument of type `Array<T>`, got {got}."
+
+/-- Collect diagnostics for any `Array<T>` whose element type is not `int`.
+
+    Each constructor has its own arm so adding a new `HighType` variant produces
+    a missing-cases error. `Unknown` and `MultiValuedExpr` are explicit no-op
+    arms (they cannot carry user-declared types that need validating). -/
+def validateHighType (ty : HighTypeMd) : List DiagnosticModel :=
+  match _hht : ty.val with
+  | .TArray et =>
+    let here : List DiagnosticModel :=
+      match et.val with
+      | .TInt => []
+      | other =>
+        [diagnosticFromSource ty.source (msgArrayElementNotInt (fmtSubscriptType other))]
+    -- Recurse into the element type — rare but a nested `Array<Array<int>>`
+    -- should still complain about the outer not being int.
+    here ++ validateHighType et
+  | .TSet et => validateHighType et
+  | .TSeq et => validateHighType et
+  | .TMap kt vt => validateHighType kt ++ validateHighType vt
+  | .Applied base args =>
+    validateHighType base ++ args.flatMap validateHighType
+  | .Pure base => validateHighType base
+  | .Intersection tys => tys.flatMap validateHighType
+  | .Unknown | .MultiValuedExpr _ => []
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
+  | .TBv _ | .UserDefined _ | .TCore _ => []
+termination_by sizeOf ty
+decreasing_by
+  all_goals simp_wf
+  all_goals (try term_by_mem)
+  -- Single-child recursion (TArray/TSet/TSeq/TMap/Applied-base/Pure).
+  all_goals (try term_by_val ty, _hht)
+  -- List-member recursion (Applied args / Intersection types): also chain
+  -- through `List.sizeOf_lt_of_mem`.
+  all_goals (have := List.sizeOf_lt_of_mem ‹_›; term_by_val ty, _hht)
+
+/-- Diagnostics for a *single* `StmtExpr` node — the Subscript/SubscriptWrite
+    misuse and `Array.length`/`Sequence.fromArray` argument/arity checks. Only
+    the constructors this validator is actually about are named; recursion into
+    children, and into the type-carrying constructors, is handled by the generic
+    `MapStmtExpr` traversals in `validateSubscriptUsage`, so a new unrelated
+    `StmtExpr` constructor needs no change here. -/
+private def validateSubscriptNode (model : SemanticModel) (expr : StmtExprMd) : List DiagnosticModel :=
+  match expr.val with
+  -- Diagnostic 1: functional update `a[i := v]` on Array<T> (not supported).
+  | .Subscript target _ (some _) =>
+    if (computeExprType model target).val.isArray then
+      [diagnosticFromSource expr.source msgArrayFuncUpdate]
+    else []
+  -- Diagnostic 2: destructive write `s[i] := v` on Seq<T> (immutable).
+  | .SubscriptWrite target _ _ =>
+    if (computeExprType model target).val.isSeq then
+      [diagnosticFromSource expr.source msgSeqDestructiveUpdate]
+    else []
+  -- Diagnostics 3 and 5: Array.length(x) / Sequence.fromArray(x) with x not Array<T>.
+  | .StaticCall callee args =>
+    if callee.text == arrayLengthName then
+      match args with
+      | [a] =>
+        let actualTy := (computeExprType model a).val
+        if actualTy.isArray then []
+        else [diagnosticFromSource expr.source (msgArrayLengthArg (fmtSubscriptType actualTy))]
+      | _ => [diagnosticFromSource expr.source (msgArrayLengthArity args.length)]
+    else if callee.text == sequenceFromArrayName then
+      match args with
+      | [a] =>
+        let actualTy := (computeExprType model a).val
+        if actualTy.isArray then []
+        else [diagnosticFromSource expr.source (msgSequenceFromArrayArg (fmtSubscriptType actualTy))]
+      | _ => [diagnosticFromSource expr.source (msgSequenceFromArrayArity args.length)]
+    else []
+  | _ => []
+
+/-- Run the Subscript/Array-length usage validator on the whole program.
+
+    Two generic collects over `MapStmtExpr`, rather than a hand-written walker
+    that enumerates every `StmtExpr`/`HighType` constructor:
+
+    * `validateHighType` is driven over *every* embedded type annotation by
+      `mapProgramHighTypesM` (the single source of truth for "where types live").
+    * `validateSubscriptNode` is driven over *every* expression node by
+      `mapStmtExprM`. Only the program-level expr-bearing slots are named
+      explicitly here (procedures via `mapProcedureM`, constrained-type
+      constraint/witness, constant initializers) — there is no whole-program
+      `StmtExpr` collect — but no `StmtExpr`/`HighType` *constructor* is
+      enumerated, so a new unrelated one needs no change.
+
+    Collects only: both hooks return their argument unchanged, so
+    `computeExprType` still sees the original (un-rewritten) children and the
+    program is left untouched. -/
+def validateSubscriptUsage (model : SemanticModel) (program : Program) : List DiagnosticModel :=
+  let M := StateM (Array DiagnosticModel)
+  -- Visit every node of one expression, collecting node-level diagnostics.
+  let collectExpr (e : StmtExprMd) : M PUnit := do
+    let _ ← mapStmtExprM (m := M) (fun n => do
+      modify (· ++ (validateSubscriptNode model n).toArray); pure n) e
+  let run : M PUnit := do
+    -- Expression positions, program-wide: procedure bodies/pre/decreases/invokeOn,
+    -- constant initializers, and constrained-type constraint/witness.
+    let _ ← mapProgramProceduresM (mapProcedureM (m := M) (fun e => do collectExpr e; pure e)) program
+    for c in program.constants do
+      match c.initializer with | some i => collectExpr i | none => pure ()
+    for td in program.types do
+      match td with
+      | .Constrained ct => collectExpr ct.constraint; collectExpr ct.witness
+      | _ => pure ()
+    -- Type positions, program-wide.
+    let _ ← mapProgramHighTypesM (m := M) (fun t => do
+      modify (· ++ (validateHighType t).toArray); pure t) program
+  (run.run #[]).2.toList
+
 /-! ## Entry point -/
 
 /-- Run the full resolution pass on a Laurel program. -/
@@ -3137,9 +3435,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  let subscriptErrors := validateSubscriptUsage semanticModel program'
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors
+    errors := finalState.errors ++ diamondErrors ++ subscriptErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/

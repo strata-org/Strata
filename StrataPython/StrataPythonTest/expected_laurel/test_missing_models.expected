@@ -3,11 +3,20 @@ test_missing_models.py(8, 4): ❓ unknown - init_calls_Any_get_1
 test_missing_models.py(9, 4): ❓ unknown - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(9, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(9, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_missing_models.py(9, 4): ❓ unknown - assume_assume(226)_calls_test_helper_procedure$post0_0
+test_missing_models.py(9, 4): ✅ pass - assume_assume(226)_calls_test_helper_procedure$post0_1
+test_missing_models.py(9, 4): ✅ pass - assume_assume(226)_calls_test_helper_procedure$post0_2
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(12, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
+test_missing_models.py(12, 4): ✅ pass - assume_assume(330)_calls_test_helper_procedure$post0_0
+test_missing_models.py(12, 4): ✅ pass - assume_assume(330)_calls_test_helper_procedure$post0_1
+test_missing_models.py(12, 4): ✅ pass - assume_assume(330)_calls_test_helper_procedure$post0_2
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_missing_models.py(15, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 8 passed, 0 failed, 3 inconclusive
+test_missing_models.py(15, 4): ✅ pass - assume_assume(411)_calls_test_helper_procedure$post0_0
+test_missing_models.py(15, 4): ✅ pass - assume_assume(411)_calls_test_helper_procedure$post0_1
+test_missing_models.py(15, 4): ✅ pass - assume_assume(411)_calls_test_helper_procedure$post0_2
+DETAIL: 16 passed, 0 failed, 4 inconclusive
 RESULT: Inconclusive

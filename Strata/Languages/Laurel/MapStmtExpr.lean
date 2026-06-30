@@ -120,6 +120,12 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.ProveBy (← mapStmtExprUsedM f true value) (← mapStmtExprUsedM f true proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprUsedM f true func), source⟩
+  | .Subscript target index update =>
+    pure ⟨.Subscript (← mapStmtExprUsedM f true target) (← mapStmtExprUsedM f true index)
+      (← update.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
+  | .SubscriptWrite target index value =>
+    pure ⟨.SubscriptWrite (← mapStmtExprUsedM f true target) (← mapStmtExprUsedM f true index)
+      (← mapStmtExprUsedM f true value), source⟩
   -- Leaves: no StmtExprMd children.
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
@@ -231,6 +237,12 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .ProveBy value proof =>
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go true proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
+    | .Subscript target index update =>
+      pure ⟨.Subscript (collapse (← go true target) target.source) (collapse (← go true index) index.source)
+        (← update.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
+    | .SubscriptWrite target index value =>
+      pure ⟨.SubscriptWrite (collapse (← go true target) target.source) (collapse (← go true index) index.source)
+        (collapse (← go true value) value.source), source⟩
     | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure e
     post used rebuilt
@@ -314,6 +326,12 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
     pure ⟨.ContractOf ty (← mapStmtExprPrePostM pre post func), source⟩
+  | .Subscript target index update =>
+    pure ⟨.Subscript (← mapStmtExprPrePostM pre post target) (← mapStmtExprPrePostM pre post index)
+      (← update.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+  | .SubscriptWrite target index value =>
+    pure ⟨.SubscriptWrite (← mapStmtExprPrePostM pre post target) (← mapStmtExprPrePostM pre post index)
+      (← mapStmtExprPrePostM pre post value), source⟩
   -- Leaves: no StmtExprMd children.
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently

@@ -7,10 +7,17 @@ test_func_input_type_constraints.py(12, 4): ❓ unknown - set_LaurelResult_calls
 test_func_input_type_constraints.py(11, 65): ❓ unknown - (List_Dict_index ensures) Return type constraint
 test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of x
 test_func_input_type_constraints.py(15, 0): ✅ pass - (Mul requires) Type constraint of y
+test_func_input_type_constraints.py(15, 0): ✅ pass - assume_assume(315)_calls_Mul$post0_0
+test_func_input_type_constraints.py(15, 0): ✅ pass - assume_assume(315)_calls_Mul$post0_1
 test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type constraint of x
 test_func_input_type_constraints.py(16, 0): ✅ pass - (Sum requires) Type constraint of y
+test_func_input_type_constraints.py(16, 0): ✅ pass - assume_assume(332)_calls_Sum$post0_0
+test_func_input_type_constraints.py(16, 0): ✅ pass - assume_assume(332)_calls_Sum$post0_1
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of l
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of i
 test_func_input_type_constraints.py(17, 0): ✅ pass - (List_Dict_index requires) Type constraint of s
-DETAIL: 11 passed, 0 failed, 3 inconclusive
+test_func_input_type_constraints.py(17, 0): ✅ pass - assume_assume(349)_calls_List_Dict_index$post0_0
+test_func_input_type_constraints.py(17, 0): ✅ pass - assume_assume(349)_calls_List_Dict_index$post0_1
+test_func_input_type_constraints.py(17, 0): ✅ pass - assume_assume(349)_calls_List_Dict_index$post0_2
+DETAIL: 18 passed, 0 failed, 3 inconclusive
 RESULT: Inconclusive

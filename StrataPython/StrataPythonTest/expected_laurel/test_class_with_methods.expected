@@ -1,6 +1,8 @@
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@__init__ requires) Type constraint of name
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@add requires) Type constraint of amount
+test_class_with_methods.py(32, 4): ✔️ always true if reached - assume_main_assume(447)_30_calls_DataStore@add$post0_0
 test_class_with_methods.py(32, 4): ✔️ always true if reached - (DataStore@add requires) Type constraint of amount
+test_class_with_methods.py(32, 4): ✔️ always true if reached - assume_main_assume(465)_32_calls_DataStore@add$post0_0
 test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(484)_34
 test_class_with_methods.py(32, 4): ✔️ always true if reached - get_count should return 30
 test_class_with_methods.py(32, 4): ✔️ always true if reached - main_assert(569)_37
@@ -11,5 +13,8 @@ test_class_with_methods.py(32, 4): ✔️ always true if reached - (Origin_test_
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_name_is_foo
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_str
 test_class_with_methods.py(29, 4): ✔️ always true if reached - assert_opt_name_none_or_bar
-DETAIL: 13 passed, 0 failed, 0 inconclusive
+test_class_with_methods.py(32, 4): ✔️ always true if reached - assume_main_assume(666)_42_calls_test_helper_procedure$post0_0
+test_class_with_methods.py(32, 4): ✔️ always true if reached - assume_main_assume(666)_42_calls_test_helper_procedure$post0_1
+test_class_with_methods.py(32, 4): ✔️ always true if reached - assume_main_assume(666)_42_calls_test_helper_procedure$post0_2
+DETAIL: 18 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success

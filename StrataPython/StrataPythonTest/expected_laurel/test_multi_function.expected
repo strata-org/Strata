@@ -4,7 +4,10 @@ test_multi_function.py(8, 47): ✅ pass - (validate_config ensures) Return type 
 test_multi_function.py(11, 4): ✅ pass - ite_cond_calls_PNotIn_0
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of name
 test_multi_function.py(16, 4): ✅ pass - (create_config requires) Type constraint of value
+test_multi_function.py(16, 4): ✅ pass - assume_assume(429)_calls_create_config$post0_0
+test_multi_function.py(16, 4): ✅ pass - assume_assume(429)_calls_create_config$post0_1
 test_multi_function.py(17, 4): ✅ pass - (validate_config requires) Type constraint of config
+test_multi_function.py(17, 4): ✅ pass - assume_assume(485)_calls_validate_config$post0_0
 test_multi_function.py(17, 4): ✅ pass - assert(485)
 test_multi_function.py(18, 7): ✅ pass - Check PNot exception
 test_multi_function.py(20, 4): ❓ unknown - set_LaurelResult_calls_Any_get_0
@@ -14,5 +17,8 @@ test_multi_function.py(24, 4): ❓ unknown - process_config should return value
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_name_is_foo
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_str
 test_multi_function.py(26, 4): ✅ pass - (Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar
-DETAIL: 14 passed, 0 failed, 2 inconclusive
+test_multi_function.py(26, 4): ✅ pass - assume_assume(715)_calls_test_helper_procedure$post0_0
+test_multi_function.py(26, 4): ✅ pass - assume_assume(715)_calls_test_helper_procedure$post0_1
+test_multi_function.py(26, 4): ✅ pass - assume_assume(715)_calls_test_helper_procedure$post0_2
+DETAIL: 20 passed, 0 failed, 2 inconclusive
 RESULT: Inconclusive

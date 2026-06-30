@@ -2,8 +2,12 @@ test_datetime_now_tz.py(4, 0): ✅ pass - (Origin_timedelta_Requires)
 test_datetime_now_tz.py(4, 0): ✅ pass - (Origin_timedelta_Requires)hours_type
 test_datetime_now_tz.py(4, 0): ✅ pass - (Origin_timedelta_Requires)days_pos
 test_datetime_now_tz.py(4, 0): ✅ pass - (Origin_timedelta_Requires)hours_pos
+test_datetime_now_tz.py(4, 0): ✅ pass - assume_assume(95)_calls_timedelta_func$post0_0
+test_datetime_now_tz.py(4, 0): ✅ pass - assume_assume(95)_calls_timedelta_func$post0_1
+test_datetime_now_tz.py(4, 0): ✅ pass - assume_assume(95)_calls_timedelta_func$post0_2
+test_datetime_now_tz.py(4, 0): ✅ pass - assume_assume(95)_calls_timedelta_func$post0_3
 test_datetime_now_tz.py(5, 18): ✅ pass - Check PSub exception
 test_datetime_now_tz.py(6, 7): ✅ pass - Check PLe exception
 test_datetime_now_tz.py(6, 0): ✅ pass - assert(162)
-DETAIL: 7 passed, 0 failed, 0 inconclusive
+DETAIL: 11 passed, 0 failed, 0 inconclusive
 RESULT: Analysis success
