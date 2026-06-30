@@ -36,7 +36,7 @@ public section
 def stripAssertAssume (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Assert _ | .Assume _ => ⟨.LiteralBool true, e.source⟩
+    | .Assert .. | .Assume _ => ⟨.LiteralBool true, e.source⟩
     | .Block stmts label =>
       let stmts' := stmts.filter fun s =>
         match s.val with | .LiteralBool true => false | _ => true
@@ -138,7 +138,7 @@ private def addFreePostcondition (proc : Procedure) (freePost : StmtExprMd) : Pr
   match freePost.val with
   | .LiteralBool true => proc  -- trivial, skip
   | _ =>
-    let freeCond : Condition := { condition := freePost, free := true }
+    let freeCond : Condition := { condition := freePost, mode := ConditionMode.Assume }
     match proc.body with
     | .Opaque postconds impl modif =>
       { proc with body := .Opaque (postconds ++ [freeCond]) impl modif }

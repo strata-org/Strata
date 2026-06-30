@@ -149,7 +149,7 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     let asserts: List StmtExprMd := targets.filterMap (fun target =>
       let ref : StmtExprMd := VariableMd.toReadbackExpr target
       let ty : HighType := (computeExprType model ref).val
-      (constraintCallForExpr ptMap ty ref (src := source)).map (⟨.Assert { condition := · }, source⟩))
+      (constraintCallForExpr ptMap ty ref (src := source)).map (⟨.Assert · none, source⟩))
     let suffix := match targets with
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
       | _ => []
@@ -200,7 +200,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
   let witnessInit : StmtExprMd :=
     ⟨.Assign [⟨.Declare ⟨witnessId, resolveType ptMap ct.base⟩, src⟩] ct.witness, src⟩
   let assert : StmtExprMd :=
-    ⟨.Assert { condition := (constraintCallFor ptMap (.UserDefined ct.name) witnessId (src := src)).get! }, src⟩
+    ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []

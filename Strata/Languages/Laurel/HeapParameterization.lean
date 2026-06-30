@@ -334,7 +334,7 @@ where
     | .AsType t ty =>
         let t' ← recurseOne t valueUsed
         let isCheck := ⟨ .IsType t' ty, source ⟩
-        let assertStmt := ⟨ .Assert { condition := isCheck }, source ⟩
+        let assertStmt := ⟨ .Assert isCheck none, source ⟩
         return [⟨ .Block [assertStmt, t'] none, source ⟩]
     | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
@@ -343,8 +343,8 @@ where
     | .Assigned n => return [⟨ .Assigned (← recurseOne n), source ⟩]
     | .Old v => return [⟨ .Old (← recurseOne v), source ⟩]
     | .Fresh v => return [⟨ .Fresh (← recurseOne v), source ⟩]
-    | .Assert ⟨condExpr, summary, free⟩ =>
-        return [⟨ .Assert { condition := ← recurseOne condExpr, summary, free }, source ⟩]
+    | .Assert condExpr summary =>
+        return [⟨ .Assert (← recurseOne condExpr) summary, source ⟩]
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
