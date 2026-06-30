@@ -32,7 +32,7 @@ jobs:
           git clone --depth 1 --branch cbmc-6.8.0 https://github.com/diffblue/cbmc.git cbmc-src
           cd cbmc-src
           git apply "$GITHUB_WORKSPACE/StrataPython/StrataPythonTest/cbmc-string-support.patch"
-          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/cbmc-bounds-check.patch"
+          git apply "$GITHUB_WORKSPACE/StrataTest/Languages/Laurel/CBMC/cbmc-bounds-check.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-regex-support.patch"
           git apply "$GITHUB_WORKSPACE/StrataTest/Backends/CBMC/cbmc-quantifier-simplify.patch"
           export CCACHE_BASEDIR=$PWD
