@@ -463,24 +463,37 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
     pure allModifies
   | _ => pure []
 
+/-- Translate the optional `summary "..."` argument of a clause. -/
+private def translateErrorSummary (errMsgArg : Arg) : TransM (Option String) := do
+  match errMsgArg with
+  | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
+    | q`Laurel.errorSummary, #[strArg] => do
+      let msg ← translateString strArg
+      pure (some msg)
+    | _, _ => pure none
+  | _ => pure none
+
 def translateRequiresClauses (arg : Arg) : TransM (List Condition) := do
   match arg with
   | .seq _ _ args => do
     let mut allRequires : List Condition := []
     for clauseArg in args do
       match clauseArg with
-      | .op clauseOp => match clauseOp.name, clauseOp.args with
-        | q`Laurel.requiresClause, #[exprArg, errMsgArg] =>
+      | .op clauseOp =>
+        -- All three variants share the `(cond, errorMessage)` shape; only the
+        -- mode differs. `free` keeps the assumption, `checked` keeps the
+        -- assertion, and the plain form keeps both.
+        let mode ← match clauseOp.name with
+          | q`Laurel.requiresClause => pure ConditionMode.Both
+          | q`Laurel.freeRequiresClause => pure ConditionMode.Assume
+          | q`Laurel.checkedRequiresClause => pure ConditionMode.Assert
+          | _ => TransM.error s!"Expected requiresClause operation, got {repr clauseOp.name}"
+        match clauseOp.args with
+        | #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          let summary ← match errMsgArg with
-            | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
-              | q`Laurel.errorSummary, #[strArg] => do
-                let msg ← translateString strArg
-                pure (some msg)
-              | _, _ => pure none
-            | _ => pure none
-          allRequires := allRequires ++ [{ condition := expr, summary }]
-        | _, _ => TransM.error s!"Expected requiresClause operation, got {repr clauseOp.name}"
+          let summary ← translateErrorSummary errMsgArg
+          allRequires := allRequires ++ [{ condition := expr, summary, mode }]
+        | _ => TransM.error s!"Expected requiresClause operation with 2 arguments, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected requiresClause operation in requires sequence"
     pure allRequires
   | _ => pure []
@@ -491,18 +504,18 @@ def translateEnsuresClauses (arg : Arg) : TransM (List Condition) := do
     let mut allEnsures : List Condition := []
     for clauseArg in args do
       match clauseArg with
-      | .op clauseOp => match clauseOp.name, clauseOp.args with
-        | q`Laurel.ensuresClause, #[exprArg, errMsgArg] =>
+      | .op clauseOp =>
+        let mode ← match clauseOp.name with
+          | q`Laurel.ensuresClause => pure ConditionMode.Both
+          | q`Laurel.freeEnsuresClause => pure ConditionMode.Assume
+          | q`Laurel.checkedEnsuresClause => pure ConditionMode.Assert
+          | _ => TransM.error s!"Expected ensuresClause operation, got {repr clauseOp.name}"
+        match clauseOp.args with
+        | #[exprArg, errMsgArg] =>
           let expr ← translateStmtExpr exprArg
-          let summary ← match errMsgArg with
-            | .option _ (some (.op errOp)) => match errOp.name, errOp.args with
-              | q`Laurel.errorSummary, #[strArg] => do
-                let msg ← translateString strArg
-                pure (some msg)
-              | _, _ => pure none
-            | _ => pure none
-          allEnsures := allEnsures ++ [{ condition := expr, summary }]
-        | _, _ => TransM.error s!"Expected ensuresClause operation, got {repr clauseOp.name}"
+          let summary ← translateErrorSummary errMsgArg
+          allEnsures := allEnsures ++ [{ condition := expr, summary, mode }]
+        | _ => TransM.error s!"Expected ensuresClause operation with 2 arguments, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected ensuresClause operation in ensures sequence"
     pure allEnsures
   | _ => pure []

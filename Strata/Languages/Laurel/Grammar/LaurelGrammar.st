@@ -179,11 +179,18 @@ op returnType(returnType: LaurelType): ReturnType => ": " returnType;
 category InvokeOnClause;
 op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:0;
 
+// `requires`/`ensures` lower to both an assertion and an assumption by default.
+// `free` keeps only the assumption (assumed but never checked); `checked` keeps
+// only the assertion (checked but never exposed as an assumption).
 category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  requires " cond:0 errorMessage;
+op freeRequiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  free requires " cond:0 errorMessage;
+op checkedRequiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  checked requires " cond:0 errorMessage;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;
+op freeEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  free ensures " cond:0 errorMessage;
+op checkedEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  checked ensures " cond:0 errorMessage;
 
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;

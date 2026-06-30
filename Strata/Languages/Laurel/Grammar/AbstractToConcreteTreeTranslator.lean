@@ -214,15 +214,22 @@ private def fieldToArg (f : Field) : Arg :=
   else
     laurelOp "immutableField" #[ident f.name.text, highTypeToArg f.type]
 
+/-- Pick the clause op name for a condition's `mode`. `Both` is the plain
+    clause, `Assume` the `free` form, and `Assert` the `checked` form. -/
+private def clauseOpName (base : String) : ConditionMode → String
+  | .Both => base
+  | .Assume => "free" ++ base.capitalize
+  | .Assert => "checked" ++ base.capitalize
+
 private def requiresClauseToArg (c : Condition) : Arg :=
   let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "requiresClause" #[stmtExprToArg c.condition, errOpt]
+  laurelOp (clauseOpName "requiresClause" c.mode) #[stmtExprToArg c.condition, errOpt]
 
 private def ensuresClauseToArg (c : Condition) : Arg :=
   let errOpt := optionArg (c.summary.map fun msg =>
     laurelOp "errorSummary" #[.strlit sr msg])
-  laurelOp "ensuresClause" #[stmtExprToArg c.condition, errOpt]
+  laurelOp (clauseOpName "ensuresClause" c.mode) #[stmtExprToArg c.condition, errOpt]
 
 private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
   let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
