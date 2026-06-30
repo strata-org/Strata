@@ -108,7 +108,7 @@ instance : HasInit P (Cmd P) where
 ---------------------------------------------------------------------
 
 /-- Get all variables accessed by an `ExprOrNondet`. -/
-def ExprOrNondet.getVars [HasFvars P] (e : ExprOrNondet P) : List P.Ident :=
+@[expose] def ExprOrNondet.getVars [HasFvars P] (e : ExprOrNondet P) : List P.Ident :=
   match e with
   | .det e => HasFvars.getFvars e
   | .nondet => []

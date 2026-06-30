@@ -18,16 +18,16 @@ namespace Imperative
 
 public section
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
 
 /-! ## Env helpers -/
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 theorem assume_env_eq (ρ : Env P) :
     ({ ρ with store := ρ.store, hasFailure := ρ.hasFailure || false } : Env P) = ρ := by
   cases ρ; simp [Bool.or_false]
 
-omit [HasFvar P] [HasBoolOps P] in
+omit [HasFvar P] [HasBoolOps P] [HasFvars P] in
 theorem eval_tt_is_tt
     (δ : SemanticEval P) (σ : SemanticStore P)
     (hwfv : WellFormedSemanticEvalVal δ) :
@@ -76,13 +76,14 @@ theorem kleene_seq_terminal
 theorem kleene_assume_terminal
     {label : String} {expr : P.Expr} {md : MetaData P} {ρ₀ : Env P}
     (hcond : ρ₀.eval ρ₀.store expr = some HasBool.tt)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval) :
+    (hwfb : WellFormedSemanticEvalBool ρ₀.eval)
+    (hwfc : WellFormedSemanticEvalExprCongr ρ₀.eval) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.cmd (.assume label expr md)) ρ₀) (.terminal ρ₀) := by
   have raw : StepKleeneStar P (EvalCmd P)
       (.stmt (.cmd (.assume label expr md)) ρ₀)
       (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
-    .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb)) (.refl _)
+    .step _ _ _ (.step_cmd (EvalCmd.eval_assume hcond hwfb hwfc)) (.refl _)
   rwa [assume_env_eq] at raw
 
 theorem kleene_assume_then

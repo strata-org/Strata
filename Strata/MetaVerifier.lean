@@ -206,7 +206,7 @@ program under the given metaverifier options. For example,
 `true` they become SMT-LIB arrays, under `false` an uninterpreted sort with
 axiomatized `select`/`update` functions.
 -/
-def smtVCsCorrect (program : Program)
+@[expose] def smtVCsCorrect (program : Program)
     (options : MetaVerifier.Options := {}) : Prop :=
   match genSMTVCs program options with
   | some vcs => (denoteQueries vcs).getD False

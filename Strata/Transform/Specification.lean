@@ -172,7 +172,9 @@ namespace Hoare
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -190,7 +192,9 @@ def TripleBlock
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval →
+    WellFormedSemanticEvalExprCongr ρ₀.eval →
+    ρ₀.hasFailure = false →
     (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') ∨
      ∃ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -252,6 +256,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
     ∀ (ρ₀ ρ' : Env P),
       WellFormedSemanticEvalBool ρ₀.eval →
       WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalExprCongr ρ₀.eval →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧

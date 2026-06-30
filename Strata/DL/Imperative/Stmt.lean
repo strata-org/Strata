@@ -162,6 +162,108 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### UniqueInits
+
+Collect the names of every variable initialized by an `init` command anywhere
+in a statement (across all nesting levels). The companion predicate
+`Block.uniqueInits` asserts that the resulting list is `Nodup`, ruling out
+the edge case where a name is projected away by `step_block_done` and then
+reinitialized — a pattern the unstructured CFG cannot replicate because its
+flat namespace has no projection.
+-/
+
+mutual
+/-- Collect every variable initialized by an `init` command in a statement. -/
+@[expose] def Stmt.initVars (s : Stmt P (Cmd P)) : List P.Ident :=
+  match s with
+  | .cmd (.init x _ _ _) => [x]
+  | .cmd _ => []
+  | .block _ bss _ => Block.initVars bss
+  | .ite _ tss ess _ => Block.initVars tss ++ Block.initVars ess
+  | .loop _ _ _ bss _ => Block.initVars bss
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+  termination_by (Stmt.sizeOf s)
+
+/-- Collect every variable initialized by an `init` command in a block. -/
+@[expose] def Block.initVars (ss : List (Stmt P (Cmd P))) : List P.Ident :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.initVars s ++ Block.initVars rest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- Every `init` in the program (across all nesting levels) names a unique
+variable. The flat-namespace CFG can simulate the structured semantics only
+when this holds — without uniqueness, structured `step_block_done` can
+project a name away that the structured semantics later reinitializes, a
+pattern the CFG cannot replicate. -/
+@[expose] def Block.uniqueInits (ss : List (Stmt P (Cmd P))) : Prop :=
+  (Block.initVars ss).Nodup
+
+---------------------------------------------------------------------
+
+/-! ### SimpleShape
+
+Predicate stating that a statement or block has a "simple" shape suitable
+for the structured-to-CFG soundness proof under axiom-free assumptions:
+- no nondeterministic `.ite`
+- no `.loop` of any kind (the `.loop` arm discharges by contradiction)
+
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
+and `.typeDecl` are all allowed.
+-/
+
+mutual
+/-- Returns true if the statement satisfies the simple-shape restriction. -/
+@[expose] def Stmt.simpleShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.simpleShape bss
+  | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
+  | .ite .nondet _ _ _ => false
+  | .loop _ _ _ _ _ => false
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block satisfies the simple-shape restriction. -/
+@[expose] def Block.simpleShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.simpleShape s && Block.simpleShape srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- `Block.simpleShape` on `s :: rest` decomposes to the conjunction. -/
+theorem Block.simpleShape_cons_iff
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+    Block.simpleShape (s :: rest) = true ↔
+      Stmt.simpleShape s = true ∧ Block.simpleShape rest = true := by
+  simp only [Block.simpleShape, Bool.and_eq_true]
+
+/-- The then-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_then
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape tss = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.1
+
+/-- The else-branch of an `.ite (.det _)` is simple when the whole ite is. -/
+theorem Stmt.simpleShape_branch_else
+    {g : P.Expr} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} :
+    Stmt.simpleShape (.ite (.det g) tss ess md) = true →
+    Block.simpleShape ess = true := by
+  simp only [Stmt.simpleShape, Bool.and_eq_true]
+  intro h
+  exact h.2
+
+---------------------------------------------------------------------
+
 /-! ### MapExpr
 
 Apply a function to all expressions in a statement's structural positions

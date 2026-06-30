@@ -66,15 +66,18 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[provenance]: :1312-1418>,
+ <[#spec_loop_invariant]: 0 <= i>,
+ <[#spec_loop_invariant]: i <= n>,
+ <[#spec_decreases]: n>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG measureFailExamplePgm 0))
@@ -154,16 +157,20 @@ loop_entry$_1:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  #[<[provenance]: :3160-3316>,
+ <[#spec_loop_invariant]: 0 <= i>,
+ <[#spec_loop_invariant]: i <= n>,
+ <[#spec_loop_invariant]: s == i * (i + 1) / 2>,
+ <[#spec_decreases]: n - i>] condGoto i < n l$_4 end$_0
 l$_4:
   i := i + 1;
   s := s + i;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG gaussPgm 0))
@@ -406,7 +413,11 @@ Context: Global scope:
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
   assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto x < n before_loop$_11 end$_0
+  #[<[provenance]: :9150-9403>,
+ <[#spec_loop_invariant]: x >= 0>,
+ <[#spec_loop_invariant]: x <= n>,
+ <[#spec_loop_invariant]: n < top>,
+ <[#spec_decreases]: n - x>] condGoto x < n before_loop$_11 end$_0
 before_loop$_11:
   y := 0;
   condGoto true loop_entry$_5 loop_entry$_5
@@ -416,21 +427,24 @@ loop_entry$_5:
   var loop_measure$_6 : int;
   assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
   assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  condGoto y < x l$_8 l$_4
+  #[<[provenance]: :9270-9383>,
+ <[#spec_loop_invariant]: y >= 0>,
+ <[#spec_loop_invariant]: y <= x>,
+ <[#spec_decreases]: x - y>] condGoto y < x l$_8 l$_4
 l$_8:
   y := y + 1;
   condGoto true measure_decrease$_7 measure_decrease$_7
 measure_decrease$_7:
   assert [measure_decrease_loop_measure$_6]: x - y < loop_measure$_6;
-  condGoto true loop_entry$_5 loop_entry$_5
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
   x := x + 1;
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
   assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
-  condGoto true loop_entry$_1 loop_entry$_1
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
-  finish
+  #[<[provenance]: <synthesized:structured-to-unstructured>>] finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG nestedPgm 2))
