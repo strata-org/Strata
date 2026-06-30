@@ -2667,15 +2667,54 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
             (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context.types,
         ty.boundVars = [] :=
       Function.internalContext_values_mono C Env func type v_inst h_inst h_ambient_mono
-    -- TODO(Task #3, FUNCTYPE_SOUNDNESS_PROGRESS.md): the composite-`S` helpers
-    -- `bodyComposite_wf_hyps`/`wf`/`pack` are still on the old `bwdMap.toList.filterMap` shape
-    -- and must be re-targeted to `renameMap v_unify.subst v_inst.fst.freeVars.eraseDups`. Once
-    -- re-targeted, this block is:
-    --   obtain ⟨hC1, hC2, hVU, hUT⟩ := bodyComposite_wf_hyps … alphaMap …
-    --   have h_wf_S := bodyComposite_wf … alphaMap h_alphaMap h_wf_ρ hC1 hC2 hVU hUT
-    --   obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ := bodyComposite_pack … alphaMap … h_wf_S
-    --   rw [h_ctx, h_ty]; exact h_core.1 S h_abs h_wf h_poly
-    sorry
+    -- The internal env resolve ran in: `Env_int = pushEmptyContext.addInNewestContext FORMALS`.
+    -- `LFunc.inputMonoSignature {…}` reduces to the `forAll []`-map FORMALS, so the
+    -- `h_core`/`h_resolve` env matches `bodyComposite_pack`'s `Γ_int`.
+    -- Provenance facts that `func.typeArgs` (user names) never enter the instantiation /
+    -- resolution / unification — required by `bodyComposite_wf` to scrub the inner 2-cycle.
+    -- These rest on instantiation freshness (`$__ty`-prefix vars vs no-gen-prefix `typeArgs`).
+    have h_inst_avoids : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs := by
+      sorry
+    have h_ctx_avoids : ∀ v, v ∈ TContext.knownTypeVars
+        (v_inst.snd.pushEmptyContext.addInNewestContext
+          (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context →
+        v ∉ func.typeArgs := by
+      sorry
+    have h_subin_avoids : ∀ v, (v ∈ Maps.keys
+          (v_inst.snd.pushEmptyContext.addInNewestContext
+            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst ∨
+        v ∈ Subst.freeVars
+          (v_inst.snd.pushEmptyContext.addInNewestContext
+            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst) →
+        v ∉ func.typeArgs := by
+      sorry
+    have h_resolved_int : TContext.AliasesResolved
+        (v_inst.snd.pushEmptyContext.addInNewestContext
+          (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context := by
+      sorry
+    -- `v_unify` avoids `func.typeArgs` on keys and range.
+    obtain ⟨hVU, hVUr⟩ := Function.vunify_avoids_typeArgs C
+      (v_inst.snd.pushEmptyContext.addInNewestContext
+        (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+          (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))))
+      func v_inst body v_resolve v_unify
+      (by rw [Prod.eta]; exact h_resolve) h_internalwf h_fwf h_resolved_int h_unify'
+      h_inst_avoids h_ctx_avoids h_subin_avoids
+    -- Provenance bundle for the composite `SubstWF`.
+    obtain ⟨hC1, hC2, hVU', hUT⟩ := Function.bodyComposite_wf_hyps C Env func type v_inst v_unify ρ₀
+      h_type h_ρ₀_range h_ρ₀_cover hVU hVUr h_inst_avoids
+    -- The composite is `SubstWF` (via `SubstWF_compose_of_cover`; the inner 2-cycle is scrubbed).
+    have h_wf_S := Function.bodyComposite_wf C Env func type v_inst v_unify ρ₀
+      h_wf_ρ hC1 hC2 hVU' hUT
+    -- Pack the threefold composite into a single `S` acting as `ρ ∘ rename ∘ v_unify`.
+    obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ := Function.bodyComposite_pack C Env func type
+      v_inst v_resolve v_unify ρ ρ₀ bodyty hρ h_absorbs h_mono_ctx h_wf_S
+    rw [h_ctx, h_ty]
+    exact h_core.1 S h_abs h_wf h_poly
   refine ⟨_, _, ρ, h_ht_post, h_wf_ρ, h_cae.1, h_cae.2, ?_⟩
   · -- output AliasEquiv
     rw [h_out_eq]
