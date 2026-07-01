@@ -285,11 +285,15 @@ async def _state_thinking(state: WorkflowState, agent) -> Transition:
     if decision.forward_to:
         state.active_handler = decision.forward_to
 
-    # Hard gate: never declare prover_done if the prover task is still running
+    # Hard gate: NEVER allow prover_done unless the prover task has actually completed.
+    # The TM/monitor must NOT kill the prover — only the prover decides when it's done.
     if decision.state_transition == Transition.PROVER_DONE:
         prover_task = getattr(agent, '_prover_task', None)
         if prover_task and not prover_task.done():
-            await agent._emit("message", "[TM] Prover task still running — ignoring premature prover_done")
+            await agent._emit("message", "[TM] Prover still running — blocking prover_done. Only the prover can declare itself done.")
+            return Transition.RESPOND
+        if not prover_task:
+            await agent._emit("message", "[TM] No prover task found — blocking prover_done.")
             return Transition.RESPOND
 
     return decision.state_transition

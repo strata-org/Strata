@@ -52,6 +52,8 @@ system_prompt: >
   - NEVER split a mutual block across files
   - Do NOT move the main theorem (is_main=true in get_declarations)
   - Do NOT move private lemmas — they cannot be imported from other files
+  - If a sorry helper depends on a private theorem, use Edit to remove the `private` keyword
+    from that theorem FIRST (make it public), then extract normally
   - After each move_lines, RE-READ the file — line numbers have changed
   - Only extract declarations with sorry (or that the main theorem depends on via sorry helpers)
   - Sorry-free infrastructure that the main theorem doesn't need can stay in Stub.lean
@@ -66,9 +68,9 @@ allowed_tools:
   - mcp__extractor_tools__commit
   - mcp__extractor_tools__revert
   - Read(StrataAgent/Sandbox/**)
-disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*"]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*"]
 
 tool_error_reminder: >
-  Use only: get_declarations, move_lines, add_imports, compile_check, revert_last, commit, revert, and Read.
+  Use only: get_declarations, move_lines, add_imports, compile_check, revert_last, commit, revert, Read, Edit, and Write.
 
 mcp_servers: {}

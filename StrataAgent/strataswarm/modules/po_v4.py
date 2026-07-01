@@ -33,7 +33,7 @@ from .._lean_tools_mcp import create_extractor_mcp_server
 
 T = TypeVar("T")
 
-MAX_DEPTH = 3
+MAX_DEPTH = 5
 
 
 # ─── Guide verdict (structured output for stall decisions) ───────────────────
@@ -131,9 +131,9 @@ TRANSITIONS: dict[tuple[str, str], str] = {
     (Phase.EXTRACT, Trans.EXTRACTED):      Phase.DETECT,
     (Phase.EXTRACT, Trans.EXTRACT_FAILED): Phase.UPDATE,
 
-    (Phase.DETECT, Trans.CYCLE_FOUND):     Phase.UPDATE,
-    (Phase.DETECT, Trans.NO_CYCLE):        Phase.UPDATE,
-    (Phase.DETECT, Trans.EXTRACT_FAILED):  Phase.UPDATE,
+    (Phase.DETECT, Trans.CYCLE_FOUND):     Phase.PROVE,   # cycle found → revert, guide retries
+    (Phase.DETECT, Trans.NO_CYCLE):        Phase.UPDATE,  # clean → register in ledger
+    (Phase.DETECT, Trans.EXTRACT_FAILED):  Phase.PROVE,   # rejected → revert, guide retries
 
     (Phase.UPDATE, Trans.CHECKED):         Phase.CHECK,
 
@@ -489,18 +489,55 @@ async def _do_extract_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Pa
 
 
 async def _do_detect_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> Trans:
-    """Run cycle detection on extracted helpers."""
+    """Validate extracted helpers. If issues found, revert and go back to PROVE.
+
+    Only passes to UPDATE (for ledger registration) when ALL checks pass.
+    Issues (cycles, duplicates, rejection) → revert extraction, feed context back to prove.
+    """
     lemma = ledger.get(state.current_lemma_id)
 
-    # Prune stale entries from Stub.lean (helpers that were just extracted out)
-    _register_all_helpers(ledger, lemma, cwd)
-
     result = await _do_detect(agent, state, ledger, lemma, cwd)
+
     if result == "rejected":
-        # Decomposition identical to previous failed one — mark failed, guide retries
-        ledger.mark_failed(lemma.id, "Decomposition rejected: identical to previously failed attempt")
+        # Revert extraction — restore from predecomp
+        _revert_extraction(lemma, cwd)
+        await agent._emit("message",
+            "[PO4] Decomposition rejected (identical to previous). Reverting — guide will retry.")
         return Trans.EXTRACT_FAILED
-    return Trans.CYCLE_FOUND if result == "cycle_found" else Trans.NO_CYCLE
+
+    if result == "cycle_found":
+        # Get cycle details from verdicts for guide context
+        verdicts = getattr(state, '_detect_verdicts', [])
+        cycle_info = [v for v in verdicts if v.match_type == "cycle"]
+        cycle_msg = "; ".join(f"{v.name} ↔ {v.matched_name}" for v in cycle_info)
+
+        # Revert extraction
+        _revert_extraction(lemma, cwd)
+        state._detect_feedback = f"CYCLE DETECTED in your decomposition: {cycle_msg}. Try a different approach."
+        await agent._emit("message",
+            f"[PO4] Cycle in decomposition: {cycle_msg}. Reverting — guide will retry.")
+        return Trans.CYCLE_FOUND
+
+    # Also check for duplicate names before passing to UPDATE
+    verdicts = getattr(state, '_detect_verdicts', [])
+    existing_names = {e.name for e in ledger.entries()}
+    duplicates = [v for v in verdicts if v.name in existing_names]
+    if duplicates:
+        dup_names = [v.name for v in duplicates]
+        _revert_extraction(lemma, cwd)
+        state._detect_feedback = (
+            f"DUPLICATE NAMES in your decomposition: {dup_names}. "
+            f"These already exist in the ledger. Use add_import_safely to import them, "
+            f"or create helpers with different names."
+        )
+        await agent._emit("message",
+            f"[PO4] Duplicate names detected: {dup_names}. Reverting — guide will retry.")
+        return Trans.EXTRACT_FAILED
+
+    # All clean — proceed to UPDATE for ledger registration
+    # Register helpers from Stub.lean now (after extraction removed them)
+    _register_all_helpers(ledger, lemma, cwd)
+    return Trans.NO_CYCLE
 
 
 async def _do_update_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Path) -> Trans:
@@ -607,10 +644,16 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
             f"re-read it if you've lost context."
         )
 
+    # Check for detect feedback (from reverted cycle/duplicate)
+    detect_feedback = getattr(state, '_detect_feedback', None)
+    if detect_feedback:
+        state._detect_feedback = None  # consume it
+
     await agent._emit("message", f"[PO4] Guide: initial strategy for {entry.name}")
     initial_result = await guide.run_ai(
         inp=(
             f"CONTEXT:\n{ledger_summary}\n\n"
+            f"{('⚠️ DECOMPOSITION REVERTED: ' + detect_feedback + chr(10) + chr(10)) if detect_feedback else ''}"
             f"We are about to prove theorem '{entry.name}' in {stub_rel}.\n"
             f"Read the cheat sheet, then advise on the best approach.\n"
             f"What proof technique fits? What pitfalls to avoid?"
@@ -1583,8 +1626,22 @@ def _resolve_import_dependencies(ledger: LemmaLedger, cwd: Path):
                 ancestry = ledger.get_ancestry(e.id)
                 if dep_id in ancestry:
                     continue  # dep is already an ancestor — no need for edge
-                # Add cross-branch dependency: e depends on dep
-                ledger.add_parent(dep_id, e.id)
+                # Add cross-branch dependency: e uses dep (e depends on dep being proved)
+                ledger.add_parent(e.id, dep_id)
+
+
+def _revert_extraction(entry: LemmaEntry, cwd: Path):
+    """Revert an extraction: restore Stub.lean from predecomp, delete new_decomposition/decomposed."""
+    predecomp = cwd / entry.workspace / "Stub.predecomp.lean"
+    stub = cwd / entry.workspace / "Stub.lean"
+    if predecomp.exists():
+        shutil.copy2(predecomp, stub)
+
+    # Remove staged/committed decomposition files
+    for subdir in ("new_decomposition", "decomposed"):
+        d = cwd / entry.workspace / subdir
+        if d.exists():
+            shutil.rmtree(d)
 
 
 def _register_all_helpers(ledger: LemmaLedger, entry: LemmaEntry, cwd: Path):
@@ -1845,7 +1902,7 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
     failed_children = [c for c in children if c.status == LemmaStatus.FAILED]
     cycle_children = [c for c in children if c.status == LemmaStatus.CYCLE]
 
-    if entry.status == LemmaStatus.PENDING and (failed_children or cycle_children):
+    if failed_children or cycle_children:
         lines.append(f"\n⚠️  PREVIOUS DECOMPOSITION FAILED — you need a DIFFERENT approach.")
 
         for fc in failed_children:
