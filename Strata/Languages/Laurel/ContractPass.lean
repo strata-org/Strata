@@ -115,32 +115,48 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
     Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
     identically-named inputs, and the condition body is rewritten to match.
 
-    The original procedure's `preconditions` are attached to the helper as its own
-    preconditions so a postcondition may rely on them for its
+    The original procedure's `preconditions` are assumed at the start of the
+    helper's body so a postcondition may rely on them for its
     well-formedness — e.g. a postcondition that calls a partial function
     `safe(x) requires x > 0` is well-formed only because the procedure declares
-    `requires x > 0`. They are always attached as *assumed* (free) preconditions,
-    regardless of their original mode: the helper only needs them to hold in order
-    to be well-formed, and the procedure's own lowering already checks them at
-    every site, so re-asserting them at the helper's call sites would be
-    redundant. A precondition references only input parameters, which keep their
-    names in the helper (only outputs are suffixed) and cannot contain `old(...)`,
-    so they are carried over without the output-renaming applied to the
-    postcondition body. Reusing function preconditions means the
-    resulting well-formedness obligation is discharged wherever the helper is
-    invoked (the body assertion and the call-site assumes), each of which is
-    already guarded by that precondition. -/
+    `requires x > 0`. They are emitted as `assume` statements rather than helper
+    preconditions: the helper only needs them to hold in order to be well-formed,
+    and the procedure's own lowering already checks them at every site, so
+    re-asserting them at the helper's call sites would be redundant. A
+    precondition references only input parameters, which keep their names in the
+    helper (only outputs are suffixed) and cannot contain `old(...)`, so they are
+    assumed without the output-renaming applied to the postcondition body. -/
 private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
     (preconditions : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
+  let postExpr := renameOutputsInPostExpr outputNames condition.condition
+  let resultName := mkId "$result"
+  let preAssumes : List StmtExprMd :=
+    preconditions.map fun c => ⟨.Assume c.condition, c.condition.source⟩
+  -- The helper is a procedure, so its body assigns the postcondition to the
+  -- `$result` output. The preconditions are assumed first so the postcondition's
+  -- well-formedness may rely on them; those assumes are erased when
+  -- TransparencyPass builds the pure `$asFunction` twin.
+  let assignResult : StmtExprMd :=
+    ⟨.Assign [⟨.Local resultName, postExpr.source⟩] postExpr, postExpr.source⟩
+  -- Emit the assignment followed by `exit $return` inside a `$return`-labelled
+  -- block: this is the exact shape `unwrapReturnBlock` (in the schema pass)
+  -- recognises as a pure return. After TransparencyPass strips the leading
+  -- assumes from the `$asFunction` twin, the remaining `{ $result := post; exit
+  -- $return }$return` block matches that pattern and translates to a function
+  -- body. Without the `exit $return`, the twin's bare assignment would instead
+  -- fall through to `translateExpr` and be rejected as a destructive assignment.
+  let exitReturn : StmtExprMd := ⟨.Exit "$return", postExpr.source⟩
+  let body : StmtExprMd :=
+    ⟨.Block (preAssumes ++ [assignResult, exitReturn]) (some "$return"), postExpr.source⟩
   { name := mkId name
     inputs := inputs ++ renamedOutputs
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := preconditions.map (fun c => { c with mode := ConditionMode.Assume })
+    outputs := [⟨resultName, { val := .TBool, source := none }⟩]
+    preconditions := []
     decreases := none
-    isFunctional := true
-    body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
+    isFunctional := false
+    body := .Transparent body }
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
