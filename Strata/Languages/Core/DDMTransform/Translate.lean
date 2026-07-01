@@ -148,10 +148,23 @@ def translateMetadataAnnKey (arg : Arg) : TransM String := do
     return s!"{dialect}.{name}"
   | _, _ => TransM.error s!"translateMetadataAnnKey: unexpected {repr op.name}"
 
-/-- Provenance values are the only MetaDataElem.Value variant that carries
-structured data (Uri + byte range, or synthesized origin) serialized as a
-flat string in the grammar. Without re-parsing, they'd be stored as `.msg`
-and break `getProvenance`/`getFileRange`/`getRelatedFileRanges`. -/
+/-- Parse the flat-string form of a `Provenance` back into structured data.
+
+Provenance values are the only `MetaDataElem.Value` variant that carries
+structured data (Uri + byte range, or synthesized origin) serialized as a flat
+string in the grammar. Without re-parsing, they'd be stored as `.msg` and break
+`getProvenance`/`getFileRange`/`getRelatedFileRanges`.
+
+Two string forms are accepted, matching how `Provenance` is formatted:
+- Synthesized origin: `<synthesized:BODY>`, where `BODY` is parsed by
+  `SynthesizedOrigin.ofFormatString` (e.g. `<synthesized:smt-encode>`).
+- Source location: `PATH:START-STOP`, where `START`/`STOP` are byte offsets
+  (`Nat`) and `PATH` is the file path. The path may itself contain colons
+  (e.g. a URI), so we split off only the final `:`-segment as the range and
+  rejoin the rest as the path (e.g. `s3://bucket/foo.st:100-200`).
+
+Returns `none` if the string matches neither form (the caller then falls back
+to storing the raw string as `.msg`). -/
 private def parseProvenanceString (s : String) : Option Strata.Provenance :=
   if s.startsWith "<synthesized:" && s.endsWith ">" then
     let inner := ((s.drop "<synthesized:".length).dropEnd 1).toString
