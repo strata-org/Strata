@@ -37,7 +37,7 @@ def typeConToCST {M} [Inhabited M] (tcons : TypeConstructor)
   let name : Ann String M := ⟨default, tcons.name⟩
   modify (·.addGlobalFreeVars #[name.val])
   let args := typeConArgsToCST (M := M) tcons
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   pure (.command_typedecl default annotsAnn name args)
 
 /-- Convert a datatype declaration to CST -/
@@ -109,7 +109,7 @@ def datatypeToCST {M} [Inhabited M] (datatypes : List (Lambda.LDatatype Visibili
     pure (DatatypeDecl.datatype_decl default name args constrList)
 
   let decls ← datatypes.mapM processDatatype
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   let datatypesCmd := Command.command_datatypes default annotsAnn ⟨default, decls.toArray⟩
   pure [datatypesCmd]
 
@@ -131,7 +131,7 @@ def typeSynToCST {M} [Inhabited M] (syn : Core.TypeSynonym)
   let targs : Ann (Option (TypeArgs M)) M := ⟨default, none⟩
   let rhs ← lmonoTyToCoreType syn.type
   modify ToCSTContext.popScope
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   pure (.command_typesynonym default annotsAnn name args targs rhs)
 
 /-- Convert a recursive function to a RecFnDecl CST node -/
@@ -190,7 +190,7 @@ def funcToCST {M} [Inhabited M]
   let paramNames := results.map (·.2)
   let b : Bindings M := .mkBindings default ⟨default, bindings⟩
   let r ← lmonoTyToCoreType func.output
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   let result ← match func.body with
   | none => pure (.command_fndecl default annotsAnn name typeArgs b r)
   | some body => do
@@ -214,7 +214,7 @@ def axiomToCST {M} [Inhabited M] (ax : Core.Axiom)
   let labelAnn : Ann (Option (Label M)) M := ⟨
       default, some (.label default ⟨default, ax.name⟩)⟩
   let exprCST ← lexprToExpr ax.e 0
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   pure (.command_axiom default annotsAnn labelAnn exprCST)
 
 /-- Convert a distinct declaration to CST -/
@@ -223,7 +223,7 @@ def distinctToCST {M} [Inhabited M] (name : Core.CoreIdent) (es : List (Lambda.L
   let labelAnn : Ann (Option (Label M)) M := ⟨default, some (.label default ⟨default, name.toPretty⟩)⟩
   let exprsCST ← es.mapM (fun a => lexprToExpr a 0)
   let exprsAnn : Ann (Array (CoreDDM.Expr M)) M := ⟨default, exprsCST.toArray⟩
-  let annotsAnn := metadataToAnn md (← get).annFilter
+  let annotsAnn ← metadataToAnn md (← get).annFilter
   pure (.command_distinct default annotsAnn labelAnn exprsAnn)
 
 /-- Convert a `Core.Decl` to a Core `Command` -/
@@ -254,7 +254,7 @@ def declToCST {M} [Inhabited M] (decl : Core.Decl) : ToCSTM M (List (Command M))
     let fnNames := funcs.map (·.name.name)
     modify (·.addGlobalFreeVars fnNames.toArray)
     let recFnDecls ← funcs.mapM fun func => recFnDeclToCST func
-    let annotsAnn := metadataToAnn md (← get).annFilter
+    let annotsAnn ← metadataToAnn md (← get).annFilter
     let cmd := Command.command_recfndefs default annotsAnn ⟨default, recFnDecls.toArray⟩
     pure [cmd]
 
@@ -274,7 +274,10 @@ def programToCST {M} [Inhabited M] (prog : Core.Program)
 
 /-- Canonical formatter for `Core.Program`. Controls metadata annotation
 emission via `annFilter` (default `.none` — no annotations emitted).
-To emit annotations, call this directly with a non-default filter. -/
+To emit annotations, call this directly with a non-default filter.
+
+If the program references names not defined in the Grammar (e.g. via a custom
+Factory), use `extraFreeVars` to add them to the formatting context. -/
 def Core.formatProgram (ast : Core.Program)
     (extraFreeVars : Array String := #[])
     (annFilter : MetadataAnnFilter := .none) : Std.Format :=

@@ -192,7 +192,8 @@ def translateMetadataAnnEntry (arg : Arg) :
       let s ← translateStr strArg
       let fld : Imperative.MetaDataElem.Field Core.Expression := .label key
       if fld == Imperative.MetaData.provenanceField ||
-         fld == Imperative.MetaData.relatedFileRange then
+         fld == Imperative.MetaData.relatedFileRange ||
+         fld == (.label Imperative.MetaData.invariantProvenanceLabel) then
         match parseProvenanceString s with
         | some prov => return { fld, value := .provenance prov }
         | none => return { fld, value := .msg s }
@@ -225,7 +226,17 @@ def getMetaDataWithAnn (op : Operation) (annotsArg : Arg) :
     TransM (Imperative.MetaData Core.Expression) := do
   let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
-  return annMd.foldl (init := md) fun acc elem => acc.push elem
+  -- `getOpMetaData` derives a `provenance` element from the op's DDM source
+  -- position. There is only ever one `provenance`, so an explicit
+  -- `@[provenance = …]` replaces that derived one instead of being appended
+  -- and ignored. Other keys stay additive. A future metadata validator can
+  -- reject bad input like duplicate `provenance`; for now the last one wins.
+  let provField : Imperative.MetaDataElem.Field Core.Expression :=
+    Imperative.MetaData.provenanceField
+  return annMd.foldl (init := md) fun acc elem =>
+    if elem.fld == provField then
+      (acc.eraseElem provField).push elem
+    else acc.push elem
 
 ---------------------------------------------------------------------
 

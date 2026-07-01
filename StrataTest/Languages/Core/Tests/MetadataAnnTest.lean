@@ -36,6 +36,11 @@ private def formatWithFilter (program : StrataDDM.Program) (filter : MetadataAnn
   let formatted := (Core.formatProgram ast (annFilter := filter)).pretty
   IO.println formatted
 
+/-- Format a single statement with a given MetadataAnnFilter. Used for metadata
+    that cannot be produced by parsing (built programmatically instead). -/
+private def formatStmtWithFilter (stmt : Core.Statement) (filter : MetadataAnnFilter) : IO Unit :=
+  IO.println (Core.formatStatement stmt (annFilter := filter)).pretty
+
 -------------------------------------------------------------------------------
 -- Test program with mixed annotations
 -------------------------------------------------------------------------------
@@ -342,5 +347,38 @@ procedure Test ()
 -/
 #guard_msgs in
 #eval formatWithFilter testEmptyAnnotation (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
+
+-------------------------------------------------------------------------------
+-- Emit-only visibility under .all for value kinds the grammar cannot (yet)
+-- round-trip: .expr renders as a real expression `(e)`; .var keys render as
+-- `$name`; and `.switch false` renders as `"false"`. These are built
+-- programmatically because they cannot be produced by parsing.
+-------------------------------------------------------------------------------
+
+-- An assert statement carrying metadata with an expression value, a
+-- var-typed key, and a false switch.
+private def testEmitOnlyStmt : Core.Statement :=
+  let yVar : Core.CoreIdent := "y"
+  let md : Imperative.MetaData Core.Expression := #[
+    { fld := .label "exprMeta", value := .expr (.intConst () 42) },
+    { fld := .var yVar, value := .switch true },
+    { fld := .label "offFlag", value := .switch false }
+  ]
+  Core.Statement.assert "a1" (.intConst () 0) md
+
+-- With `.all`, every value kind is visible: the expression `42`, the var key
+-- `$y`, and the false flag rendered as the string `"false"`.
+/--
+info: @[exprMeta = ((42)), $y, offFlag = "false"] assert [a1]: 0;
+-/
+#guard_msgs in
+#eval formatStmtWithFilter testEmitOnlyStmt .all
+
+-- With `.none` (default), none of these are emitted.
+/--
+info: assert [a1]: 0;
+-/
+#guard_msgs in
+#eval formatStmtWithFilter testEmitOnlyStmt .none
 
 end Strata.Test.MetadataAnn
