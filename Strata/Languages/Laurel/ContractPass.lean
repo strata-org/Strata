@@ -113,15 +113,31 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
 
 /-- Build a postcondition helper function over the procedure's inputs and outputs.
     Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
-    identically-named inputs, and the condition body is rewritten to match. -/
+    identically-named inputs, and the condition body is rewritten to match.
+
+    The original procedure's `preconditions` are attached to the helper as its own
+    preconditions so a postcondition may rely on them for its
+    well-formedness — e.g. a postcondition that calls a partial function
+    `safe(x) requires x > 0` is well-formed only because the procedure declares
+    `requires x > 0`. They are always attached as *assumed* (free) preconditions,
+    regardless of their original mode: the helper only needs them to hold in order
+    to be well-formed, and the procedure's own lowering already checks them at
+    every site, so re-asserting them at the helper's call sites would be
+    redundant. A precondition references only input parameters, which keep their
+    names in the helper (only outputs are suffixed) and cannot contain `old(...)`,
+    so they are carried over without the output-renaming applied to the
+    postcondition body. Reusing function preconditions means the
+    resulting well-formedness obligation is discharged wherever the helper is
+    invoked (the body assertion and the call-site assumes), each of which is
+    already guarded by that precondition. -/
 private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
-    (condition : Condition) : Procedure :=
+    (preconditions : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
   { name := mkId name
     inputs := inputs ++ renamedOutputs
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
-    preconditions := []
+    preconditions := preconditions.map (fun c => { c with mode := ConditionMode.Assume })
     decreases := none
     isFunctional := true
     body := .Transparent (renameOutputsInPostExpr outputNames condition.condition) }
@@ -411,7 +427,8 @@ def lowerContracts (program : Program) : Program :=
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs c
+      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs
+        proc.preconditions c
     preProcs ++ postProcs
 
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites

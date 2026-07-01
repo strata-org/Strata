@@ -74,12 +74,21 @@ function callee$pre2(x: int)
 x > 2;
 function callee$post0(x: int, r$out: int)
   returns ($result: bool)
+  free requires x > 0
+  free requires x > 1
+  free requires x > 2
 r$out > 0;
 function callee$post1(x: int, r$out: int)
   returns ($result: bool)
+  free requires x > 0
+  free requires x > 1
+  free requires x > 2
 r$out > 1;
 function callee$post2(x: int, r$out: int)
   returns ($result: bool)
+  free requires x > 0
+  free requires x > 1
+  free requires x > 2
 r$out > 2;
 procedure callee(x: int)
   returns (r: int)
