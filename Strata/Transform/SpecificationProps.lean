@@ -158,8 +158,8 @@ theorem skip_block (Pre : Env P → Prop) :
 omit [HasVal P] [HasOps P] in
 /-- A single command. -/
 theorem cmd (c : CmdT) (Pre Post : Env P → Prop)
-    (h : ∀ ρ₀ σ' f, Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → ρ₀.hasFailure = false →
-      evalCmd ρ₀.eval ρ₀.factory ρ₀.store c σ' f →
+    (h : ∀ ρ₀ σ' f, Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
+      evalCmd ρ₀.factory ρ₀.store c σ' f →
       Post { ρ₀ with store := σ', hasFailure := f } ∧ f = false) :
     Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.cmd c) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
@@ -183,11 +183,10 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
     TripleBlock evalCmd extendFactory Pre (s :: ss) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hdone
   have hwfb_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-      WellFormedSemanticEvalBool ρ₁.eval ρ₁.factory := by
+      WellFormedSemanticEvalBool (P := P) ρ₁.factory := by
     intro ρ₁ hterm
-    have heval := smallStep_noFuncDecl_preserves_eval P evalCmd extendFactory s ρ₀ ρ₁ hnofd hterm
     have hfac := noFuncDecl_preserves_factory evalCmd extendFactory s ρ₀ ρ₁ hnofd hterm
-    rw [heval, hfac]; exact hwfb
+    rw [hfac]; exact hwfb
   match hdone with
   | .inl hterm =>
     cases hterm with
@@ -222,20 +221,20 @@ theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaDa
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
       -- At block entry the inner is `.stmts ss ρ₀` whose factory is `ρ₀.factory`,
-      -- which is exactly `f_parent`.  So `evalExtendsOf ρ₀.factory inner` is
-      -- reflexive, and `star_preserves_evalExtendsOf` lifts the inner trace.
-      have hinv₀ : Config.evalExtendsOf P extendFactory ρ₀.factory (.stmts ss ρ₀) := by
-        simp only [Config.evalExtendsOf]; exact .refl
+      -- which is exactly `f_parent`.  So `factoryExtendsOf ρ₀.factory inner` is
+      -- reflexive, and `star_preserves_factoryExtendsOf` lifts the inner trace.
+      have hinv₀ : Config.factoryExtendsOf P extendFactory ρ₀.factory (.stmts ss ρ₀) := by
+        simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
         have hext : FactoryExtensionOf extendFactory ρ₀.factory ρ_inner.factory :=
-          star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hterm
+          star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
         have hext : FactoryExtensionOf extendFactory ρ₀.factory ρ_inner.factory :=
-          star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hexit
+          star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
 omit [HasVal P] [HasOps P] in
@@ -282,36 +281,36 @@ omit [HasVal P] [HasOps P] in
 /-- If-then-else rule. -/
 theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
-    (ht : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ ρ.eval ρ.factory ρ.store c = some HasBool.tt) tss Post)
-    (he : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ ρ.eval ρ.factory ρ.store c = some HasBool.ff) ess Post)
+    (ht : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store c = some HasBool.tt) tss Post)
+    (he : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store c = some HasBool.ff) ess Post)
     (hpost_proj : PostWF extendFactory Post) :
     Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
     | step_ite_true hc _ =>
-      have hinv₀ : Config.evalExtendsOf P extendFactory ρ₀.factory (.stmts tss ρ₀) := by
-        simp only [Config.evalExtendsOf]; exact .refl
+      have hinv₀ : Config.factoryExtendsOf P extendFactory ρ₀.factory (.stmts tss ρ₀) := by
+        simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        have hext := star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hterm
+        have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        have hext := star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hexit
+        have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
     | step_ite_false hc _ =>
-      have hinv₀ : Config.evalExtendsOf P extendFactory ρ₀.factory (.stmts ess ρ₀) := by
-        simp only [Config.evalExtendsOf]; exact .refl
+      have hinv₀ : Config.factoryExtendsOf P extendFactory ρ₀.factory (.stmts ess ρ₀) := by
+        simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
-        have hext := star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hterm
+        have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
         have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
-        have hext := star_preserves_evalExtendsOf P evalCmd extendFactory hinv₀ hexit
+        have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
 /- TODO: the WHILE rule -/
@@ -370,9 +369,9 @@ theorem hoareTriple_implies_assertValid
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
     (block_label : String) (block_md : MetaData P')
     (hoare : Triple (Lang.standard P' extendFactory)
-      (fun ρ => ρ.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
+      (fun ρ => P'.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
       st
-      (fun ρ => ρ.eval ρ.factory ρ.store post_expr = some HasBool.tt))
+      (fun ρ => P'.eval ρ.factory ρ.store post_expr = some HasBool.tt))
     (hno : st.noMatchingAssert post_label) :
     AssertValid (Lang.standard P' extendFactory)
       (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
@@ -436,44 +435,19 @@ theorem hoareTriple_implies_assertValid
                       | eval_assume hpre hwfb =>
                         cases h_assume_rest with
                         | refl =>
-                          have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq, hfac_eq⟩ :=
+                          have ⟨ρ'_clean, hterm_clean, hs_eq, hfac_eq⟩ :=
                             smallStep_hasFailure_irrel P' (EvalCmd P') extendFactory
-                              st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl rfl
+                              st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
                             hpre hwfb rfl hterm_clean
-                          have ⟨he, hs⟩ := assert_tail_getEvalStore P' extendFactory
+                          have hs := assert_tail_getStore P' extendFactory
                             ρ' post_label post_expr post_md inner ⟨post_label, post_expr⟩
                             hrest_assert hat_inner
-                          have hfac_inner : inner.getEnv.factory = ρ'.factory := by
-                            -- Assert-tail steps (stmts_cons, step_cmd for assert, seq) preserve factory
-                            cases hrest_assert with
-                            | refl => rfl
-                            | step _ _ _ h1 hr1 => cases h1 with
-                              | step_stmts_cons => cases hr1 with
-                                | refl => rfl
-                                | step _ _ _ h2 hr2 =>
-                                  cases h2 with
-                                  | step_seq_inner hi =>
-                                    cases hi with
-                                    | step_cmd =>
-                                      cases hr2 with
-                                      | refl => rfl
-                                      | step _ _ _ h3 hr3 =>
-                                        cases h3 with
-                                        | step_seq_inner h_t => exact absurd h_t (by intro h; cases h)
-                                        | step_seq_done =>
-                                          cases hr3 with
-                                          | refl => rfl
-                                          | step _ _ _ h4 hr4 =>
-                                            cases h4 with
-                                            | step_stmts_nil =>
-                                              cases hr4 with
-                                              | refl => rfl
-                                              | step _ _ _ h5 _ => exact nomatch h5
-                          -- The simulation preserves factory (hasFailure is the only
-                          -- component that can differ).
-                          dsimp [Config.getEval, Config.getStore, Config.getEnv] at he hs ⊢
-                          rw [he, hs, hfac_inner, ← hfac_eq, ← hs_eq, ← he_eq]; exact hpost
+                          have hfac_inner : inner.getEnv.factory = ρ'.factory :=
+                            assert_tail_preserves_factory P' extendFactory ρ' post_label post_expr
+                              post_md inner hrest_assert
+                          dsimp [Config.getStore, Config.getEnv] at hs ⊢
+                          rw [hs, hfac_inner, ← hfac_eq, ← hs_eq]; exact hpost
                         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
 
@@ -487,9 +461,9 @@ theorem allAssertsValid_implies_hoareTriple
     (hvalid : AllAssertsValid (Lang.standard P' extendFactory)
       (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
     Triple (Lang.standard P' extendFactory)
-      (fun ρ => ρ.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
+      (fun ρ => P'.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
       st
-      (fun ρ => ρ.eval ρ.factory ρ.store post_expr = some HasBool.tt) := by
+      (fun ρ => P'.eval ρ.factory ρ.store post_expr = some HasBool.tt) := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   let assume_stmt : Stmt P' (Cmd P') := .cmd (.assume pre_label pre_expr pre_md)
   let assert_stmt : Stmt P' (Cmd P') := .cmd (.assert post_label post_expr post_md)
@@ -497,12 +471,12 @@ theorem allAssertsValid_implies_hoareTriple
   have hvalid_st : ∀ (a : AssertId P') (cfg : Config P' (Cmd P')),
       StepStmtStar P' (EvalCmd P') extendFactory (.stmt st ρ₀) cfg →
       isAtAssert P' cfg a →
-      cfg.getEval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt := by
+      P'.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt := by
     intro a cfg hstar_st hat
     have h_assume : StepStmtStar P' (EvalCmd P') extendFactory
         (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
       .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
-    have h_ρ₁_eq : ({ store := ρ₀.store, factory := ρ₀.factory, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
+    have h_ρ₁_eq : ({ store := ρ₀.store, factory := ρ₀.factory, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
       cases ρ₀; simp [Bool.or_false]
     have h1 := stmts_cons_step P' (EvalCmd P') extendFactory assume_stmt [st, assert_stmt] ρ₀ _ h_assume
     rw [h_ρ₁_eq] at h1
@@ -518,12 +492,12 @@ theorem allAssertsValid_implies_hoareTriple
       .step _ _ _ StepStmt.step_block (.refl _)
     have h_full := ReflTrans_Transitive _ _ _ _ h_start h_block
     have h_result := hvalid a ρ₀ _ trivial h_full hat
-    dsimp [Config.getEval, Config.getStore, Config.getEnv] at h_result ⊢
+    dsimp [Config.getStore, Config.getEnv] at h_result ⊢
     exact h_result
   have h_assume : StepStmtStar P' (EvalCmd P') extendFactory
       (.stmt assume_stmt ρ₀) (.terminal { ρ₀ with store := ρ₀.store, hasFailure := ρ₀.hasFailure || false }) :=
     .step _ _ _ (StepStmt.step_cmd (EvalCmd.eval_assume hpre hwfb)) (.refl _)
-  have h_ρ₁_eq : ({ store := ρ₀.store, factory := ρ₀.factory, eval := ρ₀.eval, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
+  have h_ρ₁_eq : ({ store := ρ₀.store, factory := ρ₀.factory, hasFailure := ρ₀.hasFailure || false } : Env P') = ρ₀ := by
     cases ρ₀; simp [Bool.or_false]
   have h1 := stmts_cons_step P' (EvalCmd P') extendFactory assume_stmt [st, assert_stmt] ρ₀ _ h_assume
   rw [h_ρ₁_eq] at h1
@@ -541,7 +515,7 @@ theorem allAssertsValid_implies_hoareTriple
   have h_at : isAtAssert P' (.block (.some block_label) ρ₀.store ρ₀.factory (.seq (.stmt assert_stmt ρ') [])) ⟨post_label, post_expr⟩ := by
     simp [isAtAssert, assert_stmt]
   have h_result := hvalid ⟨post_label, post_expr⟩ ρ₀ _ trivial h_full h_at
-  dsimp [Config.getEval, Config.getStore, Config.getEnv] at h_result
+  dsimp [Config.getStore, Config.getEnv] at h_result
   exact ⟨h_result, allAssertsValid_preserves_noFailure P' extendFactory
     (ρ₀ := ρ₀) (ρ' := ρ') st hvalid_st hf₀ hstar⟩
 
@@ -590,7 +564,7 @@ theorem overapproximates_triple (L₁ L₂ : Lang P)
     (hsem : Overapproximates L₁ L₂ T)
     {Pre Post : Env P → Prop}
     (htriple : Hoare.Triple L₂ Pre s' Post)
-    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory) :
+    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal (P := P) ρ₀.factory) :
     Hoare.Triple L₁ Pre st Post := by
   intro ρ₀ ρ' hpre hwfb hf₀ hstar
   exact htriple ρ₀ ρ' hpre hwfb hf₀
@@ -654,8 +628,8 @@ private theorem overapproximates_stmts_aux
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory →
-        WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+        WellFormedSemanticEvalBool (P := P) ρ₀.factory →
+        WellFormedSemanticEvalVal (P := P) ρ₀.factory →
         (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendFactory (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -674,11 +648,10 @@ private theorem overapproximates_stmts_aux
     subst hss'
     have eval_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEvalBool ρ₁.eval ρ₁.factory ∧ WellFormedSemanticEvalVal ρ₁.eval ρ₁.factory := by
+        WellFormedSemanticEvalBool (P := P) ρ₁.factory ∧ WellFormedSemanticEvalVal (P := P) ρ₁.factory := by
       intro ρ₁ hterm_s
-      have heq := smallStep_noFuncDecl_preserves_eval P evalCmd extendFactory s ρ₀ ρ₁ hnofd_s hterm_s
       have hfac := Hoare.noFuncDecl_preserves_factory evalCmd extendFactory s ρ₀ ρ₁ hnofd_s hterm_s
-      exact ⟨heq ▸ hfac ▸ hwfb, heq ▸ hfac ▸ hwfv⟩
+      exact ⟨hfac ▸ hwfb, hfac ▸ hwfv⟩
     constructor
     · intro hstar
       cases hstar with

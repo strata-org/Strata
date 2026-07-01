@@ -87,7 +87,7 @@ end Strata
 /-! ## substitutePrecondition: iterated capture -/
 
 namespace Core
-open Lambda
+open _root_.Lambda
 
 private def precond : LExpr CoreLParams.mono :=
   .eq () (.fvar () ⟨"x", ()⟩ (some .int)) (.fvar () ⟨"y", ()⟩ (some .int))
@@ -135,7 +135,7 @@ end Core
 /-! ## captureFreevars: value corruption via iterated substitution -/
 
 namespace Core.Statement
-open Lambda
+open _root_.Lambda
 
 private def mkId (s : String) : Identifier Unit := ⟨s, ()⟩
 private def mkFv (s : String) : LExpr CoreLParams.mono := .fvar () (mkId s) (some .int)

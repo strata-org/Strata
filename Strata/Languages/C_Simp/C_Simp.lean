@@ -33,7 +33,11 @@ abbrev Expression : Imperative.PureExpr := {
   TyEnv := Lambda.TEnv Unit,
   TyContext := Lambda.LContext ⟨Unit, Unit⟩,
   EqIdent := Lambda.instDecidableEqIdentifier,
-  Factory := Lambda.Factory CSimpLParams
+  Factory := Lambda.Factory CSimpLParams,
+  eval := fun _f σ e =>
+    match e with
+    | .fvar _ x _ => σ x
+    | _ => some e
 }
 
 

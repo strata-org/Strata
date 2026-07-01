@@ -57,10 +57,10 @@ open Core Imperative
     initialized and preconditions assumed.
     The well-formed environment also includes old snapshots in store -/
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
-  wfVar  : WellFormedSemanticEvalVar ρ.eval ρ.factory
-  wfBool : WellFormedSemanticEvalBool ρ.eval ρ.factory
-  wfCong : WellFormedCoreEvalCong ρ.eval ρ.factory
-  wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval ρ.factory
+  wfVar  : WellFormedSemanticEvalVar (P := Expression) ρ.factory
+  wfBool : WellFormedSemanticEvalBool (P := Expression) ρ.factory
+  wfCong : WellFormedCoreEvalCong ρ.factory
+  wfExprCongr : WellFormedSemanticEvalExprCongr (P := Expression) ρ.factory
   -- The verification env's store holds only values (true of reachable stores).
   storeValues : Imperative.WellFormedStore ρ.store ρ.factory
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
@@ -71,7 +71,7 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   -- Precondition holds in the body, and input state had no failure.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
-    ρ.eval ρ.factory ρ.store check.expr = some HasBool.tt
+    Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
   noFailure : ρ.hasFailure = Bool.false
 
 /-! ## Procedure correctness -/
@@ -154,19 +154,19 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
   assertsValid : ∀ a, AssertValidInProcedure π φ proc a
   /-- (2) The postconditions hold on termination.
       Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
-      For structured bodies, the terminal eval `δ'` comes from the terminal
-      `Env` (may differ from `δ` due to `funcDecl` extensions). For CFG
-      bodies, `δ' = δ` since `CoreCFGStepStar` does not track eval changes. -/
+      For structured bodies, the terminal factory `fac'` comes from the terminal
+      `Env` (may differ from `fac` due to `funcDecl` extensions). For CFG
+      bodies, `fac' = fac` since `CoreCFGStepStar` does not track factory changes. -/
   postconditionsValid :
     WF.WFProcedureProp p proc →
     ∀ (ρ₀ : Env Expression),
       ProcEnvWF proc ρ₀ →
-      ∀ (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
-        CoreBodyExec π φ proc.body ρ₀.store ρ₀.factory ρ₀.eval σ' δ' failed →
+      ∀ (σ' : CoreStore) (fac' : Expression.Factory) (failed : Bool),
+        CoreBodyExec π φ proc.body ρ₀.store ρ₀.factory σ' fac' failed →
         (∀ (label : CoreLabel) (check : Procedure.Check),
           (label, check) ∈ proc.spec.postconditions.toList →
           check.attr = Procedure.CheckAttr.Default →
-          δ' ρ₀.factory σ' check.expr = some HasBool.tt) ∧
+          Expression.eval fac' σ' check.expr = some HasBool.tt) ∧
         failed = Bool.false
 
 end Core.Specification

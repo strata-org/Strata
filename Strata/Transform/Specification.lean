@@ -27,7 +27,7 @@ This module provides two equivalent formulations:
 1. **`AssertValidWhen` / `AssertValid` (reachability-based)** — for every
    initial environment `ρ₀` (satisfying `Pre`) and every configuration `cfg`
    reachable from `s`, if `cfg` is at the assert (detected by `isAtAssert`),
-   then `(cfg.getEnv).eval (cfg.getEnv).store a.expr = some HasBool.tt`.  This is a
+   then `P.eval (cfg.getEnv).factory (cfg.getEnv).store a.expr = some HasBool.tt`.  This is a
    direct, semantic definition: walk the execution graph and check each
    assert site.
 
@@ -127,7 +127,7 @@ on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
     Pre ρ₀ →
     L.star (L.stmtCfg s ρ₀) cfg →
     L.isAtAssert cfg a →
-    (L.getEnv cfg).eval (L.getEnv cfg).factory (L.getEnv cfg).store a.expr = some HasBool.tt
+    P.eval (L.getEnv cfg).factory (L.getEnv cfg).store a.expr = some HasBool.tt
 
 /-- All asserts are valid in statement `s` when `Pre` holds. -/
 def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
@@ -172,7 +172,7 @@ namespace Hoare
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -190,7 +190,7 @@ def TripleBlock
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
     (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') ∨
      ∃ lbl, StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -250,8 +250,8 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
   ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
     T st = some s' →
     ∀ (ρ₀ ρ' : Env P),
-      WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory →
-      WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+      WellFormedSemanticEvalBool (P := P) ρ₀.factory →
+      WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧

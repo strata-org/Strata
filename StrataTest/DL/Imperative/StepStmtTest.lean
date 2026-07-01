@@ -38,6 +38,19 @@ inductive Ty where
   | Bool
   deriving DecidableEq, Repr, Inhabited
 
+/-- Normalise an `Expr` into a boolean constant by folding `.not`s.
+    Closed `.tt` and `.ff` stay; `.not .tt` collapses to `.ff`, and so on.
+    `.op` is opaque to the base evaluator and stays as-is. -/
+def Expr.normBool : Expr → Expr
+  | .tt => .tt
+  | .ff => .ff
+  | .op n => .op n
+  | .not e =>
+    match Expr.normBool e with
+    | .tt => .ff
+    | .ff => .tt
+    | e'  => .not e'
+
 abbrev MiniPureExpr : PureExpr :=
   { Ident := String,
     EqIdent := instDecidableEqString,
@@ -46,7 +59,8 @@ abbrev MiniPureExpr : PureExpr :=
     ExprMetadata := Unit,
     TyEnv := Unit,
     TyContext := Unit,
-    Factory := Unit }
+    Factory := Unit,
+    eval := fun _f _σ e => some e.normBool }
 
 instance : HasVal MiniPureExpr where
   value _ _ := True
@@ -82,19 +96,6 @@ instance : HasIntOps MiniPureExpr where
 
 /-! ## Evaluator and well-formedness setup -/
 
-/-- Normalise an `Expr` into a boolean constant by folding `.not`s.
-    Closed `.tt` and `.ff` stay; `.not .tt` collapses to `.ff`, and so on.
-    `.op` is opaque to the base evaluator and stays as-is. -/
-def Expr.normBool : Expr → Expr
-  | .tt => .tt
-  | .ff => .ff
-  | .op n => .op n
-  | .not e =>
-    match Expr.normBool e with
-    | .tt => .ff
-    | .ff => .tt
-    | e'  => .not e'
-
 theorem Expr.normBool_not_tt_iff_ff (e : Expr) :
     Expr.normBool (Expr.not e) = Expr.ff ↔ Expr.normBool e = Expr.tt := by
   show (match Expr.normBool e with
@@ -111,10 +112,10 @@ theorem Expr.normBool_not_ff_iff_tt (e : Expr) :
 def miniEval : SemanticEval MiniPureExpr :=
   fun _f _σ e => some e.normBool
 
-theorem miniEval_wfBool : WellFormedSemanticEvalBool miniEval () := by
+theorem miniEval_wfBool : WellFormedSemanticEvalBool (P := MiniPureExpr) () := by
   unfold WellFormedSemanticEvalBool; intro σ e
   show (_ = some Expr.tt ↔ _ = some Expr.ff) ∧ (_ = some Expr.ff ↔ _ = some Expr.tt)
-  simp only [miniEval, Option.some.injEq]
+  simp only [MiniPureExpr, Option.some.injEq]
   exact ⟨(Expr.normBool_not_tt_iff_ff e).symm, (Expr.normBool_not_ff_iff_tt e).symm⟩
 
 /-- Empty store: no identifier is defined. -/
@@ -122,7 +123,7 @@ def emptyStore : SemanticStore MiniPureExpr := fun _ => none
 
 /-- Initial execution environment. -/
 def ρ₀ : Env MiniPureExpr :=
-  { store := emptyStore, factory := (), eval := miniEval, hasFailure := false }
+  { store := emptyStore, factory := (), hasFailure := false }
 
 /-- `ExtendFactory` is irrelevant to this test, but we need a value. -/
 def miniExtendFactory : ExtendFactory MiniPureExpr :=
@@ -132,7 +133,7 @@ def miniExtendFactory : ExtendFactory MiniPureExpr :=
 abbrev CmdT := Unit
 
 /-- `EvalCmd` is trivially false since the program contains no commands. -/
-def noCmd : EvalCmdParam MiniPureExpr CmdT := fun _ _ _ _ _ _ => False
+def noCmd : EvalCmdParam MiniPureExpr CmdT := fun _ _ _ _ _ => False
 
 ---------------------------------------------------------------------
 
@@ -153,7 +154,7 @@ def prog : Stmt MiniPureExpr CmdT :=
 theorem progReachesTerminal :
     StepStmtStar MiniPureExpr noCmd miniExtendFactory
       (.stmt prog ρ₀) (.terminal ρ₀) := by
-  have htt : ρ₀.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
   -- Step 1: step_block — enter the outer labeled block.
   refine .step _ _ _ StepStmt.step_block ?_
   -- Step 2: step_block_body step_stmts_cons.
@@ -226,7 +227,7 @@ def progIteThen : Stmt MiniPureExpr CmdT :=
 theorem progIteThenReachesTerminal :
     StepStmtStar MiniPureExpr noCmd miniExtendFactory
       (.stmt progIteThen ρ₀) (.terminal ρ₀) := by
-  have htt : ρ₀.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.tt = some HasBool.tt := rfl
   refine .step _ _ _ StepStmt.step_block ?_
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   refine .step _ _ _
@@ -269,7 +270,7 @@ def progIteElse : Stmt MiniPureExpr CmdT :=
 theorem progIteElseReachesTerminal :
     StepStmtStar MiniPureExpr noCmd miniExtendFactory
       (.stmt progIteElse ρ₀) (.terminal ρ₀) := by
-  have hff : ρ₀.eval ρ₀.factory ρ₀.store HasBool.ff = some HasBool.ff := rfl
+  have hff : MiniPureExpr.eval ρ₀.factory ρ₀.store HasBool.ff = some HasBool.ff := rfl
   refine .step _ _ _ StepStmt.step_block ?rest1
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?rest2
   -- step_ite_false — take the else branch.
@@ -317,7 +318,10 @@ abbrev MiniPureExpr2 : PureExpr :=
     ExprMetadata := Unit,
     TyEnv := Unit,
     TyContext := Unit,
-    Factory := Unit }
+    Factory := Unit,
+    eval := fun _f σ e => match e with
+      | .var x => σ x
+      | _ => some e }
 
 instance : HasVal MiniPureExpr2 where
   value _ _ := True
@@ -396,7 +400,7 @@ instance : HasFvar MiniPureExpr where
 
 /-- `WellFormedSemanticEvalVar` for `miniEval` — trivially holds since
     `getFvar` always returns `none`. -/
-theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) miniEval () := by
+theorem miniEval_wfVar : WellFormedSemanticEvalVar (P := MiniPureExpr) () := by
   unfold WellFormedSemanticEvalVar
   intro e v σ _hwfs hfv
   simp [HasFvar.getFvar] at hfv
@@ -411,7 +415,7 @@ def storeWithX : SemanticStore MiniPureExpr :=
 
 /-- Env with "x" defined. -/
 def ρ_x : Env MiniPureExpr :=
-  { store := storeWithX, factory := (), eval := miniEval, hasFailure := false }
+  { store := storeWithX, factory := (), hasFailure := false }
 
 /-- Program: `block B { init y : Bool := tt }`.
     After stepping, "y" should not be visible (projected away). -/
@@ -440,7 +444,7 @@ private theorem storeWithXY_frame :
 theorem blockScopeTest :
     StepStmtStar MiniPureExpr stdEvalCmd miniExtendFactory
       (.stmt progBlockScope ρ_x)
-      (.terminal { store := storeWithX, factory := (), eval := miniEval, hasFailure := false }) := by
+      (.terminal { store := storeWithX, factory := (), hasFailure := false }) := by
   -- Step 1: step_block — enter the block, saving ρ_x.store as σ_parent.
   refine .step _ _ _ StepStmt.step_block ?_
   -- Step 2: step_block_body (step_stmts_cons) — process the singleton list.
@@ -468,8 +472,8 @@ theorem blockScopeTest :
     ext v
     simp [projectStore, storeWithX, storeWithXY]
     split <;> simp_all
-  conv => rhs; rw [show Env.mk storeWithX () miniEval false =
-    { (Env.mk storeWithXY () miniEval false) with store := projectStore storeWithX storeWithXY }
+  conv => rhs; rw [show Env.mk storeWithX () false =
+    { (Env.mk storeWithXY () false) with store := projectStore storeWithX storeWithXY }
     from by simp [hproj]]
   exact .step _ _ _ StepStmt.step_block_done (.refl _)
 
@@ -502,7 +506,7 @@ def progLoopScope : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
 theorem loopScopeTest :
     StepStmtStar MiniPureExpr stdEvalCmd miniExtendFactory
       (.stmt progLoopScope ρ_x)
-      (.terminal { store := storeWithX, factory := (), eval := miniEval, hasFailure := false }) := by
+      (.terminal { store := storeWithX, factory := (), hasFailure := false }) := by
   -- Step 1: step_loop_nondet_enter — produces:
   --   .seq (.block .none ρ_x.store (.stmts [init y] ρ_x')) [loop ...]
   refine .step _ _ _
@@ -561,8 +565,8 @@ theorem loopScopeTest :
   -- Step 11: step_stmts_nil — final terminal
   -- The final env's store should be storeWithX after the projection.
   -- Need to reconcile the env shape.
-  conv => rhs; rw [show Env.mk storeWithX () miniEval false =
-    { Env.mk (projectStore storeWithX storeWithXY) () miniEval false with
+  conv => rhs; rw [show Env.mk storeWithX () false =
+    { Env.mk (projectStore storeWithX storeWithXY) () false with
       hasFailure := false || false } from by simp [hproj]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
@@ -660,7 +664,7 @@ def progIteFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
 theorem progIteFuncDecl_eval_restored :
     StepStmtStar MiniPureExpr stdEvalCmd addEval
       (.stmt progIteFuncDecl ρ_x) (.terminal ρ_x) := by
-  have htt : ρ_x.eval ρ_x.factory ρ_x.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval ρ_x.factory ρ_x.store HasBool.tt = some HasBool.tt := rfl
   -- Step 1: step_ite_true wraps the then-branch in `.block .none ... ρ_x.eval ...`.
   refine .step _ _ _ (StepStmt.step_ite_true htt miniEval_wfBool) ?_
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
@@ -682,7 +686,7 @@ def progIteElseFuncDecl : Stmt MiniPureExpr (Cmd MiniPureExpr) :=
 theorem progIteElseFuncDecl_eval_restored :
     StepStmtStar MiniPureExpr stdEvalCmd addEval
       (.stmt progIteElseFuncDecl ρ_x) (.terminal ρ_x) := by
-  have hff : ρ_x.eval ρ_x.factory ρ_x.store HasBool.ff = some HasBool.ff := rfl
+  have hff : MiniPureExpr.eval ρ_x.factory ρ_x.store HasBool.ff = some HasBool.ff := rfl
   refine .step _ _ _ (StepStmt.step_ite_false hff miniEval_wfBool) ?_
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_stmts_cons) ?_
   refine .step _ _ _
@@ -744,7 +748,7 @@ theorem progLoopFuncDecl_eval_restored :
   conv => rhs; rw [show ρ_x =
     { store := projectStore ρ_x.store ρ_x.store,
       factory := ρ_x.factory,
-      eval := ρ_x.eval, hasFailure := ρ_x.hasFailure || false } from by
+      hasFailure := ρ_x.hasFailure || false } from by
     cases ρ_x; simp [projectStore_self]]
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
@@ -761,7 +765,7 @@ after the block (modeled as an `ite` whose guard is the opaque expression
 
 /-- *Before* entering the block (the initial env): `miniEval` doesn't know
     about `f`, so `.op "f"` stays opaque (returns itself). -/
-example : ρ_x.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
+example : MiniPureExpr.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
 
 /-- *Inside* the block, after `step_funcDecl` has fired: the factory is
     `addEval ρ_x.factory ρ_x.store fFunc`, which with `Factory = Unit` is
@@ -770,7 +774,7 @@ example : addEval ρ_x.factory ρ_x.store fFunc = () := rfl
 
 /-- *After* the block exits: `progBlockFuncDecl_eval_restored` returns us to
     `ρ_x`, where `.op "f"` is opaque again — the funcDecl extension is gone. -/
-example : ρ_x.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
+example : MiniPureExpr.eval ρ_x.factory ρ_x.store (.op "f") = some (.op "f") := rfl
 
 /-- And as a step-level consequence: from `ρ_x` (the env after the block),
     an `ite` guarded by `.op "f"` cannot step. -/
@@ -779,8 +783,8 @@ theorem funcDecl_out_of_scope_after_block :
       (.stmt (.ite (.det (.op "f")) [] [] .empty) ρ_x) c₂ := by
   intro ⟨_, hstep⟩
   cases hstep with
-  | step_ite_true h _ => simp [ρ_x, miniEval, Expr.normBool] at h
-  | step_ite_false h _ => simp [ρ_x, miniEval, Expr.normBool] at h
+  | step_ite_true h _ => simp [Expr.normBool] at h
+  | step_ite_false h _ => simp [Expr.normBool] at h
 
 ---------------------------------------------------------------------
 

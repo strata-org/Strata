@@ -382,6 +382,23 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     | some _ => .error "expression contains stuck redex"
     | none => .ok result.fst
 
+/-- Fully evaluate an expression by repeatedly applying `eval` with fuel 200
+    until the result is a value or irreducible. On out-of-fuel, retries with
+    the partially-reduced expression. Thanks to `partial_fixpoint`, this function
+    is considered as returning `.none` if it doesn't terminate and the body
+    isn't opaque.
+    The fuel number 200 is purely arbitrary and shouldn't affect the result of
+    evalFully if Lambda's reduction rules are confluent.
+-/
+def evalFully (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
+    : Option (LExpr TBase.mono) :=
+  let (e', res) := eval 200 F env e
+  match res with
+  | .value => some e'
+  | .nonvalue => none
+  | .outOfFuel => evalFully F env e'
+partial_fixpoint
+
 end LExpr
 end -- public section
 end Lambda

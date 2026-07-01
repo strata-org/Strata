@@ -6,6 +6,8 @@
 module
 
 import all Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.FactoryProps
+import Strata.DL.Lambda.Semantics
 
 /-!
 ## Properties of the Lambda expression evaluator
@@ -54,7 +56,6 @@ private theorem evalApp_value_isCanonicalValue
 
 /-- Helper: if `evalEq` returns `.value`, the result is canonical. -/
 private theorem evalEq_value_isCanonicalValue
-
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
     (_ih_eval : ∀ e', (LExpr.eval n' F env e').snd = .value →
@@ -77,7 +78,6 @@ private theorem evalEq_value_isCanonicalValue
 
 /-- Helper: if `evalIte` returns `.value`, the result is canonical. -/
 private theorem evalIte_value_isCanonicalValue
-
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono)
     (ih_eval : ∀ e', (LExpr.eval n' F env e').snd = .value →
@@ -103,7 +103,6 @@ private theorem evalIte_value_isCanonicalValue
 /-- Helper: if `evalCore` returns `.value`, the result is canonical.
     Requires an IH for `eval` at the same fuel level. -/
 private theorem evalCore_value_isCanonicalValue
-
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     (ih_eval : ∀ e', (LExpr.eval n' F env e').snd = .value →
         LExpr.isCanonicalValue F (LExpr.eval n' F env e').fst = true)
@@ -150,7 +149,6 @@ private theorem evalCore_value_isCanonicalValue
 
 /-- If `eval` returns `.value`, the resulting expression satisfies `isCanonicalValue`. -/
 theorem eval_value_isCanonicalValue
-
     (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
     (h : (LExpr.eval n F env e).snd = .value) :
     LExpr.isCanonicalValue F (LExpr.eval n F env e).fst = true := by
@@ -224,5 +222,68 @@ theorem eval_value_isCanonicalValue
           subst hp
           exact evalCore_value_isCanonicalValue n' F env e (fun e' h' => ih e' h') hv
     exact key _ rfl h
+
+/-- If `isCanonicalValue F e = true` and fuel is at least 1, eval returns `(e, .value)`. -/
+theorem eval_canonical_identity
+    (n : Nat) (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
+    (hcan : LExpr.isCanonicalValue F e = true) :
+    LExpr.eval n F env e = (e, .value) := by
+  cases n <;> (simp only [LExpr.eval]; rw [if_pos hcan])
+
+/-! ## Properties of `LExpr.evalFully` -/
+
+/-- `evalFully` only outputs canonical values. -/
+theorem evalFully_outputs_canonical
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
+    (v : LExpr Tbase.mono) (heval : LExpr.evalFully F env e = some v) :
+    LExpr.isCanonicalValue F v = true :=
+  LExpr.evalFully.partial_correctness F env
+    (motive := fun _e v => LExpr.isCanonicalValue F v = true)
+    (fun approx ih e' r hbody => by
+      have hfst := congrArg Prod.fst (id rfl : LExpr.eval 200 F env e' = LExpr.eval 200 F env e')
+      match hm : (LExpr.eval 200 F env e').snd, (LExpr.eval 200 F env e').fst, hfst with
+      | .value, _, _ =>
+        simp [hm] at hbody; subst hbody
+        exact eval_value_isCanonicalValue 200 F env e' hm
+      | .nonvalue, _, _ => simp [hm] at hbody
+      | .outOfFuel, _, _ => simp [hm] at hbody; exact ih _ _ hbody)
+    e v heval
+
+/-- `evalFully` is the identity on canonical values. -/
+theorem evalFully_value_identity
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono)
+    (hcan : LExpr.isCanonicalValue F e = true) :
+    LExpr.evalFully F env e = some e := by
+  unfold LExpr.evalFully
+  have h := eval_canonical_identity 200 F env e hcan
+  simp [h]
+
+/-- `evalFully` on a free variable returns the store binding (given a well-formed store). -/
+theorem evalFully_fvar_store
+    (F : @Factory Tbase) (env : Env Tbase)
+    (hwfs : ∀ x v, env x = some v → LExpr.isCanonicalValue F v = true)
+    (m : Tbase.Metadata) (v : Tbase.Identifier) (ty : Option Tbase.mono.TypeType) :
+    LExpr.evalFully F env (.fvar m v ty) = env v := by
+  unfold LExpr.evalFully
+  have hnotcan : LExpr.isCanonicalValue F (.fvar m v ty : LExpr Tbase.mono) = false := by
+    apply Bool.eq_false_iff.mpr
+    intro hcan
+    have h_no_vars := isCanonicalValue_getVars_nil F _ hcan
+    simp [LExpr.LExpr.getVars] at h_no_vars
+  have heval : LExpr.eval 200 F env (.fvar m v ty : LExpr Tbase.mono) =
+    LExpr.evalCore 199 F env (.fvar m v ty : LExpr Tbase.mono) := by
+    unfold LExpr.eval
+    rw [if_neg (Bool.eq_false_iff.mp hnotcan)]
+    split
+    · rename_i heq; rw [callOfLFunc_fvar_none F m v ty] at heq; exact absurd heq (by simp)
+    · rfl
+  rw [heval]
+  unfold LExpr.evalCore
+  cases hσv : env v with
+  | none => simp
+  | some val =>
+    simp only
+    have hval : LExpr.isCanonicalValue F val = true := hwfs v val hσv
+    simp [hval]
 
 end Lambda

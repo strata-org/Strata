@@ -101,7 +101,8 @@ abbrev PureExpr : PureExpr :=
      TyEnv := TEnv,
      TyContext := Unit,
      Factory := Unit,
-     EqIdent := instDecidableEqString }
+     EqIdent := instDecidableEqString,
+     eval := fun _f _σ e => some e }
 
 /-- A Command of `ArithPrograms` -/
 abbrev Command := Imperative.Cmd Arith.PureExpr

@@ -253,6 +253,88 @@ private theorem empty_inv_no_failure
     have ⟨_, hmem, _⟩ := hff_iff.mp rfl
     exact ((List.mem_nil_iff _).mp hmem).elim
 
+omit [HasFvars P] [HasOps P] in
+private theorem block_noFuncDecl_preserves_factory
+    (extendFactory : ExtendFactory P)
+    (body : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
+    (hnofd : Block.noFuncDecl body = true)
+    (hstar : StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ')) :
+    ρ'.factory = ρ₀.factory := by
+  suffices h_gen : ∀ c₁ c₂,
+      Config.noFuncDecl c₁ →
+      StepStmtStar P (EvalCmd P) extendFactory c₁ c₂ →
+      c₂.getEnv.factory = c₁.getEnv.factory by
+    exact h_gen _ _ (show Config.noFuncDecl (.stmts body ρ₀) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    suffices h_step : ∀ (c₁ c₂ : Config P (Cmd P)),
+        StepStmt P (EvalCmd P) extendFactory c₁ c₂ → Config.noFuncDecl c₁ →
+        c₂.getEnv.factory = c₁.getEnv.factory ∧ Config.noFuncDecl c₂ by
+      have ⟨heq, hnofd_mid⟩ := h_step _ _ hstep hnofd_c
+      rw [ih hnofd_mid, heq]
+    intro c₁' c₂' hstep' hnofd_c'
+    induction hstep' with
+    | step_cmd => exact ⟨rfl, trivial⟩
+    | step_block =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c' ⊢
+      exact ⟨rfl, hnofd_c', rfl⟩
+    | step_ite_true =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
+      exact ⟨rfl, hnofd_c'.1, rfl⟩
+    | step_ite_false =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
+      exact ⟨rfl, hnofd_c'.2, rfl⟩
+    | step_ite_nondet_true =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
+      exact ⟨rfl, hnofd_c'.1, rfl⟩
+    | step_ite_nondet_false =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
+      exact ⟨rfl, hnofd_c'.2, rfl⟩
+    | step_loop_enter =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
+      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
+      · exact hnofd_c'
+      · rfl
+      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
+    | step_loop_exit => exact ⟨rfl, trivial⟩
+    | step_loop_nondet_enter =>
+      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
+      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
+      · exact hnofd_c'
+      · rfl
+      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
+    | step_loop_nondet_exit => exact ⟨rfl, trivial⟩
+    | step_exit => exact ⟨rfl, trivial⟩
+    | step_funcDecl =>
+      exact absurd hnofd_c' (by simp [Config.noFuncDecl, Stmt.noFuncDecl])
+    | step_typeDecl => exact ⟨rfl, trivial⟩
+    | step_stmts_nil => exact ⟨rfl, trivial⟩
+    | step_stmts_cons =>
+      simp only [Config.noFuncDecl, Block.noFuncDecl, Bool.and_eq_true] at hnofd_c' ⊢
+      exact ⟨rfl, hnofd_c'.1, hnofd_c'.2⟩
+    | step_seq_done =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      exact ⟨rfl, hnofd_c'.2⟩
+    | step_seq_exit => exact ⟨rfl, trivial⟩
+    | step_seq_inner _ ih_inner =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
+      exact ⟨hfac, hnofd', hnofd_c'.2⟩
+    | step_block_body _ ih_inner =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
+      exact ⟨hfac, hnofd', hfac ▸ hnofd_c'.2⟩
+    | step_block_done =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      exact ⟨hnofd_c'.2, trivial⟩
+    | step_block_exit_match =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      exact ⟨hnofd_c'.2, trivial⟩
+    | step_block_exit_mismatch =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      exact ⟨hnofd_c'.2, trivial⟩
 
 omit [HasFvars P] [HasOps P] in
 /-- Prove that adding the loop guard 'g' as an extra assume statement 'assume g'
@@ -265,13 +347,13 @@ private def loop_sim
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (b : KleeneStmt P (Cmd P))
     (sim_body : ∀ ρ₀ ρ',
-      WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+      WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
     (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ ρ' : Env P) (n : Nat)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory)
+    (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
       (.stmt (.loop (.det g) m ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
@@ -332,13 +414,10 @@ private def loop_sim
       have h_kleene_assume_b : StepKleeneStar P (EvalCmd P)
           (.stmt (.seq (.cmd (.assume "guard" g md)) b) ρ₀) (.terminal ρ_inner) :=
         kleene_seq_terminal _ b ρ₀ ρ₀ ρ_inner h_assume h_sim_body
-      have heval_inner : ρ_inner.eval = ρ₀.eval :=
-        block_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
       have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-        block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
-      have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval ρ_block.factory := by
+        block_noFuncDecl_preserves_factory extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
+      have hwfv_block : WellFormedSemanticEvalVal (P := P) ρ_block.factory := by
         simp only [heq_ρ_block]
-        rw [heval_inner]
         exact hρ₀_eq ▸ hwfv
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ_block) (.terminal _) :=
@@ -375,14 +454,14 @@ private def loop_sim_kleene
     (body : List (Stmt P (Cmd P))) (md : MetaData P)
     (b : KleeneStmt P (Cmd P))
     (sim_body : ∀ ρ₀ ρ',
-      WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+      WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
     (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ ρ' : Env P) (n : Nat)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory)
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
+    (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P) extendFactory)
       (.stmt (.loop .nondet m ([] : List (String × P.Expr)) body md) ρ₀) (.terminal ρ'))
     (hlen : hstarT.len ≤ n) :
@@ -429,17 +508,13 @@ private def loop_sim_kleene
         hρ₀_eq ▸ reflTransT_to_prop h_inner_term
       have h_sim_body : StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ_inner) :=
         sim_body ρ₀ ρ_inner hwfb hwfv hterm_body_eq
-      have heval_inner : ρ_inner.eval = ρ₀.eval :=
-        block_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
       have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-        block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
-      have hwfv_block : WellFormedSemanticEvalVal ρ_block.eval ρ_block.factory := by
+        block_noFuncDecl_preserves_factory extendFactory body ρ₀ ρ_inner hnofd_body hterm_body_eq
+      have hwfv_block : WellFormedSemanticEvalVal (P := P) ρ_block.factory := by
         simp only [heq_ρ_block]
-        rw [heval_inner]
         exact hρ₀_eq ▸ hwfv
-      have hwfb_block : WellFormedSemanticEvalBool ρ_block.eval ρ_block.factory := by
+      have hwfb_block : WellFormedSemanticEvalBool (P := P) ρ_block.factory := by
         simp only [heq_ρ_block]
-        rw [heval_inner]
         exact hρ₀_eq ▸ hwfb
       have h_kleene_loop : StepKleeneStar P (EvalCmd P)
           (.stmt (.loop b) ρ_block) (.terminal _) :=
@@ -472,14 +547,14 @@ private theorem simulation
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
       st.sizeOf ≤ sz → StmtToKleeneStmt st = some ns →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+        WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
         StepStmtStar P (EvalCmd P) extendFactory (.stmt st ρ₀) (.terminal ρ') →
         StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ'))
     ∧
     (∀ (bss : List (Stmt P (Cmd P))) (ns : KleeneStmt P (Cmd P)),
       Block.sizeOf bss ≤ sz → BlockToKleeneStmt bss = some ns →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+        WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
         StepStmtStar P (EvalCmd P) extendFactory (.stmts bss ρ₀) (.terminal ρ') →
         StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ')) := by
   induction sz with
@@ -499,7 +574,7 @@ private theorem simulation
             cases r1 with
             | refl =>
               exact .step _ _ _
-                (.step_cmd (EvalCmd.eval_assert_pass (eval_tt_is_tt ρ₀.eval ρ₀.store ρ₀.factory hwfv) hwfb))
+                (.step_cmd (EvalCmd.eval_assert_pass (eval_tt_is_tt ρ₀.store ρ₀.factory hwfv) hwfb))
                 (by rw [assume_env_eq]; exact .refl _)
             | step _ _ _ h _ => exact nomatch h
       | s :: _ => simp_all [Block.sizeOf]
@@ -531,7 +606,7 @@ private theorem simulation
                 have hsz_bss : Block.sizeOf bss ≤ n := by
                   simp_all [Stmt.sizeOf]; omega
                 have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-                  block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory bss ρ₀ ρ_inner
+                  block_noFuncDecl_preserves_factory extendFactory bss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper bss b hb) hterm
                 subst heq_ρ'
                 refine .step _ _ _ .step_block ?_
@@ -556,7 +631,7 @@ private theorem simulation
               match block_reaches_terminal P (EvalCmd P) extendFactory r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
                 have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-                  block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory tss ρ₀ ρ_inner
+                  block_noFuncDecl_preserves_factory extendFactory tss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper tss t ht_tss) hterm
                 subst heq_ρ'
                 have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
@@ -574,7 +649,7 @@ private theorem simulation
               match block_reaches_terminal P (EvalCmd P) extendFactory r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
                 have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-                  block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory ess ρ₀ ρ_inner
+                  block_noFuncDecl_preserves_factory extendFactory ess ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper ess e ht_ess) hterm
                 subst heq_ρ'
                 have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
@@ -600,7 +675,7 @@ private theorem simulation
               match block_reaches_terminal P (EvalCmd P) extendFactory r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
                 have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-                  block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory tss ρ₀ ρ_inner
+                  block_noFuncDecl_preserves_factory extendFactory tss ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper tss t ht_tss) hterm
                 subst heq_ρ'
                 have hnd := ih.2 tss t hsz_tss ht_tss ρ₀ ρ_inner hwfb hwfv hterm
@@ -616,7 +691,7 @@ private theorem simulation
               match block_reaches_terminal P (EvalCmd P) extendFactory r1 with
               | .inl ⟨ρ_inner, hterm, heq_ρ'⟩ =>
                 have hfac_inner : ρ_inner.factory = ρ₀.factory :=
-                  block_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory ess ρ₀ ρ_inner
+                  block_noFuncDecl_preserves_factory extendFactory ess ρ₀ ρ_inner
                     (stmtToKleene_some_noFuncDecl.blockHelper ess e ht_ess) hterm
                 subst heq_ρ'
                 have hnd := ih.2 ess e hsz_ess ht_ess ρ₀ ρ_inner hwfb hwfv hterm
@@ -637,7 +712,7 @@ private theorem simulation
           have hsz_body : Block.sizeOf body ≤ n := by
             simp_all [Stmt.sizeOf]; omega
           have sim_body : ∀ ρ₀ ρ',
-              WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+              WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
               StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
               StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ') :=
             fun ρ₀ ρ' hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h
@@ -654,7 +729,7 @@ private theorem simulation
           have hsz_body : Block.sizeOf body ≤ n := by
             simp_all [Stmt.sizeOf]; omega
           have sim_body : ∀ ρ₀ ρ',
-              WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
+              WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
               StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
               StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ') :=
             fun ρ₀ ρ' hwfb' hwfv' h => ih.2 body b hsz_body hb ρ₀ ρ' hwfb' hwfv' h
@@ -680,7 +755,7 @@ private theorem simulation
             cases r1 with
             | refl =>
               exact .step _ _ _
-                (.step_cmd (EvalCmd.eval_assert_pass (eval_tt_is_tt ρ₀.eval ρ₀.store ρ₀.factory hwfv) hwfb))
+                (.step_cmd (EvalCmd.eval_assert_pass (eval_tt_is_tt ρ₀.store ρ₀.factory hwfv) hwfb))
                 (by rw [assume_env_eq]; exact .refl _)
             | step _ _ _ h _ => exact nomatch h
 
@@ -696,12 +771,10 @@ private theorem simulation
             have hsz_r : Block.sizeOf rest ≤ n := by
               simp_all [Block.sizeOf]; omega
             have hnofd := stmtToKleene_some_noFuncDecl s s' hs
-            have heval_eq := smallStep_noFuncDecl_preserves_eval P (EvalCmd P) extendFactory
-              s ρ₀ ρ₁ hnofd hterm_s
             have hfac_eq : ρ₁.factory = ρ₀.factory :=
               Hoare.noFuncDecl_preserves_factory (EvalCmd P) extendFactory s ρ₀ ρ₁ hnofd hterm_s
-            have hwfb₁ : WellFormedSemanticEvalBool ρ₁.eval ρ₁.factory := hfac_eq ▸ heval_eq ▸ hwfb
-            have hwfv₁ : WellFormedSemanticEvalVal ρ₁.eval ρ₁.factory := hfac_eq ▸ heval_eq ▸ hwfv
+            have hwfb₁ : WellFormedSemanticEvalBool (P := P) ρ₁.factory := hfac_eq ▸ hwfb
+            have hwfv₁ : WellFormedSemanticEvalVal (P := P) ρ₁.factory := hfac_eq ▸ hwfv
             exact kleene_seq_terminal s' rest' ρ₀ ρ₁ ρ'
               (ih.1 s s' hsz_s hs ρ₀ ρ₁ hwfb hwfv hterm_s)
               (ih.2 rest rest' hsz_r hr ρ₁ ρ' hwfb₁ hwfv₁ hterm_rest)
@@ -713,8 +786,8 @@ theorem stmtToKleene_terminal
     (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt st = some ns)
     (ρ₀ ρ' : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory)
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
+    (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstar : StepStmtStar P (EvalCmd P) extendFactory (.stmt st ρ₀) (.terminal ρ')) :
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendFactory st.sizeOf).1 st ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hstar
@@ -726,8 +799,8 @@ theorem blockToKleene_terminal
     (bss : List (Stmt P (Cmd P))) (ns : KleeneStmt P (Cmd P))
     (ht : BlockToKleeneStmt bss = some ns)
     (ρ₀ ρ' : Env P)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory)
-    (hwfv : WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory)
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
+    (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
     (hstar : StepStmtStar P (EvalCmd P) extendFactory (.stmts bss ρ₀) (.terminal ρ')) :
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendFactory (Block.sizeOf bss)).2 bss ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hstar

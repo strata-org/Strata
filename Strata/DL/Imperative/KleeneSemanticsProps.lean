@@ -29,9 +29,9 @@ theorem assume_env_eq (ρ : Env P) :
 
 omit [HasFvar P] [HasBoolOps P] in
 theorem eval_tt_is_tt
-    (δ : SemanticEval P) (σ : SemanticStore P) (f : P.Factory)
-    (hwfv : WellFormedSemanticEvalVal δ f) :
-    δ f σ HasBool.tt = some HasBool.tt :=
+    (σ : SemanticStore P) (f : P.Factory)
+    (hwfv : WellFormedSemanticEvalVal (P := P) f) :
+    P.eval f σ HasBool.tt = some HasBool.tt :=
   hwfv.identityOnValues HasBool.tt σ (HasBool.boolIsVal f).1
 
 /-! ## Kleene small-step helpers -/
@@ -75,8 +75,8 @@ theorem kleene_seq_terminal
 
 theorem kleene_assume_terminal
     {label : String} {expr : P.Expr} {md : MetaData P} {ρ₀ : Env P}
-    (hcond : ρ₀.eval ρ₀.factory ρ₀.store expr = some HasBool.tt)
-    (hwfb : WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory) :
+    (hcond : P.eval ρ₀.factory ρ₀.store expr = some HasBool.tt)
+    (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory) :
     StepKleeneStar P (EvalCmd P)
       (.stmt (.cmd (.assume label expr md)) ρ₀) (.terminal ρ₀) := by
   have raw : StepKleeneStar P (EvalCmd P)

@@ -24,13 +24,13 @@ inductive EvalCmds
   {CmdT : Type}
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT) :
-  SemanticEval P → P.Factory → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
+  P.Factory → SemanticStore P → List CmdT → SemanticStore P → Bool → Prop where
   | eval_cmds_none :
-    EvalCmds P EvalCmd δ f σ [] σ false
+    EvalCmds P EvalCmd f σ [] σ false
   | eval_cmds_some :
-    EvalCmd δ f σ c σ' failed →
-    EvalCmds P EvalCmd δ f σ' cs σ'' failed' →
-    EvalCmds P EvalCmd δ f σ (c :: cs) σ'' (failed || failed')
+    EvalCmd f σ c σ' failed →
+    EvalCmds P EvalCmd f σ' cs σ'' failed' →
+    EvalCmds P EvalCmd f σ (c :: cs) σ'' (failed || failed')
 
 /--
 Configuration for small-step semantics, representing the current execution
@@ -60,21 +60,21 @@ inductive EvalDetBlock
   P.Factory → SemanticStore P → DetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_true :
-    EvalCmds P EvalCmd δ f σ cs σ' failed →
-    δ f σ c = .some HasBool.tt →
-    WellFormedSemanticEvalBool δ f →
+    EvalCmds P EvalCmd f σ cs σ' failed →
+    P.eval f σ c = .some HasBool.tt →
+    WellFormedSemanticEvalBool (P := P) f →
     EvalDetBlock P EvalCmd extendFactory
       f σ ⟨ cs, .condGoto c t e _ ⟩ (.cont t σ' failed)
 
   | step_goto_false :
-    EvalCmds P EvalCmd δ f σ cs σ' failed →
-    δ f σ c = .some HasBool.ff →
-    WellFormedSemanticEvalBool δ f →
+    EvalCmds P EvalCmd f σ cs σ' failed →
+    P.eval f σ c = .some HasBool.ff →
+    WellFormedSemanticEvalBool (P := P) f →
     EvalDetBlock P EvalCmd extendFactory
       f σ ⟨ cs, .condGoto c t e _ ⟩ (.cont e σ' failed)
 
   | step_terminal :
-    EvalCmds P EvalCmd δ f σ cs σ' failed →
+    EvalCmds P EvalCmd f σ cs σ' failed →
     EvalDetBlock P EvalCmd extendFactory
       f σ ⟨ cs, .finish _ ⟩ (.terminal σ' failed)
 
@@ -94,12 +94,12 @@ inductive EvalNondetBlock
   P.Factory → SemanticStore P → NondetBlock l CmdT P → CFGConfig l P → Prop where
 
   | step_goto_none :
-    EvalCmds P EvalCmd δ f σ cs σ' failed →
+    EvalCmds P EvalCmd f σ cs σ' failed →
     EvalNondetBlock P EvalCmd extendFactory
       f σ ⟨ cs, .goto [] _ ⟩ (.terminal σ' failed)
 
   | step_goto_some :
-    EvalCmds P EvalCmd δ f σ cs σ' failed →
+    EvalCmds P EvalCmd f σ cs σ' failed →
     lt ∈ ls →
     EvalNondetBlock P EvalCmd extendFactory
       f σ ⟨ cs, .goto ls _ ⟩ (.cont lt σ' failed)

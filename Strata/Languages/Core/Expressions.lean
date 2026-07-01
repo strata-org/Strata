@@ -10,6 +10,7 @@ public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprEval
 
 namespace Core
 open Std (ToFormat Format format)
@@ -28,7 +29,8 @@ abbrev Expression : Imperative.PureExpr :=
      ExprMetadata := ExpressionMetadata,
      TyEnv := @Lambda.TEnv Unit,
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
-     Factory := Lambda.Factory CoreLParams }
+     Factory := Lambda.Factory CoreLParams,
+     eval := Lambda.LExpr.evalFully }
 
 instance : Imperative.HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars

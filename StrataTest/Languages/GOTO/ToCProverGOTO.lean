@@ -30,7 +30,8 @@ private abbrev LExprTP : Imperative.PureExpr :=
      TyEnv := @Lambda.TEnv TestParams.IDMeta,
      TyContext := @Lambda.LContext TestParams,
      EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier)
-     Factory := Unit }
+     Factory := Unit,
+     eval := fun _f _σ e => some e }
 
 /--
 Commands, parameterized by type-annotated Lambda expressions.

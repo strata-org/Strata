@@ -38,6 +38,9 @@ structure PureExpr : Type 1 where
   TyContext : Type
   /-- Factory for function/operator resolution -/
   Factory : Type
+  /-- The expression evaluator. Takes a factory, a variable store, and an
+      expression, and returns an optional evaluated expression. -/
+  eval : Factory → (Ident → Option Expr) → Expr → Option Expr
 
 @[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
 @[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty

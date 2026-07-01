@@ -54,7 +54,7 @@ private def callConditions (proc : Procedure)
   let sm := subst.map (fun (x, v) => (x.fst, v))
   let exprs := List.map
                 (fun p =>
-                  { p with expr := LExpr.substFvars p.expr sm })
+                  { p with expr := Lambda.LExpr.substFvars p.expr sm })
                 conditions.values
   List.zip names exprs
 
@@ -94,9 +94,9 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
-`.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).
+`.fvar` and `.op` nodes have their types stored in the `Option Lambda.LMonoTy` field).
 -/
-private def getExprType (e : Expression.Expr) : Option LMonoTy :=
+private def getExprType (e : Expression.Expr) : Option Lambda.LMonoTy :=
   match e with
   | .fvar _ _ ty => ty
   | .op _ _ ty => ty
@@ -121,18 +121,18 @@ private def getExprType (e : Expression.Expr) : Option LMonoTy :=
 Compute type substitution by unifying actual argument types with input types
 and LHS types with output types.
 -/
-private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+private def computeTypeSubst (input_tys output_tys: List Lambda.LMonoTy)
   (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
-  Subst :=
+  Lambda.Subst :=
   let actual_tys := args.filterMap getExprType
   let lhs_tys := lhs.filterMap (fun l =>
     (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let input_constraints := actual_tys.zip input_tys
   let output_constraints := lhs_tys.zip output_tys
   let constraints := input_constraints ++ output_constraints
-  match Constraints.unify constraints SubstInfo.empty with
+  match Lambda.Constraints.unify constraints Lambda.SubstInfo.empty with
   | .ok substInfo => substInfo.subst
-  | .error _ => Subst.empty
+  | .error _ => Lambda.Subst.empty
 
 /--
 Evaluate a procedure call by inlining its contract.
@@ -304,7 +304,7 @@ private def createUnreachableCoverObligations
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (Lambda.LExpr.false ()) md))
 
 /--
 Create assert obligations for asserts in an unreachable (dead) branch, including
@@ -318,7 +318,7 @@ private def createUnreachableAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       let propType := Imperative.convertMetaDataPropertyType md
-      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
 
 /--
 Substitute free variables in an expression with their current values from the environment,
@@ -373,7 +373,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (Lambda.LExpr.false ())]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -672,7 +672,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
   let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
+                            [.assumption label_false (Lambda.LExpr.ite () cond' (Lambda.LExpr.false ()) (Lambda.LExpr.true ()))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -767,18 +767,18 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     | some proc =>
       if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
-        match args.mapM (LExpr.run E.exprEnv) with
+        match args.mapM (Lambda.LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
         | .ok argVals =>
-          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+          let formalBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
             proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
             |>.map fun ((name, ty), val) => (name, (some ty, val))
           if argVals.length != proc.header.inputs.keys.length then
             CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.inputs.keys.length} arguments, got {argVals.length}")
           else
-            let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            let outputBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
               proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+              |>.map fun (name, ty) => (name, (some ty, Lambda.LExpr.fvar () name none))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
@@ -822,7 +822,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
                 else
                   let outputVals := proc.header.outputs.keys.map fun name =>
-                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                    (callEnv'.exprEnv.state.findD name (none, Lambda.LExpr.fvar () name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
             | _ => CmdEval.updateError E (.Misc "failed to terminate")
