@@ -15,6 +15,7 @@ Usage:
   lake env lean --run editors/GenSyntax.lean emacs       # Emacs major modes
   lake env lean --run editors/GenSyntax.lean vim         # Vim/Neovim regex syntax + ftdetect
   lake env lean --run editors/GenSyntax.lean treesitter  # tree-sitter grammar.js + highlight queries
+  lake env lean --run editors/GenSyntax.lean pygments    # Pygments lexers (LaTeX minted, pygmentize)
   lake env lean --run editors/GenSyntax.lean all         # everything
 
 Each backend is generated for every dialect in `targets` (currently Core and
@@ -27,9 +28,10 @@ Laurel).  Two extraction strategies feed the backends:
   (category `LaurelType` → types; alphabetic runs → keywords; operator-character
   runs → symbol operators).
 
-The `vscode`/`emacs`/`vim` backends are lexical (regex token classification via
-`SyntaxInfo`).  The `treesitter` backend is structural: it walks the `SyntaxDef`
-data of every op/fn to emit a real grammar with operator precedence/associativity.
+The `vscode`/`emacs`/`vim`/`pygments` backends are lexical (regex token
+classification via `SyntaxInfo`).  The `treesitter` backend is structural: it
+walks the `SyntaxDef` data of every op/fn to emit a real grammar with operator
+precedence/associativity.
 -/
 
 open Strata CoreDDM StrataDDM StrataDDM.Elab
@@ -534,6 +536,99 @@ def generateVimFtdetect (t : GenTarget) : String :=
     ""
   ]
 
+/-! ## Pygments lexer generator (LaTeX minted / pygmentize) -/
+
+/-- Escape a literal for use inside a Python regex written as a raw
+    single-quoted string (`r'...'`). -/
+private def pyRegexEscape (s : String) : String :=
+  let special := "\\^$.|?*+()[]{}".toList
+  String.ofList <| s.toList.flatMap fun c =>
+    if special.contains c then ['\\', c] else [c]
+
+/-- Emit a `(words((...), suffix=r'\b'), Token)` rule, chunking the word list
+    to keep lines short.  Empty if there are no items. -/
+private def pygWordsRule (token : String) (items : List String) : List String :=
+  if items.isEmpty then [] else
+  let rec chunk (acc : List (List String)) (cur : List String) (rest : List String) :
+      List (List String) :=
+    match rest with
+    | [] => if cur.isEmpty then acc else acc ++ [cur]
+    | x :: xs =>
+      if cur.length ≥ 6 then chunk (acc ++ [cur]) [x] xs
+      else chunk acc (cur ++ [x]) xs
+  let lines := chunk [] [] items |>.map fun c =>
+    "                " ++ ", ".intercalate (c.map fun s => "'" ++ s ++ "'") ++ ","
+  ["            (words(("] ++ lines ++ ["            ), suffix=r'\\b'), " ++ token ++ "),"]
+
+/-- A Pygments `RegexLexer` for minted (LaTeX) and pygmentize.  minted v3
+    (TeX Live 2025+) loads it directly: `\begin{minted}{path/to/<name>.py}`;
+    it looks for a class named `CustomLexer`, so we alias one. -/
+def generatePygments (t : GenTarget) : String :=
+  let info := t.info
+  let cls := t.display.replace " " "" ++ "Lexer"
+  let grp := t.scope.replace "-" ""
+  let allOps := (":=" :: info.symbolOperators).eraseDups
+  let sortedOps := allOps.toArray.qsort (fun a b => a.length > b.length) |>.toList
+  let opAlt := "|".intercalate (sortedOps.map pyRegexEscape)
+  let biSorted := info.builtinFunctions.toArray.qsort (fun a b => a.length > b.length) |>.toList
+  let biAlt := "|".intercalate (biSorted.map pyRegexEscape)
+  let header : List String := [
+    s!"# AUTO-GENERATED Pygments lexer for {t.display} (.{t.ext}) files.",
+    "# Do not edit by hand; run: lake env lean --run editors/GenSyntax.lean pygments",
+    "# See editors/pygments/README.md for LaTeX minted / pygmentize usage.",
+    "",
+    "from pygments.lexer import RegexLexer, words",
+    "from pygments.token import (Comment, Keyword, Name, Number, Operator,",
+    "                            Punctuation, String, Text, Whitespace)",
+    "",
+    ""
+  ]
+  let classHead : List String := [
+    s!"class {cls}(RegexLexer):",
+    s!"    \"\"\"Lexer for {t.display} (.{t.ext}), generated from the DDM grammar.\"\"\"",
+    "",
+    s!"    name = '{t.display}'",
+    s!"    aliases = ['{t.scope}', '{grp}']",
+    s!"    filenames = ['*.{t.ext}']",
+    "",
+    "    tokens = {",
+    "        'root': [",
+  ]
+  -- Order matters: builtins (dotted names) before bare keywords/types so
+  -- `Sequence.empty` beats the type `Sequence`; symbol operators before
+  -- punctuation so `:=` beats `:`.
+  let preRules : List String := [
+    "            (r'\\s+', Whitespace),",
+    "            (r'//.*$', Comment.Single),",
+    "            (r'\"(\\\\.|[^\"\\\\])*\"', String.Double),",
+    "            (r'@\\[[^\\]]*\\]', Name.Decorator),",
+    "            (r'\\[[A-Za-z_][A-Za-z0-9_]*\\]\\s*:', Name.Label),",
+  ]
+  let biRule := if biAlt.isEmpty then []
+    else [s!"            (r'{biAlt}', Name.Builtin),"]
+  let kwRule := pygWordsRule "Keyword" info.keywords
+  let tyRule := pygWordsRule "Keyword.Type" info.types
+  let ctRule := pygWordsRule "Keyword.Constant" info.constants
+  let woRule := pygWordsRule "Operator.Word" info.wordOperators
+  let opRule := if opAlt.isEmpty then []
+    else [s!"            (r'{opAlt}', Operator),"]
+  let postRules : List String := [
+    "            (r'[0-9]+(\\.[0-9]+)?', Number),",
+    "            (r'[A-Za-z_][A-Za-z0-9_]*', Name),",
+    "            (r'[()\\[\\]{};,.:]', Punctuation),",
+    "            (r'.', Text),",
+    "        ],",
+    "    }",
+    "",
+    "",
+    "# minted resolves the class name `CustomLexer` when none is given after the",
+    "# lexer path; alias it so both spellings work.",
+    s!"CustomLexer = {cls}",
+    ""
+  ]
+  "\n".intercalate (header ++ classHead ++ preRules ++ biRule ++ kwRule ++ tyRule
+    ++ ctRule ++ woRule ++ opRule ++ postRules)
+
 /-! ## tree-sitter grammar generator (structural)
 
 Walks the resolved `SyntaxDef` of every op/fn to emit a tree-sitter `grammar.js`
@@ -1014,8 +1109,9 @@ def main (args : List String) : IO Unit := do
   let doEmacs := target == "emacs" || target == "all"
   let doVim := target == "vim" || target == "all"
   let doTs := target == "treesitter" || target == "all"
-  if !(doVscode || doEmacs || doVim || doTs) then
-    IO.eprintln s!"Usage: lake env lean --run editors/GenSyntax.lean [vscode|emacs|vim|treesitter|all]"
+  let doPyg := target == "pygments" || target == "all"
+  if !(doVscode || doEmacs || doVim || doTs || doPyg) then
+    IO.eprintln s!"Usage: lake env lean --run editors/GenSyntax.lean [vscode|emacs|vim|treesitter|pygments|all]"
     IO.Process.exit 1
   for t in targets do
     if doVscode then
@@ -1033,6 +1129,9 @@ def main (args : List String) : IO Unit := do
       let ft := t.scope.replace "-" ""
       writeOut s!"{dir}/vim/syntax/{ft}.vim" (generateVim t)
       writeOut s!"{dir}/vim/ftdetect/{t.scope}.vim" (generateVimFtdetect t)
+    if doPyg then
+      IO.FS.createDirAll s!"{dir}/pygments"
+      writeOut s!"{dir}/pygments/{t.scope.replace "-" "_"}_lexer.py" (generatePygments t)
     if doTs then
       let tsName := t.scope.replace "-" "_"
       let tsDir := s!"{dir}/treesitter/{t.scope}"
