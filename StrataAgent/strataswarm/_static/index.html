@@ -88,6 +88,12 @@ header h1 { font-size: 18px; color: #4fc3f7; }
   <h1>StrataSwarm v2</h1>
   <div class="header-controls">
     <span id="total-cost">$0.0000</span>
+    <select id="model-select" onchange="setModel(this.value)" style="padding:4px 8px;border-radius:4px;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;font-size:11px;">
+      <option value="claude-opus-4-6">Opus 4.6</option>
+      <option value="claude-sonnet-5">Sonnet 5</option>
+      <option value="claude-fable-5">Fable 5</option>
+      <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+    </select>
     <button class="btn-save" onclick="showSaveModal()">Save</button>
     <button class="btn-load" onclick="showLoadModal()">Load</button>
     <button style="background:#2e7d32;color:#c8e6c9;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;" onclick="createCheckpoint()">Checkpoint</button>
@@ -1019,6 +1025,13 @@ function resumeChat(name) { if (confirm(`Resume swarm from chat '${name}'? This 
 function deleteChat(name) { if (confirm(`Delete chat '${name}'?`)) wsSend({ action: 'delete_chat', name }); }
 function unloadSwarm() { if (isRunning) { alert('Cancel the running swarm first.'); return; } specs = []; agents = {}; agentMessages = {}; allMessages = []; selectedAgent = null; wsSend({ action: 'create_new' }); }
 function startSwarm() { if (isRunning) { alert('Swarm already running.'); return; } wsSend({ action: 'start' }); }
+function setModel(model) {
+  fetch('/api/swarm/model', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({model}) })
+    .then(r => r.json()).then(d => { if (d.status === 'ok') { console.log('Model set to', d.model); } else { alert(d.message); } });
+}
+function loadCurrentModel() {
+  fetch('/api/swarm/model').then(r => r.json()).then(d => { document.getElementById('model-select').value = d.model; });
+}
 function pauseAll() { wsSend({ action: 'pause_all' }); }
 function resumeAll() { wsSend({ action: 'resume_all' }); }
 function cancelAll() { wsSend({ action: 'cancel' }); }
@@ -1268,6 +1281,7 @@ function stopReplayPoll() {
 }
 
 connect();
+loadCurrentModel();
 </script>
 </body>
 </html>

@@ -380,6 +380,23 @@ class SwarmDashboard:
             SWARM_SAVE_DIR.mkdir(parents=True, exist_ok=True)
             return [f.stem for f in AGENT_SPECS_DIR.glob("*.yaml")]
 
+        @self.app.get("/api/swarm/model")
+        async def get_model() -> dict[str, Any]:
+            model = self._swarm._default_model if self._swarm else None
+            return {"model": model or "claude-opus-4-6", "is_default": model is None}
+
+        @self.app.post("/api/swarm/model")
+        async def set_model(body: dict[str, Any]) -> dict[str, str]:
+            model = body.get("model", "").strip()
+            if not model:
+                return {"status": "error", "message": "model is required"}
+            valid_models = ["claude-opus-4-6", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+            if model not in valid_models:
+                return {"status": "error", "message": f"Invalid model. Choose from: {valid_models}"}
+            if self._swarm:
+                self._swarm._default_model = model
+            return {"status": "ok", "model": model}
+
         @self.app.post("/api/swarm/save")
         async def save_swarm(body: dict[str, Any]) -> dict[str, str]:
             name = body.get("name", "").strip()

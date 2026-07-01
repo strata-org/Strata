@@ -101,6 +101,10 @@ class swarm_agent:
             )
         spec = _load_spec(path, self._overrides)
 
+        # Apply swarm's default model if no spec-level model set
+        if not spec.model and self._swarm and hasattr(self._swarm, '_default_model'):
+            spec.model = self._swarm._default_model
+
         # Render Jinja template variables in system_prompt
         if self._template_vars and spec.system_prompt:
             from jinja2 import Template

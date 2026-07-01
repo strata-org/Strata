@@ -79,6 +79,7 @@ class Swarm:
             check_interval=30.0,
         )
         self._total_cost: float = 0.0  # Cumulative cost across all agents (never resets)
+        self._default_model: str | None = None  # Global model override for all new agents
         self._checkpoint_manager: CheckpointManager | None = None
         if checkpoint_dir:
             self._checkpoint_manager = CheckpointManager(self, Path(checkpoint_dir))
