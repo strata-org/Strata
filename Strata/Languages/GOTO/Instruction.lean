@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.Code
+public import Strata.Languages.GOTO.Code
 
 namespace CProverGOTO
 open Std (ToFormat Format format)

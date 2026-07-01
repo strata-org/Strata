@@ -48,7 +48,7 @@ def encode (e:LExpr CoreLParams.mono)
   let lcont := { Lambda.LContext.default with
     functions := Core.Factory, knownTypes := Core.KnownTypes }
   let (e,_T) ← LExpr.annotate lcont tenv e
-  let e_res := LExpr.eval init_state.config.fuel init_state e
+  let e_res := (LExpr.evalWithLState init_state.config.fuel init_state e).fst
   match e_res with
   | .const _ _ =>
     let factory := Core.Env.init.factory

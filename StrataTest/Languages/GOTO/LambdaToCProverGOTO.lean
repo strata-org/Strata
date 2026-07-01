@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+meta import Strata.Languages.GOTO.LambdaToCProverGOTO
 import Lean.Server.Utils
 
 meta section

@@ -784,7 +784,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 state := [formalBindings ++ outputBindings] } }
             let ops : Imperative.RunOps Expression Command Env := {
               evalExpr := fun E e =>
-                some (e.eval E.exprEnv.config.fuel E.exprEnv)
+                some (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
               evalCmd := Command.run fuel'
               extendEval := fun E decl =>
                 match E.addFactoryFunc {

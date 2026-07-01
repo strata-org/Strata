@@ -9,6 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
+#guard_msgs (drop info) in
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -25,6 +26,18 @@ procedure tranparentCaller(): int {
 procedure transparentCallerCaller() opaque {
   var x: int := tranparentCaller();
   assert x == 3
+};
+
+procedure letExpressionsInTransparent() returns (r: int) {
+  var x: int := 0;
+  var y: int := x + 1;
+  var z: int := y + 1;
+  return z
+};
+
+procedure callLetExpressionsInTransparent() opaque {
+  var x: int := letExpressionsInTransparent();
+  assert x == 2
 };
 
 procedure returnAtEnd(x: int) returns (r: int) {

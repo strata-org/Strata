@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.Expr
+public import Strata.Languages.GOTO.Expr
 import Strata.Languages.Core.CoreOp
 public import Strata.DL.Lambda.LExprT
 

@@ -6,7 +6,7 @@
 module
 
 import all Strata.DL.Imperative.Stmt
-public import Strata.Backends.CBMC.GOTO.Instruction
+public import Strata.Languages.GOTO.Instruction
 public import Strata.DL.Imperative.Stmt
 
 open Std (ToFormat Format format)

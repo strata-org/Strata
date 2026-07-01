@@ -39,20 +39,9 @@ private def eliminateValueReturnNode (outParam : Identifier) (stmt : StmtExprMd)
 
 /-- Check whether a statement tree contains any `Return (some _)`. -/
 def hasValuedReturn (stmt : StmtExprMd) : Bool :=
-  match _h : stmt.val with
-  | .Return (some _) => true
-  | .Block stmts _ => stmts.attach.any fun ⟨s, _⟩ => hasValuedReturn s
-  | .IfThenElse _ thenBr (some elseBr) =>
-    hasValuedReturn thenBr || hasValuedReturn elseBr
-  | .IfThenElse _ thenBr none => hasValuedReturn thenBr
-  | .While _ _ _ body _ => hasValuedReturn body
-  | _ => false
-  termination_by sizeOf stmt
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt stmt)
-    all_goals (try term_by_mem)
-    all_goals omega
+  anyStmtExpr (fun e => match e.val with
+    | .Return (some _) => true
+    | _ => false) stmt
 
 /-- Apply value-return elimination to a single procedure. Rewrites `return expr`
     into `outParam := expr; return` for any procedure with exactly one output

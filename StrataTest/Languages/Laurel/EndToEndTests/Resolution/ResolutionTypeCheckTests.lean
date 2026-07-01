@@ -389,3 +389,34 @@ procedure useUndef() opaque {
   var y: int := x + 2
 };
 #end
+
+/-! ## TVoid is consistent with any type (TVoid is a supertype)
+
+A nested `if` without an `else` synthesizes `TVoid`. When such an `if` appears
+as one branch of an outer `if-else` whose other branch synthesizes a concrete
+type (e.g. `int`), the two branches must be consistent. Since `TVoid` means
+"I don't care about the value", any type can fill a void position — `TVoid` is
+a supertype of everything in the consistency relation.
+
+Regression test for the JVerify switch desugaring bug: a non-exhaustive
+statement-form switch desugars to nested `IfThenElse` where the innermost has
+no else branch (none → TVoid). The outer cascade's else sees `TVoid` from the
+inner if and `int` from other branches, which must be consistent. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure switchStmtNonExhaustive(i: int) opaque {
+  var num: int := -1;
+  // Desugared non-exhaustive switch: innermost if has no else
+  if i == 0 then
+    num := 10
+  else
+    if i == 1 then
+      num := 20
+    else
+      if i == 3 then
+        num := 30;
+  assert num == 10 || num == 20 || num == 30 || num == -1
+};
+#end

@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Backends.CBMC.GOTO.Expr
+meta import Strata.Languages.GOTO.Expr
 
 meta section
 

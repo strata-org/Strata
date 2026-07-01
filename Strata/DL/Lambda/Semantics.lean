@@ -10,6 +10,7 @@ public import Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.LStateProps
 import all Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.Scopes
@@ -43,14 +44,6 @@ variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
 
 open Lambda
-
-/--
-A free variable -> expression mapping.
--/
-abbrev Env (Tbase:LExprParams) := Tbase.Identifier → Option (LExpr Tbase.mono)
-
-def Scopes.toEnv (s:Scopes Tbase) : Env Tbase :=
-  fun t => (s.find? t).map (·.snd)
 
 /--
 A small-step semantics for `LExpr`.
@@ -197,28 +190,25 @@ actually has free variables. This preserves `canonical_value_not_step`:
 to fire on.
 -/
 | abs_subst_fvars:
-  ∀ (body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
+  ∀ (body : LExpr Tbase.mono) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars body).map Prod.fst →
-    rf = Scopes.toEnv σ.state →
-    Step F rf (.abs m name ty body) (.abs m' name ty (LExpr.substFvarsFromState σ body))
+    Step F rf (.abs m name ty body) (.abs m' name ty (LExpr.substFvarsFromEnv rf body))
 
 /-- Substitute free variables under a quantifier binder (body). Same motivation
 as `abs_subst_fvars`. -/
 | quant_subst_fvars_body:
-  ∀ (tr body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
+  ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars body).map Prod.fst →
-    rf = Scopes.toEnv σ.state →
-    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty tr (LExpr.substFvarsFromState σ body))
+    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty tr (LExpr.substFvarsFromEnv rf body))
 
 /-- Substitute free variables in the trigger of a quantifier. Same motivation
 as `abs_subst_fvars`. -/
 | quant_subst_fvars_trigger:
-  ∀ (tr body : LExpr Tbase.mono) (σ : LState Tbase) (x : Tbase.Identifier),
+  ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars tr).map Prod.fst →
-    rf = Scopes.toEnv σ.state →
-    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty (LExpr.substFvarsFromState σ tr) body)
+    Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty (LExpr.substFvarsFromEnv rf tr) body)
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem step_const_stuck:
   ∀ (F:@Factory Tbase) r x e,
   ¬ Step F r (.const m x) e := by
@@ -226,8 +216,7 @@ theorem step_const_stuck:
   intro H
   contradiction
 
-omit [DecidableEq Tbase.Metadata] in
--- If e is stuck for Step, then ReflTrans (Step) e e' implies e = e'.
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem ReflTrans_stuck {e e' : LExpr Tbase.mono}
     (h : ReflTrans (Step F rf) e e')
     (h_stuck : ∀ e'', ¬ Step F rf e e'') :
@@ -247,7 +236,7 @@ Multi-step execution: reflexive transitive closure of single steps.
 
 ---------------------------------------------------------------------
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf e1 e1') :
@@ -258,7 +247,7 @@ theorem StepStar_app_fn (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.app m y e2) _
       (Step.reduce_1 (m' := m) x y e2 hxy) ih
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem StepStar_app_arg (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf e2 e2') :
@@ -386,7 +375,7 @@ theorem substK_eraseMetadata_congr₂
 -- Metadata-preserving ite/eq congruence lemmas (the existing StepStar_ite_*
 -- return ∃ m', but we need metadata preserved for substFvar composition).
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c c' t f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf c c') :
@@ -397,7 +386,7 @@ private theorem StepStar_ite_cond_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m y t f) _
       (Step.ite_reduce_cond (m' := m) x y t f hxy) ih
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t t' f : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf t t') :
@@ -408,7 +397,7 @@ private theorem StepStar_ite_then_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m c y f) _
       (Step.ite_reduce_then_branch (m' := m) c x y f hxy) ih
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
     (c t f f' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf f f') :
@@ -419,7 +408,7 @@ private theorem StepStar_ite_else_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.ite m c t y) _
       (Step.ite_reduce_else_branch (m' := m) c t x y hxy) ih
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e1' e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf e1 e1') :
@@ -430,7 +419,7 @@ private theorem StepStar_eq_lhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     exact ReflTrans.step _ (.eq m y e2) _
       (Step.eq_reduce_lhs (m' := m) x y e2 hxy) ih
 
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_eq_rhs_pres (F : @Factory Tbase) (rf : Env Tbase)
     (e1 e2 e2' : LExpr Tbase.mono) (m : Tbase.Metadata)
     (h : StepStar F rf e2 e2') :
@@ -1096,8 +1085,7 @@ private theorem isCanonicalValue_args_all
   rw [List.all_eq_true] at h_all
   exact h_all x hx
 
--- Canonical values are normal forms: no Step rule can fire on them.
-omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem canonical_value_not_step
     (F : @Factory Tbase) (rf : Env Tbase)
     (e : LExpr Tbase.mono)
@@ -1127,8 +1115,7 @@ theorem canonical_value_not_step
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | abs_subst_fvars _ _ _ h_fv _ =>
-      -- freeVars body = [] (from closed), so x ∉ freeVars body → contradiction
+    | abs_subst_fvars _ _ h_fv =>
       have h_fvs : LExpr.freeVars body = [] := by
         simp [LExpr.closed, List.isEmpty_iff] at hc; exact hc
       simp [h_fvs] at h_fv
@@ -1138,10 +1125,10 @@ theorem canonical_value_not_step
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | quant_subst_fvars_body _ _ _ _ h_fv _ =>
+    | quant_subst_fvars_body _ _ _ h_fv =>
       simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
       simp [hc.2] at h_fv
-    | quant_subst_fvars_trigger _ _ _ _ h_fv _ =>
+    | quant_subst_fvars_trigger _ _ _ h_fv =>
       simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
       simp [hc.1] at h_fv
   | op =>
@@ -1261,7 +1248,7 @@ private theorem eraseMetadata_quant_congr
 
 -- Step all args within the actual expression structure identified by
 -- getLFuncCall. The result e' satisfies e'.eM = mkApp () op.eM (args'.map eM).
- omit [DecidableEq Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem StepStar_getLFuncCall_args
     {F : @Factory Tbase} {rf : Env Tbase}
     (e : LExpr Tbase.mono) (op : LExpr Tbase.mono)
@@ -1364,51 +1351,46 @@ private theorem eval_StepStar_factory_terminal
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (e : LExpr Tbase.mono) (n : Nat)
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) (n : Nat)
     (op_expr : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
-    (h_call : σ.config.factory.callOfLFunc e = some (op_expr, args, lfunc))
+    (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
     (ih : ∀ (e : LExpr Tbase.mono),
       ∃ (e' : LExpr Tbase.mono),
-        StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
-        e'.eraseMetadata = (LExpr.eval n σ e).eraseMetadata) :
+        StepStar F env e e' ∧
+        e'.eraseMetadata = (LExpr.eval n F env e).fst.eraseMetadata) :
     ∃ (e' : LExpr Tbase.mono),
-      StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
+      StepStar F env e e' ∧
       e'.eraseMetadata =
-        (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))).eraseMetadata := by
+        (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).eraseMetadata := by
   obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
-  -- Per-arg IH: e'_i is what arg_i steps to, with e'_i.eraseMetadata = (eval arg_i).eraseMetadata
   let stepped_args := args.map (fun a => (ih a).choose)
   have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
   have h_per_step : ∀ i (hi : i < args.length),
-      StepStar σ.config.factory (Scopes.toEnv σ.state)
+      StepStar F env
         (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
     intro i hi
     have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
       simp [stepped_args]
     rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
-  -- Per-arg eraseMetadata eq: e'_i.eraseMetadata = (eval arg_i).eraseMetadata
   have h_per_eM : ∀ i (hi : i < args.length),
       (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
-        (LExpr.eval n σ (args.get ⟨i, hi⟩)).eraseMetadata := by
+        (LExpr.eval n F env (args.get ⟨i, hi⟩)).fst.eraseMetadata := by
     intro i hi
     have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
       simp [stepped_args]
     rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
-  -- Step e to e' via StepStar_getLFuncCall_args
   obtain ⟨e', h_step_e, h_e'_eq⟩ :=
     StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
   refine ⟨e', h_step_e, ?_⟩
-  -- e'.eraseMetadata = (mkApp m op (args.map eval)).eraseMetadata via eraseMetadata
-  -- e'.eM = (mkApp m op stepped_args).eM = (mkApp m op (args.map eval)).eM
   have hA : e'.eraseMetadata = (LExpr.mkApp e.metadata op_expr stepped_args).eraseMetadata := by
     rw [h_e'_eq, LExpr.eraseMetadata_mkApp]
   have hB : (LExpr.mkApp e.metadata op_expr stepped_args).eraseMetadata =
-      (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))).eraseMetadata := by
+      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).eraseMetadata := by
     rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp]
     congr 1
-    have h_len_eq : stepped_args.length = (args.map (LExpr.eval n σ)).length := by simp [stepped_args]
+    have h_len_eq : stepped_args.length = (args.map (fun a => (LExpr.eval n F env a).fst)).length := by simp [stepped_args]
     apply List.ext_getElem (by simp [h_len_eq])
     intro i hi1 hi2
     simp only [List.getElem_map]
@@ -1840,12 +1822,11 @@ private theorem step_to_const_via_IH
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase)
+    (F : @Factory Tbase) (env : Env Tbase)
     (e e' : LExpr Tbase.mono) (mc : Tbase.Metadata) (c : LConst)
-    (hstep : StepStar σ.config.factory (Scopes.toEnv σ.state) e e')
+    (hstep : StepStar F env e e')
     (h_eM : e'.eraseMetadata = (LExpr.const mc c).eraseMetadata) :
-    ∃ mc', StepStar σ.config.factory (Scopes.toEnv σ.state) e (.const mc' c) := by
-  -- e'.eraseMetadata = (.const mc c).eraseMetadata means e' must be a .const (by inspection).
+    ∃ mc', StepStar F env e (.const mc' c) := by
   simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM
   cases e' <;> simp [LExpr.replaceMetadata] at h_eM <;> try contradiction
   rename_i mc' c'; subst c'
@@ -1897,65 +1878,64 @@ private theorem substFvars_closed_identity
         List.append_eq_nil_iff.mp h_app1.1
       exact ⟨ih1 h_c_t.1, ih2 h_c_t.2, ih3 h_app1.2⟩
 
-private theorem StepStar_to_substFvarsFromState_abs
+
+
+private theorem StepStar_to_substFvarsFromEnv_abs
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (m : Tbase.Metadata) (name : String) (ty : Option LMonoTy)
+    (F : @Factory Tbase) (env : Env Tbase) (m : Tbase.Metadata) (name : String) (ty : Option LMonoTy)
     (body : LExpr Tbase.mono) :
-    StepStar σ.config.factory (Scopes.toEnv σ.state)
-      (.abs m name ty body) (LExpr.substFvarsFromState σ (.abs m name ty body)) := by
-  simp only [LExpr.substFvarsFromState, LExpr.substFvars_abs]
+    StepStar F env
+      (.abs m name ty body) (LExpr.substFvarsFromEnv env (.abs m name ty body)) := by
+  simp only [LExpr.substFvarsFromEnv]
   cases h_fv : (LExpr.freeVars body) with
   | nil =>
-    have h_subst_id : LExpr.substFvars body (σ.state.toSingleMap.map (fun (k : _ × _ × _) => (k.1, k.2.2))) = body :=
-      substFvars_closed_identity body _ h_fv
-    rw [h_subst_id]; exact ReflTrans.refl _
+    rw [LExpr.substFvarsFromEnv_closed_identity env body h_fv]; exact ReflTrans.refl _
   | cons p ps =>
     have h_mem : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by
       rw [h_fv]; simp [List.map]
     exact ReflTrans.step _ _ _
-      (Step.abs_subst_fvars (m' := m) body σ p.fst h_mem rfl)
+      (Step.abs_subst_fvars (m' := m) body p.fst h_mem)
       (ReflTrans.refl _)
 
-private theorem StepStar_to_substFvarsFromState_quant
+private theorem StepStar_to_substFvarsFromEnv_quant
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (m : Tbase.Metadata) (qk : QuantifierKind)
+    (F : @Factory Tbase) (env : Env Tbase) (m : Tbase.Metadata) (qk : QuantifierKind)
     (name : String) (ty : Option LMonoTy)
     (tr body : LExpr Tbase.mono) :
-    StepStar σ.config.factory (Scopes.toEnv σ.state)
-      (.quant m qk name ty tr body) (LExpr.substFvarsFromState σ (.quant m qk name ty tr body)) := by
-  simp only [LExpr.substFvarsFromState, LExpr.substFvars_quant]
+    StepStar F env
+      (.quant m qk name ty tr body) (LExpr.substFvarsFromEnv env (.quant m qk name ty tr body)) := by
+  simp only [LExpr.substFvarsFromEnv]
   cases h_fv_body : (LExpr.freeVars body) with
   | nil =>
+    rw [LExpr.substFvarsFromEnv_closed_identity env body h_fv_body]
     cases h_fv_tr : (LExpr.freeVars tr) with
     | nil =>
-      rw [substFvars_closed_identity body _ h_fv_body, substFvars_closed_identity tr _ h_fv_tr]
-      exact ReflTrans.refl _
+      rw [LExpr.substFvarsFromEnv_closed_identity env tr h_fv_tr]; exact ReflTrans.refl _
     | cons p ps =>
-      rw [substFvars_closed_identity body _ h_fv_body]
       have h_mem : p.fst ∈ (LExpr.freeVars tr).map Prod.fst := by rw [h_fv_tr]; simp [List.map]
       exact ReflTrans.step _ _ _
-        (Step.quant_subst_fvars_trigger (m' := m) tr body σ p.fst h_mem rfl) (ReflTrans.refl _)
+        (Step.quant_subst_fvars_trigger (m' := m) tr body p.fst h_mem) (ReflTrans.refl _)
   | cons p ps =>
     cases h_fv_tr : (LExpr.freeVars tr) with
     | nil =>
-      rw [substFvars_closed_identity tr _ h_fv_tr]
+      rw [LExpr.substFvarsFromEnv_closed_identity env tr h_fv_tr]
       have h_mem : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by rw [h_fv_body]; simp [List.map]
       exact ReflTrans.step _ _ _
-        (Step.quant_subst_fvars_body (m' := m) tr body σ p.fst h_mem rfl) (ReflTrans.refl _)
+        (Step.quant_subst_fvars_body (m' := m) tr body p.fst h_mem) (ReflTrans.refl _)
     | cons p2 ps2 =>
       have h_mem_body : p.fst ∈ (LExpr.freeVars body).map Prod.fst := by rw [h_fv_body]; simp [List.map]
       have h_mem_tr : p2.fst ∈ (LExpr.freeVars tr).map Prod.fst := by rw [h_fv_tr]; simp [List.map]
       exact ReflTrans_Transitive _ _ _ _
         (ReflTrans.step _ _ _
-          (Step.quant_subst_fvars_body (m' := m) tr body σ p.fst h_mem_body rfl) (ReflTrans.refl _))
+          (Step.quant_subst_fvars_body (m' := m) tr body p.fst h_mem_body) (ReflTrans.refl _))
         (ReflTrans.step _ _ _
-          (Step.quant_subst_fvars_trigger (m' := m) tr (LExpr.substFvarsFromState σ body) σ p2.fst h_mem_tr rfl) (ReflTrans.refl _))
+          (Step.quant_subst_fvars_trigger (m' := m) tr (LExpr.substFvarsFromEnv env body) p2.fst h_mem_tr) (ReflTrans.refl _))
 
 ---------------------------------------------------------------------
 
@@ -2109,19 +2089,19 @@ omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem evalIte_eraseMetadata_congr
     [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (n' : Nat) (σ : LState Tbase)
+    (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m₁ m₂ : Tbase.Metadata) (c₁ c₂ t₁ t₂ f₁ f₂ : LExpr Tbase.mono)
     (hc : c₁.eraseMetadata = c₂.eraseMetadata)
     (ht : t₁.eraseMetadata = t₂.eraseMetadata)
     (hf : f₁.eraseMetadata = f₂.eraseMetadata)
     (ih : ∀ e₁ e₂, e₁.eraseMetadata = e₂.eraseMetadata →
-      (LExpr.eval n' σ e₁).eraseMetadata = (LExpr.eval n' σ e₂).eraseMetadata) :
-    (LExpr.evalIte n' σ m₁ c₁ t₁ f₁).eraseMetadata =
-    (LExpr.evalIte n' σ m₂ c₂ t₂ f₂).eraseMetadata := by
+      (LExpr.eval n' F env e₁).fst.eraseMetadata = (LExpr.eval n' F env e₂).fst.eraseMetadata) :
+    (LExpr.evalIte n' F env m₁ c₁ t₁ f₁).fst.eraseMetadata =
+    (LExpr.evalIte n' F env m₂ c₂ t₂ f₂).fst.eraseMetadata := by
   simp only [LExpr.evalIte]
   have hc' := ih c₁ c₂ hc
-  generalize LExpr.eval n' σ c₁ = c₁' at hc' ⊢
-  generalize LExpr.eval n' σ c₂ = c₂' at hc' ⊢
+  generalize hg₁ : (LExpr.eval n' F env c₁).fst = c₁' at hc' ⊢
+  generalize hg₂ : (LExpr.eval n' F env c₂).fst = c₂' at hc' ⊢
   have hv := EMEquiv.of_eraseMetadata_eq _ _ hc'
   cases hv with
   | const =>
@@ -2138,21 +2118,19 @@ omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem evalEq_eraseMetadata_congr
     [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (n' : Nat) (σ : LState Tbase)
+    (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m₁ m₂ : Tbase.Metadata) (l₁ l₂ r₁ r₂ : LExpr Tbase.mono)
     (hl : l₁.eraseMetadata = l₂.eraseMetadata)
     (hr : r₁.eraseMetadata = r₂.eraseMetadata)
     (ih : ∀ e₁ e₂, e₁.eraseMetadata = e₂.eraseMetadata →
-      (LExpr.eval n' σ e₁).eraseMetadata = (LExpr.eval n' σ e₂).eraseMetadata) :
-    (LExpr.evalEq n' σ m₁ l₁ r₁).eraseMetadata =
-    (LExpr.evalEq n' σ m₂ l₂ r₂).eraseMetadata := by
+      (LExpr.eval n' F env e₁).fst.eraseMetadata = (LExpr.eval n' F env e₂).fst.eraseMetadata) :
+    (LExpr.evalEq n' F env m₁ l₁ r₁).fst.eraseMetadata =
+    (LExpr.evalEq n' F env m₂ l₂ r₂).fst.eraseMetadata := by
   simp only [LExpr.evalEq]
   have hl' := ih l₁ l₂ hl
   have hr' := ih r₁ r₂ hr
-  -- eql depends only on eraseMetadata
-  rw [eql_eraseMetadata_eq σ.config.factory _ _ _ _ hl' hr']
-  -- Generalize eql result for clean split
-  generalize LExpr.eql σ.config.factory (LExpr.eval n' σ l₂) (LExpr.eval n' σ r₂) = eql_res
+  rw [eql_eraseMetadata_eq F _ _ _ _ hl' hr']
+  generalize LExpr.eql F (LExpr.eval n' F env l₂).fst (LExpr.eval n' F env r₂).fst = eql_res
   cases eql_res with
   | some b => simp only [LExpr.eraseMetadata, LExpr.replaceMetadata]
   | none => exact eraseMetadata_eq_congr hl' hr'
@@ -2245,28 +2223,25 @@ omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem evalApp_eraseMetadata_congr
     [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (n' : Nat) (σ : LState Tbase)
+    (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (e₁ e₂ a₁ a₂ b₁ b₂ : LExpr Tbase.mono)
     (he : e₁.eraseMetadata = e₂.eraseMetadata)
     (ha : a₁.eraseMetadata = a₂.eraseMetadata)
     (hb : b₁.eraseMetadata = b₂.eraseMetadata)
     (ih : ∀ e₁ e₂, e₁.eraseMetadata = e₂.eraseMetadata →
-      (LExpr.eval n' σ e₁).eraseMetadata = (LExpr.eval n' σ e₂).eraseMetadata) :
-    (LExpr.evalApp n' σ e₁ a₁ b₁).eraseMetadata =
-    (LExpr.evalApp n' σ e₂ a₂ b₂).eraseMetadata := by
+      (LExpr.eval n' F env e₁).fst.eraseMetadata = (LExpr.eval n' F env e₂).fst.eraseMetadata) :
+    (LExpr.evalApp n' F env e₁ a₁ b₁).fst.eraseMetadata =
+    (LExpr.evalApp n' F env e₂ a₂ b₂).fst.eraseMetadata := by
   simp only [LExpr.evalApp]
   have ha' := ih a₁ a₂ ha
   have hb' := ih b₁ b₂ hb
-  -- Generalize eval results for pattern matching
-  generalize hg₁ : LExpr.eval n' σ a₁ = a₁' at ha' ⊢
-  generalize hg₂ : LExpr.eval n' σ a₂ = a₂' at ha' ⊢
-  generalize hg₃ : LExpr.eval n' σ b₁ = b₁' at hb' ⊢
-  generalize hg₄ : LExpr.eval n' σ b₂ = b₂' at hb' ⊢
-  -- Match on eval'd function
+  generalize hg₁ : (LExpr.eval n' F env a₁).fst = a₁' at ha' ⊢
+  generalize hg₂ : (LExpr.eval n' F env a₂).fst = a₂' at ha' ⊢
+  generalize hg₃ : (LExpr.eval n' F env b₁).fst = b₁' at hb' ⊢
+  generalize hg₄ : (LExpr.eval n' F env b₂).fst = b₂' at hb' ⊢
   have hv := EMEquiv.of_eraseMetadata_eq _ _ ha'
   cases hv with
   | abs hv_body =>
-    -- Reduce the match on .abs
     dsimp only
     generalize hs₁ : (LExpr.subst _ _) = s₁
     generalize hs₂ : (LExpr.subst _ _) = s₂
@@ -2274,12 +2249,10 @@ private theorem evalApp_eraseMetadata_congr
       subst hs₁; subst hs₂
       apply substK_eraseMetadata_congr₂ _ _ 0 _ _ hv_body.eraseMetadata_eq
       intro m₁ m₂
-      -- (replaceMetadata1 m e).eraseMetadata = e.eraseMetadata
       have h_rp1 : ∀ m' (e' : LExpr Tbase.mono),
           (LExpr.replaceMetadata1 m' e').eraseMetadata = e'.eraseMetadata :=
         fun m' e' => by cases e' <;> simp [LExpr.replaceMetadata1, LExpr.eraseMetadata, LExpr.replaceMetadata]
       rw [h_rp1, h_rp1]; exact hb'
-    -- eqModuloMeta depends on eraseMetadata
     have h_eqmod : LExpr.eqModuloMeta e₁ s₁ = LExpr.eqModuloMeta e₂ s₂ := by
       simp only [LExpr.eqModuloMeta, BEq.beq]
       rw [he, h_subst_eM]
@@ -2307,13 +2280,12 @@ omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 private theorem evalCore_eraseMetadata_congr
     [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (n' : Nat) (σ : LState Tbase) (e₁ e₂ : LExpr Tbase.mono)
+    (n' : Nat) (F : @Factory Tbase) (env : Env Tbase) (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata)
     (ih : ∀ e₁ e₂, e₁.eraseMetadata = e₂.eraseMetadata →
-      (LExpr.eval n' σ e₁).eraseMetadata = (LExpr.eval n' σ e₂).eraseMetadata) :
-    (LExpr.evalCore n' σ e₁).eraseMetadata =
-    (LExpr.evalCore n' σ e₂).eraseMetadata := by
-  -- Both have the same constructor via eraseMetadata
+      (LExpr.eval n' F env e₁).fst.eraseMetadata = (LExpr.eval n' F env e₂).fst.eraseMetadata) :
+    (LExpr.evalCore n' F env e₁).fst.eraseMetadata =
+    (LExpr.evalCore n' F env e₂).fst.eraseMetadata := by
   generalize hg₁ : e₁ = e₁_v
   generalize hg₂ : e₂ = e₂_v
   rw [hg₁, hg₂] at h_eM
@@ -2325,32 +2297,28 @@ private theorem evalCore_eraseMetadata_congr
   | bvar => simp [LExpr.evalCore, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | fvar =>
     simp only [LExpr.evalCore]
-    -- Both look up same key x. Case split on find?:
-    cases h_find : Maps.find? σ.state _ with
-    | none =>
-      rw [Maps.findD_find?_none _ _ _ h_find, Maps.findD_find?_none _ _ _ h_find]
-      simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
-    | some v =>
-      rw [Maps.findD_find?_some _ _ _ _ h_find, Maps.findD_find?_some _ _ _ _ h_find]
+    cases env _ with
+    | some v => rfl
+    | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
   | abs hv_body =>
     simp only [LExpr.evalCore]
-    exact LExpr.substFvarsFromState_eraseMetadata_congr σ _ _
+    exact LExpr.substFvarsFromEnv_eraseMetadata_congr env _ _
       (eraseMetadata_abs_congr hv_body.eraseMetadata_eq)
   | quant hv_tr hv_body =>
     simp only [LExpr.evalCore]
-    exact LExpr.substFvarsFromState_eraseMetadata_congr σ _ _
+    exact LExpr.substFvarsFromEnv_eraseMetadata_congr env _ _
       (eraseMetadata_quant_congr hv_tr.eraseMetadata_eq hv_body.eraseMetadata_eq)
   | app hv_fn hv_arg =>
     simp only [LExpr.evalCore]
-    exact evalApp_eraseMetadata_congr n' σ _ _ _ _ _ _
+    exact evalApp_eraseMetadata_congr n' F env _ _ _ _ _ _
       h_eM hv_fn.eraseMetadata_eq hv_arg.eraseMetadata_eq ih
   | eq hv_l hv_r =>
     simp only [LExpr.evalCore]
-    exact evalEq_eraseMetadata_congr n' σ _ _ _ _ _ _
+    exact evalEq_eraseMetadata_congr n' F env _ _ _ _ _ _
       hv_l.eraseMetadata_eq hv_r.eraseMetadata_eq ih
   | ite hv_c hv_t hv_e =>
     simp only [LExpr.evalCore]
-    exact evalIte_eraseMetadata_congr n' σ _ _ _ _ _ _ _ _
+    exact evalIte_eraseMetadata_congr n' F env _ _ _ _ _ _ _ _
       hv_c.eraseMetadata_eq hv_t.eraseMetadata_eq hv_e.eraseMetadata_eq ih
 
 
@@ -2468,363 +2436,338 @@ private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
   simp only [LFunc.computeTypeSubst, h_opTS, h_argC]
 
 ---------------------------------------------------------------------
-
--- Helper for the factory-function branch of `eval_eraseMetadata_invariant`.
--- When `callOfLFunc` succeeds on `e₁` (returning factory function `f₁`),
--- this theorem shows that the post-match eval body (inline / concreteEval /
--- terminal) produces `eraseMetadata`-equal results for `e₁` and any `e₂`
--- with the same `eraseMetadata`. It handles the three-way split:
---   1. Inline: `computeTypeSubst` + `applySubst` + `substFvarsLifting` + recursive eval
---   2. ConcreteEval: `concreteEval` on evaluated args
---   3. Terminal: `mkApp` with evaluated args
--- and shows each branch is metadata-invariant, given that args evaluate to
--- `eraseMetadata`-equal results (by the IH from `eval_eraseMetadata_invariant`).
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-private theorem eval_factory_post_eraseMetadata_invariant
-    {Tbase : LExprParams}
-    [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
-    [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
-    [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (n' : Nat)
-    (hWF : FactoryWF σ.config.factory)
-    (f₁ : LFunc Tbase)
-    (e₁ e₂ : LExpr Tbase.mono)
-    (op₁ op₂ : LExpr Tbase.mono)
-    (args₁ args₂ : List (LExpr Tbase.mono))
-    (h_call₁ : σ.config.factory.callOfLFunc e₁ = some (op₁, args₁, f₁))
-    (h_eval_args_eM : (args₁.map (LExpr.eval n' σ)).map LExpr.eraseMetadata =
-        (args₂.map (LExpr.eval n' σ)).map LExpr.eraseMetadata)
-    (_h_eM : e₁.eraseMetadata = e₂.eraseMetadata)
-    (h_op_eM : op₁.eraseMetadata = op₂.eraseMetadata)
-    (h_constrArgAt_eq : ∀ idx : Option Nat,
-        (match idx with
-        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false) =
-        (match idx with
-        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false))
-    (h_canonicalArgAt_eq : ∀ idx : Option Nat,
-        (match idx with
-        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isCanonicalValue σ.config.factory)).getD false
-        | none => false) =
-        (match idx with
-        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isCanonicalValue σ.config.factory)).getD false
-        | none => false))
-    (h_all_canonical :
-        (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) =
-        (args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory))
-    (ih : ∀ (a b : LExpr Tbase.mono), a.eraseMetadata = b.eraseMetadata →
-        (LExpr.eval n' σ a).eraseMetadata = (LExpr.eval n' σ b).eraseMetadata) :
-    -- The eval body after `some (op, args, lfunc)` match (using `fun a => eval n' σ a` for args)
-    (let args' := args₁.map (fun a => LExpr.eval n' σ a)
-     let cA := fun (idx : Option Nat) => match idx with
-       | some i => (args'[i]? |>.map (LExpr.isConstrApp σ.config.factory)).getD false
-       | none => false
-     let cV := fun (idx : Option Nat) => match idx with
-       | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
-       | none => false
-     if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr) ||
-         (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr && args'.all (LExpr.isCanonicalValue σ.config.factory))) then
-       match LFunc.computeTypeSubst f₁ op₁ args' with
-       | some tySubst =>
-         LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
-           have h_and := Bool.and_eq_true_iff.mp _h; exact h_and.1)).applySubst tySubst)
-           (f₁.inputs.keys.zip args'))
-       | none => e₁
-     else
-       let new_e := @LExpr.mkApp Tbase.mono e₁.metadata op₁ args'
-       if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
-           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) ||
-           cV (Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr) then
-         match f₁.concreteEval with
-         | none => new_e
-         | some ceval => match ceval new_e.metadata args' with
-           | some e' => LExpr.eval n' σ e'
-           | none => new_e
-       else new_e).eraseMetadata =
-    (let args' := args₂.map (fun a => LExpr.eval n' σ a)
-     let cA := fun (idx : Option Nat) => match idx with
-       | some i => (args'[i]? |>.map (LExpr.isConstrApp σ.config.factory)).getD false
-       | none => false
-     let cV := fun (idx : Option Nat) => match idx with
-       | some i => (args'[i]? |>.map (LExpr.isCanonicalValue σ.config.factory)).getD false
-       | none => false
-     if _h: f₁.body.isSome && (f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-         cA (Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr) ||
-         (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr && args'.all (LExpr.isCanonicalValue σ.config.factory))) then
-       match LFunc.computeTypeSubst f₁ op₂ args' with
-       | some tySubst =>
-         LExpr.eval n' σ (LExpr.substFvarsLifting ((f₁.body.get (by
-           have h_and := Bool.and_eq_true_iff.mp _h; exact h_and.1)).applySubst tySubst)
-           (f₁.inputs.keys.zip args'))
-       | none => e₂
-     else
-       let new_e := @LExpr.mkApp Tbase.mono e₂.metadata op₂ args'
-       if args'.all (LExpr.isCanonicalValue σ.config.factory) ||
-           cA (Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr) ||
-           cV (Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr) then
-         match f₁.concreteEval with
-         | none => new_e
-         | some ceval => match ceval new_e.metadata args' with
-           | some e' => LExpr.eval n' σ e'
-           | none => new_e
-       else new_e).eraseMetadata := by
-  -- Step 1: show inline condition is the same for both sides
-  have h_inline_cond_eq :
-      (f₁.body.isSome && ((f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-        (match Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr with
-        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false)) ||
-        (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr &&
-          (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory)))) =
-      (f₁.body.isSome && ((f₁.attr.contains Strata.DL.Util.FuncAttr.inline ||
-        (match Strata.DL.Util.FuncAttr.findInlineIfConstr f₁.attr with
-        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false)) ||
-        (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical f₁.attr &&
-          (args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory)))) := by
-    congr 1; congr 1 <;> congr 1
-    exact h_constrArgAt_eq _
-  -- Step 2: show canonical/evalIfConstr/evalIfCanonical condition is the same
-  have h_can_cond_eq :
-      ((args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) ||
-        (match Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr with
-        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false) ||
-        (match Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr with
-        | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isCanonicalValue σ.config.factory)).getD false
-        | none => false)) =
-      ((args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) ||
-        (match Strata.DL.Util.FuncAttr.findEvalIfConstr f₁.attr with
-        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isConstrApp σ.config.factory)).getD false
-        | none => false) ||
-        (match Strata.DL.Util.FuncAttr.findEvalIfCanonical f₁.attr with
-        | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-            (LExpr.isCanonicalValue σ.config.factory)).getD false
-        | none => false)) := by
-    rw [h_all_canonical, h_constrArgAt_eq, h_canonicalArgAt_eq]
-  -- Step 3: unfold and case split
-  simp only []
-  split
-  · -- LHS inline
-    rename_i h_il₁
-    -- Show RHS also inline
-    have h_il₂ := h_il₁; rw [h_inline_cond_eq] at h_il₂
-    simp only [dif_pos h_il₂]
-    -- Show computeTypeSubst produces the same result on both sides
-    have h_tySubst_eq : LFunc.computeTypeSubst f₁ op₁
-        (args₁.map (fun a => LExpr.eval n' σ a)) =
-      LFunc.computeTypeSubst f₁ op₂
-        (args₂.map (fun a => LExpr.eval n' σ a)) :=
-      computeTypeSubst_eraseMetadata_congr f₁ op₁ op₂ _ _ h_op_eM h_eval_args_eM
-    rw [h_tySubst_eq]
-    -- Now both sides have the same match on computeTypeSubst
-    split
-    · -- some tySubst: both sides eval the substituted body
-      apply ih
-      exact substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_eval_args_eM
-    · -- none: both sides return e₁/e₂
-      exact _h_eM
-  · -- LHS not inline
-    rename_i h_nil₁
-    have h_nil₂ := h_nil₁; rw [h_inline_cond_eq] at h_nil₂
-    simp only [dif_neg h_nil₂]
-    -- Now split on canonical/evalIfConstr/evalIfCanonical (LHS is a regular if, not dite)
-    split
-    · -- LHS canonical
-      rename_i h_can₁
-      have h_can₂ := h_can_cond_eq ▸ h_can₁
-      simp only [if_pos h_can₂]
-      cases h_ce : f₁.concreteEval with
-      | none =>
-        simp only []
-        rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
-      | some ceval =>
-        simp only []
-        -- Use `match` on the ceval results directly
-        have h_lfunc_mem := callOfLFunc_func_mem σ.config.factory _ _ _ f₁ false h_call₁
-        have h_wf_fn := hWF.lfuncs_wf f₁ h_lfunc_mem
-        match h_cv₁ : ceval (LExpr.mkApp e₁.metadata op₁
-            (List.map (fun a => LExpr.eval n' σ a) args₁)).metadata
-            (List.map (fun a => LExpr.eval n' σ a) args₁),
-          h_cv₂ : ceval (LExpr.mkApp e₂.metadata op₂
-            (List.map (fun a => LExpr.eval n' σ a) args₂)).metadata
-            (List.map (fun a => LExpr.eval n' σ a) args₂) with
-        | some e'₁, some e'₂ =>
-          simp
-          obtain ⟨e'₂', h_cv₂', h_res_eM⟩ :=
-            h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
-          rw [h_cv₂'] at h_cv₂; cases h_cv₂
-          exact ih _ _ h_res_eM
-        | some e'₁, none =>
-          obtain ⟨e'₂, h_cv₂', _⟩ :=
-            h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
-          exact absurd (h_cv₂.symm.trans h_cv₂') (by simp)
-        | none, some e'₂ =>
-          obtain ⟨e'₁, h_cv₁', _⟩ :=
-            h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₂ h_eval_args_eM.symm h_cv₂
-          exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
-        | none, none =>
-          rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
-    · -- LHS not canonical
-      rename_i h_ncan₁
-      have h_ncan₂ := h_can_cond_eq ▸ h_ncan₁
-      simp only [if_neg h_ncan₂]
-      rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
-
----------------------------------------------------------------------
-
 -- eval is eraseMetadata-invariant: if two expressions have the same eraseMetadata,
 -- their eval results also have the same eraseMetadata.
 -- This is a key structural property of eval: metadata is only used for provenance
 -- tracking and does not affect the computation.
+
 theorem eval_eraseMetadata_invariant
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (e₁ e₂ : LExpr Tbase.mono) (n : Nat)
-    (hWF : FactoryWF σ.config.factory)
+    (F : @Factory Tbase) (env : Env Tbase) (e₁ e₂ : LExpr Tbase.mono) (n : Nat)
+    (hWF : FactoryWF F)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
-    (LExpr.eval n σ e₁).eraseMetadata = (LExpr.eval n σ e₂).eraseMetadata := by
+    (LExpr.eval n F env e₁).fst.eraseMetadata = (LExpr.eval n F env e₂).fst.eraseMetadata := by
   induction n generalizing e₁ e₂ with
   | zero =>
-    -- eval 0 σ e = e
     simp [LExpr.eval]
     exact h_eM
   | succ n' ih =>
     simp only [LExpr.eval]
-    -- First check: isCanonicalValue
-    rw [isCanonicalValue_eraseMetadata_eq σ.config.factory e₁ e₂ h_eM]
+    rw [isCanonicalValue_eraseMetadata_eq F e₁ e₂ h_eM]
     split
-    · -- Both canonical → eval returns the expression unchanged
-      exact h_eM
-    · -- Not canonical → match on callOfLFunc.
-      -- Use callOfLFunc_eraseMetadata_congr to relate the two sides
-      have h_congr := callOfLFunc_eraseMetadata_congr σ.config.factory e₁ e₂ false h_eM
-      -- Split on callOfLFunc e₁
-      split
-      · -- callOfLFunc e₁ = some (op₁, args₁, f₁)
-        rename_i op₁ args₁ f₁ h_call₁
-        -- Transfer to e₂
-        have ⟨op₂, args₂, h_call₂, h_args_eM, h_op_eM⟩ :=
-          callOfLFunc_some_of_eraseMetadata_eq σ.config.factory _ _ false h_eM _ _ _ h_call₁
-        rw [h_call₂]
-        -- args.map (eval n' σ) has same eraseMetadata for both sides
-        have h_eval_args_eM : (args₁.map (LExpr.eval n' σ)).map LExpr.eraseMetadata =
-            (args₂.map (LExpr.eval n' σ)).map LExpr.eraseMetadata := by
-          have h_len : args₁.length = args₂.length := by
-            have h_len_eq := congrArg List.length h_args_eM; simp at h_len_eq; exact h_len_eq
-          apply List.ext_getElem (by simp [h_len])
-          intro i h₁ h₂
-          simp only [List.getElem_map]
-          exact ih _ _ (by
-            have h_getElem_eq := congrArg (fun l => l[i]?) h_args_eM
-            simp [List.getElem?_map] at h_getElem_eq
-            have hi₁ : i < args₁.length := by simp at h₁; exact h₁
-            have hi₂ : i < args₂.length := by omega
-            simp [hi₁, hi₂] at h_getElem_eq
-            exact h_getElem_eq)
+    · exact h_eM
+    · split
+      · -- factory case (inline/concreteEval/terminal)
+        rename_i h_ncan op_expr₁ args₁ lfunc h_call₁
+        -- Get the corresponding callOfLFunc for e₂
+        obtain ⟨op₂, args₂, h_call₂, h_args_eM_raw, h_op_eM⟩ :=
+          callOfLFunc_some_of_eraseMetadata_eq F e₁ e₂ false h_eM op_expr₁ args₁ lfunc h_call₁
+        rw [h_call₂]; simp only []
+        -- Derive length equality
         have h_len : args₁.length = args₂.length := by
-          have h_len_eq := congrArg List.length h_args_eM; simp at h_len_eq; exact h_len_eq
-        have h_eval_getElem_eM : ∀ i (hi₁ : i < args₁.length) (hi₂ : i < args₂.length),
-            (LExpr.eval n' σ (args₁.get ⟨i, hi₁⟩)).eraseMetadata =
-            (LExpr.eval n' σ (args₂.get ⟨i, hi₂⟩)).eraseMetadata := by
-          intro i hi₁ hi₂
-          have h_getElem_eq := congrArg (fun l => l[i]?) h_eval_args_eM
-          simp [hi₁, hi₂] at h_getElem_eq
-          exact h_getElem_eq
-        have h_isConstrApp_eq : ∀ i (hi₁ : i < args₁.length) (hi₂ : i < args₂.length),
-            LExpr.isConstrApp σ.config.factory (LExpr.eval n' σ (args₁.get ⟨i, hi₁⟩)) =
-            LExpr.isConstrApp σ.config.factory (LExpr.eval n' σ (args₂.get ⟨i, hi₂⟩)) :=
-          fun i hi₁ hi₂ => isConstrApp_eraseMetadata_eq _ _ _ (h_eval_getElem_eM i hi₁ hi₂)
+          have h_len_eq := congrArg List.length h_args_eM_raw; simp at h_len_eq; exact h_len_eq
+        -- Show evaluated args have the same eraseMetadata
+        have h_eval_args_eM :
+            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map LExpr.eraseMetadata =
+            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map LExpr.eraseMetadata := by
+          apply List.ext_getElem
+          · simp [h_len]
+          · intro i hi₁ hi₂
+            simp only [List.getElem_map]
+            have h_arg_eM : (args₁[i]'(by simp at hi₁; omega)).eraseMetadata =
+                (args₂[i]'(by simp at hi₂; omega)).eraseMetadata := by
+              have h_eM_i := congrArg (·[i]?) h_args_eM_raw
+              simp [show i < args₁.length from by simp at hi₁; omega,
+                    show i < args₂.length from by simp at hi₂; omega] at h_eM_i
+              exact h_eM_i
+            exact ih _ _ h_arg_eM
+        -- Show constrArgAt equality
         have h_constrArgAt_eq : ∀ idx : Option Nat,
             (match idx with
-            | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-                (LExpr.isConstrApp σ.config.factory)).getD false
+            | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                (LExpr.isConstrApp F)).getD false
             | none => false) =
             (match idx with
-            | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-                (LExpr.isConstrApp σ.config.factory)).getD false
+            | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                (LExpr.isConstrApp F)).getD false
             | none => false) := by
           intro idx
-          match idx with
+          cases idx with
           | none => rfl
           | some i =>
-            simp only [List.getElem?_map]
-            by_cases hi₁ : i < args₁.length
-            · have hi₂ : i < args₂.length := by omega
-              simp [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
-              exact h_isConstrApp_eq i hi₁ hi₂
-            · have hi₂ : ¬(i < args₂.length) := by omega
-              simp [List.getElem?_eq_none_iff.mpr (by omega : args₁.length ≤ i)]
-              simp [List.getElem?_eq_none_iff.mpr (by omega : args₂.length ≤ i)]
-        have h_isCanonicalValue_eq : ∀ i (hi₁ : i < args₁.length) (hi₂ : i < args₂.length),
-            LExpr.isCanonicalValue σ.config.factory (LExpr.eval n' σ (args₁.get ⟨i, hi₁⟩)) =
-            LExpr.isCanonicalValue σ.config.factory (LExpr.eval n' σ (args₂.get ⟨i, hi₂⟩)) :=
-          fun i hi₁ hi₂ => isCanonicalValue_eraseMetadata_eq _ _ _ (h_eval_getElem_eM i hi₁ hi₂)
+            simp only []
+            by_cases h : i < args₁.length
+            · have hi₁ : i < (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length := by simp; omega
+              have hi₂ : i < (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length := by simp; omega
+              rw [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
+              simp only [Option.map_some, Option.getD_some]
+              simp only [List.getElem_map]
+              have h_arg_eM : (args₁[i]'(by omega)).eraseMetadata = (args₂[i]'(by omega)).eraseMetadata := by
+                have h_eM_i := congrArg (·[i]?) h_args_eM_raw
+                simp [h, show i < args₂.length from by omega] at h_eM_i
+                exact h_eM_i
+              exact isConstrApp_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
+            · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
+              have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
+              simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
+        -- Show canonicalArgAt equality
         have h_canonicalArgAt_eq : ∀ idx : Option Nat,
             (match idx with
-            | some i => ((args₁.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-                (LExpr.isCanonicalValue σ.config.factory)).getD false
+            | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                (LExpr.isCanonicalValue F)).getD false
             | none => false) =
             (match idx with
-            | some i => ((args₂.map (fun a => LExpr.eval n' σ a))[i]? |>.map
-                (LExpr.isCanonicalValue σ.config.factory)).getD false
+            | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                (LExpr.isCanonicalValue F)).getD false
             | none => false) := by
           intro idx
-          match idx with
+          cases idx with
           | none => rfl
           | some i =>
-            simp only [List.getElem?_map]
-            by_cases hi₁ : i < args₁.length
-            · have hi₂ : i < args₂.length := by omega
-              simp [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
-              exact h_isCanonicalValue_eq i hi₁ hi₂
-            · have hi₂ : ¬(i < args₂.length) := by omega
-              simp [List.getElem?_eq_none_iff.mpr (by omega : args₁.length ≤ i)]
-              simp [List.getElem?_eq_none_iff.mpr (by omega : args₂.length ≤ i)]
-        -- Helper: all canonical
+            simp only []
+            by_cases h : i < args₁.length
+            · have hi₁ : i < (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length := by simp; omega
+              have hi₂ : i < (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length := by simp; omega
+              rw [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
+              simp only [Option.map_some, Option.getD_some]
+              simp only [List.getElem_map]
+              have h_arg_eM : (args₁[i]'(by omega)).eraseMetadata = (args₂[i]'(by omega)).eraseMetadata := by
+                have h_eM_i := congrArg (·[i]?) h_args_eM_raw
+                simp [h, show i < args₂.length from by omega] at h_eM_i
+                exact h_eM_i
+              exact isCanonicalValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
+            · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
+              have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
+              simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
+        -- Show all-canonical equality
         have h_all_canonical :
-            (args₁.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) =
-            (args₂.map (fun a => LExpr.eval n' σ a)).all (LExpr.isCanonicalValue σ.config.factory) := by
-          -- Both lists have the same length and pointwise same isCanonicalValue
-          have h_pw : (args₁.map (fun a => LExpr.eval n' σ a)).map
-              (LExpr.isCanonicalValue σ.config.factory) =
-              (args₂.map (fun a => LExpr.eval n' σ a)).map
-              (LExpr.isCanonicalValue σ.config.factory) := by
-            apply List.ext_getElem (by simp [h_len])
-            intro i h₁ h₂
-            simp only [List.getElem_map]
-            have hi₁ : i < args₁.length := by simp at h₁; exact h₁
-            have hi₂ : i < args₂.length := by omega
-            exact isCanonicalValue_eraseMetadata_eq _ _ _ (h_eval_getElem_eM i hi₁ hi₂)
-          have h_all_map_eq : ∀ (l : List (LExpr Tbase.mono)),
-              l.all (LExpr.isCanonicalValue σ.config.factory) =
-              (l.map (LExpr.isCanonicalValue σ.config.factory)).all (fun b => b) := by
-            intro l; induction l with
-            | nil => simp [List.all]
-            | cons hd tl ihtl => simp [List.all, List.map, ihtl]
-          rw [h_all_map_eq, h_all_map_eq, h_pw]
-        have h_args_eq_eM := h_eval_args_eM
-        exact eval_factory_post_eraseMetadata_invariant σ n' hWF f₁
-          e₁ e₂ op₁ op₂ args₁ args₂ h_call₁ h_eval_args_eM h_eM h_op_eM
-          h_constrArgAt_eq h_canonicalArgAt_eq h_all_canonical ih
-      · -- callOfLFunc e₁ = none → evalCore path
-        rename_i h_none₁
-        have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq σ.config.factory _ _ false h_eM h_none₁
+            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
+            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) := by
+          have h_map_eq :
+              (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F) =
+              (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F) := by
+            apply List.ext_getElem
+            · simp [h_len]
+            · intro i hi₁ hi₂
+              simp only [List.getElem_map]
+              have h_arg_eM : (args₁[i]'(by simp at hi₁; omega)).eraseMetadata =
+                  (args₂[i]'(by simp at hi₂; omega)).eraseMetadata := by
+                have h_eM_i := congrArg (·[i]?) h_args_eM_raw
+                simp [show i < args₁.length from by simp at hi₁; omega,
+                  show i < args₂.length from by simp at hi₂; omega] at h_eM_i
+                exact h_eM_i
+              exact isCanonicalValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
+          rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
+              ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F)).all id
+              from by simp [List.all_map]]
+          rw [show (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) =
+              ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isCanonicalValue F)).all id
+              from by simp [List.all_map]]
+          rw [h_map_eq]
+        -- Show inline condition equality
+        have h_inline_cond_eq :
+            (lfunc.body.isSome && (lfunc.attr.contains Strata.DL.Util.FuncAttr.inline ||
+              (match Strata.DL.Util.FuncAttr.findInlineIfConstr lfunc.attr with
+              | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isConstrApp F)).getD false
+              | none => false) ||
+              (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical lfunc.attr &&
+                (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F)))) =
+            (lfunc.body.isSome && (lfunc.attr.contains Strata.DL.Util.FuncAttr.inline ||
+              (match Strata.DL.Util.FuncAttr.findInlineIfConstr lfunc.attr with
+              | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isConstrApp F)).getD false
+              | none => false) ||
+              (Strata.DL.Util.FuncAttr.hasInlineIfAllCanonical lfunc.attr &&
+                (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F)))) := by
+          congr 1; congr 1; congr 1
+          · exact h_constrArgAt_eq _
+          · exact congrArg _ h_all_canonical
+        -- Show can_cond equality (for non-inline branch)
+        have h_can_cond_eq :
+            ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) ||
+              (match Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr with
+              | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isConstrApp F)).getD false
+              | none => false) ||
+              (match Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr with
+              | some i => ((args₁.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isCanonicalValue F)).getD false
+              | none => false)) =
+            ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isCanonicalValue F) ||
+              (match Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr with
+              | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isConstrApp F)).getD false
+              | none => false) ||
+              (match Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr with
+              | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
+                  (LExpr.isCanonicalValue F)).getD false
+              | none => false)) := by
+          rw [h_all_canonical, h_constrArgAt_eq, h_canonicalArgAt_eq]
+        -- Now handle the inline/non-inline case split.
+        -- After simp only [LExpr.eval] beta-reduces the lets, both sides have
+        -- if-then-else: LHS has args₁-based condition, RHS has args₂-based.
+        -- Strategy: split LHS conditions, derive RHS conditions, resolve RHS ifs.
+        have h_computeTypeSubst_eq :=
+          computeTypeSubst_eraseMetadata_congr lfunc op_expr₁ op₂ _ _ h_op_eM h_eval_args_eM
+        -- Split on LHS inline condition (first dite in goal)
+        split
+        · -- LHS inline condition holds
+          rename_i h_inline₁
+          -- Transform h_inline₁ to have args₂-based condition (matching RHS dite)
+          -- h_inline₁ has the LHS condition. We need to convert it.
+          -- Use h_inline_cond_eq indirectly: the split hypothesis comes from
+          -- the goal's dite condition which uses args₁. We can derive the args₂
+          -- version using the fact that h_inline_cond_eq.symm.trans h_inline₁
+          -- produces the correct type if the syntactic forms align.
+          -- Alternative: use `Eq.mpr` to cast h_inline₁'s type.
+          -- The RHS has `if h: cond₂ = true then ...` where cond₂ uses args₂.
+          -- h_inline₁ proves the args₁ condition is true.
+          -- We need to reduce the RHS dite. Since simp/rw can't match
+          -- dif_pos due to syntactic vs definitional mismatch, we use
+          -- split again to resolve the match on LHS, then handle RHS if.
+          split
+          · -- LHS: some tySubst (computeTypeSubst matched)
+            rename_i tySubst h_tySubst₁
+            -- Now goal: (eval ... substFvars ... args₁).eM = (if h:... then ... else ...).eM
+            -- The RHS `if` is the only remaining split point. Split it.
+            split
+            · -- RHS: inline condition true
+              -- Now split RHS computeTypeSubst
+              split
+              · -- RHS: some tySubst₂
+                rename_i tySubst₂ h_tySubst₂
+                -- tySubst₁ = tySubst₂ via h_computeTypeSubst_eq
+                have h_eq : tySubst = tySubst₂ := by
+                  have h := h_computeTypeSubst_eq; rw [h_tySubst₁, h_tySubst₂] at h
+                  exact Option.some.inj h
+                subst h_eq
+                apply ih
+                exact substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_eval_args_eM
+              · -- RHS: none (impossible)
+                rename_i h_none₂
+                exfalso
+                have h := h_computeTypeSubst_eq; rw [h_tySubst₁, h_none₂] at h
+                exact absurd h (by simp)
+            · -- RHS: inline condition false (contradicts h_inline₁ via h_inline_cond_eq)
+              rename_i h_ninline₂
+              exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)
+          · -- LHS: none (computeTypeSubst returned none)
+            rename_i h_none₁
+            -- Goal: (e₁, .nonvalue).eM = (if h:... then ... else ...).eM
+            split
+            · -- RHS: inline condition true
+              split
+              · -- RHS: some tySubst₂ (impossible since LHS was none)
+                rename_i tySubst₂ h_tySubst₂
+                exfalso
+                have h := h_computeTypeSubst_eq; rw [h_none₁, h_tySubst₂] at h
+                exact absurd h (by simp)
+              · -- RHS: none
+                simp; exact h_eM
+            · -- RHS: inline condition false (contradicts h_inline₁)
+              rename_i h_ninline₂
+              exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)
+        · -- LHS non-inline
+          rename_i h_ninline₁
+          -- Split on LHS canonical condition
+          split
+          · -- LHS canonical holds
+            rename_i h_can₁
+            -- LHS still has match on concreteEval. Handle it first.
+            cases h_ce : lfunc.concreteEval with
+            | none =>
+              -- LHS: mkApp. RHS: concreteEval = none means all branches
+              -- reduce to mkApp regardless of canonical condition.
+              -- First reduce the match on concreteEval in the goal
+              simp only []
+              -- Now the if structure is clean. Split RHS outer inline.
+              split
+              next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
+                exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+              next h_ninline₂ => -- RHS non-inline
+                -- Regardless of canonical condition, concreteEval=none means mkApp
+                simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+            | some ceval =>
+              have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call₁
+              have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
+              -- LHS has match on ceval result. Handle it.
+              match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
+                  (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                  (args₁.map (fun a => (LExpr.eval n' F env a).fst)) with
+              | some e'₁ =>
+                -- LHS: eval n' F env e'₁. RHS: still has if/if/match structure.
+                simp only [h_cv₁]
+                -- Split RHS outer inline
+                split
+                next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
+                  exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+                next h_ninline₂ => -- RHS non-inline
+                  -- The canonical condition is true for args₂; split all nested matches/ifs
+                  split <;> split <;> split
+                  <;> first
+                    | (-- canonical positive branch: handle ceval match
+                       match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
+                           (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                           (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
+                       | some e'₂ =>
+                         simp only []
+                         obtain ⟨e'₂', h_cv₂', h_res_eM⟩ :=
+                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                         rw [h_cv₂'] at h_cv₂; cases h_cv₂
+                         exact ih _ _ h_res_eM
+                       | none =>
+                         obtain ⟨e'₂, h_cv₂', _⟩ :=
+                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                         exact absurd (h_cv₂.symm.trans h_cv₂') (by simp))
+                    | (-- non-canonical contradiction or remaining goals
+                       simp_all)
+              | none =>
+                -- LHS: mkApp. RHS: still has if/if/match structure.
+                simp only [h_cv₁]
+                -- Split RHS outer inline
+                split
+                next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
+                  exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+                next h_ninline₂ => -- RHS non-inline
+                  -- The canonical condition is true for args₂; split all nested matches/ifs
+                  split <;> split
+                  <;> first
+                    | (-- canonical positive branch: handle ceval match
+                       match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
+                           (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                           (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
+                       | some e'₂ =>
+                         obtain ⟨e'₁, h_cv₁', _⟩ :=
+                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₂ h_eval_args_eM.symm h_cv₂
+                         exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
+                       | none =>
+                         simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM])
+                    | (-- non-canonical contradiction or remaining goals
+                       simp_all [h_can_cond_eq, h_can₁, h_all_canonical,
+                         h_constrArgAt_eq, h_canonicalArgAt_eq])
+          · -- LHS non-canonical: mkApp on LHS
+            rename_i h_ncan₁
+            -- RHS has outer `if` (inline) + inner `if` (canonical).
+            -- Split RHS outer inline
+            split
+            next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
+              exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+            next h_ninline₂ => -- RHS non-inline
+              -- Split on canonical condition
+              split
+              next h_can₂_prop => -- RHS canonical (contradicts h_ncan₁)
+                -- h_ncan₁ and h_can₂_prop contradict via h_can_cond_eq
+                exact absurd (h_can_cond_eq ▸ h_can₂_prop) h_ncan₁
+              next h_ncan₂_prop => -- Both non-canonical: mkApp
+                simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+      · rename_i h_none₁
+        have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq F _ _ false h_eM h_none₁
         rw [h_none₂]
-        exact evalCore_eraseMetadata_congr n' σ e₁ e₂ h_eM ih
+        exact evalCore_eraseMetadata_congr n' F env e₁ e₂ h_eM ih
 
 ---------------------------------------------------------------------
 -- Helper lemma: for the concreteEval factory case. When concreteEval
@@ -2836,30 +2779,29 @@ private theorem eval_StepStar_factory_ceval
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (e : LExpr Tbase.mono) (n : Nat)
-    (hWF : FactoryWF σ.config.factory)
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) (n : Nat)
+    (hWF : FactoryWF F)
     (op_expr : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
-    (h_call : σ.config.factory.callOfLFunc e = some (op_expr, args, lfunc))
+    (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
     (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
     (h_ceval : lfunc.concreteEval = some ceval)
     (e'_ceval : LExpr Tbase.mono)
     (h_ceval_succ : ceval (LExpr.mkApp e.metadata op_expr
-        (args.map (fun a => LExpr.eval n σ a))).metadata (args.map (fun a => LExpr.eval n σ a)) = some e'_ceval)
+        (args.map (fun a => (LExpr.eval n F env a).fst))).metadata (args.map (fun a => (LExpr.eval n F env a).fst)) = some e'_ceval)
     (ih : ∀ (e : LExpr Tbase.mono),
       ∃ (e' : LExpr Tbase.mono),
-        StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
-        e'.eraseMetadata = (LExpr.eval n σ e).eraseMetadata) :
+        StepStar F env e e' ∧
+        e'.eraseMetadata = (LExpr.eval n F env e).fst.eraseMetadata) :
     ∃ (e' : LExpr Tbase.mono),
-      StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
-      e'.eraseMetadata = (LExpr.eval n σ e'_ceval).eraseMetadata := by
+      StepStar F env e e' ∧
+      e'.eraseMetadata = (LExpr.eval n F env e'_ceval).fst.eraseMetadata := by
   obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
-
   let stepped_args := args.map (fun a => (ih a).choose)
   have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
   have h_per_step : ∀ i (hi : i < args.length),
-      StepStar σ.config.factory (Scopes.toEnv σ.state)
+      StepStar F env
         (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
     intro i hi
     have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
@@ -2867,63 +2809,54 @@ private theorem eval_StepStar_factory_ceval
     rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
   have h_per_eM : ∀ i (hi : i < args.length),
       (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
-        (LExpr.eval n σ (args.get ⟨i, hi⟩)).eraseMetadata := by
+        (LExpr.eval n F env (args.get ⟨i, hi⟩)).fst.eraseMetadata := by
     intro i hi
     have h_get_eq : stepped_args.get ⟨i, h_stepped_len ▸ hi⟩ = (ih (args.get ⟨i, hi⟩)).choose := by
       simp [stepped_args]
     rw [h_get_eq]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
-
   obtain ⟨e_stepped, h_step_e, h_eM_stepped⟩ :=
     StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
-
   have h_args_eM : stepped_args.map LExpr.eraseMetadata =
-      (args.map (LExpr.eval n σ)).map LExpr.eraseMetadata := by
+      (args.map (fun a => (LExpr.eval n F env a).fst)).map LExpr.eraseMetadata := by
     apply List.ext_getElem (by simp [stepped_args])
     intro i hi1 hi2
     simp only [List.getElem_map]
     have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
     exact h_per_eM i hi_args
-
   have h_eM_eq : e_stepped.eraseMetadata =
-      (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))).eraseMetadata := by
+      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).eraseMetadata := by
     rw [h_eM_stepped, LExpr.eraseMetadata_mkApp, h_args_eM]
-
-  have h_call_mkApp : σ.config.factory.callOfLFunc
+  have h_call_mkApp : F.callOfLFunc
       (LExpr.mkApp e.metadata op_expr args) = some (op_expr, args, lfunc) := by
     subst h_op_eq
     simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
     simp only [h_get] at h_call
     exact h_call
-
-  have h_call_eval : σ.config.factory.callOfLFunc
-      (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))) =
-      some (op_expr, args.map (LExpr.eval n σ), lfunc) :=
-    callOfLFunc_mkApp_op σ.config.factory e.metadata op_expr args
-      (args.map (LExpr.eval n σ)) lfunc ⟨m_op, name_op, ty_op, h_op_eq⟩
+  have h_call_eval : F.callOfLFunc
+      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))) =
+      some (op_expr, args.map (fun a => (LExpr.eval n F env a).fst), lfunc) :=
+    callOfLFunc_mkApp_op F e.metadata op_expr args
+      (args.map (fun a => (LExpr.eval n F env a).fst)) lfunc ⟨m_op, name_op, ty_op, h_op_eq⟩
       h_call_mkApp (by simp)
-
   obtain ⟨op_s, args_s, h_call_s, h_args_s_eM, _⟩ :=
-    callOfLFunc_some_of_eraseMetadata_eq σ.config.factory
-      (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ)))
-      e_stepped false h_eM_eq.symm op_expr (args.map (LExpr.eval n σ)) lfunc
+    callOfLFunc_some_of_eraseMetadata_eq F
+      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst)))
+      e_stepped false h_eM_eq.symm op_expr (args.map (fun a => (LExpr.eval n F env a).fst)) lfunc
       h_call_eval
-
-  have h_lfunc_mem := callOfLFunc_func_mem σ.config.factory _ _ _ lfunc false h_call
+  have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
   have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
   obtain ⟨res_s, h_ceval_s, h_res_eM⟩ :=
     h_wf_fn.concreteEval_eraseMetadata ceval h_ceval
-      (LExpr.mkApp e.metadata op_expr (args.map (LExpr.eval n σ))).metadata
+      (LExpr.mkApp e.metadata op_expr (args.map (fun a => (LExpr.eval n F env a).fst))).metadata
       e.metadata
-      (args.map (LExpr.eval n σ)) args_s e'_ceval
+      (args.map (fun a => (LExpr.eval n F env a).fst)) args_s e'_ceval
       h_args_s_eM h_ceval_succ
-
-  have h_step_eval : Step σ.config.factory (Scopes.toEnv σ.state) e_stepped res_s :=
+  have h_step_eval : Step F env e_stepped res_s :=
     Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval h_ceval_s.symm
-
   obtain ⟨e_final, h_step_final, h_eM_final⟩ := ih res_s
   refine ⟨e_final, ReflTrans_Transitive _ _ _ _ h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
   rw [h_eM_final]
-  exact eval_eraseMetadata_invariant σ res_s e'_ceval n hWF h_res_eM.symm
+  exact eval_eraseMetadata_invariant F env res_s e'_ceval n hWF h_res_eM.symm
 
 
 ---------------------------------------------------------------------
@@ -2934,11 +2867,11 @@ theorem eval_StepStar
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
     [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
-    (σ : LState Tbase) (e : LExpr Tbase.mono) (e2 : LExpr Tbase.mono) (n : Nat)
-    (hWF : FactoryWF σ.config.factory)
-    (hEval : e2 = LExpr.eval n σ e) :
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) (e2 : LExpr Tbase.mono) (n : Nat)
+    (hWF : FactoryWF F)
+    (hEval : e2 = (LExpr.eval n F env e).fst) :
     ∃ (e' : LExpr Tbase.mono),
-      StepStar σ.config.factory (Scopes.toEnv σ.state) e e' ∧
+      StepStar F env e e' ∧
       e'.eraseMetadata = e2.eraseMetadata := by
   subst hEval
   unfold StepStar
@@ -2950,7 +2883,7 @@ theorem eval_StepStar
     split
     · -- Canonical: eval returns e
       rename_i h_canonical
-      have h_eval_n : LExpr.eval n σ e = e := by
+      have h_eval_n : (LExpr.eval n F env e).fst = e := by
         cases n with
         | zero => simp [LExpr.eval]
         | succ n' => simp [LExpr.eval, h_canonical]
@@ -2975,14 +2908,14 @@ theorem eval_StepStar
             let stepped_args := args.map (fun a => (ih a).choose)
             have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
             have h_per_step : ∀ i (hi : i < args.length),
-                StepStar σ.config.factory (Scopes.toEnv σ.state)
+                StepStar F env
                   (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
               intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
             obtain ⟨e_stepped, h_step_e, h_estepped_eM⟩ :=
               StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
-            have h_ref_call : σ.config.factory.callOfLFunc (LExpr.mkApp e.metadata op_expr stepped_args) =
+            have h_ref_call : F.callOfLFunc (LExpr.mkApp e.metadata op_expr stepped_args) =
                 some (op_expr, stepped_args, lfunc) := by
-              apply callOfLFunc_mkApp_op σ.config.factory e.metadata op_expr args stepped_args lfunc
+              apply callOfLFunc_mkApp_op F e.metadata op_expr args stepped_args lfunc
                 ⟨m_op, name_op, ty_op, h_op_eq⟩ _ h_stepped_len.symm
               subst h_op_eq
               simp only [Factory.callOfLFunc, getLFuncCall_mkApp_op] at h_call ⊢
@@ -2992,16 +2925,16 @@ theorem eval_StepStar
                 (LExpr.mkApp e.metadata op_expr stepped_args).eraseMetadata := by
               rw [h_estepped_eM, LExpr.eraseMetadata_mkApp]
             obtain ⟨op', stepped_args', h_call_stepped, h_args_eM, h_op'_eM⟩ :=
-              callOfLFunc_some_of_eraseMetadata_eq σ.config.factory
+              callOfLFunc_some_of_eraseMetadata_eq F
                 (LExpr.mkApp e.metadata op_expr stepped_args) e_stepped false
                 h_ref_eM.symm op_expr stepped_args lfunc h_ref_call
             -- Derive computeTypeSubst for stepped_args' via eraseMetadata-congr
             have h_per_eM : ∀ i (hi : i < args.length),
                 (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
-                  (LExpr.eval n σ (args.get ⟨i, hi⟩)).eraseMetadata := by
+                  ((LExpr.eval n F env (args.get ⟨i, hi⟩)).fst).eraseMetadata := by
               intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
             have h_vals_eM : stepped_args'.map LExpr.eraseMetadata =
-                (args.map (LExpr.eval n σ)).map LExpr.eraseMetadata := by
+                (args.map (fun a => (LExpr.eval n F env a).fst)).map LExpr.eraseMetadata := by
               rw [← h_args_eM]
               apply List.ext_getElem (by simp [stepped_args])
               intro i hi1 hi2
@@ -3013,7 +2946,7 @@ theorem eval_StepStar
               rw [← h_tySubst]
               exact computeTypeSubst_eraseMetadata_congr lfunc op' op_expr _ _
                 h_op'_eM.symm h_vals_eM
-            have h_expand : Step σ.config.factory (Scopes.toEnv σ.state) e_stepped
+            have h_expand : Step F (env) e_stepped
                 (LExpr.substFvarsLifting (body.applySubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')) :=
               Step.expand_fn e_stepped op' body _ stepped_args' lfunc tySubst
@@ -3027,13 +2960,13 @@ theorem eval_StepStar
                 (LExpr.substFvarsLifting (body.applySubst tySubst)
                   (lfunc.inputs.keys.zip stepped_args')).eraseMetadata =
                 (LExpr.substFvarsLifting (body.applySubst tySubst)
-                  (lfunc.inputs.keys.zip (args.map (LExpr.eval n σ)))).eraseMetadata :=
+                  (lfunc.inputs.keys.zip (args.map (fun a => (LExpr.eval n F env a).fst)))).eraseMetadata :=
               substFvarsLifting_zip_eraseMetadata_congr _ _ _ _ h_vals_eM
             have h_body_get : lfunc.body.get (by simp [h_body_eq]) = body := by
               simp [h_body_eq]
-            show _ = (LExpr.eval n σ _).eraseMetadata
-            rw [h_body_get, show (fun a => LExpr.eval n σ a) = LExpr.eval n σ from rfl]
-            exact h_ve_s.trans (eval_eraseMetadata_invariant σ _ _ n hWF h_subst_eM)
+            show _ = ((LExpr.eval n F env _).fst).eraseMetadata
+            rw [h_body_get, show (fun a => (LExpr.eval n F env a).fst) = (fun a => (LExpr.eval n F env a).fst) from rfl]
+            exact h_ve_s.trans (eval_eraseMetadata_invariant F env _ _ n hWF h_subst_eM)
           · -- computeTypeSubst = none: eval returns e unchanged
             exact ⟨e, ReflTrans.refl e, rfl⟩
         · -- Non-inline
@@ -3043,26 +2976,26 @@ theorem eval_StepStar
             split
             · -- No ceval: terminal
               rename_i h_no_ceval
-              exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
+              exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
             · -- ceval exists
               rename_i ceval h_ceval
               split
               · -- ceval succeeds: eval = eval n σ e'_ceval
                 rename_i e'_ceval h_ceval_succ
-                exact eval_StepStar_factory_ceval σ e n hWF
+                exact eval_StepStar_factory_ceval F env e n hWF
                   op_expr args lfunc h_call ceval h_ceval e'_ceval h_ceval_succ ih
               · -- ceval fails: terminal
                 rename_i h_ceval_fail
-                exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
+                exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
           · -- Symbolic args: terminal
             rename_i h_symbolic
-            exact eval_StepStar_factory_terminal σ e n op_expr args lfunc h_call ih
+            exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
       · -- evalCore case: case analysis on e
         rename_i h_no_call
         match e, h_not_canonical, h_no_call with
         | .const m c, h_nc, _ =>
           exact absurd (by simp [LExpr.isCanonicalValue] :
-            LExpr.isCanonicalValue σ.config.factory (.const m c) = true) h_nc
+            LExpr.isCanonicalValue F (.const m c) = true) h_nc
         | .op m fn ty, _, _ =>
           refine ⟨_, ReflTrans.refl _, ?_⟩
           simp only [LExpr.evalCore]
@@ -3071,34 +3004,25 @@ theorem eval_StepStar
           simp only [LExpr.evalCore]
         | .fvar m x ty, _, _ =>
           simp only [LExpr.evalCore]
-          cases h_find : Maps.find? σ.state x with
+          cases h_env : env x with
           | none =>
-            have h_findD : Maps.findD σ.state x (ty, LExpr.fvar m x ty) = (ty, LExpr.fvar m x ty) :=
-              Maps.findD_find?_none σ.state x _ h_find
-            rw [h_findD]
             exact ⟨_, ReflTrans.refl _, rfl⟩
-          | some p =>
-            have h_findD : Maps.findD σ.state x (ty, LExpr.fvar m x ty) = p :=
-              Maps.findD_find?_some σ.state x _ p h_find
-            rw [h_findD]
-            have h_toEnv : Scopes.toEnv σ.state x = some p.snd := by
-              simp [Scopes.toEnv, h_find]
-            have h_step : Step σ.config.factory (Scopes.toEnv σ.state) (.fvar m x ty) p.snd :=
-              Step.expand_fvar x p.snd h_toEnv
-            exact ⟨p.snd, ReflTrans.step _ p.snd _ h_step (ReflTrans.refl _), rfl⟩
+          | some v =>
+            have h_step : Step F env (.fvar m x ty) v :=
+              Step.expand_fvar x v h_env
+            exact ⟨v, ReflTrans.step _ v _ h_step (ReflTrans.refl _), rfl⟩
         | .abs m name ty body, _, _ =>
-          -- evalCore (.abs) = substFvarsFromState σ (.abs). Step abs to its subst form.
           simp only [LExpr.evalCore]
-          exact ⟨LExpr.substFvarsFromState σ (.abs m name ty body),
-            StepStar_to_substFvarsFromState_abs σ m name ty body, rfl⟩
+          exact ⟨LExpr.substFvarsFromEnv env (.abs m name ty body),
+            StepStar_to_substFvarsFromEnv_abs F env m name ty body, rfl⟩
         | .quant m qk name ty tr body, _, _ =>
           simp only [LExpr.evalCore]
-          exact ⟨LExpr.substFvarsFromState σ (.quant m qk name ty tr body),
-            StepStar_to_substFvarsFromState_quant σ m qk name ty tr body, rfl⟩
+          exact ⟨LExpr.substFvarsFromEnv env (.quant m qk name ty tr body),
+            StepStar_to_substFvarsFromEnv_quant F env m qk name ty tr body, rfl⟩
         | .app m e1 e2, _, _ =>
           obtain ⟨s1, hs1, hv1⟩ := ih e1
           obtain ⟨s2, hs2, hv2⟩ := ih e2
-          have h_step_app : StepStar σ.config.factory (Scopes.toEnv σ.state)
+          have h_step_app : StepStar F env
               (.app m e1 e2) (.app m s1 s2) :=
             ReflTrans_Transitive _ _ _ _ (StepStar_app_fn _ _ e1 s1 e2 m hs1)
               (StepStar_app_arg _ _ s1 e2 s2 m hs2)
@@ -3122,7 +3046,7 @@ theorem eval_StepStar
             obtain ⟨m2, body_s1, h_s1_eq, h_eM_body⟩ := h_s1_abs
             subst h_s1_eq
             -- Fire beta
-            have h_beta : Step σ.config.factory (Scopes.toEnv σ.state)
+            have h_beta : Step F (env)
                 (.app m (.abs m2 name ty body_s1) s2)
                 (LExpr.subst (fun _ => s2) body_s1) :=
               Step.beta body_s1 s2 _ rfl
@@ -3136,8 +3060,8 @@ theorem eval_StepStar
               refine ⟨e'', ReflTrans_Transitive _ _ _ _ h_steps_to_beta hstep'', ?_⟩
               have h_subst_eM : (LExpr.subst (fun _ => s2) body_s1).eraseMetadata =
                   (LExpr.subst (fun m₂ =>
-                    LExpr.replaceMetadata1 (LExpr.mergeMetadataForSubst mAbs (LExpr.eval n σ e2).metadata m₂)
-                      (LExpr.eval n σ e2)) body_e1').eraseMetadata := by
+                    LExpr.replaceMetadata1 (LExpr.mergeMetadataForSubst mAbs ((LExpr.eval n F env e2).fst).metadata m₂)
+                      ((LExpr.eval n F env e2).fst)) body_e1').eraseMetadata := by
                 simp only [LExpr.subst]
                 exact substK_eraseMetadata_congr₂ body_s1 body_e1' 0 _ _
                   h_eM_body
@@ -3147,11 +3071,11 @@ theorem eval_StepStar
                       intro m' e'; cases e' <;> simp [LExpr.replaceMetadata1, LExpr.eraseMetadata, LExpr.replaceMetadata]
                     rw [h_rp1]
                     exact hv2)
-              have h_eval_eM := eval_eraseMetadata_invariant σ
+              have h_eval_eM := eval_eraseMetadata_invariant F env
                 (LExpr.subst (fun _ => s2) body_s1)
                 (LExpr.subst (fun m₂ =>
-                    LExpr.replaceMetadata1 (LExpr.mergeMetadataForSubst mAbs (LExpr.eval n σ e2).metadata m₂)
-                      (LExpr.eval n σ e2)) body_e1')
+                    LExpr.replaceMetadata1 (LExpr.mergeMetadataForSubst mAbs ((LExpr.eval n F env e2).fst).metadata m₂)
+                      ((LExpr.eval n F env e2).fst)) body_e1')
                 n hWF h_subst_eM
               exact hve''.trans h_eval_eM
           · rename_i h_not_abs
@@ -3161,12 +3085,12 @@ theorem eval_StepStar
               obtain ⟨e'', hstep'', hve''⟩ := ih (.app m s1 s2)
               refine ⟨e'', ReflTrans_Transitive _ _ _ _ h_step_app hstep'', ?_⟩
               have h_app_eM : (LExpr.app m s1 s2).eraseMetadata =
-                  (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata (LExpr.eval n σ e1) (LExpr.eval n σ e2)).eraseMetadata := by
+                  (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata ((LExpr.eval n F env e1).fst) ((LExpr.eval n F env e2).fst)).eraseMetadata := by
                 simp [LExpr.eraseMetadata]
                 exact eraseMetadata_app_congr hv1 hv2
-              have h_eval_eM := eval_eraseMetadata_invariant σ
+              have h_eval_eM := eval_eraseMetadata_invariant F env
                 (LExpr.app m s1 s2)
-                (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata (LExpr.eval n σ e1) (LExpr.eval n σ e2))
+                (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata ((LExpr.eval n F env e1).fst) ((LExpr.eval n F env e2).fst))
                 n hWF h_app_eM
               exact hve''.trans h_eval_eM
         | .eq m e1 e2, _, _ =>
@@ -3176,9 +3100,9 @@ theorem eval_StepStar
           split
           · -- eql resolves to some b
             rename_i b h_eql_some
-            have h_eql_s : LExpr.eql σ.config.factory s1 s2 = some b := by
-              rw [eql_eraseMetadata_eq σ.config.factory s1 s2
-                (LExpr.eval n σ e1) (LExpr.eval n σ e2)
+            have h_eql_s : LExpr.eql F s1 s2 = some b := by
+              rw [eql_eraseMetadata_eq F s1 s2
+                ((LExpr.eval n F env e1).fst) ((LExpr.eval n F env e2).fst)
                 hv1 hv2]
               exact h_eql_some
             have h_step_eq := ReflTrans_Transitive _ _ _ _
@@ -3209,7 +3133,7 @@ theorem eval_StepStar
             rename_i mc_true h_eval_c_true
             rw [h_eval_c_true] at hvc
             obtain ⟨mc', h_step_to_true⟩ :=
-              step_to_const_via_IH σ c sc mc_true (.boolConst true) hsc hvc
+              step_to_const_via_IH F env c sc mc_true (LConst.boolConst true) hsc hvc
             obtain ⟨st, hst_step, hvt⟩ := ih t
             refine ⟨st, ?_, hvt⟩
             exact ReflTrans_Transitive _ _ _ _
@@ -3219,7 +3143,7 @@ theorem eval_StepStar
             rename_i mc_false h_eval_c_false
             rw [h_eval_c_false] at hvc
             obtain ⟨mc', h_step_to_false⟩ :=
-              step_to_const_via_IH σ c sc mc_false (.boolConst false) hsc hvc
+              step_to_const_via_IH F env c sc mc_false (LConst.boolConst false) hsc hvc
             obtain ⟨sf, hsf_step, hvf⟩ := ih f
             refine ⟨sf, ?_, hvf⟩
             exact ReflTrans_Transitive _ _ _ _
@@ -3233,7 +3157,7 @@ theorem eval_StepStar
               ReflTrans_Transitive _ _ _ _ (StepStar_ite_cond_pres _ _ c sc t f m hsc)
                 (ReflTrans_Transitive _ _ _ _ (StepStar_ite_then_pres _ _ sc t st f m hst)
                   (StepStar_ite_else_pres _ _ sc st f sf m hsf)), ?_⟩
-            show (LExpr.ite m sc st sf).eraseMetadata = (LExpr.ite m (LExpr.eval n σ c) (LExpr.eval n σ t) (LExpr.eval n σ f)).eraseMetadata
+            show (LExpr.ite m sc st sf).eraseMetadata = (LExpr.ite m ((LExpr.eval n F env c).fst) ((LExpr.eval n F env t).fst) ((LExpr.eval n F env f).fst)).eraseMetadata
             simp only [LExpr.eraseMetadata, LExpr.replaceMetadata]
             exact congr (congr (congr rfl hvc) hvt) hvf
 

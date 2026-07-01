@@ -75,7 +75,7 @@ structure TestCase where
 def TestCase.new (σ : LState TestParams) (e e_out : LExpr TestParams.mono) (n := 100) : TestCase :=
   { σ, e, e_out, n }
 
-def check (t:TestCase) := (Lambda.LExpr.eval t.n t.σ t.e) == t.e_out
+def check (t:TestCase) := (Lambda.LExpr.evalWithLState t.n t.σ t.e).fst == t.e_out
 
 /-- The two kinds of propositions we would like to test! -/
 abbrev steps_well (t:TestCase):Prop :=
@@ -117,7 +117,8 @@ private theorem initState_wf : FactoryWF (LState.init : LState TestParams).confi
 -- Prove `steps_well t` via `eval_StepStar` using `t.n` evaluation steps.
 macro "prove_steps_well" t:ident wf:ident : tactic =>
   `(tactic| (
-    have h := eval_StepStar ($t).σ ($t).e ($t).e_out ($t).n $wf (by native_decide)
+    have h := eval_StepStar ($t).σ.config.factory (Scopes.toEnv ($t).σ.state)
+      ($t).e ($t).e_out ($t).n $wf (by native_decide)
     obtain ⟨e', h_step, h_eM⟩ := h
     cases eraseMetadata_eq_of_unit h_eM; exact h_step))
 

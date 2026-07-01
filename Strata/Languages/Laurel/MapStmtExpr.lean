@@ -324,6 +324,102 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
 
+/-! ## Read-only traversals
+
+`foldStmtExprM` visits every `StmtExprMd` node (pre-order: a node is visited
+before its children, children left-to-right) without rebuilding the tree, so the
+caller can accumulate information in a monad. It is the read-only counterpart of
+`mapStmtExprM`, implemented on top of `mapStmtExprPrePostM` so the child
+enumeration lives in exactly one place.
+
+Analysis passes that care about only a handful of constructors should
+pattern-match those in their visitor and ignore the rest, instead of hand-rolling
+a full structural recursion — which is pure boilerplate for the irrelevant
+constructors and silently skips children if a new constructor is added. -/
+
+/-- Visit every `StmtExprMd` node (pre-order), running `f` for its effect.
+
+    Unlike a fold built on `mapStmtExprPrePostM`, this walks the tree directly
+    without rebuilding it — no `StmtExprMd` nodes are reconstructed, so a
+    read-only traversal allocates nothing beyond `f`'s own effects. The child
+    enumeration mirrors `mapStmtExprPrePostM`; if a new `StmtExpr` constructor
+    with `StmtExprMd` children is added, it needs an arm here as well. -/
+def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m Unit := do
+  f expr
+  match _h : expr.val with
+  | .IfThenElse cond th el =>
+    foldStmtExprM f cond; foldStmtExprM f th
+    el.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .Block stmts _ =>
+    stmts.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .While cond invs dec body _ =>
+    foldStmtExprM f cond
+    invs.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+    dec.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+    foldStmtExprM f body
+  | .Return v =>
+    v.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .Assign targets value =>
+    targets.attach.forM fun ⟨v, _⟩ =>
+      match v with
+      | ⟨.Field target _, _⟩ => foldStmtExprM f target
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    foldStmtExprM f value
+  | .Var (.Field target _) =>
+    foldStmtExprM f target
+  | .IncrDecr _ _ target => match target with
+    | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+  | .PureFieldUpdate target _ newValue =>
+    foldStmtExprM f target; foldStmtExprM f newValue
+  | .StaticCall _ args =>
+    args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .PrimitiveOp _ args _ =>
+    args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .ReferenceEquals lhs rhs =>
+    foldStmtExprM f lhs; foldStmtExprM f rhs
+  | .AsType target _ =>
+    foldStmtExprM f target
+  | .IsType target _ =>
+    foldStmtExprM f target
+  | .InstanceCall target _ args =>
+    foldStmtExprM f target
+    args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+  | .Quantifier _ _ trigger body =>
+    trigger.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+    foldStmtExprM f body
+  | .Assigned name =>
+    foldStmtExprM f name
+  | .Old value =>
+    foldStmtExprM f value
+  | .Fresh value =>
+    foldStmtExprM f value
+  | .Assert cond =>
+    foldStmtExprM f cond.condition
+  | .Assume cond =>
+    foldStmtExprM f cond
+  | .ProveBy value proof =>
+    foldStmtExprM f value; foldStmtExprM f proof
+  | .ContractOf _ func =>
+    foldStmtExprM f func
+  -- Leaves: no StmtExprMd children.
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Var (.Local _) | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure ()
+termination_by sizeOf expr
+decreasing_by map_stmt_expr_decreasing expr
+
+/-- Pure accumulation over every node (pre-order, parent before children). -/
+def foldStmtExpr {β : Type} (f : StmtExprMd → β → β) (init : β) (expr : StmtExprMd) : β :=
+  (foldStmtExprM (m := StateM β) (fun e => modify (f e)) expr).run init |>.snd
+
+/-- `true` iff `p` holds for at least one node in the tree. -/
+def anyStmtExpr (p : StmtExprMd → Bool) (expr : StmtExprMd) : Bool :=
+  foldStmtExpr (fun e acc => acc || p e) false expr
+
+/-- Collect, in pre-order, the concatenation of `f` applied to every node. -/
+def collectStmtExprList {β : Type} (f : StmtExprMd → List β) (expr : StmtExprMd) : List β :=
+  foldStmtExpr (fun e acc => acc ++ f e) [] expr
+
 /-- Apply a monadic transformation to all procedure bodies. -/
 @[expose]
 def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do

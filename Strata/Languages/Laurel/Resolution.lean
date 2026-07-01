@@ -12,6 +12,8 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.HeapAnalysis
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-!
 # Name Resolution Pass
@@ -430,6 +432,7 @@ private def join (ctx : TypeLattice)
   match a'.val, b'.val with
   | .Unknown, _ => some b
   | _, .Unknown => some a
+  | .TVoid, _ | _, .TVoid => some { val := .TVoid, source := a.source }
   | _, _ => if highEq a' b' then some a else none
 
 /-- Test whether a type is a user-defined reference type. `Unknown` is accepted
@@ -1322,11 +1325,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     let (e', elseTy) ← Synth.resolveStmtExpr e
     let ctx := (← get).typeLattice
     let ty ←
-      if thenTy.val == .TVoid || elseTy.val == .TVoid then
-        pure { val := .TVoid, source := source }
-      else if isConsistent ctx thenTy elseTy then
-        pure ((join ctx thenTy elseTy).getD thenTy)
-      else
+      match join ctx thenTy elseTy with
+      | some joined => pure joined
+      | none =>
         let diag := diagnosticFromSource source
           s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
         modify fun s => { s with errors := s.errors.push diag }
@@ -2622,11 +2623,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    -- Pre-register the implicit `bodyLabel` block that the LaurelToCore
-    -- translator wraps every body in (`Core.Statement.block bodyLabel …`),
-    -- so that frontends emitting `Exit bodyLabel` for early-return lowering
-    -- (e.g. PythonToLaurel) don't trip Check.exit's label-scope check.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
+    let body' ← resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     -- Transparent (static) procedure bodies are supported (#1215): the
     -- TransparencyPass derives a functional `$asFunction` copy, and the
@@ -2668,8 +2665,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
-    -- See `resolveProcedure` for the rationale on `bodyLabel`.
-    let body' ← withLabel (some bodyLabel) <| resolveBody proc.body
+    let body' ← resolveBody proc.body
     modify fun s => { s with answerType := savedAnswer }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
@@ -2801,70 +2797,24 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
 
 private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExprMd)
     : Std.HashMap Nat ResolvedNode :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .IfThenElse cond thenBr elseBr =>
-    let map := collectStmtExpr map cond
-    let map := collectStmtExpr map thenBr
-    match elseBr with
-    | some e => collectStmtExpr map e
-    | none => map
-  | .Block stmts _ => stmts.foldl collectStmtExpr map
-  | .While cond invs dec body _ =>
-    let map := collectStmtExpr map cond
-    let map := invs.foldl collectStmtExpr map
-    let map := match dec with | some d => collectStmtExpr map d | none => map
-    collectStmtExpr map body
-  | .Return val => match val with | some v => collectStmtExpr map v | none => map
-  | .Var (.Local _) => map
-  | .Var (.Declare param) =>
-    let map := register map param.name (.var param.name param.type)
-    collectHighType map param.type
-  | .Assign targets value =>
-    let map := targets.foldl (fun map t =>
-      match t.val with
-      | .Declare param =>
-        let map := register map param.name (.var param.name param.type)
-        collectHighType map param.type
-      | _ => map) map
-    collectStmtExpr map value
-  | .IncrDecr _ _ ⟨.Field tgt _, _⟩ => collectStmtExpr map tgt
-  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => map
-  | .Var (.Field target _) => collectStmtExpr map target
-  | .PureFieldUpdate target _ newVal =>
-    let map := collectStmtExpr map target
-    collectStmtExpr map newVal
-  | .StaticCall _ args => args.foldl collectStmtExpr map
-  | .PrimitiveOp _ args _ => args.foldl collectStmtExpr map
-  | .ReferenceEquals lhs rhs =>
-    let map := collectStmtExpr map lhs
-    collectStmtExpr map rhs
-  | .AsType target ty =>
-    let map := collectStmtExpr map target
-    collectHighType map ty
-  | .IsType target ty =>
-    let map := collectStmtExpr map target
-    collectHighType map ty
-  | .InstanceCall target _ args =>
-    let map := collectStmtExpr map target
-    args.foldl collectStmtExpr map
-  | .Quantifier _ param trigger body =>
-    let map := register map param.name (.quantifierVar param.name param.type)
-    let map := collectHighType map param.type
-    let map := match trigger with | some t => collectStmtExpr map t | none => map
-    collectStmtExpr map body
-  | .Assigned name => collectStmtExpr map name
-  | .Old val => collectStmtExpr map val
-  | .Fresh val => collectStmtExpr map val
-  | .Assert ⟨cond, _, _⟩ => collectStmtExpr map cond
-  | .Assume cond => collectStmtExpr map cond
-  | .ProveBy val proof =>
-    let map := collectStmtExpr map val
-    collectStmtExpr map proof
-  | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Abstract | .All | .Hole _ _ => map
+  foldStmtExpr (fun e map =>
+    match e.val with
+    | .Var (.Declare param) =>
+      let map := register map param.name (.var param.name param.type)
+      collectHighType map param.type
+    | .Assign targets _ =>
+      targets.foldl (fun map t =>
+        match t.val with
+        | .Declare param =>
+          let map := register map param.name (.var param.name param.type)
+          collectHighType map param.type
+        | _ => map) map
+    | .Quantifier _ param _ _ =>
+      let map := register map param.name (.quantifierVar param.name param.type)
+      collectHighType map param.type
+    | .AsType _ ty => collectHighType map ty
+    | .IsType _ ty => collectHighType map ty
+    | _ => map) map expr
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
     : Std.HashMap Nat ResolvedNode :=
@@ -2989,61 +2939,25 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
 
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
+Recursion into child nodes is handled by `collectStmtExprList`; the visitor only
+checks the constructors that access a field (`x#f` reads and field assignment/incr-decr targets).
 -/
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
-  | .Var (.Field target fieldName) =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
-    targetErrors ++ fieldError
-  | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
-  | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
-      match _hv : t.val with
-      | .Field target fieldName =>
-        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
-        let fieldError := checkDiamondFieldAccess model target fieldName t.source
-        acc ++ innerErrors ++ fieldError
-      | .Local _ | .Declare _ => acc) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
-  | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model t
-    match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
-    | none => errs
-  | .While c invs _ b _ =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args _ =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
-  | .IncrDecr _ _ target =>
-    match _htgt : target.val with
-    | .Field tgt fieldName =>
-      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
-      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
-      innerErrors ++ fieldError
-    | .Local _ | .Declare _ => []
-  | _ => []
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt expr)
-    all_goals (try have := AstNode.sizeOf_val_lt t)
-    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
-    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
+  collectStmtExprList (fun e =>
+    match e.val with
+    | .Var (.Field target fieldName) =>
+      checkDiamondFieldAccess model target fieldName e.source
+    | .Assign targets _ =>
+      targets.flatMap fun t =>
+        match t.val with
+        | .Field target fieldName => checkDiamondFieldAccess model target fieldName t.source
+        | .Local _ | .Declare _ => []
+    | .IncrDecr _ _ target =>
+      match target.val with
+      | .Field tgt fieldName => checkDiamondFieldAccess model tgt fieldName target.source
+      | .Local _ | .Declare _ => []
+    | _ => []) expr
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
@@ -3117,6 +3031,119 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
 
 /-! ## Entry point -/
 
+/-- Collect a "nested `old(...)` has no effect" warning for every `Old` node
+    inside `operand` (the operand of an enclosing `old`). An `old` nested
+    directly inside another `old` is always redundant. -/
+private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
+  (mapStmtExprM (m := StateM (List DiagnosticModel))
+    (fun n => do
+      match n.val with
+      | .Old _ =>
+        modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .Warning])
+        pure n
+      | _ => pure n)
+    operand |>.run []).2
+
+/-- True when `e` reads heap state, reusing the shared heap-effect analysis so
+    this stays consistent with how `HeapParameterization` classifies expressions.
+    An expression reads the heap when it either accesses a composite field
+    (`x#f`) directly, or calls a procedure that (transitively) reads the heap.
+    The latter uses the `heapReaders` set precomputed on the `SemanticModel`, so
+    e.g. `old(f(x))` is recognized as meaningful when `f` reads the heap. -/
+private def containsHeapRead (heapReaders : Std.HashSet Identifier) (e : StmtExprMd) : Bool :=
+  let result := ((collectExprMd e).run {}).2
+  result.readsHeapDirectly || result.callees.any heapReaders.contains
+
+/-- Names of a procedure's inout parameters: those appearing in both the inputs
+    and the outputs. The pre- and post-state of an inout parameter differ, so
+    `old(...)` over such a parameter is meaningful even when the procedure does
+    not touch the heap. Mirrors `PushOldInward.procInoutNames`. -/
+private def procInoutNames (proc : Procedure) : List String :=
+  proc.inputs.filterMap fun inp =>
+    if proc.outputs.any (·.name == inp.name) then some inp.name.text else none
+
+/-- True when `e` references one of `inoutNames` (an inout parameter), in which
+    case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/
+private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
+  anyStmtExpr (fun n => match n.val with
+    | .Var (.Local name) => inoutNames.contains name.text
+    | _ => false) e
+
+/-- Collect no-op `old(...)` warnings for one procedure. `writesHeap` says
+    whether the enclosing procedure (transitively) writes the heap.
+
+    An `old(e)` is a no-op — and warned — when it captures no state that can
+    differ between the pre- and post-state. That is the case when BOTH:
+    - the enclosing procedure does not write the heap AND `e` references no inout
+      parameter (so there is no pre/post distinction to capture), or
+    - `e` reads no heap state AND references no inout parameter (so its value is
+      identical pre and post).
+
+    Inout parameters matter because their input value is the pre-state and their
+    output value is the post-state (see the language definition), so `old(x)`
+    over an inout `x` is meaningful regardless of heap effects.
+
+    Additionally, any `old` nested inside another `old` is redundant. These are
+    the warnings `PushOldInward` used to emit; they live here so resolution is
+    the single source of user-program diagnostics. The two notions stay in sync
+    because both classify "writes the heap" / "reads the heap" via the shared
+    `HeapAnalysis` and inout membership via the same input/output name match. -/
+private def oldWarningsForProc (heapReaders : Std.HashSet Identifier) (writesHeap : Bool)
+    (proc : Procedure) : List DiagnosticModel :=
+  let inoutNames := procInoutNames proc
+  let visit (n : StmtExprMd) : StateM (List DiagnosticModel) (Option StmtExprMd) := do
+    match n.val with
+    | .Old inner =>
+      -- Warn on any `old` nested within this one's operand.
+      modify (· ++ nestedOldWarnings inner)
+      let refsInout := mentionsInout inoutNames inner
+      if !writesHeap && !refsInout then
+        modify (· ++ [diagnosticFromSource n.source
+          "`old(...)` has no effect: the enclosing procedure does not modify the heap" .Warning])
+      else if !containsHeapRead heapReaders inner && !refsInout then
+        modify (· ++ [diagnosticFromSource n.source
+          "`old(...)` has no effect: expression contains no heap reads" .Warning])
+      -- Return the node unchanged and stop further descent (nested olds were
+      -- already handled above), matching `PushOldInward`'s pre-order handling.
+      pure (some n)
+    | _ => pure none
+  (mapProcedureM (m := StateM (List DiagnosticModel))
+    (fun e => mapStmtExprPrePostM visit pure e) proc |>.run []).2
+
+/-- Diagnose no-op `old(...)` usage across a program. This is a property of the
+    user's *source* program (it does not depend on the heap-parameterized form),
+    so `resolve` runs it only on the initial resolution. Heap read/write status
+    comes from the `SemanticModel`, whose `heapReaders`/`heapWriters` sets are
+    computed over all procedures (static plus composite instance procedures) so
+    the call-graph analysis matches `HeapParameterization`, which runs after
+    instance procedures have been lifted into the static list. -/
+def validateOldUsage (model : SemanticModel) (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let allProcs := program.staticProcedures ++ instanceProcs
+  allProcs.flatMap fun proc =>
+    oldWarningsForProc model.heapReaders (model.heapWriters.contains proc.name) proc
+
+/-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
+    `ContractPass` generates is quantified over the procedure's inputs only, so an
+    output would be unbound. Reported here so resolution stays the single source
+    of user-program diagnostics. Composite instance procedures are included
+    because this runs at initial resolution, before `LiftInstanceProcedures`
+    moves them into the static list — the old post-lift `ContractPass` check saw
+    them, so scanning static procedures only would miss an instance `invokeOn`
+    procedure with an output. -/
+def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  (program.staticProcedures ++ instanceProcs).filterMap fun proc =>
+    if proc.invokeOn.isSome && !proc.outputs.isEmpty then
+      some (diagnosticFromSource proc.name.source
+        s!"'invokeOn' procedure '{proc.name.text}' may not have output parameters; the auto-invocation axiom is quantified over inputs only."
+        DiagnosticType.UserError)
+    else none
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
@@ -3133,15 +3160,32 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
+  -- Heap-effect classification over all procedures (static plus composite
+  -- instance procedures), so the call-graph analysis matches
+  -- `HeapParameterization`, which runs after instance procedures are lifted.
+  let allProcs := program'.staticProcedures ++ program'.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
   let semanticModel := {
     compositeCount := program.types.length,
     refToDef := refToDef,
-    nextId := finalState.nextId
+    nextId := finalState.nextId,
+    heapReaders := computeReadsHeap allProcs,
+    heapWriters := computeWritesHeap allProcs
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
+  -- resolution: later passes (and their re-resolutions) deliberately rewrite
+  -- `old` into the heap-parameterized form this check is phrased against.
+  let oldUsageWarnings :=
+    if existingModel.isNone then validateOldUsage semanticModel program' else []
+  -- `invokeOn` procedures may not declare outputs (see `validateInvokeOnOutputRefs`).
+  -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
+  let invokeOnErrors :=
+    if existingModel.isNone then validateInvokeOnOutputRefs program' else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors
+    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/

@@ -11,6 +11,7 @@ public import Strata.Languages.Laurel.LaurelPass
 import Strata.DL.Lambda.LExpr
 import StrataDDM.Util.Graph.Tarjan
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 open StrataDDM
 
@@ -48,67 +49,13 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
 
 /--
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
-Used to build the call graph for SCC-based procedure ordering.
+Used to build the call graph for SCC-based procedure ordering. Recursion into
+child nodes is handled by `collectStmtExprList`.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .StaticCall callee args =>
-      callee.text :: args.flatMap (fun a => collectStaticCallNames a)
-  | .PrimitiveOp _ args _ => args.flatMap (fun a => collectStaticCallNames a)
-  | .IfThenElse cond t e =>
-      collectStaticCallNames cond ++
-      collectStaticCallNames t ++
-      match e with
-      | some eelse => collectStaticCallNames eelse
-      | none => []
-  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
-  | .Assign targets v =>
-      -- Field targets contain StmtExpr children; defensively recurse into them
-      -- even though field-target assigns are currently eliminated before this pass.
-      let targetCalls := targets.attach.flatMap fun ⟨t, _⟩ => match _htv : t.val with
-        | .Field inner _fieldName => collectStaticCallNames inner
-        | _ => []
-      targetCalls ++ collectStaticCallNames v
-  | .Return v =>
-      match v with
-      | some x => collectStaticCallNames x
-      | none => []
-  | .While cond invs dec body _ =>
-      collectStaticCallNames cond ++
-      invs.flatMap (fun i => collectStaticCallNames i) ++
-      (match dec with
-      | some d => collectStaticCallNames d
-      | none => []) ++
-      collectStaticCallNames body
-  | .Quantifier _ _ trig body =>
-      (match trig with
-      | some t => collectStaticCallNames t
-      | none => []) ++
-      collectStaticCallNames body
-  | .Var (.Field t _) => collectStaticCallNames t
-  | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
-  | .InstanceCall t _ args =>
-      collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
-  | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
-  | .Assert ⟨cond, _summary, _⟩ => collectStaticCallNames cond
-  | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
-  | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
-  | .AsType t _ | .IsType t _ => collectStaticCallNames t
-  | .ContractOf _ f => collectStaticCallNames f
-  | .Assigned v => collectStaticCallNames v
-  | _ => []
-termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try term_by_mem)
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := Variable.sizeOf_field_target_lt_of_eq _htv
-    omega))
-  all_goals omega
+  collectStmtExprList (fun e => match e.val with
+    | .StaticCall callee _ => [callee.text]
+    | _ => []) expr
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC

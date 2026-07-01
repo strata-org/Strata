@@ -27,6 +27,6 @@ Having an idiomaticity test per pass is recommend but not required.
 
 The folder UnitTests contains tests that require calling internal Laurel APIs. Adding unit tests is recommend for utility functions such as the generic Laurel traversal code that's in MapStmtExprTest.
 
-# CBMB
+# CBMC
 
 WIP.

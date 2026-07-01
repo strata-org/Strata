@@ -6,7 +6,7 @@
 module
 
 public import Strata.DL.Imperative.BasicBlock
-public import Strata.DL.Imperative.ToCProverGOTO
+public import Strata.Languages.GOTO.ToCProverGOTO
 
 public section
 

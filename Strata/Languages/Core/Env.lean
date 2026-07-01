@@ -204,7 +204,7 @@ def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
 
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  e.eval E.exprEnv.config.fuel E.exprEnv
+  (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
 
 def Env.pushScope (E : Env) (scope : (Lambda.Scope CoreLParams)) : Env :=
   { E with exprEnv.state := E.exprEnv.state.push scope }

@@ -17,7 +17,7 @@ open Std (ToFormat Format format)
 namespace CmdEval
 
 def eval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  LExpr.eval E.exprEnv.config.fuel E.exprEnv e
+  (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
 
 def updateError (E : Env) (e : EvalError Expression) : Env :=
   { E with error := e }

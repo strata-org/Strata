@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.LExprEvalProps
 public import Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.Semantics
@@ -53,7 +54,7 @@ def typeCheckAndPartialEval
   let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory C.functions
-  return (LExpr.eval σ.config.fuel σ et)
+  return (LExpr.evalWithLState σ.config.fuel σ et).fst
 
 end -- public section
 end Lambda

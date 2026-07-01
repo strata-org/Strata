@@ -119,6 +119,12 @@ structure SemanticModel where
   nextId: Nat
   compositeCount: Nat
   refToDef: Std.HashMap Nat ResolvedNode
+  /-- Procedures that (transitively) read the heap, by name. Computed once by
+      `HeapAnalysis` during resolution so downstream checks can decide whether a
+      call reads the heap without re-running the call-graph analysis. -/
+  heapReaders: Std.HashSet Identifier := {}
+  /-- Procedures that (transitively) write the heap, by name. See `heapReaders`. -/
+  heapWriters: Std.HashSet Identifier := {}
   deriving Repr
 
 /-- Look up the resolved node for an identifier, returning `none` if the identifier
