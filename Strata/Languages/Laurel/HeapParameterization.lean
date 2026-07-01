@@ -56,11 +56,9 @@ structure AnalysisResult where
 
 
 mutual
-def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
-  termination_by sizeOf expr
-  decreasing_by cases expr; term_by_mem
+partial def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit := collectExpr expr.val
 
-def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
+partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match _: expr with
   | .Var (.Field target _) =>
       modify fun s => { s with readsHeapDirectly := true }; collectExprMd target
@@ -93,16 +91,14 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   | .Assume c => collectExprMd c
   | .ProveBy v p => collectExprMd v; collectExprMd p
   | .ContractOf _ f => collectExprMd f
+  | .Throw v => collectExprMd v
+  | .Try body catches finally? =>
+      collectExprMd body
+      for c in catches do
+        match c.predicate with | some p => collectExprMd p | none => pure ()
+        collectExprMd c.body
+      match finally? with | some f => collectExprMd f | none => pure ()
   | _ => pure ()
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try term_by_mem)
-    -- For target inside Field in assign target list (attach-based loop):
-    all_goals (
-      have := List.sizeOf_lt_of_mem ‹_›
-      have := Variable.sizeOf_field_target_lt_of_eq _hav
-      omega)
 end
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
@@ -452,12 +448,25 @@ where
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
+    | .Throw value => return [⟨ .Throw (← recurseOne value), source ⟩]
+    | .Try body catches finally? =>
+        -- Recurse into every arm so calls/field accesses inside a `try` are
+        -- heap-transformed (e.g. `$heap` threaded through calls in the body).
+        let body' ← recurseOne body false
+        let catches' ← catches.attach.mapM fun ⟨c, _⟩ => do
+          let predicate' ← c.predicate.attach.mapM fun ⟨p, _⟩ => recurseOne p
+          let cbody' ← recurseOne c.body false
+          pure ({ c with predicate := predicate', body := cbody' } : CatchClause)
+        let finally'? ← finally?.attach.mapM fun ⟨f, _⟩ => recurseOne f false
+        return [⟨ .Try body' catches' finally'?, source ⟩]
     | _ => return [exprMd]
   termination_by (sizeOf exprMd, 0)
   decreasing_by
     all_goals simp_wf
     all_goals (try have := AstNode.sizeOf_val_lt exprMd)
     all_goals (try have := AstNode.sizeOf_val_lt v)
+    all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
     all_goals (try term_by_mem)
     all_goals (try (cases exprMd; simp_all; omega))
     -- For field inner expressions in attach-based:
