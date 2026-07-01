@@ -255,7 +255,7 @@ theorem InitStateUniqueResult
 
 theorem eval_assert_store_cst
   [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]:
-  EvalCmd P δ σ (.assert l e md) σ' f → σ = σ' := by
+  EvalCmd P δ fac σ (.assert l e md) σ' f → σ = σ' := by
   intros Heval; cases Heval with
   | eval_assert_pass _ => rfl
   | eval_assert_fail _ => rfl
@@ -314,10 +314,10 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasVarsImp P (Cmd P)] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]:
-  WellFormedSemanticEvalExprCongr δ →
+  WellFormedSemanticEvalExprCongr δ fac →
   ¬ v ∈ HasFvars.getFvars e →
-  EvalCmd P δ σ (Cmd.set v (.det e') md) σ' f →
-  δ σ e = δ σ' e := by
+  EvalCmd P δ fac σ (Cmd.set v (.det e') md) σ' f →
+  δ fac σ e = δ fac σ' e := by
   intro Hwf Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
   specialize Hwf e σ σ'
@@ -338,12 +338,12 @@ theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
   [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
-  δ σ v1 = δ σ2 v1 →
-  δ σ v2 = δ σ1 v2 →
-  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
+  δ fac σ v1 = δ fac σ2 v1 →
+  δ fac σ v2 = δ fac σ1 v2 →
+  EvalCmd P δ fac σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ fac σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ fac σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ fac σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
   cases Hs1 with | eval_set _ Hu1 _ =>
@@ -356,14 +356,14 @@ theorem eval_cmd_set_comm'
 theorem eval_cmd_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
   [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [DecidableEq P.Ident]:
-  WellFormedSemanticEvalExprCongr δ →
+  WellFormedSemanticEvalExprCongr δ fac →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
-  EvalCmd P δ σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
-  EvalCmd P δ σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
-  EvalCmd P δ σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
-  EvalCmd P δ σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
+  EvalCmd P δ fac σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
+  EvalCmd P δ fac σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
+  EvalCmd P δ fac σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
+  EvalCmd P δ fac σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1

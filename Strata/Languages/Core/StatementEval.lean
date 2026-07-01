@@ -786,7 +786,7 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
               evalExpr := fun E e =>
                 some (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
               evalCmd := Command.run fuel'
-              extendEval := fun E decl =>
+              extendFactory := fun E decl =>
                 match E.addFactoryFunc {
                   name := decl.name
                   typeArgs := decl.typeArgs

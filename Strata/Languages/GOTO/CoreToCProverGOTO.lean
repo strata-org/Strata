@@ -39,8 +39,8 @@ abbrev Core.ExprStr : Imperative.PureExpr :=
      ExprMetadata := CoreParams.Metadata,
      TyEnv := @Lambda.TEnv CoreParams.IDMeta,
      TyContext := @Lambda.LContext CoreParams,
-     EvalEnv := Lambda.LState CoreParams
-     EqIdent := inferInstanceAs (DecidableEq CoreParams.Identifier) }
+     EqIdent := inferInstanceAs (DecidableEq CoreParams.Identifier),
+     Factory := Lambda.Factory CoreParams }
 
 namespace CoreToGOTO
 

@@ -21,12 +21,11 @@ variable (P : PureExpr)
 /-
 These are intended to be as generic as possible, not using any specific
 data structure. They'll probably usually be instantiated with map
-lookups. The evaluation functions take two states: an old state and a
-current state. This allows for two-state expressions and predicates.
+lookups.
 -/
 @[expose] abbrev SemanticStore := P.Ident → Option P.Expr
-@[expose] abbrev SemanticEval := SemanticStore P → P.Expr → Option P.Expr
-@[expose] abbrev SemanticEvalBool := SemanticStore P → P.Expr → Option Bool
+@[expose] abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
+@[expose] abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
 
 /--
 Evaluation relation of an Imperative command `Cmd`.
@@ -37,7 +36,7 @@ a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
 when the command signals a failure.
 -/
 @[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
+  SemanticEval P → P.Factory → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
 
@@ -84,32 +83,32 @@ def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
 /-! ### Well-Formedness of `SemanticEval`s -/
 
 @[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
-    (δ : SemanticEval P) : Prop :=
+    (δ : SemanticEval P) (f : P.Factory) : Prop :=
     ∀ σ e,
-      (δ σ e = some Imperative.HasBool.tt ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
-      (δ σ e = some Imperative.HasBool.ff ↔ δ σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
+      (δ f σ e = some Imperative.HasBool.tt ↔ δ f σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
+      (δ f σ e = some Imperative.HasBool.ff ↔ δ f σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
 
 /-- A store is well-formed when every binding it holds is a value.  The
     predicates below only constrain such stores, so the value rule and the var
     rule stay jointly satisfiable (an arbitrary store could bind a variable to a
     non-value). -/
-@[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) : Prop :=
-    ∀ x v, σ x = some v → HasVal.value v
+@[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) (f : P.Factory) : Prop :=
+    ∀ x v, σ x = some v → HasVal.value f v
 
 /-- Well-formedness of a `SemanticEval`'s value behavior, split into named
     clauses. -/
 structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
-    (δ : SemanticEval P) : Prop where
+    (δ : SemanticEval P) (f : P.Factory) : Prop where
   /-- The evaluator produces only values (on well-formed stores). -/
-  outputsAreValues : ∀ v v' σ, WellFormedStore σ → δ σ v = some v' → HasVal.value v'
+  outputsAreValues : ∀ v v' σ, WellFormedStore σ f → δ f σ v = some v' → HasVal.value f v'
   /-- The evaluator is the identity on values. -/
-  identityOnValues : ∀ v' σ, HasVal.value v' → δ σ v' = some v'
+  identityOnValues : ∀ v' σ, HasVal.value f v' → δ f σ v' = some v'
 
 @[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasVal P] [HasFvar P] (δ : SemanticEval P)
-    : Prop := (∀ e v σ, WellFormedStore σ → HasFvar.getFvar e = some v → δ σ e = σ v)
+    (f : P.Factory) : Prop := (∀ e v σ, WellFormedStore σ f → HasFvar.getFvar e = some v → δ f σ e = σ v)
 
 @[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P] (δ : SemanticEval P)
-    : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ σ e = δ σ' e
+    (f : P.Factory) : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → δ f σ e = δ f σ' e
 
 /--
 Abstract variable update.
@@ -154,65 +153,65 @@ The failure flag is accumulated in `Env.hasFailure` by the statement
 semantics (`EvalStmt`).
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
-  SemanticEval P → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
+  SemanticEval P → P.Factory → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
   /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
-    δ σ e = .some v →
+    δ f σ e = .some v →
     InitState P σ x v σ' →
-    WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar δ f →
     ---
-    EvalCmd δ σ (.init x _ (.det e) _) σ' false
+    EvalCmd δ f σ (.init x _ (.det e) _) σ' false
 
   /-- Initialize `x` with an unconstrained value (havoc semantics). -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
-    WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar δ f →
     ---
-    EvalCmd δ σ (.init x _ .nondet _) σ' false
+    EvalCmd δ f σ (.init x _ .nondet _) σ' false
 
   /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
-    δ σ e = .some v →
+    δ f σ e = .some v →
     UpdateState P σ x v σ' →
-    WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar δ f →
     ----
-    EvalCmd δ σ (.set x (.det e) _) σ' false
+    EvalCmd δ f σ (.set x (.det e) _) σ' false
 
   /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
   | eval_set_nondet :
     UpdateState P σ x v σ' →
-    WellFormedSemanticEvalVar δ →
+    WellFormedSemanticEvalVar δ f →
     ----
-    EvalCmd δ σ (.set x .nondet _) σ' false
+    EvalCmd δ f σ (.set x .nondet _) σ' false
 
   /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
   | eval_assert_pass :
-    δ σ e = .some HasBool.tt →
-    WellFormedSemanticEvalBool δ →
+    δ f σ e = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ f →
     ----
-    EvalCmd δ σ (.assert _ e _) σ false
+    EvalCmd δ f σ (.assert _ e _) σ false
 
   /-- Assert fails: `e` does not evaluate to true, failure flag is set.
       The store is unchanged — the command is an unconditional skip on the
       store, but the failure flag records the violation. -/
   | eval_assert_fail :
-    δ σ e = .some HasBool.ff →
-    WellFormedSemanticEvalBool δ →
+    δ f σ e = .some HasBool.ff →
+    WellFormedSemanticEvalBool δ f →
     ----
-    EvalCmd δ σ (.assert _ e _) σ true
+    EvalCmd δ f σ (.assert _ e _) σ true
 
   /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
-    δ σ e = .some HasBool.tt →
-    WellFormedSemanticEvalBool δ →
+    δ f σ e = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ f →
     ----
-    EvalCmd δ σ (.assume _ e _) σ false
+    EvalCmd δ f σ (.assume _ e _) σ false
 
   /-- A cover, when encountered, is essentially a skip. -/
   | eval_cover :
-    WellFormedSemanticEvalBool δ →
+    WellFormedSemanticEvalBool δ f →
     ----
-    EvalCmd δ σ (.cover _ e _) σ false
+    EvalCmd δ f σ (.cover _ e _) σ false
 
 end section
 

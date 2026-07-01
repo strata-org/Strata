@@ -28,7 +28,7 @@ abbrev Expression : Imperative.PureExpr :=
      ExprMetadata := ExpressionMetadata,
      TyEnv := @Lambda.TEnv Unit,
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
-     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Unit⟩ }
+     Factory := Lambda.Factory CoreLParams }
 
 instance : Imperative.HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars

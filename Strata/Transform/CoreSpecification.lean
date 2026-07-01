@@ -33,7 +33,7 @@ open Core Imperative
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
@@ -57,12 +57,12 @@ open Core Imperative
     initialized and preconditions assumed.
     The well-formed environment also includes old snapshots in store -/
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
-  wfVar  : WellFormedSemanticEvalVar ρ.eval
-  wfBool : WellFormedSemanticEvalBool ρ.eval
-  wfCong : WellFormedCoreEvalCong ρ.eval
-  wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval
+  wfVar  : WellFormedSemanticEvalVar ρ.eval ρ.factory
+  wfBool : WellFormedSemanticEvalBool ρ.eval ρ.factory
+  wfCong : WellFormedCoreEvalCong ρ.eval ρ.factory
+  wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval ρ.factory
   -- The verification env's store holds only values (true of reachable stores).
-  storeValues : Imperative.WellFormedStore ρ.store
+  storeValues : Imperative.WellFormedStore ρ.store ρ.factory
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.
@@ -71,13 +71,13 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   -- Precondition holds in the body, and input state had no failure.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
-    ρ.eval ρ.store check.expr = some HasBool.tt
+    ρ.eval ρ.factory ρ.store check.expr = some HasBool.tt
   noFailure : ρ.hasFailure = Bool.false
 
 /-! ## Procedure correctness -/
 
 variable (π : String → Option Procedure)
-variable (φ : CoreEval → PureFunc Expression → CoreEval)
+variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-- A specific assertion `a` in procedure `proc` is valid
     for initial program states satisfying the preconditions (`ProcEnvWF`). -/
@@ -162,11 +162,11 @@ structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
     ∀ (ρ₀ : Env Expression),
       ProcEnvWF proc ρ₀ →
       ∀ (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
-        CoreBodyExec π φ proc.body ρ₀.store ρ₀.eval σ' δ' failed →
+        CoreBodyExec π φ proc.body ρ₀.store ρ₀.factory ρ₀.eval σ' δ' failed →
         (∀ (label : CoreLabel) (check : Procedure.Check),
           (label, check) ∈ proc.spec.postconditions.toList →
           check.attr = Procedure.CheckAttr.Default →
-          δ' σ' check.expr = some HasBool.tt) ∧
+          δ' ρ₀.factory σ' check.expr = some HasBool.tt) ∧
         failed = Bool.false
 
 end Core.Specification

@@ -50,10 +50,10 @@ theorem TouchVarsEmpty :
   intros H; cases H <;> simp
 
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  {extendEval : ExtendEval P}
+  {extendFactory : ExtendFactory P}
   { ρ ρ' : Env P }
   [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] :
-  EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
+  EvalStmtsSmall P EvalCmd extendFactory ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
   intro H
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
@@ -629,7 +629,7 @@ theorem ReadValuesLength :
   induction Hrd <;> simp_all
 
 theorem EvalExpressionsLength :
-  EvalExpressions (P:=Core.Expression) δ σ ks vs →
+  EvalExpressions (P:=Core.Expression) δ fac σ ks vs →
   ks.length = vs.length := by
   intros Hrd
   induction Hrd <;> simp_all
@@ -1329,7 +1329,7 @@ theorem ReadValuesSubstStores :
       simp_all
     . exact ih Ht Ht'
 
-theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} :
+theorem EvalStatementsContractApp' {φ : Expression.Factory → PureFunc Expression → Expression.Factory} :
   EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' →
   ∃ ρ',
     EvalStatementsContract π φ ρ ss₁ ρ' ∧
@@ -1357,7 +1357,7 @@ theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → Co
               (.stmts ss₁ ρ₁) (.terminal ρ') from Hss₁))
       exact ⟨ρ', Hcons, Hss₂⟩
 
-theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} :
+theorem EvalStatementsContractApp {φ : Expression.Factory → PureFunc Expression → Expression.Factory} :
   EvalStatementsContract π φ ρ ss₁ ρ' →
   EvalStatementsContract π φ ρ' ss₂ ρ'' →
   EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' := by
@@ -1388,7 +1388,7 @@ theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → Cor
         (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
         (.step _ _ _ .step_seq_done Hconcat)
 
-theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
+theorem EvalStatementsApp {φ : Expression.Factory → PureFunc Expression → Expression.Factory} :
   EvalStatements π φ ρ ss₁ ρ' →
   EvalStatements π φ ρ' ss₂ ρ'' →
   EvalStatements π φ ρ (ss₁ ++ ss₂) ρ'' := by
@@ -1747,7 +1747,7 @@ theorem HavocVarsDefined :
 
 theorem EvalCmdDefMonotone' :
   isDefined σ v →
-  EvalCmd Core.Expression δ σ c σ' f →
+  EvalCmd Core.Expression δ fac σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval with
@@ -1792,8 +1792,8 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply Hup2
 
 theorem EvalCmdRefinesContract :
-EvalCmd Expression δ σ c σ' f →
-EvalCommandContract π δ σ (CmdExt.cmd c) σ' f := by
+EvalCmd Expression δ fac σ c σ' f →
+EvalCommandContract π δ fac σ (CmdExt.cmd c) σ' f := by
 intros H; constructor; exact H
 
 theorem InvStoresUpdatedStateDisjRightMono :
@@ -2044,18 +2044,18 @@ NOTE:
   variables are irrelevant.
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ n callArgs σ' p md md'},
+  ∀ {π φ δ fac σ n callArgs σ' p md md'},
   π n = .some p →
-  EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
-  EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
-  intros π φ δ σ n callArgs σ' p md md' pFound H
+  EvalCommand π φ δ fac σ (CmdExt.call n callArgs md) σ' false →
+  EvalCommandContract π δ fac σ (CmdExt.call n callArgs md') σ' false := by
+  intros π φ δ fac σ n callArgs σ' p md md' pFound H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
 theorem EvalCommandRefinesContract :
-EvalCommand π φ δ σ c σ' f →
-EvalCommandContract π δ σ c σ' f := by
+EvalCommand π φ δ fac σ c σ' f →
+EvalCommandContract π δ fac σ c σ' f := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
@@ -2124,10 +2124,10 @@ theorem EvalStatementRefinesContract :
     Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
     together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
 theorem EvalExpressionIsDefined :
-  WellFormedStore σ →
-  WellFormedCoreEvalCong δ →
-  WellFormedSemanticEvalVar δ →
-  (δ σ e).isSome →
+  WellFormedStore σ f →
+  WellFormedCoreEvalCong δ f →
+  WellFormedSemanticEvalVar δ f →
+  (δ f σ e).isSome →
   isDefined σ (HasFvars.getFvars e) := by
   intros Hwfs Hwfc Hwfvr Hsome
   intros v Hin
@@ -2158,7 +2158,7 @@ theorem EvalExpressionIsDefined :
 /-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
 theorem CoreStepStar_to_StepStmtStar
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {c c' : Imperative.Config Expression Command}
     (h : CoreStepStar π φ c c') :
     Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
@@ -2169,7 +2169,7 @@ theorem CoreStepStar_to_StepStmtStar
 /-- The generic `StepStmtStar` implies `CoreStepStar`. -/
 theorem StepStmtStar_to_CoreStepStar
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {c c' : Imperative.Config Expression Command} :
     Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
     CoreStepStar π φ c c' := by
@@ -2182,7 +2182,7 @@ theorem StepStmtStar_to_CoreStepStar
     not support mutual inductives). -/
 theorem CoreStepStar_rec
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {motive : CoreConfig → CoreConfig → Prop}
     (h_refl : ∀ c, motive c c)
     (h_step : ∀ c₁ c₂ c₃, CoreStep π φ c₁ c₂ →
@@ -2202,7 +2202,7 @@ theorem CoreStepStar_rec
 /-- `CoreStepStar` is transitive. -/
 theorem CoreStepStar_trans
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {c₁ c₂ c₃ : CoreConfig}
     (h₁ : CoreStepStar π φ c₁ c₂)
     (h₂ : CoreStepStar π φ c₂ c₃) :
@@ -2215,7 +2215,7 @@ theorem CoreStepStar_trans
 /-- Lift `seq_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_seq_inner_star
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     (inner inner' : CoreConfig) (ss : List Statement)
     (h : CoreStepStar π φ inner inner') :
     CoreStepStar π φ (.seq inner ss) (.seq inner' ss) :=
@@ -2226,19 +2226,19 @@ theorem core_seq_inner_star
 /-- Lift `block_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_block_inner_star
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     (inner inner' : CoreConfig) (label : Option String) (σ_parent : SemanticStore Expression)
-    (e_parent : Imperative.SemanticEval Expression)
+    (f_parent : Expression.Factory)
     (h : CoreStepStar π φ inner inner') :
-    CoreStepStar π φ (.block label σ_parent e_parent inner) (.block label σ_parent e_parent inner') :=
+    CoreStepStar π φ (.block label σ_parent f_parent inner) (.block label σ_parent f_parent inner') :=
   StepStmtStar_to_CoreStepStar
-    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' label σ_parent e_parent
+    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' label σ_parent f_parent
       (CoreStepStar_to_StepStmtStar h))
 
 /-- Lift `seq_reaches_terminal` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_seq_reaches_terminal
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+    {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {inner : CoreConfig} {ss : List Statement} {ρ' : Env Expression}
     (hstar : CoreStepStar π φ (.seq inner ss) (.terminal ρ')) :
     ∃ ρ₁, CoreStepStar π φ inner (.terminal ρ₁) ∧
@@ -2252,7 +2252,7 @@ theorem core_seq_reaches_terminal
 /-! ## Well-formed evaluator extension -/
 
 variable (π : String → Option Procedure)
-variable (φ : CoreEval → PureFunc Expression → CoreEval)
+variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
 /-! ### Config-level WF predicates for Core
 
@@ -2261,41 +2261,69 @@ preservation of WF along a trace requires WF of every captured `e_parent`
 snapshot in addition to WF of the inner eval. -/
 
 @[expose] def CoreConfig.wfBool : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .stmts _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .terminal ρ => WellFormedSemanticEvalBool ρ.eval
-  | .exiting _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedSemanticEvalBool e_parent ∧ CoreConfig.wfBool inner
+  | .stmt _ ρ => WellFormedSemanticEvalBool ρ.eval ρ.factory
+  | .stmts _ ρ => WellFormedSemanticEvalBool ρ.eval ρ.factory
+  | .terminal ρ => WellFormedSemanticEvalBool ρ.eval ρ.factory
+  | .exiting _ ρ => WellFormedSemanticEvalBool ρ.eval ρ.factory
+  | .block _ _ f_parent inner =>
+    WellFormedSemanticEvalBool inner.getEnv.eval f_parent ∧ CoreConfig.wfBool inner
   | .seq inner _ => CoreConfig.wfBool inner
 
 @[expose] def CoreConfig.wfVar : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .stmts _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .terminal ρ => WellFormedSemanticEvalVar ρ.eval
-  | .exiting _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedSemanticEvalVar e_parent ∧ CoreConfig.wfVar inner
+  | .stmt _ ρ => WellFormedSemanticEvalVar ρ.eval ρ.factory
+  | .stmts _ ρ => WellFormedSemanticEvalVar ρ.eval ρ.factory
+  | .terminal ρ => WellFormedSemanticEvalVar ρ.eval ρ.factory
+  | .exiting _ ρ => WellFormedSemanticEvalVar ρ.eval ρ.factory
+  | .block _ _ f_parent inner =>
+    WellFormedSemanticEvalVar inner.getEnv.eval f_parent ∧ CoreConfig.wfVar inner
   | .seq inner _ => CoreConfig.wfVar inner
 
 @[expose] def CoreConfig.wfCong : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .stmts _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .terminal ρ => WellFormedCoreEvalCong ρ.eval
-  | .exiting _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedCoreEvalCong e_parent ∧ CoreConfig.wfCong inner
+  | .stmt _ ρ => WellFormedCoreEvalCong ρ.eval ρ.factory
+  | .stmts _ ρ => WellFormedCoreEvalCong ρ.eval ρ.factory
+  | .terminal ρ => WellFormedCoreEvalCong ρ.eval ρ.factory
+  | .exiting _ ρ => WellFormedCoreEvalCong ρ.eval ρ.factory
+  | .block _ _ f_parent inner =>
+    WellFormedCoreEvalCong inner.getEnv.eval f_parent ∧ CoreConfig.wfCong inner
   | .seq inner _ => CoreConfig.wfCong inner
 
 @[expose] def CoreConfig.wfExprCongr : CoreConfig → Prop
-  | .stmt _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .stmts _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .terminal ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .exiting _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .block _ _ e_parent inner =>
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ e_parent ∧
+  | .stmt _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory
+  | .stmts _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory
+  | .terminal ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory
+  | .exiting _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory
+  | .block _ _ f_parent inner =>
+    @Imperative.WellFormedSemanticEvalExprCongr Expression _ inner.getEnv.eval f_parent ∧
     CoreConfig.wfExprCongr inner
   | .seq inner _ => CoreConfig.wfExprCongr inner
+
+private theorem core_step_preserves_eval
+    (c₁ c₂ : CoreConfig)
+    (hstep : CoreStep π φ c₁ c₂) :
+    c₂.getEnv.eval = c₁.getEnv.eval := by
+  induction hstep with
+  | step_cmd => rfl
+  | step_block => rfl
+  | step_ite_true => rfl
+  | step_ite_false => rfl
+  | step_ite_nondet_true => rfl
+  | step_ite_nondet_false => rfl
+  | step_loop_enter => rfl
+  | step_loop_exit => rfl
+  | step_loop_nondet_enter => rfl
+  | step_loop_nondet_exit => rfl
+  | step_exit => rfl
+  | step_funcDecl => rfl
+  | step_typeDecl => rfl
+  | step_stmts_nil => rfl
+  | step_stmts_cons => rfl
+  | step_seq_done => rfl
+  | step_seq_exit => rfl
+  | step_block_done => rfl
+  | step_block_exit_match => rfl
+  | step_block_exit_mismatch => rfl
+  | step_seq_inner _ ih => exact ih
+  | step_block_body _ ih => exact ih
 
 private theorem core_step_preserves_cfg_wfBool
     (h_wf_ext : WFEvalExtension φ)
@@ -2311,8 +2339,10 @@ private theorem core_step_preserves_cfg_wfBool
   | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
   | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
   | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfBool _ _ _ hwf
+  | step_block_body hstep_inner ih =>
+    have heval : _ = _ := core_step_preserves_eval π φ _ _ hstep_inner
+    exact ⟨heval ▸ hwf.1, ih hwf.2⟩
+  | step_funcDecl => exact h_wf_ext.preserves_wfBool _ _ _ _ hwf
   | _ => exact hwf
 
 private theorem core_step_preserves_cfg_wfVar
@@ -2329,8 +2359,10 @@ private theorem core_step_preserves_cfg_wfVar
   | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
   | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
   | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfVar _ _ _ hwf
+  | step_block_body hstep_inner ih =>
+    have heval : _ = _ := core_step_preserves_eval π φ _ _ hstep_inner
+    exact ⟨heval ▸ hwf.1, ih hwf.2⟩
+  | step_funcDecl => exact h_wf_ext.preserves_wfVar _ _ _ _ hwf
   | _ => exact hwf
 
 private theorem core_step_preserves_cfg_wfCong
@@ -2347,8 +2379,10 @@ private theorem core_step_preserves_cfg_wfCong
   | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
   | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
   | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfCong _ _ _ hwf
+  | step_block_body hstep_inner ih =>
+    have heval : _ = _ := core_step_preserves_eval π φ _ _ hstep_inner
+    exact ⟨heval ▸ hwf.1, ih hwf.2⟩
+  | step_funcDecl => exact h_wf_ext.preserves_wfCong _ _ _ _ hwf
   | _ => exact hwf
 
 private theorem core_step_preserves_cfg_wfExprCongr
@@ -2365,33 +2399,35 @@ private theorem core_step_preserves_cfg_wfExprCongr
   | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
   | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
   | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfExprCongr _ _ _ hwf
+  | step_block_body hstep_inner ih =>
+    have heval : _ = _ := core_step_preserves_eval π φ _ _ hstep_inner
+    exact ⟨heval ▸ hwf.1, ih hwf.2⟩
+  | step_funcDecl => exact h_wf_ext.preserves_wfExprCongr _ _ _ _ hwf
   | _ => exact hwf
 
 private theorem CoreConfig.wfBool_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfBool → WellFormedSemanticEvalBool cfg.getEnv.eval := by
+    cfg.wfBool → WellFormedSemanticEvalBool cfg.getEnv.eval cfg.getEnv.factory := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
   | block _ _ _ inner ih => intro h; exact ih h.2
   | seq inner _ ih => intro h; exact ih h
 
 private theorem CoreConfig.wfVar_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfVar → WellFormedSemanticEvalVar cfg.getEnv.eval := by
+    cfg.wfVar → WellFormedSemanticEvalVar cfg.getEnv.eval cfg.getEnv.factory := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
   | block _ _ _ inner ih => intro h; exact ih h.2
   | seq inner _ ih => intro h; exact ih h
 
 private theorem CoreConfig.wfCong_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfCong → WellFormedCoreEvalCong cfg.getEnv.eval := by
+    cfg.wfCong → WellFormedCoreEvalCong cfg.getEnv.eval cfg.getEnv.factory := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
   | block _ _ _ inner ih => intro h; exact ih h.2
   | seq inner _ ih => intro h; exact ih h
 
 private theorem CoreConfig.wfExprCongr_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfExprCongr → @Imperative.WellFormedSemanticEvalExprCongr Expression _ cfg.getEnv.eval := by
+    cfg.wfExprCongr → @Imperative.WellFormedSemanticEvalExprCongr Expression _ cfg.getEnv.eval cfg.getEnv.factory := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
   | block _ _ _ inner ih => intro h; exact ih h.2
@@ -2464,9 +2500,9 @@ private theorem core_star_preserves_cfg_wfExprCongr
 theorem core_wfBool_preserved_stmt
     (h_wf_ext : WFEvalExtension φ)
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool ρ.eval)
+    (hwf₀ : WellFormedSemanticEvalBool ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval :=
+    WellFormedSemanticEvalBool c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfBool_implies_wfEval _
     (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
       (show CoreConfig.wfBool (.stmt s ρ) from hwf₀))
@@ -2474,9 +2510,9 @@ theorem core_wfBool_preserved_stmt
 theorem core_wfBool_preserved_stmts
     (h_wf_ext : WFEvalExtension φ)
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool ρ.eval)
+    (hwf₀ : WellFormedSemanticEvalBool ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval :=
+    WellFormedSemanticEvalBool c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfBool_implies_wfEval _
     (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
       (show CoreConfig.wfBool (.stmts ss ρ) from hwf₀))
@@ -2484,9 +2520,9 @@ theorem core_wfBool_preserved_stmts
 theorem core_wfVar_preserved_stmt
     (h_wf_ext : WFEvalExtension φ)
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar ρ.eval)
+    (hwf₀ : WellFormedSemanticEvalVar ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval :=
+    WellFormedSemanticEvalVar c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfVar_implies_wfEval _
     (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
       (show CoreConfig.wfVar (.stmt s ρ) from hwf₀))
@@ -2494,9 +2530,9 @@ theorem core_wfVar_preserved_stmt
 theorem core_wfVar_preserved_stmts
     (h_wf_ext : WFEvalExtension φ)
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar ρ.eval)
+    (hwf₀ : WellFormedSemanticEvalVar ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval :=
+    WellFormedSemanticEvalVar c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfVar_implies_wfEval _
     (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
       (show CoreConfig.wfVar (.stmts ss ρ) from hwf₀))
@@ -2504,9 +2540,9 @@ theorem core_wfVar_preserved_stmts
 theorem core_wfCong_preserved_stmt
     (h_wf_ext : WFEvalExtension φ)
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedCoreEvalCong ρ.eval)
+    (hwf₀ : WellFormedCoreEvalCong ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedCoreEvalCong c₂.getEnv.eval :=
+    WellFormedCoreEvalCong c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfCong_implies_wfEval _
     (core_star_preserves_cfg_wfCong π φ h_wf_ext hstar
       (show CoreConfig.wfCong (.stmt s ρ) from hwf₀))
@@ -2514,9 +2550,9 @@ theorem core_wfCong_preserved_stmt
 theorem core_wfCong_preserved_stmts
     (h_wf_ext : WFEvalExtension φ)
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedCoreEvalCong ρ.eval)
+    (hwf₀ : WellFormedCoreEvalCong ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedCoreEvalCong c₂.getEnv.eval :=
+    WellFormedCoreEvalCong c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfCong_implies_wfEval _
     (core_star_preserves_cfg_wfCong π φ h_wf_ext hstar
       (show CoreConfig.wfCong (.stmts ss ρ) from hwf₀))
@@ -2524,9 +2560,9 @@ theorem core_wfCong_preserved_stmts
 theorem core_wfExprCongr_preserved_stmt
     (h_wf_ext : WFEvalExtension φ)
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
+    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval :=
+    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfExprCongr_implies_wfEval _
     (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
       (show CoreConfig.wfExprCongr (.stmt s ρ) from hwf₀))
@@ -2534,9 +2570,9 @@ theorem core_wfExprCongr_preserved_stmt
 theorem core_wfExprCongr_preserved_stmts
     (h_wf_ext : WFEvalExtension φ)
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
+    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval ρ.factory)
     (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval :=
+    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval c₂.getEnv.factory :=
   CoreConfig.wfExprCongr_implies_wfEval _
     (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
       (show CoreConfig.wfExprCongr (.stmts ss ρ) from hwf₀))
@@ -2547,24 +2583,24 @@ theorem core_wfExprCongr_preserved_stmts
     in the full store.  The projected store only removes variables, and expression
     evaluation depends only on the variables it references. -/
 theorem eval_projectStore_to_full
-    {δ : CoreEval} {σ₀ σ : SemanticStore Expression}
+    {δ : CoreEval} {f : Expression.Factory} {σ₀ σ : SemanticStore Expression}
     {e : Expression.Expr} {v : Expression.Expr}
-    (h_eval : δ (projectStore σ₀ σ) e = some v)
-    (h_wfStore : WellFormedStore σ)
-    (h_wfVar : WellFormedSemanticEvalVar δ)
-    (h_wfCong : WellFormedCoreEvalCong δ)
-    (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ) :
-    δ σ e = some v := by
+    (h_eval : δ f (projectStore σ₀ σ) e = some v)
+    (h_wfStore : WellFormedStore σ f)
+    (h_wfVar : WellFormedSemanticEvalVar δ f)
+    (h_wfCong : WellFormedCoreEvalCong δ f)
+    (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ f) :
+    δ f σ e = some v := by
   -- `projectStore σ₀ σ` only ever returns bindings of `σ` (or `none`), so it
   -- inherits `σ`'s well-formedness.
-  have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) := by
+  have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) f := by
     intro x w hx
     simp only [projectStore] at hx
     split at hx
     · exact h_wfStore x w hx
     · exact absurd hx (by simp)
   have h_def := EvalExpressionIsDefined h_wfStoreProj h_wfCong h_wfVar
-    (show (δ (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
+    (show (δ f (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
   have h_agree : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x = σ x := by
     intro x hx
     have h_x_def : (projectStore σ₀ σ x).isSome = true := h_def x hx
@@ -2643,12 +2679,12 @@ private theorem coreIsAtAssert_block_of_inner
     (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label σ_parent e_parent inner) a := h
 
 private theorem evalCommand_failure_implies_assert_ff
-    {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
+    {π : String → Option Procedure} {φ : Expression.Factory → PureFunc Expression → Expression.Factory}
     {ρ : Env Expression} {c : Command} {σ'}
-    (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
+    (hcmd : EvalCommand π φ ρ.eval ρ.factory ρ.store c σ' true) :
     ∃ a : AssertId Expression,
       coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
-      ρ.eval ρ.store a.expr = some HasBool.ff := by
+      ρ.eval ρ.factory ρ.store a.expr = some HasBool.ff := by
   cases hcmd with
   | cmd_sem heval =>
     cases heval with
@@ -2659,7 +2695,7 @@ theorem core_noFailure_preserved
     (hvalid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
       CoreStepStar π φ c₁ cfg →
       coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+      cfg.getEval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt)
     (hf₀ : c₁.getEnv.hasFailure = Bool.false)
     (hstar : CoreStepStar π φ c₁ c₂) :
     c₂.getEnv.hasFailure = Bool.false := by
@@ -2667,7 +2703,7 @@ theorem core_noFailure_preserved
       (∀ (a : AssertId Expression) (cfg : CoreConfig),
         CoreStepStar π φ c₁ cfg →
         coreIsAtAssert cfg a →
-        cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+        cfg.getEval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt) →
       c₁.getEnv.hasFailure = Bool.false →
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
       c₂.getEnv.hasFailure = Bool.false from
@@ -2679,7 +2715,7 @@ theorem core_noFailure_preserved
     exact ih
       (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
       (Imperative.step_preserves_noFailure
-        (P := Expression) (extendEval := EvalPureFunc φ)
+        (P := Expression) (extendFactory := EvalPureFunc φ)
         coreIsAtAssert
         evalCommand_failure_implies_assert_ff
         coreIsAtAssert_of_inv_mem

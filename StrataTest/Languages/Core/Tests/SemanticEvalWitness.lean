@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core.StatementSemantics
+import Strata.DL.Lambda.Semantics
 
 /-!
 # A concrete evaluator satisfying the semantic well-formedness conditions
@@ -39,74 +40,68 @@ open Lambda (LExpr LConst)
 
 meta section
 
-/-- A canonical Core value used as the normal form of reducible expressions. -/
-def canonicalValue : Expression.Expr := .const () (LConst.intConst 0)
-
-theorem canonicalValue_isValue : Value canonicalValue := .const
-
-/-- A concrete `CoreEval`: look up `fvar`s, act as identity on values, and
-    reduce everything else to `canonicalValue`. -/
-def coreWitnessEval : CoreEval := fun σ e =>
-  match e with
+/-- A concrete `CoreEval`: identity on canonical values, store lookup on fvars,
+    constant otherwise. -/
+def coreWitnessEval : CoreEval := fun f σ e =>
+  if Lambda.LExpr.isCanonicalValue f e then some e
+  else match e with
   | .fvar _ x _ => σ x
-  | .const _ c  => some (.const () c)
-  | .bvar _ i   => some (.bvar () i)
-  | .op _ o ty  => some (.op () o ty)
-  | .abs _ n ty b => some (.abs () n ty b)
-  | _ => some canonicalValue
+  | _ => some (.const () (LConst.intConst 0))
+
+/-- Canonical values have no free variables, so they are not fvars. -/
+private theorem canonical_not_fvar (f : Expression.Factory)
+    (e : Expression.Expr) (hcan : Lambda.LExpr.isCanonicalValue f e = true) :
+    HasFvar.getFvar (P := Expression) e = none := by
+  cases e with
+  | fvar m x ty =>
+    have h_no_vars := Lambda.isCanonicalValue_getVars_nil f _ hcan
+    simp [Lambda.LExpr.LExpr.getVars] at h_no_vars
+  | _ => rfl
 
 /-- On a free-variable atom the witness returns the store binding. -/
-theorem coreWitnessEval_wfVar : WellFormedSemanticEvalVar coreWitnessEval := by
+theorem coreWitnessEval_wfVar (f : Expression.Factory) :
+    WellFormedSemanticEvalVar coreWitnessEval f := by
   intro e v σ _hwfs hget
-  cases e <;> simp_all only [HasFvar.getFvar, coreWitnessEval, reduceCtorEq]
-  cases hget
-  rfl
+  simp only [coreWitnessEval]
+  have h_not_can : Lambda.LExpr.isCanonicalValue f e ≠ true := by
+    intro hcan
+    have h := canonical_not_fvar f e hcan
+    simp [h] at hget
+  rw [if_neg h_not_can]
+  cases e with
+  | fvar m x ty =>
+    simp only [HasFvar.getFvar] at hget; cases hget; rfl
+  | _ => simp [HasFvar.getFvar] at hget
 
 /-- Every witness output on a well-formed store is a value, and the witness is
     the identity on values. -/
-theorem coreWitnessEval_wfVal : WellFormedSemanticEvalVal coreWitnessEval := by
-  refine ⟨?_, ?_⟩
-  · -- outputs are values (using well-formedness of the store for the fvar case)
+theorem coreWitnessEval_wfVal (f : Expression.Factory) :
+    WellFormedSemanticEvalVal coreWitnessEval f := by
+  constructor
+  · -- outputsAreValues
     intro e v σ hwfs heval
-    cases e with
-    | fvar m x ty =>
-      -- output is `σ x`; `WellFormedStore σ` makes it a value
-      simp only [coreWitnessEval] at heval
-      exact hwfs x v heval
-    | const m c   => simp only [coreWitnessEval] at heval; cases heval; exact .const
-    | bvar m i    => simp only [coreWitnessEval] at heval; cases heval; exact .bvar
-    | op m o ty   => simp only [coreWitnessEval] at heval; cases heval; exact .op
-    | abs m n ty b => simp only [coreWitnessEval] at heval; cases heval; exact .abs
-    | app m f a   => simp only [coreWitnessEval] at heval; cases heval; exact canonicalValue_isValue
-    | ite m c t e => simp only [coreWitnessEval] at heval; cases heval; exact canonicalValue_isValue
-    | eq m a b    => simp only [coreWitnessEval] at heval; cases heval; exact canonicalValue_isValue
-    | quant m k n ty tr b =>
-      simp only [coreWitnessEval] at heval; cases heval; exact canonicalValue_isValue
-  · -- identity on values
+    simp only [coreWitnessEval] at heval
+    split at heval
+    · -- isCanonicalValue f e = true, output is e
+      rename_i h_can
+      cases heval; exact h_can
+    · -- not canonical
+      cases e with
+      | fvar m x ty =>
+        exact hwfs x v heval
+      | _ =>
+        simp at heval; cases heval
+        show Lambda.LExpr.isCanonicalValue _ _ = true
+        unfold Lambda.LExpr.isCanonicalValue; rfl
+  · -- identityOnValues
     intro v σ hv
-    cases hv with
-    | const => rfl
-    | bvar  => rfl
-    | op    => rfl
-    | abs   => rfl
-
-/-- A Core evaluator bundled with the well-formedness conditions that
-    `EvalCommand.call_sem` requires. -/
-structure WFCoreEval where
-  eval : CoreEval
-  wfVar : WellFormedSemanticEvalVar eval
-  wfVal : WellFormedSemanticEvalVal eval
-
-/-- `WFCoreEval` is inhabited (witnessed by `coreWitnessEval`), so the
-    conditions `call_sem` requires are satisfiable — i.e. `call_sem` is not
-    vacuous. -/
-instance : Inhabited WFCoreEval :=
-  ⟨coreWitnessEval, coreWitnessEval_wfVar, coreWitnessEval_wfVal⟩
+    simp only [HasVal.value] at hv
+    simp only [coreWitnessEval, hv, ite_true]
 
 /-- Corollary: the conjunction is inhabitable by a genuine evaluator. -/
-theorem exists_wf_coreEval :
-    ∃ δ : CoreEval, WellFormedSemanticEvalVar δ ∧ WellFormedSemanticEvalVal δ :=
-  ⟨(default : WFCoreEval).eval, (default : WFCoreEval).wfVar, (default : WFCoreEval).wfVal⟩
+theorem exists_wf_coreEval (f : Expression.Factory) :
+    ∃ δ : CoreEval, WellFormedSemanticEvalVar δ f ∧ WellFormedSemanticEvalVal δ f :=
+  ⟨coreWitnessEval, coreWitnessEval_wfVar f, coreWitnessEval_wfVal f⟩
 
 end
 

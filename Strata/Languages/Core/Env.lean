@@ -151,7 +151,7 @@ structure Env where
   error : Option (Imperative.EvalError Expression)
   program : Program
   substMap : SubstMap
-  exprEnv : Expression.EvalEnv
+  exprEnv : Lambda.LState ⟨ExpressionMetadata, Unit⟩
   datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
   pathConditions : Imperative.PathConditions Expression

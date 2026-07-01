@@ -799,7 +799,7 @@ The semantics of the {name Stmt}`Stmt` type is defined in terms of
 
 The {name StepStmt}`StepStmt` relation describes how each type of statement
 transforms configurations. It is parameterized by a command evaluator and an
-`extendEval` function (used by `funcDecl` to add new function definitions to
+`extendFactory` function (used by `funcDecl` to add new function definitions to
 the expression evaluator within a scope).
 
 {docstring Imperative.StepStmt}

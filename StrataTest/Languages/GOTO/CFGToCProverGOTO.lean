@@ -31,8 +31,8 @@ private abbrev LExprTP : Imperative.PureExpr :=
      ExprMetadata := TestParams.Metadata,
      TyEnv := @Lambda.TEnv TestParams.IDMeta,
      TyContext := @Lambda.LContext TestParams,
-     EvalEnv := Lambda.LState TestParams
-     EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier) }
+     EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier)
+     Factory := Unit }
 
 private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
@@ -54,7 +54,7 @@ instance : Imperative.ToGoto LExprTP where
   toGotoExpr := Lambda.LExprT.toGotoExpr
 
 instance : Imperative.HasVal LExprTP where
-  value _ := True
+  value _ _ := True
 
 instance : Imperative.HasFvars LExprTP where
   getFvars _ := []
@@ -64,7 +64,7 @@ instance : Imperative.HasBool LExprTP where
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := .tcons "bool" []
-  boolIsVal := ⟨trivial, trivial⟩
+  boolIsVal := fun _ => ⟨trivial, trivial⟩
 
 instance : Imperative.HasIdent LExprTP where
   ident s := ⟨s, ()⟩
@@ -81,7 +81,7 @@ instance : Imperative.HasInt LExprTP where
   zero        := .intConst md 0
   intTy       := .tcons "int" []
   isNumeral _ := true
-  numeralIsValue := fun _ _ => trivial
+  numeralIsValue := fun _ _ _ => trivial
   zeroIsNumeral := by decide
   numeralHasNoFvars := fun _ _ => rfl
 

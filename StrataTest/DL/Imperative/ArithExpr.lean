@@ -100,7 +100,7 @@ abbrev PureExpr : PureExpr :=
      ExprMetadata := Unit,
      TyEnv := TEnv,
      TyContext := Unit,
-     EvalEnv := Env,
+     Factory := Unit,
      EqIdent := instDecidableEqString }
 
 /-- A Command of `ArithPrograms` -/
@@ -127,5 +127,4 @@ abbrev PureExpr : PureExpr :=
      Expr := Expr,
      Ty := Untyped,
      TyEnv := Empty,
-     EvalEnv :=  Env }
 -/

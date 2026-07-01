@@ -36,8 +36,8 @@ structure PureExpr : Type 1 where
     during type checking/inference (e.g., known types and known functions.)
   -/
   TyContext : Type
-  /-- Evaluation environment -/
-  EvalEnv : Type
+  /-- Factory for function/operator resolution -/
+  Factory : Type
 
 @[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
 @[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
@@ -64,7 +64,7 @@ class HasOps (P : PureExpr) where
   getOps : P.Expr → List P.Ident
 
 class HasVal (P : PureExpr) where
-  value : P.Expr → Prop
+  value : P.Factory → P.Expr → Prop
 
 /-- Boolean expressions.  Extends `HasVal P` (folding in the former
     `HasBoolVal`).  `boolIsVal` ensures `tt`/`ff` are values. -/
@@ -73,7 +73,7 @@ class HasBool (P : PureExpr) extends HasVal P where
   ff : P.Expr
   tt_is_not_ff: tt ≠ ff
   boolTy : P.Ty
-  boolIsVal : (@HasVal.value P) tt ∧ (@HasVal.value P) ff
+  boolIsVal : ∀ f, (@HasVal.value P) f tt ∧ (@HasVal.value P) f ff
 
 /-- Boolean operations: not, and, imp. -/
 class HasBoolOps (P : PureExpr) extends HasBool P where
@@ -86,7 +86,7 @@ class HasInt (P : PureExpr) [HasVal P] [HasFvars P] where
   zero  : P.Expr
   intTy : P.Ty
   isNumeral : P.Expr → Bool
-  numeralIsValue : ∀ n, isNumeral n = Bool.true → (@HasVal.value P) n
+  numeralIsValue : ∀ f n, isNumeral n = Bool.true → (@HasVal.value P) f n
   zeroIsNumeral : isNumeral zero = Bool.true
   numeralHasNoFvars : ∀ (n : P.Expr), isNumeral n = Bool.true →
     HasFvars.getFvars (P := P) n = []

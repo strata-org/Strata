@@ -32,8 +32,8 @@ abbrev Expression : Imperative.PureExpr := {
   ExprMetadata := CSimpLParams.Metadata,
   TyEnv := Lambda.TEnv Unit,
   TyContext := Lambda.LContext ⟨Unit, Unit⟩,
-  EvalEnv := Lambda.LState ⟨Unit, String⟩,
-  EqIdent := Lambda.instDecidableEqIdentifier
+  EqIdent := Lambda.instDecidableEqIdentifier,
+  Factory := Lambda.Factory CSimpLParams
 }
 
 

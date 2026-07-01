@@ -186,7 +186,7 @@ category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;
 
 category ModifiesClause;
-op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;
 op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;

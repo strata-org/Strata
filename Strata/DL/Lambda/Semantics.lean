@@ -1085,6 +1085,67 @@ private theorem isCanonicalValue_args_all
   rw [List.all_eq_true] at h_all
   exact h_all x hx
 
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
+/-- Canonical values have no free variables. -/
+theorem isCanonicalValue_getVars_nil
+    (F : @Factory Tbase) (e : LExpr Tbase.mono)
+    (hc : LExpr.isCanonicalValue F e = true) :
+    LExpr.LExpr.getVars e = [] := by
+  suffices h : ∀ (sz : Nat) (e : LExpr Tbase.mono),
+      e.sizeOf ≤ sz → LExpr.isCanonicalValue F e = true →
+      LExpr.LExpr.getVars e = [] from
+    h e.sizeOf e (Nat.le_refl _) hc
+  intro sz; induction sz with
+  | zero =>
+    intro e hsz _
+    exact absurd hsz (by have h_pos := LExpr.sizeOf_pos e; omega)
+  | succ sz ih =>
+    intro e hsz hc
+    cases e with
+    | const => rfl
+    | bvar => rfl
+    | op => rfl
+    | fvar =>
+      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+    | abs m n ty body =>
+      simp [LExpr.LExpr.getVars]
+      have h_closed : LExpr.closed (.abs m n ty body) = true := by
+        simp [LExpr.isCanonicalValue] at hc; exact hc
+      have h_body_closed : LExpr.closed body = true := by
+        simp [LExpr.closed, LExpr.freeVars] at h_closed ⊢; exact h_closed
+      exact closed_implies_getVars_nil body h_body_closed
+    | quant m qk n ty tr body =>
+      have h_closed : LExpr.closed (.quant m qk n ty tr body) = true := by
+        simp [LExpr.isCanonicalValue] at hc; exact hc
+      exact closed_implies_getVars_nil (.quant m qk n ty tr body) h_closed
+    | app m e1 e2 =>
+      simp only [LExpr.LExpr.getVars, List.append_eq_nil_iff]
+      have hc_app := hc
+      simp [LExpr.isCanonicalValue] at hc
+      split at hc
+      · rename_i op args f h_call
+        simp only [Bool.and_eq_true] at hc
+        obtain ⟨h_cond, h_all⟩ := hc
+        have h_e1_can : LExpr.isCanonicalValue F e1 = true :=
+          isCanonicalValue_app_left F m e1 e2 hc_app
+        have h_mem : e2 ∈ args := callOfLFunc_app_arg_mem F e1 e2 m op args f _ h_call
+        have h_e2_can : LExpr.isCanonicalValue F e2 = true :=
+          isCanonicalValue_args_all F args h_all e2 h_mem
+        have h_sz_e1 : e1.sizeOf < (LExpr.app m e1 e2).sizeOf := by
+          simp [LExpr.sizeOf]; omega
+        have h_sz_e2 : e2.sizeOf < (LExpr.app m e1 e2).sizeOf := by
+          simp [LExpr.sizeOf]; omega
+        constructor
+        · exact ih e1 (by omega) h_e1_can
+        · exact ih e2 (by omega) h_e2_can
+      · simp at hc
+    | ite =>
+      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+    | eq =>
+      simp [LExpr.isCanonicalValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
+
+-- Canonical values are normal forms: no Step rule can fire on them.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem canonical_value_not_step
     (F : @Factory Tbase) (rf : Env Tbase)

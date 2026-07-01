@@ -98,15 +98,15 @@ structure Lang (P : PureExpr) where
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
     type and evaluator. -/
 abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
-    (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+    (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
-  ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendEval,
+  ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendFactory,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
-    (extendEval : ExtendEval P) : Lang P :=
-  Lang.imperative P (Cmd P) (EvalCmd P) extendEval (Imperative.isAtAssert P)
+    (extendFactory : ExtendFactory P) : Lang P :=
+  Lang.imperative P (Cmd P) (EvalCmd P) extendFactory (Imperative.isAtAssert P)
 
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
@@ -127,7 +127,7 @@ on the initial environment.  `AssertValid` is `AssertValidWhen (fun _ => True)`.
     Pre ρ₀ →
     L.star (L.stmtCfg s ρ₀) cfg →
     L.isAtAssert cfg a →
-    (L.getEnv cfg).eval (L.getEnv cfg).store a.expr = some HasBool.tt
+    (L.getEnv cfg).eval (L.getEnv cfg).factory (L.getEnv cfg).store a.expr = some HasBool.tt
 
 /-- All asserts are valid in statement `s` when `Pre` holds. -/
 def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
@@ -172,7 +172,7 @@ namespace Hoare
 def Triple
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
@@ -180,30 +180,30 @@ def Triple
 
 section StmtRules
 
-variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
 def TripleBlock
-    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval → ρ₀.hasFailure = false →
-    (StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.terminal ρ') ∨
-     ∃ lbl, StepStmtStar P evalCmd extendEval (.stmts ss ρ₀) (.exiting lbl ρ')) →
+    Pre ρ₀ → WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory → ρ₀.hasFailure = false →
+    (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') ∨
+     ∃ lbl, StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
 
 omit [HasVal P] in
 /-- A postcondition is well-formed if it is stable under `projectStore` and
-    `eval`-replacement by any parent eval that the inner `ρ.eval` extends. -/
+    `factory`-replacement by any parent factory that the inner `ρ.factory` extends. -/
 def PostWF (Post : Env P → Prop) : Prop :=
-  ∀ ρ σ_parent e_parent,
-    EvalExtensionOf extendEval e_parent ρ.eval →
+  ∀ ρ σ_parent f_parent,
+    FactoryExtensionOf extendFactory f_parent ρ.factory →
     Post ρ → ρ.hasFailure = false →
-    Post { ρ with store := projectStore σ_parent ρ.store, eval := e_parent } ∧
-      ({ ρ with store := projectStore σ_parent ρ.store, eval := e_parent } : Env P).hasFailure = false
+    Post { ρ with store := projectStore σ_parent ρ.store, factory := f_parent } ∧
+      ({ ρ with store := projectStore σ_parent ρ.store, factory := f_parent } : Env P).hasFailure = false
 
 end StmtRules
 
@@ -213,7 +213,7 @@ end StmtRules
 section StandardConnection
 
 variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P'] [HasInt P'] [HasIntOps P']
-variable (extendEval : ExtendEval P')
+variable (extendFactory : ExtendFactory P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
 def PredicatedStmt
@@ -250,8 +250,8 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
   ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
     T st = some s' →
     ∀ (ρ₀ ρ' : Env P),
-      WellFormedSemanticEvalBool ρ₀.eval →
-      WellFormedSemanticEvalVal ρ₀.eval →
+      WellFormedSemanticEvalBool ρ₀.eval ρ₀.factory →
+      WellFormedSemanticEvalVal ρ₀.eval ρ₀.factory →
       (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
        L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
       ∧
@@ -262,7 +262,7 @@ def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
 
 section ImperativeStmts
 
-variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendEval : ExtendEval P)
+variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
 /-- `Lang` for block-level (statement-list) overapproximation.
@@ -270,7 +270,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 abbrev Lang.imperativeBlock : Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
-  star := StepStmtStar P evalCmd extendEval
+  star := StepStmtStar P evalCmd extendFactory
   stmtCfg := .stmts
   terminalCfg := .terminal
   exitingCfg := .exiting

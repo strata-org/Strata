@@ -65,7 +65,7 @@ inductive StepKleene
 
   /-- A command steps to terminal. -/
   | step_cmd :
-    EvalCmd ρ.eval ρ.store c σ' hasAssertFailure →
+    EvalCmd ρ.eval ρ.factory ρ.store c σ' hasAssertFailure →
     ----
     StepKleene EvalCmd
       (.stmt (.cmd c) ρ)

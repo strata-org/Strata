@@ -122,7 +122,7 @@ Without (2), this is impossible because the `reduce_2` rule of small step
 semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
 (2), the semantics stuck and `2+3` can never be evaluated to `5`.
 -/
-def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
+@[expose] def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
   | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>

@@ -70,7 +70,7 @@ private theorem evalEq_value_isCanonicalValue
     generalize (LExpr.eval n' F env e2).fst = e2' at hp
     generalize LExpr.eql F e1' e2' = eql_res at hp
     cases eql_res with
-    | some b => subst hp; simp [LExpr.isCanonicalValue]
+    | some b => subst hp; unfold LExpr.isCanonicalValue; rfl
     | none => subst hp; simp at hv
   exact key _ rfl h
 
@@ -115,7 +115,7 @@ private theorem evalCore_value_isCanonicalValue
     intro p hp hv
     cases e with
     | const m c =>
-      simp [LExpr.evalCore] at hp; subst hp; simp [LExpr.isCanonicalValue]
+      simp [LExpr.evalCore] at hp; subst hp; unfold LExpr.isCanonicalValue; rfl
     | op m n args =>
       simp [LExpr.evalCore] at hp; subst hp; simp at hv
     | bvar m n =>
