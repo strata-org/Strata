@@ -243,6 +243,21 @@ def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : A
   liftM (solver.defineFun id argPairs outSort bodyEnc)
   modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
 
+/-- Emit a recursive function as `define-fun-rec` via the `AbstractSolver` API.
+    Must be called after the UF stub has been registered in the encoder state
+    (so that self-recursive body references resolve). -/
+def encodeFunctionRec (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
+  if let .some enc := (← get).base.ufs.get? uf then return enc
+  let id ← uniquify (ufId (← get).base.ufs.size)
+  liftM (solver.comment uf.id)
+  let argPairs ← uf.args.mapM fun vt => do
+    let s ← liftM (termTypeToSort solver vt.ty)
+    return (vt.id, s)
+  let outSort ← liftM (termTypeToSort solver uf.out)
+  let bodyEnc ← encodeTerm solver body
+  liftM (solver.defineFunRec id argPairs outSort bodyEnc)
+  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
+
 end AbstractEncoder
 
 /-- Build constructor declarations for a datatype, converting field types
@@ -313,10 +328,16 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
-  -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
-  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
+  -- RecIF UFs are emitted as define-fun-rec; exclude them from declare-fun.
+  let recIfIds : Std.HashSet String :=
+    ctx.recifs.foldl (fun acc rif => acc.insert rif.uf.id) {}
+  -- Filter out managed variables and RecIF UFs from UF declarations.
+  let ufsToDecl := (if managedNames.isEmpty then ctx.ufs
+    else ctx.ufs.filter fun uf => !managedNames.contains uf.id).filter
+    fun uf => !recIfIds.contains uf.id
+  -- Phase 1: register RecIF UF stubs so self-recursive body references resolve.
+  let (_, estate) ← ctx.recifs.mapM (fun rif => AbstractEncoder.encodeUF solver rif.uf) |>.run initState
+  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run estate
   -- Pre-populate encoder state with managed variable names so encodeTerm
   -- recognizes them without emitting declareFun
   let estate := if managedNames.isEmpty then estate
@@ -326,6 +347,8 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
         { estate with base := { estate.base with
           ufs := estate.base.ufs.insert uf uf.id
           usedNames := estate.base.usedNames.insert uf.id } }
+  -- Phase 2: emit recursive function bodies as define-fun-rec (before non-recursive define-fun).
+  let (_recifs, estate) ← ctx.recifs.mapM (fun rif => AbstractEncoder.encodeFunctionRec solver rif.uf rif.body) |>.run estate
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
@@ -376,9 +399,20 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let preDeclaredNames := ctx.preDeclaredNames
 
   let estate ← phase "encodeUFs" do
-    let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-      else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+    -- Exclude RecIF UFs: they will be declared+defined by define-funs-rec, not declare-fun.
+    let recIfIds : Std.HashSet String :=
+      ctx.recifs.foldl (fun acc rif => acc.insert rif.uf.id) {}
+    let ufsToDecl := (if managedNames.isEmpty then ctx.ufs
+      else ctx.ufs.filter fun uf => !managedNames.contains uf.id).filter
+      fun uf => !recIfIds.contains uf.id
     let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
+    pure estate
+
+  -- Emit structural-recursive functions BEFORE regular define-fun functions so that
+  -- bodies of non-recursive functions (e.g. nat.toInt calling pos.toInt) find the
+  -- RecIF names already registered and don't emit spurious declare-fun commands.
+  let estate ← phase "encodeRecursiveFunctions" do
+    let ((), estate) ← (Core.encodeFunctionsRec ctx.recifs).run estate
     pure estate
 
   let estate ← phase "encodeFunctions" do

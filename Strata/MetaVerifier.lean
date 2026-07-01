@@ -40,17 +40,21 @@ structure SanitizedContext where
   sorts : Array Core.SMT.Sort := #[]
   ufs : Array UF := #[]
   ifs : Array Core.SMT.IF := #[]
+  /-- Structural- and int-recursive functions to emit as `define-funs-rec`. -/
+  recifs : Array Core.SMT.IF := #[]
   axms : Array Term := #[]
   tySubst : Map String TermType := []
 deriving Repr, Inhabited, DecidableEq
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
-  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, recifs := ctx.recifs,
+    axms := ctx.axms, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
   { sorts := ctx.sorts
     ufs := ctx.ufs
     ifs := ctx.ifs
+    recifs := ctx.recifs
     axms := ctx.axms
     tySubst := ctx.tySubst
     typeFactory := #[]

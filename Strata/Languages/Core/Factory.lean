@@ -277,9 +277,9 @@ end -- public meta section
 
 public section
 
-ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
-ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64]
-ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64]
+ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
+ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
+ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64, 128]
 
 /- Real Arithmetic Operations -/
 
@@ -968,9 +968,9 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64,128])
+  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64,128])
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64,128])
 
 @[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
@@ -1023,9 +1023,9 @@ public section
 instance : Inhabited CoreLParams.Metadata where
   default := ()
 
-DefBVOpFuncExprs [1, 8, 16, 32, 64]
-DefBVSafeOpFuncExprs [1, 8, 16, 32, 64]
-DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64]
+DefBVOpFuncExprs [1, 8, 16, 32, 64, 128]
+DefBVSafeOpFuncExprs [1, 8, 16, 32, 64, 128]
+DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64, 128]
 
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr

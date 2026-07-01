@@ -277,6 +277,33 @@ def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : Term
   let bodyStr ← termToSMTString body
   defineFun id args retTy bodyStr
 
+/-- Emit a single self-recursive function definition as `define-fun-rec` (SMT-LIB §4.2.5). -/
+def defineFunRec (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : Term) : SolverM Unit := do
+  let typedArgs ← args.mapM fun (name, ty) => do
+    let tyStr ← typeToSMTString ty
+    return s!"({quoteIdent name} {tyStr})"
+  let argStr := String.intercalate " " typedArgs
+  let retStr ← typeToSMTString retTy
+  let bodyStr ← termToSMTString body
+  emitln s!"(define-fun-rec {quoteIdent id} ({argStr}) {retStr} {bodyStr})"
+
+/-- Emit a group of mutually recursive function definitions as `define-funs-rec`
+    (SMT-LIB §4.2.6). Use `defineFunRec` for single self-recursive functions. -/
+def defineFunsRec (fns : List (String × List (String × TermType) × TermType))
+    (bodies : List Term) : SolverM Unit := do
+  let decls ← fns.mapM fun (id, args, retTy) => do
+    let typedArgs ← args.mapM fun (name, ty) => do
+      let tyStr ← typeToSMTString ty
+      return s!"({quoteIdent name} {tyStr})"
+    let argStr := String.intercalate " " typedArgs
+    let retStr ← typeToSMTString retTy
+    return s!"({quoteIdent id} ({argStr}) {retStr})"
+  let bodyStrs ← bodies.mapM termToSMTString
+  let declStr := String.intercalate " " decls
+  let bodyStr := String.intercalate " " bodyStrs
+  emitln s!"(define-funs-rec ({declStr}) ({bodyStr}))"
+
 /-! ## Solver control -/
 
 private def readlnD (dflt : String) : SolverM String := do

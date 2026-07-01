@@ -37,6 +37,10 @@ structure SMT.Context where
   sorts : Array SMT.Sort := #[]
   ufs : Array UF := #[]
   ifs : Array SMT.IF := #[]
+  /-- Structural-recursive functions to emit as `define-funs-rec`.
+      UF stubs for these are added to `ufs` to enable self-references
+      during body encoding, but `declare-fun` is suppressed for them. -/
+  recifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
   /-- Stores the TypeFactory purely for ordering datatype declarations
@@ -65,6 +69,11 @@ def SMT.Context.addIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context 
   let smtif := { uf := fn, body := body }
   if smtif ∈ ctx.ifs then ctx else
   { ctx with ifs := ctx.ifs.push smtif }
+
+def SMT.Context.addRecIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context :=
+  let smtif := { uf := fn, body := body }
+  if smtif ∈ ctx.recifs then ctx else
+  { ctx with recifs := ctx.recifs.push smtif }
 
 def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
   if axm ∈ ctx.axms then ctx else
@@ -659,9 +668,24 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
                     Lambda abstractions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
         else
+          let hasCases := (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome
           let (ctx, isNew) ←
             if func.isRecursive then
-              .ok (ctx.addUF uf, !ctx.ufs.contains uf)
+              -- Both structural (@[cases]) and int-recursive (decreases) functions:
+              -- add a UF stub first so self-recursive calls resolve during body encoding,
+              -- then store the body as a RecIF for define-fun-rec emission.
+              -- hasCases only distinguishes axiom generation (below), not body encoding.
+              let isNewVal := !ctx.ufs.contains uf
+              let ctx := ctx.addUF uf
+              if isNewVal then
+                match func.body with
+                | some body =>
+                  let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+                  let body := LExpr.substFvarsLifting body (formals.zip bvars)
+                  let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
+                  .ok (ctx.addRecIF uf term, isNewVal)
+                | none => .ok (ctx, isNewVal)
+              else .ok (ctx, isNewVal)
             else match func.body with
             | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
             | some body =>
@@ -671,11 +695,13 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
               let body := LExpr.substFvarsLifting body (formals.zip bvars)
               let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
               .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
-          -- For recursive functions with @[cases], generate per-constructor axioms.
-          -- Int-recursive functions (no @[cases]) are pure UFs with no axioms.
-          let recAxioms ← if func.isRecursive && isNew &&
-              (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
-              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
+          -- define-funs-rec replaces axioms for both structural (@[cases]) and int-recursive
+          -- (decreases) functions. genRecursiveAxioms is only needed for @[cases] functions
+          -- with no body (opaque structural recursion).
+          let recAxioms ← if func.isRecursive && isNew && hasCases then
+              match func.body with
+              | some _ => .ok []
+              | none   => Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
             else .ok []
           let allAxioms := func.axioms ++ recAxioms
           if isNew then
@@ -705,6 +731,37 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
             .ok (.app (Op.uf uf), smt_outty, ctx)
 
 end
+
+/-- Emit structural-recursive functions as a single `define-funs-rec` command.
+    Pre-registers all function names before encoding any body so that
+    self-references and mutual recursion resolve to the same names. -/
+def encodeFunctionsRec (recifs : Array SMT.IF) : EncoderM Unit := do
+  if recifs.isEmpty then return ()
+  -- Phase 1: Allocate abbreviated names for all RecIF UFs.
+  let mut pairs : Array (UF × String) := #[]
+  for rif in recifs do
+    let uf := rif.uf
+    let id ← if let .some existing := (← get).ufs.get? uf then pure existing
+      else
+        let newId ← uniquify (sanitizeSmtName uf.id)
+        modify fun st => { st with ufs := st.ufs.insert uf newId }
+        pure newId
+    pairs := pairs.push (uf, id)
+  -- Phase 2: Encode all bodies (self/cross references now resolve via registered names).
+  let mut bodyTerms : Array Term := #[]
+  for rif in recifs do
+    let bodyEnc ← encodeTerm rif.body
+    bodyTerms := bodyTerms.push bodyEnc
+  -- Phase 3: Emit define-fun-rec (singleton) or define-funs-rec (mutual group).
+  if pairs.size == 1 then
+    let (uf, id) := pairs[0]!
+    let args := uf.args.map fun (vt : TermVar) => (vt.id, vt.ty)
+    Strata.SMT.Solver.defineFunRec id args uf.out bodyTerms[0]!
+  else
+    let fns := pairs.toList.map fun pair =>
+      let (uf, id) : UF × String := pair
+      (id, uf.args.map fun (vt : TermVar) => (vt.id, vt.ty), uf.out)
+    Strata.SMT.Solver.defineFunsRec fns bodyTerms.toList
 
 def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
   (useArrayTheory : Bool := false) :
