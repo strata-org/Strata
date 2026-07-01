@@ -2720,6 +2720,30 @@ def resolveBody (body : Body) : ResolveM Body := do
     return .Abstract posts'
   | .External => return .External
 
+/-- Resolve a procedure's E4 exceptional contract: the optional `throws` type
+    (checked to be a subtype of the channel root `BaseException`) and the
+    `onThrow` postconditions (each binding scoped at `BaseException` over a
+    boolean predicate). Recorded for the verifier; not enforced — Java-style
+    declare-or-catch is front-end policy. See `laurel_extensions.md` (E4). -/
+def resolveExceptionalContract (proc : Procedure)
+    : ResolveM (Option HighTypeMd × List OnThrowClause) := do
+  let throwsType' ← proc.throwsType.mapM fun t => do
+    let t' ← resolveHighType t
+    let baseTy ← resolveHighType
+      { val := .UserDefined (mkId baseExceptionTypeName), source := t.source }
+    let ctx := (← get).typeLattice
+    unless isConsistentSubtype ctx t' baseTy do
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource t.source
+        s!"throws type must be a subtype of '{baseExceptionTypeName}'") }
+    pure t'
+  let onThrow' ← proc.onThrow.mapM fun c => withScope do
+    let bindTy ← resolveHighType
+      { val := .UserDefined (mkId baseExceptionTypeName), source := c.binding.source }
+    let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+    let predicate' ← Check.resolveStmtExpr c.predicate { val := .TBool, source := c.predicate.source }
+    pure ({ binding := binding', predicate := predicate' } : OnThrowClause)
+  pure (throwsType', onThrow')
+
 /-- (Procedure)
     ```
     T_o-bar = proc.outputs.types
@@ -2755,10 +2779,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- (e.g. destructive assignments) inside a transparent body. So there is
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
+    let (throwsType', onThrow') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             throwsType := throwsType', onThrow := onThrow',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -2796,10 +2822,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
       modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
+    let (throwsType', onThrow') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             throwsType := throwsType', onThrow := onThrow',
              body := body' }
 
 /-- Resolve a type definition. -/

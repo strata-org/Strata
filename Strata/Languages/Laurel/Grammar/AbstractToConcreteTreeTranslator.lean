@@ -255,6 +255,10 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       if proc.outputs.isEmpty then optionArg none
       else optionArg (some (laurelOp "returnParameters" #[commaSep (proc.outputs.map parameterToArg |>.toArray)]))
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
+  let throwsArg := optionArg (proc.throwsType.map fun t =>
+    laurelOp "throwsClause" #[highTypeToArg t])
+  let onThrowArgs := proc.onThrow.map (fun c =>
+    laurelOp "onThrowClause" #[ident c.binding.text, stmtExprToArg c.predicate]) |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let (opaqueSpecArg, bodyArg) := match proc.body with
@@ -278,6 +282,8 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       returnTypeArg,
       returnParamsArg,
       seqArg requiresArgs,
+      throwsArg,
+      seqArg onThrowArgs,
       invokeOnArg,
       opaqueSpecArg,
       bodyArg

@@ -206,6 +206,13 @@ category OpaqueSpec;
 op opaqueSpec(ensures: Seq EnsuresClause, modifies: Seq ModifiesClause): OpaqueSpec =>
   "\n  opaque" ensures modifies;
 
+// Exceptional contract (E4): an optional `throws` type and `onThrow` postconditions.
+category ThrowsClause;
+op throwsClause(throwsType: LaurelType): ThrowsClause => "\n  throws " throwsType;
+
+category OnThrowClause;
+op onThrowClause(binding: Ident, predicate: StmtExpr): OnThrowClause => "\n  onThrow (" binding ") " predicate:0;
+
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
 op externalBody: Body => "external";
@@ -215,19 +222,23 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
+  throws: Option ThrowsClause,
+  onThrow: Seq OnThrowClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires throws onThrow invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
+  throws: Option ThrowsClause,
+  onThrow: Seq OnThrowClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires throws onThrow invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

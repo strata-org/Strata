@@ -229,6 +229,14 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- Optional declared exception type (E4): the single type this procedure may
+      throw, bounded by the channel root `BaseException`. Recorded as
+      exceptional-contract data; not enforced (declare-or-catch is front-end
+      policy) and not yet lowered (E7). -/
+  throwsType : Option (AstNode HighType) := none
+  /-- Exceptional postconditions (E4): predicates that hold when the procedure
+      exits on the exceptional channel. Recorded, not enforced. -/
+  onThrow : List OnThrowClause := []
 
 /--
 A typed parameter for a procedure.
@@ -268,6 +276,20 @@ structure CatchClause where
   predicate : Option (AstNode StmtExpr) := none
   /-- The handler body, run when this clause matches. -/
   body : AstNode StmtExpr
+
+/--
+An `onThrow` exceptional postcondition (E4): a binding for the thrown value
+(typed at the channel root `BaseException`) and a boolean predicate that must
+hold when the procedure exits exceptionally. A procedure carries a list of
+these. Laurel *records* them for the verifier to reason about call sites; it
+does not enforce any declare-or-catch rule (that is front-end policy). See
+`docs/design/laurel_extensions.md` (extension E4).
+-/
+structure OnThrowClause where
+  /-- The identifier bound to the thrown value (typed `BaseException`). -/
+  binding : Identifier
+  /-- The exceptional-postcondition predicate (checked at `TBool`). -/
+  predicate : AstNode StmtExpr
 
 /--
 The body of a procedure. A body can be transparent (with a visible

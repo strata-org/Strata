@@ -12,7 +12,7 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added `try`/`catch`/`finally` (E3/E5 exception handling).
+-- Last grammar change: added `throws`/`onThrow` procedure clauses (E4 exceptional contract).
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

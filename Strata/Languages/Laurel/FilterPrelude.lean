@@ -162,6 +162,14 @@ private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.preconditions.forM (collectExprNames ·.condition)
   proc.decreases.forM collectExprNames
   proc.invokeOn.forM collectExprNames
+  -- E4 exceptional contract: a declared `throws` type or any `onThrow` clause
+  -- uses the exceptional channel, whose root `BaseException` must be in scope;
+  -- recording it (and the throws type / onThrow predicate names) gates the
+  -- exception prelude in and keeps the relevant declarations.
+  if proc.throwsType.isSome || !proc.onThrow.isEmpty then
+    addTypeName baseExceptionTypeName
+  proc.throwsType.forM collectHighTypeNames
+  proc.onThrow.forM (collectExprNames ·.predicate)
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/
