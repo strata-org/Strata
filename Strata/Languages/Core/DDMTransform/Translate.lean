@@ -232,6 +232,23 @@ def translateOptMetadataAnn (arg : Arg) :
     let entries ← translateCommaSep translateMetadataAnnEntry annOp.args[0]!
     return entries
 
+/-- Merge explicit annotation metadata (`annMd`) into source-position metadata
+    (`md`).
+
+    `getOpMetaData` derives a `provenance` element from the op's DDM source
+    position. There is only ever one `provenance`, so an explicit
+    `@[provenance = …]` replaces that derived one instead of being appended
+    and ignored. Other keys stay additive. A future metadata validator can
+    reject bad input like duplicate `provenance`; for now the last one wins. -/
+def mergeAnnMetaData (md annMd : Imperative.MetaData Core.Expression) :
+    Imperative.MetaData Core.Expression :=
+  let provField : Imperative.MetaDataElem.Field Core.Expression :=
+    Imperative.MetaData.provenanceField
+  annMd.foldl (init := md) fun acc elem =>
+    if elem.fld == provField then
+      (acc.eraseElem provField).push elem
+    else acc.push elem
+
 /-- Merge explicit annotation metadata into source-position metadata from an op.
     Combines `getOpMetaData` (source positions) with `translateOptMetadataAnn`
     (user-supplied annotations). -/
@@ -239,17 +256,7 @@ def getMetaDataWithAnn (op : Operation) (annotsArg : Arg) :
     TransM (Imperative.MetaData Core.Expression) := do
   let annMd ← translateOptMetadataAnn annotsArg
   let md ← getOpMetaData op
-  -- `getOpMetaData` derives a `provenance` element from the op's DDM source
-  -- position. There is only ever one `provenance`, so an explicit
-  -- `@[provenance = …]` replaces that derived one instead of being appended
-  -- and ignored. Other keys stay additive. A future metadata validator can
-  -- reject bad input like duplicate `provenance`; for now the last one wins.
-  let provField : Imperative.MetaDataElem.Field Core.Expression :=
-    Imperative.MetaData.provenanceField
-  return annMd.foldl (init := md) fun acc elem =>
-    if elem.fld == provField then
-      (acc.eraseElem provField).push elem
-    else acc.push elem
+  return mergeAnnMetaData md annMd
 
 ---------------------------------------------------------------------
 
@@ -1399,7 +1406,7 @@ def translateVarStatement (bindings : TransBindings) (annotsArg : Arg) (decls : 
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
   else
-    let md := (← translateOptMetadataAnn annotsArg).foldl (init := md) fun acc elem => acc.push elem
+    let md := mergeAnnMetaData md (← translateOptMetadataAnn annotsArg)
     let tpids ← translateDeclList bindings decls[0]!
     let (stmts, bindings) ← initVarStmts tpids bindings md
     let newVars ← tpids.mapM (fun (id, ty) =>
@@ -1416,7 +1423,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (annotsArg :
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
   else
-    let md := (← translateOptMetadataAnn annotsArg).foldl (init := md) fun acc elem => acc.push elem
+    let md := mergeAnnMetaData md (← translateOptMetadataAnn annotsArg)
     let mty ← translateLMonoTy bindings args[0]!
     let lhs ← translateIdent Core.CoreIdent args[1]!
     let val ← translateExpr p bindings args[2]!
