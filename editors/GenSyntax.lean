@@ -1027,7 +1027,11 @@ def main (args : List String) : IO Unit := do
     if doVim then
       IO.FS.createDirAll s!"{dir}/vim/syntax"
       IO.FS.createDirAll s!"{dir}/vim/ftdetect"
-      writeOut s!"{dir}/vim/syntax/{t.scope}.vim" (generateVim t)
+      -- Vim sources `syntax/<filetype>.vim`, and the filetype strips the dash
+      -- from the scope (highlight groups cannot contain dashes), so the syntax
+      -- file must be named after the filetype, not the scope.
+      let ft := t.scope.replace "-" ""
+      writeOut s!"{dir}/vim/syntax/{ft}.vim" (generateVim t)
       writeOut s!"{dir}/vim/ftdetect/{t.scope}.vim" (generateVimFtdetect t)
     if doTs then
       let tsName := t.scope.replace "-" "_"

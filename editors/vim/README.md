@@ -12,19 +12,44 @@ Neovim with no compilation step.
 
 ## Installation
 
-### Plugin manager (recommended)
+This directory lives **inside the Strata repository** — it is not a standalone
+plugin repo, so plugin managers can't fetch it from a URL. Every option below
+points your editor at the `editors/vim` subdirectory of your local Strata
+checkout (**not** the repo root). The examples use `~/code/Strata/editors/vim`;
+substitute wherever you cloned Strata.
 
-Point your plugin manager at this directory. For example, with
-[lazy.nvim](https://github.com/folke/lazy.nvim):
+Because the plugin is loaded from a local path, your plugin manager won't
+install or update it — it always tracks the checkout, and updates arrive via
+`git pull` in the Strata repo.
+
+### Runtimepath (simplest)
+
+Add the directory to your runtimepath. Neovim (`init.lua`):
 
 ```lua
-{ dir = "/path/to/Strata/editors/vim" }
+vim.opt.runtimepath:append(vim.fn.expand("~/code/Strata/editors/vim"))
 ```
 
-Or with [vim-plug](https://github.com/junegunn/vim-plug):
+Vim (`.vimrc`), also works in Neovim's `init.vim`:
 
 ```vim
-Plug '/path/to/Strata/editors/vim'
+set runtimepath+=~/code/Strata/editors/vim
+```
+
+### Plugin manager
+
+With [lazy.nvim](https://github.com/folke/lazy.nvim), use `dir =` to load from
+a local path:
+
+```lua
+{ dir = "~/code/Strata/editors/vim" }
+```
+
+With [vim-plug](https://github.com/junegunn/vim-plug), pass the local path
+instead of a URL:
+
+```vim
+Plug '~/code/Strata/editors/vim'
 ```
 
 ### Manual
@@ -33,15 +58,16 @@ Symlink the `syntax/` and `ftdetect/` files into your runtime directory:
 
 ```bash
 # Neovim
-ln -s /path/to/Strata/editors/vim/syntax/*.vim    ~/.config/nvim/syntax/
-ln -s /path/to/Strata/editors/vim/ftdetect/*.vim  ~/.config/nvim/ftdetect/
+ln -s ~/code/Strata/editors/vim/syntax/*.vim    ~/.config/nvim/syntax/
+ln -s ~/code/Strata/editors/vim/ftdetect/*.vim  ~/.config/nvim/ftdetect/
 
 # Vim
-ln -s /path/to/Strata/editors/vim/syntax/*.vim    ~/.vim/syntax/
-ln -s /path/to/Strata/editors/vim/ftdetect/*.vim  ~/.vim/ftdetect/
+ln -s ~/code/Strata/editors/vim/syntax/*.vim    ~/.vim/syntax/
+ln -s ~/code/Strata/editors/vim/ftdetect/*.vim  ~/.vim/ftdetect/
 ```
 
-Open any `.core.st` or `.laurel.st` file and highlighting applies automatically.
+With any of these options, open a `.core.st` or `.laurel.st` file and
+highlighting applies automatically.
 
 ## How it's generated
 
@@ -60,5 +86,6 @@ the DDM parser, not the dialect grammar).
 
 Add the dialect's import and a `GenTarget` entry to `targets` in
 `editors/GenSyntax.lean` (a `scope`, `display` name, and double `ext`), then
-rerun the generator. `syntax/<scope>.vim` and `ftdetect/<scope>.vim` are produced
-automatically.
+rerun the generator. `syntax/<filetype>.vim` (the scope with dashes removed —
+Vim sources the syntax file named after the filetype) and
+`ftdetect/<scope>.vim` are produced automatically.
