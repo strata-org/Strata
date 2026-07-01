@@ -58,6 +58,7 @@ class LemmaEntry:
     import_path: str = ""        # lean import path (set when proved)
     proved_by: str = ""          # "direct" | "shortcut" | "assembly"
     failure_reason: str = ""
+    siblings_at_failure: list[str] = field(default_factory=list)  # names of siblings in same decomposition when this failed
     pruned_reason: str = ""
     cycle_ancestor_id: str = ""
     is_mutual: bool = False      # True if file contains a mutual block
@@ -404,6 +405,15 @@ class LemmaLedger:
             if not entry or not entry.parent_id:
                 return None
             return self._entries.get(entry.parent_id)
+
+    def get_all_parents(self, entry_id: str) -> list[LemmaEntry]:
+        """Get ALL entries that have this entry in their children list (multi-parent)."""
+        with self._lock:
+            parents = []
+            for e in self._entries.values():
+                if entry_id in e.children:
+                    parents.append(e)
+            return parents
 
     def all_children_proved(self, entry_id: str) -> bool:
         children = self.get_children(entry_id)

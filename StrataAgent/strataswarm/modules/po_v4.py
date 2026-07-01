@@ -518,6 +518,9 @@ async def _do_update_phase(agent, state: PO4State, ledger: LemmaLedger, cwd: Pat
 
 async def _do_check(agent, state: PO4State, ledger: LemmaLedger) -> Trans:
     """Read-only inspection: all proved? pending? blocked?"""
+    root = ledger.get(ledger.root_id)
+    if root and root.status == LemmaStatus.FAILED:
+        return Trans.BLOCKED
     if ledger.all_proved():
         return Trans.ALL_PROVED
     elif ledger.pick_next() is not None:
@@ -940,6 +943,10 @@ async def _do_extract(agent, state: PO4State, ledger: LemmaLedger,
     tools = get_lean_tools()
     stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
 
+    # Save pre-decomposition snapshot (for full restore on child failure)
+    predecomp = cwd / entry.workspace / "Stub.predecomp.lean"
+    shutil.copy2(cwd / stub_rel, predecomp)
+
     # Stage extraction into new_decomposition/ (not decomposed/ directly)
     new_decomp_dir = cwd / entry.workspace / "new_decomposition"
     if new_decomp_dir.exists():
@@ -1285,22 +1292,32 @@ def _do_update(state: PO4State, ledger: LemmaLedger, entry: LemmaEntry, cwd: Pat
         if entry.status == LemmaStatus.PROVING:
             ledger.mark_contingent(entry.id)
 
-    # 2. Prune all children of parents with dead nodes + re-activate parents + restore Stub
+    # 2. Resolve sibling import dependencies
+    # After all entries are registered, check actual imports and add cross-edges
+    _resolve_import_dependencies(ledger, cwd)
+
+    # 3. Prune all children of parents with dead nodes + re-activate parents + restore Stub
     from .cycle_detection import prune_siblings_of_dead
     prune_siblings_of_dead(ledger, cwd)
 
-    # 3. Propagate proved upward: if all children of a CONTINGENT node are proved, mark it proved
+    # 4. Propagate proved upward: re-check ALL contingent entries via hard compile check
+    # Order: leaves first (topo sort) — a leaf being proved might unblock its parent
+    tools = get_lean_tools()
     changed = True
     while changed:
         changed = False
         for e in ledger.entries():
             if e.status != LemmaStatus.CONTINGENT:
                 continue
-            if not e.children:
+            # Hard check: does the file actually compile sorry-free now?
+            file_to_check = e.file_path
+            if not (cwd / file_to_check).exists():
                 continue
-            children = ledger.get_children(e.id)
-            if children and all(c.status == LemmaStatus.PROVED for c in children):
-                ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"),
+            if tools.has_sorry(file_to_check):
+                continue  # still has local sorry — stay contingent
+            cr = tools.check_compiles(file_to_check)
+            if cr.success and not cr.has_sorry:
+                ledger.mark_proved(e.id, file_to_check.replace("/", ".").removesuffix(".lean"),
                                    proved_by="assembly")
                 changed = True
 
@@ -1462,7 +1479,7 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLe
                 ancestor_modules.append(anc.workspace.replace("/", "."))
 
         stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
-        writer_imports_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger)
+        writer_imports_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger, current_entry_id=entry.id)
 
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
@@ -1520,6 +1537,56 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
     return getattr(agent, attr)
 
 
+def _resolve_import_dependencies(ledger: LemmaLedger, cwd: Path):
+    """For each ledger entry, check its file's imports and add cross-edges.
+
+    If entry A imports entry B (both in the ledger), add B as a parent of A.
+    This tracks sibling dependencies so propagate_proved_upward works correctly.
+
+    IMPORTANT: Skip edges that would duplicate or invert existing parent-child
+    relationships from decomposition. Only add truly cross-branch edges.
+    """
+    tools = get_lean_tools()
+
+    # Build module_path → entry_id mapping for all ledger entries
+    module_to_id: dict[str, str] = {}
+    for e in ledger.entries():
+        module = e.file_path.replace("/", ".").removesuffix(".lean")
+        module_to_id[module] = e.id
+
+    # Build set of existing parent→child edges (from decomposition)
+    existing_edges: set[tuple[str, str]] = set()  # (parent_id, child_id)
+    for e in ledger.entries():
+        for child_id in e.children:
+            existing_edges.add((e.id, child_id))
+
+    # For each entry, check its imports
+    for e in ledger.entries():
+        if not (cwd / e.file_path).exists():
+            continue
+        imports = tools.check_imports(e.file_path)
+        if imports.error:
+            continue
+        for imp in imports.imports:
+            if imp in module_to_id:
+                dep_id = module_to_id[imp]
+                if dep_id == e.id:
+                    continue  # self-import
+                # Skip if this would create a cycle with existing decomposition edges:
+                # - dep is already a child of e (e decomposed into dep)
+                # - e is already a child of dep (dep decomposed into e)
+                if (e.id, dep_id) in existing_edges:
+                    continue  # e already has dep as child — don't add reverse edge
+                if (dep_id, e.id) in existing_edges:
+                    continue  # dep already has e as child — already tracked
+                # Skip if dep is an ancestor of e (would create cycle going up)
+                ancestry = ledger.get_ancestry(e.id)
+                if dep_id in ancestry:
+                    continue  # dep is already an ancestor — no need for edge
+                # Add cross-branch dependency: e depends on dep
+                ledger.add_parent(dep_id, e.id)
+
+
 def _register_all_helpers(ledger: LemmaLedger, entry: LemmaEntry, cwd: Path):
     """Register all public theorems/defs in Stub.lean to the ledger.
 
@@ -1527,6 +1594,10 @@ def _register_all_helpers(ledger: LemmaLedger, entry: LemmaEntry, cwd: Path):
     so they're discoverable by other branches via ledger_search.
     Also removes stale entries (helpers that were deleted/renamed by the writer).
     """
+    # Don't register children of a FAILED entry — prevents infinite chains
+    if entry.status == LemmaStatus.FAILED:
+        return
+
     tools = get_lean_tools()
     stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
 
@@ -1769,35 +1840,33 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
         f"\nTo find proved lemmas you can import, use: ledger_search(query=..., status_filter=['proved'])",
     ]
 
-    # If this entry was CONTINGENT (re-activated because child failed), tell guide
-    if entry.status == LemmaStatus.PENDING and entry.children:
-        failure_trace = _find_failure_paths(ledger, entry.id)
-        if failure_trace:
-            lines.append(f"\n⚠️  THIS LEMMA WAS PREVIOUSLY CONTINGENT (decomposed, waiting on children).")
-            lines.append(f"The decomposition FAILED. Decomposition path to failure:")
-            lines.append(failure_trace)
-            lines.append(f"\nYou need a DIFFERENT decomposition strategy.")
-            lines.append(f"Consider: mutual recursion, induction, or a completely different approach.")
-
-    # THIS lemma's pruned/failed children = previous decomposition attempts
+    # If this entry was re-activated because a child failed or cycled, show context
     children = ledger.get_children(entry.id)
-    pruned_children = [c for c in children if c.status == LemmaStatus.PRUNED]
+    failed_children = [c for c in children if c.status == LemmaStatus.FAILED]
     cycle_children = [c for c in children if c.status == LemmaStatus.CYCLE]
 
-    if pruned_children:
-        lines.append(f"\nYOUR PREVIOUS FAILED DECOMPOSITIONS ({len(pruned_children)}) — DO NOT repeat:")
-        for c in pruned_children[:5]:
-            lines.append(f"  - {c.name}: {c.pruned_reason}")
-        if len(pruned_children) > 5:
-            lines.append(f"  ... and {len(pruned_children) - 5} more")
+    if entry.status == LemmaStatus.PENDING and (failed_children or cycle_children):
+        lines.append(f"\n⚠️  PREVIOUS DECOMPOSITION FAILED — you need a DIFFERENT approach.")
 
-    if cycle_children:
-        lines.append(f"\nCYCLES DETECTED ({len(cycle_children)}) — these helpers recreated an ancestor:")
-        for c in cycle_children:
-            ancestor = ledger.get(c.cycle_ancestor_id)
+        for fc in failed_children:
+            lines.append(f"\n  FAILED: '{fc.name}' — {fc.failure_reason}")
+            if fc.siblings_at_failure:
+                lines.append(f"  That decomposition used these helpers together: {fc.siblings_at_failure}")
+
+        for cc in cycle_children:
+            ancestor = ledger.get(cc.cycle_ancestor_id)
             ancestor_name = ancestor.name if ancestor else "unknown"
-            lines.append(f"  - {c.name} ≈ {ancestor_name} — the lemma decomposes recursively to a "
-                         f"very similar signature. Possibly INDUCTION will be more helpful here.")
+            lines.append(f"\n  CYCLE: '{cc.name}' recreated ancestor '{ancestor_name}'")
+            lines.append(f"  This means the decomposition led back to the same obligation circularly.")
+            if cc.siblings_at_failure:
+                lines.append(f"  That decomposition used these helpers together: {cc.siblings_at_failure}")
+
+        lines.append(f"\nDo NOT recreate the same decomposition. Try:")
+        lines.append(f"  - A completely different proof structure")
+        lines.append(f"  - Mutual recursion instead of separate helpers")
+        lines.append(f"  - Fuel-based induction instead of termination_by")
+        lines.append(f"  - Tighter preconditions to eliminate impossible cases")
+        lines.append(f"  - Use induction on the data structure rather than decomposing into helpers")
 
     # Active children still pending/contingent
     active_children = [c for c in children

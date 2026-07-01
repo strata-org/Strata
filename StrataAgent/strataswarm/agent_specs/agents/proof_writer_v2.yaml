@@ -72,6 +72,12 @@ system_prompt: >
   - Or: restructure using fuel-based induction (add a Nat fuel parameter, induction fuel)
     which avoids `termination_by` entirely.
 
+  WHEN A HELPER FAILS:
+  If a helper you previously created was marked as failed (guide will tell you), your
+  Stub.lean has been restored to the pre-decomposition state. You have a fresh start.
+  Use add_import_safely to re-import any siblings that were proved and still useful.
+  Try a completely different approach for the part that failed.
+
 prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)

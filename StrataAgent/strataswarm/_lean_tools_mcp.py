@@ -472,11 +472,12 @@ def create_extractor_mcp_server(session: "MoveSession"):
     )
 
 
-def create_writer_import_server(target_file: str, ancestor_modules: list[str], ledger=None):
-    """Create an MCP server with a safe import tool for proof_writer.
+def create_writer_import_server(target_file: str, ancestor_modules: list[str], ledger=None, current_entry_id: str = ""):
+    """Create an MCP server with import + prune tools for proof_writer.
 
-    The writer calls add_import_safely instead of manually editing the import section.
-    The tool checks: not circular, module exists, file compiles after adding.
+    Tools:
+    - add_import_safely: add an import with safety checks
+    - prune_helper: prune a failed child helper (removes import, moves file to pruned/)
     """
     from .modules.po_lean import get_lean_tools
 
@@ -545,8 +546,87 @@ def create_writer_import_server(target_file: str, ancestor_modules: list[str], l
         return {"content": [{"type": "text", "text":
             f"OK: added '{import_line}' — file compiles."}]}
 
+    @tool(
+        name="prune_helper",
+        description=(
+            "Prune a failed helper lemma from your decomposition. "
+            "This removes the import from your Stub.lean, moves the helper file to a pruned/ folder, "
+            "and marks it as PRUNED in the ledger. Use this when a helper you created turned out to be "
+            "unprovable and you want to restructure your proof without it. "
+            "You can only prune YOUR OWN children (helpers you decomposed)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the helper to prune (as it appears in the ledger)",
+                },
+            },
+            "required": ["name"],
+        },
+    )
+    async def prune_helper_tool(input: dict[str, Any]) -> dict[str, Any]:
+        import shutil
+        from .modules.lemma_ledger import LemmaStatus
+
+        if not ledger or not current_entry_id:
+            return {"content": [{"type": "text", "text": "Error: ledger not available for pruning"}]}
+
+        helper_name = input["name"]
+        tools = get_lean_tools()
+        root = tools._root
+
+        # Find the helper in the ledger
+        target_entry = ledger.find_by_name(helper_name) if hasattr(ledger, 'find_by_name') else None
+        if not target_entry:
+            # Fallback: search by name
+            for e in ledger.entries():
+                if e.name == helper_name:
+                    target_entry = e
+                    break
+        if not target_entry:
+            return {"content": [{"type": "text", "text": f"Error: '{helper_name}' not found in ledger"}]}
+
+        # Security: can only prune own children
+        if target_entry.parent_id != current_entry_id:
+            return {"content": [{"type": "text", "text":
+                f"Error: '{helper_name}' is not your child (parent={target_entry.parent_id[:8]}). "
+                f"You can only prune helpers you decomposed."}]}
+
+        # Cannot prune PROVED entries
+        if target_entry.status == LemmaStatus.PROVED:
+            return {"content": [{"type": "text", "text":
+                f"Error: '{helper_name}' is PROVED — cannot prune proved lemmas."}]}
+
+        # Remove import from Stub.lean
+        source = root / target_file
+        if source.exists():
+            content = source.read_text()
+            module_path = target_entry.file_path.replace("/", ".").removesuffix(".lean")
+            import_line = f"import {module_path}"
+            lines = content.splitlines()
+            lines = [l for l in lines if l.strip() != import_line]
+            source.write_text("\n".join(lines))
+
+        # Move file to pruned/ folder
+        helper_file = root / target_entry.file_path
+        if helper_file.exists():
+            workspace_dir = helper_file.parent
+            pruned_dir = workspace_dir.parent / "pruned"
+            pruned_dir.mkdir(parents=True, exist_ok=True)
+            dest = pruned_dir / helper_file.name
+            shutil.move(str(helper_file), str(dest))
+
+        # Mark as PRUNED in ledger (cascades to children)
+        ledger.prune_branch(target_entry.id, f"Pruned by writer: approach abandoned")
+
+        return {"content": [{"type": "text", "text":
+            f"OK: pruned '{helper_name}' — import removed, file moved to pruned/, "
+            f"entry marked PRUNED in ledger."}]}
+
     return create_sdk_mcp_server(
         name="writer_imports",
         version="1.0.0",
-        tools=[add_import_safely_tool],
+        tools=[add_import_safely_tool, prune_helper_tool],
     )

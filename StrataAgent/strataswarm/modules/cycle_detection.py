@@ -357,109 +357,46 @@ def prune_siblings_of_dead(ledger, cwd: Path = None) -> int:
     for entry in ledger.entries():
         if entry.status not in (LemmaStatus.FAILED, LemmaStatus.CYCLE):
             continue
-        if not entry.parent_id:
-            continue
-        if entry.parent_id in parents_reactivated:
-            continue  # already handled this parent
 
-        parent = ledger.get(entry.parent_id)
-        if not parent or parent.status in (LemmaStatus.PROVED, LemmaStatus.PRUNED):
+        # Handle ALL parents of this entry (multi-parent via add_parent)
+        all_parents = ledger.get_all_parents(entry.id)
+        if not all_parents:
             continue
 
-        if entry.status == LemmaStatus.FAILED:
-            # FAILED: the writer's approach was wrong. Prune ALL children,
-            # parent re-decomposes from scratch.
-            for child_id in parent.children:
-                child = ledger.get(child_id)
-                if child and child.status != LemmaStatus.PRUNED:
-                    pruned = ledger.prune_branch(child_id,
-                        f"parent '{parent.name}' re-decomposing (child '{entry.name}' failed)")
-                    pruned_count += len(pruned)
-
-            # Re-activate parent with priority boost + restore clean Stub + remove old decomposed
-            # But if already re-activated too many times, mark FAILED (path exhausted)
-            parent.attempts += 1
-            if parent.attempts >= parent.max_attempts:
-                parent.status = LemmaStatus.FAILED
-                parent.failure_reason = (
-                    f"Decomposition failed {parent.attempts} times — all attempts produced failing children")
-                parents_reactivated.add(parent.id)
+        for parent in all_parents:
+            if parent.id in parents_reactivated:
+                continue
+            if parent.status in (LemmaStatus.PROVED, LemmaStatus.PRUNED, LemmaStatus.FAILED):
                 continue
 
-            parent.status = LemmaStatus.PENDING
-            parent.priority_boost = True
-            parents_reactivated.add(parent.id)
-            if cwd:
-                # Remove old decomposed/ so stale imports don't pollute next attempt
-                old_decomposed = cwd / parent.workspace / "decomposed"
-                if old_decomposed.exists():
-                    idx = 0
-                    while (cwd / parent.workspace / f"decomposed_old_{idx}").exists():
-                        idx += 1
-                    old_decomposed.rename(cwd / parent.workspace / f"decomposed_old_{idx}")
+            if entry.status in (LemmaStatus.FAILED, LemmaStatus.CYCLE):
+                # FAILED/CYCLE child: disconnect siblings, restore parent, retry.
+                # Siblings keep their status/files — may be used by other branches.
 
-                # Strip stale decomposed imports from Stub.clean.lean before restoring
-                clean = cwd / parent.workspace / "Stub.clean.lean"
-                stub = cwd / parent.workspace / "Stub.lean"
-                if clean.exists():
-                    clean_content = clean.read_text()
-                    clean_lines = [l for l in clean_content.splitlines()
-                                   if not (l.strip().startswith("import ") and ".decomposed." in l)]
-                    clean_content = "\n".join(clean_lines)
-                    stub.write_text(clean_content)
-                    # Also update Stub.clean.lean itself so future restores are clean
-                    clean.write_text(clean_content)
+                if parent.status not in (LemmaStatus.CONTINGENT, LemmaStatus.PROVING):
+                    continue
 
-        elif entry.status == LemmaStatus.CYCLE:
-            # CYCLE: node X recreates ancestor A. The entire sub-graph under A
-            # is from the same bad decomposition.
-            # - Path A → X: mark as CYCLE (the tainted chain)
-            # - Everything else under A: mark as PRUNED (collateral)
-            # - A itself: back to PENDING (retry with induction)
-            ancestor_id = entry.cycle_ancestor_id
-            ancestor = ledger.get(ancestor_id) if ancestor_id else parent
-            if not ancestor:
-                ancestor = parent
+                # Record sibling names on the failed/cycle entry
+                siblings = [ledger.get(cid) for cid in parent.children if cid != entry.id]
+                entry.siblings_at_failure = [s.name for s in siblings if s]
 
-            # Mark the path from entry up to ancestor as CYCLE
-            path_ids = set()
-            current_id = entry.id
-            while current_id and current_id != ancestor.id:
-                path_ids.add(current_id)
-                node = ledger.get(current_id)
-                if node and node.status not in (LemmaStatus.CYCLE,):
-                    node.status = LemmaStatus.CYCLE
-                    node.cycle_ancestor_id = ancestor.id
-                current_id = node.parent_id if node else None
+                # Disconnect parent from non-failed/cycle children (keep all failure records)
+                parent.children = [cid for cid in parent.children
+                                   if cid == entry.id or
+                                   (ledger.get(cid) and ledger.get(cid).status in
+                                    (LemmaStatus.FAILED, LemmaStatus.CYCLE))]
 
-            # Prune everything else under ancestor (not on the path, not already pruned)
-            def _prune_subtree_except_path(node_id):
-                node = ledger.get(node_id)
-                if not node:
-                    return
-                for child_id in node.children:
-                    if child_id in path_ids:
-                        _prune_subtree_except_path(child_id)
-                    else:
-                        child = ledger.get(child_id)
-                        if child and child.status not in (LemmaStatus.PRUNED, LemmaStatus.CYCLE):
-                            ledger.prune_branch(child_id,
-                                f"cycle detected: '{entry.name}' → ancestor '{ancestor.name}'")
-                            nonlocal pruned_count
-                            pruned_count += 1
-
-            _prune_subtree_except_path(ancestor.id)
-
-            # Re-activate ancestor with priority boost
-            if ancestor.id not in parents_reactivated:
-                ancestor.status = LemmaStatus.PENDING
-                ancestor.priority_boost = True
-                parents_reactivated.add(ancestor.id)
+                # Restore Stub.lean from pre-decomposition backup
                 if cwd:
-                    clean = cwd / ancestor.workspace / "Stub.clean.lean"
-                    stub = cwd / ancestor.workspace / "Stub.lean"
-                    if clean.exists():
-                        shutil.copy2(clean, stub)
+                    predecomp = cwd / parent.workspace / "Stub.predecomp.lean"
+                    stub = cwd / parent.workspace / "Stub.lean"
+                    if predecomp.exists():
+                        shutil.copy2(predecomp, stub)
+
+                # Re-activate parent
+                parent.status = LemmaStatus.PENDING
+                parent.priority_boost = True
+                parents_reactivated.add(parent.id)
 
     return pruned_count
 

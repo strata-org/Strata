@@ -134,6 +134,7 @@ def create_ledger_mcp_server(ledger: "LemmaLedger"):
             "import_path": entry.import_path,
             "proved_by": entry.proved_by,
             "failure_reason": entry.failure_reason,
+            "siblings_at_failure": entry.siblings_at_failure,
             "pruned_reason": entry.pruned_reason,
             "cycle_ancestor_id": entry.cycle_ancestor_id,
         }, indent=2)}]}

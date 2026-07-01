@@ -100,18 +100,33 @@ def make_proof_writer_verifier(
                 r'(?:theorem|def|lemma)\s+(\S+)', original_content))
 
             # Check new names against ledger
+            from ..lemma_ledger import LemmaStatus as _LS
             for name in current_names - original_names:
                 if name == main_theorem:
                     continue
                 results = ledger.search(name, page_size=5)
                 for hit in results.hits:
-                    if hit.entry.name == name and hit.entry.file_path != target_file:
-                        import_module = hit.entry.file_path.replace("/", ".").removesuffix(".lean")
-                        return (
-                            f"DUPLICATE: theorem '{name}' already exists in the ledger "
-                            f"(module: {import_module}). Delete your copy and add "
-                            f"`import {import_module}` instead of redefining it."
-                        )
+                    if hit.entry.name == name:
+                        if hit.entry.status in (_LS.FAILED, _LS.CYCLE):
+                            stmt = hit.entry.statement[:300] if hit.entry.statement else ""
+                            reason = hit.entry.failure_reason or (
+                                f"Cycled back to ancestor '{hit.entry.cycle_ancestor_id[:8]}'"
+                                if hit.entry.cycle_ancestor_id else "unknown")
+                            label = "FAILED" if hit.entry.status == _LS.FAILED else "CYCLIC"
+                            return (
+                                f"RECREATING {label} LEMMA: '{name}' previously {label.lower()}.\n"
+                                f"Reason: {reason[:200]}\n"
+                                f"Statement: {stmt}\n\n"
+                                f"Use a different approach or create another one with a different name. "
+                                f"Make sure not to have the exact same body, because we failed last time."
+                            )
+                        if hit.entry.file_path != target_file:
+                            import_module = hit.entry.file_path.replace("/", ".").removesuffix(".lean")
+                            return (
+                                f"POSSIBLE DUPLICATE: theorem '{name}' already exists in the ledger "
+                                f"(module: {import_module}). If possible, import it with "
+                                f"add_import_safely. Otherwise create another one with a different name."
+                            )
 
         # 3.6 No private helpers with sorry (they can't be extracted/reused)
         if split and not split.error:
