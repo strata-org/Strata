@@ -97,31 +97,37 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
 
-def computeReadsHeap (procs : List Procedure) : Std.HashSet Identifier :=
-  let info := procs.map fun p => (p.name, analyzeProc p)
-  let direct := info.filterMap fun (n, r) => if r.readsHeapDirectly then some n else none
-  let rec fixpoint (fuel : Nat) (current : Std.HashSet Identifier) : Std.HashSet Identifier :=
+/-- Transitive call-graph closure of a direct effect, shared by the reads-heap
+    and writes-heap analyses. Given, per procedure, its `name`, whether it has
+    the effect `directly`, and its static `callees`, returns the set of
+    procedures that have the effect directly or transitively: a procedure is in
+    the set if it has the effect directly, or it calls a procedure that is in
+    the set. Iterated to a fixpoint (bounded by the number of procedures, which
+    is a safe upper bound on the longest propagation chain).
+
+    Generic over the name type `α` (needs `BEq`/`Hashable` for the `HashSet`),
+    so the two heap-effect analyses share one engine instead of duplicating the
+    fixpoint. -/
+def transitiveEffectClosure {α : Type} [BEq α] [Hashable α]
+    (info : List (α × Bool × List α)) : Std.HashSet α :=
+  let direct := info.filterMap fun (n, directly, _) => if directly then some n else none
+  let rec fixpoint (fuel : Nat) (current : Std.HashSet α) : Std.HashSet α :=
     match fuel with
     | 0 => current
     | fuel' + 1 =>
-      let next := info.foldl (fun acc (n, r) =>
-        if current.contains n || r.callees.any current.contains then acc.insert n else acc)
+      let next := info.foldl (fun acc (n, _, callees) =>
+        if current.contains n || callees.any current.contains then acc.insert n else acc)
         current
       if next.size == current.size then current else fixpoint fuel' next
-  fixpoint procs.length (Std.HashSet.ofList direct)
+  fixpoint info.length (Std.HashSet.ofList direct)
+
+def computeReadsHeap (procs : List Procedure) : Std.HashSet Identifier :=
+  transitiveEffectClosure (procs.map fun p =>
+    let r := analyzeProc p; (p.name, r.readsHeapDirectly, r.callees))
 
 def computeWritesHeap (procs : List Procedure) : Std.HashSet Identifier :=
-  let info := procs.map fun p => (p.name, analyzeProc p)
-  let direct := info.filterMap fun (n, r) => if r.writesHeapDirectly then some n else none
-  let rec fixpoint (fuel : Nat) (current : Std.HashSet Identifier) : Std.HashSet Identifier :=
-    match fuel with
-    | 0 => current
-    | fuel' + 1 =>
-      let next := info.foldl (fun acc (n, r) =>
-        if current.contains n || r.callees.any current.contains then acc.insert n else acc)
-        current
-      if next.size == current.size then current else fixpoint fuel' next
-  fixpoint procs.length (Std.HashSet.ofList direct)
+  transitiveEffectClosure (procs.map fun p =>
+    let r := analyzeProc p; (p.name, r.writesHeapDirectly, r.callees))
 
 end Strata.Laurel
 
