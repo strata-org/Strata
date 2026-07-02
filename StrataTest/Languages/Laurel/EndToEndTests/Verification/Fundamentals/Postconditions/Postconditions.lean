@@ -52,18 +52,21 @@ procedure caller() returns (out: int)
 };
 #end
 
-/- A postcondition's well-formedness can depend on the procedure's
-   preconditions. `safe` is partial (`requires x > 0`), so the postcondition
-   `safe(x) == safe(x)` is well-formed only when `x > 0` — which the procedure's
-   `requires x > 0` guarantees. This verifies clean only because the contract
-   pass attaches the procedure's preconditions to the postcondition helper as
-   assumed preconditions; dropping `requires x > 0` makes the well-formedness
-   obligation for `safe(x)` fail. The exact lowering is pinned in
+/- A postcondition may call another procedure. `safe` is an opaque procedure
+   (`requires x > 0`), and the postcondition `safe(x) == safe(x)` references it.
+   The contract pass lowers the postcondition into a `$post` helper whose body
+   calls `safe`, guarded by the procedure's own preconditions (assumed at the
+   top of the helper body). TransparencyPass builds the pure `$asFunction` twin,
+   so the call-site assertion `foo$post0$asFunction(x, r)` reduces to
+   `safe$asFunction(x) == safe$asFunction(x)`, which holds by reflexivity. This
+   verifies clean. The exact lowering is pinned in
    `Idiomaticity/ContractPassConditionModeTest`. -/
 #eval testLaurel <|
 #strata
 program Laurel;
-function safe(x: int): int requires x > 0;
+procedure safe(x: int) returns (s: int)
+  requires x > 0
+  opaque;
 procedure foo(x: int) returns (r: int)
   requires x > 0
   opaque

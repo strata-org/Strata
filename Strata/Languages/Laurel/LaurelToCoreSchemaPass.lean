@@ -59,9 +59,22 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List DiagnosticModel := []
+  /-- Names of the program's (non-functional) procedures. A `StaticCall` whose
+      callee is in this set is a procedure call; anything else (Core functions,
+      the `$asFunction` twins produced by TransparencyPass, constants, etc.) is a
+      pure function application. This is name-based on purpose: TransparencyPass
+      redirects a call to `foo` into `foo$asFunction` while preserving the
+      callee's `uniqueId`, so an id-based `model.isFunction` check would still
+      resolve to the (now non-functional) base procedure and wrongly reject it. -/
+  procedureNames : Std.HashSet String := {}
 
 /-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
 @[expose] abbrev TranslateM := OptionT (StateM TranslateState)
+
+/-- Whether `name` refers to one of the program's procedures (as opposed to a
+    pure function application). See `TranslateState.procedureNames`. -/
+def containsProcedure (name : Identifier) : TranslateM Bool := do
+  return (← get).procedureNames.contains name.text
 
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
 def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
@@ -224,7 +237,7 @@ def translateExpr (expr : StmtExprMd)
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
       -- In a pure context, only Core functions (not procedures) are allowed
-      if isPureContext && !model.isFunction callee then
+      if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
       else
         let fnOp : Core.Expression.Expr := .op () ⟨callee.text, ()⟩ none
@@ -418,8 +431,6 @@ Diagnostics are emitted into the monad state.
 -/
 def translateStmt (stmt : StmtExprMd)
     : TranslateM (List Core.Statement) := do
-  let s ← get
-  let model := s.model
   let md := astNodeToCoreMd stmt
   match _h : stmt.val with
   | .Assert cond summary =>
@@ -492,7 +503,9 @@ def translateStmt (stmt : StmtExprMd)
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
-        if model.isFunction callee then
+        if (← containsProcedure callee) then
+          translateCallTargets callee args
+        else
           -- Function call: translate as a normal expression assignment
           let coreExpr ← translateExpr value
           match targets with
@@ -503,8 +516,6 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
-        else
-          translateCallTargets callee args
       | .InstanceCall _target callee args =>
           translateCallTargets callee args
       | .Hole _ _ =>
@@ -530,7 +541,7 @@ def translateStmt (stmt : StmtExprMd)
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
   | .StaticCall callee args =>
       -- Check if this is a function or procedure
-      if model.isFunction callee then
+      if !(← containsProcedure callee) then
         -- Function call in statement position: preserve as unused init
         exprAsUnusedInit stmt md
       else
@@ -826,7 +837,11 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
   - Laurel parameter definitions are translated to Core ones.
   - Laurel calling conventions are translated to Core ones."
   run := fun options p fnModel =>
-    let initState : TranslateState := { model := fnModel, overflowChecks := options.overflowChecks }
+    let procedureNames : Std.HashSet String := p.decls.foldl (fun r d => match d with
+      | .procedure proc => r.insert proc.name.text
+      | _ => r) {}
+    let initState : TranslateState :=
+      { model := fnModel, overflowChecks := options.overflowChecks, procedureNames }
     let (coreProgramOption, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
     let diagnostics : List DiagnosticModel :=

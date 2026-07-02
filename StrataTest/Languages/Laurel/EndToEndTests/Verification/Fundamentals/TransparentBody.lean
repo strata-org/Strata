@@ -75,11 +75,11 @@ procedure testFunctions()
 {
   assert returnAtEnd(1) == 1;
   assert returnAtEnd(1) == 2;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
   assert guardInFunction(1) == 1;
   assert guardInFunction(1) == 2
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure guards(a: int) returns (r: int)

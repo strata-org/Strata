@@ -166,7 +166,7 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, body := body }
+  { proc with name := funcName, isFunctional := true, body := body }
 
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
@@ -196,7 +196,11 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def createFunctionsForTransparentBodies (program : Program) (options : LaurelTranslateOptions := {}) : UnorderedCoreWithLaurelTypes :=
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
+  -- Only non-functional procedures get a procedural twin. Genuine functions
+  -- (`isFunctional`, e.g. a user `function` or a pure `$pre` helper) are already
+  -- pure; giving them a procedural twin would put their name in `procedureNames`
+  -- and wrongly reject calls to them from pure function/contract bodies.
+  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
   -- A transparent procedure whose body is purely functional (no Assume/Assert
   -- from contract instrumentation) needs only a function copy, not a procedural
   -- twin. This matches the old `isFunctional` behavior for condition helpers.
@@ -217,7 +221,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
   let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
   let coreProcedures := imperativeProcs.map fun proc =>
     let freePostcondition := mkFreePostcondition proc
-    let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
     let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
     -- When requested, redirect every call to a single-output twinned procedure
     -- to its `$asFunction` version so calls stay constant-foldable during

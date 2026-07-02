@@ -72,24 +72,33 @@ x > 1;
 function callee$pre2(x: int)
   returns ($result: bool)
 x > 2;
-function callee$post0(x: int, r$out: int)
+procedure callee$post0(x: int, r$out: int)
   returns ($result: bool)
-  free requires x > 0
-  free requires x > 1
-  free requires x > 2
-r$out > 0;
-function callee$post1(x: int, r$out: int)
+{
+  assume x > 0;
+  assume x > 1;
+  assume x > 2;
+  $result := r$out > 0;
+  exit $return
+}$return;
+procedure callee$post1(x: int, r$out: int)
   returns ($result: bool)
-  free requires x > 0
-  free requires x > 1
-  free requires x > 2
-r$out > 1;
-function callee$post2(x: int, r$out: int)
+{
+  assume x > 0;
+  assume x > 1;
+  assume x > 2;
+  $result := r$out > 1;
+  exit $return
+}$return;
+procedure callee$post2(x: int, r$out: int)
   returns ($result: bool)
-  free requires x > 0
-  free requires x > 1
-  free requires x > 2
-r$out > 2;
+{
+  assume x > 0;
+  assume x > 1;
+  assume x > 2;
+  $result := r$out > 2;
+  exit $return
+}$return;
 procedure callee(x: int)
   returns (r: int)
   opaque
