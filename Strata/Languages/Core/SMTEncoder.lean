@@ -23,9 +23,13 @@ open Lambda Strata.SMT Strata.SMT.Encoder
 public section
 
 structure SMT.IF where
-  uf : UF
+  id : String
+  args : List TermVar
+  out : TermType
   body : Term
 deriving Repr, DecidableEq, Inhabited
+
+@[expose] def SMT.IF.toUF (f : SMT.IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
 
 structure SMT.Sort where
   name : String
@@ -58,8 +62,10 @@ A factory function whose body and axioms have been encoded to SMT `Term`s,
 ready to be committed to the `SMT.Context`.
 -/
 structure SMT.EncodedFnDef where
-  uf : UF
-  body : Option Term
+  id : String
+  args : List TermType
+  out : TermType
+  body? : Option (List String × Term)
   axioms : List Term
 deriving Repr, Inhabited
 
@@ -108,8 +114,8 @@ def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
   if fn ∈ ctx.ufs then ctx else
   { ctx with ufs := ctx.ufs.push fn }
 
-def SMT.Context.addIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context :=
-  let smtif := { uf := fn, body := body }
+def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term) : SMT.Context :=
+  let smtif : SMT.IF := { id, args, out, body }
   if smtif ∈ ctx.ifs then ctx else
   { ctx with ifs := ctx.ifs.push smtif }
 
@@ -120,15 +126,19 @@ def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
 /-- Commit a resolved function definition: emit its interpreted body (`addIF`)
     or uninterpreted declaration (`addUF`), followed by its axioms (`addAxiom`). -/
 def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) : SMT.Context :=
-  let ctx := match rdef.body with
-    | some term => ctx.addIF rdef.uf term
-    | none => ctx.addUF rdef.uf
+  let ctx := match rdef.body? with
+    | some (params, body) =>
+      let args := params.zip rdef.args |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
+      ctx.addIF rdef.id args rdef.out body
+    | none =>
+      let uf : UF := { id := rdef.id, args := rdef.args, out := rdef.out }
+      ctx.addUF uf
   rdef.axioms.foldl (init := ctx) (·.addAxiom ·)
 
 /-- True if the function `uf`'s declaration has already been committed: it is
     in `ufs` (uninterpreted) or `ifs` (interpreted). -/
 def SMT.Context.committedFn (ctx : SMT.Context) (uf : UF) : Bool :=
-  ctx.ufs.contains uf || ctx.ifs.any (·.uf == uf)
+  ctx.ufs.contains uf || ctx.ifs.any (·.toUF == uf)
 
 /-- True if the function `uf` is already committed in `ctx` or scheduled in the
     pending queue `pending`. Used to dedup function scheduling. -/
@@ -582,10 +592,9 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
         let intys := tys.take (tys.length - 1)
         let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
         let bvs := formalStrs.zip smt_intys
-        let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
         let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
-        let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
+        let uf : UF := { id := (toString $ format fn), args := smt_intys, out := smt_outty }
         let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
         if !arrowParams.isEmpty then
           let names := arrowParams.map (fun (n, _) => toString (format n))
@@ -753,13 +762,13 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
     let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
     let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
     let allArgs := e1t :: acc
-    let mut argvars : List TermVar := []
+    let mut argTys : List TermType := []
     let mut ctx := ctx
     for inty in intys do
       let (smt_inty, ctx') ← LMonoTy.toSMTType inty ctx
       ctx := ctx'
-      argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
-    let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
+      argTys := argTys ++ [smt_inty]
+    let uf := UF.mk (id := (toString $ format fn)) (args := argTys) (out := smt_outty)
     .ok (Term.app (.uf uf) allArgs smt_outty, ctx, pending)
   | _, _ =>
     .error f!"Cannot encode .app expression {LExpr.app () fn arg}"
@@ -826,7 +835,8 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
         toSMTTerm factory [] ax (ctx.addSubst smt_ty_inst) pending
       .ok (axiom_term :: axs, ctx.restoreSubst seededSubst, pending))
   -- Restore the substitution that was active before this function.
-  .ok ({ uf := p.uf, body := bodyTerm?, axioms := axiomTermsRev.reverse },
+  let body? := bodyTerm?.map (formalStrs, ·)
+  .ok ({ id := p.uf.id, args := p.uf.args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
        ctx.restoreSubst savedSubst, pending)
 
 /--

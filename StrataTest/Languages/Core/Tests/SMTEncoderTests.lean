@@ -75,7 +75,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
@@ -87,7 +87,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
@@ -262,7 +262,7 @@ end ArrayTheory
 #eval show IO _ from do
   let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet) (profilePipeline := false)
   -- Non-nullary UF: f(x : Int) : Int — should be excluded from ids
-  let uf_f := UF.mk "f" [TermVar.mk "x" TermType.int] TermType.int
+  let uf_f := UF.mk "f" [TermType.int] TermType.int
   -- Nullary UF: c : Int — should be included in ids
   let uf_c := UF.mk "c" [] TermType.int
   let ctx : SMT.Context := { SMT.Context.default with ufs := #[uf_f, uf_c] }

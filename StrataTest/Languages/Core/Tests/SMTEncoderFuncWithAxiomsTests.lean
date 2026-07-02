@@ -55,22 +55,25 @@ section FuncWithAxiomsTests
 
 /- A little `SMT.Context` printer, via SMTDDM -/
 
-/-- Render a `UF` as a function signature `id : (argName : argTy, ...) -> out`.
-    Argument *names* are shown (from `uf.args`): a function body references its
-    parameters by their formal names (e.g. `v`), so showing those names on the
-    left-hand side makes the binder of a name appearing in an interpreted
-    function's body visible. -/
+/-- Render a `UF` as a function signature `id : (argTy, ...) -> out`. -/
 def ppUF (uf : UF) : Except String String := do
-  let args ← uf.args.mapM fun v => do
-    return s!"{v.id} : {← Strata.SMTDDM.termTypeToString v.ty}"
+  let args ← uf.args.mapM fun ty => do
+    return s!"{← Strata.SMTDDM.termTypeToString ty}"
   let outTy ← Strata.SMTDDM.termTypeToString uf.out
   return s!"{uf.id} : ({", ".intercalate args}) -> {outTy}"
+
+/-- Render an `IF` as a function signature with param names. -/
+def ppIF (f : SMT.IF) : Except String String := do
+  let args ← f.args.mapM fun v => do
+    return s!"{v.id} : {← Strata.SMTDDM.termTypeToString v.ty}"
+  let outTy ← Strata.SMTDDM.termTypeToString f.out
+  return s!"{f.id} : ({", ".intercalate args}) -> {outTy}"
 
 /-- Pretty-print `SMT.Context` -/
 def ppContext (ctx : SMT.Context) : Except String String := do
   let ufs ← ctx.ufs.toList.mapM ppUF
   let ifs ← ctx.ifs.toList.mapM fun f => do
-    return s!"{← ppUF f.uf} := {← Strata.SMTDDM.termToString f.body}"
+    return s!"{← ppIF f} := {← Strata.SMTDDM.termToString f.body}"
   let axms ← ctx.axms.toList.mapM Strata.SMTDDM.termToString
   let sect (title : String) (lines : List String) : String :=
     if lines.isEmpty then s!"{title}: (none)\n"
@@ -161,8 +164,8 @@ private def monoDefFuncWithAxiom (name : String) (body : LExpr CoreLParams.mono)
 info: Terms:
   (= (f 0) 0)
 UFs:
-  g : (v : Int) -> Int
-  f : (v : Int) -> Int
+  g : (Int) -> Int
+  f : (Int) -> Int
 IFs: (none)
 Axioms:
   (forall ((x Int)) (= (g x) x))
@@ -181,9 +184,9 @@ Axioms:
 info: Terms:
   (= (f 0) 0)
 UFs:
-  h : (v : Int) -> Int
-  g : (v : Int) -> Int
-  f : (v : Int) -> Int
+  h : (Int) -> Int
+  g : (Int) -> Int
+  f : (Int) -> Int
 IFs: (none)
 Axioms:
   (forall ((x Int)) (= (h x) (f x)))
@@ -218,9 +221,9 @@ private def polyFunc (name callee : String) : Lambda.LFunc CoreLParams :=
 info: Terms:
   (= (pf 0) 0)
 UFs:
-  rf : (v : Int) -> Int
-  qf : (v : Int) -> Int
-  pf : (v : Int) -> Int
+  rf : (Int) -> Int
+  qf : (Int) -> Int
+  pf : (Int) -> Int
 IFs: (none)
 Axioms:
   (forall ((x Int)) (= (rf x) (pf x)))
@@ -241,7 +244,7 @@ Axioms:
 info: Terms:
   (= (d 0) 0)
 UFs:
-  g : (v : Int) -> Int
+  g : (Int) -> Int
 IFs:
   d : (v : Int) -> Int := (g v)
 Axioms:
@@ -311,8 +314,8 @@ info: Terms:
   (= (idp 0) 0)
   (= (idp 0.0) 0.0)
 UFs:
-  idp : (v : Int) -> Int
-  idp : (v : Real) -> Real
+  idp : (Int) -> Int
+  idp : (Real) -> Real
 IFs: (none)
 Axioms:
   (forall ((x Int)) (= (idp x) x))
@@ -336,7 +339,7 @@ info: Terms:
   (= (idp 0) 0)
   (= (idp 1) 1)
 UFs:
-  idp : (v : Int) -> Int
+  idp : (Int) -> Int
 IFs: (none)
 Axioms:
   (forall ((x Int)) (= (idp x) x))
@@ -357,14 +360,13 @@ info: encodeFunctionDef: function 'g' was already declared as uninterpreted befo
 -/
 #guard_msgs in
 #eval show IO Unit from do
-  let g : UF := { id := "g", args := [⟨"v", .int⟩], out := .int }
-  let body : Term := .var ⟨"v", .int⟩
+  let g : UF := { id := "g", args := [.int], out := .int }
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Solver.bufferWriter b
   try
     let _ ← (do
       let _ ← Encoder.encodeUF g
-      let _ ← Encoder.encodeFunctionDef g body
+      let _ ← Encoder.encodeFunctionDef g [⟨"v", .int⟩] (.var ⟨"v", .int⟩)
       : EncoderM Unit).run EncoderState.init |>.run solver
     IO.println "ERROR: expected an error but succeeded"
   catch e =>

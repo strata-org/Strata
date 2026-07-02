@@ -167,16 +167,16 @@ example :
   denoteQuery_rfl
 
 example :
-  let f := { id := "f", args := [{ id := "a", ty := .prim .int }], out := .prim .int }
+  let f : UF := { id := "f", args := [.prim .int], out := .prim .int }
   let f3 := .app (.uf f) [.prim (.int 3)] (.prim .int)
   (denoteQuery {ufs := #[f]} [] (.app .gt [.prim (.int 42), f3] (.prim .int))) =
   .some (∀ (f : Int → Int), 42 > f 3) := by
   denoteQuery_rfl
 
 example :
-  let a := { id := "a", ty := .prim .int }
-  let f := { uf := { id := "f", args := [a], out := .prim .int }, body := .app .add [.var a, .prim (.int 2)] (.prim .int) }
-  let f3 := .app (.uf f.uf) [.prim (.int 3)] (.prim .int)
+  let a : TermVar := { id := "a", ty := .prim .int }
+  let f : Core.SMT.IF := { id := "f", args := [a], out := .prim .int, body := .app .add [.var a, .prim (.int 2)] (.prim .int) }
+  let f3 := .app (.uf f.toUF) [.prim (.int 3)] (.prim .int)
   (denoteQuery {ifs := #[f]} [] (.app .gt [.prim (.int 42), f3] (.prim .int))) =
   .some (let f (a : Int) := a + 2; 42 > f 3) := by
   denoteQuery_rfl

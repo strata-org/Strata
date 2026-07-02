@@ -668,15 +668,13 @@ where
   translateFunDecl (uf : UF) : TranslateM (Name × Expr) := do
     let state ← get
     let n := symbolToName uf.id
-    let ps ← uf.args.mapM translateParam
+    let ps ← uf.args.mapM fun ty => do
+      let t ← translateSort ty
+      modify fun s => { s with level := s.level + 1 }
+      return (.anonymous, t)
     let s ← translateSort uf.out
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     set { level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) : Translate.State }
-    return (n, t)
-  translateParam (v : TermVar) : TranslateM (Name × Expr) := do
-    let n := symbolToName v.id
-    let t ← translateSort v.ty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
 
 /--
@@ -695,13 +693,13 @@ def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Exp
 where
   translateFunDef (f : Core.SMT.IF) : TranslateM (Name × Expr × Expr) := do
     let state ← get
-    let ps ← f.uf.args.mapM translateParam
-    let s ← translateSort f.uf.out
+    let ps ← f.args.mapM translateParam
+    let s ← translateSort f.out
     let (_, b) ← translateTerm f.body
-    let n := symbolToName f.uf.id
+    let n := symbolToName f.id
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     let v := ps.foldr (fun (n, t) b => .lam n t b .default) b
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.uf) (t, state.level) : Translate.State }
+    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) : Translate.State }
     return (n, t, v)
   translateParam (v : TermVar) : TranslateM (Name × Expr) := do
     let n := symbolToName v.id

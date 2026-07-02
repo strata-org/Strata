@@ -172,7 +172,7 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
   let empty : Term := .app (.datatype_op .constructor "set.empty") [] ty
-  return tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [⟨"x", t.typeOf⟩, ⟨"s", ty⟩], ty⟩) [t, acc] ty) empty
+  return tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [t.typeOf, ty], ty⟩) [t, acc] ty) empty
 
 def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   return .app (.datatype_op .constructor ty.mkName) tEncs ty
@@ -182,8 +182,7 @@ def encodeUF (uf : UF) : EncoderM String := do
   let baseName := sanitizeSmtName uf.id
   let id ← uniquify baseName
   comment uf.id
-  let argTys := uf.args.map (fun vt => vt.ty)
-  Solver.declareFun id argTys uf.out
+  Solver.declareFun id uf.args uf.out
   modifyGet λ state => (id, {state with
     functions := state.functions.insert uf id
     isFunUninterp := state.isFunUninterp.insert uf true})
@@ -301,7 +300,7 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunctionDef (uf : UF) (body : Term) : EncoderM String := do
+def encodeFunctionDef (uf : UF) (params : List TermVar) (body : Term) : EncoderM String := do
   if let (.some enc) := (← get).functions.get? uf then
     -- The function was already emitted.
     if ((← get).isFunUninterp.get? uf).getD false then
@@ -312,7 +311,7 @@ def encodeFunctionDef (uf : UF) (body : Term) : EncoderM String := do
   let baseName := ufId (← ufNum)
   let id ← uniquify baseName
   comment uf.id
-  let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
+  let argPairs := params.map (fun v => (v.id, v.ty))
   let bodyEnc ← encodeTerm body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with

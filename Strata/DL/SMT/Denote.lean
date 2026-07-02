@@ -110,7 +110,7 @@ def substituteTermVarIS (isctx : ISContext) (v : TermVar) : TermVar :=
   { v with ty := substituteIS isctx v.ty }
 
 def substituteUFIS (isctx : ISContext) (uf : UF) : UF :=
-  { uf with args := uf.args.map (substituteTermVarIS isctx), out := substituteIS isctx uf.out }
+  { uf with args := uf.args.map (substituteIS isctx), out := substituteIS isctx uf.out }
 
 mutual
 
@@ -139,7 +139,7 @@ def substituteTermISs (isctx : ISContext) (ts : List Term) : List Term :=
 end
 
 def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
-  { iF with uf := substituteUFIS isctx iF.uf, body := substituteTermIS isctx iF.body }
+  { iF with args := iF.args.map (substituteTermVarIS isctx), out := substituteIS isctx iF.out, body := substituteTermIS isctx iF.body }
 
 mutual
 
@@ -244,11 +244,11 @@ The result is an arrow type `a₁ → … → out` when every argument and the
 result type can be interpreted.
 -/
 @[simp]
-def denoteFunSort (sctx : SortContext) (as : List TermVar) (out : TermType) : Option (SortDenoteResult sctx) :=
+def denoteFunSort (sctx : SortContext) (as : List TermType) (out : TermType) : Option (SortDenoteResult sctx) :=
   match as with
   | []      => denoteSort sctx out
   | a :: as => do
-    let a ← denoteSort sctx a.ty
+    let a ← denoteSort sctx a
     let as ← denoteFunSort sctx as out
     return fun sΓ => a sΓ → as sΓ
 
@@ -281,7 +281,7 @@ theorem denoteSortArray_Some :
   simp [denoteSort]
 
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
-    (denoteSort sctx a.ty).isSome ∧ (denoteFunSort sctx as out).isSome := by
+    (denoteSort sctx a).isSome ∧ (denoteFunSort sctx as out).isSome := by
   simp only [denoteFunSort, Option.pure_def, Option.bind_eq_bind,
               Option.isSome_bind, Option.isSome_some, Option.any_true] at h
   have ⟨h1 , h2⟩ := (Option.any_eq_true_iff_get _ _).mp h
@@ -291,7 +291,7 @@ theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome)
 theorem arrow_of_denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     have has := denoteFunSortCons_isSome h
     (denoteFunSort sctx (a :: as) out).get h sΓ =
-    ((denoteSort sctx a.ty).get has.left sΓ → (denoteFunSort sctx as out).get has.right sΓ) := by
+    ((denoteSort sctx a).get has.left sΓ → (denoteFunSort sctx as out).get has.right sΓ) := by
   simp [*, denoteFunSort] at *
 
 theorem denoteSortOut_isSome_of_denoteFunSort_isSome (h : (denoteFunSort sctx as out).isSome) :
@@ -416,15 +416,15 @@ Check that denoted argument types match declared variable types.
 If lengths differ, this returns `false`.
 -/
 @[simp, expose]
-noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermVar) : Bool :=
+noncomputable def argTypesAlign (as : List (TermDenoteResult ctx)) (vs : List TermType) : Bool :=
   match as, vs with
   | [], [] => true
   | a :: as, v :: vs =>
-    a.ty == v.ty && argTypesAlign as vs
+    a.ty == v && argTypesAlign as vs
   | _, _ => false
 
 private theorem argTypesAlign_true_with_len (h : argTypesAlign as vs) (hl : as.length = vs.length) :
-  ∀ i, (h : i < as.length) → as[i].ty = (vs[i]'(hl ▸ h)).ty := fun i hi =>
+  ∀ i, (h : i < as.length) → as[i].ty = (vs[i]'(hl ▸ h)) := fun i hi =>
   match as, vs with
   | [], _ => nomatch h
   | _ :: _, [] =>
@@ -445,12 +445,12 @@ theorem argTypesAlign_length_eq (h : argTypesAlign as vs) : as.length = vs.lengt
     have h' : as.length = vs.length := argTypesAlign_length_eq (Bool.and_eq_true_iff.mp h).right
     simpa using congrArg Nat.succ h'
 
-theorem argTypesAlign_true {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+theorem argTypesAlign_true {as : List (TermDenoteResult ctx)} {vs : List TermType} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)) :=
   argTypesAlign_true_with_len h (argTypesAlign_length_eq h)
 
-theorem argTypesAlign_arg_types {as : List (TermDenoteResult ctx)} {vs : List TermVar} (h : argTypesAlign as vs) :
-  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)).ty :=
+theorem argTypesAlign_arg_types {as : List (TermDenoteResult ctx)} {vs : List TermType} (h : argTypesAlign as vs) :
+  ∀ i, (hi : i < as.length) → as[i].ty = (vs[i]'(argTypesAlign_length_eq h ▸ hi)) :=
   argTypesAlign_true h
 
 -- Note: `noncomputable` because of a compiler error
@@ -459,13 +459,13 @@ Apply the semantic interpretation of a UF symbol to denoted arguments.
 -/
 @[simp]
 noncomputable def applyUFAux (tdi : TermDenoteInput ctx) (uf : (denoteFunSort ctx.sctx args out).get h ⟨tdi.sΓ, tdi.hsΓ⟩)
-  (as : List (TermDenoteResult ctx)) (hl : args.length = as.length) (has : ∀ i, (hi : i < as.length) → as[i].ty = (args[i]'(hl ▸ hi)).ty) :
+  (as : List (TermDenoteResult ctx)) (hl : args.length = as.length) (has : ∀ i, (hi : i < as.length) → as[i].ty = (args[i]'(hl ▸ hi))) :
     (denoteSort ctx.sctx out).get (denoteSortOut_isSome_of_denoteFunSort_isSome h) ⟨tdi.sΓ, tdi.hsΓ⟩ :=
   match args, as with
   | [], []            => uf
   | arg :: _, a :: as =>
     let uf := arrow_of_denoteFunSortCons_isSome h ▸ uf
-    have ha : denoteSort ctx.sctx arg.ty = denoteSort ctx.sctx a.ty := has 0 (Nat.zero_lt_succ _) ▸ rfl
+    have ha : denoteSort ctx.sctx arg = denoteSort ctx.sctx a.ty := has 0 (Nat.zero_lt_succ _) ▸ rfl
     let uf := uf (Option.get_congr ha ▸ a.res tdi)
     applyUFAux tdi uf as (Nat.succ.inj hl) (fun i hi => (has (i + 1) (Nat.succ_lt_succ hi)))
 
@@ -556,7 +556,7 @@ def bindExistsVar : QuantVarBinder := fun {n} {ty} ctx hTy =>
       ft' tdi'
 
 def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
-    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
+    (hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
@@ -571,14 +571,14 @@ def buildQuant (bindVar : QuantVarBinder) (ctx : Context) (vs : List TermVar)
       bindVar (n := n) (ty := ty) ctx (denoteFunSortCons_isSome hTys).left ft' tdi
 
 def buildExists (ctx : Context) (vs : List TermVar)
-    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
+    (hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
   buildQuant bindExistsVar ctx vs hTys bodyFt tdi
 
 def buildForall (ctx : Context) (vs : List TermVar)
-    (hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome)
+    (hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome)
     (bodyFt : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
     (tdi : TermDenoteInput ctx)
     : Prop :=
@@ -640,14 +640,14 @@ and semantics when successful.
       none
   -- Quantifiers
   | .quant .all vs _ t =>
-    if hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome then
+    if hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome then
       let tctx : Context := { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }
       let ⟨.prim .bool, _, tFt⟩ ← denoteTerm tctx t | none
       return ⟨.prim .bool, rfl, buildForall ctx vs hTys tFt⟩
     else
       none
   | .quant .exist vs _ t =>
-    if hTys : (denoteFunSort ctx.sctx vs (.prim .bool)).isSome then
+    if hTys : (denoteFunSort ctx.sctx (vs.map (·.ty)) (.prim .bool)).isSome then
       let tctx : Context := { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }
       let ⟨.prim .bool, _, tFt⟩ ← denoteTerm tctx t | none
       return ⟨.prim .bool, rfl, buildExists ctx vs hTys tFt⟩
@@ -1124,8 +1124,8 @@ noncomputable def bindIFVar (ctx : Context) {hTys hTyTys} :
     let v' := { id := n, ty := ty }
     let vs' := v' :: ctx.tctx.vs
     let tctx' := { ufs := ctx.tctx.ufs, vs := vs' }
-    ((tdi : TermDenoteInput ⟨ctx.sctx, tctx'⟩) → (denoteFunSort ctx.sctx vs out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩) →
-    (tdi : TermDenoteInput ⟨ctx.sctx, tctx⟩) → (denoteFunSort ctx.sctx (v' :: vs) out).get hTyTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
+    ((tdi : TermDenoteInput ⟨ctx.sctx, tctx'⟩) → (denoteFunSort ctx.sctx (vs.map (·.ty)) out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩) →
+    (tdi : TermDenoteInput ⟨ctx.sctx, tctx⟩) → (denoteFunSort ctx.sctx ((v' :: vs).map (·.ty)) out).get hTyTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
   let tctx := { ufs := ctx.tctx.ufs, vs := ctx.tctx.vs }
   let v' := { id := n, ty := ty }
   let vs' := v' :: ctx.tctx.vs
@@ -1152,11 +1152,11 @@ noncomputable def bindIFVar (ctx : Context) {hTys hTyTys} :
 /--
 Turn a denoted IF body (under its argument binders) into a denoted function.
 -/
-noncomputable def buildIFBody (ctx : Context) {hTys hTy}
+noncomputable def buildIFBody (ctx : Context) (vs : List TermVar) {out} {hTys hTy}
     (bodyFt : (tdi : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }) →
               (denoteSort ctx.sctx out).get hTy ⟨tdi.sΓ, tdi.hsΓ⟩)
     (tdi : TermDenoteInput ctx)
-    : (denoteFunSort ctx.sctx vs out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
+    : (denoteFunSort ctx.sctx (vs.map (·.ty)) out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
     match vs with
     | [] => bodyFt tdi
     | { id := n, ty := ty } :: vs =>
@@ -1164,7 +1164,7 @@ noncomputable def buildIFBody (ctx : Context) {hTys hTy}
       letI ctx' : Context := { sctx := ctx.sctx, tctx := { vs := { id := n, ty := ty } :: ctx.tctx.vs, ufs := ctx.tctx.ufs } }
       have hvs : ({ id := n, ty := ty } :: vs).reverse ++ ctx.tctx.vs = vs.reverse ++ ctx'.tctx.vs :=
         List.reverse_cons ▸ List.append_assoc _ _ _ ▸ rfl
-      let ft' := buildIFBody ctx' (hTys := hTys') (hvs ▸ bodyFt)
+      let ft' := buildIFBody ctx' vs (hTys := hTys') (hvs ▸ bodyFt)
       bindIFVar ctx ft' tdi
 
 /--
@@ -1176,23 +1176,23 @@ denoting `body`, pushes that interpretation into the environment, and returns a
 proposition over the original (smaller) context.
 -/
 @[simp]
-noncomputable def bindIF {n} {args out} (body : Term) (ctx : Context) (ft' :
-    let uf' := { id := n, args := args, out := out }
+noncomputable def bindIF (iF : Core.SMT.IF) (ctx : Context) (ft' :
+    let uf' := iF.toUF
     let ufs' := uf' :: ctx.tctx.ufs
     let tctx' := { ufs := ufs', vs := ctx.tctx.vs }
     TermDenoteInput ⟨ctx.sctx, tctx'⟩ → Prop) :
   Option (TermDenoteInput ctx → Prop) := do
-  if hTys : (denoteFunSort ctx.sctx args out).isSome then
-    let bodyCtx : Context := { sctx := ctx.sctx, tctx := { vs := args.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }
-    let ⟨bodyTy, _, bodyFt⟩ ← denoteTerm bodyCtx body
-    if hBodyOut : bodyTy = out then
-      let uf' := { id := n, args := args, out := out }
+  let uf' := iF.toUF
+  if hTys : (denoteFunSort ctx.sctx uf'.args uf'.out).isSome then
+    let bodyCtx : Context := { sctx := ctx.sctx, tctx := { vs := iF.args.reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } }
+    let ⟨bodyTy, _, bodyFt⟩ ← denoteTerm bodyCtx iF.body
+    if hBodyOut : bodyTy = uf'.out then
       let ufs' := uf' :: ctx.tctx.ufs
       let tctx' : TermContext := { ufs := ufs', vs := ctx.tctx.vs }
       let ft (tdi : TermDenoteInput ctx) :=
-        have hBodyOut : denoteSort ctx.sctx out = denoteSort ctx.sctx bodyTy := hBodyOut ▸ rfl
-        let f : (denoteFunSort ctx.sctx args out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
-          buildIFBody ctx (hTy := denoteSortOut_isSome_of_denoteFunSort_isSome hTys) (Option.get_congr hBodyOut ▸ bodyFt) tdi
+        have hBodyOut : denoteSort ctx.sctx uf'.out = denoteSort ctx.sctx bodyTy := hBodyOut ▸ rfl
+        let f : (denoteFunSort ctx.sctx uf'.args uf'.out).get hTys ⟨tdi.sΓ, tdi.hsΓ⟩ :=
+          buildIFBody ctx iF.args (hTy := denoteSortOut_isSome_of_denoteFunSort_isSome hTys) (Option.get_congr hBodyOut ▸ bodyFt) tdi
         let uf' := { uf := uf', h := hTys, ufΓ := f }
         let ufΓ' : UFEnvironment ⟨tdi.sΓ, tdi.hsΓ⟩ := uf' :: tdi.tΓ.ufs
         haveI huf' : ufΓ'.WF ufs' :=
@@ -1229,7 +1229,7 @@ noncomputable def denoteBoolTermFromContext
   let ufs := if iss.isEmpty then ufs else ufs.map (substituteUFIS iss)
   let ifs := if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)
   let t := substituteTermIS iss t
-  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map Core.SMT.IF.uf ++ ufs⟩⟩ t | none
+  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map Core.SMT.IF.toUF ++ ufs⟩⟩ t | none
   let ft ← bindIFs ⟨uss, iss⟩ {} ufs ifs ft
   let ft ← bindUFs ⟨uss, iss⟩ {} ufs ft
   let ft ← bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
@@ -1274,12 +1274,12 @@ where
   Eliminate all interpreted-function declarations by repeatedly applying `bindIF`.
   -/
   @[simp]
-  bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map Core.SMT.IF.uf ++ ufs⟩⟩ → Prop) :
+  bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map Core.SMT.IF.toUF ++ ufs⟩⟩ → Prop) :
       Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
     do match ifs with
     | [] => return ft'
-    | { uf := _, body } :: ifs =>
-      let ft ← bindIF body { sctx, tctx := { vs := vs, ufs := ifs.map Core.SMT.IF.uf ++ ufs } } ft'
+    | iF :: ifs =>
+      let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map Core.SMT.IF.toUF ++ ufs } } ft'
       bindIFs sctx vs ufs ifs ft
 
 def mkISContext (iss : Map String TermType) : ISContext :=

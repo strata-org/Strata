@@ -243,11 +243,10 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #guard_msgs in
 #eval do
   let collidingUF : UF := { id := "f.0", args := [], out := .int }
-  let functionUF : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
-  let body : Term := .var ⟨"x", .int⟩
+  let functionUF : UF := { id := "userFn", args := [.int], out := .int }
   let estate ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
-    let _ ← Encoder.encodeFunctionDef functionUF body
+    let _ ← Encoder.encodeFunctionDef functionUF [⟨"x", .int⟩] (.var ⟨"x", .int⟩)
   return (estate.functions[collidingUF]!, estate.functions[functionUF]!)
 
 -- A user UF named `f.1` should not collide when two functions are encoded.
@@ -256,13 +255,11 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #eval do
   let collidingUF : UF := { id := "f.1", args := [], out := .bool }
   let fn0 : UF := { id := "fn0", args := [], out := .int }
-  let fn1 : UF := { id := "fn1", args := [⟨"y", .int⟩], out := .int }
-  let body0 : Term := .prim (.int 42)
-  let body1 : Term := .var ⟨"y", .int⟩
+  let fn1 : UF := { id := "fn1", args := [.int], out := .int }
   let estate ← runEncoder do
     let _ ← Encoder.encodeUF collidingUF
-    let _ ← Encoder.encodeFunctionDef fn0 body0
-    let _ ← Encoder.encodeFunctionDef fn1 body1
+    let _ ← Encoder.encodeFunctionDef fn0 [] (.prim (.int 42))
+    let _ ← Encoder.encodeFunctionDef fn1 [⟨"y", .int⟩] (.var ⟨"y", .int⟩)
   return (estate.functions[collidingUF]!, estate.functions[fn0]!, estate.functions[fn1]!)
 
 -- A UF named the same as a pre-declared datatype/sort should be disambiguated
@@ -282,10 +279,9 @@ private def runEncoderWith (initState : EncoderState) (act : EncoderM Unit) : IO
 #guard_msgs in
 #eval do
   let preDeclaredNames := Std.HashSet.ofList ["f.0"]
-  let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
-  let body : Term := .var ⟨"x", .int⟩
+  let fn : UF := { id := "userFn", args := [.int], out := .int }
   let estate ← runEncoderWith (EncoderState.initWithNames preDeclaredNames) do
-    let _ ← Encoder.encodeFunctionDef fn body
+    let _ ← Encoder.encodeFunctionDef fn [⟨"x", .int⟩] (.var ⟨"x", .int⟩)
   return estate.functions[fn]!
 
 -- A UF named identically to a constructor declared via `declareType` should
@@ -411,10 +407,9 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
 #guard_msgs in
 #eval do
   let preDeclaredNames := Std.HashSet.ofList ["f.0"]
-  let fn : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
-  let body : Term := .var ⟨"x", .int⟩
+  let fn : UF := { id := "userFn", args := [.int], out := .int }
   let estate := runAbstractEncoder preDeclaredNames do
-    let _ ← AbstractEncoder.encodeFunctionDef mockSolver fn body
+    let _ ← AbstractEncoder.encodeFunctionDef mockSolver fn [⟨"x", .int⟩] (.var ⟨"x", .int⟩)
   return estate.functions[fn]!
 
 -- AbstractEncoder: UF-vs-function collision (same as batch path)
@@ -422,11 +417,10 @@ private def runAbstractEncoder (initNames : Std.HashSet String)
 #guard_msgs in
 #eval do
   let collidingUF : UF := { id := "f.0", args := [], out := .int }
-  let functionUF : UF := { id := "userFn", args := [⟨"x", .int⟩], out := .int }
-  let body : Term := .var ⟨"x", .int⟩
+  let functionUF : UF := { id := "userFn", args := [.int], out := .int }
   let estate := runAbstractEncoder {} do
     let _ ← AbstractEncoder.encodeUF mockSolver collidingUF
-    let _ ← AbstractEncoder.encodeFunctionDef mockSolver functionUF body
+    let _ ← AbstractEncoder.encodeFunctionDef mockSolver functionUF [⟨"x", .int⟩] (.var ⟨"x", .int⟩)
   return (estate.functions[collidingUF]!, estate.functions[functionUF]!)
 
 end Strata.SMT.Encoder.AbstractEncoderTests

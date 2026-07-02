@@ -241,7 +241,7 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       let argTerms := argResults.toList.map (·.term)
       let uf : UF := {
         id := fnName.val,
-        args := argTerms.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩),
+        args := argTerms.map (·.typeOf),
         out := .int
       }
       let term := Term.app (.uf uf) argTerms .int
