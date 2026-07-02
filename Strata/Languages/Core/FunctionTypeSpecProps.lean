@@ -954,6 +954,12 @@ theorem Function.typeCheck_inputsNodup (C : LContext CoreLParams) (Env : TEnv Un
   elim_err h with h_genprefix
   elim_err h
   elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   rename_i h_undecl
   elim_err h
   elim_err h
@@ -1022,6 +1028,12 @@ theorem Function.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv 
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -1212,6 +1224,81 @@ private theorem instantiateWithCheck_freeVars_eraseDups_length_le
       ≤ freshtvs.length := List.subset_nodup_length h_nodup h_sub_fresh
     _ = xs.length := h_len
 
+/-- Free vars of an `instantiateWithCheck` output of a **closed** scheme are all
+    generator names `$__ty<k>`. The fresh vars come from `genTyVars`
+    (`genTyVars_is_genName`); alias resolution does not grow free vars
+    (`LMonoTy_resolveAliases_freeVars_subset`); and closedness forces every body
+    free var into the substituted (bound) variables, so the output's free vars are
+    a subset of the fresh generator set. -/
+theorem instantiateWithCheck_freeVars_gen_prefixed
+    (type : LTy) (C : LContext CoreLParams) (Env : TEnv Unit)
+    (monoty : LMonoTy) (Env' : TEnv Unit)
+    (h : LTy.instantiateWithCheck type C Env = .ok (monoty, Env'))
+    (h_closed : LTy.freeVars type = [])
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ v, v ∈ LMonoTy.freeVars monoty → ∃ (k: Nat), v = TState.tyPrefix ++ toString k := by
+  rcases type with ⟨xs, body⟩
+  -- The scheme is closed: every free var of the body is a bound var.
+  have h_sub : ∀ v, v ∈ LMonoTy.freeVars body → v ∈ xs := by
+    simp only [LTy.freeVars] at h_closed
+    intro v hv
+    rw [List.removeAll, List.filter_eq_nil_iff] at h_closed
+    have hf := h_closed v hv
+    simp_all
+  -- Same cover as `instantiateWithCheck_freeVars_eraseDups_length_le`, but tracking
+  -- that the fresh set consists of generator names.
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v1 h_ra
+  obtain ⟨mty_ra, Env_ra⟩ := v1
+  elim_errs h
+  cases h
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+  elim_err h_ra
+  rename_i v2 h_inst
+  obtain ⟨mty_inst, genEnv1⟩ := v2
+  dsimp only at h_ra
+  have h_ctx_inst : genEnv1.context = Env.genEnv.context :=
+    LTy.instantiate_context (LTy.forAll xs body) Env.genEnv mty_inst genEnv1 h_inst
+  have h_aw_ra : TContext.AliasesWF
+      ({ genEnv := genEnv1, stateSubstInfo := Env.stateSubstInfo } : TEnv Unit).context := by
+    simp only [TEnv.context]; rw [h_ctx_inst]; exact h_aw
+  have h_ra_sub : ∀ v, v ∈ mty_ra.freeVars → v ∈ mty_inst.freeVars :=
+    LMonoTy_resolveAliases_freeVars_subset (T := CoreLParams) mty_inst
+      { genEnv := genEnv1, stateSubstInfo := Env.stateSubstInfo } mty_ra Env_ra h_ra h_aw_ra
+  -- Every free var of the instantiate output is a generator name.
+  have h_inst_gen : ∀ v, v ∈ mty_inst.freeVars → ∃ (k: Nat), v = TState.tyPrefix ++ toString k := by
+    cases xs with
+    | nil =>
+      -- closed monomorphic: freeVars body ⊆ [] (vacuous)
+      simp only [LTy.instantiate] at h_inst
+      cases h_inst
+      intro v hv
+      exact absurd (h_sub v hv) (by simp)
+    | cons a rest =>
+      simp only [LTy.instantiate, Bind.bind, Except.bind] at h_inst
+      elim_err h_inst
+      rename_i v1 h_gen
+      obtain ⟨freshtvs, genEnv2⟩ := v1
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h_inst
+      obtain ⟨h_mty, h_env⟩ := h_inst
+      have h_flen : freshtvs.length = (a :: rest).length :=
+        TGenEnv.genTyVars_length (a :: rest).length Env.genEnv freshtvs genEnv2 h_gen
+      rw [← h_mty]
+      intro v hv
+      have hSNE : Subst.hasEmptyScopes
+          [List.zip (a :: rest) (List.map LMonoTy.ftvar freshtvs)] = false := by
+        cases freshtvs with
+        | nil => simp at h_flen
+        | cons f frest => rfl
+      have h_v_fresh : v ∈ freshtvs :=
+        LMonoTy.freeVars_subst_closed (a :: rest) freshtvs h_flen body h_sub hSNE v hv
+      obtain ⟨k, _, h_eq⟩ := TGenEnv.genTyVars_is_genName (T := CoreLParams)
+        (a :: rest).length Env.genEnv freshtvs genEnv2 h_gen v h_v_fresh
+      exact ⟨k, h_eq⟩
+  intro v hv
+  exact h_inst_gen v (h_ra_sub v hv)
+
 theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -1222,6 +1309,12 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -1350,6 +1443,12 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
   elim_err h with h_genprefix
   elim_err h
   elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   rename_i h_undecl
   elim_err h
   elim_err h
@@ -1361,7 +1460,7 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
     · simp at h
     · cases h
       intro body h_eq
-      simp_all
+      simp only [h_body_none, reduceCtorEq] at h_eq
   · -- body = some
     rename_i body h_body_some
     elim_err h
@@ -1469,6 +1568,12 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
   elim_err h with h_genprefix
   elim_err h
   elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   rename_i h_undecl
   elim_err h
   elim_err h
@@ -1484,7 +1589,7 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
       cases h
       intro m h_eq h_nonfvar
       rw [Option.not_isSome_iff_eq_none] at h_measure_none
-      simp_all
+      rw [h_measure_none] at h_eq; exact absurd h_eq (by simp)
   · -- body = some
     rename_i body h_body_some
     elim_err h
@@ -1749,6 +1854,12 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -2381,6 +2492,28 @@ theorem Function.bodyComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
     intro a _ x ty h_find h_bv
     exact absurd (h_mono ty (Maps.find?_mem_values Γ_int.types h_find)) h_bv
 
+/-- The gen-prefix guard rejects any input type arg starting with `$__ty`, so a
+    successful check implies no `func.typeArgs` element has that reserved prefix. -/
+theorem Function.typeCheck_input_typeArgs_no_gen_prefix (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    ∀ ta, ta ∈ func.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  -- `h_genprefix : ¬(func.typeArgs.filter (prefix) != [])`, i.e. the filtered list is empty.
+  rw [bne_iff_ne, ne_eq, Decidable.not_not] at h_genprefix
+  intro ta hta h_pref
+  have h_mem : ta ∈ func.typeArgs.filter
+      (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) := by
+    rw [List.mem_filter]
+    exact ⟨hta, by simpa [TState.tyPrefix] using h_pref⟩
+  rw [h_genprefix] at h_mem
+  exact absurd h_mem (by simp)
+
 /-- **Instantiated body judgment.** The `typeCheck` pipeline resolves the body in
     an *instantiated* context `Γ_inst` (formals bound to fresh-tyvar, alias-resolved
     monotypes) at an instantiated output `output_inst`, and constructs a renaming
@@ -2434,6 +2567,12 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -2688,8 +2827,26 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     -- Provenance facts that `func.typeArgs` (user names) never enter the instantiation /
     -- resolution / unification — required by `bodyComposite_wf` to scrub the inner 2-cycle.
     -- These rest on instantiation freshness (`$__ty`-prefix vars vs no-gen-prefix `typeArgs`).
+    -- The signature scheme is closed (the `undeclaredVars` guard ensures `LTy.freeVars type = []`).
+    have h_closed : LTy.freeVars type = [] := by simpa [bne_iff_ne] using h_undecl
+    -- A generator name `$__ty<k>` is never a user `typeArg` (the gen-prefix guard `h_genprefix`
+    -- says no `func.typeArg` carries the `$__ty` prefix).
+    have h_ta_filter_nil : List.filter
+        (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs = [] := by
+      simpa [bne_iff_ne] using h_genprefix
+    have h_gen_avoids : ∀ (k : Nat), (TState.tyPrefix ++ toString k) ∉ func.typeArgs := by
+      intro k h_in
+      have h_mem : (TState.tyPrefix ++ toString k) ∈ List.filter
+          (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs := by
+        rw [List.mem_filter]
+        exact ⟨h_in, by simp [TState.tyPrefix]⟩
+      rw [h_ta_filter_nil] at h_mem
+      exact absurd h_mem (by simp)
     have h_inst_avoids : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs := by
-      sorry
+      intro v hv
+      obtain ⟨k, h_eq⟩ := instantiateWithCheck_freeVars_gen_prefixed type C Env v_inst.fst v_inst.snd
+        (by rw [Prod.eta]; exact h_inst) h_closed h_wf.aliasesWF v hv
+      rw [h_eq]; exact h_gen_avoids k
     have h_ctx_avoids : ∀ v, v ∈ TContext.knownTypeVars
         (v_inst.snd.pushEmptyContext.addInNewestContext
           (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
@@ -2852,6 +3009,12 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -3192,6 +3355,204 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono
     measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure
   }
+
+/-- `Function.typeCheck` copies `concreteEval` and `isConstr` unchanged from the input
+    `func` to the result `func'` in every successful branch. -/
+theorem Function.typeCheck_concreteEval_isConstr_preserved
+    (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    func'.concreteEval = func.concreteEval ∧ func'.isConstr = func.isConstr := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  rename_i h_undecl
+  elim_err h
+  elim_err h
+  rename_i v_inst h_inst
+  split at h
+  · -- body = none
+    split at h
+    · simp at h
+    · cases h; exact ⟨rfl, rfl⟩
+  · -- body = some
+    rename_i body h_body_some
+    elim_err h
+    rename_i h_stray
+    elim_err h
+    elim_err h
+    rename_i v_resolve h_resolve
+    elim_err h
+    rename_i v_unify h_unify
+    split at h <;> try contradiction
+    rename_i alphaMap h_alphaMap
+    elim_err h
+    rename_i bwdMap h_alpha
+    elim_err h
+    elim_err h
+    elim_err h
+    elim_err h
+    split at h
+    · split at h
+      · elim_err h; cases h; exact ⟨rfl, rfl⟩
+      · elim_err h
+        rename_i v_measure h_measure_resolve
+        elim_err h
+        rename_i h_measure_ty
+        elim_err h; cases h; exact ⟨rfl, rfl⟩
+    · elim_err h; cases h; exact ⟨rfl, rfl⟩
+
+/-- The early guards in `Function.typeCheck` reject any function with a `concreteEval`
+    or that is a constructor, so a successful check implies the *input* `func` has
+    `concreteEval = none` and `isConstr = false`. -/
+theorem Function.typeCheck_input_concreteEval_none_isConstr_false
+    (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    func.concreteEval = none ∧ func.isConstr = false := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
+  elim_err h with h_ce
+  elim_err h
+  elim_err h with h_ic
+  refine ⟨?_, ?_⟩
+  · simpa using h_ce
+  · simpa using h_ic
+
+/-- Combining preservation with the guard extraction: every accepted `func'` has no
+    `concreteEval` and is not a constructor. -/
+theorem Function.typeCheck_concreteEval_none_isConstr_false
+    (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    func'.concreteEval = none ∧ func'.isConstr = false := by
+  obtain ⟨h_ce, h_ic⟩ := Function.typeCheck_concreteEval_isConstr_preserved C Env func func' Env' h
+  obtain ⟨h_ce', h_ic'⟩ := Function.typeCheck_input_concreteEval_none_isConstr_false C Env func func' Env' h
+  exact ⟨h_ce.trans h_ce', h_ic.trans h_ic'⟩
+
+/-- In every successful branch, `func'.typeArgs = map Prod.snd (_.zip func.typeArgs)`,
+    a sublist of `func.typeArgs`; so every type arg of the result is a type arg of the
+    input. -/
+theorem Function.typeCheck_typeArgs_subset (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    ∀ ta, ta ∈ func'.typeArgs → ta ∈ func.typeArgs := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h
+  rename_i h_undecl
+  elim_err h
+  elim_err h
+  rename_i v_inst h_inst
+  have h_close : ∀ (vs : List TyIdentifier),
+      ∀ ta, ta ∈ List.map (fun x => x.snd) (vs.zip func.typeArgs) → ta ∈ func.typeArgs := by
+    intro vs ta hta
+    exact (List.map_snd_zip_sublist vs func.typeArgs).subset hta
+  split at h
+  · -- body = none
+    split at h
+    · simp at h
+    · cases h; exact h_close _
+  · -- body = some
+    rename_i body h_body_some
+    elim_err h
+    rename_i h_stray
+    elim_err h
+    elim_err h
+    rename_i v_resolve h_resolve
+    elim_err h
+    rename_i v_unify h_unify
+    split at h <;> try contradiction
+    rename_i alphaMap h_alphaMap
+    elim_err h
+    rename_i bwdMap h_alpha
+    elim_err h
+    elim_err h
+    elim_err h
+    elim_err h
+    split at h
+    · split at h
+      · elim_err h; cases h; exact h_close _
+      · elim_err h
+        rename_i v_measure h_measure_resolve
+        elim_err h
+        rename_i h_measure_ty
+        elim_err h; cases h; exact h_close _
+    · elim_err h; cases h; exact h_close _
+
+/-- **Bridge: a successfully type-checked function is `LFuncWF`.**
+    If `Function.typeCheck` succeeds, the resulting `func'` satisfies the structural
+    well-formedness predicate `LFuncWF`. Lets downstream consumers obtain `LFuncWF func'`
+    directly from a successful type-check, rather than re-establishing each field. -/
+theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env) :
+    Lambda.LFuncWF func' := by
+  obtain ⟨h_ce_none, h_ic_false⟩ :=
+    Function.typeCheck_concreteEval_none_isConstr_false C Env func func' Env' h
+  refine { toFuncWF := ?_, constr_no_eval := ?_, typeArgs_no_gen_prefix := ?_,
+           concreteEval_eraseMetadata := ?_ }
+  · -- toFuncWF
+    refine { arg_nodup := ?_, concreteEval_argmatch := ?_,
+             body_or_concreteEval := ?_, typeArgs_nodup := ?_,
+             inputs_typevars_in_typeArgs := ?_, output_typevars_in_typeArgs := ?_ }
+    · -- arg_nodup: key-nodup ⟹ name-nodup (Identifier name is injective for Unit meta)
+      have h_keys := Function.typeCheck_inputsNodup C Env func func' Env' h
+      rw [ListMap.keys_eq_map_fst] at h_keys
+      have h_eq : List.map (fun x : CoreLParams.Identifier × LMonoTy => x.fst.name) func'.inputs
+          = List.map (fun i : CoreLParams.Identifier => i.name) (List.map Prod.fst func'.inputs) := by
+        rw [List.map_map]; rfl
+      rw [h_eq]
+      refine List.Pairwise.map _ ?_ h_keys
+      intro a b hab; cases a; cases b; simp_all
+    · -- concreteEval_argmatch: vacuous (concreteEval = none)
+      intro fn _ _ _ hfn; rw [h_ce_none] at hfn; exact absurd hfn (by simp)
+    · -- body_or_concreteEval: concreteEval = none, so left conjunct false
+      rw [h_ce_none]; simp
+    · -- typeArgs_nodup
+      exact Function.typeCheck_typeArgsNodup C Env func func' Env' h
+    · -- inputs_typevars_in_typeArgs
+      have h_undecl := Function.typeCheck_noUndeclaredVars C Env func func' Env' h h_wf
+      intro ty hty v hv
+      apply h_undecl v
+      rw [LMonoTy.freeVars_mkArrow', List.mem_append]
+      exact Or.inl (LMonoTys.freeVars_mem_subset hty hv)
+    · -- output_typevars_in_typeArgs
+      have h_undecl := Function.typeCheck_noUndeclaredVars C Env func func' Env' h h_wf
+      intro v hv
+      apply h_undecl v
+      rw [LMonoTy.freeVars_mkArrow', List.mem_append]
+      exact Or.inr hv
+  · -- constr_no_eval: isConstr = false, premise false
+    rw [h_ic_false]; simp
+  · -- typeArgs_no_gen_prefix: func'.typeArgs ⊆ func.typeArgs, none of which has the prefix
+    intro ta hta
+    exact Function.typeCheck_input_typeArgs_no_gen_prefix C Env func func' Env' h ta
+      (Function.typeCheck_typeArgs_subset C Env func func' Env' h ta hta)
+  · -- concreteEval_eraseMetadata: vacuous (concreteEval = none)
+    intro ceval hc; rw [h_ce_none] at hc; exact absurd hc (by simp)
 
 end TypeSpec
 end Core

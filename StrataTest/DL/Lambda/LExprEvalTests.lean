@@ -321,9 +321,9 @@ macro "prove_ceval_argmatch" : tactic => `(tactic|
 private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
   intro lf hmem; simp [testFuncs] at hmem
   rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch }
 
@@ -618,9 +618,9 @@ private theorem polyState_wf : FactoryWF polyState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch }
 
@@ -658,9 +658,9 @@ private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyPairFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch }
 
@@ -718,9 +718,9 @@ private theorem each_evalIfCanonicalFunc_wf :
     ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncWF lf := by
   intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
   rcases hmem with rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch }
 

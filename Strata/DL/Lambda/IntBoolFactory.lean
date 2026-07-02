@@ -133,22 +133,17 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
       ty.freeVars ⊆ typeArgs := by first | decide | grind)
     (h_output : output.freeVars ⊆ typeArgs
       := by first | decide | grind)
-    (h_precond : ∀ p, p ∈ preconditions →
-      (LExpr.freeVars p.expr).map (·.1.name) ⊆ inputs.map (·.1.name)
-      := by first | decide | grind)
     (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms, preconditions := preconditions }, {
     arg_nodup := h_nodup
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
     body_or_concreteEval := by simp
     constr_no_eval := by simp
     typeArgs_nodup := h_ta_nodup
     inputs_typevars_in_typeArgs := h_inputs
     output_typevars_in_typeArgs := h_output
-    precond_freevars := h_precond
     typeArgs_no_gen_prefix := h_ta_no_gen
   }⟩
 
@@ -224,10 +219,7 @@ def unaryOp (n : T.Identifier)
     (preconditions :
       List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (hInTy : inTy.freeVars = [] := by decide)
-    (hOutTy : outTy.freeVars = [] := by decide)
-    (h_precond : ∀ p, p ∈ preconditions →
-      (LExpr.freeVars p.expr).map (·.1.name) ⊆ [unaryParamName]
-      := by simp [unaryParamName]) : WFLFunc T :=
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
@@ -240,7 +232,6 @@ def unaryOp (n : T.Identifier)
          | _ => .none
        | _ => none) }, {
     arg_nodup := by simp
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by
       intro fn md args res hfn heval
       simp at hfn; subst hfn
@@ -252,9 +243,6 @@ def unaryOp (n : T.Identifier)
     inputs_typevars_in_typeArgs := by
       intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
-    precond_freevars := by
-      intro p hp
-      exact h_precond p hp
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_eraseMetadata := by
@@ -295,10 +283,7 @@ def binaryOp (n : T.Identifier)
     (preconditions :
       List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (hInTy : inTy.freeVars = [] := by decide)
-    (hOutTy : outTy.freeVars = [] := by decide)
-    (h_precond : ∀ p, p ∈ preconditions →
-      (LExpr.freeVars p.expr).map (·.1.name) ⊆ [binaryParam1Name, binaryParam2Name]
-      := by simp [binaryParam1Name, binaryParam2Name]) : WFLFunc T :=
+    (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
   let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
   let cevalInTy := LambdaLeanType.cevalTy (ValTy := InValTy) T
   ⟨{ name := n,
@@ -312,7 +297,6 @@ def binaryOp (n : T.Identifier)
          | _, _ => .none
        | _ => none) }, {
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
-    body_freevars := by intro b hb; simp at hb
     concreteEval_argmatch := by
       intro fn md args res hfn heval
       simp at hfn; subst hfn
@@ -325,7 +309,6 @@ def binaryOp (n : T.Identifier)
       intro ity hity; simp [ListMap.values] at hity
       rcases hity with rfl | rfl <;> simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
-    precond_freevars := h_precond
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_eraseMetadata := by

@@ -20,6 +20,22 @@ namespace Function
 open Lambda Imperative
 open Std (ToFormat Format format)
 
+/-- The ambient type variables of a typing environment: every type variable the
+    surrounding context can name — those bound in the context types, plus the keys
+    and free variables of the ambient substitution. A function's `typeArgs` must be
+    disjoint from these (enforced by `typeCheck`). Kept as a standalone (non-reducible)
+    def so the `typeCheck` guard is opaque to `simp` during proof unwrapping. -/
+def ambientTyVars (Env : Core.Expression.TyEnv) : List Lambda.TyIdentifier :=
+  Lambda.TContext.knownTypeVars Env.context ++
+  Maps.keys Env.stateSubstInfo.subst ++
+  Lambda.Subst.freeVars Env.stateSubstInfo.subst
+
+/-- `true` iff some `typeArg` of `func` collides with an ambient type variable of
+    `Env`. Opaque wrapper around `ambientTyVars` so the `typeCheck` guard splits
+    cleanly. -/
+def collidesWithAmbient (Env : Core.Expression.TyEnv) (func : Function) : Bool :=
+  func.typeArgs.any (fun ta => (Function.ambientTyVars Env).contains ta)
+
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
@@ -37,6 +53,31 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   if genPrefixArgs != [] then
     .error f!"Function '{func.name}': type variables {genPrefixArgs} use the reserved \
               generator-variable prefix '{TState.tyPrefix}'; rename them"
+  -- Reject any `concreteEval` on a function going through `Function.typeCheck`.
+  -- Parsed/source functions never carry one (`ofPureFunc` always sets `none`);
+  -- only the built-in factories construct `concreteEval`, and they build their
+  -- `LFuncWF` directly without calling this checker. Rejecting it here makes the
+  -- three `concreteEval_*` `LFuncWF` fields vacuously true for every accepted func.
+  if func.concreteEval.isSome then
+    .error f!"Function '{func.name}': a concreteEval implementation was supplied; \
+              only built-in factory functions may carry one"
+  -- Reject datatype constructors going through `Function.typeCheck`. Constructors
+  -- are built directly by the datatype factory (which constructs their `LFuncWF`),
+  -- never by this checker, so source/parsed functions are never constructors.
+  -- Rejecting it here makes the `constr_no_eval` `LFuncWF` field vacuously true
+  -- (its premise `isConstr` is false) for every accepted function.
+  if func.isConstr then
+    .error f!"Function '{func.name}': a datatype constructor cannot be declared as a \
+              regular function"
+  -- Reject type arguments that collide with an ambient type variable of `Env` (e.g. an
+  -- enclosing procedure's type parameter, or a variable free in the ambient substitution).
+  -- The body-soundness proof (Route B composite `SubstWF`) needs `func.typeArgs` to be
+  -- disjoint from every type variable the surrounding context can name; without this a
+  -- user parameter could alias an ambient rigid variable and the fresh→user renaming could
+  -- capture it. Rejecting here makes that disjointness extractable from a successful check.
+  if Function.collidesWithAmbient Env func then
+    .error f!"Function '{func.name}': some type variable collides with a type \
+              variable of the enclosing context; rename them"
   let undeclaredVars := LTy.freeVars type
   if undeclaredVars != [] then
     .error f!"Function '{func.name}': type variables {undeclaredVars} appear in \
