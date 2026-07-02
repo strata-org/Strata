@@ -89,10 +89,11 @@ header h1 { font-size: 18px; color: #4fc3f7; }
   <div class="header-controls">
     <span id="total-cost">$0.0000</span>
     <select id="model-select" onchange="setModel(this.value)" style="padding:4px 8px;border-radius:4px;background:#1a1a2e;color:#e0e0e0;border:1px solid #0f3460;font-size:11px;">
-      <option value="claude-opus-4-6">Opus 4.6</option>
-      <option value="claude-sonnet-5">Sonnet 5</option>
-      <option value="claude-fable-5">Fable 5</option>
-      <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+      <option value="global.anthropic.claude-opus-4-8[1m]">Opus 4.8</option>
+      <option value="global.anthropic.claude-opus-4-7[1m]">Opus 4.7</option>
+      <option value="global.anthropic.claude-opus-4-6-v1[1m]">Opus 4.6</option>
+      <option value="global.anthropic.claude-sonnet-5[1m]">Sonnet 5</option>
+      <option value="global.anthropic.claude-sonnet-4-6[1m]">Sonnet 4.6</option>
     </select>
     <button class="btn-save" onclick="showSaveModal()">Save</button>
     <button class="btn-load" onclick="showLoadModal()">Load</button>

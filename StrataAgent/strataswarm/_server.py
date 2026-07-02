@@ -382,17 +382,24 @@ class SwarmDashboard:
 
         @self.app.get("/api/swarm/model")
         async def get_model() -> dict[str, Any]:
-            model = self._swarm._default_model if self._swarm else None
-            return {"model": model or "claude-opus-4-6", "is_default": model is None}
+            model = (self._swarm._default_model if self._swarm else None) or getattr(self, '_pending_model', None)
+            return {"model": model or "global.anthropic.claude-opus-4-6-v1[1m]", "is_default": model is None}
 
         @self.app.post("/api/swarm/model")
         async def set_model(body: dict[str, Any]) -> dict[str, str]:
             model = body.get("model", "").strip()
             if not model:
                 return {"status": "error", "message": "model is required"}
-            valid_models = ["claude-opus-4-6", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+            valid_models = {
+                "global.anthropic.claude-opus-4-8[1m]",
+                "global.anthropic.claude-opus-4-7[1m]",
+                "global.anthropic.claude-opus-4-6-v1[1m]",
+                "global.anthropic.claude-sonnet-5[1m]",
+                "global.anthropic.claude-sonnet-4-6[1m]",
+            }
             if model not in valid_models:
-                return {"status": "error", "message": f"Invalid model. Choose from: {valid_models}"}
+                return {"status": "error", "message": f"Invalid model. Choose from: {sorted(valid_models)}"}
+            self._pending_model = model  # store on dashboard for when swarm starts
             if self._swarm:
                 self._swarm._default_model = model
             return {"status": "ok", "model": model}
@@ -1118,6 +1125,10 @@ class SwarmDashboard:
             nudge_module=self._nudge_module,
             manager=self._manager,
         )
+
+        # Apply pending model selection (set via dropdown before swarm started)
+        if hasattr(self, '_pending_model') and self._pending_model:
+            self._swarm._default_model = self._pending_model
 
         for spec_req in self._agent_specs:
             tools = ToolSet()

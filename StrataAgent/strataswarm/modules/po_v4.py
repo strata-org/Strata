@@ -606,7 +606,19 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
 
     original_content = (cwd / stub_rel).read_text()
 
-    # Get or create writer + guide
+    # Check if this is a retry (detect feedback or failed children exist)
+    detect_feedback = getattr(state, '_detect_feedback', None)
+    if detect_feedback:
+        state._detect_feedback = None
+    failed_children = [c for c in ledger.get_children(entry.id) if c.status == LemmaStatus.FAILED]
+    cycle_children = [c for c in ledger.get_children(entry.id) if c.status == LemmaStatus.CYCLE]
+    is_retry = bool(detect_feedback or failed_children or cycle_children)
+
+    # On retry: destroy old guide+writer, spawn fresh ones with failure context
+    if is_retry:
+        await _cleanup_agents(agent, entry)
+
+    # Get or create writer + guide (fresh on retry)
     writer = await _get_writer(agent, entry, state, ledger)
     guide = await _get_guide(agent, entry, state, ledger)
 
@@ -632,34 +644,53 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
     # ── Main loop: guide ↔ writer ──
     total_turns_used = 0
     prev_sorry_count = None
-    chunk_budget = CHUNK_TURNS  # guide adjusts this each cycle
+    chunk_budget = CHUNK_TURNS
     guide_state_file = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
 
-    # Initial guide consultation
+    # Build initial guide prompt — different for retries vs first attempt
     ledger_summary = _build_ledger_summary(ledger, entry)
-    state_reminder = ""
-    if guide_state_file.exists():
-        state_reminder = (
-            f"\nNOTE: Your prior state is saved at {entry.workspace}/guide_state/{entry.name}.md — "
-            f"re-read it if you've lost context."
-        )
 
-    # Check for detect feedback (from reverted cycle/duplicate)
-    detect_feedback = getattr(state, '_detect_feedback', None)
-    if detect_feedback:
-        state._detect_feedback = None  # consume it
+    if is_retry:
+        # Build failure context for the fresh guide
+        failure_context = ""
+        if detect_feedback:
+            failure_context += f"⚠️ DECOMPOSITION REVERTED: {detect_feedback}\n\n"
+        for fc in failed_children:
+            failure_context += f"⚠️ CHILD FAILED: '{fc.name}' — {fc.failure_reason}\n"
+            if fc.siblings_at_failure:
+                failure_context += f"   Siblings in that attempt: {fc.siblings_at_failure}\n"
+        for cc in cycle_children:
+            ancestor = ledger.get(cc.cycle_ancestor_id)
+            failure_context += f"⚠️ CYCLE: '{cc.name}' recreated ancestor '{ancestor.name if ancestor else '?'}'\n"
 
-    await agent._emit("message", f"[PO4] Guide: initial strategy for {entry.name}")
-    initial_result = await guide.run_ai(
-        inp=(
+        guide_prompt = (
+            f"A PREVIOUS AGENT attempted to prove '{entry.name}' and FAILED.\n\n"
+            f"{failure_context}\n"
             f"CONTEXT:\n{ledger_summary}\n\n"
-            f"{('⚠️ DECOMPOSITION REVERTED: ' + detect_feedback + chr(10) + chr(10)) if detect_feedback else ''}"
+            f"The previous agent's strategy notes are at: {entry.workspace}/guide_state/{entry.name}.md\n"
+            f"Read that file to understand what was tried and FAILED.\n"
+            f"The current Stub.lean is at: {stub_rel}\n\n"
+            f"You MUST propose a COMPLETELY DIFFERENT strategy.\n"
+            f"The previous approach failed — do NOT repeat it.\n"
+            f"Read the cheat sheet, read the file, and give comprehensive new guidelines."
+        )
+    else:
+        state_reminder = ""
+        if guide_state_file.exists():
+            state_reminder = (
+                f"\nNOTE: Your prior state is saved at {entry.workspace}/guide_state/{entry.name}.md — "
+                f"re-read it if you've lost context."
+            )
+        guide_prompt = (
+            f"CONTEXT:\n{ledger_summary}\n\n"
             f"We are about to prove theorem '{entry.name}' in {stub_rel}.\n"
             f"Read the cheat sheet, then advise on the best approach.\n"
             f"What proof technique fits? What pitfalls to avoid?"
             f"{state_reminder}"
-        ),
-    )
+        )
+
+    await agent._emit("message", f"[PO4] Guide: {'NEW strategy (retry)' if is_retry else 'initial strategy'} for {entry.name}")
+    initial_result = await guide.run_ai(inp=guide_prompt)
     action = _build_initial_action(entry, stub_rel, initial_result.raw_result or "", protected_names)
 
     while True:
@@ -771,7 +802,6 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                 "TURNS: <number>\n"
                 "REASON: <one sentence>"
             ),
-            max_turns=1,
         )
 
         action, reason, turns = _parse_guide_verdict(verdict_result.raw_result or "")
@@ -863,7 +893,6 @@ async def _attempt_prove(agent, state: PO4State, ledger: LemmaLedger,
                         "- give_up: Cannot be proved at this depth. Mark as failed.\n\n"
                         "Reply: ACTION: <continue|give_up>\nTURNS: <number>\nREASON: <one sentence>"
                     ),
-                    max_turns=1,
                 )
                 deep_action_str, deep_reason, _ = _parse_guide_verdict(verdict_result.raw_result or "")
                 if deep_action_str == "give_up":
@@ -1506,6 +1535,32 @@ def _topo_sort(ledger: LemmaLedger) -> list[str]:
 
 # ─── Per-lemma agents ─────────────────────────────────────────────────────────
 
+async def _cleanup_agents(agent, entry: LemmaEntry):
+    """Destroy existing guide+writer for this entry so fresh ones can be created."""
+    writer_attr = f"_writer_{entry.id}"
+    guide_attr = f"_guide_{entry.id}"
+
+    # Close writer context if exists
+    writer_ctx = getattr(agent, f"{writer_attr}_ctx", None)
+    if writer_ctx:
+        try:
+            await writer_ctx.__aexit__(None, None, None)
+        except Exception:
+            pass
+    setattr(agent, writer_attr, None)
+    setattr(agent, f"{writer_attr}_ctx", None)
+
+    # Close guide context if exists
+    guide_ctx = getattr(agent, f"{guide_attr}_ctx", None)
+    if guide_ctx:
+        try:
+            await guide_ctx.__aexit__(None, None, None)
+        except Exception:
+            pass
+    setattr(agent, guide_attr, None)
+    setattr(agent, f"{guide_attr}_ctx", None)
+
+
 async def _get_writer(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLedger):
     """Get or create persistent proof_writer for this lemma."""
     from .._ledger_mcp import create_ledger_mcp_server
@@ -1572,9 +1627,9 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO4State, ledger: LemmaLed
                 inp=(
                     f"PRIOR SESSION STATE (from your previous work on this lemma):\n\n"
                     f"{prior_state}\n\n"
-                    f"Use this as context. You've seen this problem before."
+                    f"Use this as context. You've seen this problem before. "
+                    f"Acknowledge briefly — do NOT start proving yet."
                 ),
-                max_turns=1,
             )
 
     return getattr(agent, attr)
