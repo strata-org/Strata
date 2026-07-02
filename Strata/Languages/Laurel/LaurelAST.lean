@@ -212,8 +212,10 @@ inductive IncrDecrOp where
     - precondition: asserted at call sites, assumed in the implementation body.
     - postcondition: asserted at the end of the body, assumed after calls.
 
-    The mode selects which of those lowerings are emitted. `Assume` corresponds
-    to the classic "free" condition (assumed but never checked). -/
+    The mode selects which of those lowerings are emitted.
+
+    Laurel authors only need to use `ConditionMode.Both`. The other options
+    (`Assert` and `Assume`) are used by Laurel compilation steps. -/
 inductive ConditionMode where
   | Assert | Assume | Both
   deriving BEq
