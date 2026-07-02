@@ -111,6 +111,12 @@ partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
     | q`Laurel.compositeType, #[nameArg] =>
       let name ← translateIdent nameArg
       return mkHighTypeMd (.UserDefined name) src
+    | q`Laurel.appliedType, #[baseArg, argsArg] =>
+      let base ← translateIdent baseArg
+      let args ← match argsArg with
+        | .seq _ .comma args => args.toList.mapM translateHighType
+        | singleArg => do let a ← translateHighType singleArg; pure [a]
+      return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined base) src) args) src
     | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
 
@@ -698,8 +704,16 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseDatatype expects operation"
   match op.name, op.args with
-  | q`Laurel.datatype, #[nameArg, constructorsArg] =>
+  | q`Laurel.datatype, #[nameArg, typeParamsArg, constructorsArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← match typeParamsArg with
+      | .option _ (some (.op tpOp)) => match tpOp.name, tpOp.args with
+        | q`Laurel.typeParams, #[paramsArg] =>
+          match paramsArg with
+          | .seq _ .comma args => args.toList.mapM translateIdent
+          | singleArg => do let p ← translateIdent singleArg; pure [p]
+        | _, _ => TransM.error s!"Expected typeParams, got {repr tpOp.name}"
+      | _ => pure []
     let constructors ← match constructorsArg with
       | .op listOp => match listOp.name, listOp.args with
         | q`Laurel.datatypeConstructorList, #[csArg] =>
@@ -708,7 +722,7 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
           | singleArg => do let c ← parseDatatypeConstructor singleArg; pure [c]
         | _, _ => TransM.error s!"Expected datatypeConstructorList, got {repr listOp.name}"
       | _ => TransM.error s!"Expected datatypeConstructorList operation"
-    return .Datatype { name := name, typeArgs := [], constructors := constructors }
+    return .Datatype { name := name, typeArgs := typeArgs, constructors := constructors }
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 

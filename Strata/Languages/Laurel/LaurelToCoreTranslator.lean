@@ -78,7 +78,7 @@ private def invalidCoreType (source : Option FileRange) (reason : String) : Tran
 /-
 Translate Laurel HighType to Core Type
 -/
-def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
+partial def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   let model := (← get).model
   match _h : ty.val with
   | .TInt => return LMonoTy.int
@@ -97,13 +97,18 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       return .tcons "Composite" []
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  -- Generic type application, e.g. `Option<int>` → Core `.tcons "Option" [int]`.
+  -- Core has real polymorphic datatypes, so the type arguments are forwarded.
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined n =>
+      let coreArgs ← args.mapM translateType
+      return .tcons n.text coreArgs
+    | _ => invalidCoreType ty.source "generic type application with a non-named base is not supported"
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
   | _ => do
     invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
-
-termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
@@ -785,13 +790,34 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   return .func f (identifierToCoreMd proc.name)
 
 /--
+Translate a datatype constructor argument type. A reference to one of the
+datatype's type parameters (`typeVars`) becomes a Core type variable
+(`.ftvar`); everything else translates normally. Handles type parameters
+nested inside `Applied`/`TSet`/`TMap` (e.g. `tail: List<T>`).
+-/
+partial def translateCtorArgType (typeVars : List String) (ty : HighTypeMd)
+    : TranslateM LMonoTy := do
+  match ty.val with
+  | .UserDefined name =>
+    if typeVars.contains name.text then return .ftvar name.text
+    else translateType ty
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined n => return .tcons n.text (← args.mapM (translateCtorArgType typeVars))
+    | _ => translateType ty
+  | .TSet et => return Core.mapTy (← translateCtorArgType typeVars et) LMonoTy.bool
+  | .TMap k v => return Core.mapTy (← translateCtorArgType typeVars k) (← translateCtorArgType typeVars v)
+  | _ => translateType ty
+
+/--
 Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
 -/
 def translateDatatypeDefinition (dt : DatatypeDefinition)
     : TranslateM (Lambda.LDatatype Unit) := do
+  let typeVars := dt.typeArgs.map (·.text)
   let constrs ← dt.constructors.mapM fun c => do
     let args ← c.args.mapM fun ⟨ n, ty ⟩ => do
-      return (⟨n.text, ()⟩, ← translateType ty)
+      return (⟨n.text, ()⟩, ← translateCtorArgType typeVars ty)
     return { name := ⟨c.name.text, ()⟩
              args := args
              testerName := s!"{dt.name}..is{c.name}" : Lambda.LConstr Unit }

@@ -51,10 +51,13 @@ partial def highTypeValToArg : HighType → Arg
   | .TVoid => laurelOp "compositeType" #[ident "void"]
   -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
-  | .Applied base _args =>
-    -- Applied types are not directly representable in the grammar;
-    -- emit the base type as a best-effort approximation
-    highTypeToArg base
+  | .Applied base args =>
+    -- Generic type application, e.g. `Option<int>`. Representable only when the
+    -- base is a named type (which is the only form the grammar produces).
+    match base.val with
+    | .UserDefined name =>
+      laurelOp "appliedType" #[ident name.text, commaSep (args.map highTypeToArg |>.toArray)]
+    | _ => highTypeToArg base
   | .Pure base => highTypeToArg base
   | .Intersection types =>
     match types with
@@ -317,10 +320,12 @@ private def datatypeConstructorToArg (c : DatatypeConstructor) : Arg :=
 private def datatypeToOp (dt : DatatypeDefinition) : StrataDDM.Operation :=
   let ctors := dt.constructors.map datatypeConstructorToArg |>.toArray
   let ctorList := laurelOp "datatypeConstructorList" #[commaSep ctors]
+  let typeParamsArg := optionArg (if dt.typeArgs.isEmpty then none
+    else some (laurelOp "typeParams" #[commaSep (dt.typeArgs.map (fun p => ident p.text) |>.toArray)]))
   let datatypeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "datatype" }
-      args := #[ident dt.name.text, ctorList] }
+      args := #[ident dt.name.text, typeParamsArg, ctorList] }
   { ann := sr
     name := { dialect := "Laurel", name := "datatypeCommand" }
     args := #[.op datatypeOp] }

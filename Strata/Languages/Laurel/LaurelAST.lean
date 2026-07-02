@@ -647,6 +647,12 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     else match ctx.unfoldMap.get? name.text with
       | some target => ctx.unfold target (visited.insert name.text)
       | none => ty
+  -- Generic type application is *erased* to its base for Laurel's consistency /
+  -- subtype checks: `Option<int>` is treated as `Option`. Type-argument
+  -- checking is deferred to Core (which has real polymorphic datatypes); the
+  -- args are preserved in the AST and only dropped here, in the type-relation
+  -- layer, never in translation.
+  | .Applied base _ => ctx.unfold base visited
   | _ => ty
 
 /-- All ancestors of a composite type (including itself), reachable via

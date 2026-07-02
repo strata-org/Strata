@@ -13,6 +13,8 @@ op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.TCore
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
+// Generic type application, e.g. `Option<int>` or `Result<int, E>`.
+op appliedType (base: Ident, args: CommaSepBy LaurelType): LaurelType => base "<" args ">";
 op compositeType (name: Ident): LaurelType => name;
 
 category StmtExpr;
@@ -179,8 +181,12 @@ op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name;
 category DatatypeConstructorList;
 op datatypeConstructorList (constructors: CommaSepBy DatatypeConstructor): DatatypeConstructorList => constructors;
 
+// Optional generic type parameters on a datatype, e.g. `Option<T>` / `Result<Val, Err>`.
+category TypeParams;
+op typeParams (params: CommaSepBy Ident): TypeParams => "<" params ">";
+
 category Datatype;
-op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name " { " constructors " }";
+op datatype (name: Ident, typeParams: Option TypeParams, constructors: DatatypeConstructorList): Datatype => "datatype " name typeParams " { " constructors " }";
 
 // Procedures
 category ReturnType;

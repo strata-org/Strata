@@ -361,6 +361,29 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | other => pure other
   return { val := val', source := ty.source }
 
+/-- Resolve a datatype constructor argument type, leaving references to the
+    datatype's own type parameters (`typeParams`) as bare `.UserDefined`
+    markers — they are not defined types, so `resolveHighType` would (wrongly)
+    report them "not defined". Everything else resolves normally. The markers
+    survive to `translateDatatypeDefinition`, which turns them into Core type
+    variables (`ftvar`). -/
+partial def resolveDatatypeArgType (typeParams : List String) (ty : HighTypeMd)
+    : ResolveM HighTypeMd := do
+  match ty.val with
+  | .UserDefined name =>
+    if typeParams.contains name.text then pure ty
+    else resolveHighType ty
+  | .Applied base args =>
+    let base' ← resolveDatatypeArgType typeParams base
+    let args' ← args.mapM (resolveDatatypeArgType typeParams)
+    pure { val := .Applied base' args', source := ty.source }
+  | .TSet et =>
+    pure { val := .TSet (← resolveDatatypeArgType typeParams et), source := ty.source }
+  | .TMap k v =>
+    pure { val := .TMap (← resolveDatatypeArgType typeParams k)
+                        (← resolveDatatypeArgType typeParams v), source := ty.source }
+  | _ => resolveHighType ty
+
 /-- Format a type for use in diagnostics. -/
 private def formatType (ty : HighTypeMd) : String :=
   match ty.val with
@@ -1768,6 +1791,20 @@ def Synth.staticCall (exprMd : StmtExprMd)
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
   let (retTy, paramTypes) ← getCallInfo callee
+  -- Datatype constructors are (erased) polymorphic: their declared argument
+  -- types may be the datatype's own type parameters, so we do NOT check the
+  -- arguments against them here — Core performs the real polymorphic check.
+  -- (Same treatment as the polymorphic map primitives above.) Testers, whose
+  -- names contain "..is", are ordinary and fall through to normal checking.
+  let isConstructorCall := match (← get).scope.get? callee.text with
+    | some (_, .datatypeConstructor _ _) => (callee.text.splitOn "..is").length == 1
+    | _ => false
+  if isConstructorCall then
+    let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      let (a', _) ← Synth.resolveStmtExpr a
+      pure a')
+    return (.StaticCall callee' args', retTy)
   let unknownTy : HighTypeMd := { val := .Unknown, source := none }
   let expectedTys : List HighTypeMd :=
     paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
@@ -2871,10 +2908,11 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
+    let typeParamNames := dt.typeArgs.map (·.text)
     let ctors' ← dt.constructors.mapM fun ctor => do
       let ctorName' ← resolveRef ctor.name
       let args' ← ctor.args.mapM fun (p: Parameter) => do
-        let ty' ← resolveHighType p.type
+        let ty' ← resolveDatatypeArgType typeParamNames p.type
         let resolved ← resolveRef (dt.destructorName p)
         -- Keep the original parameter name; only take the uniqueId from resolution.
         -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
