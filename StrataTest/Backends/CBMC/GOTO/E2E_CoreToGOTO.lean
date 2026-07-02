@@ -235,6 +235,15 @@ procedure caller() {
     | IO.throwServerError "translation failed"
   assert! (goto.pretty.splitOn "FUNCTION_CALL").length > 1
 
+-- Translating `helper` (which owns the inout parameter) pins the rename-map
+-- dedup: the inout binds to the formal symbol `helper::y`, and no shadow local
+-- `helper::1::y` is emitted. Reverting the outputs-filter regresses this.
+#eval do
+  let (.ok (symtab, _)) := coreToGotoJsonByName E2E_InoutCall "helper"
+    | IO.throwServerError "translation failed"
+  assert! symtab.getObjValD "helper::y" != Lean.Json.null
+  assert! symtab.getObjValD "helper::1::y" == Lean.Json.null
+
 -------------------------------------------------------------------------------
 
 -- Test: axioms are emitted as ASSUME instructions
