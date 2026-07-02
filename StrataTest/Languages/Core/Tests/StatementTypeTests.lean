@@ -299,6 +299,99 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
 
 end CallOutArgTests
 
+section ScopeTests
+
+/-
+DECLARATION SCOPING (regression tests for #1392): `goBlock` in `typeCheckAux`
+discards the block body's output `LContext` and returns the input `C`, so
+`typeDecl`/`funcDecl` declarations made inside a block (or `ite`/`loop` branch,
+which route through `goBlock`) are block-local and do NOT leak out — mirroring
+the `pushEmptyContext`/`popContext` discipline on the `TEnv` type-scope.
+
+The two tests below check that a type `T` declared inside a block / branch is
+out of scope where it should be (`var y : T` reports an unknown type). Before
+the fix these incorrectly type-checked (`ok:`). NOTE: this scoping is not
+reachable through the concrete `#strata` front-end anyway — the DDM parser
+independently rejects the analogous program with "Undeclared type or category
+T." — so these AST-level tests are the regression guard.
+-/
+
+open Std (ToFormat Format format)
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+
+/-- A bare type constructor `T` (the type declared by the `typeDecl`s below). -/
+private def tyT : LMonoTy := .tcons "T" []
+
+/--
+A type declared in the THEN-branch of an `ite` must NOT be visible in the
+ELSE-branch: variable bindings are block-scoped (push/pop) and so are type/
+function declarations. `var y : T` in the else-branch sees no `T`.
+-/
+def testTypeDeclScopedToBranch : List Statement :=
+  [ Statement.init "g" t[bool] (.det eb[#true]) .empty,
+    .ite (.det eb[g])
+      -- then-branch: declare type `T`
+      [ Statement.typeDecl { name := "T", params := [] } .empty ]
+      -- else-branch: use `T` — out of scope
+      [ Statement.init "y" (.forAll [] tyT) .nondet .empty ]
+      .empty
+  ]
+
+-- The concrete syntax one would write (if the parser allowed it) is:
+--
+--   procedure P () {
+--     var g : bool;
+--     havoc g;
+--     if (g) {
+--       type T;
+--     }
+--     else {
+--       var y : T;   -- T not in scope here
+--     }
+--   };
+--
+-- The else-branch's `var y : T` is rejected because `T` is local to the
+-- then-branch (regression guard for #1392).
+/--
+info: error: Type T is not an instance of a previously registered type!
+Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                     testTypeDeclScopedToBranch
+         return format ans.fst
+
+/--
+A type declared inside a `block` must NOT be visible after the block closes,
+just like variable bindings (which are popped at block exit).
+-/
+def testTypeDeclScopedToBlock : List Statement :=
+  [ Imperative.Stmt.block "blk" [ Statement.typeDecl { name := "T", params := [] } .empty ] .empty,
+    -- after the block: type `T` is out of scope
+    Statement.init "y" (.forAll [] tyT) .nondet .empty ]
+
+-- The concrete syntax one would write (if the parser allowed it) is:
+--
+--   procedure P () {
+--     blk: {
+--       type T;
+--     }
+--     var y : T;   -- T not in scope here
+--   };
+--
+-- The `var y : T` after the block is rejected because `T` is local to the
+-- block (regression guard for #1392).
+/--
+info: error: Type T is not an instance of a previously registered type!
+Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
+                     testTypeDeclScopedToBlock
+         return format ans.fst
+
+end ScopeTests
+
 end Core
 
 end
