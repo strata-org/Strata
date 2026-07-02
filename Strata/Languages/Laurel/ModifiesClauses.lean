@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.MapStmtExpr
@@ -85,20 +86,36 @@ def extractModifiesEntries (model: SemanticModel)
     | _ => classifyModifiesType expr (computeExprType model expr).val
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
-- For a single Composite `e`: `$obj != e`
+Object identity is compared by reference (`Composite..ref!`), matching the
+ref-only heap key: a modified object and the quantified `$obj` alias the same
+heap slot exactly when their references are equal, regardless of type tag.
+- For a single Composite `e`: `ref!($obj) != ref!(e)`
 - For a Set Composite `e`: `!(select(e, $obj))` i.e. $obj is not in the set
-- For a field `(o, f)`: `!($obj == o && $fld == f)` i.e. the quantified
+- For a field `(o, f)`: `!(ref!($obj) == ref!(o) && $fld == f)` i.e. the quantified
   `($obj, $fld)` pair is not the modified `(object, field)` pair (field-granular)
+
+The entry expression is assumed to be `Composite`-typed. Naming a value of a
+non-`Composite` datatype (including the dynamic-reference type) in a modifies
+clause is unsupported and rejected by type checking, as it was before the
+heap re-key — `ref!` here just produces a clearer mismatch than the old `!=`.
 -/
 def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) : StmtExprMd :=
+  let ref (e : StmtExprMd) : StmtExprMd := mkMd <| .StaticCall "Composite..ref!" [e]
   match entry with
   | .single expr =>
-    mkMd <| .PrimitiveOp .Neq [obj, expr]
+    mkMd <| .PrimitiveOp .Neq [ref obj, ref expr]
   | .set expr =>
+    -- Set membership still compares whole composites (the set is keyed by
+    -- Composite, not ref), unlike the ref-based `.single`/`.field` cases above.
+    -- This is consistent only while a set cannot contain two entries that alias
+    -- the same ref under different type tags. Set-valued modifies clauses are
+    -- not yet constructible from surface Laurel, so this path is unreachable;
+    -- re-key set membership by `ref!` before enabling them alongside
+    -- dynamic-reference values.
     let membership := mkMd <| .StaticCall "select" [expr, obj]
     mkMd <| .PrimitiveOp .Not [membership]
   | .field objExpr fieldConst =>
-    let objEq := mkMd <| .PrimitiveOp .Eq [obj, objExpr]
+    let objEq := mkMd <| .PrimitiveOp .Eq [ref obj, ref objExpr]
     let fldEq := mkMd <| .PrimitiveOp .Eq [fld, fieldConst]
     let bothMatch := mkMd <| .PrimitiveOp .And [objEq, fldEq]
     mkMd <| .PrimitiveOp .Not [bothMatch]
@@ -149,9 +166,12 @@ def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let data h := mkMd <| .StaticCall "Heap..data!" [h]
   let nextRef h := mkMd <| .StaticCall "Heap..nextReference!" [h]
   let dataOut := data heapOut
+  -- `data` is keyed by an object's reference (int), so index by `ref!` here too.
   let modifiedRefs := entries.filterMap fun e => match e with | .single r => some r | _ => none
   let framedData := modifiedRefs.foldr
-    (fun ref acc => mkMd <| .StaticCall "update" [acc, ref, mkMd <| .StaticCall "select" [dataOut, ref]])
+    (fun r acc =>
+      let key := mkMd <| .StaticCall "Composite..ref!" [r]
+      mkMd <| .StaticCall "update" [acc, key, mkMd <| .StaticCall "select" [dataOut, key]])
     (data heapIn)
   let dataPreserved := mkMd <| .PrimitiveOp .Eq [dataOut, framedData]
   let refsMonotone := mkMd <| .PrimitiveOp .Leq [nextRef heapIn, nextRef heapOut]
@@ -232,7 +252,9 @@ public def modifiesClausesTransformPass : LoweringPass where
   name := "ModifiesClausesTransform"
   documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
-  comesAfter := [⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩]
+  comesAfter := [
+    ⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩,
+    ⟨ typeHierarchyTransformPass.meta, "this is the first re-resolving pass after heap parameterization, which emits calls to the readFieldDyn/updateFieldDyn wrappers; the type hierarchy pass must run first so those wrappers are already injected."⟩]
   run := fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)
     (p', diags, {})

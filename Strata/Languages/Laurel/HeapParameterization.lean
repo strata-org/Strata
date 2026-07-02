@@ -20,8 +20,8 @@ import Strata.Languages.Laurel.EliminateValueInReturns
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
-and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
+The heap is modeled as a `Heap` datatype containing a `data: Map int (Map Field Box)` map
+(keyed by object reference) and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -60,6 +60,11 @@ structure TransformState where
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
   /-- Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
+  /-- Name of the program's dynamic-reference type, if any. -/
+  dynRefTypeName : Option String := none
+  /-- Constructor that boxes a heap reference `int` into the dynamic-reference
+      type, used when a composite value flows into a dynamic-ref-typed slot. -/
+  dynRefBoxConstructor : Option String := none
 
 @[expose] abbrev TransformM := StateM TransformState
 
@@ -162,6 +167,51 @@ private def wrapList (source : Option FileRange) : List StmtExprMd → StmtExprM
   | [single] => single
   | many => ⟨.Block many none, source⟩
 
+/-- Whether `target`'s static type is the program's dynamic-reference type. -/
+private def isDynRefTarget (model : SemanticModel) (target : StmtExprMd) : TransformM Bool := do
+  match (← get).dynRefTypeName with
+  | none => return false
+  | some dynName =>
+    match (computeExprType model target).val with
+    | .UserDefined n => return n.text == dynName
+    | _ => return false
+
+/-- Box `arg` into the dynamic-reference type when it flows into a slot of the
+    dynamic-ref type but its own static type is a composite: emit
+    `boxConstructor(Composite..ref!(arg))`. `Composite..ref!` is introduced by
+    the later type-hierarchy pass and re-resolved then, mirroring the `.Eq` arm.
+    Values already of the dynamic-ref type (or non-composites) pass through. -/
+private def boxIfDynRef (model : SemanticModel) (expectedTy : HighTypeMd)
+    (arg : StmtExprMd) : TransformM StmtExprMd := do
+  let some dynName := (← get).dynRefTypeName | return arg
+  let some boxCtor := (← get).dynRefBoxConstructor | return arg
+  match expectedTy.val with
+  | .UserDefined e =>
+    if e.text != dynName then return arg
+    match (computeExprType model arg).val with
+    | .UserDefined a =>
+      if a.text == dynName || isDatatype model a then return arg
+      let refExpr := ⟨ .StaticCall "Composite..ref!" [arg], arg.source ⟩
+      return ⟨ .StaticCall boxCtor [refExpr], arg.source ⟩
+    | _ => return arg
+  | _ => return arg
+
+/-- Box each argument of a static call whose corresponding parameter is the
+    dynamic-reference type (see `boxIfDynRef`). Arguments beyond the declared
+    parameters (e.g. an injected heap) are left untouched. -/
+private def boxCallArgs (model : SemanticModel) (callee : Identifier)
+    (args : List StmtExprMd) : TransformM (List StmtExprMd) := do
+  if (← get).dynRefTypeName.isNone then return args
+  let params := match model.get callee with
+    | .staticProcedure proc => proc.inputs
+    | .instanceProcedure _ proc => proc.inputs
+    | _ => []
+  if params.isEmpty then return args
+  args.zipIdx.mapM fun (arg, i) =>
+    match params[i]? with
+    | some p => boxIfDynRef model p.type arg
+    | none => pure arg
+
 /--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
@@ -183,12 +233,21 @@ where
 
         let valTy := (model.get fieldName).getType
         let selectTarget' ← recurseOne selectTarget
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
+        -- A dynamic-reference target reads via `readFieldDyn` (unbox + owner tag).
+        let heapArg := mkMd (.Var (.Local heapVar))
+        let fieldArg := mkMd (.StaticCall qualifiedName [])
+        let readExpr ←
+          if (← isDynRefTarget model selectTarget) then
+            let owner := (qualifiedName.splitOn ".").head!
+            let tagArg := mkMd (.StaticCall (owner ++ "_TypeTag") [])
+            pure ⟨ .StaticCall readFieldDynName [heapArg, selectTarget', tagArg, fieldArg], source ⟩
+          else
+            pure ⟨ .StaticCall "readField" [heapArg, selectTarget', fieldArg], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
         return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
     | .StaticCall callee args =>
-        let args' ← args.mapM (recurseOne ·)
+        let args' ← args.mapM (recurseOne ·) >>= boxCallArgs model callee
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -253,8 +312,17 @@ where
               let freshVar ← freshVarName
               let target' ← recurseOne target
               let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar))]
-              let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar)]
-                (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
+              -- A dynamic-reference target writes via `updateFieldDyn`.
+              let heapArg := mkMd (.Var (.Local heapVar))
+              let fieldArg := mkMd (.StaticCall qualifiedName [])
+              let updateCall ←
+                if (← isDynRefTarget model target) then
+                  let owner := (qualifiedName.splitOn ".").head!
+                  let tagArg := mkMd (.StaticCall (owner ++ "_TypeTag") [])
+                  pure (mkMd (.StaticCall updateFieldDynName [heapArg, target', tagArg, fieldArg, boxedVal]))
+                else
+                  pure (mkMd (.StaticCall "updateField" [heapArg, target', fieldArg, boxedVal]))
+              let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar)] updateCall, source ⟩
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
@@ -263,7 +331,7 @@ where
         -- Detect calls and add a heap argument if needed
         let (v', addedHeap) <- match _hv : v.val with
           | .StaticCall callee args => do
-            let args' <- args.mapM recurseOne
+            let args' <- args.mapM recurseOne >>= boxCallArgs model callee
             let calleeWritesHeap ← writesHeap callee
             let calleeReadsHeap ← readsHeap callee
             if calleeWritesHeap then
@@ -277,7 +345,17 @@ where
             let _args' <- args.mapM recurseOne
             pure (⟨ .InstanceCall _callTarget' _callee _args', v.source ⟩, false)
           | _ =>
-            pure (<- recurseOne v, false)
+            pure (← recurseOne v, false)
+        -- Box a composite value (direct, or a pure/heap-reading call result)
+        -- flowing into a dynamic-ref-typed target. Skipped for heap-writing
+        -- calls (`addedHeap`), whose value is bound through an out-parameter.
+        let v' ← if addedHeap then pure v' else match targets with
+          | [t] =>
+            let targetTy := match t.val with
+              | .Declare param => param.type
+              | _ => computeExprType model ⟨.Var t.val, t.source⟩
+            boxIfDynRef model targetTy v'
+          | _ => pure v'
         let allTargets := if addedHeap
           then ⟨ Variable.Local heapVar, v.source ⟩ :: processedTargets
           else processedTargets
@@ -330,7 +408,18 @@ where
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
     | .New _ => return [exprMd]
-    | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
+    | .ReferenceEquals l r =>
+      -- Reference equality on composites compares refs, matching `==` and the
+      -- ref-only heap key; the type tag is not part of object identity.
+      let l' ← recurseOne l
+      let r' ← recurseOne r
+      match (computeExprType model l).val with
+      | .UserDefined name =>
+        if isDatatype model name then return [⟨ .ReferenceEquals l' r', source ⟩]
+        let ref1 := mkMd (.StaticCall "Composite..ref!" [l'])
+        let ref2 := mkMd (.StaticCall "Composite..ref!" [r'])
+        return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
+      | _ => return [⟨ .ReferenceEquals l' r', source ⟩]
     | .AsType t ty =>
         let t' ← recurseOne t valueUsed
         let isCheck := ⟨ .IsType t' ty, source ⟩
@@ -455,7 +544,10 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- pass, so they're covered by the calls below.
   let heapReaders := computeReadsHeap program.staticProcedures
   let heapWriters := computeWritesHeap program.staticProcedures
-  let initState : TransformState := { heapReaders, heapWriters }
+  let initState : TransformState := {
+    heapReaders, heapWriters,
+    dynRefTypeName := program.dynamicRefType?.map (·.1.text),
+    dynRefBoxConstructor := program.dynamicRefType?.map (·.2.boxConstructor.text) }
   let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
@@ -485,7 +577,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
-  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map int (Map Field Box)`, keyed by object reference. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     (heapParameterization m p, [], {})

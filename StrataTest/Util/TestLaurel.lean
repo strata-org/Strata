@@ -55,25 +55,28 @@ def defaultLaurelTestOptions : LaurelVerifyOptions :=
     Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
     navigation). -/
-private def runLaurelResolutionRaw (program : StrataDDM.Program) :
+private def runLaurelResolutionRaw (program : StrataDDM.Program)
+    (postParse : Laurel.Program → Laurel.Program := id) :
     IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let result := Laurel.resolve laurelProgram
+    let result := Laurel.resolve (postParse laurelProgram)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
     Returns diagnostics as `DiagnosticModel`s. -/
 private def runLaurelPipelineRaw (program : StrataDDM.Program)
-    (options : LaurelVerifyOptions) : IO (Array Strata.DiagnosticModel) := do
+    (options : LaurelVerifyOptions)
+    (postParse : Laurel.Program → Laurel.Program := id) : IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
+    let laurelProgram := postParse laurelProgram
     -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
     -- back as a structured `DiagnosticModel` (rather than thrown like the CLI),
     -- so it flows through the same snippet-local `line:col` rendering as every
@@ -344,8 +347,22 @@ private def runAndCheck (block : SourcedProgram)
     range. (Failure reports always use the file-relative format regardless.) -/
 def testLaurel (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
-    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block (runLaurelPipelineRaw · options) showLocations showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false)
+    (postParse : Laurel.Program → Laurel.Program := id) : IO Unit :=
+  runAndCheck block (runLaurelPipelineRaw · options postParse) showLocations showSnippet
+
+/-- Mark the datatype `typeName` as the dynamic-reference type with unbox
+    accessor `refAccessor` and box constructor `boxConstructor`, for tests
+    independent of a specific front-end. -/
+def withDynamicRef (typeName : String) (refAccessor : String) (boxConstructor : String)
+    (p : Laurel.Program) : Laurel.Program :=
+  { p with types := p.types.map fun td =>
+      match td with
+      | .Datatype dt =>
+        if dt.name.text == typeName then
+          .Datatype { dt with dynamicRef := some { refAccessor, boxConstructor } }
+        else td
+      | _ => td }
 
 /-- Path to the directory for intermediate files, inside the build directory.
     Resolved from the current working directory so it works on any machine. -/
@@ -366,7 +383,8 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     echoes each diagnostic's file-relative `line:col` range and
     `showSnippet := true` appends the snippet-relative range. -/
 def testLaurelResolution (block : SourcedProgram)
-    (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block runLaurelResolutionRaw showLocations showSnippet
+    (showLocations : Bool := false) (showSnippet : Bool := false)
+    (postParse : Laurel.Program → Laurel.Program := id) : IO Unit :=
+  runAndCheck block (runLaurelResolutionRaw · postParse) showLocations showSnippet
 
 end StrataTest.Util

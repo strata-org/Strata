@@ -840,6 +840,17 @@ structure DatatypeConstructor where
       Populated with a `uniqueId` during resolution. -/
   testerName : Identifier := mkId ""
 
+/-- Marks a datatype as the dynamic-reference type: values of this static type
+    are unboxed to a heap `Composite` on field access. `refAccessor` is the
+    unbox operator (`Dyn → int`), set by front-ends on their catch-all type
+    (e.g. StrataPython marks Python's `Any`). `boxConstructor` is the reverse:
+    the constructor `(int → Dyn)` used to box a heap reference back into the
+    dynamic type when a composite value flows into a dynamic-ref-typed slot. -/
+structure DynamicRefSpec where
+  refAccessor : Identifier
+  boxConstructor : Identifier
+  deriving Repr, Inhabited
+
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.
 
@@ -851,6 +862,8 @@ structure DatatypeDefinition where
   name : Identifier
   typeArgs : List Identifier
   constructors : List DatatypeConstructor
+  /-- Set when this datatype is the program's dynamic-reference type. -/
+  dynamicRef : Option DynamicRefSpec := none
 
 /-- Canonical resolution name for the tester of constructor `ctor` in this datatype.
     Matches the override name used by `Resolution.resolveTypeDefinition`. -/
@@ -935,6 +948,12 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+/-- The program's dynamic-reference type (name + spec), if any is marked. -/
+def Program.dynamicRefType? (p : Program) : Option (Identifier × DynamicRefSpec) :=
+  p.types.findSome? fun td => match td with
+    | .Datatype dt => dt.dynamicRef.map (dt.name, ·)
+    | _ => none
 
 end -- public section
 

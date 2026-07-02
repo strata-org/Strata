@@ -162,7 +162,7 @@ structure ResolveState where
   /-- Diagnostics collected during resolution. -/
   errors : Array DiagnosticModel := #[]
   /-- When resolving inside an instance procedure, the owning composite type name.
-      Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
+      Used by `resolveFieldRef` to resolve `self.field`. -/
   instanceTypeName : Option String := none
   /-- The declared output types of the enclosing procedure body, in
       declaration order. `none` means we are not currently resolving
@@ -177,6 +177,8 @@ structure ResolveState where
       chains) used by the subtyping/consistency checks. Built once from
       `program.types` at the start of `resolve`. -/
   typeLattice : TypeLattice := {}
+  /-- Name of the program's dynamic-reference type, if any (see `resolveFieldRef`). -/
+  dynRefTypeName : Option String := none
 
 abbrev ResolveM := StateM ResolveState
 
@@ -299,10 +301,30 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some typeName := typeName? then
     if let some resolved ← resolveFieldInTypeScope typeName fieldName then
       return resolved
-  -- Fallback: use the owning instance type (handles `self.field` when self has type `Any`)
+  -- Fallback: use the owning instance type (handles `self.field`).
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
+  -- A dynamic-reference target resolves its field across all type scopes; the
+  -- gate keeps a concrete target from binding a foreign field. When exactly one
+  -- composite declares the field name, bind it. When several do, the runtime
+  -- object's type is unknown, so we cannot pick the right owner — the heap keys
+  -- fields by their owner-qualified constant, so guessing would address a
+  -- foreign object's slot. Reject as ambiguous rather than silently mis-binding.
+  if typeName?.isSome && typeName? == (← get).dynRefTypeName then
+    let scopes := (← get).typeScopes.toList.mergeSort (·.1 < ·.1)
+    let owners := scopes.filterMap fun (tyName, fieldScope) =>
+      (fieldScope.get? fieldName.text).map fun (defId, _) => (tyName, defId)
+    match owners with
+    | [(_, defId)] => return { fieldName with uniqueId := some defId }
+    | _ :: _ :: _ =>
+      let names := String.intercalate ", " (owners.map (·.1))
+      let diag := diagnosticFromSource (source.orElse fun _ => fieldName.source)
+        s!"Field '{fieldName}' on a dynamic-reference value is ambiguous: declared by {names}. \
+           Accessing a field shared by several types through a dynamic-reference value is not supported."
+      modify fun s => { s with errors := s.errors.push diag }
+      return { fieldName with uniqueId := none }
+    | [] => pure ()
   resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
@@ -396,6 +418,18 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
   let diag := diagnosticFromSource source s!"{constructor}{problem}{suffix}"
   modify fun s => { s with errors := s.errors.push diag }
 
+/-- True when `expected` is the program's dynamic-reference type and `actual` is
+    a composite type — the composite→dynamic-ref boxing case, which heap
+    parameterization lowers by boxing the heap reference. Restricted to
+    composites (a datatype has no `typeScopes` entry) so it agrees with
+    `boxIfDynRef`, which only boxes composites; a datatype→dynref flow stays a
+    type error rather than leaking an unboxed value. -/
+private def isDynRefExpectedFromComposite (expected actual : HighTypeMd) : ResolveM Bool := do
+  match (← get).dynRefTypeName, expected.val, actual.val with
+  | some dynName, .UserDefined e, .UserDefined a =>
+    return e.text == dynName && a.text != dynName && (← get).typeScopes.contains a.text
+  | _, _, _ => return false
+
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
@@ -403,6 +437,10 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
 private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   let ctx := (← get).typeLattice
   unless isConsistentSubtype ctx actual expected do
+    -- A composite/user-defined value flows into the dynamic-reference type by
+    -- boxing its heap reference (inserted by heap parameterization), so accept
+    -- it here even though they are unrelated in the subtype lattice.
+    if (← isDynRefExpectedFromComposite expected actual) then return
     typeMismatch source none s!"expected '{formatType expected}'" actual
 
 /-- Test whether a type is in the set of numeric primitives
@@ -2779,7 +2817,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         text := testerResolved.text
         uniqueId := testerResolved.uniqueId }
       return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
-    return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
+    return .Datatype { dt with name := dtName', constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
     let taName' ← resolveRef ta.name
@@ -3202,7 +3240,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := TypeLattice.ofTypes program.types
-  let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
+  let dynRefTypeName := program.dynamicRefType?.map (·.1.text)
+  let (program', finalState) := phase1.run { nextId := nextId, typeLattice, dynRefTypeName }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
   -- Heap-effect classification over all procedures (static plus composite
