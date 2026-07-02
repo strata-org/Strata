@@ -493,6 +493,19 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
+/-- Filesystem-safe filename component derived from an obligation label.
+    First sanitizes illegal characters, then caps length: labels within
+    `maxLen` pass through unchanged; longer ones are truncated to `maxLen`
+    characters with a hex hash of the *full* label appended, so generated
+    filenames stay within `NAME_MAX` while remaining unique and stable per
+    label. Used only for filename derivation, never for report text. -/
+def sanitizeFilenameCapped (s : String) (maxLen : Nat := 128) : String :=
+  let sanitized := sanitizeFilename s
+  if sanitized.length ≤ maxLen then sanitized
+  else
+    let hexHash := String.ofList (Nat.toDigits 16 (hash s).toNat)
+    String.ofList (sanitized.toList.take maxLen) ++ "_" ++ hexHash
+
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
@@ -1568,7 +1581,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     else
       let counterVal ← counter.get
       counter.set (counterVal + 1)
-      let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
+      let filename := tempDir / s!"{SMT.sanitizeFilenameCapped label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
