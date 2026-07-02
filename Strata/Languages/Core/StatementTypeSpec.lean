@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.CommandTypeSpec
+public import Strata.Languages.Core.FunctionTypeSpec
 
 /-! ## Declarative Typing Specification for Statements
 
@@ -41,11 +42,9 @@ contexts, so the persisted refinement is absorbed there.
 
 ### Function dependency
 
-The `funcDecl` constructor's premise is an **abstract** predicate
-`funcTyped : LContext CoreLParams → Function → Prop`, supplied as a parameter.
-This keeps the statement spec decoupled from the (still-in-progress) function
-typing specification: when `FuncHasType'` lands, the instantiating abbrevs plug
-it in. See `docs/plan-statement-type-spec.md`.
+The `funcDecl` constructor's premise is `FuncHasType'`, the declarative function
+typing specification, evaluated in the ambient context `C, Γ` the declaration is
+checked in. See `docs/plan-statement-type-spec.md`.
 -/
 
 namespace Core
@@ -58,15 +57,13 @@ public section
 mutual
 
 /--
-Declarative typing for statements, parameterized over `ExprTypingSpec` and an
-abstract function-typing predicate `funcTyped`.
+Declarative typing for statements, parameterized over `ExprTypingSpec`.
 
-The relation `StmtHasType' τ P funcTyped C Γ s C' Γ'` reads: "under program `P`,
+The relation `StmtHasType' τ P C Γ s C' Γ'` reads: "under program `P`,
 in ambient context `C` and type-scope `Γ`, statement `s` is well-typed and
 yields output context `C'` and type-scope `Γ'`."
 -/
-inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
-    (funcTyped : LContext CoreLParams → Function → Prop) :
+inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
     LContext CoreLParams → TContext Unit → Statement →
     LContext CoreLParams → TContext Unit → Prop where
 
@@ -74,29 +71,29 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
       unchanged (commands do not declare functions or types). -/
   | cmd : ∀ C Γ Γ' c,
       CmdExtHasType' (τ := τ) C P Γ c Γ' →
-      StmtHasType' τ P funcTyped C Γ (.cmd c) C Γ'
+      StmtHasType' τ P C Γ (.cmd c) C Γ'
 
   /-- A labeled block. The body is typed under the *input* `C, Γ`; its output
       context is existentially discarded (the block is lexically scoped), so the
       block's own output context is the input `C, Γ`. -/
   | block : ∀ C Γ C_body Γ_body label body md,
-      StmtsHasType' τ P funcTyped C Γ body C_body Γ_body →
-      StmtHasType' τ P funcTyped C Γ (.block label body md) C Γ
+      StmtsHasType' τ P C Γ body C_body Γ_body →
+      StmtHasType' τ P C Γ (.block label body md) C Γ
 
   /-- Deterministic if-then-else: the condition must be `bool`; each branch is
       typed independently from the input `C, Γ` (no cross-branch leakage). The
       output context is the input `C, Γ`. -/
   | ite_det : ∀ C Γ C_t Γ_t C_e Γ_e cond thenb elseb md,
       S.exprTyped C Γ cond (S.embed .bool) →
-      StmtsHasType' τ P funcTyped C Γ thenb C_t Γ_t →
-      StmtsHasType' τ P funcTyped C Γ elseb C_e Γ_e →
-      StmtHasType' τ P funcTyped C Γ (.ite (.det cond) thenb elseb md) C Γ
+      StmtsHasType' τ P C Γ thenb C_t Γ_t →
+      StmtsHasType' τ P C Γ elseb C_e Γ_e →
+      StmtHasType' τ P C Γ (.ite (.det cond) thenb elseb md) C Γ
 
   /-- Non-deterministic if-then-else: as `ite_det` but with no condition. -/
   | ite_nondet : ∀ C Γ C_t Γ_t C_e Γ_e thenb elseb md,
-      StmtsHasType' τ P funcTyped C Γ thenb C_t Γ_t →
-      StmtsHasType' τ P funcTyped C Γ elseb C_e Γ_e →
-      StmtHasType' τ P funcTyped C Γ (.ite .nondet thenb elseb md) C Γ
+      StmtsHasType' τ P C Γ thenb C_t Γ_t →
+      StmtsHasType' τ P C Γ elseb C_e Γ_e →
+      StmtHasType' τ P C Γ (.ite .nondet thenb elseb md) C Γ
 
   /-- Loop. The guard (if deterministic) must be `bool`; the measure (if
       present) must be `int`; each invariant must be `bool`; the body is typed
@@ -105,64 +102,63 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
       (∀ g, guard = .det g → S.exprTyped C Γ g (S.embed .bool)) →
       (∀ m, measure = some m → S.exprTyped C Γ m (S.embed .int)) →
       (∀ p, p ∈ invariants → S.exprTyped C Γ p.2 (S.embed .bool)) →
-      StmtsHasType' τ P funcTyped C Γ body C_body Γ_body →
-      StmtHasType' τ P funcTyped C Γ (.loop guard measure invariants body md) C Γ
+      StmtsHasType' τ P C Γ body C_body Γ_body →
+      StmtHasType' τ P C Γ (.loop guard measure invariants body md) C Γ
 
   /-- Exit statement: context unchanged. (The label/`op` checks are operational
       side conditions handled in the soundness proof, not typing facts.) -/
   | exit : ∀ C Γ label md,
-      StmtHasType' τ P funcTyped C Γ (.exit label md) C Γ
+      StmtHasType' τ P C Γ (.exit label md) C Γ
 
   /-- Local function declaration. The function is non-recursive and well-typed
-      (per the abstract `funcTyped`); the resulting `func` is added to `C` for
-      subsequent statements. -/
+      (per `FuncHasType'`, evaluated in the ambient `C, Γ`); the resulting `func`
+      is added to `C` for subsequent statements. -/
   | funcDecl : ∀ C Γ decl func md,
       ¬ decl.isRecursive →
-      funcTyped C func →
-      StmtHasType' τ P funcTyped C Γ (.funcDecl decl md) (C.addFactoryFunction func) Γ
+      FuncHasType' τ C Γ func →
+      StmtHasType' τ P C Γ (.funcDecl decl md) (C.addFactoryFunction func) Γ
 
   /-- Local type declaration. The new type is added to `C` (must not clash with
       an existing known type, per `addKnownTypeWithError`). -/
   | typeDecl : ∀ C C' Γ tc md,
       C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } default = .ok C' →
-      StmtHasType' τ P funcTyped C Γ (.typeDecl tc md) C' Γ
+      StmtHasType' τ P C Γ (.typeDecl tc md) C' Γ
 
 /--
 Declarative typing for a list of statements, threading both `C` and `Γ`.
 Mirrors the `go` loop in `typeCheckAux`.
 -/
-inductive StmtsHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
-    (funcTyped : LContext CoreLParams → Function → Prop) :
+inductive StmtsHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
     LContext CoreLParams → TContext Unit → List Statement →
     LContext CoreLParams → TContext Unit → Prop where
 
   /-- The empty statement list leaves the context unchanged. -/
   | nil : ∀ C Γ,
-      StmtsHasType' τ P funcTyped C Γ [] C Γ
+      StmtsHasType' τ P C Γ [] C Γ
 
   /-- The first statement is typed, then the rest in the updated context. -/
   | cons : ∀ C C' C'' Γ Γ' Γ'' s ss,
-      StmtHasType' τ P funcTyped C Γ s C' Γ' →
-      StmtsHasType' τ P funcTyped C' Γ' ss C'' Γ'' →
-      StmtsHasType' τ P funcTyped C Γ (s :: ss) C'' Γ''
+      StmtHasType' τ P C Γ s C' Γ' →
+      StmtsHasType' τ P C' Γ' ss C'' Γ'' →
+      StmtsHasType' τ P C Γ (s :: ss) C'' Γ''
 
 end
 
 /-- `StmtHasType'` instantiated with the polymorphic `HasType` relation. -/
-abbrev StmtHasType (P : Program) (funcTyped : LContext CoreLParams → Function → Prop) :=
-  @StmtHasType' LTy P instHasType funcTyped
+abbrev StmtHasType (P : Program) :=
+  @StmtHasType' LTy P instHasType
 
 /-- `StmtsHasType'` instantiated with the polymorphic `HasType` relation. -/
-abbrev StmtsHasType (P : Program) (funcTyped : LContext CoreLParams → Function → Prop) :=
-  @StmtsHasType' LTy P instHasType funcTyped
+abbrev StmtsHasType (P : Program) :=
+  @StmtsHasType' LTy P instHasType
 
 /-- `StmtHasType'` instantiated with the annotated `HasTypeA` relation. -/
-abbrev StmtHasTypeA (P : Program) (funcTyped : LContext CoreLParams → Function → Prop) :=
-  @StmtHasType' LMonoTy P instHasTypeA funcTyped
+abbrev StmtHasTypeA (P : Program) :=
+  @StmtHasType' LMonoTy P instHasTypeA
 
 /-- `StmtsHasType'` instantiated with the annotated `HasTypeA` relation. -/
-abbrev StmtsHasTypeA (P : Program) (funcTyped : LContext CoreLParams → Function → Prop) :=
-  @StmtsHasType' LMonoTy P instHasTypeA funcTyped
+abbrev StmtsHasTypeA (P : Program) :=
+  @StmtsHasType' LMonoTy P instHasTypeA
 
 end -- public section
 

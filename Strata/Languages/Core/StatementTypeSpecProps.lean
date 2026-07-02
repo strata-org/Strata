@@ -6,6 +6,7 @@
 module
 
 import Strata.Languages.Core.StatementTypeSpec
+import all Strata.Languages.Core.FunctionTypeSpec
 import all Strata.Languages.Core.CommandTypeSpecProps
 import all Strata.Languages.Core.StatementType
 import all Strata.Languages.Core.FunctionType
@@ -37,28 +38,15 @@ the `cons` rule, push/pop scope reasoning, WF preservation across
 
 ### Function dependency (the `funcDecl` case)
 
-Rather than `sorry`-ing the `funcDecl` case, the theorems take the abstract
-`funcTyped` predicate (the one parameterizing the spec) **plus** a soundness
-hypothesis `h_func_sound`: a successful `PureFunc.typeCheck` implies `funcTyped`
-of the resulting `Function`. This discharges the `funcDecl` case from the
-hypothesis (no sorry) and mirrors the spec's abstract-`funcTyped` design — when
-`FuncHasType'` lands, it supplies the concrete proof of `h_func_sound`.
+The `funcDecl` case requires `FuncHasType' τ C Γ func` for the type-checked
+function. Discharging it from `PureFunc.typeCheck`'s soundness is deferred
+(`sorry`) pending the function typechecker soundness deliverables.
 -/
 
 namespace Core
 namespace TypeSpec
 
 open Lambda LExpr Imperative
-
-/-- A successful `PureFunc.typeCheck` implies the abstract `funcTyped` predicate
-    holds for the produced `Function`. This is the (currently-abstract) bridge to
-    the function typing specification; when `FuncHasType'` lands, the concrete
-    `funcTyped` instantiation discharges this from `PureFunc.typeCheck`'s soundness. -/
-def PureFuncTypeCheckSound (funcTyped : LContext CoreLParams → Function → Prop) : Prop :=
-  ∀ (C : LContext CoreLParams) (Env : TEnv Unit) (decl decl' : PureFunc Expression)
-    (func : Function) (Env' : TEnv Unit),
-    PureFunc.typeCheck C Env decl = .ok (decl', func, Env') →
-    funcTyped C func
 
 
 /-! ### Part I — Core `go`/`goBlock` induction (unannotated)
@@ -1278,31 +1266,63 @@ theorem CmdExtHasType'_find_congr {τ : Type} [S : ExprTypingSpec τ]
       obtain ⟨mty, h_ae, h_find_lhs⟩ := h_out i hi hj
       exact ⟨mty, by rw [h_al]; exact h_ae, by rw [h_eq]; exact h_find_lhs⟩
 
+/-- `FuncHasType'` is Γ-congruent: two type-scopes agreeing pointwise on `find?`
+    and on `aliases` give the same function-typing judgement. Only `bodyTyped`/
+    `measureTyped` mention `Γ` (through `funcContext`, which pushes the same formals
+    scope on both sides), so the obligation reduces to `exprTyped` congruence on the
+    extended contexts, discharged by `h_expr_congr`. -/
+theorem FuncHasType'_find_congr {τ : Type} [S : ExprTypingSpec τ]
+    (h_expr_congr : ∀ (Γa Γb : TContext Unit) (Cx : LContext CoreLParams) e t,
+      (∀ x, Γb.types.find? x = Γa.types.find? x) → Γb.aliases = Γa.aliases →
+      S.exprTyped Cx Γa e t → S.exprTyped Cx Γb e t)
+    {C : LContext CoreLParams} {Γa Γb : TContext Unit} {func : Function}
+    (h_eq : ∀ x, Γb.types.find? x = Γa.types.find? x)
+    (h_al : Γb.aliases = Γa.aliases)
+    (h : FuncHasType' τ C Γa func) :
+    FuncHasType' τ C Γb func := by
+  have h_ctx_find : ∀ x,
+      (funcContext Γb func).types.find? x = (funcContext Γa func).types.find? x := by
+    intro x
+    simp only [funcContext, Maps.push, Maps.find?]
+    cases hf : Map.find? (func.inputs.map (fun p => (p.1, LTy.forAll [] p.2))) x with
+    | none => simp only [hf]; exact h_eq x
+    | some v => simp only [hf]
+  have h_ctx_al : (funcContext Γb func).aliases = (funcContext Γa func).aliases := by
+    simp only [funcContext]; exact h_al
+  exact {
+    inputsNodup := h.inputsNodup
+    typeArgsNodup := h.typeArgsNodup
+    noUndeclaredVars := h.noUndeclaredVars
+    bodyTyped := fun body h_body =>
+      h_expr_congr _ _ C body _ h_ctx_find h_ctx_al (h.bodyTyped body h_body)
+    measureTyped := fun m h_m h_nv =>
+      h_expr_congr _ _ C m _ h_ctx_find h_ctx_al (h.measureTyped m h_m h_nv) }
+
 /-- `StmtsHasType'` is Γ-congruent (output-congruent), given expression-layer
     congruence. Proved together with the `StmtHasType'` version via the mutual
     recursor. The only Γ-mutating statement (`cmd` whose `CmdHasType'.init` inserts a
     binding) threads the agreement through `CmdExtHasType'_find_congr`; block/ite/loop
     leave Γ unchanged; `cons` chains the head's output agreement into the tail. -/
 theorem StmtsHasType'_find_congr {τ : Type} [S : ExprTypingSpec τ]
-    {P : Program} {funcTyped : LContext CoreLParams → Function → Prop}
+    {P : Program}
     {C C' : LContext CoreLParams} {Γ₁ Γ₁' : TContext Unit} {ss : List Statement}
     (h_expr_congr : ∀ (Γa Γb : TContext Unit) (Cx : LContext CoreLParams) e t,
       (∀ x, Γb.types.find? x = Γa.types.find? x) → Γb.aliases = Γa.aliases →
       S.exprTyped Cx Γa e t → S.exprTyped Cx Γb e t)
-    (h : StmtsHasType' τ P funcTyped C Γ₁ ss C' Γ₁') :
+    (h : StmtsHasType' τ P C Γ₁ ss C' Γ₁') :
     ∀ (Γ₂ : TContext Unit),
       (∀ x, Γ₂.types.find? x = Γ₁.types.find? x) → Γ₂.aliases = Γ₁.aliases →
       ∃ Γ₂', (∀ x, Γ₂'.types.find? x = Γ₁'.types.find? x) ∧ Γ₂'.aliases = Γ₁'.aliases ∧
-        StmtsHasType' τ P funcTyped C Γ₂ ss C' Γ₂' := by
+        StmtsHasType' τ P C Γ₂ ss C' Γ₂' := by
   refine StmtsHasType'.rec
     (motive_1 := fun Ca Γa s Ca' Γa' _ =>
       ∀ Γ₂, (∀ x, Γ₂.types.find? x = Γa.types.find? x) → Γ₂.aliases = Γa.aliases →
         ∃ Γ₂', (∀ x, Γ₂'.types.find? x = Γa'.types.find? x) ∧ Γ₂'.aliases = Γa'.aliases ∧
-          StmtHasType' τ P funcTyped Ca Γ₂ s Ca' Γ₂')
+          StmtHasType' τ P Ca Γ₂ s Ca' Γ₂')
     (motive_2 := fun Ca Γa ss Ca' Γa' _ =>
       ∀ Γ₂, (∀ x, Γ₂.types.find? x = Γa.types.find? x) → Γ₂.aliases = Γa.aliases →
         ∃ Γ₂', (∀ x, Γ₂'.types.find? x = Γa'.types.find? x) ∧ Γ₂'.aliases = Γa'.aliases ∧
-          StmtsHasType' τ P funcTyped Ca Γ₂ ss Ca' Γ₂')
+          StmtsHasType' τ P Ca Γ₂ ss Ca' Γ₂')
     ?cmd ?block ?ite_det ?ite_nondet ?loop ?exit ?funcDecl ?typeDecl ?nil ?cons h
   case cmd =>
     intro Ca Γa Γa' c h_cmd Γ₂ h_eq h_al
@@ -1338,7 +1358,9 @@ theorem StmtsHasType'_find_congr {τ : Type} [S : ExprTypingSpec τ]
     exact ⟨Γ₂, h_eq, h_al, StmtHasType'.exit Ca Γ₂ label md⟩
   case funcDecl =>
     intro Ca Γa decl func md h_nrec h_func Γ₂ h_eq h_al
-    exact ⟨Γ₂, h_eq, h_al, StmtHasType'.funcDecl Ca Γ₂ decl func md h_nrec h_func⟩
+    have h_func₂ : FuncHasType' τ Ca Γ₂ func :=
+      FuncHasType'_find_congr h_expr_congr h_eq h_al h_func
+    exact ⟨Γ₂, h_eq, h_al, StmtHasType'.funcDecl Ca Γ₂ decl func md h_nrec h_func₂⟩
   case typeDecl =>
     intro Ca Ca' Γa tc md h_add Γ₂ h_eq h_al
     exact ⟨Γ₂, h_eq, h_al, StmtHasType'.typeDecl Ca Ca' Γ₂ tc md h_add⟩
@@ -1450,7 +1472,6 @@ theorem resolve_int_HasTypeA (C : LContext CoreLParams) (Env Env' : TEnv Unit)
 theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss acc : List Statement) (labels : List String)
     (ss' : List Statement) (Env' : TEnv Unit) (C' : LContext CoreLParams)
-    (funcTyped : LContext CoreLParams → Function → Prop)
     (h : Statement.typeCheckAux.go P op C Env ss acc labels = .ok (ss', Env', C'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
@@ -1458,9 +1479,8 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_mono : ContextMono Env.context)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
-    (h_closed : CalledProcsClosed P)
-    (h_func_sound : PureFuncTypeCheckSound funcTyped) :
-    StmtsHasType P funcTyped C (TContext.subst Env.context Env'.stateSubstInfo.subst) ss
+    (h_closed : CalledProcsClosed P) :
+    StmtsHasType P C (TContext.subst Env.context Env'.stateSubstInfo.subst) ss
       C' (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
   -- Same mutual `go`/`goBlock` induction as `typeCheckAux_go_preserves`, but each
   -- motive concludes `StmtsHasType … (subst _ Env'.subst) …` at the **final**
@@ -1495,7 +1515,7 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) →
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
-      StmtsHasType P funcTyped C (TContext.subst Env.context S) ss
+      StmtsHasType P C (TContext.subst Env.context S) ss
         C' (TContext.subst Env'.context S))
     (motive2 := fun C Env bss acc labels =>
       ∀ ss' Env' C',
@@ -1506,7 +1526,7 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
         LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) →
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         (∀ v, v ∈ C.rigidTypeVars → LMonoTy.subst S (.ftvar v) = .ftvar v) →
-      ∃ C_body Γ_body, StmtsHasType P funcTyped C (TContext.subst Env.context S) bss
+      ∃ C_body Γ_body, StmtsHasType P C (TContext.subst Env.context S) bss
         C_body Γ_body)
     ?case_nil ?case_cmd ?case_block_clash ?case_block ?case_ite ?case_loop
     ?case_exit ?case_funcDecl ?case_typeDecl ?case_goBlock
@@ -2327,7 +2347,7 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       have hS_abs_body : Subst.absorbs S Env_body.stateSubstInfo.subst := hS_abs
       -- Body typing via the inner-`go` IH (motive1) at the SAME subst `S`, pushed Γ.
       -- (The relation subject is the body's INPUT statement list `bss₀`.)
-      have h_body_typed : StmtsHasType P funcTyped C₀
+      have h_body_typed : StmtsHasType P C₀
           (TContext.subst Env₀.pushEmptyContext.context S) bss₀
           C_body (TContext.subst Env_body.context S) :=
         ih_body bss' Env_body C_body h_body_run h_push_wf hfwf₀ h_push_ne h_push_mono h_push_rigid
@@ -2361,7 +2381,6 @@ by `typeCheck`, so it is existentially quantified.
 -/
 theorem Statement.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss ss' : List Statement) (Env' : TEnv Unit)
-    (funcTyped : LContext CoreLParams → Function → Prop)
     (h : Statement.typeCheck C Env P op ss = .ok (ss', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
@@ -2369,9 +2388,8 @@ theorem Statement.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_mono : ContextMono Env.context)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
-    (h_closed : CalledProcsClosed P)
-    (h_func_sound : PureFuncTypeCheckSound funcTyped) :
-    ∃ C', StmtsHasType P funcTyped C (TContext.subst Env.context Env'.stateSubstInfo.subst) ss
+    (h_closed : CalledProcsClosed P) :
+    ∃ C', StmtsHasType P C (TContext.subst Env.context Env'.stateSubstInfo.subst) ss
       C' Env'.context := by
   -- `typeCheck` runs `typeCheckAux = go … [] []`, then overwrites the output
   -- context with `subst Env_aux.context Env_aux.subst` while leaving
@@ -2388,7 +2406,7 @@ theorem Statement.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     obtain ⟨h_ss, h_env⟩ := h
     refine ⟨C_aux, ?_⟩
     have h_core := typeCheckAux_go_sound C Env P op ss [] [] ss_aux Env_aux C_aux
-      funcTyped h_go h_wf h_fwf h_ne h_mono h_rigid_inv h_closed h_func_sound
+      h_go h_wf h_fwf h_ne h_mono h_rigid_inv h_closed
     -- `Env'` is `Env_aux.updateContext (subst Env_aux.context Env_aux.subst)`, so
     -- `Env'.stateSubstInfo.subst = Env_aux.stateSubstInfo.subst` and
     -- `Env'.context = subst Env_aux.context Env_aux.subst`.
@@ -2422,7 +2440,6 @@ theorem Statement.subst_go_nil (S : Subst) (ss : List Statement) :
 theorem typeCheckAux_go_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss : List Statement) (labels : List String)
     (ss' : List Statement) (Env' : TEnv Unit) (C' : LContext CoreLParams)
-    (funcTyped : LContext CoreLParams → Function → Prop)
     (h : Statement.typeCheckAux.go P op C Env ss [] labels = .ok (ss', Env', C'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
@@ -2431,9 +2448,8 @@ theorem typeCheckAux_go_annotated_sound (C : LContext CoreLParams) (Env : TEnv U
     (h_resolved : TContext.AliasesResolved Env.context)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
-    (h_closed : CalledProcsClosed P)
-    (h_func_sound : PureFuncTypeCheckSound funcTyped) :
-    StmtsHasTypeA P funcTyped C (TContext.subst Env.context Env'.stateSubstInfo.subst)
+    (h_closed : CalledProcsClosed P) :
+    StmtsHasTypeA P C (TContext.subst Env.context Env'.stateSubstInfo.subst)
       (List.map (Core.Statement.Statement.subst Env'.stateSubstInfo.subst) ss')
       C' (TContext.subst Env'.context Env'.stateSubstInfo.subst) := by
   -- The rigid invariant `h_rigid_inv` mirrors the non-annotated `typeCheckAux_go_sound`:
@@ -2460,7 +2476,7 @@ theorem typeCheckAux_go_annotated_sound (C : LContext CoreLParams) (Env : TEnv U
         LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) →
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         ∃ ss_proc, ss' = acc.reverse ++ ss_proc ∧
-          StmtsHasTypeA P funcTyped C (TContext.subst Env.context S)
+          StmtsHasTypeA P C (TContext.subst Env.context S)
             (List.map (Core.Statement.Statement.subst S) ss_proc)
             C' (TContext.subst Env'.context S))
     (motive2 := fun C Env bss acc labels =>
@@ -2473,7 +2489,7 @@ theorem typeCheckAux_go_annotated_sound (C : LContext CoreLParams) (Env : TEnv U
         LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v) →
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         ∃ C_body Γ_body ss_proc, ss' = acc.reverse ++ ss_proc ∧
-          StmtsHasTypeA P funcTyped C (TContext.subst Env.context S)
+          StmtsHasTypeA P C (TContext.subst Env.context S)
             (List.map (Core.Statement.Statement.subst S) ss_proc) C_body Γ_body)
     ?case_nil ?case_cmd ?case_block_clash ?case_block ?case_ite ?case_loop
     ?case_exit ?case_funcDecl ?case_typeDecl ?case_goBlock
@@ -3342,7 +3358,6 @@ applied) satisfy `StmtsHasTypeA`.
 -/
 theorem Statement.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss ss' : List Statement) (Env' : TEnv Unit)
-    (funcTyped : LContext CoreLParams → Function → Prop)
     (h : Statement.typeCheck C Env P op ss = .ok (ss', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
@@ -3351,9 +3366,8 @@ theorem Statement.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TE
     (h_resolved : TContext.AliasesResolved Env.context)
     (h_rigid_inv : ∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env.stateSubstInfo.subst (.ftvar v) = .ftvar v)
-    (h_closed : CalledProcsClosed P)
-    (h_func_sound : PureFuncTypeCheckSound funcTyped) :
-    ∃ C', StmtsHasTypeA P funcTyped C (TContext.subst Env.context Env'.stateSubstInfo.subst)
+    (h_closed : CalledProcsClosed P) :
+    ∃ C', StmtsHasTypeA P C (TContext.subst Env.context Env'.stateSubstInfo.subst)
       ss' C' Env'.context := by
   unfold Statement.typeCheck Statement.typeCheckAux at h
   cases h_go : Statement.typeCheckAux.go P op C Env ss [] [] with
@@ -3365,7 +3379,7 @@ theorem Statement.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TE
     obtain ⟨h_ss, h_env⟩ := h
     refine ⟨C_aux, ?_⟩
     have h_core := typeCheckAux_go_annotated_sound C Env P op ss [] ss_aux Env_aux C_aux
-      funcTyped h_go h_wf h_fwf h_ne h_mono h_resolved h_rigid_inv h_closed h_func_sound
+      h_go h_wf h_fwf h_ne h_mono h_resolved h_rigid_inv h_closed
     -- `ss' = subst.go Env_aux.subst ss_aux []` = `map (subst Env_aux.subst) ss_aux`,
     -- which is exactly the core lemma's output list. And `Env'.subst = Env_aux.subst`,
     -- `Env'.context = subst Env_aux.context Env_aux.subst`.
