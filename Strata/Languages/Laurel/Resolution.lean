@@ -969,7 +969,11 @@ def Check.while (exprMd : StmtExprMd)
     unless isNumeric ctx decTy do
       typeMismatch a.val.source none "expected a numeric type" decTy
     pure e')
-  let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
+  -- The loop body is conceptually a block: give it block semantics (a fresh
+  -- scope for an unbraced body) via `Check.bodyAsBlock`. Its value type is
+  -- discarded — control re-enters the loop or falls through — so it is checked
+  -- at `Unknown` (the gradual wildcard).
+  let body' ← Check.bodyAsBlock body { val := .Unknown, source := body.source }
   pure { val := .While cond' invs' dec' body', source := source }
   termination_by (exprMd, 0)
   decreasing_by
@@ -1302,6 +1306,39 @@ def Check.block (exprMd : StmtExprMd)
       simp only [StmtExpr.Block.sizeOf_spec] at hsz
       try (have := List.sizeOf_lt_of_mem ‹_ ∈ stmts›)
       omega
+
+/-- Check a construct's *body* `b` against `expected`, giving it block
+    semantics regardless of its syntactic shape.
+
+    Several constructs carry a body that is conceptually a block — a
+    procedure/function body, a `while` body — but the grammar's body slot
+    accepts an arbitrary `StmtExpr` (`body:0`), so a body written without
+    braces (`while(c) var x := 1`) parses as a *bare* statement rather than
+    a `.Block`. A block introduces a fresh lexical scope; a bare statement
+    does not, so without this helper an unbraced body's declarations would
+    leak into the enclosing scope.
+
+    Rather than rewrite the AST to wrap such bodies in a synthetic `.Block`
+    node (which would also complicate the size-based termination measure),
+    we get the *effect* of a block by where we resolve it:
+
+    * **`b` is already a `.Block`** — check it directly. `Check.block`
+      already opens its own scope (and label scope, dead-code analysis,
+      and CPS dispatch), so wrapping here would only nest a redundant
+      empty scope. This is the overwhelmingly common case (braced bodies).
+
+    * **`b` is any other statement** — check it inside a fresh `withScope`,
+      reproducing the one block behavior a bare check would otherwise miss.
+
+    The expected type `T` is forwarded unchanged, so the body's value is
+    checked exactly as a block's would be (last-statement-carries-the-value
+    when `b` is a block; the construct's own rule otherwise). -/
+def Check.bodyAsBlock (b : StmtExprMd) (expected : HighTypeMd) : ResolveM StmtExprMd :=
+  match b.val with
+  | .Block .. => Check.resolveStmtExpr b expected
+  | _         => withScope <| Check.resolveStmtExpr b expected
+  termination_by (b, 4)
+  decreasing_by all_goals (apply Prod.Lex.right; decide)
 
 /-- (If / If-NoElse)
     ```
@@ -2678,11 +2715,14 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
 def resolveBody (body : Body) (expected : HighTypeMd) : ResolveM Body := do
   match body with
   | .Transparent b =>
-    let b' ← Check.resolveStmtExpr b expected
+    -- A procedure/function body is conceptually a block; `Check.bodyAsBlock`
+    -- gives it block semantics (a fresh scope for an unbraced body) while
+    -- dispatching a braced body straight to `Check.block`.
+    let b' ← Check.bodyAsBlock b expected
     return .Transparent b'
   | .Opaque posts impl mods =>
     let posts' ← posts.mapM (·.mapM resolveStmtExpr)
-    let impl' ← impl.mapM (Check.resolveStmtExpr · expected)
+    let impl' ← impl.mapM (Check.bodyAsBlock · expected)
     let mods' ← mods.mapM resolveStmtExpr
     return .Opaque posts' impl' mods'
   | .Abstract posts =>
