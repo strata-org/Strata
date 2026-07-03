@@ -60,7 +60,7 @@ procedure multipleRequiresCaller()
 {
   var a: int := multipleRequires(1, 2);
   var b: int := multipleRequires(-1, 2)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 
 function funcMultipleRequires(x: int, y: int): int

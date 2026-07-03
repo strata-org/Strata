@@ -208,31 +208,48 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     | .Transparent b => blockContainsAssumeOrAssert b
     | _ => true
   let (imperativeProcs, _) := toUpdate.partition needsProcTwin
-  let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
-  -- Names of single-output procedures whose calls can be redirected to their
-  -- `$asFunction` version: `mkFreePostcondition` only equates a single output
-  -- to the function, and a single function application can only fill one
-  -- assignment target. Multi-output procedures are excluded.
-  let singleOutputNames : Std.HashSet String :=
-    imperativeProcs.foldl (fun s p =>
-      if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
-  -- $asFunction copies for procedures that have a procedural twin;
-  -- transparent-only procedures keep their original name.
-  let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
-  let coreProcedures := imperativeProcs.map fun proc =>
-    let freePostcondition := mkFreePostcondition proc
-    let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
-    let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
-    -- When requested, redirect every call to a single-output twinned procedure
-    -- to its `$asFunction` version so calls stay constant-foldable during
-    -- symbolic evaluation (instead of producing fresh symbolic outputs via the
-    -- procedural twin).
-    let proc := if options.alwaysCallCoreFunctions then redirectCallsInProc singleOutputNames proc else proc
-    addFreePostcondition proc freePostcondition
   let datatypes := program.types.filterMap fun td => match td with
     | .Datatype dt => some dt
     | _ => none
-  { functions, coreProcedures, datatypes, constants := program.constants }
+  match options.analysisMode with
+  | .Execute =>
+    -- Concrete execution: skip the transparency pass entirely. No `$asFunction`
+    -- twins, free postconditions, or call redirection are produced — redirecting
+    -- a call to a pure twin would drop its imperative meaning. Genuine
+    -- functions/externals (and transparent-only procedures) are still emitted as
+    -- pure functions so their call sites resolve, and the imperative procedures
+    -- pass through unchanged as procedures.
+    let imperativeNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
+    let functions := (program.staticProcedures.filter (fun p => !imperativeNames.contains p.name.text)).map (mkFunctionCopy {})
+    { functions, coreProcedures := imperativeProcs, datatypes, constants := program.constants }
+  | .Verify | .BothSuboptimally =>
+    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
+    -- Names of single-output procedures whose calls can be redirected to their
+    -- `$asFunction` version: `mkFreePostcondition` only equates a single output
+    -- to the function, and a single function application can only fill one
+    -- assignment target. Multi-output procedures are excluded.
+    let singleOutputNames : Std.HashSet String :=
+      imperativeProcs.foldl (fun s p =>
+        if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
+    -- $asFunction copies for procedures that have a procedural twin;
+    -- transparent-only procedures keep their original name.
+    let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
+    let coreProcedures := imperativeProcs.map fun proc =>
+      let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+      let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
+      match options.analysisMode with
+      | .Verify =>
+        -- Redirect every call to a single-output twinned procedure to its
+        -- `$asFunction` version so calls stay constant-foldable during symbolic
+        -- evaluation (instead of producing fresh symbolic outputs via the
+        -- procedural twin). Since callers then observe the pure twin directly,
+        -- the free postcondition tying procedure to twin is unnecessary.
+        redirectCallsInProc singleOutputNames proc
+      | _ =>
+        -- `BothSuboptimally`: keep calls as-is and tie each procedure to its
+        -- twin via a free postcondition, at the cost of fresh symbolic outputs.
+        addFreePostcondition proc (mkFreePostcondition proc)
+    { functions, coreProcedures, datatypes, constants := program.constants }
 where
   /-- Check if an expression tree contains Assume or Assert statements anywhere.
       The contract pass inserts these for procedures with contracts. -/

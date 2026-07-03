@@ -13,6 +13,30 @@ namespace Strata.Laurel
 
 public section
 
+/-- Selects how the transparency pass lowers procedures for a given analysis.
+
+    - `Execute`: skip the transparency pass entirely. No `$asFunction` twins,
+      no free postconditions, and no call redirection are produced. Genuine
+      functions/externals are still emitted, but procedure calls stay procedure
+      calls, which concrete interpretation requires — redirecting a call to a
+      pure twin would drop its imperative meaning.
+    - `Verify`: redirect calls to single-output procedures to their pure
+      `$asFunction` twin so they remain constant-foldable during symbolic
+      evaluation (avoiding the term blowup that occurs when each call produces a
+      fresh symbolic output via the procedural twin). Since callers never
+      observe the procedural output, the free postconditions that equate a
+      procedure to its twin are omitted.
+    - `BothSuboptimally`: generate the twins and the free postconditions tying
+      each procedure to its twin, but leave call sites alone (procedure calls
+      stay procedure calls, function calls stay function calls). More
+      conservative than `Verify` at the cost of fresh symbolic outputs per call.
+
+    Multi-output procedures are never redirected regardless of mode, since a
+    single function application cannot fill multiple assignment targets. -/
+inductive AnalysisMode where
+  | Execute | Verify | BothSuboptimally
+  deriving BEq
+
 structure LaurelTranslateOptions where
   inlineFunctionsWhenPossible : Bool := false
   overflowChecks : Core.OverflowChecks := {}
@@ -21,14 +45,9 @@ structure LaurelTranslateOptions where
       this option has no effect. Use with the verifier's `useArrayTheory`. -/
   enumeratedModifiesClauses : Bool := false
   keepAllFilesPrefix : Option String := none
-  /-- When `true`, calls in procedure bodies to single-output procedures that
-      have a `$asFunction` twin are redirected to that pure function version
-      instead of the procedural twin. This keeps such calls constant-foldable
-      during symbolic evaluation (avoiding the term blowup that occurs when each
-      call produces a fresh symbolic output via the procedural twin).
-      Multi-output procedures are left as procedure calls, since a single
-      function application cannot fill multiple assignment targets. -/
-  alwaysCallCoreFunctions : Bool := true
+  /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
+      analyze/verify behavior. See `AnalysisMode`. -/
+  analysisMode : AnalysisMode := .Verify
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
