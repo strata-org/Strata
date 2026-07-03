@@ -173,15 +173,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
           else c }
       else td
     | _ => td
-  -- Inject the bridge only when a dynamic type is marked; it needs the 2-arg
-  -- `MkComposite` and `TypeTag` produced by this pass.
-  let bridgeProcs : List Procedure :=
-    match program.dynamicRefType? with
-    | some (name, spec) => dynamicRefBridge name spec
-    | none => []
   let transformed : Program :=
     { program with
-      staticProcedures := procs' ++ bridgeProcs,
+      staticProcedures := procs',
       types := [typeTagDatatype] ++ remainingTypes,
       constants := program.constants ++ typeHierarchyConstants }
   -- Now that `New`/`IsType` have been lowered (they needed the original
