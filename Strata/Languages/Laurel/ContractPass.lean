@@ -229,11 +229,18 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Contrac
     -- body's postcondition list.
     return .Opaque [] (some ⟨.Block (snapshotDecls ++ preAssumes ++ [impl] ++ postAsserts) none, impl.source⟩) []
   | .Opaque _ none mods =>
-    -- Bodiless: there is no implementation to assert against, so the
-    -- postconditions remain as the procedure's (free) spec.
-    return .Opaque postconds none mods
+    -- Bodiless: there is no implementation to assert against, so we cannot lower
+    -- the postconditions to body assertions. Callers already assume each
+    -- postcondition at the call site (via `mkPostAssumes`), so drop them from the
+    -- procedure's spec too — leaving a `checked` (assert-only) postcondition here
+    -- would be uncheckable (no body) yet still reach Core, where the schema pass
+    -- rejects any non-free condition. The transparency pass re-adds the only
+    -- legitimate surviving postcondition (the free `$asFunction` equation).
+    return .Opaque [] none mods
   | .Abstract _ =>
-    return .Abstract postconds
+    -- Abstract procedures likewise have no body to check against; their
+    -- postconditions are assumed at call sites, so clear the spec here.
+    return .Abstract []
   | b => return b
 
 /-- Generate precondition checks (one per precondition) for a call site.

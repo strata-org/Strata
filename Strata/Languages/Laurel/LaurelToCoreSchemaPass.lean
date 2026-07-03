@@ -590,7 +590,7 @@ def translateStmt (stmt : StmtExprMd)
 Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
-private def translateChecks (checks : List Condition) (labelBase : String) (overrideFree: Bool)
+private def translateChecks (checks : List Condition) (labelBase : String)
     (defaultSummary : Option String := none)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
@@ -600,8 +600,21 @@ private def translateChecks (checks : List Condition) (labelBase : String) (over
     let md := match check.summary.orElse (fun _ => defaultSummary) with
       | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
       | none => baseMd
-    let attr := if check.mode == ConditionMode.Assume || overrideFree then Core.Procedure.CheckAttr.Free else .Default
-    let c : Core.Procedure.Check := { expr := checkExpr, attr, md }
+    -- By the time conditions reach the Core schema pass, the contract pass has
+    -- lowered every *checkable* pre/postcondition into explicit body
+    -- assert/assume statements and cleared the procedures' condition lists. The
+    -- only conditions that survive to here are the *free* (assume-only)
+    -- postconditions added by the transparency pass (`r == foo$asFunction(...)`),
+    -- which Core simply assumes at call sites. The schema pass therefore only
+    -- supports free conditions and always emits `.Free`; a non-free condition
+    -- reaching this point is a compiler-invariant violation, not user input.
+    if check.mode != ConditionMode.Assume then
+      let d := diagnosticFromSource check.condition.source
+        s!"internal error: a non-free {labelBase} reached Core translation; the contract pass should have lowered it to an assertion"
+        DiagnosticType.StrataBug
+      emitDiagnostic d
+      emitCoreDiagnostic d
+    let c : Core.Procedure.Check := { expr := checkExpr, attr := .Free, md }
     return (label, c))
 
 /--
@@ -631,7 +644,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     outputs := outputs
   }
   -- Translate preconditions
-  let preconditions ← translateChecks proc.preconditions "requires" false
+  let preconditions ← translateChecks proc.preconditions "requires"
 
   let bodyStmts : Option (List Core.Statement) ←
     match proc.body with
@@ -644,13 +657,14 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
-  -- Translate postconditions for Opaque and Abstract bodies. A bodiless
-  -- procedure (bodyStmts = none) gets its postconditions marked `free`
-  -- (overrideFree) so they are assumed, not checked — and an empty body.
+  -- Translate postconditions for Opaque and Abstract bodies. After the contract
+  -- pass, the only postconditions still attached to a procedure are the free
+  -- (assume-only) ones added by the transparency pass; `translateChecks` rejects
+  -- any non-free condition and always emits `.Free`.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds s!"postcondition" bodyStmts.isNone
+        translateChecks postconds s!"postcondition"
           (defaultSummary := "postcondition")
     | _ => pure []
   let body : List Core.Statement :=
