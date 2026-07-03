@@ -135,18 +135,6 @@ def SemanticModel.get? (model: SemanticModel) (iden: Identifier): Option Resolve
 def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
   (model.get? iden).getD default
 
-def SemanticModel.isFunction (model: SemanticModel) (id: Identifier): Bool :=
-  match model.get id with
-      | .staticProcedure proc => proc.isFunctional
-      | .parameter _ => true
-      | .datatypeConstructor _ _ => true
-      | .datatypeDestructor _ _ => true
-      | .constant _ => true
-      | .unresolved _ => true -- functions calls are more permissive, so true avoids possibly incorrect errors
-      | node =>
-          dbg_trace s!"Sound but incomplete BUG! id: {repr id}, is not a procedure, but a node {repr node}"
-          false
-
 /--
 Compute the flattened set of ancestors for a composite type, including itself.
 Traverses the `extending` list transitively.

@@ -77,7 +77,7 @@ program Laurel;
 composite C {
   var v: int
 }
-function getV(c: C) returns (r: int)
+procedure getV(c: C) returns (r: int)
   opaque
   ensures r == c#v;
 procedure bump(c: C)

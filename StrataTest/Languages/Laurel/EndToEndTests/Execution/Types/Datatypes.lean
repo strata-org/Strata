@@ -52,10 +52,10 @@ procedure unsafeDestructor() opaque {
 };
 
 // Datatype in function
-function listHead(xs: IntList): int
+procedure listHead(xs: IntList): int
   requires IntList..isCons(xs)
 {
-  IntList..head(xs)
+  return IntList..head(xs)
 };
 
 procedure testFunction() opaque {

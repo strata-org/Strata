@@ -150,7 +150,6 @@ instance : Inhabited Procedure where
     outputs := []
     preconditions := []
     decreases := none
-    isFunctional := false
     invokeOn := none
     body := .Transparent { val := .LiteralBool true, source := none }
   }
@@ -354,7 +353,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let cond ← translateStmtExpr condArg
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
-      return mkStmtExprMd (.While cond invariants none body) src
+      return mkStmtExprMd (.While cond invariants none body false) src
     | q`Laurel.forLoop, #[initArg, condArg, stepArg, invSeqArg, bodyArg] =>
       let init ← translateStmtExpr initArg
       let cond ← translateStmtExpr condArg
@@ -362,7 +361,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
       let whileBody := mkStmtExprMd (.Block [body, step] none) src
-      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody) src
+      let whileStmt := mkStmtExprMd (.While cond invariants none whileBody false) src
       return mkStmtExprMd (.Block [init, whileStmt] none) src
     | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
       -- A `do … while` is a post-test `While`. The `EliminateDoWhile` pass
@@ -581,11 +580,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected body or externalBody operation, got {repr bodyOp.name}"
       | .option _ none => pure none
       | _ => TransM.error s!"Expected body, got {repr bodyArg}"
-    -- For functions, wrap the body in a Return so the last expression
-    -- is treated as the return value by downstream passes.
-    let body := if op.name == q`Laurel.function then
-      body.map fun b => ⟨.Return (some b), b.source⟩
-    else body
     -- Determine procedure body kind
     let procBody :=
       if isExternal then Body.External
@@ -599,7 +593,6 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       outputs := returnParameters
       preconditions := preconditions
       decreases := none
-      isFunctional := op.name == q`Laurel.function
       invokeOn := invokeOn
       body := procBody
     }

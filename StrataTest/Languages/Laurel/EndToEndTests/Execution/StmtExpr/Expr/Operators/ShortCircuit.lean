@@ -12,9 +12,9 @@ open Strata
 #eval testLaurel
 #strata
 program Laurel;
-function mustNotCallFunc(x: int): int
+procedure mustNotCallFunc(x: int): int
   requires false
-{ x };
+{ return x };
 
 procedure mustNotCallProc(): int
   requires false

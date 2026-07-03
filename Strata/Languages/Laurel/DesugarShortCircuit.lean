@@ -50,7 +50,11 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
 
 /-- Desugar short-circuit operators in a program. -/
 def desugarShortCircuit (program : Program) : Program :=
-  let imperativeCallees := (program.staticProcedures.filter (!·.isFunctional)).map (·.name.text)
+  -- Every static procedure is imperative now that Laurel `function`s are gone,
+  -- and this pass runs before the lifting pass (see `comesBefore`), so calls to
+  -- them are still in expression position here. They therefore all count as
+  -- imperative callees whose short-circuited operands must be guarded.
+  let imperativeCallees := program.staticProcedures.map (·.name.text)
   mapProgram (mapStmtExpr (desugarShortCircuitNode imperativeCallees)) program
 
 end -- public section

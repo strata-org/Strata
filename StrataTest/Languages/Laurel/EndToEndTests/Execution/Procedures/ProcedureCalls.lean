@@ -40,9 +40,9 @@ procedure fooProof()
 //  assert x == y;
 };
 
-function aFunction(x: int): int
+procedure aFunction(x: int): int
 {
-  x
+  return x
 };
 
 procedure aFunctionCaller()

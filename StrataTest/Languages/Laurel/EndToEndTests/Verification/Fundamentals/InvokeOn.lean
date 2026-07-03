@@ -13,12 +13,12 @@ open Strata
     (options := { verifyOptions := { Core.VerifyOptions.quiet with solver := "z3" } })
 #strata
 program Laurel;
-function P(x: int): bool;
-function Q(x: int): bool;
+procedure P(x: int): bool;
+procedure Q(x: int): bool;
 
-function assertP(x: int): int requires P(x);
-function needsPAndQsInvoke1(): int {
-  assertP(3)
+procedure assertP(x: int): int requires P(x);
+procedure needsPAndQsInvoke1(): int {
+  return assertP(3)
 };
 
 procedure PAndQ(x: int)
@@ -26,8 +26,8 @@ procedure PAndQ(x: int)
   opaque
   ensures P(x) && Q(x);
 
-function needsPAndQsInvoke2(): int {
-  assertP(3)
+procedure needsPAndQsInvoke2(): int {
+  return assertP(3)
 };
 
 // The axiom fires because P(x) appears in the goal.
@@ -44,8 +44,8 @@ procedure axiomDoesNotFireBecauseOfPattern(x: int)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
-function A(x: int, y: real): bool;
-function B(x: real): bool;
+procedure A(x: int, y: real): bool;
+procedure B(x: real): bool;
 procedure AAndB(x: int, y: real)
   invokeOn A(x, y)
   opaque
@@ -64,7 +64,7 @@ procedure invokeB(x: int, y :real)
 //^^^^^^^^^^^ error: assertion could not be proved
 };
 
-function R(x: int): bool;
+procedure R(x: int): bool;
 procedure badPostcondition(x: int)
   invokeOn R(x)
   opaque

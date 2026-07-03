@@ -34,7 +34,7 @@ structure ElimHoleState where
 
 private abbrev ElimHoleM := StateM ElimHoleState
 
-/-- Generate a fresh uninterpreted function for a typed hole and return a call to it. -/
+/-- Generate a fresh uninterpreted procedure for a typed hole and return a call to it. -/
 private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   let s ← get
   let n := s.counter
@@ -47,7 +47,6 @@ private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : Eli
     outputs := [{ name := "$result", type := holeType }]
     preconditions := []
     decreases := none
-    isFunctional := true
     body := .Opaque [] none []
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }

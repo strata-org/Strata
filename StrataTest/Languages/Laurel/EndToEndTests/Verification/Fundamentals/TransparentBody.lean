@@ -52,9 +52,9 @@ procedure returnAtEnd(x: int) returns (r: int) {
   }
 };
 
-function elseWithCall(): int
+procedure elseWithCall(): int
 {
-  if true then 3 else returnAtEnd(3)
+  return if true then 3 else returnAtEnd(3)
 };
 
 procedure guardInFunction(x: int) returns (r: int)

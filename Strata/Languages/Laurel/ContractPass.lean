@@ -62,13 +62,24 @@ private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
     Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
 private def mkConditionProc (name : String) (params : List Parameter)
     (condition : Condition) : Procedure :=
+  let src := condition.condition.source
+  -- Give the pre/post helper procedure a shape the current lowering can turn
+  -- into a Core function: assign the condition to the `$result` output and exit
+  -- via `returnLabel`, rather than emitting the condition directly as a
+  -- transparent expression body. This matches the `{ $result := …; exit }`
+  -- pattern that `unwrapReturnBlock` (LaurelToCoreSchemaPass) recognizes when
+  -- converting a transparent body to a Core function application. Once a
+  -- dedicated "functionalize" pass exists, helpers could be emitted as
+  -- functions directly and this block wrapping would no longer be needed.
+  let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condition.condition, src⟩
+  let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
+  let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
   { name := mkId name
     inputs := params
     outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    isFunctional := true
-    body := .Transparent condition.condition }
+    body := .Transparent body }
 
 /-- Suffix appended to a procedure's output-parameter names when they are lowered
     into a postcondition helper *function*.
@@ -155,7 +166,6 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
     outputs := [⟨resultName, { val := .TBool, source := none }⟩]
     preconditions := []
     decreases := none
-    isFunctional := false
     body := .Transparent body }
 
 /-- Information about a procedure's contracts. -/
@@ -174,7 +184,7 @@ private def collectContractInfo (procs : List Procedure) : Std.HashMap String Co
     let postconds := getPostconditions proc.body
     let hasPre := !proc.preconditions.isEmpty
     let hasPost := !postconds.isEmpty
-    if !proc.isFunctional && (hasPre || hasPost) then
+    if hasPre || hasPost then
       let preNames := proc.preconditions.zipIdx.map fun (c, i) =>
         (preCondProcName proc.name.text i, c.summary, c.mode)
       let postNames := postconds.zipIdx.map fun (c, i) =>
@@ -277,19 +287,15 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Contrac
 
 /-- Generate precondition checks (one per precondition) for a call site.
     A precondition is checked at the call site unless it is assume-only
-    (mode `Assume`, i.e. a free precondition). In a functional caller an
-    assertion is not possible, so the check is emitted as an assumption. -/
-private def mkPreChecks (info : ContractInfo) (isFunctional : Bool)
+    (mode `Assume`, i.e. a free precondition). -/
+private def mkPreChecks (info : ContractInfo)
     (tempRefs : List StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
   if !info.hasPreCondition then []
   else info.preNames.filterMap fun (name, summary, mode) =>
     if !mode.doesAssert then none
     else
       let call := mkCall name tempRefs
-      if isFunctional then
-        some ⟨.Assume call, src⟩
-      else
-        some ⟨.Assert call (some (summary.getD "precondition")), src⟩
+      some ⟨.Assert call (some (summary.getD "precondition")), src⟩
 
 /-- Generate postcondition assumes (one per postcondition) for a call site.
     A postcondition is assumed after the call unless it is assert-only
@@ -328,12 +334,12 @@ private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprM
 
 /-- Rewrite call sites in a statement/expression tree. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
-    (isFunctional : Bool) (expr : StmtExprMd) : ContractM StmtExprMd := do
+    (expr : StmtExprMd) : ContractM StmtExprMd := do
   let rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
       (info : ContractInfo) (src : Option FileRange)
       : ContractM (List StmtExprMd) := do
     let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
-    let preCheck := mkPreChecks info isFunctional tempRefs src
+    let preCheck := mkPreChecks info tempRefs src
     let (callStmt, postAssume, returnValue) ←
       if info.hasPostCondition && !info.outputParams.isEmpty then do
         let mut outputTempDecls : List VariableMd := []
@@ -374,7 +380,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
             let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
             let callArgs := mkCallArgs info args' tempRefs
             let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
-            let preCheck := mkPreChecks info isFunctional tempRefs src
+            let preCheck := mkPreChecks info tempRefs src
             let outputArgs := targets.filterMap fun t =>
               match t.val with
               | .Local name => some (mkMd (.Var (.Local name)))
@@ -399,7 +405,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
 /-- Rewrite call sites in all bodies of a procedure. -/
 private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)
     (proc : Procedure) : ContractM Procedure := do
-  let rw := rewriteCallSites contractInfoMap proc.isFunctional
+  let rw := rewriteCallSites contractInfoMap
   match proc.body with
   | .Transparent body =>
     let body' ← rw body
@@ -438,7 +444,7 @@ def lowerContracts (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
   -- Generate helper procedures for all procedures with contracts
-  let helperProcs := (program.staticProcedures.filter (fun proc => !proc.isFunctional)).flatMap fun proc =>
+  let helperProcs := program.staticProcedures.flatMap fun proc =>
     let postconds := getPostconditions proc.body
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
       mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
@@ -450,24 +456,21 @@ def lowerContracts (program : Program) : Program :=
   -- Transform procedures: strip contracts, add assume/assert, rewrite call sites
   -- Run all call-site rewriting in a single ContractM to share the global counter.
   let (transformedProcs, _) := (program.staticProcedures.mapM fun (proc : Procedure) => do
-    if proc.isFunctional then
-      return proc
-    else
-      let proc : Procedure := match proc.invokeOn with
-        | some trigger =>
-          let postconds := getPostconditions proc.body
-          if postconds.isEmpty then { proc with invokeOn := none }
-          else { proc with
-            axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
-            invokeOn := none }
-        | none => proc
-      let proc : Procedure ← match contractInfoMap.get? proc.name.text with
-        | some info =>
-          let body ← transformProcBody proc info
-          pure { proc with preconditions := [], body }
-        | none => pure proc
-      -- Rewrite call sites in the procedure body
-      rewriteCallSitesInProc contractInfoMap proc).run 0
+    let proc : Procedure := match proc.invokeOn with
+      | some trigger =>
+        let postconds := getPostconditions proc.body
+        if postconds.isEmpty then { proc with invokeOn := none }
+        else { proc with
+          axioms := [mkInvokeOnAxiom proc.inputs trigger proc.preconditions postconds]
+          invokeOn := none }
+      | none => proc
+    let proc : Procedure ← match contractInfoMap.get? proc.name.text with
+      | some info =>
+        let body ← transformProcBody proc info
+        pure { proc with preconditions := [], body }
+      | none => pure proc
+    -- Rewrite call sites in the procedure body
+    rewriteCallSitesInProc contractInfoMap proc).run 0
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
 

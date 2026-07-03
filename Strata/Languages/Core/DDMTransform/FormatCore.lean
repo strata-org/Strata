@@ -721,9 +721,26 @@ partial def lappToExpr {M} [Inhabited M]
     : ToCSTM M (CoreDDM.Expr M) := do
   let (head, args) := Lambda.getLFuncCall e
   match head with
-  | .op _ fn _ =>
-    let argExprs ← args.mapM (lexprToExpr · qLevel)
-    lopToExpr fn.name argExprs
+  | .op _ fn ty =>
+    -- `mapConst` (the constant-map builtin) has no inferable key type, so it is
+    -- emitted with an explicit key-type annotation `mapConst<K>(v)`. Recover `K`
+    -- from the op's function type `V → Map K V`.
+    if fn.name == "mapConst" then
+      match args with
+      | [valArg] =>
+        let valCST ← lexprToExpr valArg qLevel
+        let kCST ← match ty with
+          | some (.tcons "arrow" [_, .tcons "Map" [k, _]]) => lmonoTyToCoreType k
+          | some (.tcons "Map" [k, _]) => lmonoTyToCoreType k
+          | _ => pure (CoreType.tvar default unknownTypeVar)
+        -- The value type is inferred from `v` on re-parse, so a placeholder is fine.
+        pure (.map_const default kCST (CoreType.tvar default unknownTypeVar) valCST)
+      | _ =>
+        let argExprs ← args.mapM (lexprToExpr · qLevel)
+        lopToExpr fn.name argExprs
+    else
+      let argExprs ← args.mapM (lexprToExpr · qLevel)
+      lopToExpr fn.name argExprs
   | .app _ fn arg =>
     -- getLFuncCall couldn't decompose further (fn is not .app or .op)
     let fnCST ← lexprToExpr fn qLevel

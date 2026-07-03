@@ -26,21 +26,16 @@ procedure hasMutatingAssignment(): int
   x
 };
 
-function functionWithMutatingAssignment(x: int): int
+procedure functionWithMutatingAssignment(x: int): int
 {
-  x := x + 1
+  x := x + 1;
 //^^^^^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
+  return 3
 };
 
-function functionWithWhile(x: int): int
+procedure functionCallingHasMutationAssignment(x: int): int
 {
-  while(false) {};
-//^^^^^^^^^^^^^^^ error: loops are not supported in functions or contracts
-  3
-};
-function functionCallingHasMutationAssignment(x: int): int
-{
-  hasMutatingAssignment()
+  return hasMutatingAssignment()
 };
 
 procedure impureContractIsLegal1(x: int)
@@ -56,5 +51,22 @@ procedure impureContractIsNotLegal2(x: int)
   opaque
 {
   assert (x := 2) == 2
+};
+#end
+
+/-! ## Loop in a transparent body
+
+The transparency pass reports only the first fatal transparent-body error per
+program, so this case lives in its own `#eval` block to avoid masking (or being
+masked by) the destructive-assignment diagnostics above. -/
+
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure functionWithWhile(x: int): int
+{
+  while(false) {};
+//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
+  return 3
 };
 #end

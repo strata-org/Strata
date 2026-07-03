@@ -1132,6 +1132,12 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
+  | .fn _ q`Core.map_const, [_ktp, _vtp, va] =>
+     let kty ← translateLMonoTy bindings _ktp
+     let vty ← translateLMonoTy bindings _vtp
+     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Const) (.some (LMonoTy.mkArrow vty [Core.mapTy kty vty])))
+     let v ← translateExpr p bindings va
+     return .mkApp () fn [v]
   -- Seq operations
   | .fn _ q`Core.seq_length, [_atp, sa] =>
      let ety ← translateLMonoTy bindings _atp

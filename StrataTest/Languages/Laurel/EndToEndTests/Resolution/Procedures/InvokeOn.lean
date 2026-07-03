@@ -18,7 +18,7 @@ axiom). Resolution reports this. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function P(x: int): bool;
+procedure P(x: int): bool;
 
 procedure foo(x: int) returns (r: int)
 //        ^^^ error: 'invokeOn' procedure 'foo' may not have output parameters
@@ -37,7 +37,7 @@ instance `invokeOn` procedure with an output would slip through. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
-function P(x: int): bool;
+procedure P(x: int): bool;
 
 composite C {
   var v: int

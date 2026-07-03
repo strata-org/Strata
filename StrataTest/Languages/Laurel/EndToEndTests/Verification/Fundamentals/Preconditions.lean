@@ -33,17 +33,17 @@ procedure caller()
   var y: int := hasRequires(3)
 };
 
-function aFunctionWithPrecondition(x: int): int
+procedure aFunctionWithPrecondition(x: int): int
   requires x == 10
 {
-  x
+  return x
 };
 
 procedure aFunctionWithPreconditionCaller()
   opaque
 {
   var x: int := aFunctionWithPrecondition(0)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 // Error ranges are too wide because Core does not use expression locations
 };
 
@@ -63,11 +63,11 @@ procedure multipleRequiresCaller()
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 
-function funcMultipleRequires(x: int, y: int): int
+procedure funcMultipleRequires(x: int, y: int): int
   requires x > 0
   requires y > 0
 {
-  x + y
+  return x + y
 };
 
 procedure funcMultipleRequiresCaller()
@@ -75,19 +75,6 @@ procedure funcMultipleRequiresCaller()
 {
   var a: int := funcMultipleRequires(1, 2);
   var b: int := funcMultipleRequires(1, -1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-};
-
-// A function's `free` precondition is still checked at call sites: a
-// FuncPrecondition carries no free/checked attribute, so every one becomes a
-// well-formedness obligation at each call.
-function freeNeedsPositive(x: int) returns (r: int)
-  free requires x > 0
-{
-  x
-};
-procedure callsFree() opaque {
-  var v: int := freeNeedsPositive(-1)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end

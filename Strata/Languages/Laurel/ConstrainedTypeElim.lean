@@ -14,15 +14,13 @@ import Strata.Util.Tactics
 # Constrained Type Elimination
 
 A Laurel-to-Laurel pass that eliminates constrained types by:
-1. Generating a constraint function per constrained type (e.g. `nat$constraint(x: int): bool`)
-2. Adding `requires constraintFunc(param)` for constrained-typed inputs
-3. Adding `ensures constraintFunc(result)` for constrained-typed outputs
-   - Skipped for `isFunctional` procedures since the Laurel translator does not yet support
-     function postconditions. Constrained return types on functions are not checked.
-4. Inserting `assert constraintFunc(var)` for local variable init and reassignment
+1. Generating a constraint procedure per constrained type (e.g. `nat$constraint(x: int): bool`)
+2. Adding `requires constraintProc(param)` for constrained-typed inputs
+3. Adding `ensures constraintProc(result)` for constrained-typed outputs
+4. Inserting `assert constraintProc(var)` for local variable init and reassignment
 5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume)
 6. Adding a synthetic witness-validation procedure per constrained type
-7. Injecting constraint function calls into quantifier bodies (`forall` → `implies`, `exists` → `and`)
+7. Injecting constraint procedure calls into quantifier bodies (`forall` → `implies`, `exists` → `and`)
 8. Resolving all constrained type references to their base types
 -/
 
@@ -50,7 +48,7 @@ def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
 def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
   match ty with | .UserDefined name => ptMap.contains name.text | _ => false
 
-/-- Build a call to the constraint function for a constrained type, asserting
+/-- Build a call to the constraint procedure for a constrained type, asserting
     the constraint on the read-back expression `ref`. Returns `none` if `ty` is
     not a constrained type.
 
@@ -65,15 +63,15 @@ def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
     else none
   | _ => none
 
-/-- Build a call to the constraint function for a constrained type, checking a
+/-- Build a call to the constraint procedure for a constrained type, checking a
     local variable read, or `none` if not constrained. -/
 def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
     (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
   constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
 
-/-- Generate a constraint function for a constrained type.
-    For nested types, the function calls the parent's constraint function. -/
-def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
+/-- Generate a constraint procedure for a constrained type.
+    For nested types, the procedure calls the parent's constraint procedure. -/
+def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
   let bodyExpr: StmtExprMd := match ct.base.val with
     | .UserDefined parent =>
@@ -90,7 +88,6 @@ def mkConstraintFunc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
     body := .Transparent { val := .Return bodyExpr, source := none }
-    isFunctional := true
     decreases := none
     preconditions := [] }
 
@@ -166,7 +163,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
-  let outputEnsures : List Condition := if proc.isFunctional then [] else proc.outputs.filterMap fun p =>
+  let outputEnsures : List Condition := proc.outputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := ⟨c.val, p.type.source⟩ }
   let body' := match proc.body with
@@ -174,8 +171,7 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     let body := elimStmts ptMap model bodyExpr
     if outputEnsures.isEmpty then .Transparent body
     else
-      let retBody := if proc.isFunctional then ⟨.Return (some body), bodyExpr.source⟩ else body
-      .Opaque outputEnsures (some retBody) []
+      .Opaque outputEnsures (some body) []
   | .Opaque postconds impl modif =>
     let impl' := impl.map (elimStmts ptMap model)
     .Opaque (postconds ++ outputEnsures) impl' modif
@@ -206,7 +202,6 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     outputs := []
     body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
     preconditions := []
-    isFunctional := false
     decreases := none }
 
 /-- Eliminate constrained types within a composite type definition: resolve
@@ -226,27 +221,23 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
     : Program × List DiagnosticModel :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
-  let constraintFuncs := program.types.filterMap fun
-    | .Constrained ct => some (mkConstraintFunc ptMap ct) | _ => none
+  let constraintProcs := program.types.filterMap fun
+    | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
-  let funcDiags := program.staticProcedures.foldl (init := []) fun acc proc =>
-    if proc.isFunctional && proc.outputs.any (fun p => isConstrainedType ptMap p.type.val) then
-      acc.cons (diagnosticFromSource proc.name.source "constrained return types on functions are not yet supported")
-    else acc
   ({ program with
-    staticProcedures := constraintFuncs ++ program.staticProcedures.map (elimProc ptMap model)
+    staticProcedures := constraintProcs ++ program.staticProcedures.map (elimProc ptMap model)
                         ++ witnessProcedures
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
       | other => some other },
-   funcDiags)
+   [])
 
 /-- Pipeline pass: constrained type elimination. -/
 public def constrainedTypeElimPass : LoweringPass where
   name := "ConstrainedTypeElim"
-  documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking functions and witness procedures. Type tests against constrained types are rewritten to call the generated constraint function."
+  documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. Type tests against constrained types are rewritten to call the generated constraint procedure."
   needsResolves := true
   run := fun _ p m =>
     let (p', diags) := constrainedTypeElim m p

@@ -255,6 +255,36 @@ def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LE
     let e1g ← toGotoExpr e1
     let e2g ← toGotoExpr e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
+  -- Quaternary Functions (4 arguments)
+  | .app m (.app _ (.app _ (.app _ (.op _ fn _) e1) e2) e3) e4 =>
+    let op ← fnToGotoID (toString fn)
+    let gty ← m.type.toGotoType
+    let e1g ← toGotoExpr e1
+    let e2g ← toGotoExpr e2
+    let e3g ← toGotoExpr e3
+    let e4g ← toGotoExpr e4
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g] }
+  -- Quinary Functions (5 arguments)
+  | .app m (.app _ (.app _ (.app _ (.app _ (.op _ fn _) e1) e2) e3) e4) e5 =>
+    let op ← fnToGotoID (toString fn)
+    let gty ← m.type.toGotoType
+    let e1g ← toGotoExpr e1
+    let e2g ← toGotoExpr e2
+    let e3g ← toGotoExpr e3
+    let e4g ← toGotoExpr e4
+    let e5g ← toGotoExpr e5
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g, e5g] }
+  -- Senary Functions (6 arguments)
+  | .app m (.app _ (.app _ (.app _ (.app _ (.app _ (.op _ fn _) e1) e2) e3) e4) e5) e6 =>
+    let op ← fnToGotoID (toString fn)
+    let gty ← m.type.toGotoType
+    let e1g ← toGotoExpr e1
+    let e2g ← toGotoExpr e2
+    let e3g ← toGotoExpr e3
+    let e4g ← toGotoExpr e4
+    let e5g ← toGotoExpr e5
+    let e6g ← toGotoExpr e6
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g, e5g, e6g] }
   | _ => .error f!"[toGotoExpr] Not yet implemented: {e}"
 
 /--
@@ -354,6 +384,41 @@ def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
     let tg ← toGotoExprCtx bvars t
     let eg ← toGotoExprCtx bvars e
     return (Expr.ite cg tg eg)
+  -- N-ary Functions (4+ arguments) — handles function applications with more
+  -- than 3 arguments that aren't caught by the ternary/binary/unary cases.
+  -- Pattern: .app _ (.app _ (.app _ (.app _ (.op _ fn ty) e1) e2) e3) e4
+  | .app _ (.app _ (.app _ (.app _ (.op _ fn (some ty)) e1) e2) e3) e4 =>
+    let op ← fnToGotoID (toString fn)
+    let retty := ty.destructArrow.getLast!
+    let gty ← retty.toGotoType
+    let e1g ← toGotoExprCtx bvars e1
+    let e2g ← toGotoExprCtx bvars e2
+    let e3g ← toGotoExprCtx bvars e3
+    let e4g ← toGotoExprCtx bvars e4
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g] }
+  -- Quinary (5 arguments)
+  | .app _ (.app _ (.app _ (.app _ (.app _ (.op _ fn (some ty)) e1) e2) e3) e4) e5 =>
+    let op ← fnToGotoID (toString fn)
+    let retty := ty.destructArrow.getLast!
+    let gty ← retty.toGotoType
+    let e1g ← toGotoExprCtx bvars e1
+    let e2g ← toGotoExprCtx bvars e2
+    let e3g ← toGotoExprCtx bvars e3
+    let e4g ← toGotoExprCtx bvars e4
+    let e5g ← toGotoExprCtx bvars e5
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g, e5g] }
+  -- Senary (6 arguments)
+  | .app _ (.app _ (.app _ (.app _ (.app _ (.app _ (.op _ fn (some ty)) e1) e2) e3) e4) e5) e6 =>
+    let op ← fnToGotoID (toString fn)
+    let retty := ty.destructArrow.getLast!
+    let gty ← retty.toGotoType
+    let e1g ← toGotoExprCtx bvars e1
+    let e2g ← toGotoExprCtx bvars e2
+    let e3g ← toGotoExprCtx bvars e3
+    let e4g ← toGotoExprCtx bvars e4
+    let e5g ← toGotoExprCtx bvars e5
+    let e6g ← toGotoExprCtx bvars e6
+    return { id := op, type := gty, operands := [e1g, e2g, e3g, e4g, e5g, e6g] }
   | _ => .error f!"[toGotoExprCtx] Not yet implemented: {toString e}"
 
 /--

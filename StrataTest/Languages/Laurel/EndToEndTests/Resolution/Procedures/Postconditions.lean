@@ -9,20 +9,18 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-/-! ## Functions with postconditions are not yet supported -/
+/-! ## Procedures with postconditions -/
 
 #eval testLaurel <|
 #strata
 program Laurel;
 
-function opaqueFunction(x: int) returns (r: int)
-//       ^^^^^^^^^^^^^^ error: functions with postconditions are not yet supported
-// The above limitation is because Core does not yet support functions with postconditions
+procedure opaqueFunction(x: int) returns (r: int)
   requires x > 0
   opaque
   ensures r > 0
 {
-  x
+  return x
 };
 
 procedure callerOfOpaqueFunction()
@@ -30,7 +28,8 @@ procedure callerOfOpaqueFunction()
 {
   var x: int := opaqueFunction(3);
   assert x > 0;
-// The following assertion should fail but does not
+// The caller only sees the postcondition (r > 0), not the body, so this fails.
   assert x == 3
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

@@ -14,13 +14,12 @@ open Strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 
-// Function with valid constrained return — constraint not checked (not yet supported)
-function goodFunc(): nat { 3 };
-//       ^^^^^^^^ error: constrained return types on functions are not yet supported
+// Procedure with valid constrained return — 3 satisfies nat's constraint (x >= 0).
+procedure goodFunc(): nat { return 3 };
 
-// Function with invalid constrained return — constraint not checked (not yet supported)
-function badFunc(): nat { -1 };
-//       ^^^^^^^ error: constrained return types on functions are not yet supported
+// Procedure with invalid constrained return — -1 violates nat's constraint (x >= 0).
+procedure badFunc(): nat { return -1 };
+//                   ^^^ error: postcondition does not hold
 
 // Caller of constrained function — body is inlined, caller sees actual value
 procedure callerGood()

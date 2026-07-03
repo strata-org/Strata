@@ -166,7 +166,7 @@ private def mkFunctionCopy (asFunctionNames : Std.HashSet String) (proc : Proced
     | .Transparent b => .Transparent (rewriteCallsToFunctional asFunctionNames (if hasProcedureTwin then stripAssertAssume b else b))
     | .Opaque _ _ _ => if hasProcedureTwin then .Opaque [] none [] else proc.body
     | x => x
-  { proc with name := funcName, isFunctional := true, body := body }
+  { proc with name := funcName, body := body }
 
 /-- Append a free postcondition to a procedure's body postconditions.
     For Opaque and Abstract bodies, the free condition is appended to the
@@ -196,11 +196,7 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def createFunctionsForTransparentBodies (program : Program) (options : LaurelTranslateOptions := {}) : UnorderedCoreWithLaurelTypes :=
-  -- Only non-functional procedures get a procedural twin. Genuine functions
-  -- (`isFunctional`, e.g. a user `function` or a pure `$pre` helper) are already
-  -- pure; giving them a procedural twin would put their name in `procedureNames`
-  -- and wrongly reject calls to them from pure function/contract bodies.
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal && !p.isFunctional)
+  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
   -- A transparent procedure whose body is purely functional (no Assume/Assert
   -- from contract instrumentation) needs only a function copy, not a procedural
   -- twin. This matches the old `isFunctional` behavior for condition helpers.
@@ -213,15 +209,26 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     | _ => none
   match options.analysisMode with
   | .Execute =>
-    -- Concrete execution: skip the transparency pass entirely. No `$asFunction`
-    -- twins, free postconditions, or call redirection are produced — redirecting
-    -- a call to a pure twin would drop its imperative meaning. Genuine
-    -- functions/externals (and transparent-only procedures) are still emitted as
-    -- pure functions so their call sites resolve, and the imperative procedures
-    -- pass through unchanged as procedures.
-    let imperativeNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
-    let functions := (program.staticProcedures.filter (fun p => !imperativeNames.contains p.name.text)).map (mkFunctionCopy {})
-    { functions, coreProcedures := imperativeProcs, datatypes, constants := program.constants }
+    -- Concrete execution: keep every procedure as a real procedure (no call
+    -- redirection and no free postconditions), so an imperative call is executed
+    -- for its imperative meaning rather than folded into a pure twin.
+    --
+    -- We still emit the `$asFunction` twins and rewrite the *function copies'*
+    -- bodies (and any axiom / quantifier references) to call those twins. This is
+    -- what keeps a pure context resolvable: a transparent procedure such as
+    -- `List_slice` — or a bodiless prelude primitive such as `Any_len` — is
+    -- reached from another function body or a `requires`/`ensures` clause, and
+    -- after the function/procedure merge those callees are procedures. Rewriting
+    -- the call to `<name>$asFunction` turns it back into a pure function
+    -- application the schema pass accepts, exactly as before the merge. The
+    -- imperative procedure bodies themselves are left untouched (their calls stay
+    -- procedure calls), preserving execution semantics.
+    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
+    let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
+    let coreProcedures := imperativeProcs.map fun proc =>
+      let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+      rewriteQuantifierBodiesInProc toUpdateNames proc
+    { functions, coreProcedures, datatypes, constants := program.constants }
   | .Verify | .BothSuboptimally =>
     let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     -- Names of single-output procedures whose calls can be redirected to their
@@ -234,17 +241,59 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     -- $asFunction copies for procedures that have a procedural twin;
     -- transparent-only procedures keep their original name.
     let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
-    let coreProcedures := imperativeProcs.map fun proc =>
-      let proc := { proc with isFunctional := false, axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
-      let proc := rewriteQuantifierBodiesInProc toUpdateNames proc
+    -- Rewrite each procedure's axioms/quantifier bodies to reference the
+    -- `$asFunction` twins before we decide which procedures still need the free
+    -- postcondition bridge.
+    let rewritten := imperativeProcs.map fun proc =>
+      let proc := { proc with axioms := proc.axioms.map (rewriteCallsToFunctional toUpdateNames) }
+      rewriteQuantifierBodiesInProc toUpdateNames proc
+    -- Names whose `$asFunction` twin is referenced by some rewritten axiom or
+    -- quantifier body. The axiom/quantifier rewrites above turn a reference to
+    -- `P(..)` into `P$asFunction(..)` while goals elsewhere still mention `P(..)`,
+    -- so `P` needs the free postcondition `P == P$asFunction(..)` to tie the two
+    -- together. This happens for `invokeOn P(x)` (an axiom on the *triggering*
+    -- procedure, not on `P`) and for a quantifier trigger `{ P(i) }` inside a
+    -- procedure body — so the referenced twins must be gathered across every
+    -- procedure's axioms and body, not per-procedure.
+    let scanExprForTwins (e : StmtExprMd) : StateM (Std.HashSet String) Unit :=
+      foldStmtExprM (fun e =>
+        match e.val with
+        | .StaticCall callee _ =>
+          if callee.text.endsWith "$asFunction" then
+            modify (·.insert (callee.text.dropRight "$asFunction".length))
+          else pure ()
+        | _ => pure ()) e
+    let collectTwins : StateM (Std.HashSet String) Unit := do
+      for proc in rewritten do
+        for ax in proc.axioms do scanExprForTwins ax
+        match proc.body with
+        | .Opaque postconds impl _ =>
+          postconds.forM fun c => scanExprForTwins c.condition
+          match impl with | some b => scanExprForTwins b | none => pure ()
+        | .Transparent b => scanExprForTwins b
+        | .Abstract postconds => postconds.forM fun c => scanExprForTwins c.condition
+        | .External => pure ()
+    let axiomTwinNames : Std.HashSet String := (collectTwins.run {}).snd
+    let coreProcedures := rewritten.map fun proc =>
       match options.analysisMode with
       | .Verify =>
         -- Redirect every call to a single-output twinned procedure to its
         -- `$asFunction` version so calls stay constant-foldable during symbolic
         -- evaluation (instead of producing fresh symbolic outputs via the
-        -- procedural twin). Since callers then observe the pure twin directly,
-        -- the free postcondition tying procedure to twin is unnecessary.
-        redirectCallsInProc singleOutputNames proc
+        -- procedural twin). Callers of a redirected procedure observe the pure
+        -- twin directly, so the free postcondition tying procedure to twin is
+        -- unnecessary there.
+        --
+        -- A procedure still needs the free postcondition when it is *not*
+        -- redirected yet its twin is referenced by some rewritten axiom (the
+        -- `invokeOn` case): without `P == P$asFunction(..)` the rewritten axiom
+        -- can no longer discharge a goal about `P`. Procedures whose twin no
+        -- axiom mentions get no bridge, since injecting the uninterpreted twin
+        -- equation only weakens the solver (turning refutable goals into unknown).
+        let proc := redirectCallsInProc singleOutputNames proc
+        if axiomTwinNames.contains proc.name.text && !singleOutputNames.contains proc.name.text then
+          addFreePostcondition proc (mkFreePostcondition proc)
+        else proc
       | _ =>
         -- `BothSuboptimally`: keep calls as-is and tie each procedure to its
         -- twin via a free postcondition, at the cost of fresh symbolic outputs.
@@ -252,22 +301,19 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
     { functions, coreProcedures, datatypes, constants := program.constants }
 where
   /-- Check if an expression tree contains Assume or Assert statements anywhere.
-      The contract pass inserts these for procedures with contracts. -/
+      The contract pass inserts these for procedures with contracts.
+
+      Uses the generic `anyStmtExpr` combinator so every constructor is
+      traversed automatically. A hand-rolled recursion here would miss nodes
+      like `Quantifier`, `InstanceCall`, `Old`, and `Fresh`: since the contract
+      pass now instruments every contract-bearing procedure, a `requires`-bearing
+      helper called from inside such a node produces an `Assert` that a partial
+      traversal would not see, so no procedural twin would be generated and the
+      schema pass would then reject the embedded assert. -/
   blockContainsAssumeOrAssert (e : StmtExprMd) : Bool :=
-    match e with
-    | AstNode.mk val _ =>
-    match val with
-    | .Assume _ | .Assert .. => true
-    | .Block stmts _ => stmts.attach.any fun ⟨s, _⟩ => blockContainsAssumeOrAssert s
-    | .IfThenElse c t f =>
-      blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert t ||
-      match f with | some fe => blockContainsAssumeOrAssert fe | none => false
-    | .StaticCall _ args => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
-    | .Assign _ v => blockContainsAssumeOrAssert v
-    | .While c _ _ b _ => blockContainsAssumeOrAssert c || blockContainsAssumeOrAssert b
-    | .Return v => match v with | some ve => blockContainsAssumeOrAssert ve | none => false
-    | .PrimitiveOp _ args _ => args.attach.any fun ⟨a, _⟩ => blockContainsAssumeOrAssert a
-    | _ => false
+    anyStmtExpr (fun n => match n.val with
+      | .Assume _ | .Assert .. => true
+      | _ => false) e
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
   name := "TransparencyPass"

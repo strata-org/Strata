@@ -63,15 +63,24 @@ invokes it so the call-site checks are generated too. In the lowered output:
     not the `checked` one (assert-only postconditions are not assumed). -/
 
 /--
-info: function callee$pre0(x: int)
+info: procedure callee$pre0(x: int)
   returns ($result: bool)
-x > 0;
-function callee$pre1(x: int)
+{
+  $result := x > 0;
+  exit $return
+}$return;
+procedure callee$pre1(x: int)
   returns ($result: bool)
-x > 1;
-function callee$pre2(x: int)
+{
+  $result := x > 1;
+  exit $return
+}$return;
+procedure callee$pre2(x: int)
   returns ($result: bool)
-x > 2;
+{
+  $result := x > 2;
+  exit $return
+}$return;
 procedure callee$post0(x: int, r$out: int)
   returns ($result: bool)
 {

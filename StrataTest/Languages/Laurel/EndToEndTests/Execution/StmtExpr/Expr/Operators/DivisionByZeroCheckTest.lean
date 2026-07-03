@@ -30,10 +30,10 @@ procedure safeDivision()
   assert z == 5
 };
 
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivSafe()
@@ -63,16 +63,16 @@ procedure unsafeDivision(x: int)
 #eval testLaurel <|
 #strata
 program Laurel;
-function pureDiv(x: int, y: int): int
+procedure pureDiv(x: int, y: int): int
   requires y != 0
 {
-  x / y
+  return x / y
 };
 
 procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 #end
