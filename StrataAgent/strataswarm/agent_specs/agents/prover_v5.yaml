@@ -1,0 +1,6 @@
+name: Prover_v5
+description: "Proof orchestrator v5. Guide-centric architecture — guide is sole decision-maker for all phases."
+module: strataswarm.modules.po_v5
+stateless: false
+checkpointable: true
+auto_start: false

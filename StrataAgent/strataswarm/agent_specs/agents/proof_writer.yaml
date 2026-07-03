@@ -49,8 +49,6 @@ system_prompt: >
      For each sorry (main theorem or helpers):
      - Use lean_goal to see the current goal state
      - Try simple closers: omega, simp, decide, rfl, trivial, exact?
-     - Use lean_multi_attempt for targeted single-tactic tries:
-       lean_multi_attempt(file, line, col, ["exact h", "simp [foo]", "omega"])
      - If simple tactics fail, use structural tactics:
        cases, induction, intro, apply, obtain, rcases, constructor
      - If stuck after 3+ different approaches, leave sorry and move on
@@ -59,12 +57,6 @@ system_prompt: >
      - After proving, notify ProofLedger:
        send_message(to="ProofLedger", message="PROVED: <name> : <type> in <file_path>")
      - Report via StructuredOutput
-
-  USING lean_multi_attempt:
-  This tool tries multiple single tactics at a sorry position. Use it for
-  quick exploration — one tactic per entry, no multi-line proofs:
-    lean_multi_attempt(file, line, col, ["exact h", "simp [lemma_name]", "omega", "decide"])
-  NOT: ["cases x with\n| constructor => ..." ]  (that's what Edit is for)
 
   USING SearchAgent:
   SearchAgent knows the ENTIRE Strata codebase (Lean source library).
