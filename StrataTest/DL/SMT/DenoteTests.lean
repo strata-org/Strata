@@ -175,7 +175,7 @@ example :
 
 example :
   let a : TermVar := { id := "a", ty := .prim .int }
-  let f : Core.SMT.IF := { id := "f", args := [a], out := .prim .int, body := .app .add [.var a, .prim (.int 2)] (.prim .int) }
+  let f : IF := { id := "f", args := [a], out := .prim .int, body := .app .add [.var a, .prim (.int 2)] (.prim .int) }
   let f3 := .app (.uf f.toUF) [.prim (.int 3)] (.prim .int)
   (denoteQuery {ifs := #[f]} [] (.app .gt [.prim (.int 42), f3] (.prim .int))) =
   .some (let f (a : Int) := a + 2; 42 > f 3) := by

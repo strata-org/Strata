@@ -21,21 +21,6 @@ open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
 
 public section
-
-structure SMT.IF where
-  id : String
-  args : List TermVar
-  out : TermType
-  body : Term
-deriving Repr, DecidableEq, Inhabited
-
-@[expose] def SMT.IF.toUF (f : SMT.IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
-
-structure SMT.Sort where
-  name : String
-  arity : Nat
-deriving Repr, DecidableEq, Inhabited
-
 /--
 A factory function whose UF declaration has been emitted but whose
 definition (interpreted body and/or axioms) has not been encoded as SMT.Term yet.
@@ -63,9 +48,9 @@ ready to be committed to the `SMT.Context`.
 -/
 structure SMT.EncodedFnDef where
   id : String
-  args : List TermType
+  args : List TermVar
   out : TermType
-  body? : Option (List String × Term)
+  body? : Option Term
   axioms : List Term
 deriving Repr, Inhabited
 
@@ -78,9 +63,9 @@ SMT.Context also has fields that are invariant during translation; they are
 explicitly marked as invariant in their comments.
 -/
 structure SMT.Context where
-  sorts : Array SMT.Sort := #[]
+  sorts : Array Strata.DL.SMT.Sort := #[]
   ufs : Array UF := #[]
-  ifs : Array SMT.IF := #[]
+  ifs : Array IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
   /-- Stores the TypeFactory purely for ordering datatype declarations
@@ -106,7 +91,7 @@ deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
 
-def SMT.Context.addSort (ctx : SMT.Context) (sort : SMT.Sort) : SMT.Context :=
+def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Context :=
   if sort ∈ ctx.sorts then ctx else
   { ctx with sorts := ctx.sorts.push sort }
 
@@ -115,7 +100,7 @@ def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
   { ctx with ufs := ctx.ufs.push fn }
 
 def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term) : SMT.Context :=
-  let smtif : SMT.IF := { id, args, out, body }
+  let smtif : IF := { id, args, out, body }
   if smtif ∈ ctx.ifs then ctx else
   { ctx with ifs := ctx.ifs.push smtif }
 
@@ -127,11 +112,10 @@ def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
     or uninterpreted declaration (`addUF`), followed by its axioms (`addAxiom`). -/
 def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) : SMT.Context :=
   let ctx := match rdef.body? with
-    | some (params, body) =>
-      let args := params.zip rdef.args |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
-      ctx.addIF rdef.id args rdef.out body
+    | some body =>
+      ctx.addIF rdef.id rdef.args rdef.out body
     | none =>
-      let uf : UF := { id := rdef.id, args := rdef.args, out := rdef.out }
+      let uf : UF := { id := rdef.id, args := rdef.args.map (·.ty), out := rdef.out }
       ctx.addUF uf
   rdef.axioms.foldl (init := ctx) (·.addAxiom ·)
 
@@ -762,12 +746,13 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
     let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
     let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
     let allArgs := e1t :: acc
-    let mut argTys : List TermType := []
+    let mut argTysRev : List TermType := []
     let mut ctx := ctx
     for inty in intys do
       let (smt_inty, ctx') ← LMonoTy.toSMTType inty ctx
       ctx := ctx'
-      argTys := argTys ++ [smt_inty]
+      argTysRev := smt_inty :: argTysRev
+    let argTys := argTysRev.reverse
     let uf := UF.mk (id := (toString $ format fn)) (args := argTys) (out := smt_outty)
     .ok (Term.app (.uf uf) allArgs smt_outty, ctx, pending)
   | _, _ =>
@@ -803,8 +788,11 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
   let savedSubst := ctx.tySubst
   let ctx := ctx.addSubst p.tySubst
   let seededSubst := ctx.tySubst
+  -- Encode arg types (needed for both interpreted and uninterpreted paths).
+  let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
+  let args := formalStrs.zip smt_intys |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
   -- Encode the body (interpreted functions) or leave it uninterpreted.
-  let (bodyTerm?, ctx, pending) ←
+  let (body?, ctx, pending) ←
     if func.isRecursive then
       .ok (none, ctx, ([] : List SMT.PendingFnDef))
     else match func.body with
@@ -812,8 +800,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
     | some body =>
       -- Substitute the formals in the function body with appropriate `.bvar`s.
       -- Use substFvarsLifting to properly lift indices under binders.
-      let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
-      let bvs := formalStrs.zip smt_intys
+      let bvs := args.map fun v => (v.id, v.ty)
       let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
       let body := LExpr.substFvarsLifting body (formals.zip bvars)
       let (term, ctx, pending) ← toSMTTerm factory bvs body ctx []
@@ -835,8 +822,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
         toSMTTerm factory [] ax (ctx.addSubst smt_ty_inst) pending
       .ok (axiom_term :: axs, ctx.restoreSubst seededSubst, pending))
   -- Restore the substitution that was active before this function.
-  let body? := bodyTerm?.map (formalStrs, ·)
-  .ok ({ id := p.uf.id, args := p.uf.args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
+  .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
        ctx.restoreSubst savedSubst, pending)
 
 /--

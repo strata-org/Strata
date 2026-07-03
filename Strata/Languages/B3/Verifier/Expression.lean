@@ -111,11 +111,6 @@ end ConversionContext
 -- Operator Conversion
 ---------------------------------------------------------------------
 
-/-- Placeholder name for UF argument types in SMT encoding.
-SMT solvers don't require actual parameter names for uninterpreted functions,
-only the types matter for type checking. -/
-def UF_ARG_PLACEHOLDER := "_"
-
 /-- Convert B3 binary operators to SMT terms without constant folding -/
 def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
   | .iff _ => fun t1 t2 => Term.app .eq [t1, t2] .bool

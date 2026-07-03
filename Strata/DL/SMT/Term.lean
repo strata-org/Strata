@@ -215,5 +215,14 @@ instance : Coe String Term where
 instance : Coe TermVar Term where
   coe v := .var v
 
+structure IF where
+  id : String
+  args : List TermVar
+  out : TermType
+  body : Term
+deriving Repr, DecidableEq, Inhabited
+
+@[expose] def IF.toUF (f : IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
+
 end Strata.SMT
 end

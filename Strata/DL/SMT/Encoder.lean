@@ -300,7 +300,8 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunctionDef (uf : UF) (params : List TermVar) (body : Term) : EncoderM String := do
+def encodeFunctionDef (f : IF) : EncoderM String := do
+  let uf := f.toUF
   if let (.some enc) := (← get).functions.get? uf then
     -- The function was already emitted.
     if ((← get).isFunUninterp.get? uf).getD false then
@@ -311,8 +312,8 @@ def encodeFunctionDef (uf : UF) (params : List TermVar) (body : Term) : EncoderM
   let baseName := ufId (← ufNum)
   let id ← uniquify baseName
   comment uf.id
-  let argPairs := params.map (fun v => (v.id, v.ty))
-  let bodyEnc ← encodeTerm body
+  let argPairs := f.args.map (fun v => (v.id, v.ty))
+  let bodyEnc ← encodeTerm f.body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with
     functions := state.functions.insert uf id

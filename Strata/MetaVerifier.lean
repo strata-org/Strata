@@ -37,9 +37,9 @@ public section
 namespace Strata.SMT
 
 structure SanitizedContext where
-  sorts : Array Core.SMT.Sort := #[]
+  sorts : Array Strata.DL.SMT.Sort := #[]
   ufs : Array UF := #[]
-  ifs : Array Core.SMT.IF := #[]
+  ifs : Array IF := #[]
   axms : Array Term := #[]
   tySubst : Map String TermType := []
 deriving Repr, Inhabited, DecidableEq
@@ -244,8 +244,8 @@ deriving instance ToExpr for Op.Arrays
 deriving instance ToExpr for Op
 deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
-deriving instance ToExpr for Core.SMT.Sort
-deriving instance ToExpr for Core.SMT.IF
+deriving instance ToExpr for Strata.DL.SMT.Sort
+deriving instance ToExpr for IF
 deriving instance ToExpr for SanitizedContext
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy

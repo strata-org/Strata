@@ -15,13 +15,11 @@ open Lean
 open Strata
 open SMT
 
-deriving instance Hashable for Core.SMT.Sort
-
 inductive Translate.Var where
   | bv : SMT.TermVar → Translate.Var
   | uf : SMT.UF → Translate.Var
-  | us : Core.SMT.Sort → Translate.Var
-  | is : Core.SMT.Sort → Translate.Var
+  | us : DL.SMT.Sort → Translate.Var
+  | is : DL.SMT.Sort → Translate.Var
 deriving BEq, Hashable, Repr
 
 structure Translate.State where
@@ -617,14 +615,14 @@ Introduce uninterpreted sort declarations as outer `forall` binders.
 For each declared sort we also add an implicit `Nonempty` instance binder, so
 terms that quantify over values of that sort remain type-correct.
 -/
-def withTypeDecls (uss : Array Core.SMT.Sort) (k : TranslateM Expr) : TranslateM Expr := do
+def withTypeDecls (uss : Array DL.SMT.Sort) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   let decls ← uss.mapM translateTypeDecl
   let b ← k
   set state
   return decls.flatten.foldr (fun (n, t, bi) b => .forallE n t b bi) b
 where
-  translateTypeDecl (us : Core.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
+  translateTypeDecl (us : DL.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
     let n := symbolToName us.name
     let t := us.arity.repeatTR (.forallE .anonymous (.sort 1) · .default) (.sort 1)
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
@@ -681,7 +679,7 @@ where
 Introduce interpreted function definitions (`define-fun`) as local `let`
 bindings, with lambda bodies over their parameters.
 -/
-def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Expr := do
+def withFunDefs (ifs : Array SMT.IF) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   -- it's common for SMT-LIB queries to be "letified" using define-fun to
   -- minimize their size. We don't recurse on each definition to avoid stack
@@ -691,7 +689,7 @@ def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Exp
   set state
   return defs.foldr (fun (n, t, v) b => .letE n t v b true) b
 where
-  translateFunDef (f : Core.SMT.IF) : TranslateM (Name × Expr × Expr) := do
+  translateFunDef (f : SMT.IF) : TranslateM (Name × Expr × Expr) := do
     let state ← get
     let ps ← f.args.mapM translateParam
     let s ← translateSort f.out

@@ -234,7 +234,8 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunctionDef (solver : AbstractSolver τ σ m) (uf : UF) (params : List TermVar) (body : Term) : AbstractEncoderM τ m String := do
+def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncoderM τ m String := do
+  let uf := f.toUF
   if let .some enc := (← get).base.functions.get? uf then
     -- See `Strata.SMT.Encoder.encodeFunctionDef`: a function already emitted as an
     -- uninterpreted `declare-fun` (because it was referenced before its
@@ -248,11 +249,11 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (uf : UF) (params : List
       return enc
   let id ← uniquify (ufId (← get).base.functions.size)
   liftM (solver.comment uf.id)
-  let argPairs ← params.mapM fun v => do
+  let argPairs ← f.args.mapM fun v => do
     let s ← liftM (termTypeToSort solver v.ty)
     return (v.id, s)
   let outSort ← liftM (termTypeToSort solver uf.out)
-  let bodyEnc ← encodeTerm solver body
+  let bodyEnc ← encodeTerm solver f.body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
   modifyGet fun state => (id, { state with
     base.functions := state.base.functions.insert uf id
@@ -342,7 +343,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
           functions := estate.base.functions.insert uf uf.id
           isFunUninterp := estate.base.isFunUninterp.insert uf false
           usedNames := estate.base.usedNames.insert uf.id } }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn.toUF fn.args fn.body) |>.run estate
+  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     solver.assert id
@@ -405,7 +406,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
             functions := estate.functions.insert uf uf.id
             isFunUninterp := estate.isFunUninterp.insert uf false
             usedNames := estate.usedNames.insert uf.id }
-    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunctionDef fn.toUF fn.args fn.body) |>.run estate
+    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunctionDef fn) |>.run estate
     pure estate
 
   let (_axms, estate) ← phase "encodeAxioms" do

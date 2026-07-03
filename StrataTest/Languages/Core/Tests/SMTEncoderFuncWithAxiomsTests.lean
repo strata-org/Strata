@@ -63,7 +63,7 @@ def ppUF (uf : UF) : Except String String := do
   return s!"{uf.id} : ({", ".intercalate args}) -> {outTy}"
 
 /-- Render an `IF` as a function signature with param names. -/
-def ppIF (f : SMT.IF) : Except String String := do
+def ppIF (f : IF) : Except String String := do
   let args ← f.args.mapM fun v => do
     return s!"{v.id} : {← Strata.SMTDDM.termTypeToString v.ty}"
   let outTy ← Strata.SMTDDM.termTypeToString f.out
@@ -361,12 +361,13 @@ info: encodeFunctionDef: function 'g' was already declared as uninterpreted befo
 #guard_msgs in
 #eval show IO Unit from do
   let g : UF := { id := "g", args := [.int], out := .int }
+  let gIF : IF := { id := "g", args := [⟨"v", .int⟩], out := .int, body := .var ⟨"v", .int⟩ }
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }
   let solver ← Solver.bufferWriter b
   try
     let _ ← (do
       let _ ← Encoder.encodeUF g
-      let _ ← Encoder.encodeFunctionDef g [⟨"v", .int⟩] (.var ⟨"v", .int⟩)
+      let _ ← Encoder.encodeFunctionDef gIF
       : EncoderM Unit).run EncoderState.init |>.run solver
     IO.println "ERROR: expected an error but succeeded"
   catch e =>

@@ -56,11 +56,11 @@ def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
   | _ + 1, α :: αs => applyNonemptyPred (hfα α) αs (propext Nat.add_one_inj ▸ List.length_cons ▸ h)
 
 structure USDenote where
-  us   : Core.SMT.Sort
+  us   : Strata.DL.SMT.Sort
   usΓ  : mkTypeFunType us.arity
   nonempty : mkNonemptyPred usΓ
 
-abbrev USContext := List Core.SMT.Sort
+abbrev USContext := List Strata.DL.SMT.Sort
 abbrev USEnvironment := List USDenote
 
 structure USEnvironment.WF (uss : USContext) (Γ : USEnvironment) where
@@ -138,7 +138,7 @@ def substituteTermISs (isctx : ISContext) (ts : List Term) : List Term :=
 
 end
 
-def substituteIFIS (isctx : ISContext) (iF : Core.SMT.IF) : Core.SMT.IF :=
+def substituteIFIS (isctx : ISContext) (iF : IF) : IF :=
   { iF with args := iF.args.map (substituteTermVarIS isctx), out := substituteIS isctx iF.out, body := substituteTermIS isctx iF.body }
 
 mutual
@@ -1176,7 +1176,7 @@ denoting `body`, pushes that interpretation into the environment, and returns a
 proposition over the original (smaller) context.
 -/
 @[simp]
-noncomputable def bindIF (iF : Core.SMT.IF) (ctx : Context) (ft' :
+noncomputable def bindIF (iF : IF) (ctx : Context) (ft' :
     let uf' := iF.toUF
     let ufs' := uf' :: ctx.tctx.ufs
     let tctx' := { ufs := ufs', vs := ctx.tctx.vs }
@@ -1225,11 +1225,11 @@ It is boolean-specific because SMT queries denote propositions.
 -/
 @[simp]
 noncomputable def denoteBoolTermFromContext
-    (uss : USContext) (iss : ISContext) (ufs : UFContext) (ifs : List Core.SMT.IF) (t : Term) := do
+    (uss : USContext) (iss : ISContext) (ufs : UFContext) (ifs : List IF) (t : Term) := do
   let ufs := if iss.isEmpty then ufs else ufs.map (substituteUFIS iss)
   let ifs := if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)
   let t := substituteTermIS iss t
-  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map Core.SMT.IF.toUF ++ ufs⟩⟩ t | none
+  let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map IF.toUF ++ ufs⟩⟩ t | none
   let ft ← bindIFs ⟨uss, iss⟩ {} ufs ifs ft
   let ft ← bindUFs ⟨uss, iss⟩ {} ufs ft
   let ft ← bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
@@ -1274,12 +1274,12 @@ where
   Eliminate all interpreted-function declarations by repeatedly applying `bindIF`.
   -/
   @[simp]
-  bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map Core.SMT.IF.toUF ++ ufs⟩⟩ → Prop) :
+  bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map IF.toUF ++ ufs⟩⟩ → Prop) :
       Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
     do match ifs with
     | [] => return ft'
     | iF :: ifs =>
-      let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map Core.SMT.IF.toUF ++ ufs } } ft'
+      let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map IF.toUF ++ ufs } } ft'
       bindIFs sctx vs ufs ifs ft
 
 def mkISContext (iss : Map String TermType) : ISContext :=
