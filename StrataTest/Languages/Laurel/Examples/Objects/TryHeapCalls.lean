@@ -17,13 +17,13 @@ body were not counted toward heap classification and did not get `$heap`
 threaded, so a caller invoking a heap-using procedure inside a `try` failed
 re-resolution with an internal `strata-bug` (`expected 'Heap', got 'int'`).
 
-Now such programs parse, resolve, heap-parameterize, and re-resolve cleanly,
-reaching the expected `not-yet-implemented` lowering (E7) instead.
+Now such programs parse, resolve, heap-parameterize, re-resolve, lower (E7), and
+verify cleanly (no `strata-bug`).
 -/
 
 -- Minimal: a heap-using callee (`alloc` allocates, so it is a heap writer) is
--- invoked inside a `try` body. This must reach the `try/catch` NYI lowering
--- without any prior `strata-bug`.
+-- invoked inside a `try` body. This lowers and verifies without any prior
+-- `strata-bug`.
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -34,7 +34,6 @@ procedure alloc() returns (r: int) opaque {
 };
 procedure computeViaTry() returns (r: int) opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     r := alloc()
   } catch e {
     r := 0
@@ -43,7 +42,10 @@ procedure computeViaTry() returns (r: int) opaque {
 #end
 
 -- Realistic: multiple heap-using, throwing callees invoked inside a
--- multi-catch `try`. Reaches the throw/try NYIs (no strata-bug).
+-- multi-catch `try`. The throwing callees lower to `Result`-returning
+-- procedures (E7), and the calls inside the `try` bind and unwrap those results
+-- (propagating `Bad` to the matching catch); the whole program verifies with no
+-- strata-bug.
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -53,7 +55,6 @@ procedure parsePositive(s: int) returns (r: int) throws ParseError opaque {
   if s < 0 then {
     var pe: ParseError := new ParseError;
     throw pe
-//  ^^^^^^^^ not-yet-implemented: throw is not yet supported (requires generic Result lowering, E7)
   };
   r := s
 };
@@ -61,13 +62,11 @@ procedure safeDivide(a: int, b: int) returns (r: int) throws ArithError opaque {
   if b == 0 then {
     var ae: ArithError := new ArithError;
     throw ae
-//  ^^^^^^^^ not-yet-implemented: throw is not yet supported (requires generic Result lowering, E7)
   };
   r := a / b
 };
 procedure compute(s: int) returns (r: int) opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     var n: int := parsePositive(s);
     r := safeDivide(100, n)
   } catch e when e is ParseError {

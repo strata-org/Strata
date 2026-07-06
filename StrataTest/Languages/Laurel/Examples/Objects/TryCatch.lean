@@ -15,15 +15,14 @@ Exercises the E3/E5 structured handler: `try` / predicate-based `catch` /
 `catch` binds the caught value (typed at the channel root `BaseException`, E1)
 and may carry a `when` guard (checked at `bool`).
 
-Like `throw` (E2), full lowering to Core targets a generic `Result<Val, Err>`
-(E7), which Laurel cannot express until it gains generic datatypes. So a
-well-typed `try` reaches translation and reports `not-yet-implemented` there.
-These tests pin down the front half: parsing, resolution, catch-binding
-scoping, and guard type-checking.
+`try`/`catch`/`finally` now lowers to Core (E7): the body runs in a labeled
+block, a `throw` exits to it, a first-match-wins chain of guarded handlers runs
+after it, and `finally` runs on the fall-through edge. These well-typed cases
+lower and verify; the negative case is rejected during resolution.
 -/
 
--- Well-typed try / catch / finally: parses, resolves, type-checks; only the
--- Core lowering is missing (E7).
+-- Well-typed try / catch / finally: parses, resolves, type-checks, lowers, and
+-- verifies (the bodies have no proof obligations that fail).
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -32,7 +31,6 @@ procedure tryCatchFinally()
   opaque
 {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } catch e {
     assert true
@@ -51,7 +49,6 @@ procedure tryWithGuard()
   opaque
 {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } catch e when true {
     assert true

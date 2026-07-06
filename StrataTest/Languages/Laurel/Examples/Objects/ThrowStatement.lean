@@ -14,11 +14,12 @@ Exercises the E2 `throw` statement (see `docs/design/laurel_extensions.md`,
 extension E2). `throw`'s operand is typed at the prelude root `BaseException`
 (E1); any declared subtype is accepted.
 
-Full lowering to Core targets a generic `Result<Val, Err>` (E7), which Laurel
-cannot express until it gains generic datatypes, so a well-typed `throw`
-currently reaches translation and reports `not-yet-implemented` there. These
-tests pin down the front half of the pipeline: parsing, resolution, and the
-`BaseException` type rule.
+E7 lowering: a `throw` in a procedure that declares `throws` lowers to a
+`Result<Val, Composite>`-returning Core procedure — an in-flight exception sets
+the synthesized `$thrown`/`$exc` locals and exits, and the procedure's result is
+constructed as `Bad(exc)`. A `throw` whose exception would escape a procedure
+that does *not* declare `throws` is the E4 no-escape case, which is not yet
+enforced/lowered.
 -/
 
 -- Ill-typed: the operand is an `int`, not a `BaseException`. The type error is
@@ -35,17 +36,33 @@ procedure throwsNonException()
 };
 #end
 
--- Well-typed: the operand is a `BaseException`. Parsing, resolution, and the
--- `BaseException` type rule all succeed; only the Core lowering is missing (E7).
+-- Well-typed and declared `throws`: lowers to a `Result`-returning procedure
+-- (E7) and verifies — there are no proof obligations to discharge.
 #eval testLaurel <|
 #strata
 program Laurel;
 
 procedure throwsException()
+  throws BaseException
   opaque
 {
   var e: BaseException := new BaseException;
   throw e
-//^^^^^^^ not-yet-implemented: throw is not yet supported (requires generic Result lowering, E7)
+};
+#end
+
+-- A `throw` whose exception would escape a procedure that does not declare
+-- `throws` is the E4 no-escape case: reported as not-yet-implemented pending
+-- contract enforcement, rather than silently dropping the escape.
+#eval testLaurel <|
+#strata
+program Laurel;
+
+procedure throwsWithoutDeclaring()
+  opaque
+{
+  var e: BaseException := new BaseException;
+  throw e
+//^^^^^^^ not-yet-implemented: `throw` in a procedure that does not declare `throws` is not yet supported (E4 no-escape enforcement)
 };
 #end

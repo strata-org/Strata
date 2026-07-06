@@ -73,6 +73,11 @@ composite BaseException {
   var message: string
 }
 
+datatype Result<Val, Err> {
+  Good(value: Val),
+  Bad(err: Err)
+}
+
 #end
 
 /--

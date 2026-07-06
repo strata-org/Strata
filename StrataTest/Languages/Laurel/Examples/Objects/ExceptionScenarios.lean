@@ -16,8 +16,8 @@ hierarchy, `throw`, predicate-based `try`/`catch`/`finally`, and the
 `throws`/`onThrow` procedure contract.
 
 Two observable behaviors are pinned down here:
-  * well-formed `throw` / `try` constructs parse, resolve, and type-check, then
-    reach the `not-yet-implemented` Core lowering (E7, blocked on generics);
+  * well-formed `throw` (in a procedure declaring `throws`) and `try` / `catch` /
+    `finally` constructs lower to Core (E7) and verify;
   * well-formed `throws`/`onThrow` contracts are recorded, ignored at
     translation, and so verify cleanly (no diagnostics);
   * ill-typed constructs are rejected during resolution.
@@ -36,7 +36,6 @@ composite ParseError extends BaseException {}
 composite ArithError extends BaseException {}
 procedure multipleCatches() opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } catch e when e is ParseError {
     assert true
@@ -54,7 +53,6 @@ composite ParseError extends BaseException {}
 composite ArithError extends BaseException {}
 procedure unionCatch() opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } catch e when e is ParseError || e is ArithError {
     assert true
@@ -68,7 +66,6 @@ procedure unionCatch() opaque {
 program Laurel;
 procedure catchAll() opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } catch e {
     assert true
@@ -82,7 +79,6 @@ procedure catchAll() opaque {
 program Laurel;
 procedure tryFinally() opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     assert true
   } finally {
     assert true
@@ -97,7 +93,6 @@ program Laurel;
 composite ParseError extends BaseException {}
 procedure nestedTry() opaque {
   try {
-//^ not-yet-implemented: try/catch is not yet supported (requires generic Result lowering, E7)
     try {
       assert true
     } catch inner {
@@ -111,15 +106,16 @@ procedure nestedTry() opaque {
 
 /-! ## Throwing (E1/E2) -/
 
--- Throw a value of a declared subtype of BaseException.
+-- Throw a value of a declared subtype of BaseException. The procedure declares
+-- `throws`, so this lowers to a `Result`-returning Core procedure (E7) and
+-- verifies (no proof obligations).
 #eval testLaurel <|
 #strata
 program Laurel;
 composite ParseError extends BaseException {}
-procedure throwsSubtype() opaque {
+procedure throwsSubtype() throws BaseException opaque {
   var e: ParseError := new ParseError;
   throw e
-//^^^^^^^ not-yet-implemented: throw is not yet supported (requires generic Result lowering, E7)
 };
 #end
 
