@@ -85,6 +85,9 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError (fun e => DiagnosticModel.fromFormat (format e))
            let Env := Env.updateSubst S
+           -- Reject calls that refine a rigid type variable, as `Cmd.typeCheck`
+           -- does for other commands.
+           let _ ← CmdType.checkAnnotCompat C Env
            let newCallArgs := CallArg.replaceInArgs callArgs args'
            let s' := .call pname newCallArgs md
            .ok (s', Env)
@@ -125,6 +128,9 @@ where
           | .det c =>
             let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (conda, Env) ← LExpr.resolve C Env c |>.mapError DiagnosticModel.fromFormat
+            -- Reject guards that refine a rigid type variable, as `Cmd.typeCheck`
+            -- does for other commands (the `ite`/`loop` analogue of #1397, #1410).
+            let _ ← CmdType.checkAnnotCompat C Env
             let condty := conda.toLMonoTy
             match condty with
             | .tcons "bool" [] =>
@@ -167,6 +173,9 @@ where
             else
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
           ) (([] : List (String × _)), Env)
+          -- Reject guards/measures/invariants that refine a rigid type variable,
+          -- as `Cmd.typeCheck` does for other commands (analogue of #1397, #1410).
+          let _ ← CmdType.checkAnnotCompat C Env
           let mty := mt.map LExpr.toLMonoTy
           match mty with
           | none | some (.tcons "int" []) =>
@@ -222,7 +231,11 @@ where
     (labels : List String) :
     Except DiagnosticModel (List Statement × TEnv Unit × LContext CoreLParams) := do
     let Env := Env.pushEmptyContext
-    let (ss', Env, C) ← go C Env bss acc labels
+    -- Discard the block body's output `LContext`: type/function declarations
+    -- made inside the block are block-local and must not leak out (mirroring
+    -- the `pushEmptyContext`/`popContext` discipline on the `TEnv` type-scope).
+    -- The running substitution and generator state in `Env` still persist.
+    let (ss', Env, _C) ← go C Env bss acc labels
     .ok (ss', Env.popContext, C)
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=

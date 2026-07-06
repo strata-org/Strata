@@ -182,6 +182,60 @@ info: error: Function 'bad': type variables [$__ty0] appear in the signature but
   let (func', _) ← Function.typeCheck C Env issue1287_func
   return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}"
 
+-- Issue #1399: a nested funcDecl may not generalize over a type variable free
+-- in the ambient context. These cannot be written in concrete syntax (the DDM
+-- front-end rejects them at elaboration, and the `var x : ∀a. a` route is closed
+-- by the monomorphic-var-init invariant), so the ambient context is built by hand
+-- and `Function.typeCheck` is invoked directly.
+--
+-- Ambient context binding `y : t`, with `t` rigid (as an enclosing procedure
+-- type parameter would be).
+private def ambientEnv : Core.Expression.TyEnv :=
+  let binding : Map CoreLParams.Identifier LTy := [(⟨"y", ()⟩, .forAll [] (.ftvar "t"))]
+  @Lambda.TEnv.addInNewestContext CoreLParams (Lambda.TEnv.default : Lambda.TEnv Unit).pushEmptyContext binding
+
+private def ambientC : Core.Expression.TyContext :=
+  { LContext.default with rigidTypeVars := ["t"] }
+
+-- BAD (#1399): f<a>() : a { y } generalizes over `a`, but the body is the ambient
+-- `y : t`. The function would be recorded as `∀a. a` — callable at any type —
+-- though it returns one fixed ambient value. Must be REJECTED.
+private def generalizeAmbientFunc : Core.Function :=
+  { name := ⟨"f", ()⟩,
+    typeArgs := ["a"],
+    inputs := [],
+    output := .ftvar "a",
+    body := some (.fvar () ⟨"y", ()⟩ none) }
+
+/--
+info: error: Function 'f': type variable 't' is free in the enclosing context and cannot be generalized; the body pins a declared type parameter to an ambient type
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck ambientC ambientEnv generalizeAmbientFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
+-- GOOD (regression guard for the #1399 fix): id<a>(x:a):a { x } — its `a` only
+-- touches its own parameter, disjoint from the ambient `t`. Must still be ACCEPTED
+-- even when checked in the same ambient context.
+private def genuinePolyInAmbientFunc : Core.Function :=
+  { name := ⟨"id", ()⟩,
+    typeArgs := ["a"],
+    inputs := [(⟨"x", ()⟩, .ftvar "a")],
+    output := .ftvar "a",
+    body := some (.fvar () ⟨"x", ()⟩ none) }
+
+/--
+info: ok: typeArgs: [a]
+inputs: (x, a)
+output: a
+body: some x
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck ambientC ambientEnv genuinePolyInAmbientFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
 -- Issue #586: Body constrains polymorphic type arg to concrete type.
 -- foo<a>(x:a):a { x + 1 } then called as foo("hello").
 open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax in
@@ -209,6 +263,59 @@ info: error: Function 'foo': body constrains the type to '(arrow int int)', inco
 -/
 #guard_msgs in
 #eval (typeCheck .default issue586_pgm)
+
+-- Measure may not refine the polymorphic signature. A `decreases` clause is
+-- resolved in a throwaway env and only checked to have type `int`; without an
+-- anti-refinement gate, `f<a>(x:a):a { x } decreases (x + 0)` would silently
+-- pin `a := int` in the measure env while the signature stays polymorphic, so
+-- the formal `x : a` would not actually carry an int-typed measure. These are
+-- abstract-syntax tests (the Factory must be present for `Int.Add`); the
+-- front-end does not offer a concrete way to write a refining measure.
+private def factoryC : Core.Expression.TyContext :=
+  { LContext.default with functions := Core.Factory }
+
+-- BAD: polymorphic `f<a>(x:a):a { x }` with `decreases (x + 0)` refines `a`.
+-- Must be REJECTED.
+private def measureRefinesSigFunc : Core.Function :=
+  { name := ⟨"f", ()⟩,
+    typeArgs := ["a"],
+    inputs := [(⟨"x", ()⟩, .ftvar "a")],
+    output := .ftvar "a",
+    isRecursive := true,
+    body := some (.fvar () ⟨"x", ()⟩ none),
+    measure := some (.app () (.app () (.op () ⟨"Int.Add", ()⟩ none) (.fvar () ⟨"x", ()⟩ none))
+                             (.const () (.intConst 0))) }
+
+/--
+info: error: recursive function 'f': decreases expression refines type variable '$__ty0' to 'int'; a measure may not constrain the function's polymorphic signature or an enclosing rigid type variable
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck factoryC Env measureRefinesSigFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nmeasure: {func'.measure}"
+
+-- GOOD (regression guard): monomorphic `g(n:int):int { n }` with `decreases (n + 0)`
+-- has a genuinely int-typed measure that refines nothing. Must still be ACCEPTED.
+private def measureLegitFunc : Core.Function :=
+  { name := ⟨"g", ()⟩,
+    typeArgs := [],
+    inputs := [(⟨"n", ()⟩, .int)],
+    output := .int,
+    isRecursive := true,
+    body := some (.fvar () ⟨"n", ()⟩ none),
+    measure := some (.app () (.app () (.op () ⟨"Int.Add", ()⟩ none) (.fvar () ⟨"n", ()⟩ none))
+                             (.const () (.intConst 0))) }
+
+/--
+info: ok: typeArgs: []
+inputs: (n, int)
+output: int
+measure: some n + 0
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck factoryC Env measureLegitFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nmeasure: {func'.measure}"
 
 -- Quantifier annotation referencing an undeclared type var.
 -- f<T>(x:T):T { (forall y:U. y)(x) } — U is not in typeArgs.

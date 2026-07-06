@@ -274,6 +274,134 @@ theorem HasType.regularity [DecidableEq T.IDMeta] (h : HasType (T := T) C Γ e t
   done
 
 
+/-- `HasType` does not read `C.rigidTypeVars` (rigidity is enforced by the
+    type-checker's post-hoc checks, not by the typing relation). So a judgment
+    proved against a context with an overridden rigid-var set transfers to the
+    original context. Used when a sub-expression (e.g. a function's measure) is
+    type-checked under a temporarily-extended rigid set. -/
+theorem HasType.of_rigidTypeVars_irrel [DecidableEq T.IDMeta] {C : LContext T}
+    {rv : List TyIdentifier} {Γ : TContext T.IDMeta} {e : LExpr T.mono} {ty : LTy}
+    (h : HasType ({C with rigidTypeVars := rv}) Γ e ty) : HasType C Γ e ty := by
+  induction h with
+  | tbool_const Γ m b hk => exact HasType.tbool_const _ _ _ hk
+  | tint_const Γ m n hk => exact HasType.tint_const _ _ _ hk
+  | treal_const Γ m r hk => exact HasType.treal_const _ _ _ hk
+  | tstr_const Γ m s hk => exact HasType.tstr_const _ _ _ hk
+  | tbitvec_const Γ m n b hk => exact HasType.tbitvec_const _ _ _ _ hk
+  | tvar Γ m x ty hf => exact HasType.tvar _ _ _ _ hf
+  | tvar_annotated Γ m x ty_o ty_s tys ann hf hl ho ha =>
+    exact HasType.tvar_annotated _ _ _ _ _ _ _ hf hl ho ha
+  | tabs Γ m name x x_ty e e_ty o hfr hx he ht ho ih =>
+    exact HasType.tabs _ _ _ _ _ _ _ _ hfr hx he ih ho
+  | tapp Γ m e1 e2 t1 t2 h1 h2 ht1 ht2 ih1 ih2 =>
+    exact HasType.tapp _ _ _ _ _ _ h1 h2 ih1 ih2
+  | tinst Γ e ty e_ty x x_ty ht he ih => exact HasType.tinst _ _ _ _ _ _ ih he
+  | tgen Γ e a ty ht hfr ih => exact HasType.tgen _ _ _ _ ih hfr
+  | tif Γ m c e1 e2 ty hc h1 h2 ihc ih1 ih2 => exact HasType.tif _ _ _ _ _ _ ihc ih1 ih2
+  | teq Γ m e1 e2 ty h1 h2 ih1 ih2 => exact HasType.teq _ _ _ _ _ ih1 ih2
+  | tquant Γ m k name tr tr_ty x x_ty e o hfr hx ht htr ho ih ihtr =>
+    exact HasType.tquant _ _ _ _ _ _ _ _ _ _ hfr hx ih ihtr ho
+  | top Γ m f op ty hf ht => exact HasType.top _ _ _ _ _ hf ht
+  | top_annotated Γ m f op ty_o ty_s tys ann hf ht hl ho ha =>
+    exact HasType.top_annotated _ _ _ _ _ _ _ _ hf ht hl ho ha
+  | talias Γ e mty mty' hae ht ih => exact HasType.talias _ _ _ _ hae ih
+
+/-- **Γ-congruence for `HasType`.** The typing relation reads the type-context `Γ`
+    only through `Γ.types.find?` (the `tvar`/`tvar_annotated` cases, and `isFresh` in
+    `tgen`) and `Γ.aliases` (the `tvar_annotated`/`tabs`/`tquant`/`talias` cases). So
+    typing is invariant under replacing `Γ₁` by any `Γ₂` that agrees pointwise on
+    `find?` and has the same `aliases`. The output-`Γ₂` is quantified *inside* the
+    conclusion so the binder-extending cases (`tabs`/`tquant`) can re-apply the IH at
+    the *extended* contexts (both sides insert the identical binding, preserving the
+    pointwise `find?` agreement via `Maps.find?_insert_self`/`_insert_ne`).
+
+    Needed by the statement typechecker's soundness proof: `typeCheckAux` types
+    block/branch bodies under `pushEmptyContext` (`Γ = []::Γ₀`), whereas the spec
+    types them under the plain `Γ₀`; the two contexts agree exactly on `find?`. -/
+theorem HasType.find_congr {T : LExprParams} [DecidableEq T.IDMeta]
+    {C : LContext T} {Γ₁ : TContext T.IDMeta}
+    {e : LExpr T.mono} {ty : LTy}
+    (h : HasType C Γ₁ e ty) :
+    ∀ (Γ₂ : TContext T.IDMeta),
+      (∀ x, Γ₂.types.find? x = Γ₁.types.find? x) →
+      Γ₂.aliases = Γ₁.aliases →
+      HasType C Γ₂ e ty := by
+  induction h with
+  | tbool_const Γ m b hk =>
+    intro Γ₂ _ _; exact HasType.tbool_const Γ₂ m b hk
+  | tint_const Γ m n hk =>
+    intro Γ₂ _ _; exact HasType.tint_const Γ₂ m n hk
+  | treal_const Γ m r hk =>
+    intro Γ₂ _ _; exact HasType.treal_const Γ₂ m r hk
+  | tstr_const Γ m s hk =>
+    intro Γ₂ _ _; exact HasType.tstr_const Γ₂ m s hk
+  | tbitvec_const Γ m n b hk =>
+    intro Γ₂ _ _; exact HasType.tbitvec_const Γ₂ m n b hk
+  | tvar Γ m x ty h_find =>
+    intro Γ₂ h_eq _
+    exact HasType.tvar Γ₂ m x ty (by rw [h_eq]; exact h_find)
+  | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_annot =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tvar_annotated Γ₂ m x ty_o ty_s tys ann
+      (by rw [h_eq]; exact h_find) h_len h_open (by rw [h_al]; exact h_annot)
+  | tabs Γ m name x x_ty e e_ty o h_fresh hx he h_body h_o ih_body =>
+    intro Γ₂ h_eq h_al
+    refine HasType.tabs Γ₂ m name x x_ty e e_ty o h_fresh hx he
+      (ih_body { Γ₂ with types := Γ₂.types.insert x.fst x_ty } ?_ h_al) ?_
+    · -- The extended contexts agree on `find?`: both insert `(x.fst, x_ty)`.
+      intro y
+      by_cases h_xy : y = x.fst
+      · -- look up the just-inserted binding on both sides.
+        rw [h_xy]
+        show (Maps.insert Γ₂.types x.fst x_ty).find? x.fst = (Maps.insert Γ.types x.fst x_ty).find? x.fst
+        rw [Maps.find?_insert_self, Maps.find?_insert_self]
+      · show (Maps.insert Γ₂.types x.fst x_ty).find? y = (Maps.insert Γ.types x.fst x_ty).find? y
+        rw [Maps.find?_insert_ne _ _ _ _ h_xy, Maps.find?_insert_ne _ _ _ _ h_xy]; exact h_eq y
+    · rw [h_al]; exact h_o
+  | tapp Γ m e1 e2 t1 t2 h1 h2 h_e1 h_e2 ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tapp Γ₂ m e1 e2 t1 t2 h1 h2 (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | tinst Γ e ty e_ty x x_ty h_e h_eqty ih_e =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tinst Γ₂ e ty e_ty x x_ty (ih_e Γ₂ h_eq h_al) h_eqty
+  | tgen Γ e a ty h_e h_isfresh ih_e =>
+    intro Γ₂ h_eq h_al
+    refine HasType.tgen Γ₂ e a ty (ih_e Γ₂ h_eq h_al) ?_
+    -- `isFresh` reads `Γ.types.find?`; transport along the pointwise agreement.
+    intro y t h_find; rw [h_eq] at h_find; exact h_isfresh y t h_find
+  | tif Γ m c e1 e2 ty h_c h_e1 h_e2 ih_c ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.tif Γ₂ m c e1 e2 ty
+      (ih_c Γ₂ h_eq h_al) (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | teq Γ m e1 e2 ty h_e1 h_e2 ih_e1 ih_e2 =>
+    intro Γ₂ h_eq h_al
+    exact HasType.teq Γ₂ m e1 e2 ty (ih_e1 Γ₂ h_eq h_al) (ih_e2 Γ₂ h_eq h_al)
+  | tquant Γ m k name tr tr_ty x x_ty e o h_fresh hx h_body h_tr h_o ih_body ih_tr =>
+    intro Γ₂ h_eq h_al
+    have h_ext : ∀ y, (({ Γ₂ with types := Γ₂.types.insert x.fst x_ty } : TContext T.IDMeta).types).find? y
+        = (({ Γ with types := Γ.types.insert x.fst x_ty } : TContext T.IDMeta).types).find? y := by
+      intro y
+      by_cases h_xy : y = x.fst
+      · -- look up the just-inserted binding on both sides.
+        rw [h_xy]
+        show (Maps.insert Γ₂.types x.fst x_ty).find? x.fst = (Maps.insert Γ.types x.fst x_ty).find? x.fst
+        rw [Maps.find?_insert_self, Maps.find?_insert_self]
+      · show (Maps.insert Γ₂.types x.fst x_ty).find? y = (Maps.insert Γ.types x.fst x_ty).find? y
+        rw [Maps.find?_insert_ne _ _ _ _ h_xy, Maps.find?_insert_ne _ _ _ _ h_xy]; exact h_eq y
+    exact HasType.tquant Γ₂ m k name tr tr_ty x x_ty e o h_fresh hx
+      (ih_body _ h_ext h_al) (ih_tr _ h_ext h_al) (by rw [h_al]; exact h_o)
+  | top Γ m f op ty h_find h_type =>
+    intro Γ₂ _ _; exact HasType.top Γ₂ m f op ty h_find h_type
+  | top_annotated Γ m f op ty_o ty_s tys ann h_find h_type h_len h_open h_annot =>
+    intro Γ₂ _ h_al
+    exact HasType.top_annotated Γ₂ m f op ty_o ty_s tys ann h_find h_type
+      h_len h_open (by rw [h_al]; exact h_annot)
+  | talias Γ e mty mty' h_equiv h_e ih_e =>
+    intro Γ₂ h_eq h_al
+    exact HasType.talias Γ₂ e mty mty' (by rw [h_al]; exact h_equiv) (ih_e Γ₂ h_eq h_al)
+
+
+
 section Proofs
 attribute [local simp] Pure.pure Except.pure
 
@@ -761,7 +889,49 @@ theorem HasType_subst_fresh_all
           fun x hx hxk => h_any ⟨x, hxk, hx⟩
         rw [LMonoTy.subst_no_relevant_keys S mty h_no_key]; exact h_ty
 
+/--
+Applying a well-formed type substitution `S` to the *whole* typing judgment —
+the context `Γ` and the result type `ty` together — preserves typing. The
+expression `e` is unchanged. This is the simultaneous context+type
+substitution-preservation lemma; specialized to a fresh→user renaming it bridges
+the instantiated typing judgment produced by `resolve` and the user-facing
+`funcContext` judgment required by `FuncHasType`. Proved by induction on `h`.
+-/
+theorem HasType_TContext_subst
+    (C : LContext T) (Γ : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy) (S : Subst)
+    (h : HasType C Γ e ty)
+    (h_wf : SubstWF S) :
+    HasType C (TContext.subst Γ S) e (LTy.subst S ty) := by
+  sorry
 
+/--
+Two typing contexts are *alias-equivalent* (w.r.t. `aliases`) when every monotype
+binding in `Γ` is matched, at the same key, by a binding in `Γ'` whose stored
+monotype is alias-equivalent to it. (All bindings are required to be monotypes,
+i.e. `.forAll []`, which holds for both `funcContext` and the body-resolution
+context; the relation also pins this down so the `tvar` case can re-derive the
+variable's type.) The direction `AliasEquiv aliases mty' mty` (Γ'-type ↝ Γ-type)
+is the one needed to transport a judgment from `Γ` to `Γ'` via `talias`. -/
+def TContextAliasEquiv (aliases : List TypeAlias) (Γ Γ' : TContext T.IDMeta) : Prop :=
+  ∀ x ty, Γ.types.find? x = some ty →
+    ∃ mty mty', ty = .forAll [] mty ∧
+      Γ'.types.find? x = some (.forAll [] mty') ∧
+      _root_.Lambda.AliasEquiv aliases mty' mty
+
+/--
+`HasType` transfers along an alias-equivalent context: if `e : ty` in `Γ`, and
+`Γ'` has the same aliases and bindings alias-equivalent to `Γ`'s, then `e : ty`
+in `Γ'`. This is the *context* counterpart of `HasType_resolveAliases` (which
+only bridges the *result* type). Used to move the body's typing judgment from the
+alias-resolved body-resolution context to the user-facing `funcContext` (whose
+formal types may still contain aliases). Proved by induction on `h`. -/
+theorem HasType_context_aliasEquiv
+    (C : LContext T) (Γ Γ' : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
+    (h : HasType C Γ e ty)
+    (h_alias : Γ'.aliases = Γ.aliases)
+    (h_ctx : TContextAliasEquiv Γ.aliases Γ Γ') :
+    HasType C Γ' e ty := by
+  sorry
 
 /--
 If `Constraints.unify [(ty1, ty2)] S = .ok S_new`, then there exists a
@@ -872,6 +1042,36 @@ theorem Constraints.unify_keys_incl
   simp at h_unify; subst h_unify
   exact (Constraints.unifyCore_sound cs S relS h_core).keys_incl
 
+/-- **Predicate transfer through `Constraints.unify`.** If a predicate `P` on type
+    variables holds for every free variable of the constraints and for every key and
+    range variable of the input substitution, then it holds for every key and range
+    variable of the unify result. The keys side uses `unify_keys_incl`; the range side
+    uses the `goodSubset` field of the unify relation. Used to thread the
+    "every type variable avoids `func.typeArgs`" invariant through the body's
+    return-type unification (`v_unify`). -/
+theorem Constraints.unify_pred
+    {cs : Constraints} {S S' : SubstInfo}
+    (h_unify : Constraints.unify cs S = .ok S')
+    (P : TyIdentifier → Prop)
+    (h_cs : ∀ v, v ∈ Constraints.freeVars cs → P v)
+    (h_Sk : ∀ v, v ∈ Maps.keys S.subst → P v)
+    (h_Sv : ∀ v, v ∈ Subst.freeVars S.subst → P v) :
+    (∀ v, v ∈ Maps.keys S'.subst → P v) ∧ (∀ v, v ∈ Subst.freeVars S'.subst → P v) := by
+  refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+  · rcases Constraints.unify_keys_incl h_unify v hv with h | h | h
+    · exact h_Sk v h
+    · exact h_cs v h
+    · exact h_Sv v h
+  · have h_incl : Subst.freeVars S'.subst ⊆ Constraints.freeVars cs ++ Subst.freeVars S.subst := by
+      simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
+      elim_err h_unify
+      rename_i relS h_core
+      simp at h_unify; subst h_unify
+      exact relS.goodSubset
+    rcases List.mem_append.mp (h_incl hv) with h | h
+    · exact h_cs v h
+    · exact h_Sv v h
+
 /-- Free variables of a substitution `[zip ids (map ftvar freshtvs)]` are a
     subset of `freshtvs`. -/
 private theorem Subst.freeVars_zip_ftvar (ids freshtvs : List TyIdentifier)
@@ -978,35 +1178,25 @@ private theorem Maps.find?_zip_ftvar_mem (ids : List TyIdentifier)
 private theorem LMonoTy.freeVars_subst_closed
     (ids : List TyIdentifier) (freshtvs : List TyIdentifier)
     (h_len : freshtvs.length = ids.length) (mty : LMonoTy)
-    (h_closed : ∀ tv, tv ∈ LMonoTy.freeVars mty → tv ∈ ids)
-    (hSNE : Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] = false) :
+    (h_closed : ∀ tv, tv ∈ LMonoTy.freeVars mty → tv ∈ ids) :
     ∀ tv, tv ∈ LMonoTy.freeVars
         (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty) →
       tv ∈ freshtvs := by
   intro tv h_tv
   induction mty with
   | ftvar x =>
-    simp [LMonoTy.freeVars] at h_closed
-    obtain ⟨ftv', hm, hf⟩ := Maps.find?_zip_ftvar_mem ids freshtvs h_len x h_closed
-    simp [LMonoTy.subst, hSNE, hf, LMonoTy.freeVars] at h_tv
+    have hx : x ∈ ids := h_closed x (by simp [LMonoTy.freeVars])
+    obtain ⟨ftv', hm, hf⟩ := Maps.find?_zip_ftvar_mem ids freshtvs h_len x hx
+    simp only [LMonoTy.subst_unfold, hf, LMonoTy.freeVars, List.mem_singleton] at h_tv
     subst h_tv; exact hm
   | bitvec n =>
-    simp [LMonoTy.subst, LMonoTy.freeVars] at h_tv
+    simp only [LMonoTy.subst_unfold, LMonoTy.freeVars, List.not_mem_nil] at h_tv
   | tcons name args ih =>
-    simp [LMonoTy.subst, hSNE, LMonoTy.freeVars] at h_tv
-    rw [LMonoTys.subst_eq_substLogic] at h_tv
-    simp [LMonoTy.freeVars] at h_closed
-    induction args with
-    | nil => simp [LMonoTys.substLogic, LMonoTys.freeVars] at h_tv
-    | cons a arest arih =>
-      unfold LMonoTys.substLogic at h_tv; simp [hSNE] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h_a | h_rest
-      · exact ih a List.mem_cons_self (fun tv' h' => h_closed tv' (Or.inl h')) h_a
-      · exact arih
-          (fun a' h_mem h_closed' => ih a' (List.mem_cons_of_mem a h_mem) h_closed')
-          (fun tv' h' => h_closed tv' (Or.inr h'))
-          h_rest
+    simp only [LMonoTy.subst_unfold, LMonoTy.freeVars] at h_tv h_closed
+    obtain ⟨mt, hmt, hvmt⟩ := LMonoTys.freeVars_exists h_tv
+    obtain ⟨a, ha, hae⟩ := List.mem_map.mp hmt
+    subst hae
+    exact ih a ha (fun tv' h' => h_closed tv' (LMonoTys.freeVars_mem_subset ha h')) hvmt
 
 /-- Substituting `[zip ids (map ftvar freshtvs)]` into a list of monotypes whose
     free variables are all in `ids` produces types whose free variables are all
@@ -1019,35 +1209,13 @@ private theorem LMonoTys.freeVars_subst_closed
         (LMonoTys.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mtys) →
       tv ∈ freshtvs := by
   intro tv h_tv
-  rw [LMonoTys.subst_eq_substLogic] at h_tv
-  induction mtys with
-  | nil => simp [LMonoTys.substLogic, LMonoTys.freeVars] at h_tv
-  | cons mty mrest ih =>
-    by_cases hSE :
-        Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)]
-    · -- hasEmptyScopes = true means ids = []
-      simp [Subst.hasEmptyScopes, List.all, Map.isEmpty] at hSE
-      have h_ids_nil : ids = [] := by
-        cases ids with
-        | nil => rfl
-        | cons id ids' =>
-          match freshtvs with
-          | [] => simp at h_len
-          | ftv :: ftvs' => simp [List.zip] at hSE
-      subst h_ids_nil; exfalso
-      simp [LMonoTys.substLogic] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h1 | h2
-      · exact ((h_closed tv).1 h1).elim
-      · exact ((h_closed tv).2 h2).elim
-    · have hSNE : Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] = false := by
-        revert hSE; cases Subst.hasEmptyScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)] <;> simp
-      unfold LMonoTys.substLogic at h_tv; simp [hSNE] at h_tv
-      simp [LMonoTys.freeVars] at h_closed
-      rcases h_tv with h_mty | h_rest
-      · exact LMonoTy.freeVars_subst_closed ids freshtvs h_len mty
-          (fun tv' h' => h_closed tv' (Or.inl h')) hSNE tv h_mty
-      · exact ih (fun tv' h' => h_closed tv' (Or.inr h')) h_rest
+  -- Wrap the list in a `tcons` so the scalar lemma applies: `subst` distributes
+  -- into `tcons` and `freeVars (tcons _ mtys) = freeVars mtys`.
+  have h_wrap : tv ∈ LMonoTy.freeVars
+      (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] (.tcons "x" mtys)) := by
+    rw [LMonoTy.subst_tcons]; simpa only [LMonoTy.freeVars] using h_tv
+  exact LMonoTy.freeVars_subst_closed ids freshtvs h_len (.tcons "x" mtys)
+    (fun tv' h' => h_closed tv' (by simpa only [LMonoTy.freeVars] using h')) tv h_wrap
 
 mutual
 /-- Free vars of `openVars vars vals body` are contained in `freeVarsList vals`
@@ -1654,6 +1822,17 @@ omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc 
 theorem TEnvWF.toEnvFreshForGen {Env : TEnv T.IDMeta} (h : TEnvWF Env) : EnvFreshForGen Env :=
   ⟨h.substFreshForGen, h.ctxFreshForGen⟩
 
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `TEnvWF` is preserved by `updateSubst` provided the new substitution is itself
+    gen-fresh: `updateSubst` only touches `stateSubstInfo`, so every other `TEnvWF`
+    field (which depends only on `.context`/`.genEnv`) is unchanged, and the lone
+    substitution field is supplied directly. The freshness hypothesis is discharged
+    by `unify_preserves_SubstFreshForGen` at the use site. -/
+theorem TEnvWF.of_updateSubst {Env : TEnv T.IDMeta} {S : SubstInfo}
+    (h : TEnvWF Env) (h_sf : SubstFreshForGen S Env.genEnv.genState) :
+    TEnvWF (Env.updateSubst S) :=
+  ⟨h.aliasesWF, h_sf, h.ctxFreshForGen, h.boundVarsNodup, h.boundVarsFresh⟩
+
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `ContextFreshForGen` is monotone in the counter. -/
 private theorem ContextFreshForGen.mono (Γ : TContext T.IDMeta) (s s' : TState)
@@ -1745,6 +1924,37 @@ private theorem SubstFreshForGen.mono (S : SubstInfo) (s s' : TState)
     SubstFreshForGen S s' := by
   intro v hv n hn; exact h v hv n (Nat.le_trans h_le hn)
 
+/-- Applying a gen-fresh substitution to a gen-fresh monotype yields a gen-fresh
+    monotype: every free var of `subst S mty` is either a free var of `mty`
+    (fresh by `h_mty`) or comes from a substitution value (fresh by `h_S`). This
+    is the reusable kernel behind the per-case output-type-freshness arguments in
+    `resolveAux_properties_aux` (the `app`/`eq`/`ite` cases). -/
+theorem freeVars_subst_genFresh
+    (S : SubstInfo) (mty : LMonoTy) (state : TState)
+    (h_S : SubstFreshForGen S state)
+    (h_mty : ∀ v, v ∈ LMonoTy.freeVars mty →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    ∀ v, v ∈ LMonoTy.freeVars (LMonoTy.subst S.subst mty) →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst mty hv) with h | h
+  · exact h_mty v h n hn
+  · exact h_S v (Or.inr h) n hn
+
+/-- List version of `freeVars_subst_genFresh`: applying a gen-fresh substitution
+    to a list of gen-fresh monotypes yields gen-fresh outputs. -/
+theorem LMonoTys.freeVars_subst_genFresh
+    (S : SubstInfo) (mtys : LMonoTys) (state : TState)
+    (h_S : SubstFreshForGen S state)
+    (h_mtys : ∀ v, v ∈ LMonoTys.freeVars mtys →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    ∀ v, v ∈ LMonoTys.freeVars (LMonoTys.subst S.subst mtys) →
+      ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  rcases List.mem_append.mp (LMonoTys.freeVars_of_subst_subset S.subst mtys hv) with h | h
+  · exact h_mtys v h n hn
+  · exact h_S v (Or.inr h) n hn
+
 /-- `Constraints.unify` preserves `SubstFreshForGen` when constraint free vars
     also satisfy the freshness condition.
 
@@ -1783,6 +1993,31 @@ private theorem unify_preserves_SubstFreshForGen
     rcases List.mem_append.mp (h_incl h_fv) with h | h
     · exact h_fresh_cs v h n hn
     · exact h_fresh_S v (Or.inr h) n hn
+
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- **`TEnvWF` is preserved through `updateSubst`-of-`unify`.** Replacing the
+    running substitution with the result of `Constraints.unify` keeps every
+    `TEnvWF` field: the context and generator are untouched (so `aliasesWF`,
+    `ctxFreshForGen`, `boundVarsNodup`, `boundVarsFresh` transfer directly), and
+    `substFreshForGen` is re-established by `unify_preserves_SubstFreshForGen`
+    provided the constraint's free vars are gen-fresh for the input state.
+
+    This is the public bridge consumed by the command-level
+    `Cmd.typeCheck_preserves` / `typeCheckCmd_call_preserves` lemmas (the
+    `unifyTypes`/`updateSubst` step). -/
+theorem TEnvWF.of_unify_updateSubst
+    {cs : Constraints} {S' : SubstInfo} {Env : TEnv T.IDMeta}
+    (h_wf : TEnvWF Env)
+    (h_unify : Constraints.unify cs Env.stateSubstInfo = .ok S')
+    (h_cs_fresh : ∀ v, v ∈ Constraints.freeVars cs →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    TEnvWF (Env.updateSubst S') where
+  aliasesWF := h_wf.aliasesWF
+  substFreshForGen :=
+    unify_preserves_SubstFreshForGen h_unify h_wf.substFreshForGen h_cs_fresh
+  ctxFreshForGen := h_wf.ctxFreshForGen
+  boundVarsNodup := h_wf.boundVarsNodup
+  boundVarsFresh := h_wf.boundVarsFresh
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for
@@ -2246,7 +2481,7 @@ theorem LMonoTy_instantiateWithCheck_context'
   exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem LTy_instantiateWithCheck_freeVars_fresh
+theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
     ∀ v, v ∈ LMonoTy.freeVars mty →
@@ -2798,6 +3033,236 @@ theorem TEnvWF.of_typeBoundVar
     boundVarsNodup := typeBoundVar_preserves_boundVarsNodup C Env bty xv xty Env' h h_envwf.boundVarsNodup
     boundVarsFresh := h_inv.boundVarsFresh }
 
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `find?` is unaffected by pushing an empty scope: the empty head map fails to
+    find any key, so lookup falls through to the original scopes. -/
+theorem TEnv.pushEmptyContext_find?
+    (Env : TEnv T.IDMeta) (y : T.Identifier) :
+    (Env.pushEmptyContext).context.types.find? y = Env.context.types.find? y := by
+  simp only [TEnv.pushEmptyContext, TEnv.updateContext, TEnv.context, Maps.push]
+  rfl
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `knownTypeVars` is unaffected by pushing an empty scope: the empty head map
+    contributes no type variables. -/
+theorem TEnv.pushEmptyContext_knownTypeVars
+    (Env : TEnv T.IDMeta) :
+    TContext.knownTypeVars (Env.pushEmptyContext).context =
+      TContext.knownTypeVars Env.context := by
+  simp only [TEnv.pushEmptyContext, TEnv.updateContext, TEnv.context, Maps.push,
+    TContext.knownTypeVars, TContext.types.knownTypeVars, TContext.types.knownTypeVars.go,
+    List.nil_append]
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Pushing an empty scope preserves `TEnvWF`. The new empty head scope adds no
+    bindings and no type variables, and leaves `aliases`, `genState`, and the
+    substitution unchanged. -/
+theorem TEnvWF.of_pushEmptyContext
+    (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
+    TEnvWF (Env.pushEmptyContext) := by
+  have h_subst : (Env.pushEmptyContext).stateSubstInfo = Env.stateSubstInfo := rfl
+  have h_gen : (Env.pushEmptyContext).genEnv.genState = Env.genEnv.genState := rfl
+  have h_aliases : (Env.pushEmptyContext).context.aliases = Env.context.aliases := rfl
+  refine {
+    aliasesWF := ?_
+    substFreshForGen := ?_
+    ctxFreshForGen := ?_
+    boundVarsNodup := ?_
+    boundVarsFresh := ?_ }
+  · simp only [TContext.AliasesWF, h_aliases]; exact h_envwf.aliasesWF
+  · rw [h_subst, h_gen]; exact h_envwf.substFreshForGen
+  · intro v hv n hn
+    rw [TEnv.pushEmptyContext_knownTypeVars] at hv
+    rw [h_gen] at hn
+    exact h_envwf.ctxFreshForGen v hv n hn
+  · intro y ty h_find
+    rw [TEnv.pushEmptyContext_find?] at h_find
+    exact h_envwf.boundVarsNodup y ty h_find
+  · intro y ty h_find v hv n hn
+    rw [TEnv.pushEmptyContext_find?] at h_find
+    rw [h_gen] at hn
+    exact h_envwf.boundVarsFresh y ty h_find v hv n hn
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `addInNewest` distributes over a `cons`: inserting `b :: rest` is the same as
+    inserting `[b]` first and then `rest`. This lets us fold a multi-binding
+    `addInNewestContext` into repeated single-binding insertions. -/
+theorem Maps.addInNewest_cons_eq
+    (ms : Maps T.Identifier LTy) (b : T.Identifier × LTy) (rest : Map T.Identifier LTy) :
+    Maps.addInNewest ms (b :: rest) = Maps.addInNewest (Maps.addInNewest ms [b]) rest := by
+  cases ms with
+  | nil => rfl
+  | cons mm tl =>
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    congr 1
+    exact List.append_cons mm b rest
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `addInNewestContext` distributes over a `cons` at the `TEnv` level. -/
+theorem TEnv.addInNewestContext_cons_eq
+    (Env : TEnv T.IDMeta) (b : T.Identifier × LTy) (rest : Map T.Identifier LTy) :
+    Env.addInNewestContext (b :: rest) =
+      (Env.addInNewestContext [b]).addInNewestContext rest := by
+  simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+  congr 3
+  exact Maps.addInNewest_cons_eq Env.genEnv.context.types b rest
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Inserting a single monomorphic binding `(x, forAll [] mty)` whose free type
+    variables are gen-fresh preserves `TEnvWF`. The new binding has empty
+    `boundVars`, so `boundVarsNodup` and `boundVarsFresh` are vacuous on it; its
+    type variables are gen-fresh by hypothesis, giving `ctxFreshForGen`;
+    `aliases`, `genState`, and the substitution are unchanged. -/
+theorem TEnvWF.of_addInNewestContext_singleton
+    (Env : TEnv T.IDMeta) (x : T.Identifier) (mty : LMonoTy)
+    (h_envwf : TEnvWF Env)
+    (h_fresh : ∀ v, v ∈ LMonoTy.freeVars mty →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    TEnvWF (Env.addInNewestContext [(x, .forAll [] mty)]) := by
+  have h_subst : (Env.addInNewestContext [(x, .forAll [] mty)]).stateSubstInfo =
+      Env.stateSubstInfo := rfl
+  have h_gen : (Env.addInNewestContext [(x, .forAll [] mty)]).genEnv.genState =
+      Env.genEnv.genState := rfl
+  have h_aliases : (Env.addInNewestContext [(x, .forAll [] mty)]).context.aliases =
+      Env.context.aliases := rfl
+  refine {
+    aliasesWF := ?_
+    substFreshForGen := ?_
+    ctxFreshForGen := ?_
+    boundVarsNodup := ?_
+    boundVarsFresh := ?_ }
+  · simp only [TContext.AliasesWF, h_aliases]; exact h_envwf.aliasesWF
+  · rw [h_subst, h_gen]; exact h_envwf.substFreshForGen
+  · intro v hv n hn
+    rw [h_gen] at hn
+    rcases knownTypeVars_addInNewestContext_cases Env x (.forAll [] mty) v hv with
+      h_old | h_new
+    · exact h_envwf.ctxFreshForGen v h_old n hn
+    · have h_new' : v ∈ LMonoTy.freeVars mty := by
+        simpa [LTy.freeVars, List.removeAll] using h_new
+      exact h_fresh v h_new' n hn
+  · intro y ty h_find
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars]
+    · rw [h_old] at h_find
+      exact h_envwf.boundVarsNodup y ty h_find
+  · intro y ty h_find v hv n hn
+    rw [h_gen] at hn
+    simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
+    rcases Maps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
+      ⟨h_new, _⟩ | h_old
+    · rw [h_new] at h_find; injection h_find with h_find; subst h_find
+      simp [LTy.boundVars] at hv
+    · rw [h_old] at h_find
+      exact h_envwf.boundVarsFresh y ty h_find v hv n hn
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `find?` is unaffected by inserting the empty map: `addInNewest` with `[]`
+    leaves every scope's contents unchanged (a possibly-empty newest scope gains
+    no entries). -/
+theorem TEnv.addInNewestContext_nil_find?
+    (Env : TEnv T.IDMeta) (y : T.Identifier) :
+    (Env.addInNewestContext []).context.types.find? y = Env.context.types.find? y := by
+  simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+  cases h : Env.genEnv.context.types with
+  | nil => rfl
+  | cons mm tl =>
+    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+    rw[Map.append_nil]
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `knownTypeVars` is unaffected by inserting the empty map. -/
+theorem TEnv.addInNewestContext_nil_knownTypeVars
+    (Env : TEnv T.IDMeta) :
+    TContext.knownTypeVars (Env.addInNewestContext []).context =
+      TContext.knownTypeVars Env.context := by
+  simp only [TEnv.addInNewestContext, TEnv.updateContext, TEnv.context, TContext.knownTypeVars]
+  cases h : Env.genEnv.context.types with
+  | nil => simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Map.append_nil,
+      TContext.types.knownTypeVars, TContext.types.knownTypeVars.go, List.append_nil]
+  | cons mm tl => simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Map.append_nil]
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Inserting the empty map preserves `TEnvWF`: `find?`, `knownTypeVars`,
+    `aliases`, `genState`, and the substitution are all unchanged. -/
+theorem TEnvWF.of_addInNewestContext_nil
+    (Env : TEnv T.IDMeta) (h_envwf : TEnvWF Env) :
+    TEnvWF (Env.addInNewestContext []) := by
+  have h_subst : (Env.addInNewestContext []).stateSubstInfo = Env.stateSubstInfo := rfl
+  have h_gen : (Env.addInNewestContext []).genEnv.genState = Env.genEnv.genState := rfl
+  have h_aliases : (Env.addInNewestContext []).context.aliases = Env.context.aliases := rfl
+  refine {
+    aliasesWF := ?_
+    substFreshForGen := ?_
+    ctxFreshForGen := ?_
+    boundVarsNodup := ?_
+    boundVarsFresh := ?_ }
+  · simp only [TContext.AliasesWF, h_aliases]; exact h_envwf.aliasesWF
+  · rw [h_subst, h_gen]; exact h_envwf.substFreshForGen
+  · intro v hv n hn
+    rw [TEnv.addInNewestContext_nil_knownTypeVars] at hv
+    rw [h_gen] at hn
+    exact h_envwf.ctxFreshForGen v hv n hn
+  · intro y ty h_find
+    rw [TEnv.addInNewestContext_nil_find?] at h_find
+    exact h_envwf.boundVarsNodup y ty h_find
+  · intro y ty h_find v hv n hn
+    rw [TEnv.addInNewestContext_nil_find?] at h_find
+    rw [h_gen] at hn
+    exact h_envwf.boundVarsFresh y ty h_find v hv n hn
+
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Inserting a list of monomorphic bindings `(id, forAll [] mty)` whose free type
+    variables are all gen-fresh preserves `TEnvWF`. Proved by induction over the
+    list, distributing each `cons` into a single-binding insertion
+    (`TEnvWF.of_addInNewestContext_singleton`). The generator state is unchanged
+    by each insertion, so the freshness hypothesis carries to the tail. -/
+theorem TEnvWF.of_addInNewestContext_mono
+    (Env : TEnv T.IDMeta) (pairs : List (T.Identifier × LMonoTy))
+    (h_envwf : TEnvWF Env)
+    (h_fresh : ∀ p ∈ pairs, ∀ v, v ∈ LMonoTy.freeVars p.2 →
+      ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n) :
+    TEnvWF (Env.addInNewestContext (pairs.map (fun p => (p.1, .forAll [] p.2)))) := by
+  induction pairs generalizing Env with
+  | nil =>
+    show TEnvWF (Env.addInNewestContext [])
+    exact TEnvWF.of_addInNewestContext_nil Env h_envwf
+  | cons p ps ih =>
+    rw [List.map_cons, TEnv.addInNewestContext_cons_eq]
+    -- Insert the head binding first; gen state is unchanged.
+    have h_head_fresh : ∀ v, v ∈ LMonoTy.freeVars p.2 →
+        ∀ n, n ≥ Env.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n :=
+      h_fresh p List.mem_cons_self
+    have h_envwf1 : TEnvWF (Env.addInNewestContext [(p.1, .forAll [] p.2)]) :=
+      TEnvWF.of_addInNewestContext_singleton Env p.1 p.2 h_envwf h_head_fresh
+    have h_gen1 : (Env.addInNewestContext [(p.1, .forAll [] p.2)]).genEnv.genState =
+        Env.genEnv.genState := rfl
+    have h_tail_fresh : ∀ q ∈ ps, ∀ v, v ∈ LMonoTy.freeVars q.2 →
+        ∀ n, n ≥ (Env.addInNewestContext [(p.1, .forAll [] p.2)]).genEnv.genState.tyGen →
+          v ≠ TState.tyPrefix ++ toString n := by
+      intro q hq v hv n hn
+      rw [h_gen1] at hn
+      exact h_fresh q (List.mem_cons_of_mem p hq) v hv n hn
+    exact ih (Env.addInNewestContext [(p.1, .forAll [] p.2)]) h_envwf1 h_tail_fresh
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Pushing an empty scope preserves `AliasesResolved`: only `.types` changes,
+    `.aliases` is untouched. -/
+theorem TContext.AliasesResolved.of_pushEmptyContext
+    (Env : TEnv T.IDMeta) (h : TContext.AliasesResolved Env.context) :
+    TContext.AliasesResolved Env.pushEmptyContext.context := h
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Inserting bindings in the newest scope preserves `AliasesResolved`: only
+    `.types` changes, `.aliases` is untouched. -/
+theorem TContext.AliasesResolved.of_addInNewestContext
+    (Env : TEnv T.IDMeta) (map : Map T.Identifier LTy)
+    (h : TContext.AliasesResolved Env.context) :
+    TContext.AliasesResolved (Env.addInNewestContext map).context := h
+
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 Context preservation for `LTy.instantiateWithCheck`.
@@ -3053,6 +3518,80 @@ private theorem LMonoTys.freeVars_destructArrow_subset (mtys : LMonoTys) :
     LMonoTys.freeVars (LMonoTys.destructArrow mtys) ⊆ LMonoTys.freeVars mtys :=
   (freeVars_destructArrow_subset_combined (mtysSize mtys)).2 mtys (Nat.le_refl _)
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Any monotype appearing in `monoty.destructArrow` (where `monoty` is the output of
+`LTy.instantiateWithCheck`) has gen-fresh free variables. The input monotypes the
+typechecker inserts into the internal env are members of this list, so this supplies
+the freshness precondition of `TEnvWF.of_addInNewestContext_mono`. -/
+theorem instantiateWithCheck_destructArrow_mem_fresh
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (monoty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (monoty, Env'))
+    (mt : LMonoTy) (h_mem : mt ∈ LMonoTy.destructArrow monoty) :
+    ∀ v, v ∈ LMonoTy.freeVars mt →
+      ∀ n, n ≥ Env'.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  intro v hv n hn
+  have h_fresh := LTy_instantiateWithCheck_freeVars_fresh ty C Env monoty Env' h
+  have h_in_destr : v ∈ LMonoTys.freeVars (LMonoTy.destructArrow monoty) :=
+    LMonoTys.freeVars_mem_subset h_mem hv
+  have h_in_monoty : v ∈ LMonoTy.freeVars monoty :=
+    LMonoTy.freeVars_destructArrow_subset monoty h_in_destr
+  exact h_fresh v h_in_monoty n hn
+
+/-- `freeVars (mkArrow' ret args)` is `freeVars args ++ freeVars ret`. -/
+private theorem LMonoTy.freeVars_mkArrow' (ret : LMonoTy) (args : LMonoTys) :
+    LMonoTy.freeVars (LMonoTy.mkArrow' ret args) =
+    LMonoTys.freeVars args ++ LMonoTy.freeVars ret := by
+  induction args with
+  | nil => simp [LMonoTy.mkArrow', LMonoTys.freeVars]
+  | cons m mrest ih =>
+    simp only [LMonoTy.mkArrow'_cons, LMonoTy.arrow, LMonoTy.freeVars,
+      LMonoTys.freeVars, List.append_nil]
+    rw [ih, List.append_assoc]
+
+/-- The free vars of any component of `monoty.destructArrow` are free vars of `monoty`. -/
+private theorem LMonoTy.mem_destructArrow_freeVars_subset (monoty x : LMonoTy)
+    (hx : x ∈ LMonoTy.destructArrow monoty) :
+    LMonoTy.freeVars x ⊆ LMonoTy.freeVars monoty :=
+  fun _ hv =>
+    LMonoTy.freeVars_destructArrow_subset monoty (LMonoTys.freeVars_mem_subset hx hv)
+
+/-- The reconstructed output monotype `mkArrow' R DL`, where `R` is the last element of
+`drop n (destructArrow monoty)` (or the global last as default) and `DL` is its dropLast,
+has free vars contained in those of `monoty`. This is the `h_sub` obligation `bodyTyped`
+owes `bodyTyped_chain`: the declared output is assembled entirely from
+`monoty.destructArrow` components. -/
+theorem LMonoTy.freeVars_reconstructedOutput_subset (monoty : LMonoTy) (n : Nat) :
+    ∀ v, v ∈ LMonoTy.freeVars
+        (LMonoTy.mkArrow'
+          ((List.drop n monoty.destructArrow).getLast?.getD
+            (List.getLast monoty.destructArrow (LMonoTy.destructArrow_non_empty monoty)))
+          (List.drop n monoty.destructArrow).dropLast) →
+      v ∈ LMonoTy.freeVars monoty := by
+  intro v hv
+  rw [LMonoTy.freeVars_mkArrow', List.mem_append] at hv
+  cases hv with
+  | inl h_dl =>
+    -- v is a free var of some element of (drop n da).dropLast
+    obtain ⟨x, hx_mem, hx_v⟩ := LMonoTys.freeVars_exists h_dl
+    have h_x_in_drop : x ∈ List.drop n monoty.destructArrow :=
+      List.dropLast_subset _ hx_mem
+    have h_x_in_da : x ∈ monoty.destructArrow := List.mem_of_mem_drop h_x_in_drop
+    exact LMonoTy.mem_destructArrow_freeVars_subset monoty x h_x_in_da hx_v
+  | inr h_r =>
+    -- v is a free var of the return type R = getD (getLast? (drop n da)) (getLast da)
+    have h_r_in_da : ((List.drop n monoty.destructArrow).getLast?.getD
+        (List.getLast monoty.destructArrow (LMonoTy.destructArrow_non_empty monoty)))
+        ∈ monoty.destructArrow := by
+      cases h_last : (List.drop n monoty.destructArrow).getLast? with
+      | none =>
+        simp only [Option.getD_none]
+        exact List.getLast_mem (LMonoTy.destructArrow_non_empty monoty)
+      | some r =>
+        simp only [Option.getD_some]
+        exact List.mem_of_mem_drop (List.mem_of_getLast? h_last)
+    exact LMonoTy.mem_destructArrow_freeVars_subset monoty _ h_r_in_da h_r
+
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Factory function types produced by `LFunc.type` have empty `freeVars`
     when the function satisfies `LFuncWF`. -/
@@ -3095,7 +3634,7 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Factory function types produced by `LFunc.type` have `boundVars = func.typeArgs`. -/
-private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
+theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
     LTy.boundVars ty = func.typeArgs := by
   unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
@@ -3413,14 +3952,12 @@ private theorem resolveAux_properties_aux :
             simp only [Subst.freeVars, List.mem_flatMap] at h_fv ⊢
             obtain ⟨ty, h_ty_mem, h_v_fv⟩ := h_fv
             exact ⟨ty, Maps.values_remove_subset _ _ _ h_ty_mem, h_v_fv⟩)) n_ hn
-    · -- Output type freshness
-      intro v hv k hk; simp [toLMonoTy] at hv
-      have hv_in := LMonoTy.freeVars_of_subst_subset v4.subst (.ftvar fresh_name) hv
-      simp [LMonoTy.freeVars] at hv_in
-      rcases hv_in with hv_fresh | hv_fv
-      · rw [hv_fresh, h_gen_name]
-        exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState (by omega) k hk
-      · exact h_sf4 v (Or.inr hv_fv) k hk
+    · -- Output type freshness: the inferred type is `subst v4.subst (ftvar fresh_name)`,
+      -- so `freeVars_subst_genFresh` reduces it to freshness of `fresh_name` itself.
+      refine freeVars_subst_genFresh v4 (.ftvar fresh_name) Env3.genEnv.genState h_sf4 ?_
+      intro w hw m hm
+      simp [LMonoTy.freeVars] at hw; rw [hw, h_gen_name]
+      exact generated_name_fresh Env2.genEnv.genState.tyGen Env3.genEnv.genState (by omega) m hm
   | .abs m _ bty body =>
     simp only [resolveAux, Bind.bind, Except.bind] at h
     elim_err h
@@ -4651,7 +5188,7 @@ theorem tconsAlias_eq_simple
 
 mutual
 /-- `AliasEquiv` is preserved under type substitution. -/
-private theorem AliasEquiv_subst (aliases : List TypeAlias)
+theorem AliasEquiv_subst (aliases : List TypeAlias)
     (a b : LMonoTy) (S : Subst) (h : AliasEquiv aliases a b)
     (h_aw : ∀ alias, alias ∈ aliases → TypeAlias.WF alias) :
     AliasEquiv aliases (LMonoTy.subst S a) (LMonoTy.subst S b) := by
@@ -4941,6 +5478,37 @@ theorem LTy_instantiateWithCheck_isInstance
   exact resolveAliases_aliasEquiv (Γ := Env.context) mty_inst
     { Env with genEnv := genEnv1 } mty_ra Env_ra h_ra h_aliases_eq h_aw
 
+/-- **Instantiation inverse (structural, general).** `LTy.instantiateWithCheck`
+    instantiates the scheme's ∀-bound variables with fresh type variables (in
+    *declaration* order) and resolves aliases. There is a *renaming* `ρ` (the fresh
+    variables back to the scheme's body, declaration-order — NOT the appearance-order
+    `freeVars.eraseDups.zip typeArgs`) such that applying `ρ` to the produced monotype
+    `mty` recovers exactly the alias-*resolved* raw scheme body: resolving aliases on
+    `LTy.toMonoTypeUnsafe ty` yields `LMonoTy.subst ρ mty`.
+
+    This is the structural (equality, not `AliasEquiv`) form: it commutes the renaming
+    `ρ` through `resolveAliases` and uses that `ρ` exactly inverts the fresh
+    instantiation. The equality is decomposable component-by-component (via
+    `mkArrow'`-injectivity at the call site), avoiding any abstract `AliasEquiv`
+    inversion across the arrow spine. The per-component `AliasEquiv` facts then follow
+    from `resolveAliases_aliasEquiv` applied to each raw component. -/
+theorem LTy_instantiateWithCheck_inverse
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
+    (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    -- `ρ` is a *single-scope* renaming `[ρ₀]` (the fresh→user inverse is built as one
+    -- scope; ROUTE B's composite needs this to apply `LMonoTy.subst_compose`).
+    ∃ (ρ₀ : SubstOne) (Env_r : TEnv T.IDMeta), SubstWF [ρ₀] ∧
+      LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe ty) Env = .ok (LMonoTy.subst [ρ₀] mty, Env_r) ∧
+      (∀ x ∈ Map.keys ρ₀, TContext.isFresh (T := T) x Env.context) ∧
+      -- ρ₀-contract for ROUTE B's `SubstWF` (used by `bodyComposite_wf_hyps`):
+      -- C2: ρ₀'s keys cover the instantiation variables (`freeVars mty`);
+      -- C1: ρ₀'s range is the scheme's bound variables (the user type arguments).
+      (∀ v, v ∈ LMonoTy.freeVars mty → v ∈ Map.keys ρ₀) ∧
+      (∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ LTy.boundVars ty) := by
+  sorry
+
 /-- The concrete σ produced by composing an inner AnnotCompat substitution with
     an outer S. Maps `v ↦ subst S (subst [σ] (ftvar v))` for each `v ∈ freeVars ann`. -/
 def AnnotCompat_subst_witness (ann : LMonoTy) (σ : Map TyIdentifier LMonoTy) (S : Subst) :
@@ -5210,7 +5778,7 @@ private theorem SubstWF.key_not_in_LTy_freeVars_subst
       (keys_go_mem S xs a h_key h_not_xs) (SubstWF_go S xs h_wf) h_in_fv
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_go_find_reverse
+theorem TContext_types_subst_go_find_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Map.find? (TContext.types.subst.go S scope) x = some ty) :
     ∃ ty_orig, Map.find? scope x = some ty_orig ∧ ty = LTy.subst S ty_orig := by
@@ -5222,7 +5790,7 @@ private theorem TContext_types_subst_go_find_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_go_find_none_reverse
+theorem TContext_types_subst_go_find_none_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier)
     (h : Map.find? (TContext.types.subst.go S scope) x = none) :
     Map.find? scope x = none := by
@@ -5234,7 +5802,7 @@ private theorem TContext_types_subst_go_find_none_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-private theorem TContext_types_subst_find_reverse
+theorem TContext_types_subst_find_reverse
     (types : Maps (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Maps.find? (TContext.types.subst types S) x = some ty) :
     ∃ ty_orig, Maps.find? types x = some ty_orig ∧ ty = LTy.subst S ty_orig := by

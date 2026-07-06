@@ -769,6 +769,14 @@ theorem LMonoTy.subst_bool (S : Subst) : LMonoTy.subst S LMonoTy.bool = LMonoTy.
   intro h
   simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
 
+/--
+Substitution on `LMonoTy.int` is the identity (ground type).
+-/
+theorem LMonoTy.subst_int (S : Subst) : LMonoTy.subst S LMonoTy.int = LMonoTy.int := by
+  simp [LMonoTy.int, LMonoTy.subst]
+  intro h
+  simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
+
 /-- Substitution distributes over a 2-element `tcons`, giving component-wise results. -/
 theorem LMonoTy.subst_tcons_pair (S : Subst) (name : String) (a b : LMonoTy) :
     LMonoTy.subst S (.tcons name [a, b]) = .tcons name [LMonoTy.subst S a, LMonoTy.subst S b] := by
@@ -1496,6 +1504,10 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
+    -- TODO: the original constraint `c` is recorded raw, without applying `S`, so
+    -- the "Impossible to unify ..." message can show stale type variables (e.g.
+    -- `$__ty1` for a var already solved to `int`). Apply `S` to `c` here before
+    -- `addOriginalConstraint` to report solved types.
     let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
     .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }

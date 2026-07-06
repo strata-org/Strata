@@ -20,12 +20,64 @@ namespace Function
 open Lambda Imperative
 open Std (ToFormat Format format)
 
+/-- The ambient type variables of a typing environment: every type variable the
+    surrounding context can name — those bound in the context types, plus the keys
+    and free variables of the ambient substitution. A function's `typeArgs` must be
+    disjoint from these (enforced by `typeCheck`). Kept as a standalone (non-reducible)
+    def so the `typeCheck` guard is opaque to `simp` during proof unwrapping. -/
+def ambientTyVars (Env : Core.Expression.TyEnv) : List Lambda.TyIdentifier :=
+  Lambda.TContext.knownTypeVars Env.context ++
+  Maps.keys Env.stateSubstInfo.subst ++
+  Lambda.Subst.freeVars Env.stateSubstInfo.subst
+
+/-- `true` iff some `typeArg` of `func` collides with an ambient type variable of
+    `Env`. Opaque wrapper around `ambientTyVars` so the `typeCheck` guard splits
+    cleanly. -/
+def collidesWithAmbient (Env : Core.Expression.TyEnv) (func : Function) : Bool :=
+  func.typeArgs.any (fun ta => (Function.ambientTyVars Env).contains ta)
+
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
   let origTypeArgs := func.typeArgs
+  -- Ambient context types, for the #1399 generalization check (preserved by instantiation).
+  let ambientTypes := Env.context.types
   let type ← func.type
+  -- Reject type arguments that collide with the type-checker's generated-variable
+  -- namespace (`$__ty*`). Instantiation renames each type parameter to a fresh
+  -- `$__ty<n>` variable; a user parameter literally named `$__ty0` would alias one of
+  -- these, so the fresh→user back-renaming could capture. This guarantees the accepted
+  -- function satisfies `LFuncWF.typeArgs_no_gen_prefix`.
+  let genPrefixArgs := func.typeArgs.filter (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList)
+  if genPrefixArgs != [] then
+    .error f!"Function '{func.name}': type variables {genPrefixArgs} use the reserved \
+              generator-variable prefix '{TState.tyPrefix}'; rename them"
+  -- Reject any `concreteEval` on a function going through `Function.typeCheck`.
+  -- Parsed/source functions never carry one (`ofPureFunc` always sets `none`);
+  -- only the built-in factories construct `concreteEval`, and they build their
+  -- `LFuncWF` directly without calling this checker. Rejecting it here makes the
+  -- three `concreteEval_*` `LFuncWF` fields vacuously true for every accepted func.
+  if func.concreteEval.isSome then
+    .error f!"Function '{func.name}': a concreteEval implementation was supplied; \
+              only built-in factory functions may carry one"
+  -- Reject datatype constructors going through `Function.typeCheck`. Constructors
+  -- are built directly by the datatype factory (which constructs their `LFuncWF`),
+  -- never by this checker, so source/parsed functions are never constructors.
+  -- Rejecting it here makes the `constr_no_eval` `LFuncWF` field vacuously true
+  -- (its premise `isConstr` is false) for every accepted function.
+  if func.isConstr then
+    .error f!"Function '{func.name}': a datatype constructor cannot be declared as a \
+              regular function"
+  -- Reject type arguments that collide with an ambient type variable of `Env` (e.g. an
+  -- enclosing procedure's type parameter, or a variable free in the ambient substitution).
+  -- The body-soundness proof (Route B composite `SubstWF`) needs `func.typeArgs` to be
+  -- disjoint from every type variable the surrounding context can name; without this a
+  -- user parameter could alias an ambient rigid variable and the fresh→user renaming could
+  -- capture it. Rejecting here makes that disjointness extractable from a successful check.
+  if Function.collidesWithAmbient Env func then
+    .error f!"Function '{func.name}': some type variable collides with a type \
+              variable of the enclosing context; rename them"
   let undeclaredVars := LTy.freeVars type
   if undeclaredVars != [] then
     .error f!"Function '{func.name}': type variables {undeclaredVars} appear in \
@@ -55,6 +107,11 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
   | none =>
+    -- A measure (decreases clause) is only meaningful for a function with a
+    -- body; reject one on a bodiless function so it is never left unvalidated.
+    if func.measure.isSome then
+      .error f!"Function '{func.name}': a decreases clause was supplied but the \
+                function has no body"
     let func := { func with
       typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
@@ -70,6 +127,9 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
     let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
+    -- Save this initial context (formals pushed, before the body's unification)
+    -- so the measure can be type-checked independently against the same context.
+    let measureBaseEnv := Env
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
@@ -81,34 +141,90 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- the body cannot force a=int. This is appropriate for an IR where
     -- the user can give annotations as needed.
     let inferredTy := LMonoTy.subst S.subst monoty
-    let bwdMap ← match LMonoTy.alphaEquivMap monoty inferredTy with
-      | some m => pure m
+    -- Reject check: the body must not over-constrain the polymorphic signature.
+    -- `alphaEquivMap` succeeds iff `S.subst` acts as a bijective variable renaming on
+    -- `monoty`'s type variables (anything else — e.g. pinning a parameter to a concrete
+    -- type — fails the match). We only consume the success bit here; the renaming itself
+    -- is reconstructed directly from `S.subst` below, as its inverse on `monoty`'s fresh
+    -- instantiation variables.
+    match LMonoTy.alphaEquivMap monoty inferredTy with
+      | some _ => pure ()
       | none =>
         let displayInferred := LMonoTy.subst userSubst inferredTy
         let displayMono := LMonoTy.subst userSubst monoty
         .error f!"Function '{func.name}': body constrains the type to '{displayInferred}', \
                   incompatible with declared polymorphic signature '{displayMono}'"
     let Env := TEnv.updateSubst Env S
-    -- Apply S to the body, then rename type variables to match the
-    -- instantiated typeArgs so that body annotations are consistent.
+    -- Ambient type variables (e.g. an enclosing procedure's type parameters) are
+    -- rigid in the body: the function body may not refine them to concrete types.
+    -- This mirrors the var-initializer check in `CmdType.checkAnnotCompat`; without
+    -- it, a nested `function f() : int { y }` over an ambient `y : t` would silently
+    -- specialize the rigid `t := int`.
+    let Sb := Env.stateSubstInfo.subst
+    match C.rigidTypeVars.find? (fun v => LMonoTy.subst Sb (.ftvar v) != .ftvar v) with
+    | some v =>
+      let inferred := LMonoTy.subst Sb (.ftvar v)
+      .error f!"Function '{func.name}': rigid type variable '{v}' was refined to \
+                '{inferred}' by the body"
+    | none => pure ()
+    -- Generalization side condition (#1399): may only generalize over `ftv(τ) \ ftv(Γ)`.
+    let ambientFreeVars := Lambda.TContext.types.knownTypeVars
+      (Lambda.TContext.types.subst ambientTypes Sb)
+    let genVars := (LMonoTy.subst Sb monoty).freeVars
+    match genVars.find? (fun v => ambientFreeVars.contains v) with
+    | some v =>
+      .error f!"Function '{func.name}': type variable '{v}' is free in the enclosing \
+                context and cannot be generalized; the body pins a declared type \
+                parameter to an ambient type"
+    | none => pure ()
+    -- Apply S to the body, then rename type variables back to the instantiation
+    -- variables so that body annotations are consistent. The `alphaEquivMap` check
+    -- above guarantees `S.subst` acts as a bijective renaming on `monoty`'s type
+    -- variables, so the renaming is exactly the *inverse* of `S.subst` on those
+    -- variables: each instantiation var `x` is sent by `S.subst` to some `ftvar y`,
+    -- and we map `y ↦ ftvar x` (dropping identity entries `x = y`). Building it
+    -- directly from the instantiation's own variable list `monoty.freeVars.eraseDups`
+    -- makes this inverse definitional, rather than recovering it from `alphaEquivMap`.
     let bodya := LExpr.applySubstT bodya S.subst
-    -- Identity entries are no-ops: bijectivity of bwdMap ensures no other key maps to k.
     let renameSubst : Subst :=
-      [bwdMap.toList.filterMap (fun (k, v) => if k == v then none else some (k, .ftvar v))]
+      [monoty.freeVars.eraseDups.filterMap (fun x =>
+        match LMonoTy.subst S.subst (.ftvar x) with
+        | .ftvar y => if x == y then none else some (y, .ftvar x)
+        | _ => none)]
     let bodya := LExpr.applySubstT bodya renameSubst
     -- Validate the measure expression type for int-recursive functions.
     -- Only validates non-fvar measures (fvar measures are validated in TermCheck
     -- using the TypeFactory, which has ADT information).
-    match func.measure with
+    let measure' ← match func.measure with
     | some measure =>
       match measure with
-      | .fvar _ _ _ => pure ()
+      | .fvar _ _ _ => pure func.measure
       | _ =>
-        let (measurea, _) ← LExpr.resolve C Env measure
+        -- Type-check the measure independently of the body, against the SAME
+        -- initial context (formals at their declared types). The signature's
+        -- type parameters (`func.typeArgs`, now fresh instantiation vars) are
+        -- rigid here, exactly as in the body: the measure may not specialize
+        -- the function's polymorphic signature. Without this, a measure like
+        -- `decreases (x + 0)` for `f<a>(x:a)` would pin `a := int` while the
+        -- signature stays polymorphic, so the formal `x : a` would not actually
+        -- carry an int-typed measure.
+        let measureRigid := func.typeArgs ++ C.rigidTypeVars
+        let Cm := { C with rigidTypeVars := measureRigid }
+        let (measurea, measureEnv) ← LExpr.resolve Cm measureBaseEnv measure
+        let Sm := measureEnv.stateSubstInfo.subst
         let measurety := measurea.toLMonoTy
         if measurety != .int then
           .error f!"recursive function '{func.name}': non-variable decreases expression must have type int, got '{measurety}'. For structural recursion, use a parameter name"
-    | none => pure ()
+        else
+          match measureRigid.find? (fun v => LMonoTy.subst Sm (.ftvar v) != .ftvar v) with
+          | some v =>
+            let inferred := LMonoTy.subst Sm (.ftvar v)
+            .error f!"recursive function '{func.name}': decreases expression refines type \
+                      variable '{v}' to '{inferred}'; a measure may not constrain the \
+                      function's polymorphic signature or an enclosing rigid type variable"
+          | none =>
+            pure (some (LExpr.applySubstT measurea userSubst).unresolved)
+    | none => pure none
     let Env := TEnv.popContext Env
     -- Rename back to user type variable names.
     let bodya := LExpr.applySubstT bodya userSubst
@@ -116,7 +232,8 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       typeArgs := userTypeArgs.map (·.2),
       inputs := func.inputs.map (fun (id, mty) => (id, LMonoTy.subst userSubst mty)),
       output := LMonoTy.subst userSubst func.output,
-      body := some bodya.unresolved }
+      body := some bodya.unresolved,
+      measure := measure' }
     .ok (new_func, Env)
 
 end Function

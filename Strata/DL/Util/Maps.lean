@@ -102,6 +102,43 @@ Look up `(x : α)` in all the maps in `ms`.
     | none => Maps.find? rest x
     | some v => some v
 
+/-- `Maps.keys` distributes over scope-stack append. -/
+theorem Maps.keys_append (ms1 ms2 : Maps α β) :
+    Maps.keys (ms1 ++ ms2) = Maps.keys ms1 ++ Maps.keys ms2 := by
+  induction ms1 with
+  | nil => rfl
+  | cons m rest ih =>
+    show m.keys ++ Maps.keys (rest ++ ms2) = (m.keys ++ Maps.keys rest) ++ Maps.keys ms2
+    rw [ih, List.append_assoc]
+
+/-- `Maps.values` distributes over scope-stack append. -/
+theorem Maps.values_append (ms1 ms2 : Maps α β) :
+    Maps.values (ms1 ++ ms2) = Maps.values ms1 ++ Maps.values ms2 := by
+  induction ms1 with
+  | nil => rfl
+  | cons m rest ih =>
+    show m.values ++ Maps.values (rest ++ ms2) = (m.values ++ Maps.values rest) ++ Maps.values ms2
+    rw [ih, List.append_assoc]
+
+/-- Looking up a key in concatenated scope-stacks searches the first stack then the second. -/
+theorem Maps.find?_append [DecidableEq α] (ms1 ms2 : Maps α β) (x : α) :
+    Maps.find? (ms1 ++ ms2) x = match Maps.find? ms1 x with
+      | some v => some v
+      | none => Maps.find? ms2 x := by
+  induction ms1 with
+  | nil => rfl
+  | cons m rest ih =>
+    show (match m.find? x with
+          | none => Maps.find? (rest ++ ms2) x
+          | some v => some v) =
+        match (match m.find? x with
+               | none => Maps.find? rest x
+               | some v => some v) with
+          | some v => some v
+          | none => Maps.find? ms2 x
+    rw [ih]
+    cases m.find? x <;> rfl
+
 /--
 Look up `(x : α)` in all the maps in `ms`, returning the default element `d` if
 `x` is not found.

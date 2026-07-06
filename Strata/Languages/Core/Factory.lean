@@ -215,10 +215,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 (Lambda.boolNotFunc (T := CoreLParams)).func.opExpr
                 (.app default ($overflowFuncName).opExpr
                   (.fvar default $xParam (some (.bitvec $sizeNum)))),
-                default⟩])
-              (h_precond := by
-                intro p hp; simp at hp; subst hp
-                native_decide)))
+                default⟩])))
       else
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -229,10 +226,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                   (.app default ($overflowFuncName).opExpr
                     (.fvar default $xParam (some (.bitvec $sizeNum))))
                   (.fvar default $yParam (some (.bitvec $sizeNum)))),
-                default⟩])
-              (h_precond := by
-                intro p hp; simp at hp; subst hp
-                native_decide)))
+                default⟩])))
 
 open Lean Elab Command in
 /-- Generate safe signed division/modulo operations with both div-by-zero
@@ -266,13 +260,7 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
                   (.app default ($overflowFuncName).opExpr
                     (.fvar default $xParam (some (.bitvec $sizeNum))))
                   (.fvar default $yParam (some (.bitvec $sizeNum)))),
-                default⟩])
-            (h_precond := by
-              intro p hp
-              simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
-              cases hp with
-              | inl h => subst h; native_decide
-              | inr h => subst h; native_decide)))
+                default⟩])))
 
 end -- public meta section
 
@@ -526,8 +514,8 @@ private def SeqBoundKind.upperOpExpr : SeqBoundKind → LExpr CoreLParams.mono
     that way. The parameter exists so a future partial Sequence op with a
     different input name need only pass it explicitly rather than rely on a
     hidden string literal. Either way, mismatches between the function's
-    declared inputs and the names used here are caught at elaboration by
-    `polyUneval`'s `h_precond` free-vars check. -/
+    declared inputs and the names used here are the caller's responsibility
+    to keep consistent. -/
 private def mkSeqBoundsPrecond
     (varName : String) (k : SeqBoundKind) (seqName : String := "s") :
     Strata.DL.Util.FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata :=
