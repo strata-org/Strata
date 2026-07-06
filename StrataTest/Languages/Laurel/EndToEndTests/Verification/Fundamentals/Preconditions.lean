@@ -77,4 +77,17 @@ procedure funcMultipleRequiresCaller()
   var b: int := funcMultipleRequires(1, -1)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
+
+// A function's `free` precondition is still checked at call sites: a
+// FuncPrecondition carries no free/checked attribute, so every one becomes a
+// well-formedness obligation at each call.
+function freeNeedsPositive(x: int) returns (r: int)
+  free requires x > 0
+{
+  x
+};
+procedure callsFree() opaque {
+  var v: int := freeNeedsPositive(-1)
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
 #end
