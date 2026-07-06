@@ -38,7 +38,64 @@ when the command signals a failure.
 @[expose] abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
   P.Factory → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
 
-/-- ### Well-Formedness of `SemanticStore`s -/
+/-! ### Well-Formedness of `SemanticStore` -/
+
+/-- A store is well-formed when every binding it holds is a value.  The
+    predicates below only constrain such stores, so the value rule and the var
+    rule stay jointly satisfiable (an arbitrary store could bind a variable to a
+    non-value). -/
+@[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) (f : P.Factory) : Prop :=
+    ∀ x v, σ x = some v → HasVal.value f v
+
+
+/-! ### Well-Formedness of `SemanticEval` -/
+
+/-- The evaluator respects Boolean negation: for any store `σ` and expression
+    `e`, `P.eval f σ e = some tt` iff `P.eval f σ (not e) = some ff`, and
+    dually. -/
+@[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
+    (f : P.Factory) : Prop :=
+    ∀ σ e,
+      (P.eval f σ e = some Imperative.HasBool.tt ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
+      (P.eval f σ e = some Imperative.HasBool.ff ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
+
+/-- Well-formedness of a `SemanticEval`'s value behavior, split into named
+    clauses. -/
+structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+    (f : P.Factory) : Prop where
+  /-- The evaluator produces only values (on well-formed stores). -/
+  outputsAreValues : ∀ v v' σ, WellFormedStore σ f → P.eval f σ v = some v' → HasVal.value f v'
+  /-- The evaluator is the identity on values. -/
+  identityOnValues : ∀ v' σ, HasVal.value f v' → P.eval f σ v' = some v'
+
+/-- The evaluator resolves free variables via the store: on a well-formed
+    store, evaluating a free-variable expression yields its store binding. -/
+@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasVal P] [HasFvar P]
+    (f : P.Factory) : Prop :=
+    (∀ e v σ, WellFormedStore σ f → HasFvar.getFvar e = some v → P.eval f σ e = σ v)
+
+/-- The evaluator agrees on well-formed stores that agree on the free variables
+    of the expression under evaluation. -/
+@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVal P] [HasFvars P]
+    (f : P.Factory) : Prop :=
+    ∀ e σ σ', WellFormedStore σ f → WellFormedStore σ' f →
+      (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → P.eval f σ e = P.eval f σ' e
+
+/-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
+structure WellFormedSemanticEval {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
+    [HasBool P] [HasBoolOps P] (f : P.Factory) : Prop where
+  /-- The evaluator respects boolean negation:
+      `eval e = some tt` iff `eval (not e) = some ff`, and dually. -/
+  bool : WellFormedSemanticEvalBool f
+  /-- The evaluator only outputs values and is the identity on values. -/
+  val : WellFormedSemanticEvalVal f
+  /-- The evaluator resolves free variables via the store. -/
+  var : WellFormedSemanticEvalVar f
+  /-- The evaluator agrees on stores that agree on free variables. -/
+  exprCongr : WellFormedSemanticEvalExprCongr f
+
+
+/-- ### Predicates on `SemanticStore`s -/
 
 @[expose] def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → (σ v).isSome = true
@@ -54,6 +111,7 @@ def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Pro
 def isDefinedOver {P : PureExpr}
   (getVars : α → List P.Ident) (σ : SemanticStore P) (s : α) : Prop :=
   isDefined σ (getVars s)
+
 
 /-! ### Store Substitution -/
 
@@ -80,35 +138,8 @@ def invStoresExcept {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.
 def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
   : List (P.Ident × P.Ident) := substs.map Prod.swap
 
-/-! ### Well-Formedness of `SemanticEval`s -/
 
-@[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
-    (f : P.Factory) : Prop :=
-    ∀ σ e,
-      (P.eval f σ e = some Imperative.HasBool.tt ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
-      (P.eval f σ e = some Imperative.HasBool.ff ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
-
-/-- A store is well-formed when every binding it holds is a value.  The
-    predicates below only constrain such stores, so the value rule and the var
-    rule stay jointly satisfiable (an arbitrary store could bind a variable to a
-    non-value). -/
-@[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) (f : P.Factory) : Prop :=
-    ∀ x v, σ x = some v → HasVal.value f v
-
-/-- Well-formedness of a `SemanticEval`'s value behavior, split into named
-    clauses. -/
-structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
-    (f : P.Factory) : Prop where
-  /-- The evaluator produces only values (on well-formed stores). -/
-  outputsAreValues : ∀ v v' σ, WellFormedStore σ f → P.eval f σ v = some v' → HasVal.value f v'
-  /-- The evaluator is the identity on values. -/
-  identityOnValues : ∀ v' σ, HasVal.value f v' → P.eval f σ v' = some v'
-
-@[expose] def WellFormedSemanticEvalVar {P : PureExpr} [HasVal P] [HasFvar P]
-    (f : P.Factory) : Prop := (∀ e v σ, WellFormedStore σ f → HasFvar.getFvar e = some v → P.eval f σ e = σ v)
-
-@[expose] def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasFvars P]
-    (f : P.Factory) : Prop := ∀ e σ σ', (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → P.eval f σ e = P.eval f σ' e
+/-! ### Formal Semantics of Command. -/
 
 /--
 Abstract variable update.

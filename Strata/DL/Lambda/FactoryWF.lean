@@ -50,6 +50,14 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ∃ res2, ceval md2 args2 = some res2 ∧
           LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
     intro _ h; simp [Func.concreteEval] at h
+  /-- `concreteEval` does not introduce fresh free variables: every free
+      variable of a successful result was already free in some argument. -/
+  concreteEval_freeVars :
+    ∀ ceval, f.concreteEval = some ceval →
+      ∀ md (args : List (LExpr T.mono)) res,
+        ceval md args = some res →
+        ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
+    intro _ h; simp [Func.concreteEval] at h
 
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where

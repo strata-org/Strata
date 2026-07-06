@@ -1326,6 +1326,9 @@ theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr (P := P) ρ.factory →
+  WellFormedStore ρ.store ρ.factory →
+  WellFormedStore ρ1.store ρ.factory →
+  WellFormedStore ρ2.store ρ.factory →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
@@ -1334,7 +1337,7 @@ theorem eval_stmt_set_comm
   EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
   EvalStmtSmall P (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 (.det v1) md1')) ρ'' →
   ρ'.store = ρ''.store := by
-  intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   unfold EvalStmtSmall at Hs1 Hs2 Hs3 Hs4
   match Hs1, Hs2, Hs3, Hs4 with
   | .step _ _ _ (.step_cmd Hc1) (.refl _),
@@ -1342,20 +1345,24 @@ theorem eval_stmt_set_comm
     .step _ _ _ (.step_cmd Hc3) (.refl _),
     .step _ _ _ (.step_cmd Hc4) (.refl _) =>
     simp
-    exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
+    exact eval_cmd_set_comm Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
 theorem eval_stmts_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident] :
   WellFormedSemanticEvalExprCongr (P := P) ρ.factory →
+  WellFormedStore ρ.store ρ.factory →
+  (∀ ρ_mid, EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ_mid →
+    WellFormedStore ρ_mid.store ρ.factory) →
+  (∀ ρ_mid, EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ_mid →
+    WellFormedStore ρ_mid.store ρ.factory) →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
   EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
   EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
   ρ'.store = ρ''.store := by
-  intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
-  -- Extract the four EvalCmd's from the two list executions
+  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Heval1 Heval2
   have extract := fun (s1 s2 : Stmt P (Cmd P)) (ρ₀ ρ_final : Env P)
       (h : EvalStmtsSmall P (EvalCmd P) evalFun ρ₀ [s1, s2] ρ_final) =>
     show ∃ ρ_mid, EvalStmtSmall P (EvalCmd P) evalFun ρ₀ s1 ρ_mid ∧
@@ -1370,9 +1377,9 @@ theorem eval_stmts_set_comm
           match htail2 with
           | .step _ _ _ .step_stmts_nil (.refl _) =>
             exact ⟨ρ₁, hterm1, hterm2⟩
-  have ⟨ρ_mid1, Hs1, Hs2⟩ := extract _ _ _ _ Heval1
-  have ⟨ρ_mid2, Hs3, Hs4⟩ := extract _ _ _ _ Heval2
-  exact eval_stmt_set_comm Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  have ⟨ρ_m1, Hs1, Hs2⟩ := extract _ _ _ _ Heval1
+  have ⟨ρ_m2, Hs3, Hs4⟩ := extract _ _ _ _ Heval2
+  exact eval_stmt_set_comm Hwf Hwfs (Hwfs1 _ Hs1) (Hwfs2 _ Hs3) Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
 
 end AssertSetProps
 

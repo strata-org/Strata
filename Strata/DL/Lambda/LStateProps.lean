@@ -118,4 +118,75 @@ theorem LExpr.substFvarsFromEnv_closed_identity
     simp [LExpr.freeVars] at h
     exact congr (congr (congr rfl (ihc h.1)) (iht h.2.1)) (ihf h.2.2)
 
+/-- `substFvarsFromEnv` agrees on expressions when the environments agree on the
+    free variables. -/
+theorem substFvarsFromEnv_env_congr {Tbase : LExprParams}
+    (env₁ env₂ : Env Tbase) (e : LExpr Tbase.mono)
+    (hagree : ∀ x ∈ LExpr.LExpr.getVars e, env₁ x = env₂ x) :
+    LExpr.substFvarsFromEnv env₁ e = LExpr.substFvarsFromEnv env₂ e := by
+  induction e with
+  | const | op | bvar => rfl
+  | fvar m x ty =>
+    simp only [LExpr.substFvarsFromEnv]
+    rw [hagree x (by simp [LExpr.LExpr.getVars])]
+  | abs _ _ _ _ ih => simp only [LExpr.substFvarsFromEnv]; rw [ih hagree]
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.substFvarsFromEnv]
+    rw [iht (fun x hx => hagree x (List.mem_append_left _ hx)),
+        ihb (fun x hx => hagree x (List.mem_append_right _ hx))]
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv]
+    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ hx)),
+        ih2 (fun x hx => hagree x (List.mem_append_right _ hx))]
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substFvarsFromEnv]
+    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ (List.mem_append_left _ hx))),
+        ih2 (fun x hx => hagree x (List.mem_append_left _ (List.mem_append_right _ hx))),
+        ih3 (fun x hx => hagree x (List.mem_append_right _ hx))]
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv]
+    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ hx)),
+        ih2 (fun x hx => hagree x (List.mem_append_right _ hx))]
+
+/-- If the environment maps only to closed expressions, `substFvarsFromEnv`
+    does not introduce free variables. -/
+theorem getVars_substFvarsFromEnv_mem {Tbase : LExprParams} (env : Env Tbase)
+    (hcl : ∀ x v, env x = some v → LExpr.LExpr.getVars v = [])
+    (e : LExpr Tbase.mono) (y : Tbase.Identifier)
+    (hy : y ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e)) :
+    y ∈ LExpr.LExpr.getVars e := by
+  induction e with
+  | const | op | bvar => exact hy
+  | fvar m x ty =>
+    simp only [LExpr.substFvarsFromEnv] at hy
+    cases hv : env x with
+    | none => rw [hv] at hy; exact hy
+    | some v => rw [hv, hcl x v hv] at hy; simp at hy
+  | abs _ _ _ _ ih => exact ih hy
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    simp only [LExpr.LExpr.getVars, List.mem_append]
+    rcases hy with h | h
+    · exact Or.inl (iht h)
+    · exact Or.inr (ihb h)
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    simp only [LExpr.LExpr.getVars, List.mem_append]
+    rcases hy with h | h
+    · exact Or.inl (ih1 h)
+    · exact Or.inr (ih2 h)
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    simp only [LExpr.LExpr.getVars, List.mem_append]
+    rcases hy with (h | h) | h
+    · exact Or.inl (Or.inl (ih1 h))
+    · exact Or.inl (Or.inr (ih2 h))
+    · exact Or.inr (ih3 h)
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    simp only [LExpr.LExpr.getVars, List.mem_append]
+    rcases hy with h | h
+    · exact Or.inl (ih1 h)
+    · exact Or.inr (ih2 h)
+
 end Lambda

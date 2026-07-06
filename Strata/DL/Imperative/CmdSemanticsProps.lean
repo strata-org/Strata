@@ -315,12 +315,14 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasVarsImp P (Cmd P)] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]:
   WellFormedSemanticEvalExprCongr (P := P) fac →
+  WellFormedStore σ fac →
+  WellFormedStore σ' fac →
   ¬ v ∈ HasFvars.getFvars e →
   EvalCmd P fac σ (Cmd.set v (.det e') md) σ' f →
   P.eval fac σ e = P.eval fac σ' e := by
-  intro Hwf Hnin Heval
+  intro Hwf Hwfs Hwfs' Hnin Heval
   unfold WellFormedSemanticEvalExprCongr at Hwf
-  specialize Hwf e σ σ'
+  specialize Hwf e σ σ' Hwfs Hwfs'
   have: ∀ (v : P.Ident), v ∈ HasFvars.getFvars e → σ v = σ' v := by
     cases Heval
     rename_i Hu
@@ -357,6 +359,9 @@ theorem eval_cmd_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
   [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr (P := P) fac →
+  WellFormedStore σ fac →
+  WellFormedStore σ1 fac →
+  WellFormedStore σ2 fac →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
@@ -365,9 +370,9 @@ theorem eval_cmd_set_comm
   EvalCmd P fac σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
   EvalCmd P fac σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
   σ' = σ'' := by
-  intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
-  have Heval2:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin1 Hs1
-  have Heval1:= semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hnin2 Hs3
+  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  have Heval2 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs1 Hnin1 Hs1
+  have Heval1 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs2 Hnin2 Hs3
   exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
 
 end -- public section

@@ -319,6 +319,26 @@ macro "prove_ceval_argmatch" : tactic => `(tactic|
       | [_, _, _] => simp | _ :: _ :: _ :: _ :: _ => simp)
    | simp at h1))
 
+-- Tactic to prove concreteEval_freeVars for concrete test functions:
+-- either the function has no concreteEval (contradiction), or its concrete
+-- evaluator only produces results whose free variables come from an argument
+-- (constants contribute none; `.eq`/identity terms reuse an argument subterm).
+macro "prove_ceval_freeVars" : tactic => `(tactic|
+  (intro ceval hce md args res hres z hz
+   simp only [Option.some.injEq, reduceCtorEq] at hce
+   all_goals (
+     subst hce
+     simp only [] at hres
+     repeat' split at hres
+     all_goals (
+       first
+       | simp only [reduceCtorEq] at hres
+       | (injection hres with hres'
+          subst hres'
+          simp only [LExpr.LExpr.getVars, List.append_nil, List.nil_append,
+            List.not_mem_nil, List.mem_append, List.mem_singleton] at hz
+          all_goals (refine ⟨_, ?_, hz⟩; simp))))))
+
 private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
   intro lf hmem; simp [testFuncs] at hmem
   rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
@@ -326,7 +346,8 @@ private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
     output_typevars_in_typeArgs := by decide, precond_freevars := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
-    concreteEval_argmatch := by prove_ceval_argmatch }
+    concreteEval_argmatch := by prove_ceval_argmatch
+    concreteEval_freeVars := by prove_ceval_freeVars }
 
 -- Well-formedness of testBuiltIn factory
 private theorem testBuiltIn_wf : FactoryWF testBuiltIn := by
@@ -623,7 +644,8 @@ private theorem polyState_wf : FactoryWF polyState.config.factory := by
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
     output_typevars_in_typeArgs := by decide, precond_freevars := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
-    concreteEval_argmatch := by prove_ceval_argmatch }
+    concreteEval_argmatch := by prove_ceval_argmatch
+    concreteEval_freeVars := by prove_ceval_freeVars }
 
 -- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
 def test_poly_tysubst := TestCase.new
@@ -663,7 +685,8 @@ private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
     output_typevars_in_typeArgs := by decide, precond_freevars := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
-    concreteEval_argmatch := by prove_ceval_argmatch }
+    concreteEval_argmatch := by prove_ceval_argmatch
+    concreteEval_freeVars := by prove_ceval_freeVars }
 
 -- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
 def test_poly_tysubst_distinct := TestCase.new
@@ -723,7 +746,8 @@ private theorem each_evalIfCanonicalFunc_wf :
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
     output_typevars_in_typeArgs := by decide, precond_freevars := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
-    concreteEval_argmatch := by prove_ceval_argmatch }
+    concreteEval_argmatch := by prove_ceval_argmatch
+    concreteEval_freeVars := by prove_ceval_freeVars }
 
 private theorem evalIfCanonicalState_wf :
     FactoryWF evalIfCanonicalState.config.factory := by
@@ -768,6 +792,197 @@ def test_evalIfCanonical_all_canonical := TestCase.new
 
 example : steps_well test_evalIfCanonical_all_canonical := by
   prove_steps_well test_evalIfCanonical_all_canonical evalIfCanonicalState_wf
+
+/-! ### Tests: `.value true` is actually produced by `LExpr.eval`
+
+`LExpr.eval` returns `(v, .value true)` iff the entire recursive evaluation was
+fully reduced — every intermediate recursive `eval` call itself returned
+`.value true`.  These tests demonstrate that this "fully-reduced" tag is
+actually reachable on a range of expressions, so downstream properties phrased
+in terms of `.value true` are not vacuously true. -/
+
+-- Helper: extract the `.snd` (result classification) after a full evaluation.
+def checkResultValueTrue (t : TestCase) : Bool :=
+  match (Lambda.LExpr.evalWithLState t.n t.σ t.e).snd with
+  | .value true => true
+  | _ => false
+
+-- Test: a plain integer literal is canonical, so `eval` returns `.value true`
+-- at any fuel.
+def test_vt_int_literal := TestCase.new ∅ esM[#42] esM[#42]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_int_literal
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_int_literal
+
+-- Test: a boolean literal is canonical, so `eval` returns `.value true`.
+def test_vt_bool_literal := TestCase.new ∅ esM[#true] esM[#true]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_bool_literal
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_bool_literal
+
+-- Test: `if true then #10 else #20` — the guard is canonical `.value true`,
+-- and the taken branch `#10` is also `.value true`.  So the ite reduces to
+-- `#10` with `.value true`.
+def test_vt_ite_true := TestCase.new ∅ esM[if #true then #10 else #20] esM[#10]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_ite_true
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_ite_true
+
+-- Test: `if false then #10 else #20` — the false branch fires.
+def test_vt_ite_false := TestCase.new ∅ esM[if #false then #10 else #20] esM[#20]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_ite_false
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_ite_false
+
+-- Test: `Int.Add #20 #30` — the concreteEval fires with both args canonical
+-- `.value true`, so the outer result is `.value true` with `#50`.
+def test_vt_int_add := TestCase.new
+  testState
+  esM[((~Int.Add #20) #30)]
+  esM[#50]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_int_add
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_int_add
+
+-- Test: a nested `Int.Add ((Int.Add #1 #2) #3)` — each inner eval must return
+-- `.value true`, and so must the outer.
+def test_vt_int_add_nested := TestCase.new
+  testState
+  esM[((~Int.Add ((~Int.Add #1) #2)) #3)]
+  esM[#6]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_int_add_nested
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_int_add_nested
+
+-- Test: β-reduction of a closed lambda applied to a canonical arg.
+-- `(λ x. #17) #24` reduces to `#17` with `.value true`.
+def test_vt_beta_const := TestCase.new
+  ∅
+  esM[((λ #17) #24)]
+  esM[#17]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_beta_const
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_beta_const
+
+-- Test: β-reduction with an `Int.Add` in the body.
+-- `((λ x. (Int.Add x #10)) #5)` reduces to `#15` with `.value true`.
+def test_vt_beta_add := TestCase.new
+  testState
+  esM[((λ ((~Int.Add %0) #10)) #5)]
+  esM[#15]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_beta_add
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_beta_add
+
+-- Test: three-argument concreteEval `Int.Add3 #1 #2 #3` returns `#6` with
+-- `.value true`.
+def test_vt_int_add3 := TestCase.new
+  testState
+  esM[(((~Int.Add3 #1) #2) #3)]
+  esM[#6]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_int_add3
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_int_add3
+
+-- Test: an equality between two identical constants reduces to `#true` with
+-- `.value true`.
+def test_vt_eq_refl := TestCase.new ∅ esM[(#5 == #5)] esM[#true]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_eq_refl
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_eq_refl
+
+-- Test: an equality between two distinct constants reduces to `#false` with
+-- `.value true`.
+def test_vt_eq_neq := TestCase.new ∅ esM[(#5 == #6)] esM[#false]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_eq_neq
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_eq_neq
+
+-- Test: `IntAddAlias` is inlined and both arguments are canonical, so the
+-- outer result is `.value true` at `#50`.
+def test_vt_inline_alias := TestCase.new
+  testState
+  esM[((~IntAddAlias #20) #30)]
+  esM[#50]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_inline_alias
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_inline_alias
+
+/-! ### Contrastive tests: `eval` does NOT produce `.value true` on unreduced
+expressions.  These show that `.value true` isn't trivially always returned. -/
+
+-- Test: a bare free variable with no store binding stays `.nonvalue` (not
+-- `.value true`), demonstrating the flag really distinguishes reduced vs not.
+def test_nvt_stuck_fvar := TestCase.new ∅ esM[x] esM[x]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_nvt_stuck_fvar
+/-- info: false -/
+#guard_msgs in
+#eval checkResultValueTrue test_nvt_stuck_fvar
+
+-- Test: `Int.Add #20 x` — one arg symbolic, so the outer stays `.nonvalue`,
+-- not `.value true`.
+def test_nvt_int_add_symbolic := TestCase.new
+  testState
+  esM[((~Int.Add #20) x)]
+  esM[((~Int.Add #20) x)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_nvt_int_add_symbolic
+/-- info: false -/
+#guard_msgs in
+#eval checkResultValueTrue test_nvt_int_add_symbolic
 
 end EvalTest
 ---------------------------------------------------------------------

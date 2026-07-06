@@ -982,6 +982,11 @@ def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
 def FactoryFuncNames : List String :=
   (WFFactoryArray.map (·.func.name.name)).toList
 
+/-- The function names in the mapped factory array are pairwise distinct. -/
+theorem WFFactoryArray_func_name_nodup :
+    List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) := by
+  native_decide
+
 /-- Decidable predicate: is `s` the name of a built-in factory function? -/
 def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 

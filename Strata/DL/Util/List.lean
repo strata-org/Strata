@@ -20,6 +20,20 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
     let as := as.dedup
     if a ∈ as then as else a :: as
 
+/-- Values in the `snd` projection of a `zip` are members of the second list. -/
+theorem mem_map_snd_zip {α β} (l₁ : List α) (l₂ : List β) (v : β)
+    (h : v ∈ (l₁.zip l₂).map Prod.snd) : v ∈ l₂ := by
+  induction l₁ generalizing l₂ with
+  | nil => simp at h
+  | cons a l₁ ih =>
+    cases l₂ with
+    | nil => simp at h
+    | cons b l₂ =>
+      simp only [List.zip_cons_cons, List.map_cons, List.mem_cons] at h
+      rcases h with rfl | h
+      · exact List.mem_cons.mpr (Or.inl rfl)
+      · exact List.mem_cons_of_mem _ (ih l₂ h)
+
 /--
 Tail-recursive worker for `dedup`. Walks the input left-to-right,
 skipping elements that still appear later, and collects kept elements

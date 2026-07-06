@@ -1672,7 +1672,7 @@ private theorem eqModuloMeta_eraseMetadata_eq
   unfold LExpr.eqModuloMeta; rw [ha, hb]
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-private theorem eql_eraseMetadata_eq
+theorem eql_eraseMetadata_eq
     {Tbase : LExprParams}
     [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
     (F : @Factory Tbase)
@@ -2002,7 +2002,7 @@ private theorem StepStar_to_substFvarsFromEnv_quant
 
 -- isCanonicalValue depends only on eraseMetadata.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
-private theorem isCanonicalValue_eraseMetadata_eq
+theorem isCanonicalValue_eraseMetadata_eq
     {Tbase : LExprParams}
     [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
     (F : @Factory Tbase)
@@ -2197,7 +2197,7 @@ private theorem evalEq_eraseMetadata_congr
   | none => exact eraseMetadata_eq_congr hl' hr'
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [Inhabited Tbase.IDMeta] in
-private theorem substFvarsLifting_zip_eraseMetadata_congr
+theorem substFvarsLifting_zip_eraseMetadata_congr
     (e : LExpr Tbase.mono)
     (keys : List Tbase.Identifier)
     (vals₁ vals₂ : List (LExpr Tbase.mono))
@@ -2516,7 +2516,8 @@ theorem eval_eraseMetadata_invariant
     simp [LExpr.eval]
     exact h_eM
   | succ n' ih =>
-    simp only [LExpr.eval]
+    simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
+      LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
     rw [isCanonicalValue_eraseMetadata_eq F e₁ e₂ h_eM]
     split
     · exact h_eM
@@ -2734,97 +2735,79 @@ theorem eval_eraseMetadata_invariant
               exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)
         · -- LHS non-inline
           rename_i h_ninline₁
-          -- Split on LHS canonical condition
-          split
-          · -- LHS canonical holds
-            rename_i h_can₁
-            -- LHS still has match on concreteEval. Handle it first.
-            cases h_ce : lfunc.concreteEval with
-            | none =>
-              -- LHS: mkApp. RHS: concreteEval = none means all branches
-              -- reduce to mkApp regardless of canonical condition.
-              -- First reduce the match on concreteEval in the goal
-              simp only []
-              -- Now the if structure is clean. Split RHS outer inline.
-              split
-              next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
-                exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
-              next h_ninline₂ => -- RHS non-inline
-                -- Regardless of canonical condition, concreteEval=none means mkApp
-                simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
-            | some ceval =>
-              have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call₁
-              have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
-              -- LHS has match on ceval result. Handle it.
-              match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
-                  (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata
-                  (args₁.map (fun a => (LExpr.eval n' F env a).fst)) with
-              | some e'₁ =>
-                -- LHS: eval n' F env e'₁. RHS: still has if/if/match structure.
-                simp only [h_cv₁]
-                -- Split RHS outer inline
-                split
-                next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
-                  exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
-                next h_ninline₂ => -- RHS non-inline
-                  -- The canonical condition is true for args₂; split all nested matches/ifs
-                  split <;> split <;> split
-                  <;> first
-                    | (-- canonical positive branch: handle ceval match
-                       match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
-                           (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
-                           (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
-                       | some e'₂ =>
-                         simp only []
-                         obtain ⟨e'₂', h_cv₂', h_res_eM⟩ :=
-                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
-                         rw [h_cv₂'] at h_cv₂; cases h_cv₂
-                         exact ih _ _ h_res_eM
-                       | none =>
-                         obtain ⟨e'₂, h_cv₂', _⟩ :=
-                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
-                         exact absurd (h_cv₂.symm.trans h_cv₂') (by simp))
-                    | (-- non-canonical contradiction or remaining goals
-                       simp_all)
-              | none =>
-                -- LHS: mkApp. RHS: still has if/if/match structure.
-                simp only [h_cv₁]
-                -- Split RHS outer inline
-                split
-                next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
-                  exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
-                next h_ninline₂ => -- RHS non-inline
-                  -- The canonical condition is true for args₂; split all nested matches/ifs
-                  split <;> split
-                  <;> first
-                    | (-- canonical positive branch: handle ceval match
-                       match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
-                           (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
-                           (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
-                       | some e'₂ =>
-                         obtain ⟨e'₁, h_cv₁', _⟩ :=
-                           h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₂ h_eval_args_eM.symm h_cv₂
-                         exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
-                       | none =>
-                         simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM])
-                    | (-- non-canonical contradiction or remaining goals
-                       simp_all [h_can_cond_eq, h_can₁, h_all_canonical,
-                         h_constrArgAt_eq, h_canonicalArgAt_eq])
-          · -- LHS non-canonical: mkApp on LHS
-            rename_i h_ncan₁
-            -- RHS has outer `if` (inline) + inner `if` (canonical).
-            -- Split RHS outer inline
+          -- Case on both attribute lookups to eliminate inner matches
+          -- (findEvalIfConstr and findEvalIfCanonical) which cause `split`
+          -- to misfire when nested inside the outer `if canonical`.  After
+          -- this cases, the outer `if canonical` will be split cleanly.
+          have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call₁
+          have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
+          cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+            simp only [h_fEC, h_fEV] at h_can_cond_eq h_constrArgAt_eq h_canonicalArgAt_eq ⊢
+            -- Now `split` on the outer LHS `if canonical` works.
             split
-            next h_inline₂ => -- RHS inline (contradicts h_ninline₁)
-              exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
-            next h_ninline₂ => -- RHS non-inline
-              -- Split on canonical condition
+            · rename_i h_can₁
+              cases h_ce : lfunc.concreteEval with
+              | none =>
+                simp only []
+                split
+                next h_inline₂ =>
+                  exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+                next h_ninline₂ =>
+                  simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+              | some ceval =>
+                match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
+                    (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                    (args₁.map (fun a => (LExpr.eval n' F env a).fst)) with
+                | some e'₁ =>
+                  simp only [h_cv₁]
+                  split
+                  next h_inline₂ =>
+                    exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+                  next h_ninline₂ =>
+                    -- LHS canonical is true (h_can₁); derive RHS canonical is true
+                    have h_can₂ := h_can_cond_eq ▸ h_can₁
+                    rw [if_pos h_can₂]
+                    match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
+                    | some e'₂ =>
+                      obtain ⟨e'₂', h_cv₂', h_res_eM⟩ :=
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                      rw [h_cv₂'] at h_cv₂; cases h_cv₂
+                      exact ih _ _ h_res_eM
+                    | none =>
+                      obtain ⟨e'₂, h_cv₂', _⟩ :=
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                      exact absurd (h_cv₂.symm.trans h_cv₂') (by simp)
+                | none =>
+                  simp only [h_cv₁]
+                  split
+                  next h_inline₂ =>
+                    exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+                  next h_ninline₂ =>
+                    have h_can₂ := h_can_cond_eq ▸ h_can₁
+                    rw [if_pos h_can₂]
+                    match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
+                    | some e'₂ =>
+                      obtain ⟨e'₁, h_cv₁', _⟩ :=
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₂ h_eval_args_eM.symm h_cv₂
+                      exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
+                    | none =>
+                      simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+            · rename_i h_ncan₁
               split
-              next h_can₂_prop => -- RHS canonical (contradicts h_ncan₁)
-                -- h_ncan₁ and h_can₂_prop contradict via h_can_cond_eq
-                exact absurd (h_can_cond_eq ▸ h_can₂_prop) h_ncan₁
-              next h_ncan₂_prop => -- Both non-canonical: mkApp
-                simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+              next h_inline₂ =>
+                exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
+              next h_ninline₂ =>
+                split
+                next h_can₂_prop =>
+                  exact absurd (h_can_cond_eq ▸ h_can₂_prop) h_ncan₁
+                next h_ncan₂_prop =>
+                  simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+          )
       · rename_i h_none₁
         have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq F _ _ false h_eM h_none₁
         rw [h_none₂]
@@ -2940,7 +2923,8 @@ theorem eval_StepStar
   | zero =>
     exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]⟩
   | succ n ih =>
-    simp only [LExpr.eval]
+    simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
+      LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
     split
     · -- Canonical: eval returns e
       rename_i h_canonical
@@ -3032,25 +3016,30 @@ theorem eval_StepStar
             exact ⟨e, ReflTrans.refl e, rfl⟩
         · -- Non-inline
           rename_i h_not_inline
-          split
-          · rename_i h_canonical_args
+          -- Case on both attribute lookups to eliminate inner matches
+          cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfCanonical lfunc.attr <;> (
+            simp only []
             split
-            · -- No ceval: terminal
-              rename_i h_no_ceval
-              exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
-            · -- ceval exists
-              rename_i ceval h_ceval
+            · rename_i h_canonical_args
               split
-              · -- ceval succeeds: eval = eval n σ e'_ceval
-                rename_i e'_ceval h_ceval_succ
-                exact eval_StepStar_factory_ceval F env e n hWF
-                  op_expr args lfunc h_call ceval h_ceval e'_ceval h_ceval_succ ih
-              · -- ceval fails: terminal
-                rename_i h_ceval_fail
+              · -- No ceval: terminal
+                rename_i h_no_ceval
                 exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
-          · -- Symbolic args: terminal
-            rename_i h_symbolic
-            exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
+              · -- ceval exists
+                rename_i ceval h_ceval
+                split
+                · -- ceval succeeds: eval = eval n σ e'_ceval
+                  rename_i e'_ceval h_ceval_succ
+                  exact eval_StepStar_factory_ceval F env e n hWF
+                    op_expr args lfunc h_call ceval h_ceval e'_ceval h_ceval_succ ih
+                · -- ceval fails: terminal
+                  rename_i h_ceval_fail
+                  exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
+            · -- Symbolic args: terminal
+              rename_i h_symbolic
+              exact eval_StepStar_factory_terminal F env e n op_expr args lfunc h_call ih
+          )
       · -- evalCore case: case analysis on e
         rename_i h_no_call
         match e, h_not_canonical, h_no_call with

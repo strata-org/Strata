@@ -21,6 +21,7 @@ structure PureExpr : Type 1 where
   /-- Kinds of identifiers allowed in expressions. We expect identifiers to have
    decidable equality; see `EqIdent`. -/
   Ident   : Type
+  /-- Decidable equality on identifiers. -/
   EqIdent : DecidableEq Ident
   /-- Expressions -/
   Expr    : Type

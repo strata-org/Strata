@@ -59,7 +59,6 @@ open Core Imperative
 structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   wfVar  : WellFormedSemanticEvalVar (P := Expression) ρ.factory
   wfBool : WellFormedSemanticEvalBool (P := Expression) ρ.factory
-  wfCong : WellFormedCoreEvalCong ρ.factory
   wfExprCongr : WellFormedSemanticEvalExprCongr (P := Expression) ρ.factory
   -- The verification env's store holds only values (true of reachable stores).
   storeValues : Imperative.WellFormedStore ρ.store ρ.factory
