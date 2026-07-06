@@ -129,6 +129,6 @@ procedure usesCheckedEnsures()
 {
   var v: int := checkedEnsuresCallee(3);
   assert v > 3
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

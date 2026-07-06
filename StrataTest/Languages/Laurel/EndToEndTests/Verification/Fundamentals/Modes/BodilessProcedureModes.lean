@@ -57,7 +57,7 @@ procedure callerOfBad() returns (r: int)
 {
   r := bad();
   assert false
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
