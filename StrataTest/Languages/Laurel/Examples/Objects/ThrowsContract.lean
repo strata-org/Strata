@@ -12,12 +12,15 @@ open Strata
 /-
 Exercises the E4 procedure exceptional contract: an optional `throws` type and
 `onThrow` exceptional postconditions (see `docs/design/laurel_extensions.md`,
-extension E4). Laurel *records* these and resolves/type-checks them — the
-`throws` type must be a subtype of the channel root `BaseException`, and each
-`onThrow` predicate is checked at `bool` with its binding typed `BaseException`.
-Laurel performs no declare-or-catch enforcement (that is front-end policy), and
-the contract is not yet consumed by lowering (E7), so a well-formed contract
-verifies cleanly (it is ignored during translation).
+extension E4). The `throws` type must be a subtype of the channel root
+`BaseException`, and each `onThrow` predicate is checked at `bool` with its
+binding typed `BaseException`.
+
+E4 enforcement (the "check, don't trust" analysis): a procedure may only let an
+exception escape whose type is a subtype of its declared `throws` type, and a
+procedure that declares no `throws` may not let any exception escape (whether
+thrown directly or propagated from a callee). Java-style declare-or-catch at
+call sites remains front-end policy.
 -/
 
 -- Valid: `throws` a BaseException subtype. Recorded and ignored at translation,
@@ -77,5 +80,83 @@ procedure badOnThrow()
   opaque
 {
   assert true
+};
+#end
+
+/-! ## E4 enforcement: no-escape and the throws upper-bound -/
+
+-- Upper-bound violation: declares `throws ArithError` but throws a sibling
+-- `ParseError`, which is not a subtype of the declared type.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite ArithError extends BaseException {}
+composite ParseError extends BaseException {}
+procedure wrongThrows()
+  throws ArithError
+  opaque
+{
+  var e: ParseError := new ParseError;
+  throw e
+//^^^^^^^ error: procedure 'wrongThrows' may throw 'ParseError', which is not a subtype of its declared `throws` type 'ArithError'
+};
+#end
+
+-- No-escape via a propagated call: `callsThrower` invokes a throwing procedure
+-- without catching it and without declaring `throws` itself.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure thrower()
+  returns (r: int)
+  throws BaseException
+  opaque
+{
+  var e: BaseException := new BaseException;
+  throw e
+};
+procedure callsThrower()
+  returns (r: int)
+  opaque
+{
+  r := thrower()
+//     ^^^^^^^^^ error: procedure 'callsThrower' may let an exception of type 'BaseException' escape, but does not declare a `throws` clause
+};
+#end
+
+-- Allowed: the declared `throws` type is a supertype of what is thrown, so the
+-- coarsened contract holds (this is how a Java `throws Exception` covering a
+-- more specific throw is represented).
+#eval testLaurel <|
+#strata
+program Laurel;
+composite ParseError extends BaseException {}
+procedure coarsenedThrows()
+  throws BaseException
+  opaque
+{
+  var e: ParseError := new ParseError;
+  throw e
+};
+#end
+
+-- Allowed (no-escape via catch): `handled` throws inside a `try` whose `catch`
+-- handles the thrown type, so nothing escapes and no `throws` declaration is
+-- required. Must produce no diagnostics.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite ParseError extends BaseException {}
+procedure handled()
+  returns (r: int)
+  opaque
+{
+  var e: ParseError := new ParseError;
+  try {
+    throw e
+  } catch c when c is ParseError {
+    r := -1
+  };
+  r := 0
 };
 #end

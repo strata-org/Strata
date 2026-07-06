@@ -3283,6 +3283,117 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
   for proc in program.staticProcedures do
     let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
 
+/-! ## E4 exception-escape enforcement
+
+Static "check, don't trust" analysis (the design's E4 enforcement): a procedure
+that does not declare `throws` must not let any exception escape, and one that
+declares `throws T` must only let exceptions whose type is a subtype of `T`
+escape.
+
+`exceptionEscapes` over-approximates the set of exception types that can leave a
+statement uncaught. A `try` removes a body type only when some `catch` clause
+*provably* handles it — a catch-all, or an `x is T` guard (or a disjunction of
+such guards) with the type a subtype of `T`. Any other guard is treated as
+catching nothing, so the analysis stays sound: it never claims an escape is
+impossible when it might not be. It runs only on the initial resolution, where
+`throw` operands still carry their declared types and `is`-guards have not yet
+been lowered by `typeHierarchyTransform`. -/
+
+/-- Whether `pred`, the guard of a `catch <binding> when pred`, provably holds
+    for every value of type `ty` — i.e. that clause definitely catches `ty`. -/
+partial def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
+    (pred : StmtExprMd) (ty : HighTypeMd) : Bool :=
+  match pred.val with
+  | .LiteralBool true => true
+  | .IsType target guardTy =>
+    match target.val with
+    | .Var (.Local n) => n.text == binding.text && isSubtype lattice ty guardTy
+    | _ => false
+  | .PrimitiveOp .Or [p1, p2] _ | .PrimitiveOp .OrElse [p1, p2] _ =>
+    catchGuardCatches lattice binding p1 ty || catchGuardCatches lattice binding p2 ty
+  | _ => false
+
+/-- Whether a `catch` clause definitely catches every value of type `ty`.
+    An absent guard is a catch-all. -/
+def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTypeMd) : Bool :=
+  match c.predicate with
+  | none => true
+  | some p => catchGuardCatches lattice c.binding p ty
+
+/-- Over-approximate the exception types (each with a source location) that can
+    escape `expr` uncaught. -/
+partial def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (expr : StmtExprMd) : List (HighTypeMd × Option FileRange) :=
+  let calleeThrows (callee : Identifier) : List (HighTypeMd × Option FileRange) :=
+    match model.get callee with
+    | .staticProcedure p | .instanceProcedure _ p =>
+      match p.throwsType with
+      | some t => [(t, expr.source)]
+      | none => []
+    | _ => []
+  match expr.val with
+  | .Throw e =>
+    -- Only count a `throw` whose operand is actually on the exceptional channel.
+    -- An operand that is not a `BaseException` subtype is already an
+    -- (independently reported) type error, so don't pile on an escape error.
+    let ty := computeExprType model e
+    if isSubtype lattice ty ⟨.UserDefined (mkId baseExceptionTypeName), none⟩
+    then [(ty, expr.source)] else []
+  | .StaticCall callee args =>
+    calleeThrows callee ++ args.flatMap (exceptionEscapes model lattice)
+  | .InstanceCall target callee args =>
+    calleeThrows callee ++ exceptionEscapes model lattice target
+      ++ args.flatMap (exceptionEscapes model lattice)
+  | .Try body catches finally? =>
+    let bodyEsc := exceptionEscapes model lattice body
+    let uncaught := bodyEsc.filter (fun p => !catches.any (fun c => clauseCatches lattice c p.1))
+    let handlersEsc := catches.flatMap (fun c => exceptionEscapes model lattice c.body)
+    let finallyEsc := match finally? with
+      | some f => exceptionEscapes model lattice f
+      | none => []
+    uncaught ++ handlersEsc ++ finallyEsc
+  | .Block stmts _ => stmts.flatMap (exceptionEscapes model lattice)
+  | .IfThenElse c t e =>
+    exceptionEscapes model lattice c ++ exceptionEscapes model lattice t
+      ++ (match e with | some eb => exceptionEscapes model lattice eb | none => [])
+  | .While c _ _ b =>
+    exceptionEscapes model lattice c ++ exceptionEscapes model lattice b
+  | .Assign _ value => exceptionEscapes model lattice value
+  | .Return (some v) => exceptionEscapes model lattice v
+  | .PrimitiveOp _ args _ => args.flatMap (exceptionEscapes model lattice)
+  | .ProveBy v pf => exceptionEscapes model lattice v ++ exceptionEscapes model lattice pf
+  | _ => []
+
+/-- Check one procedure's body against its `throws` declaration (E4):
+    no-escape when nothing is declared, subtype upper-bound when `throws T` is. -/
+def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
+    (proc : Procedure) : List DiagnosticModel :=
+  let body? := match proc.body with
+    | .Transparent b => some b
+    | .Opaque _ (some impl) _ => some impl
+    | _ => none
+  match body? with
+  | none => []
+  | some body =>
+    let escs := exceptionEscapes model lattice body
+    match proc.throwsType with
+    | none =>
+      escs.map (fun (ty, src) =>
+        diagnosticFromSource src
+          s!"procedure '{proc.name.text}' may let an exception of type '{formatType ty}' escape, but does not declare a `throws` clause"
+          DiagnosticType.UserError)
+    | some declared =>
+      escs.filterMap (fun (ty, src) =>
+        if isSubtype lattice ty declared then none
+        else some (diagnosticFromSource src
+          s!"procedure '{proc.name.text}' may throw '{formatType ty}', which is not a subtype of its declared `throws` type '{formatType declared}'"
+          DiagnosticType.UserError))
+
+/-- Validate the whole program's exception contracts (E4 enforcement). -/
+def validateExceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (program : Program) : List DiagnosticModel :=
+  program.staticProcedures.flatMap (checkProcedureThrows model lattice)
+
 /-! ## Entry point -/
 
 /-- Run the full resolution pass on a Laurel program. -/
@@ -3307,9 +3418,16 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  -- E4 exception-contract enforcement runs only on the initial resolution, when
+  -- `throw` operands still carry their declared (pre-heap-parameterization)
+  -- types and `is`-guards are un-lowered. Re-resolutions (existingModel = some)
+  -- see `Composite`-typed operands and would misjudge the subtype checks.
+  let escapeErrors :=
+    if existingModel.isNone then validateExceptionEscapes semanticModel typeLattice program'
+    else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors
+    errors := finalState.errors ++ diamondErrors ++ escapeErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/

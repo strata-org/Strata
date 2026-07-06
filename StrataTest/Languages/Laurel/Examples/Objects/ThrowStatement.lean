@@ -18,8 +18,8 @@ E7 lowering: a `throw` in a procedure that declares `throws` lowers to a
 `Result<Val, Composite>`-returning Core procedure — an in-flight exception sets
 the synthesized `$thrown`/`$exc` locals and exits, and the procedure's result is
 constructed as `Bad(exc)`. A `throw` whose exception would escape a procedure
-that does *not* declare `throws` is the E4 no-escape case, which is not yet
-enforced/lowered.
+that does *not* declare `throws` is the E4 no-escape case, now rejected during
+resolution (E4 enforcement).
 -/
 
 -- Ill-typed: the operand is an `int`, not a `BaseException`. The type error is
@@ -51,9 +51,8 @@ procedure throwsException()
 };
 #end
 
--- A `throw` whose exception would escape a procedure that does not declare
--- `throws` is the E4 no-escape case: reported as not-yet-implemented pending
--- contract enforcement, rather than silently dropping the escape.
+-- E4 no-escape enforcement: a `throw` whose exception would escape a procedure
+-- that does not declare `throws` is rejected during resolution.
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -63,6 +62,6 @@ procedure throwsWithoutDeclaring()
 {
   var e: BaseException := new BaseException;
   throw e
-//^^^^^^^ not-yet-implemented: `throw` in a procedure that does not declare `throws` is not yet supported (E4 no-escape enforcement)
+//^^^^^^^ error: procedure 'throwsWithoutDeclaring' may let an exception of type 'BaseException' escape, but does not declare a `throws` clause
 };
 #end
