@@ -94,7 +94,7 @@ decreasing_by
 /-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
     Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
 private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
-  let id := Strata.Name.findUnique baseName 1 ((← get).base.usedNames.union smtReservedKeywordsSet)
+  let id := Strata.Name.findUnique baseName 1 (← get).base.usedNames
   modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
   return id
 

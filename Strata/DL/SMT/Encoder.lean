@@ -69,40 +69,6 @@ open Solver
 
 public section
 
-structure EncoderState where
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`).
-      Holds every function emitted so far, whether as an uninterpreted
-      `declare-fun` or an interpreted `define-fun`; use `isFunUninterp` to
-      distinguish the two. -/
-  functions : Std.HashMap UF String
-  /-- For each emitted function (same keys as `functions`), records whether it
-      was emitted as an uninterpreted `declare-fun` (`true`) or an interpreted
-      `define-fun` (`false`). Lets callers detect the unsound case where a
-      function is first referenced (declared uninterpreted) and only later
-      reached as a definition. -/
-  isFunUninterp : Std.HashMap UF Bool
-  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
-      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
-      without relying on naming conventions. -/
-  usedNames : Std.HashSet String
-
-def EncoderState.init : EncoderState where
-  functions := {}
-  isFunUninterp := {}
-  usedNames := {}
-
-/-- Create an encoder state pre-populated with names already emitted to the
-    solver (e.g. sort and datatype names declared before encoding begins). -/
-def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
-  functions := {}
-  isFunUninterp := {}
-  usedNames := names
-
-@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
-
-
-namespace Encoder
-
 /-- SMT-LIB reserved keywords that should not be used as variable names.
     Includes command names, logical connectives, sort names, and theory
     function symbols that cvc5 disallows shadowing. -/
@@ -136,6 +102,40 @@ def smtReservedKeywords : List String :=
 def smtReservedKeywordsSet : Std.HashSet String :=
   Std.HashSet.ofList smtReservedKeywords
 
+structure EncoderState where
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`).
+      Holds every function emitted so far, whether as an uninterpreted
+      `declare-fun` or an interpreted `define-fun`; use `isFunUninterp` to
+      distinguish the two. -/
+  functions : Std.HashMap UF String
+  /-- For each emitted function (same keys as `functions`), records whether it
+      was emitted as an uninterpreted `declare-fun` (`true`) or an interpreted
+      `define-fun` (`false`). Lets callers detect the unsound case where a
+      function is first referenced (declared uninterpreted) and only later
+      reached as a definition. -/
+  isFunUninterp : Std.HashMap UF Bool
+  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
+      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
+      without relying on naming conventions. -/
+  usedNames : Std.HashSet String
+
+def EncoderState.init : EncoderState where
+  functions := {}
+  isFunUninterp := {}
+  usedNames := smtReservedKeywordsSet
+
+/-- Create an encoder state pre-populated with names already emitted to the
+    solver (e.g. sort and datatype names declared before encoding begins). -/
+def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
+  functions := {}
+  isFunUninterp := {}
+  usedNames := names.union smtReservedKeywordsSet
+
+@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
+
+
+namespace Encoder
+
 /-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
     reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
     names with `$` to make them valid simple symbols. -/
@@ -156,8 +156,7 @@ def ufNum   : EncoderM Nat := do return (← get).functions.size
     registry (and SMT reserved keywords) for collisions, disambiguates via
     `@N` suffixes, registers the result, and returns it. -/
 def uniquify (baseName : String) : EncoderM String := do
-  let usedNames := (← get).usedNames.union smtReservedKeywordsSet
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id := Strata.Name.findUnique baseName 1 (← get).usedNames
   modify fun s => { s with usedNames := s.usedNames.insert id }
   return id
 
