@@ -782,7 +782,7 @@ named-output assignment.
 
 TODO, cover all the non-verification language parts
 
-# Types
+## Types
 
 Laurel's types come in two groups: those a user can write — primitives,
 collections, and user-defined types — and a few internal constructors the
@@ -795,7 +795,7 @@ during resolution and later passes; these have no surface syntax.
 
 {docstring Strata.Laurel.HighType}
 
-## User-Defined Types
+### User-Defined Types
 
 User-defined types come in two categories: composite types and constrained types.
 
@@ -813,27 +813,27 @@ type. Algebraic datatypes can be encoded using composite and constrained types.
 
 {docstring Strata.Laurel.TypeDefinition}
 
-# Expressions and Statements
+## Expressions and Statements
 
 Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like
 constructs. This avoids duplication of shared concepts such as conditionals and variable
 declarations.
 
-## Operations
+### Operations
 
 {docstring Strata.Laurel.Operation}
 
-## The StmtExpr Type
+### The StmtExpr Type
 
 {docstring Strata.Laurel.StmtExpr}
 
-## Metadata
+## Sources
 
-All AST nodes can carry metadata via the `AstNode` wrapper.
+All AST nodes can carry a source location via the `AstNode` wrapper.
 
 {docstring Strata.Laurel.AstNode}
 
-# Procedures
+## Procedures
 
 Procedures are the main unit of specification and verification in Laurel.
 
@@ -843,20 +843,20 @@ Procedures are the main unit of specification and verification in Laurel.
 
 {docstring Strata.Laurel.Body}
 
-# Programs
+## Programs
 
 A Laurel program consists of procedures, global variables, type definitions, and constants.
 
 {docstring Strata.Laurel.Program}
 
-## Primitive types
+### Primitive types
 
 Laurel provides unbounded mathematical `int` and `real` types, a `bool` type,
 `string`, and fixed-width bitvectors. Because `int` is unbounded, arithmetic in
 specifications behaves like ordinary mathematics: there is no overflow to reason
 around when you are stating what a procedure computes.
 
-## Composites
+### Composites
 
 Laurel models objects with *composite* types. A composite declares mutable
 fields and may declare *instance procedures* (methods). Fields are read and

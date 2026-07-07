@@ -49,7 +49,7 @@ Goals:
 7. Use complete analysis algorithms to reduce the required proof effort.
 8. Code used to enable verification may not affect execution behavior.
 
-# (1.3) Enable Verification
+# Enable Verification
 To achieve goal 1.3, enable proving properties through verification, Laurel has the following features.
 - Assertions
 - Quantifiers
@@ -57,44 +57,165 @@ To achieve goal 1.3, enable proving properties through verification, Laurel has 
 - Decreases clauses
 - Assumptions (more about gradual verification)
 
-# (2) Reduce duplication between source languages
+# Prevent duplicate work
 To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with which input languages.
 
-TODO, add a table with Laurel features as rows, and a list of languages in columns (Java, Kotlin, C#, JavaScript, Python, GoLang). Split up language feature whenever relevant for the columns.
+Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP planned but not yet implemented, ✗ not planned. The source-language columns record — ✓ directly supported, ~ partial or library-only (semantics differ, or only available through a standard library rather than the core language), — not present.
 
-These features should be in rows but marked as WIP:
-- Try/catch and checked exception
-- Procedures types and procedures as values
-- Parametric polymorphism
+:::table +header
+ *
+   * Feature
+   * Laurel
+   * Java
+   * JavaScript
+   * Python
+ *
+   * Reference (heap) objects
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Classes with instance methods
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Multiple supertypes for subtyping (interface conformance)
+   * ✓
+   * ✓
+   * —
+   * ✓
+ *
+   * Multiple implementation inheritance (fields/methods from several parents)
+   * ✓
+   * —
+   * ~
+   * ✓
+ *
+   * Value (structural) types
+   * ✓
+   * ~
+   * —
+   * ~
+ *
+   * Runtime type test and cast (`is` / `as`)
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Reference equality
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Arbitrary-precision integers
+   * ✓
+   * ~
+   * ~
+   * ✓
+ *
+   * IEEE-754 64-bit floats
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Strings
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Sets and maps
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Fixed-width bitvector operations
+   * ✓
+   * ✓
+   * ~
+   * ~
+ *
+   * `while` loops
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * `do`/`while` (post-test) loops
+   * ✓
+   * ✓
+   * ✓
+   * —
+ *
+   * `break` / `continue` (direct statements)
+   * WIP
+   * ✓
+   * ✓
+   * ✓
+ *
+   * `break` / `continue` via labelled block exit (`exit L`)
+   * ✓
+   * ✓
+   * ✓
+   * ~
+ *
+   * Increment / decrement operators (`++` / `--`)
+   * ✓
+   * ✓
+   * ✓
+   * —
+ *
+   * Short-circuit boolean operators (`&&` / `||`)
+   * ✓
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Algebraic datatypes / pattern matching
+   * ✓
+   * ~
+   * —
+   * ~
+ *
+   * Try / catch and checked exceptions
+   * WIP
+   * ✓
+   * ~
+   * ~
+ *
+   * Procedure types and procedures as values
+   * WIP
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Parametric polymorphism (generics)
+   * WIP
+   * ✓
+   * —
+   * ~
+:::
 
-# (3) Great user experience
+Notes on the partial (~) entries:
+- *Multiple supertypes for subtyping* — Laurel's `extending` list lets a type declare several supertypes for `is`/`as` and subtyping. Java gets this from implementing multiple interfaces (and Python from its MRO). JavaScript has only a single prototype chain and no interface concept.
+- *Multiple implementation inheritance* — this is the stronger form Python needs: inheriting fields and method implementations from several concrete parents, resolved by an MRO. Only Python has it fully; JavaScript relies on ad-hoc mixin patterns, and Java has none (interfaces provide default methods but no fields).
+- *Value (structural) types* — Java has records and primitives; Python has frozen dataclasses and tuples; JavaScript has no value objects.
+- *Arbitrary-precision integers* — only Python has them as the default `int`; Java and JavaScript expose them through a library (`BigInteger`, `BigInt`).
+- *Fixed-width bitvector operations* — JavaScript's bitwise operators are 32-bit; Python integers are arbitrary width.
+- *`do`/`while` loops* — Python has none.
+- *`break` / `continue`* — Laurel does not yet have dedicated `break`/`continue` keywords (WIP). It already provides the more general primitive underneath them: a labelled block `{ … } L` and an `exit L` statement that jumps to the end of that block. `break` is an exit of the block wrapping the loop, and `continue` an exit of the block wrapping the loop body, so the one primitive covers both. On the labelled-exit row, Python has `break`/`continue` without labels.
+- *Increment / decrement* — Python has no such operators.
+- *Algebraic datatypes / pattern matching* — Java (sealed types + `switch` patterns) and Python (`match`) support a subset; JavaScript has none.
+- *Exceptions* — Java has checked exceptions; JavaScript and Python have exceptions, but unchecked.
 
-## Parameter lists
-Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
-
-At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
-`assign x, y := multiOutCall(a, b)`
-Core uses the argument list to assign the output parameters, like this:
-`multiOutCall(a, b, out x, out y)`
-
-In Laurel, an inout parameter only influences the callee's code, since it means there is a single variable that is used as input and output. On the calling side however, there is no concept of inout parameters. This is different from Core, where inout variables affect the calling side. Example of an inout being called in Core, `hasInout(inout x)`.
-
-## Assignments to fresh and existing declarations
-In Laurel, assignments can have multiple targets. Each target can be either an existing variable or a local declaration. Example:
-```
-var x: int;
-var z: int;
-assign x, var y: int, z := hasThreeOutputs()
-```
-In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to an existing local variable. Example:
-```
-var x: int;
-var y: int;
-var z: int;
-hasThreeOutputs(out x, out y, out z);
-```
-
-# (4) Modular Verification
+# Modular Verification
 To achieve goal (4), Laurel has the following features related to modular verification.
 
 ## Preconditions
@@ -105,7 +226,7 @@ Laurel allows a procedure to be marked as opaque, which means that callers won't
 
 Since modifies clauses are a type of postcondition, they are also only allowed on opaque procedures.
 
-# (5) Minimize Verification Code
+# Minimize Verification Code
 To achieve goal (5), minimize the amount of user code needed to enable verification, Laurel has the following features:
 
 ## Transparent procedures
@@ -133,26 +254,56 @@ A second reason for not allowing any heap modification inside contracts is that 
 
 TODO, fill in
 
-# (6) Enable finding proofs through an automated search.
+# Automated proof search
+Goal 6 was enabling the finding of proofs through automated search.
 
-Loop invariants
+Loop invariants. These enable unbounded symbolic execution
 
 Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
 
-# (7) Reduce verification through complete analysis
-To achieve goal 7, Laurel has the following features.
+# Use complete algorithms to reduce workload
+To achieve goal 7, to reduce the verification work through the use of complete algorithms, Laurel has the following features.
 
 ## Constrained types
 Constrained types propagating facts through the type system.
 
-TODO, add example using polymorphic types
+TODO, add example using polymorphic types, like a wrapping Container<T> that takes a `nat` and we still have the `nat` fact on the other side.
 
 ## Implicit conversions
 
 To be designed..
 
-# (8) Verification code may not affect execution
+# Verification without side-effects
+
+To support goal 8, for verification code not to affect the outcome of executing the program, Laurel has rules for code that exists only for verification purposes.
 
 TODO, Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
+
+# Great user experience
+
+## Parameter lists
+Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+
+At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
+`assign x, y := multiOutCall(a, b)`
+Core uses the argument list to assign the output parameters, like this:
+`multiOutCall(a, b, out x, out y)`
+
+In Laurel, an inout parameter only influences the callee's code, since it means there is a single variable that is used as input and output. On the calling side however, there is no concept of inout parameters. This is different from Core, where inout variables affect the calling side. Example of an inout being called in Core, `hasInout(inout x)`.
+
+## Assignments to fresh and existing declarations
+In Laurel, assignments can have multiple targets. Each target can be either an existing variable or a local declaration. Example:
+```
+var x: int;
+var z: int;
+assign x, var y: int, z := hasThreeOutputs()
+```
+In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to an existing local variable. Example:
+```
+var x: int;
+var y: int;
+var z: int;
+hasThreeOutputs(out x, out y, out z);
+```
