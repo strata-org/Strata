@@ -120,7 +120,7 @@ procedure callsThrower()
   opaque
 {
   r := thrower()
-//     ^^^^^^^^^ error: procedure 'callsThrower' may let an exception of type 'BaseException' escape, but does not declare a `throws` clause
+//     ^^^^^^^^^ error: procedure 'callsThrower' may let an exception of type 'BaseException' escape; catch it with a `try`/`catch` or declare a `throws` clause
 };
 #end
 

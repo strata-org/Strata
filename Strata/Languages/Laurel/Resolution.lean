@@ -3380,7 +3380,7 @@ def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
     | none =>
       escs.map (fun (ty, src) =>
         diagnosticFromSource src
-          s!"procedure '{proc.name.text}' may let an exception of type '{formatType ty}' escape, but does not declare a `throws` clause"
+          s!"procedure '{proc.name.text}' may let an exception of type '{formatType ty}' escape; catch it with a `try`/`catch` or declare a `throws` clause"
           DiagnosticType.UserError)
     | some declared =>
       escs.filterMap (fun (ty, src) =>
