@@ -98,6 +98,19 @@ def laurelPipeline : Array LaurelPass := #[
   typeAliasElimPass,
   filterNonCompositeModifiesPass,
   liftInstanceProceduresPass,
+  -- E4 enforcement. Placed after LiftInstanceProcedures (so instance-method
+  -- bodies are checked as ordinary procedures and method→method `throws`
+  -- resolve through the lifted procedures) and before HeapParameterization (so
+  -- `throw` operands and `throws` types still carry their real, un-erased
+  -- types). Emits no-escape / subtype upper-bound diagnostics; does not
+  -- transform the program.
+  { name := "ExceptionEscapeCheck"
+    documentation := "Enforces the E4 exception contract: a procedure that declares no `throws` may not let an exception escape (thrown directly or propagated from a callee), and a `throws T` procedure may only let exceptions whose type is a subtype of T escape. Static analysis; emits diagnostics only."
+    comesBefore := [⟨heapParameterizationPass,
+      "escape analysis reads `throw` operand and `throws` types, which heap parameterization erases to `Composite`"⟩]
+    run := fun p m =>
+      let lattice := TypeLattice.ofTypes p.types
+      (p, validateExceptionEscapes m lattice p, {}) },
   eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,

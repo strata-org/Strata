@@ -3295,9 +3295,11 @@ statement uncaught. A `try` removes a body type only when some `catch` clause
 *provably* handles it — a catch-all, or an `x is T` guard (or a disjunction of
 such guards) with the type a subtype of `T`. Any other guard is treated as
 catching nothing, so the analysis stays sound: it never claims an escape is
-impossible when it might not be. It runs only on the initial resolution, where
-`throw` operands still carry their declared types and `is`-guards have not yet
-been lowered by `typeHierarchyTransform`. -/
+impossible when it might not be. It runs as the `ExceptionEscapeCheck` pipeline
+pass — after `LiftInstanceProcedures` (so instance-method bodies are checked and
+method→method `throws` resolve through the lifted procedures) and before
+`HeapParameterization` (so `throw` operands and `throws` types still carry their
+real types and `is`-guards are un-lowered). -/
 
 /-- Whether `pred`, the guard of a `catch <binding> when pred`, provably holds
     for every value of type `ty` — i.e. that clause definitely catches `ty`. -/
@@ -3375,18 +3377,23 @@ def checkProcedureThrows (model : SemanticModel) (lattice : TypeLattice)
   match body? with
   | none => []
   | some body =>
+    -- Instance methods reach this check after being lifted to top-level
+    -- procedures named `Composite$method`; render that with a dot for the user.
+    -- (User procedure names cannot contain `$`, so this only affects lifted
+    -- method names.)
+    let displayName := proc.name.text.replace "$" "."
     let escs := exceptionEscapes model lattice body
     match proc.throwsType with
     | none =>
       escs.map (fun (ty, src) =>
         diagnosticFromSource src
-          s!"procedure '{proc.name.text}' may let an exception of type '{formatType ty}' escape; catch it with a `try`/`catch` or declare a `throws` clause"
+          s!"procedure '{displayName}' may let an exception of type '{formatType ty}' escape; catch it with a `try`/`catch` or declare a `throws` clause"
           DiagnosticType.UserError)
     | some declared =>
       escs.filterMap (fun (ty, src) =>
         if isSubtype lattice ty declared then none
         else some (diagnosticFromSource src
-          s!"procedure '{proc.name.text}' may throw '{formatType ty}', which is not a subtype of its declared `throws` type '{formatType declared}'"
+          s!"procedure '{displayName}' may throw '{formatType ty}', which is not a subtype of its declared `throws` type '{formatType declared}'"
           DiagnosticType.UserError))
 
 /-- Validate the whole program's exception contracts (E4 enforcement). -/
@@ -3418,16 +3425,14 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
-  -- E4 exception-contract enforcement runs only on the initial resolution, when
-  -- `throw` operands still carry their declared (pre-heap-parameterization)
-  -- types and `is`-guards are un-lowered. Re-resolutions (existingModel = some)
-  -- see `Composite`-typed operands and would misjudge the subtype checks.
-  let escapeErrors :=
-    if existingModel.isNone then validateExceptionEscapes semanticModel typeLattice program'
-    else []
+  -- Note: E4 exception-escape enforcement (`validateExceptionEscapes`) is *not*
+  -- run here. It runs as the dedicated `ExceptionEscapeCheck` pipeline pass,
+  -- after `LiftInstanceProcedures` (so instance-method bodies are checked and
+  -- method→method `throws` resolve) and before `HeapParameterization` (so
+  -- `throw` operands and `throws` types still carry their real types).
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors ++ escapeErrors
+    errors := finalState.errors ++ diamondErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
