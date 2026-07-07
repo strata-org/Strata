@@ -340,19 +340,6 @@ def withOldBindings
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False
 
-/-! ## Well-formed factory extension -/
-
-/-- A well-formed factory extension preserves well-formedness properties
-    through `funcDecl` steps (which extend the factory). -/
-structure WFFactoryExtension (φ : Expression.Factory → Imperative.PureFunc Expression → Expression.Factory) : Prop where
-  preserves_wfBool : ∀ f σ decl, Imperative.WellFormedSemanticEvalBool (P := Expression) f →
-    Imperative.WellFormedSemanticEvalBool (P := Expression) (EvalPureFunc φ f σ decl)
-  preserves_wfVar : ∀ f σ decl, Imperative.WellFormedSemanticEvalVar (P := Expression) f →
-    Imperative.WellFormedSemanticEvalVar (P := Expression) (EvalPureFunc φ f σ decl)
-  preserves_wfExprCongr : ∀ f σ decl,
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ f →
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ (EvalPureFunc φ f σ decl)
-
 ---------------------------------------------------------------------
 
 inductive EvalCommandContract : (String → Option Procedure)  →

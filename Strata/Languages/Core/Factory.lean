@@ -990,6 +990,17 @@ theorem WFFactoryArray_func_name_nodup :
 /-- Decidable predicate: is `s` the name of a built-in factory function? -/
 def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 
+/-! ### Membership lemmas for specific built-in ops
+
+Used by transforms (e.g. `LoopElim`) that synthesize references to standard
+ops to discharge downstream `factoryDeclared`-style preconditions. -/
+
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+
+theorem intLt_isNameInFactory :
+    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
+
 end -- public section
 
 public meta section

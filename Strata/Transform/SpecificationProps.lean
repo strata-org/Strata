@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Imperative.StmtSemantics
 public import Strata.Transform.Specification
 import all Strata.Transform.Specification
 import all Strata.DL.Imperative.CmdSemantics
@@ -12,10 +13,12 @@ import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Util.ListUtils
 
-/-! # Theorems for the Soundness Specification
+/-! # Soundness Specification — Theorems
 
-Theorems and proofs that complement the definitions in
-`Strata.Transform.Specification`. -/
+This module contains the theorems associated with the definitions in
+`Strata.Transform.Specification`. See that file's module docstring for the
+overall structure of the soundness-specification framework.
+-/
 
 public section
 
@@ -23,28 +26,31 @@ namespace Imperative
 
 namespace Specification
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+    [HasInt P] [HasIntOps P]
 variable (L : Lang P)
+
+
 
 namespace Hoare
 
 /-! ## Parametric Hoare rules -/
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 /-- False precondition proves anything -/
-theorem false_pre (s : L.StmtT) (Post : Env P → Prop) :
-    Triple L (fun _ => False) s Post := by
+theorem false_pre (params : L.InitEnvWFParamsTy) (s : L.StmtT) (Post : Env P → Prop) :
+    Triple L params (fun _ => False) s Post := by
   intro _ _ hpre; exact absurd hpre id
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 /-- Consequence (weakening): strengthen precondition, weaken postconditions. -/
-theorem consequence
+theorem consequence (params : L.InitEnvWFParamsTy)
     {Pre Pre' : Env P → Prop} {Post Post' : Env P → Prop} {s : L.StmtT}
-    (h : Triple L Pre s Post)
+    (h : Triple L params Pre s Post)
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
-    Triple L Pre' s Post' := by
-  intro ρ₀ ρ' hpre' hwfb hf₀ hstar
-  have ⟨hp, hf⟩ := h ρ₀ ρ' (hpre ρ₀ hpre') hwfb hf₀ hstar
+    Triple L params Pre' s Post' := by
+  intro ρ₀ ρ' hpre' hinit hf₀ hstar
+  have ⟨hp, hf⟩ := h ρ₀ ρ' (hpre ρ₀ hpre') hinit hf₀ hstar
   exact ⟨hpost ρ' hp, hf⟩
 
 
@@ -55,90 +61,7 @@ section StmtRules
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
-omit [HasFvar P] [HasVal P] [HasOps P] [HasFvars P] in
-/-- Factory is preserved when stepping through noFuncDecl configs. -/
-theorem noFuncDecl_preserves_factory
-    (s : Stmt P CmdT) (ρ ρ' : Env P)
-    (hnofd : Stmt.noFuncDecl s = true)
-    (hstar : StepStmtStar P evalCmd extendFactory (.stmt s ρ) (.terminal ρ')) :
-    ρ'.factory = ρ.factory := by
-  suffices h_gen : ∀ c₁ c₂,
-      Config.noFuncDecl c₁ →
-      StepStmtStar P evalCmd extendFactory c₁ c₂ →
-      c₂.getEnv.factory = c₁.getEnv.factory by
-    exact h_gen _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
-  intro c₁ c₂ hnofd_c hstar_c
-  induction hstar_c with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    suffices h_step : ∀ (c₁ c₂ : Config P CmdT),
-        StepStmt P evalCmd extendFactory c₁ c₂ → Config.noFuncDecl c₁ →
-        c₂.getEnv.factory = c₁.getEnv.factory ∧ Config.noFuncDecl c₂ by
-      have ⟨heq, hnofd_mid⟩ := h_step _ _ hstep hnofd_c
-      rw [ih hnofd_mid, heq]
-    intro c₁' c₂' hstep' hnofd_c'
-    induction hstep' with
-    | step_cmd => exact ⟨rfl, trivial⟩
-    | step_block =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c', rfl⟩
-    | step_ite_true =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.1, rfl⟩
-    | step_ite_false =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.2, rfl⟩
-    | step_ite_nondet_true =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.1, rfl⟩
-    | step_ite_nondet_false =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.2, rfl⟩
-    | step_loop_enter =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
-      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-      · exact hnofd_c'
-      · rfl
-      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
-    | step_loop_exit => exact ⟨rfl, trivial⟩
-    | step_loop_nondet_enter =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
-      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-      · exact hnofd_c'
-      · rfl
-      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
-    | step_loop_nondet_exit => exact ⟨rfl, trivial⟩
-    | step_exit => exact ⟨rfl, trivial⟩
-    | step_funcDecl =>
-      exact absurd hnofd_c' (by simp [Config.noFuncDecl, Stmt.noFuncDecl])
-    | step_typeDecl => exact ⟨rfl, trivial⟩
-    | step_stmts_nil => exact ⟨rfl, trivial⟩
-    | step_stmts_cons =>
-      simp only [Config.noFuncDecl, Block.noFuncDecl, Bool.and_eq_true] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c'.1, hnofd_c'.2⟩
-    | step_seq_done =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c'.2⟩
-    | step_seq_exit => exact ⟨rfl, trivial⟩
-    | step_seq_inner _ ih_inner =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
-      exact ⟨hfac, hnofd', hnofd_c'.2⟩
-    | step_block_body _ ih_inner =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
-      exact ⟨hfac, hnofd', hfac ▸ hnofd_c'.2⟩
-    | step_block_done =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨hnofd_c'.2, trivial⟩
-    | step_block_exit_match =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨hnofd_c'.2, trivial⟩
-    | step_block_exit_mismatch =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨hnofd_c'.2, trivial⟩
-
- omit [HasFvar P] [HasVal P] [HasOps P] [HasFvars P] in
+omit [HasOps P] in
 /-- Empty statement list is skip. -/
 theorem skip_block (Pre : Env P → Prop) :
     TripleBlock evalCmd extendFactory Pre [] Pre := by
@@ -155,46 +78,49 @@ theorem skip_block (Pre : Env P → Prop) :
     | step _ _ _ h _ => cases h with
       | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
-omit [HasVal P] [HasOps P] in
+omit [HasOps P] in
 /-- A single command. -/
-theorem cmd (c : CmdT) (Pre Post : Env P → Prop)
-    (h : ∀ ρ₀ σ' f, Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
+theorem cmd (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    (c : CmdT) (Pre Post : Env P → Prop)
+    (h : ∀ ρ₀ σ' f, Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory →
       evalCmd ρ₀.factory ρ₀.store c σ' f →
       Post { ρ₀ with store := σ', hasFailure := f } ∧ f = false) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.cmd c) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre (.cmd c) Post := by
+  intro ρ₀ ρ' hpre hinit hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
     | step_cmd hcmd =>
       cases r1 with
       | refl =>
-        have ⟨hp, hfeq⟩ := h ρ₀ _ _ hpre hwfb hf₀ hcmd
+        have ⟨hp, hfeq⟩ := h ρ₀ _ _ hpre hinit.bool hcmd
         simp [hf₀] at hp ⊢; exact ⟨hp, hfeq⟩
       | step _ _ _ h _ => exact nomatch h
 
-omit [HasVal P] [HasOps P] in
 /-- Sequential cons. -/
-theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
+theorem seq_cons (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
     {Pre Mid Post : Env P → Prop}
-    (h₁ : Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre s Mid)
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (h₁ : Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre s Mid)
     (h₂ : TripleBlock evalCmd extendFactory Mid ss Post)
-    (hnofd : Stmt.noFuncDecl s = true)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
     TripleBlock evalCmd extendFactory Pre (s :: ss) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hdone
-  have hwfb_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-      WellFormedSemanticEvalBool (P := P) ρ₁.factory := by
+  intro ρ₀ ρ' hpre hinit hf₀ hdone
+  -- `WellFormedSemanticEval`'s conditions only mention `ρ.factory`, and
+  -- `WFFactoryExtension` guarantees each is preserved along `s`'s execution
+  -- (even through funcDecls).
+  have hinit_preserved : ∀ ρ₁, StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
+      WellFormedSemanticEval (P := P) ρ₁.factory := by
     intro ρ₁ hterm
-    have hfac := noFuncDecl_preserves_factory evalCmd extendFactory s ρ₀ ρ₁ hnofd hterm
-    rw [hfac]; exact hwfb
+    exact star_preserves_wfEval P evalCmd extendFactory hwf_ext hterm hinit
   match hdone with
   | .inl hterm =>
     cases hterm with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
         have ⟨ρ₁, hterm_s, hrest_ss⟩ := seq_reaches_terminal P evalCmd extendFactory hrest
-        have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
-        exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inl hrest_ss)
+        have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hinit hf₀ hterm_s
+        exact h₂ ρ₁ ρ' hmid (hinit_preserved ρ₁ hterm_s) hf₁ (.inl hrest_ss)
   | .inr ⟨lbl, hexit⟩ =>
     cases hexit with
     | step _ _ _ hstep hrest => cases hstep with
@@ -204,54 +130,58 @@ theorem seq_cons {s : Stmt P CmdT} {ss : List (Stmt P CmdT)}
           exact absurd hexit_inner
             (exitsCoveredByBlocks_noEscape P evalCmd extendFactory s hnoesc ρ₀ lbl ρ')
         | .inr ⟨ρ₁, hterm_s, hexit_ss⟩ =>
-          have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
-          exact h₂ ρ₁ ρ' hmid (hwfb_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
+          have ⟨hmid, hf₁⟩ := h₁ ρ₀ ρ₁ hpre hinit hf₀ hterm_s
+          exact h₂ ρ₁ ρ' hmid (hinit_preserved ρ₁ hterm_s) hf₁ (.inr ⟨lbl, hexit_ss⟩)
 
-omit [HasVal P] [HasOps P] in
+omit [HasOps P] in
 /-- Lift a `TripleBlock` to a `Triple` by wrapping in a block.
     The postcondition `Post` is required to be stable under `projectStore`
     (it only references variables defined before the block). -/
-theorem TripleBlock.toTriple {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
+theorem TripleBlock.toTriple
+    (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h : TripleBlock evalCmd extendFactory Pre ss Post)
     (hpost_proj : PostWF extendFactory Post) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.block l ss md) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre (.block l ss md) Post := by
+  intro ρ₀ ρ' hpre hinit hf₀ hstar
   cases hstar with
   | step _ _ _ hstep hrest => cases hstep with
     | step_block =>
-      -- At block entry the inner is `.stmts ss ρ₀` whose factory is `ρ₀.factory`,
-      -- which is exactly `f_parent`.  So `factoryExtendsOf ρ₀.factory inner` is
+      -- At block entry the inner is `.stmts ss ρ₀` whose eval is `ρ₀.eval`,
+      -- which is exactly `e_parent`.  So `evalExtendsOf ρ₀.eval inner` is
       -- reflexive, and `star_preserves_factoryExtendsOf` lifts the inner trace.
       have hinv₀ : Config.factoryExtendsOf P extendFactory ρ₀.factory (.stmts ss ρ₀) := by
         simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory hrest with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hinit hf₀ (.inl hterm)
         have hext : FactoryExtensionOf extendFactory ρ₀.factory ρ_inner.factory :=
           star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := h ρ₀ ρ_inner hpre hinit hf₀ (.inr ⟨lbl, hexit⟩)
         have hext : FactoryExtensionOf extendFactory ρ₀.factory ρ_inner.factory :=
           star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
-omit [HasVal P] [HasOps P] in
+omit [HasOps P] in
 /-- Lift a `Triple` to a `TripleBlock` for a singleton list. -/
-theorem Triple.toTripleBlock {s : Stmt P CmdT}
+theorem Triple.toTripleBlock
+    (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
-    (h : Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre s Post)
+    (h : Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre s Post)
     (hnoesc : Stmt.exitsCoveredByBlocks [] s) :
     TripleBlock evalCmd extendFactory Pre [s] Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hdone
+  intro ρ₀ ρ' hpre hinit hf₀ hdone
   match hdone with
   | .inl hterm =>
     cases hterm with
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
         have ⟨ρ₁, hterm_s, hrest_nil⟩ := seq_reaches_terminal P evalCmd extendFactory hrest
-        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hwfb hf₀ hterm_s
+        have ⟨hp, hf⟩ := h ρ₀ ρ₁ hpre hinit hf₀ hterm_s
         cases hrest_nil with
         | step _ _ _ h1 r1 => cases h1 with
           | step_stmts_nil => cases r1 with
@@ -270,22 +200,24 @@ theorem Triple.toTripleBlock {s : Stmt P CmdT}
           | step _ _ _ h _ => cases h with
             | step_stmts_nil => rename_i r; cases r with | step _ _ _ h _ => cases h
 
-omit [HasVal P] [HasOps P] in
+omit [HasOps P] in
 /-- Empty block is skip. -/
-theorem skip (l : String) (md : MetaData P) (Pre : Env P → Prop)
+theorem skip (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    (l : String) (md : MetaData P) (Pre : Env P → Prop)
     (hpre_proj : PostWF extendFactory Pre) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.block l [] md) Pre :=
-  TripleBlock.toTriple evalCmd extendFactory isAtAssertFn (skip_block evalCmd extendFactory Pre) hpre_proj
+    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre (.block l [] md) Pre :=
+  TripleBlock.toTriple evalCmd extendFactory isAtAssertFn params (skip_block evalCmd extendFactory Pre) hpre_proj
 
-omit [HasVal P] [HasOps P] in
+omit [HasOps P] in
 /-- If-then-else rule. -/
-theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
+theorem ite (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (ht : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store c = some HasBool.tt) tss Post)
     (he : TripleBlock evalCmd extendFactory (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store c = some HasBool.ff) ess Post)
     (hpost_proj : PostWF extendFactory Post) :
-    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) Pre (.ite (.det c) tss ess md) Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params Pre (.ite (.det c) tss ess md) Post := by
+  intro ρ₀ ρ' hpre hinit hf₀ hstar
   cases hstar with
   | step _ _ _ h1 r1 => cases h1 with
     | step_ite_true hc _ =>
@@ -293,11 +225,11 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
         simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hinit hf₀ (.inl hterm)
         have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := ht ρ₀ ρ_inner ⟨hpre, hc⟩ hinit hf₀ (.inr ⟨lbl, hexit⟩)
         have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
     | step_ite_false hc _ =>
@@ -305,11 +237,11 @@ theorem ite {c : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
         simp only [Config.factoryExtendsOf]; exact .refl
       match block_reaches_terminal P evalCmd extendFactory r1 with
       | .inl ⟨ρ_inner, hterm, heq⟩ =>
-        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inl hterm)
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hinit hf₀ (.inl hterm)
         have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hterm
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
       | .inr ⟨lbl, ρ_inner, hexit, heq⟩ =>
-        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hwfb hf₀ (.inr ⟨lbl, hexit⟩)
+        have ⟨hpost, hf⟩ := he ρ₀ ρ_inner ⟨hpre, hc⟩ hinit hf₀ (.inr ⟨lbl, hexit⟩)
         have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
@@ -323,60 +255,26 @@ end StmtRules
 section StandardConnection
 
 variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P']
+    [HasInt P'] [HasIntOps P']
 variable (extendFactory : ExtendFactory P')
-
-omit [HasOps P'] [HasFvars P'] in
-/-- Factory is preserved along an assert-tail trace: stepping through
-    `.stmts [.cmd (.assert ...)] ρ` only involves `step_stmts_cons`, `step_cmd`
-    (for assert), `step_seq_inner/done`, and `step_stmts_nil` — none of which
-    change the factory. -/
-private theorem assert_tail_preserves_factory
-    (ρ : Env P') (l : String) (e : P'.Expr) (md : MetaData P')
-    (cfg : Config P' (Cmd P'))
-    (hstar : StepStmtStar P' (EvalCmd P') extendFactory
-      (.stmts [Stmt.cmd (Cmd.assert l e md)] ρ) cfg) :
-    cfg.getEnv.factory = ρ.factory := by
-  cases hstar with
-  | refl => rfl
-  | step _ _ _ h1 hr1 => cases h1 with
-    | step_stmts_cons => cases hr1 with
-      | refl => rfl
-      | step _ _ _ h2 hr2 =>
-        cases h2 with
-        | step_seq_inner hi =>
-          cases hi with
-          | step_cmd =>
-            cases hr2 with
-            | refl => rfl
-            | step _ _ _ h3 hr3 =>
-              cases h3 with
-              | step_seq_inner h_t => exact absurd h_t (by intro h; cases h)
-              | step_seq_done =>
-                cases hr3 with
-                | refl => rfl
-                | step _ _ _ h4 hr4 =>
-                  cases h4 with
-                  | step_stmts_nil =>
-                    cases hr4 with
-                    | refl => rfl
-                    | step _ _ _ h5 _ => exact nomatch h5
 
 omit [HasOps P'] in
 /-- **Direction 1**: Hoare triple implies assert validity for `PredicatedStmt`. -/
-theorem hoareTriple_implies_assertValid
+theorem hoareTriple_implies_assertValid (params : (Lang.standard P' extendFactory).InitEnvWFParamsTy)
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
     (block_label : String) (block_md : MetaData P')
-    (hoare : Triple (Lang.standard P' extendFactory)
+    (hoare : Triple (Lang.standard P' extendFactory) params
       (fun ρ => P'.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => P'.eval ρ.factory ρ.store post_expr = some HasBool.tt))
     (hno : st.noMatchingAssert post_label) :
-    AssertValid (Lang.standard P' extendFactory)
+    AssertValidWhen (Lang.standard P' extendFactory)
+      (fun ρ => WellFormedSemanticEval (P := P') ρ.factory)
       (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)
       ⟨post_label, post_expr⟩ := by
-  intro ρ₀ cfg _ hreach hat
+  intro ρ₀ cfg hwhen hreach hat
   have hno_match := noMatchingAssert_implies_no_reachable_assert P' extendFactory st post_label post_expr hno
   unfold PredicatedStmt at hreach
   cases hreach with
@@ -435,36 +333,36 @@ theorem hoareTriple_implies_assertValid
                       | eval_assume hpre hwfb =>
                         cases h_assume_rest with
                         | refl =>
-                          have ⟨ρ'_clean, hterm_clean, hs_eq, hfac_eq⟩ :=
+                          have ⟨ρ'_clean, hterm_clean, hs_eq, he_eq⟩ :=
                             smallStep_hasFailure_irrel P' (EvalCmd P') extendFactory
                               st _ ρ' hterm_st { ρ₀ with hasFailure := false } rfl rfl
                           have ⟨hpost, _⟩ := hoare { ρ₀ with hasFailure := false } ρ'_clean
-                            hpre hwfb rfl hterm_clean
-                          have hs := assert_tail_getStore P' extendFactory
+                            hpre hwhen rfl hterm_clean
+                          simp only [hs_eq, he_eq] at hpost
+                          have ⟨hs, he⟩ := assert_tail_getStore P' extendFactory
                             ρ' post_label post_expr post_md inner ⟨post_label, post_expr⟩
                             hrest_assert hat_inner
-                          have hfac_inner : inner.getEnv.factory = ρ'.factory :=
-                            assert_tail_preserves_factory P' extendFactory ρ' post_label post_expr
-                              post_md inner hrest_assert
-                          dsimp [Config.getStore, Config.getEnv] at hs ⊢
-                          rw [hs, hfac_inner, ← hfac_eq, ← hs_eq]; exact hpost
+                          dsimp [Config.getStore, Config.getEnv] at he hs ⊢
+                          rw [he, hs]; exact hpost
                         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
 
 omit [HasOps P'] in
 /-- **Direction 2**: Assert validity for `PredicatedStmt` implies Hoare triple. -/
 theorem allAssertsValid_implies_hoareTriple
+    (params : (Lang.standard P' extendFactory).InitEnvWFParamsTy)
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
     (block_label : String) (block_md : MetaData P')
     (hvalid : AllAssertsValid (Lang.standard P' extendFactory)
       (PredicatedStmt P' pre_label pre_expr pre_md st post_label post_expr post_md block_label block_md)) :
-    Triple (Lang.standard P' extendFactory)
+    Triple (Lang.standard P' extendFactory) params
       (fun ρ => P'.eval ρ.factory ρ.store pre_expr = some HasBool.tt)
       st
       (fun ρ => P'.eval ρ.factory ρ.store post_expr = some HasBool.tt) := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
+  intro ρ₀ ρ' hpre hinit hf₀ hstar
+  have hwfb := hinit.bool
   let assume_stmt : Stmt P' (Cmd P') := .cmd (.assume pre_label pre_expr pre_md)
   let assert_stmt : Stmt P' (Cmd P') := .cmd (.assert post_label post_expr post_md)
   let body : List (Stmt P' (Cmd P')) := [assume_stmt, st, assert_stmt]
@@ -526,7 +424,9 @@ end Hoare
 
 namespace Transform
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+/-! ## Connection between Sound, AssertValid and AllAssertsValid -/
+
+omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
@@ -537,62 +437,70 @@ theorem sound_comp (L₁ L₂ L₃ : Lang P)
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem sound_assertValid (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
     (s : L₁.StmtT) (s' : L₂.StmtT)
     (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
     AssertValid L₁ s a := hsound s s' a ht hvalid
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem sound_allAsserts (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
     (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
     AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
 
-omit [HasVal P] [HasOps P] [HasFvar P] [HasFvars P] [HasBoolOps P] in
+omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem sound_id : Sound L L some := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+/-! ## Connection between `Overapproximates` and `Hoare.Triple` -/
+
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] in
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
 theorem overapproximates_triple (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
-    (hsem : Overapproximates L₁ L₂ T)
+    (hsem : Overapproximates L₁ L₂ T params₁ params₂)
     {Pre Post : Env P → Prop}
-    (htriple : Hoare.Triple L₂ Pre s' Post)
-    (hwfv : ∀ ρ₀ : Env P, Pre ρ₀ → WellFormedSemanticEvalVal (P := P) ρ₀.factory) :
-    Hoare.Triple L₁ Pre st Post := by
-  intro ρ₀ ρ' hpre hwfb hf₀ hstar
-  exact htriple ρ₀ ρ' hpre hwfb hf₀
-    ((hsem st s' ht ρ₀ ρ' hwfb (hwfv ρ₀ hpre)).1 hstar)
+    (htriple : Hoare.Triple L₂ params₂ Pre s' Post) :
+    Hoare.Triple L₁ params₁ Pre st Post := by
+  intro ρ₀ ρ' hpre hinit hf₀ hstar
+  have hr := hsem st s' ht ρ₀ hinit
+  exact htriple ρ₀ ρ' hpre hr.2 hf₀ ((hr.1 ρ').1 hstar)
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
-theorem overapproximates_id (L₁ : Lang P) :
-    Overapproximates L₁ L₁ some := by
-  intro st s' ht ρ₀ ρ' _ _
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] in
+theorem overapproximates_id (L₁ : Lang P) (params₁ : L₁.InitEnvWFParamsTy) :
+    Overapproximates L₁ L₁ some params₁ params₁ := by
+  intro st s' ht ρ₀ hinit
   simp at ht; subst ht
-  exact ⟨id, fun _ => id⟩
+  exact ⟨fun _ => ⟨id, fun _ => id⟩, hinit⟩
 
-omit [HasOps P] [HasFvar P] [HasFvars P] in
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] in
+/-- Composition of two overapproximations: the intermediate WF passed to `h₂`
+    is exactly the target-WF conclusion of `h₁`, so no extra bridging
+    hypothesis is needed. -/
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (h₁ : Overapproximates L₁ L₂ T₁)
-    (h₂ : Overapproximates L₂ L₃ T₂) :
-    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) := by
-  intro st s'' ht ρ₀ ρ' hwfb hwfv
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (h₁ : Overapproximates L₁ L₂ T₁ params₁ params₂)
+    (h₂ : Overapproximates L₂ L₃ T₂ params₂ params₃) :
+    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+  intro st s'' ht ρ₀ hinit
   simp [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
-    have hr₁ := h₁ st s' h ρ₀ ρ' hwfb hwfv
-    have hr₂ := h₂ s' s'' ht ρ₀ ρ' hwfb hwfv
+    have hr₁ := h₁ st s' h ρ₀ hinit
+    have hr₂ := h₂ s' s'' ht ρ₀ hr₁.2
+    refine ⟨fun ρ' => ?_, hr₂.2⟩
     refine ⟨?_, ?_⟩
-    · intro hstar; exact hr₂.1 (hr₁.1 hstar)
-    · intro lbl hstar; exact hr₂.2 lbl (hr₁.2 lbl hstar)
+    · intro hstar; exact (hr₂.1 ρ').1 ((hr₁.1 ρ').1 hstar)
+    · intro lbl hstar; exact (hr₂.1 ρ').2 lbl ((hr₁.1 ρ').2 lbl hstar)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-! ## Statement-list overapproximation (Imperative-specific)
@@ -606,7 +514,7 @@ section ImperativeStmts
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
-omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasVal P] in
+omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] [HasFvars P] in
 private theorem mapM_noFuncDecl
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true)
@@ -622,14 +530,15 @@ private theorem mapM_noFuncDecl
 omit [HasOps P] in
 private theorem overapproximates_stmts_aux
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T)
+    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
     (ss : List (Stmt P CmdT))
     (hnofd : Block.noFuncDecl ss = true) :
     ∀ (ss' : List (Stmt P CmdT)),
       ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P),
-        WellFormedSemanticEvalBool (P := P) ρ₀.factory →
-        WellFormedSemanticEvalVal (P := P) ρ₀.factory →
+        WellFormedSemanticEval (P := P) ρ₀.factory →
         (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') →
          StepStmtStar P evalCmd extendFactory (.stmts ss' ρ₀) (.terminal ρ'))
         ∧
@@ -637,32 +546,42 @@ private theorem overapproximates_stmts_aux
                 StepStmtStar P evalCmd extendFactory (.stmts ss' ρ₀) (.exiting lbl ρ')) := by
   induction ss with
   | nil =>
-    intro ss' hmap ρ₀ ρ' _ _
+    intro ss' hmap ρ₀ ρ' _
     have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
     subst this; exact ⟨id, fun _ => id⟩
   | cons s rest ih =>
-    intro ss' hmap ρ₀ ρ' hwfb hwfv
+    intro ss' hmap ρ₀ ρ' hwf
     simp [Block.noFuncDecl, Bool.and_eq_true] at hnofd
     have ⟨hnofd_s, hnofd_rest⟩ := hnofd
     have ⟨s', rest', hs, hrm, hss'⟩ := List.mapM_cons_some hmap
     subst hss'
-    have eval_preserved : ∀ ρ₁ : Env P,
+    have wf_preserved : ∀ ρ₁ : Env P,
         StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
-        WellFormedSemanticEvalBool (P := P) ρ₁.factory ∧ WellFormedSemanticEvalVal (P := P) ρ₁.factory := by
+        WellFormedSemanticEval (P := P) ρ₁.factory := by
       intro ρ₁ hterm_s
-      have hfac := Hoare.noFuncDecl_preserves_factory evalCmd extendFactory s ρ₀ ρ₁ hnofd_s hterm_s
-      exact ⟨hfac ▸ hwfb, hfac ▸ hwfv⟩
+      have hfac := stmt_noFuncDecl_preserves_factory P evalCmd extendFactory s ρ₀ ρ₁ hnofd_s hterm_s
+      exact hfac ▸ hwf
+    -- `Lang.imperative`'s `initEnvWF` unfolds to `WellFormedSemanticEval ρ.factory`,
+    -- so `hwf` directly satisfies the source-side WF gate of `hsem`.
+    have hsem_s : ∀ (ρ₁ : Env P),
+        (StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.terminal ρ₁) →
+         StepStmtStar P evalCmd extendFactory (.stmt s' ρ₀) (.terminal ρ₁))
+        ∧
+        (∀ lbl, StepStmtStar P evalCmd extendFactory (.stmt s ρ₀) (.exiting lbl ρ₁) →
+                StepStmtStar P evalCmd extendFactory (.stmt s' ρ₀) (.exiting lbl ρ₁)) := by
+      intro ρ₁
+      exact (hsem s s' hs ρ₀ hwf).1 ρ₁
     constructor
     · intro hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
         | step_stmts_cons =>
           have ⟨ρ₁, hterm_s, hterm_rest⟩ := seq_reaches_terminal P evalCmd extendFactory hrest_exec
-          have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+          have hwf₁ := wf_preserved ρ₁ hterm_s
           exact ReflTrans_Transitive _ _ _ _
             (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁
-              ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).1 hterm_rest)
+              ((hsem_s ρ₁).1 hterm_s))
+            ((ih hnofd_rest rest' hrm ρ₁ ρ' hwf₁).1 hterm_rest)
     · intro lbl hstar
       cases hstar with
       | step _ _ _ hstep hrest_exec => cases hstep with
@@ -671,27 +590,30 @@ private theorem overapproximates_stmts_aux
           | .inl hexit_s =>
             exact .step _ _ _ .step_stmts_cons
               (ReflTrans_Transitive _ _ _ _ (seq_inner_star P evalCmd extendFactory _ _ rest'
-                ((hsem s s' hs ρ₀ ρ' hwfb hwfv).2 lbl hexit_s))
+                ((hsem_s ρ').2 lbl hexit_s))
                 (.step _ _ _ .step_seq_exit (.refl _)))
           | .inr ⟨ρ₁, hterm_s, hexit_rest⟩ =>
-            have ⟨hwfb₁, hwfv₁⟩ := eval_preserved ρ₁ hterm_s
+            have hwf₁ := wf_preserved ρ₁ hterm_s
             exact ReflTrans_Transitive _ _ _ _
               (stmts_cons_step P evalCmd extendFactory s' rest' ρ₀ ρ₁
-                ((hsem s s' hs ρ₀ ρ₁ hwfb hwfv).1 hterm_s))
-              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwfb₁ hwfv₁).2 lbl hexit_rest)
+                ((hsem_s ρ₁).1 hterm_s))
+              ((ih hnofd_rest rest' hrm ρ₁ ρ' hwf₁).2 lbl hexit_rest)
 
 omit [HasOps P] in
 theorem overapproximates_stmts
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T)
+    (params₁ params₂ : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    (hsem : Overapproximates (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn)
+      (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) T params₁ params₂)
     (hnofd_T : ∀ s s', T s = some s' → Stmt.noFuncDecl s = true) :
     Overapproximates
       (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
       (Lang.imperativeBlock evalCmd extendFactory isAtAssertFn)
-      (fun ss => ss.mapM T) := by
-  intro ss ss' hmap ρ₀ ρ' hwfb hwfv
-  exact overapproximates_stmts_aux evalCmd extendFactory isAtAssertFn T hsem ss
-    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwfb hwfv
+      (fun ss => ss.mapM T) () () := by
+  intro ss ss' hmap ρ₀ hwf
+  refine ⟨fun ρ' => overapproximates_stmts_aux evalCmd extendFactory isAtAssertFn T
+    params₁ params₂ hsem ss
+    (mapM_noFuncDecl T hnofd_T ss ss' hmap) ss' hmap ρ₀ ρ' hwf, hwf⟩
 
 end ImperativeStmts
 

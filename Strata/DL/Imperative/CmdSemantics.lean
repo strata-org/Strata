@@ -81,9 +81,20 @@ structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     ∀ e σ σ', WellFormedStore σ f → WellFormedStore σ' f →
       (∀ x ∈ HasFvars.getFvars e, σ x = σ' x) → P.eval f σ e = P.eval f σ' e
 
+/-- Well-formedness for the integer fragment of a factory-based evaluator. -/
+structure WellFormedSemanticEvalInt {P : PureExpr}
+    [HasBool P] [HasFvars P] [HasInt P] [HasIntOps P]
+    (f : P.Factory) : Prop where
+  ltReduces : ∀ σ x y nx ny,
+    P.eval f σ x = some nx → HasInt.isNumeral nx = Bool.true →
+    P.eval f σ y = some ny → HasInt.isNumeral ny = Bool.true →
+    P.eval f σ (HasIntOps.lt x y) = some HasBool.tt ∨
+    P.eval f σ (HasIntOps.lt x y) = some HasBool.ff
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
-structure WellFormedSemanticEval {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] (f : P.Factory) : Prop where
+structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
+    (f : P.Factory) : Prop where
   /-- The evaluator respects boolean negation:
       `eval e = some tt` iff `eval (not e) = some ff`, and dually. -/
   bool : WellFormedSemanticEvalBool f
@@ -93,6 +104,8 @@ structure WellFormedSemanticEval {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars
   var : WellFormedSemanticEvalVar f
   /-- The evaluator agrees on stores that agree on free variables. -/
   exprCongr : WellFormedSemanticEvalExprCongr f
+  /-- The evaluator reduces integer comparisons to booleans. -/
+  int : WellFormedSemanticEvalInt f
 
 
 /-- ### Predicates on `SemanticStore`s -/

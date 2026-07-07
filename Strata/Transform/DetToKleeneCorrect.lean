@@ -31,6 +31,7 @@ public section
 open Imperative Specification
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
+  [HasInt P] [HasIntOps P]
 
 /-! ## Lang instances -/
 
@@ -52,6 +53,8 @@ abbrev Lang.kleene : Lang P where
   exitingCfg := fun _ ρ => .terminal ρ
   isAtAssert := isAtKleeneAssert
   getEnv := KleeneConfig.getEnv
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
 
 /-! ## Transform-success helpers: extract sub-transform results -/
 
@@ -541,7 +544,7 @@ private def loop_sim_kleene
 
 /-! ## Core simulation by strong induction on statement/block size -/
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 private theorem simulation
     (extendFactory : ExtendFactory P) (sz : Nat) :
     (∀ (st : Stmt P (Cmd P)) (ns : KleeneStmt P (Cmd P)),
@@ -772,14 +775,14 @@ private theorem simulation
               simp_all [Block.sizeOf]; omega
             have hnofd := stmtToKleene_some_noFuncDecl s s' hs
             have hfac_eq : ρ₁.factory = ρ₀.factory :=
-              Hoare.noFuncDecl_preserves_factory (EvalCmd P) extendFactory s ρ₀ ρ₁ hnofd hterm_s
+              stmt_noFuncDecl_preserves_factory P (EvalCmd P) extendFactory s ρ₀ ρ₁ hnofd hterm_s
             have hwfb₁ : WellFormedSemanticEvalBool (P := P) ρ₁.factory := hfac_eq ▸ hwfb
             have hwfv₁ : WellFormedSemanticEvalVal (P := P) ρ₁.factory := hfac_eq ▸ hwfv
             exact kleene_seq_terminal s' rest' ρ₀ ρ₁ ρ'
               (ih.1 s s' hsz_s hs ρ₀ ρ₁ hwfb hwfv hterm_s)
               (ih.2 rest rest' hsz_r hr ρ₁ ρ' hwfb₁ hwfv₁ hterm_rest)
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If det stmt reaches terminal, Kleene transform reaches terminal. -/
 theorem stmtToKleene_terminal
     (extendFactory : ExtendFactory P)
@@ -792,7 +795,7 @@ theorem stmtToKleene_terminal
     StepKleeneStar P (EvalCmd P) (.stmt ns ρ₀) (.terminal ρ') :=
   (simulation extendFactory st.sizeOf).1 st ns (Nat.le_refl _) ht ρ₀ ρ' hwfb hwfv hstar
 
-omit [HasOps P] [HasFvars P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If det block reaches terminal, Kleene transform reaches terminal. -/
 theorem blockToKleene_terminal
     (extendFactory : ExtendFactory P)
@@ -816,10 +819,10 @@ omit [HasOps P] in
 theorem detToKleene_overapproximates
     (extendFactory : ExtendFactory P) :
     Transform.Overapproximates (Lang.det extendFactory) (Lang.kleene (P := P))
-      (StmtToKleeneStmt (P := P)) := by
-  intro st ns ht ρ₀ ρ' hwfb hwfv
-  refine ⟨?_, ?_⟩
-  · exact stmtToKleene_terminal extendFactory st ns ht ρ₀ ρ' hwfb hwfv
+      (StmtToKleeneStmt (P := P)) () () := by
+  intro st ns ht ρ₀ hwf
+  refine ⟨fun ρ' => ⟨?_, ?_⟩, hwf⟩
+  · exact stmtToKleene_terminal extendFactory st ns ht ρ₀ ρ' hwf.bool hwf.val
   · intro lbl hstar
     exact absurd hstar (exitsCoveredByBlocks_noEscape P (EvalCmd P) extendFactory st
       (stmtToKleene_some_exitsCovered [] st ns ht) ρ₀ lbl ρ')

@@ -94,22 +94,41 @@ structure Lang (P : PureExpr) where
   isAtAssert : CfgT → AssertId P → Prop
   /-- Extract env from a configuration. -/
   getEnv : CfgT → Env P
+  /-- The type of parameters threaded into `initEnvWF`.
+      The Core language uses a record bundling reserved
+      "fresh-prefixes" and a `declaredFuncs` predicate (see
+      `Core.Specification.InitEnvWFParams`). -/
+  InitEnvWFParamsTy : Type
+  /-- Initial environment well-formedness: The language-specific well-formedness
+      parameters are passed via `InitEnvWFParamsTy`. -/
+  initEnvWF : InitEnvWFParamsTy → StmtT → Env P → Prop
 
 /-- Build a `Lang` from `Imperative.Stmt`/`Config` with a given command
-    type and evaluator. -/
-abbrev Lang.imperative (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
+    type and evaluator.
+
+    `ParamsTy` is the `InitEnvWFParamsTy` for the resulting language; it defaults
+    to `Unit` (no parameters), in which case `initEnvWF` defaults to
+    `WellFormedSemanticEval` on the initial env's factory.  The Core language
+    overrides both. -/
+abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
-    (isAtAssert : Config P CmdT → AssertId P → Prop) : Lang P :=
+    (isAtAssert : Config P CmdT → AssertId P → Prop)
+    (ParamsTy : Type := Unit)
+    (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop :=
+      fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory) :
+    Lang P :=
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd extendFactory,
-   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv⟩
+   .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, ParamsTy, initEnvWF⟩
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
-abbrev Lang.standard (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
+abbrev Lang.standard (P : PureExpr) [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
     (extendFactory : ExtendFactory P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendFactory (Imperative.isAtAssert P)
 
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasVal P]
+variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P]
 variable (L : Lang P)
 
 
@@ -169,14 +188,16 @@ namespace Hoare
     TODO: We will want to define Triple for total correctness. It will be useful
     when proving preservation of termination after program transformation.
 -/
-def Triple
+@[expose] def Triple
+    (params : L.InitEnvWFParamsTy)
     (Pre : Env P → Prop) (s : L.StmtT) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
+    Pre ρ₀ → L.initEnvWF params s ρ₀ → ρ₀.hasFailure = false →
     L.star (L.stmtCfg s ρ₀) (L.terminalCfg ρ') →
     Post ρ' ∧ ρ'.hasFailure = false
 
-/-! ## Definitions for structural Hoare rules (Imperative-specific) -/
+
+/-! ## Structural Hoare rules (Imperative-specific) -/
 
 section StmtRules
 
@@ -186,11 +207,12 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- Partial-correctness Hoare triple for a block body.
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
-def TripleBlock
+@[expose] def TripleBlock {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
-    Pre ρ₀ → WellFormedSemanticEvalBool (P := P) ρ₀.factory → ρ₀.hasFailure = false →
+    Pre ρ₀ → WellFormedSemanticEval (P := P) ρ₀.factory → ρ₀.hasFailure = false →
     (StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.terminal ρ') ∨
      ∃ lbl, StepStmtStar P evalCmd extendFactory (.stmts ss ρ₀) (.exiting lbl ρ')) →
     Post ρ' ∧ ρ'.hasFailure = false
@@ -212,11 +234,11 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P'] [HasInt P'] [HasIntOps P']
+variable (P' : PureExpr) [HasFvar P'] [HasBool P'] [HasBoolOps P'] [HasFvars P']
 variable (extendFactory : ExtendFactory P')
 
 /-- The composite statement `assume pre; st; assert post` wrapped in a block. -/
-def PredicatedStmt
+@[expose] def PredicatedStmt
     (pre_label : String) (pre_expr : P'.Expr) (pre_md : MetaData P')
     (st : Stmt P' (Cmd P'))
     (post_label : String) (post_expr : P'.Expr) (post_md : MetaData P')
@@ -234,29 +256,35 @@ namespace Transform
 
 /-- A transformation is *sound* if it preserves assertion validity.
     Bilingual: source and target may live in different languages. -/
-def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+@[expose] def Sound (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
   ∀ (s : L₁.StmtT) (s' : L₂.StmtT) (a : AssertId P),
     T s = some s' → AssertValid L₂ s' a → AssertValid L₁ s a
 
 /-! ## Overapproximate predicate
 
-`Overapproximates L₁ L₂ T` says that any terminal or exiting env reachable
-from `st` in `L₁` is also reachable from `T st` in `L₂`.
-When `L₁ = L₂`, this specializes to the single-language case. -/
+`Overapproximates L₁ L₂ T params₁ params₂` says that any terminal or exiting
+env reachable from `st` in `L₁` is also reachable from `T st` in `L₂`, and
+that `T` preserves initial-env well-formedness from the source's
+`params₁`-parameterized `initEnvWF` to the target's `params₂`-parameterized
+`initEnvWF`.  When `L₁ = L₂` and `params₁ = params₂`, this specializes to
+the single-language case. -/
 
-/-- Overapproximation: terminal/exiting envs reachable from the
-    source are also reachable from the target. -/
-def Overapproximates (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT) : Prop :=
+/-- Overapproximation: terminal/exiting envs reachable from the source are
+    also reachable from the target. -/
+@[expose] def Overapproximates
+    (L₁ L₂ : Lang P) (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
   ∀ (st : L₁.StmtT) (s' : L₂.StmtT),
     T st = some s' →
-    ∀ (ρ₀ ρ' : Env P),
-      WellFormedSemanticEvalBool (P := P) ρ₀.factory →
-      WellFormedSemanticEvalVal (P := P) ρ₀.factory →
-      (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
-       L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
-      ∧
-      (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
-              L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ'))
+    ∀ (ρ₀ : Env P),
+      L₁.initEnvWF params₁ st ρ₀ →
+      (∀ (ρ' : Env P),
+        (L₁.star (L₁.stmtCfg st ρ₀) (L₁.terminalCfg ρ') →
+         L₂.star (L₂.stmtCfg s' ρ₀) (L₂.terminalCfg ρ'))
+        ∧
+        (∀ lbl, L₁.star (L₁.stmtCfg st ρ₀) (L₁.exitingCfg lbl ρ') →
+                L₂.star (L₂.stmtCfg s' ρ₀) (L₂.exitingCfg lbl ρ')))
+      ∧ L₂.initEnvWF params₂ s' ρ₀
 
 /-! ## Statement-list overapproximation (Imperative-specific) -/
 
@@ -267,7 +295,10 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
-abbrev Lang.imperativeBlock : Lang P where
+abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
+    (isAtAssertFn : Config P CmdT → AssertId P → Prop) : Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
   star := StepStmtStar P evalCmd extendFactory
@@ -276,6 +307,8 @@ abbrev Lang.imperativeBlock : Lang P where
   exitingCfg := .exiting
   isAtAssert := isAtAssertFn
   getEnv := Config.getEnv
+  InitEnvWFParamsTy := Unit
+  initEnvWF := fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory
 
 end ImperativeStmts
 

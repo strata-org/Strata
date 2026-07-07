@@ -8,6 +8,11 @@ module
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.Factory
+import all Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.Factory
 
 public section
 
@@ -30,6 +35,71 @@ open Core Imperative
 
 /-! ## Core `Lang` bundle -/
 
+/-- Parameters threaded into `Core.Specification.InitEnvWF` (the Core language's
+    `Lang.InitEnvWFParamsTy`).
+
+    The `prefixIdents : List String` lists "fresh-prefixes": prefixes of
+    identifiers that must NOT appear in the initial environment.  Downstream
+    transforms reserve such prefixes so they can introduce fresh names with
+    that prefix without colliding with user names.
+
+    The `declaredFuncs : Expression.Ident → Bool` characterizes the set of
+    operator/function names already defined in the initial evaluator.  Concrete
+    instantiations use this to enforce a `defUseWellFormed` invariant that all
+    operator references in the program are pre-declared, and any `funcDecl`
+    introduces a fresh name. -/
+structure InitEnvWFParams where
+  /-- Reserved "fresh-prefixes" that must not appear in the initial env. -/
+  prefixIdents : List String
+  /-- Predicate of operator/function names already defined in the evaluator. -/
+  declaredFuncs : Expression.Ident → Bool
+
+/-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
+    getting stuck.
+
+    Extends `Imperative.WellFormedSemanticEval` on `ρ.factory`, which
+    contributes the evaluator-level conditions `bool`/`val`/`var`/`exprCongr`/`int`.
+    The remaining fields are Core-specific (store definedness, reserved-prefix
+    freshness, `defUse` well-formedness, factory membership). -/
+structure InitEnvWF (params : InitEnvWFParams)
+    (s : Statement) (ρ : Env Expression) : Prop
+    extends WellFormedSemanticEval (P := Expression) ρ.factory where
+  readWritesDefined : ∀ n ∈ Stmt.touchedVars s, n ∉ Stmt.definedVars s false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Stmt.definedVars s false, (ρ.store n).isNone
+  /-- Source's `definedVars` don't use any of the reserved prefixes. -/
+  definedVarsNotReserved : ∀ n ∈ Stmt.definedVars s false, ∀ p ∈ params.prefixIdents,
+    ¬ p.toList.isPrefixOf n.name.toList
+  /-- Source's `funcDeclNames` don't use any of the reserved prefixes.
+      `funcDecl` names live in the evaluator (not the store), so they aren't
+      covered by `definedVarsNotReserved`. -/
+  funcDeclNamesNotReserved : ∀ n ∈ Stmt.funcDeclNames s false, ∀ p ∈ params.prefixIdents,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
+  defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    params.declaredFuncs ⟨s, ()⟩ = Bool.true
+
+/-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
+    statements `bss` from env `ρ`. -/
+structure BlockInitEnvWF (params : InitEnvWFParams)
+    (bss : Statements)
+    (ρ : Env Expression) : Prop
+    extends WellFormedSemanticEval (P := Expression) ρ.factory where
+  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss false →
+    (ρ.store n).isSome
+  defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
+  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ params.prefixIdents,
+    ¬ p.toList.isPrefixOf n.name.toList
+  funcDeclNamesNotReserved : ∀ n ∈ Block.funcDeclNames bss false, ∀ p ∈ params.prefixIdents,
+    ¬ p.toList.isPrefixOf n.name.toList
+  reservedFresh : ∀ n, (ρ.store n).isSome →
+    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
+  defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true
+  factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
+    params.declaredFuncs ⟨s, ()⟩ = Bool.true
+
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core
     (π : String → Option Procedure)
@@ -37,6 +107,7 @@ open Core Imperative
     Imperative.Specification.Lang Expression :=
   Imperative.Specification.Lang.imperative
     Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+    (ParamsTy := InitEnvWFParams) (initEnvWF := InitEnvWF)
 
 /-! ## Well-formed program state at the entry of procedure -/
 
@@ -56,10 +127,8 @@ open Core Imperative
     This captures the state after inputs, outputs, modified globals have been
     initialized and preconditions assumed.
     The well-formed environment also includes old snapshots in store -/
-structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
-  wfVar  : WellFormedSemanticEvalVar (P := Expression) ρ.factory
-  wfBool : WellFormedSemanticEvalBool (P := Expression) ρ.factory
-  wfExprCongr : WellFormedSemanticEvalExprCongr (P := Expression) ρ.factory
+structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop
+    extends WellFormedSemanticEval (P := Expression) ρ.factory where
   -- The verification env's store holds only values (true of reachable stores).
   storeValues : Imperative.WellFormedStore ρ.store ρ.factory
   storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome

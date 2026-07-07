@@ -2216,47 +2216,27 @@ theorem core_seq_reaches_terminal
 variable (π : String → Option Procedure)
 variable (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
 
-/-! ### Config-level WF predicates for Core
+/-! ### Config-level WF predicate for Core
 
 `step_block_done`/`exit_match`/`exit_mismatch` restore `eval := e_parent`, so
 preservation of WF along a trace requires WF of every captured `e_parent`
 snapshot in addition to WF of the inner eval. -/
 
-@[expose] def CoreConfig.wfBool : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalBool (P := Expression) ρ.factory
-  | .stmts _ ρ => WellFormedSemanticEvalBool (P := Expression) ρ.factory
-  | .terminal ρ => WellFormedSemanticEvalBool (P := Expression) ρ.factory
-  | .exiting _ ρ => WellFormedSemanticEvalBool (P := Expression) ρ.factory
+@[expose] def CoreConfig.wfEval : CoreConfig → Prop
+  | .stmt _ ρ => WellFormedSemanticEval (P := Expression) ρ.factory
+  | .stmts _ ρ => WellFormedSemanticEval (P := Expression) ρ.factory
+  | .terminal ρ => WellFormedSemanticEval (P := Expression) ρ.factory
+  | .exiting _ ρ => WellFormedSemanticEval (P := Expression) ρ.factory
   | .block _ _ f_parent inner =>
-    WellFormedSemanticEvalBool (P := Expression) f_parent ∧ CoreConfig.wfBool inner
-  | .seq inner _ => CoreConfig.wfBool inner
+    WellFormedSemanticEval (P := Expression) f_parent ∧ CoreConfig.wfEval inner
+  | .seq inner _ => CoreConfig.wfEval inner
 
-@[expose] def CoreConfig.wfVar : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalVar (P := Expression) ρ.factory
-  | .stmts _ ρ => WellFormedSemanticEvalVar (P := Expression) ρ.factory
-  | .terminal ρ => WellFormedSemanticEvalVar (P := Expression) ρ.factory
-  | .exiting _ ρ => WellFormedSemanticEvalVar (P := Expression) ρ.factory
-  | .block _ _ f_parent inner =>
-    WellFormedSemanticEvalVar (P := Expression) f_parent ∧ CoreConfig.wfVar inner
-  | .seq inner _ => CoreConfig.wfVar inner
-
-@[expose] def CoreConfig.wfExprCongr : CoreConfig → Prop
-  | .stmt _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory
-  | .stmts _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory
-  | .terminal ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory
-  | .exiting _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory
-  | .block _ _ f_parent inner =>
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ f_parent ∧
-    CoreConfig.wfExprCongr inner
-  | .seq inner _ => CoreConfig.wfExprCongr inner
-
-
-private theorem core_step_preserves_cfg_wfBool
-    (h_wf_ext : WFFactoryExtension φ)
+private theorem core_step_preserves_cfg_wfEval
+    (h_wf_ext : Imperative.WFFactoryExtension Expression (EvalPureFunc φ))
     (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfBool)
+    (hwf : c₁.wfEval)
     (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfBool := by
+    c₂.wfEval := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
     | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
@@ -2267,175 +2247,53 @@ private theorem core_step_preserves_cfg_wfBool
   | step_seq_inner _ ih => exact ih hwf
   | step_block_body hstep_inner ih =>
     exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfBool _ _ _ hwf
+  | step_funcDecl => exact h_wf_ext.preserves_wfEval _ _ _ hwf
   | _ => exact hwf
 
-private theorem core_step_preserves_cfg_wfVar
-    (h_wf_ext : WFFactoryExtension φ)
-    (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfVar)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfVar := by
-  induction hstep with
-  | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        exact hwf
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body hstep_inner ih =>
-    exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfVar _ _ _ hwf
-  | _ => exact hwf
-
-private theorem core_step_preserves_cfg_wfExprCongr
-    (h_wf_ext : WFFactoryExtension φ)
-    (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfExprCongr)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfExprCongr := by
-  induction hstep with
-  | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        exact hwf
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body hstep_inner ih =>
-    exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfExprCongr _ _ _ hwf
-  | _ => exact hwf
-
-private theorem CoreConfig.wfBool_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfBool → WellFormedSemanticEvalBool (P := Expression) cfg.getEnv.factory := by
+private theorem CoreConfig.wfEval_implies_wfEval (cfg : CoreConfig) :
+    cfg.wfEval → WellFormedSemanticEval (P := Expression) cfg.getEnv.factory := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
   | block _ _ _ inner ih => intro h; exact ih h.2
   | seq inner _ ih => intro h; exact ih h
 
-private theorem CoreConfig.wfVar_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfVar → WellFormedSemanticEvalVar (P := Expression) cfg.getEnv.factory := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-private theorem CoreConfig.wfExprCongr_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfExprCongr → @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ cfg.getEnv.factory := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-private theorem core_star_preserves_cfg_wfBool
-    (h_wf_ext : WFFactoryExtension φ)
+private theorem core_star_preserves_cfg_wfEval
+    (h_wf_ext : Imperative.WFFactoryExtension Expression (EvalPureFunc φ))
     {c₁ c₂ : CoreConfig}
     (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfBool) :
-    c₂.wfBool := by
+    (hwf : c₁.wfEval) :
+    c₂.wfEval := by
   suffices ∀ (c₁ c₂ : CoreConfig),
       Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfBool → c₂.wfBool from
+      c₁.wfEval → c₂.wfEval from
     this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
   intro c₁ c₂ hstar
   induction hstar with
   | refl => intro h; exact h
   | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfBool π φ h_wf_ext _ _ h hstep)
+    intro h; exact ih (core_step_preserves_cfg_wfEval π φ h_wf_ext _ _ h hstep)
 
-private theorem core_star_preserves_cfg_wfVar
-    (h_wf_ext : WFFactoryExtension φ)
-    {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfVar) :
-    c₂.wfVar := by
-  suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfVar → c₂.wfVar from
-    this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
-  intro c₁ c₂ hstar
-  induction hstar with
-  | refl => intro h; exact h
-  | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfVar π φ h_wf_ext _ _ h hstep)
-
-private theorem core_star_preserves_cfg_wfExprCongr
-    (h_wf_ext : WFFactoryExtension φ)
-    {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfExprCongr) :
-    c₂.wfExprCongr := by
-  suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfExprCongr → c₂.wfExprCongr from
-    this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
-  intro c₁ c₂ hstar
-  induction hstar with
-  | refl => intro h; exact h
-  | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfExprCongr π φ h_wf_ext _ _ h hstep)
-
-theorem core_wfBool_preserved_stmt
-    (h_wf_ext : WFFactoryExtension φ)
+/-- WF-bundle preservation starting from `.stmt s ρ`. -/
+theorem core_wfEval_preserved_stmt
+    (h_wf_ext : Imperative.WFFactoryExtension Expression (EvalPureFunc φ))
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool (P := Expression) ρ.factory)
+    (hwf₀ : WellFormedSemanticEval (P := Expression) ρ.factory)
     (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalBool (P := Expression) c₂.getEnv.factory :=
-  CoreConfig.wfBool_implies_wfEval _
-    (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
-      (show CoreConfig.wfBool (.stmt s ρ) from hwf₀))
+    WellFormedSemanticEval (P := Expression) c₂.getEnv.factory :=
+  CoreConfig.wfEval_implies_wfEval _
+    (core_star_preserves_cfg_wfEval π φ h_wf_ext hstar
+      (show CoreConfig.wfEval (.stmt s ρ) from hwf₀))
 
-theorem core_wfBool_preserved_stmts
-    (h_wf_ext : WFFactoryExtension φ)
+/-- WF-bundle preservation starting from `.stmts ss ρ`. -/
+theorem core_wfEval_preserved_stmts
+    (h_wf_ext : Imperative.WFFactoryExtension Expression (EvalPureFunc φ))
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool (P := Expression) ρ.factory)
+    (hwf₀ : WellFormedSemanticEval (P := Expression) ρ.factory)
     (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalBool (P := Expression) c₂.getEnv.factory :=
-  CoreConfig.wfBool_implies_wfEval _
-    (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
-      (show CoreConfig.wfBool (.stmts ss ρ) from hwf₀))
-
-theorem core_wfVar_preserved_stmt
-    (h_wf_ext : WFFactoryExtension φ)
-    {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalVar (P := Expression) c₂.getEnv.factory :=
-  CoreConfig.wfVar_implies_wfEval _
-    (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
-      (show CoreConfig.wfVar (.stmt s ρ) from hwf₀))
-
-theorem core_wfVar_preserved_stmts
-    (h_wf_ext : WFFactoryExtension φ)
-    {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalVar (P := Expression) c₂.getEnv.factory :=
-  CoreConfig.wfVar_implies_wfEval _
-    (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
-      (show CoreConfig.wfVar (.stmts ss ρ) from hwf₀))
-
-theorem core_wfExprCongr_preserved_stmt
-    (h_wf_ext : WFFactoryExtension φ)
-    {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ c₂.getEnv.factory :=
-  CoreConfig.wfExprCongr_implies_wfEval _
-    (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
-      (show CoreConfig.wfExprCongr (.stmt s ρ) from hwf₀))
-
-theorem core_wfExprCongr_preserved_stmts
-    (h_wf_ext : WFFactoryExtension φ)
-    {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ ρ.factory)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ _ c₂.getEnv.factory :=
-  CoreConfig.wfExprCongr_implies_wfEval _
-    (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
-      (show CoreConfig.wfExprCongr (.stmts ss ρ) from hwf₀))
+    WellFormedSemanticEval (P := Expression) c₂.getEnv.factory :=
+  CoreConfig.wfEval_implies_wfEval _
+    (core_star_preserves_cfg_wfEval π φ h_wf_ext hstar
+      (show CoreConfig.wfEval (.stmts ss ρ) from hwf₀))
 
 /-! ## projectStore and expression evaluation -/
 

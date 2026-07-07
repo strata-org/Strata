@@ -376,24 +376,179 @@ theorem coreFactory_WellFormedSemanticEvalBool :
 
 
 /-!
+## `WellFormedSemanticEvalInt` for Core
+-/
+
+open Lambda in
+/-- Sufficient condition for `eval (n+1)` on `Int.Lt x y` to reduce to a
+    concrete `boolConst`: when both `x` and `y` reduce to integer numerals at
+    fuel `n` with `.value true`, then the outer application reduces to
+    `boolConst (a < b)` at fuel `n+1`. -/
+theorem eval_intLt_value_of_numerals
+    (f : Expression.Factory) (σ : CoreStore) (x y : Expression.Expr)
+    (n : Nat) (a b : Int)
+    (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func)
+    (hx : Lambda.LExpr.eval n f σ x = (Lambda.LExpr.intConst () a, .value true))
+    (hy : Lambda.LExpr.eval n f σ y = (Lambda.LExpr.intConst () b, .value true)) :
+    Lambda.LExpr.eval (n + 1) f σ
+        (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y)
+      = (Lambda.LExpr.boolConst () (decide (a < b)), .value true) := by
+  have hcall : Lambda.Factory.callOfLFunc (T := CoreLParams) f
+      (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y)
+      = some ((Lambda.intLtFunc (T := CoreLParams)).opExpr, [x, y],
+              (Lambda.intLtFunc (T := CoreLParams)).func) := by
+    simp only [Lambda.Factory.callOfLFunc, Lambda.getLFuncCall, Lambda.getLFuncCall.go,
+      Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.intLtFunc, Lambda.binaryOp]
+    rw [hILt]
+    simp [Lambda.intLtFunc, Lambda.binaryOp]
+  have hcan : Lambda.LExpr.isCanonicalValue f
+      (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = false := by
+    simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
+      Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+      Lambda.intLtFunc, Lambda.binaryOp]
+    rw [hILt]
+    simp [Lambda.intLtFunc, Lambda.binaryOp]
+  have hcani : ∀ (a : Int),
+      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.intConst () a : Expression.Expr) = true := by
+    intro a; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.intConst]
+  have hcanb : ∀ (b : Bool),
+      Lambda.LExpr.isCanonicalValue f (Lambda.LExpr.boolConst () b : Expression.Expr) = true := by
+    intro b; simp [Lambda.LExpr.isCanonicalValue, Lambda.LExpr.boolConst]
+  simp only [Lambda.LExpr.eval]
+  rw [if_neg (by simp [hcan]), hcall]
+  simp only [Lambda.intLtFunc, Lambda.binaryOp]
+  rw [dif_neg (by simp)]
+  have hf1 : Strata.DL.Util.FuncAttr.findEvalIfConstr #[] = none := by decide
+  have hf2 : Strata.DL.Util.FuncAttr.findEvalIfCanonical #[] = none := by decide
+  simp only [hf1, hf2, List.map, List.all, Bool.and_true]
+  rw [hx, hy]
+  simp only [Lambda.LExpr.EvalResult.isValueTrue, Bool.and_true]
+  have hcev : Lambda.LambdaLeanType.cevalTy (ty := Lambda.LMonoTy.int) (ValTy := Int) CoreLParams
+      = Lambda.LExpr.denoteInt := rfl
+  have hmk : Lambda.LambdaLeanType.mkConst (ty := Lambda.LMonoTy.bool) (ValTy := Bool) CoreLParams
+      = @Lambda.LExpr.boolConst CoreLParams.mono := rfl
+  simp only [hcev, hmk]
+  have hdenote : Lambda.LExpr.denoteInt (Lambda.LExpr.intConst () a : Expression.Expr) = some a := rfl
+  have hdenote' : Lambda.LExpr.denoteInt (Lambda.LExpr.intConst () b : Expression.Expr) = some b := rfl
+  rw [if_pos (by simp [hcani])]
+  simp only [hdenote, hdenote']
+  simp only [if_true]
+  rw [Lambda.eval_canonical_identity n f σ _ (hcanb _)]
+  simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair, Lambda.LExpr.EvalResult.combineValueFlag]
+
+open Lambda in
+/-- The Core evaluator satisfies `WellFormedSemanticEvalInt` when the factory
+    resolves `Int.Lt` to `intLtFunc`. -/
+theorem coreEvaluator_WellFormedSemanticEvalInt (f : Expression.Factory)
+    (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func) :
+    Imperative.WellFormedSemanticEvalInt (P := Expression) f where
+  ltReduces := by
+    intro σ x y nx ny hx hnx hy hny
+    -- Extract that nx = .intConst _ a, ny = .intConst _ b from isNumeral.
+    have hnx_shape : ∃ a : Int, nx = Lambda.LExpr.intConst () a := by
+      cases nx with
+      | const m c =>
+        cases c with
+        | intConst i => exact ⟨i, rfl⟩
+        | _ => simp [Core.isNumeral, HasInt.isNumeral] at hnx
+      | _ => simp [Core.isNumeral, HasInt.isNumeral] at hnx
+    have hny_shape : ∃ b : Int, ny = Lambda.LExpr.intConst () b := by
+      cases ny with
+      | const m c =>
+        cases c with
+        | intConst i => exact ⟨i, rfl⟩
+        | _ => simp [Core.isNumeral, HasInt.isNumeral] at hny
+      | _ => simp [Core.isNumeral, HasInt.isNumeral] at hny
+    obtain ⟨a, rfl⟩ := hnx_shape
+    obtain ⟨b, rfl⟩ := hny_shape
+    -- Now obtain concrete fuel witnesses for the eval reductions.
+    obtain ⟨nx', hx', _⟩ := Lambda.evalFully_some_exists f σ x _ hx
+    obtain ⟨ny', hy', _⟩ := Lambda.evalFully_some_exists f σ y _ hy
+    -- Fuel monotonicity: lift each eval to any ≥ fuel.
+    have hmono : ∀ (e : Expression.Expr) (v : Expression.Expr) (m d : Nat),
+        Lambda.LExpr.eval m f σ e = (v, .value true) →
+        Lambda.LExpr.eval (m + d) f σ e = (v, .value true) := by
+      intro e v m d he
+      induction d with
+      | zero => simpa using he
+      | succ d' ih => exact Lambda.eval_value_true_mono f σ _ _ _ ih
+    obtain ⟨dx, hdx⟩ :=
+      Nat.exists_eq_add_of_le (Nat.le_max_left nx' ny' : nx' ≤ max nx' ny')
+    obtain ⟨dy, hdy⟩ :=
+      Nat.exists_eq_add_of_le (Nat.le_max_right nx' ny' : ny' ≤ max nx' ny')
+    have hx_n : Lambda.LExpr.eval (max nx' ny') f σ x =
+        (Lambda.LExpr.intConst () a, .value true) := by
+      rw [hdx]; exact hmono x _ nx' dx hx'
+    have hy_n : Lambda.LExpr.eval (max nx' ny') f σ y =
+        (Lambda.LExpr.intConst () b, .value true) := by
+      rw [hdy]; exact hmono y _ ny' dy hy'
+    -- Apply the helper.
+    have hstep : Lambda.LExpr.eval (max nx' ny' + 1) f σ
+        (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y)
+        = (Lambda.LExpr.boolConst () (decide (a < b)), .value true) :=
+      eval_intLt_value_of_numerals f σ x y (max nx' ny') a b hILt hx_n hy_n
+    -- Determine tt/ff based on the truth of `a < b`.
+    by_cases hab : a < b
+    · left
+      have h_out : Lambda.LExpr.eval (max nx' ny' + 1) f σ
+          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y)
+          = (Core.true, .value true) := by
+        rw [hstep, decide_eq_true hab]; rfl
+      show Lambda.LExpr.evalFully f σ
+          (@HasIntOps.lt Core.Expression _ _ _ _ x y) = some Core.true
+      change Lambda.LExpr.evalFully f σ
+          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _
+      exact Lambda.evalFully_of_value_true f σ _ _ _ h_out
+    · right
+      have h_out : Lambda.LExpr.eval (max nx' ny' + 1) f σ
+          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y)
+          = (Core.false, .value true) := by
+        rw [hstep, decide_eq_false hab]; rfl
+      show Lambda.LExpr.evalFully f σ
+          (@HasIntOps.lt Core.Expression _ _ _ _ x y) = some Core.false
+      change Lambda.LExpr.evalFully f σ
+          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _
+      exact Lambda.evalFully_of_value_true f σ _ _ _ h_out
+
+set_option maxRecDepth 8000 in
+/-- `Int.Lt` resolves in the concrete `Core.Factory` to `intLtFunc`. -/
+theorem coreFactory_intLt :
+    (Core.Factory)["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func := by
+  have hname : (Lambda.intLtFunc (T := CoreLParams)).func.name.name = "Int.Lt" := rfl
+  have hCoreFactory : Core.Factory
+      = Lambda.Factory.ofArray (WFFactoryArray.map (·.func)) := rfl
+  have hmem : (Lambda.intLtFunc (T := CoreLParams)).func ∈ WFFactoryArray.map (·.func) := by
+    refine Array.mem_map.mpr ⟨Lambda.intLtFunc (T := CoreLParams), ?_, rfl⟩
+    unfold WFFactoryArray
+    simp only [Array.mem_def, Array.toList_appendList,
+      List.mem_append, List.mem_cons, or_true, true_or]
+  have hnodup : List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) :=
+    WFFactoryArray_func_name_nodup
+  rw [hCoreFactory, ← hname]
+  exact Lambda.Factory.get?_ofArray_of_mem hmem hnodup
+
+/-!
 ## Instance of the full `WellFormedSemanticEval` bundle
 --/
 
 def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
     (hWF : Lambda.FactoryWF f)
-    (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func) :
+    (hBN : f["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func)
+    (hILt : f["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func) :
     Imperative.WellFormedSemanticEval (P := Expression) f where
   bool := coreEvaluator_WellFormedSemanticEvalBool f hBN
   val := coreEvaluator_WellFormedSemanticEvalVal f
   var := coreEvaluator_WellFormedSemanticEvalVar f
   exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF
+  int := coreEvaluator_WellFormedSemanticEvalInt f hILt
 
 /-- Specialization of `coreEvaluator_WellFormedSemanticEval` to the concrete
     `Core.Factory`, which is unconditionally well-formed and resolves
-    `Bool.Not` to `boolNotFunc`. -/
+    `Bool.Not` to `boolNotFunc` and `Int.Lt` to `intLtFunc`. -/
 theorem coreFactory_WellFormedSemanticEval :
     Imperative.WellFormedSemanticEval (P := Expression) Core.Factory :=
-  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf coreFactory_boolNot
+  coreEvaluator_WellFormedSemanticEval Core.Factory Core.Factory_wf
+    coreFactory_boolNot coreFactory_intLt
 
 end Core
 

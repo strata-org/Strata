@@ -70,7 +70,7 @@ def Core.true : Core.Expression.Expr := .boolConst () Bool.true
 def Core.false : Core.Expression.Expr := .boolConst () Bool.false
 
 /-- Syntactic check for integer numeral literals in Core. -/
-def Core.isNumeral : Core.Expression.Expr → Bool
+@[expose] def Core.isNumeral : Core.Expression.Expr → Bool
   | .const _ (.intConst _) => Bool.true
   | _ => Bool.false
 

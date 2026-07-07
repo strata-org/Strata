@@ -22,15 +22,10 @@ evaluator.
 namespace Lambda
 open Strata
 
--- Several individual theorems below don't use every instance in the `variable`
--- block; silencing the per-theorem "unused section variable" linter rather than
--- restructuring, since the instances are used by the majority.
-set_option linter.unusedSectionVars false
-
 variable {Tbase : LExprParams}
   [DecidableEq Tbase.IDMeta]
-  [Inhabited Tbase.IDMeta]
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- `liftBVars` does not change the free variables (only shifts de Bruijn indices). -/
 theorem getVars_liftBVars (k : Nat) (e : LExpr Tbase.mono) (c : Nat) :
     LExpr.LExpr.getVars (LExpr.liftBVars k e c) = LExpr.LExpr.getVars e := by
@@ -45,6 +40,7 @@ theorem getVars_liftBVars (k : Nat) (e : LExpr Tbase.mono) (c : Nat) :
     simp only [LExpr.liftBVars, LExpr.LExpr.getVars]; rw [ih1 c, ih2 c, ih3 c]
   | eq _ _ _ ih1 ih2 => simp only [LExpr.liftBVars, LExpr.LExpr.getVars]; rw [ih1 c, ih2 c]
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- `replaceUserProvidedType` does not change the free variables. -/
 theorem getVars_replaceUserProvidedType (e : LExpr Tbase.mono)
     (f : LMonoTy → LMonoTy) :
@@ -59,6 +55,7 @@ theorem getVars_replaceUserProvidedType (e : LExpr Tbase.mono)
     simp only [LExpr.replaceUserProvidedType, LExpr.LExpr.getVars]; rw [ih1, ih2, ih3]
   | eq _ _ _ ih1 ih2 => simp only [LExpr.replaceUserProvidedType, LExpr.LExpr.getVars]; rw [ih1, ih2]
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- `applySubst` does not change the free variables (only type annotations). -/
 theorem getVars_applySubst (e : LExpr Tbase.mono) (S : Subst) :
     LExpr.LExpr.getVars (e.applySubst S) = LExpr.LExpr.getVars e := by
@@ -67,11 +64,13 @@ theorem getVars_applySubst (e : LExpr Tbase.mono) (S : Subst) :
   · rfl
   · exact getVars_replaceUserProvidedType e _
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- `replaceMetadata1` does not change the free variables. -/
 theorem getVars_replaceMetadata1 (r : Tbase.Metadata) (e : LExpr Tbase.mono) :
     LExpr.LExpr.getVars (LExpr.replaceMetadata1 r e) = LExpr.LExpr.getVars e := by
   cases e <;> rfl
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables introduced by `substK` come from the base expression or the
     substituted term. -/
 theorem getVars_substK_mem (k : Nat) (s : Tbase.mono.base.Metadata → LExpr Tbase.mono)
@@ -129,6 +128,7 @@ theorem getVars_substK_mem (k : Nat) (s : Tbase.mono.base.Metadata → LExpr Tba
       · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hl)
       · exact Or.inr hr
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables introduced by `mkApp` come from the head or an argument. -/
 theorem getVars_mkApp_mem (m : Tbase.Metadata) (op : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono)) (y : Tbase.Identifier)
@@ -287,6 +287,7 @@ theorem getVars_substFvarsLifting_mem
     | cons p m => simp [Map.isEmpty] at h_empty
   · exact getVars_substFvarsLifting_go_mem sm e 0 y hy
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables of the arguments extracted by `getLFuncCall.go` are contained
     in the free variables of the whole expression together with the accumulator. -/
 private theorem getLFuncCall_go_getVars_mem
@@ -330,6 +331,7 @@ private theorem getLFuncCall_go_getVars_mem
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; obtain ⟨rfl, rfl⟩ := h; exact Or.inr ⟨a, ha, hy⟩
   termination_by e.sizeOf
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables of a `callOfLFunc` argument are contained in the whole
     expression's free variables. -/
 theorem callOfLFunc_getVars_args (F : @Factory Tbase) (e : LExpr Tbase.mono)
@@ -344,6 +346,7 @@ theorem callOfLFunc_getVars_args (F : @Factory Tbase) (e : LExpr Tbase.mono)
   · exact h1
   · simp at hb
 
+omit [DecidableEq Tbase.IDMeta] in
 /-- The free variables of a well-formed function body are among its inputs. -/
 theorem lfunc_body_getVars_subset_keys
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)

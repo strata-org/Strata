@@ -552,7 +552,7 @@ theorem procToVerifyStmt_structure
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨l, c⟩, _, rfl⟩ := hs; simp [stmtInitVar]
     refine ⟨PrefixStepsOK_assumes π φ proc.spec.preconditions ρ₀
-      h_wf.preconditionsHold h_wf.wfBool, ?_⟩
+      h_wf.preconditionsHold h_wf.bool, ?_⟩
     rw [h_assumes_id]
     -- Split: (inputInits ++ outputOnlyInits) ++ oldInoutInits
     rw [show inputInits ++ outputOnlyInits ++ oldInoutInits =
@@ -569,7 +569,7 @@ theorem procToVerifyStmt_structure
       exact absurd hsx.symm (h_wf_proc.ioNotOld x hx id.name)
     constructor
     · -- PrefixStepsOK for oldInoutInits at ρ₀
-      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.storeValues h_wf.wfVar
+      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.storeValues h_wf.var
       · -- inout params are defined in store (they are inputs)
         intro id hid
         rw [← ListMap.keys_eq_map_fst] at hid
@@ -603,7 +603,7 @@ theorem procToVerifyStmt_structure
     · -- PrefixStepsOK for inputInits ++ outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
       have h_wfVar_old : WellFormedSemanticEvalVar (P := Expression)
           (prefixInitEnv oldInoutInits ρ₀).factory := by
-        rw [prefixInitEnv_factory]; exact h_wf.wfVar
+        rw [prefixInitEnv_factory]; exact h_wf.var
       have h_wfStore_old : Imperative.WellFormedStore (prefixInitEnv oldInoutInits ρ₀).store
           (prefixInitEnv oldInoutInits ρ₀).factory := by
         rw [prefixInitEnv_factory]; exact prefixInitEnv_store_wf oldInoutInits ρ₀ h_wf.storeValues
@@ -626,7 +626,7 @@ theorem procToVerifyStmt_structure
       · -- inputInits at prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)
         have h_wfVar_out' : WellFormedSemanticEvalVar (P := Expression)
             (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
-          rw [prefixInitEnv_factory, prefixInitEnv_factory]; exact h_wf.wfVar
+          rw [prefixInitEnv_factory, prefixInitEnv_factory]; exact h_wf.var
         have h_wfStore_out' : Imperative.WellFormedStore
             (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).store
             (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
@@ -686,7 +686,7 @@ theorem procBodyVerify_procedureCorrect
     (h_correct : Specification.AllAssertsValid
       (Core.Specification.Lang.core π φ) verifyStmt)
     -- `h_wf_ext`: the evaluator extension `φ` is well-formed
-    (h_wf_ext : Core.WFFactoryExtension φ)
+    (h_wf_ext : Imperative.WFFactoryExtension Expression (Core.EvalPureFunc φ))
     -- `h_wf_proc`: the procedure is well-formed
     (h_wf_proc : WF.WFProcedureProp p proc) :
     -- Conclusion: ProcedureCorrect holds.
@@ -867,8 +867,10 @@ theorem procBodyVerify_procedureCorrect
     have h_nf' : ρ'.hasFailure = Bool.false := by
       rw [h_ρ'_eq]; exact h_nf_inner
     -- wfBool preservation
+    have h_wfEval_term : WellFormedSemanticEval (P := Expression) ρ_inner.factory :=
+      Core.core_wfEval_preserved_stmts π φ h_wf_ext h_wf.toWellFormedSemanticEval h_term_inner
     have h_wfb_term : WellFormedSemanticEvalBool (P := Expression) ρ_inner.factory :=
-      Core.core_wfBool_preserved_stmts π φ h_wf_ext h_wf.wfBool h_term_inner
+      h_wfEval_term.bool
 
     -- After the body block terminates via step_block_done, the store and factory are projected.
     -- ρ_proj coincides with ρ' by h_ρ'_eq.
@@ -940,7 +942,7 @@ theorem procBodyVerify_procedureCorrect
                   (EvalCmd.eval_assert_pass h_head_eval
                     (by show WellFormedSemanticEvalBool (P := Expression) ρ_proj.factory
                         simp only [ρ_proj]
-                        exact h_wf.wfBool))))
+                        exact h_wf.bool))))
                 (.refl _)
             have h2 : (⟨ρ_proj.store, ρ_proj.factory, ρ_proj.hasFailure || false⟩ : Env Expression) = ρ_proj := by
               simp only [Bool.or_false]

@@ -35,7 +35,7 @@ Key results (organized roughly in the order they appear below):
 - `evalFully_of_value_true` — if any fuel `m` produces `(v, .value true)`,
   then `evalFully = some v`.  This is the closure that discharges the
   reverse direction of `coreEvaluator_WellFormedSemanticEvalBool` without
-  needing an external axiom.
+  needing an external assumption.
 -/
 
 namespace Lambda
@@ -1526,8 +1526,8 @@ end eval_value_true_add_fuel
 
 If *any* fuel `m` produces `(v, .value true)`, then `evalFully = some v`.
 This is the closure that discharges the reverse direction of
-`coreEvaluator_WellFormedSemanticEvalBool` without needing an external axiom.
-Requires the min-fuel witness lemma `eval_least_fuel_value_true`. -/
+`coreEvaluator_WellFormedSemanticEvalBool` without needing an external
+assumption. Requires the min-fuel witness lemma `eval_least_fuel_value_true`. -/
 
 section evalFully_of_value_true
 

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
@@ -55,11 +56,11 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendFactory : ExtendFactory P)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Empty statement list evaluation. -/
 theorem evalStmtsSmallNil
     (ρ : Env P) :
@@ -67,7 +68,7 @@ theorem evalStmtsSmallNil
   unfold EvalStmtsSmall
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Terminal configurations are indeed terminal. -/
 theorem terminalIsTerminal
     (ρ : Env P) :
@@ -76,7 +77,7 @@ theorem terminalIsTerminal
   intro c' h
   cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Helper: if the inner config of a `.seq` takes multiple steps, the
     enclosing `.seq` takes the same number of steps.
     Proved by induction on the multi-step derivation. -/
@@ -92,7 +93,7 @@ theorem seq_inner_star
   | step _ mid _ hstep _ ih =>
     exact .step _ _ _ (.step_seq_inner hstep) ih
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Helper: if the inner config of a `.block` takes multiple steps, the
     enclosing `.block` takes the same number of steps. -/
 theorem block_inner_star
@@ -107,7 +108,7 @@ theorem block_inner_star
   | refl => exact .refl _
   | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- When executing `.stmts (s :: ss) ρ`, if the head statement `s`
     multi-steps to `.terminal ρ'`, then the whole list multi-steps to
     `.stmts ss ρ'`.
@@ -138,7 +139,7 @@ theorem stmts_cons_step
 
 /-! ## Inversion lemmas for seq and block execution -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a seq execution reaching terminal: the inner terminates,
     then the tail stmts run to terminal. -/
 theorem seq_reaches_terminal
@@ -163,7 +164,7 @@ theorem seq_reaches_terminal
     | step_seq_done => subst htgt; exact ⟨_, .refl _, hrest⟩
     | step_seq_exit => subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a seq execution reaching exiting: either the inner exited
     (propagated), or the inner terminated and the tail exited. -/
 theorem seq_reaches_exiting
@@ -207,7 +208,7 @@ def Config.factoryExtendsOf (f_root : P.Factory) :
     Config.factoryExtendsOf f_root inner
   | .seq inner _ => Config.factoryExtendsOf f_root inner
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- A single `StepStmt` step preserves `Config.factoryExtendsOf f_root`. -/
 private theorem step_preserves_factoryExtendsOf
     {c c' : Config P CmdT} {f_root : P.Factory}
@@ -243,7 +244,7 @@ private theorem step_preserves_factoryExtendsOf
     rename_i decl _ _ _
     exact .step _ decl hinv
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Multi-step lift of `step_preserves_factoryExtendsOf`. -/
 theorem star_preserves_factoryExtendsOf
     {c c' : Config P CmdT} {f_root : P.Factory}
@@ -255,7 +256,7 @@ theorem star_preserves_factoryExtendsOf
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_factoryExtendsOf P EvalCmd extendFactory hinv hstep)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching terminal: the inner either
     terminated or exited (caught by the block).  In both cases the inner
     reaches a config whose env projects to `ρ'` via the parent store. -/
@@ -295,7 +296,7 @@ theorem block_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
@@ -327,7 +328,7 @@ theorem block_reaches_exiting
 
 /-! ## Trace construction helpers -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Entering a block: a single step from `.stmt (.block l body md) ρ`
     to `.block (.some l) (.stmts body ρ)`. -/
 theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
@@ -336,7 +337,7 @@ theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
       (.stmt (.block l body md) ρ) (.block (.some l) ρ.store ρ.factory (.stmts body ρ)) :=
   .step _ _ _ .step_block (.refl _)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If a prefix of a statement list terminates, the full list steps
     to the suffix starting from the terminal environment. -/
 theorem stmts_prefix_terminal_append
@@ -358,7 +359,7 @@ theorem stmts_prefix_terminal_append
         exact ReflTrans_Transitive _ _ _ _
           (stmts_cons_step P EvalCmd extendFactory s (rest ++ sfx) ρ ρ₁ h_s) (ih ρ₁ h_r)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose a terminating execution of `ss₁ ++ ss₂` into a terminating
     execution of `ss₁` followed by a terminating execution of `ss₂`. -/
 theorem stmts_append_terminates
@@ -506,7 +507,7 @@ private def step_simulation
       | _ => exact nomatch heq.2.2.2
     | _ => exact nomatch heq
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- The terminal state's store and factory are independent of the starting
     `hasFailure` flag.  Proved by simulation: each step preserves
     store/factory equivalence, so the terminal states agree. -/
@@ -535,7 +536,7 @@ theorem smallStep_hasFailure_irrel
 
 /-! ## Well-paired exits: preservation and no-escape -/
 
-omit [HasBool P] [HasBoolOps P] [HasOps P] in
+omit [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
 /-- Helper: when the inner of a block reaches `.exiting l` and the
     block's label (if some) doesn't match `l`, then `l` must be in the outer
     labels list.  The conclusion is `l ∈ labels`, which is exactly the
@@ -557,7 +558,7 @@ private theorem block_exit_mismatch_unfold {labels : List String}
     · exact absurd (by rw [hh]) hne
     · exact hh
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
 theorem step_preserves_exitsCoveredByBlocks
     (labels : List String)
@@ -614,7 +615,7 @@ theorem step_preserves_exitsCoveredByBlocks
     intro labels hwp
     exact block_exit_mismatch_unfold (P := P) (CmdT := CmdT) hwp hne
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- Well-paired statements cannot escape via `.exiting`:
     if all exits in `s` are caught by enclosing blocks
     (`s.exitsCoveredByBlocks []`), then `s` never reaches `.exiting`. -/
@@ -638,7 +639,7 @@ theorem exitsCoveredByBlocks_noEscape
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendFactory [] _ _ hstep hwp_c)
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- Well-paired statement lists cannot escape via `.exiting`:
     if all exits in `bss` are caught by enclosing blocks
     (`Block.exitsCoveredByBlocks [] bss`), then `.stmts bss ρ` never reaches `.exiting`. -/
@@ -660,7 +661,7 @@ theorem block_exitsCoveredByBlocks_noEscape
   | step _ _ _ hstep _ ih =>
     exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendFactory [] _ _ hstep hwp_c)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If `.block l inner →* cfg`, the inner config never reaches `.exiting`,
     and `cfg` is neither terminal nor exiting, then `cfg = .block l inner'`
     for some `inner'` with `inner →* inner'`. -/
@@ -702,7 +703,7 @@ theorem block_star_extract_inner
 
 /-! ## noFuncDecl preserves eval (small-step) -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- A single step preserves factory when noFuncDecl holds.
     The only step that changes factory is step_funcDecl, which is excluded. -/
 private theorem step_preserves_factory_noFuncDecl
@@ -719,15 +720,307 @@ private theorem step_preserves_factory_noFuncDecl
     grind [Config.noFuncDecl, Stmt.noFuncDecl, Block.noFuncDecl, Config.getEnv]
 
 
+/-! ## WF preservation under WFFactoryExtension (no `noFuncDecl` requirement) -/
+
+variable [HasFvar P]
+
+/-- Single step preserves `Config.wfEval` when the evaluator extension is
+    well-formed (no `noFuncDecl` requirement). -/
+private theorem step_preserves_wfEval_wfExtend
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd extendFactory c₁ c₂)
+    (hwf : c₁.wfEval) :
+    c₂.wfEval := by
+  induction hstep with
+  -- Only `step_funcDecl` mutates the factory; `preserves_wfEval` covers it.
+  | step_funcDecl => exact hwf_ext.preserves_wfEval _ _ _ hwf
+  -- Recursive rules: use the induction hypothesis on the inner config.
+  | step_seq_inner _ ih => exact ih hwf
+  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
+  -- Everything else is pure Config.wfEval juggling.
+  | _ => first | exact hwf | exact ⟨hwf, hwf⟩ | exact hwf.1
+
+/-- `Config.wfEval` is preserved under `StepStmtStar`. -/
+theorem star_preserves_cfg_wfEval
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendFactory c₁ c₂)
+    (hwf : c₁.wfEval) :
+    c₂.wfEval := by
+  induction hstar with
+  | refl => exact hwf
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_wfEval_wfExtend P EvalCmd extendFactory hwf_ext _ _ hstep hwf)
+
+omit [HasOps P] in
+/-- `Config.wfEval` implies `WellFormedSemanticEval` on the current
+    config's factory (the inner factory after walking through any blocks). -/
+theorem Config.wfEval_implies_wfEval (cfg : Config P CmdT) :
+    cfg.wfEval → WellFormedSemanticEval (P := P) cfg.getEnv.factory := by
+  induction cfg with
+  | stmt | stmts | terminal | exiting => intro h; exact h
+  | block _ _ _ inner ih => intro h; exact ih h.2
+  | seq inner _ ih => intro h; exact ih h
+
+/-- `WellFormedSemanticEval` is preserved under `StepStmtStar` when the
+    starting config is a top-level `.stmt`/`.stmts`/`.terminal`/`.exiting`
+    (i.e., not inside a `.block`).  Generalises
+    `smallStep_noFuncDecl_preserves_eval` to programs with funcDecl.
+
+    For starts at `.block` configurations, use `star_preserves_cfg_wfEval`
+    with the appropriate `Config.wfEval` precondition. -/
+theorem star_preserves_wfEval
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) c₂)
+    (hwf : WellFormedSemanticEval (P := P) ρ.factory) :
+    WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
+  have h := star_preserves_cfg_wfEval P EvalCmd extendFactory hwf_ext hstar
+    (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwf)
+  exact Config.wfEval_implies_wfEval P c₂ h
+
+/-- Block-list variant of `star_preserves_wfEval`: starting at `.stmts ss ρ`. -/
+theorem star_preserves_wfEval_block
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    {ss : List (Stmt P CmdT)} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) c₂)
+    (hwf : WellFormedSemanticEval (P := P) ρ.factory) :
+    WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
+  have h := star_preserves_cfg_wfEval P EvalCmd extendFactory hwf_ext hstar
+    (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwf)
+  exact Config.wfEval_implies_wfEval P c₂ h
+
+/-- Single-step preservation of `eval` on expressions disjoint from
+    `Config.funcDeclNames` (in the operator-name sense), as a
+    **bidirectional iff** at the `Option.some` level.  Maintains the
+    snapshot-agreement invariant. -/
+private theorem step_preserves_eval_on_disjoint
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    {c₁ c₂ : Config P CmdT}
+    (hstep : StepStmt P EvalCmd extendFactory c₁ c₂)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Config.funcDeclNames c₁, n ∉ HasOps.getOps (P := P) e)
+    (hsnap : Config.factorySnapAgrees (P := P) σ' e c₁) :
+    (∀ v, P.eval c₁.getEnv.factory σ' e = some v ↔ P.eval c₂.getEnv.factory σ' e = some v) ∧
+      (∀ n ∈ Config.funcDeclNames c₂, n ∉ HasOps.getOps (P := P) e) ∧
+      Config.factorySnapAgrees (P := P) σ' e c₂ := by
+  induction hstep with
+  -- Only `step_funcDecl` mutates the factory; use the disjoint-op assumptions.
+  | step_funcDecl =>
+    rename_i decl _ ρ_inst _
+    have hname : decl.name ∉ HasOps.getOps (P := P) e := by
+      apply hdisj decl.name
+      simp [Config.funcDeclNames, Stmt.funcDeclNames]
+    refine ⟨?_, ?_, ?_⟩
+    · intro v
+      simp only [Config.getEnv]
+      exact ⟨fun hv => hwf_ext.preserves_eval_some_on_disjoint_op
+              ρ_inst.factory ρ_inst.store decl σ' e v hname hv,
+             fun hv => hwf_ext.preserves_eval_some_on_disjoint_op_back
+              ρ_inst.factory ρ_inst.store decl σ' e v hname hv⟩
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.factorySnapAgrees]
+  -- Recursive rule: the surrounding config appends its own `funcDeclNames`.
+  | step_seq_inner hstep_inner ih =>
+    rename_i inner _ _
+    have hdisj_inner : ∀ n ∈ Config.funcDeclNames inner, n ∉ HasOps.getOps (P := P) e := by
+      intro n hn; apply hdisj n; simp [Config.funcDeclNames]; exact .inl hn
+    have hsnap_inner : Config.factorySnapAgrees (P := P) σ' e inner := by
+      simpa [Config.factorySnapAgrees] using hsnap
+    have ⟨hmono, hdisj', hsnap'⟩ := ih hdisj_inner hsnap_inner
+    refine ⟨hmono, ?_, ?_⟩
+    · intro n hn
+      simp only [Config.funcDeclNames, List.mem_append] at hn
+      rcases hn with hn | hn
+      · exact hdisj' n hn
+      · apply hdisj n; simp [Config.funcDeclNames]; exact .inr hn
+    · simpa [Config.factorySnapAgrees] using hsnap'
+  -- Recursive rule for blocks: inherit `f_parent` from `hsnap.1`.
+  | step_block_body hstep_inner ih =>
+    rename_i inner _ _ _ _
+    have hdisj_inner : ∀ n ∈ Config.funcDeclNames inner, n ∉ HasOps.getOps (P := P) e := by
+      intro n hn; apply hdisj n; simp [Config.funcDeclNames]; exact hn
+    have ⟨hiff, hdisj', hsnap'⟩ := ih hdisj_inner hsnap.2
+    refine ⟨hiff, ?_, ⟨fun v => (hsnap.1 v).trans (hiff v), hsnap'⟩⟩
+    intro n hn; simp only [Config.funcDeclNames] at hn; exact hdisj' n hn
+  -- Block-exit rules: factory changes to `f_parent`, use `hsnap.1`.
+  | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
+    refine ⟨fun v => by simp only [Config.getEnv]; exact (hsnap.1 v).symm, ?_, ?_⟩
+    · intro n hn; simp [Config.funcDeclNames] at hn
+    · simp [Config.factorySnapAgrees]
+  -- All other rules leave the factory unchanged and only shuffle
+  -- `funcDeclNames`; the bookkeeping is uniform.
+  | _ =>
+    refine ⟨fun _ => Iff.rfl, ?_, ?_⟩
+    · intro n hn
+      apply hdisj n
+      first
+      | (simp_all [Config.funcDeclNames, Stmt.funcDeclNames, Block.funcDeclNames]; try grind)
+      | exact hn
+    · first
+      | simp [Config.factorySnapAgrees, Config.getEnv]
+      | simpa [Config.factorySnapAgrees] using hsnap
+
+/-- Star-step preservation of `eval` on expressions disjoint from
+    `Config.funcDeclNames` (in the operator-name sense), as a
+    **bidirectional iff** at the `Option.some` level. -/
+theorem star_preserves_eval_on_disjoint
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd extendFactory c₁ c₂)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Config.funcDeclNames c₁, n ∉ HasOps.getOps (P := P) e)
+    (hsnap : Config.factorySnapAgrees (P := P) σ' e c₁) :
+    ∀ v, P.eval c₁.getEnv.factory σ' e = some v ↔ P.eval c₂.getEnv.factory σ' e = some v := by
+  suffices h_gen : ∀ c₁ c₂,
+      StepStmtStar P EvalCmd extendFactory c₁ c₂ →
+      (∀ n ∈ Config.funcDeclNames c₁, n ∉ HasOps.getOps (P := P) e) →
+      Config.factorySnapAgrees (P := P) σ' e c₁ →
+      ∀ v, P.eval c₁.getEnv.factory σ' e = some v ↔ P.eval c₂.getEnv.factory σ' e = some v by
+    exact h_gen c₁ c₂ hstar hdisj hsnap
+  intro c₁ c₂ hstar
+  induction hstar with
+  | refl => intros _ _ v; exact Iff.rfl
+  | step _ mid _ hstep _ ih =>
+    intro hdisj_c hsnap_c
+    have ⟨hiff_step, hdisj_mid, hsnap_mid⟩ :=
+      step_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext hstep σ' e hdisj_c hsnap_c
+    intro v
+    exact (hiff_step v).trans (ih hdisj_mid hsnap_mid v)
+
+/-- Specialization of `star_preserves_eval_on_disjoint` to a top-level
+    `.stmts ss ρ → .terminal ρ'` trace, where the snapshot-agreement
+    invariant trivially holds. -/
+theorem block_preserves_eval_on_disjoint
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Block.funcDeclNames ss false, n ∉ HasOps.getOps (P := P) e)
+    (hterm : StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) (.terminal ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext hterm σ' e
+    (by intro n hn; exact hdisj n (by simpa [Config.funcDeclNames] using hn))
+    (by simp [Config.factorySnapAgrees])
+  intro v
+  have hiff := h v
+  simpa [Config.getEnv] using hiff
+
+/-- Exiting variant of `block_preserves_eval_on_disjoint`. -/
+theorem block_preserves_eval_on_disjoint_exiting
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (hdisj : ∀ n ∈ Block.funcDeclNames ss false, n ∉ HasOps.getOps (P := P) e)
+    (hexit : StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) (.exiting lbl ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext hexit σ' e
+    (by intro n hn; exact hdisj n (by simpa [Config.funcDeclNames] using hn))
+    (by simp [Config.factorySnapAgrees])
+  intro v
+  have hiff := h v
+  simpa [Config.getEnv] using hiff
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Bundles `block_preserves_eval_on_disjoint` with `funcDeclNames_disjoint_of_defined`:
+    when the block's `defUseWellFormed` holds against `defined`, every expression `e`
+    whose ops are all in `declared` is `Option.some`-monotone-preserved. -/
+theorem block_preserves_eval_via_defUseOk
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (defined : P.Ident → Bool) (declared : P.Ident → Bool)
+    (hdef : Block.defUseWellFormed defined declared ss = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasOps.getOps (P := P) e, declared n)
+    (hterm : StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) (.terminal ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  apply block_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext ss ρ ρ' σ' e _ hterm
+  intro n hn hop
+  have h_undecl := Block.funcDeclNames_disjoint_of_declared defined declared ss hdef n hn
+  have h_decl := he n hop
+  rw [h_decl] at h_undecl
+  cases h_undecl
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+theorem block_preserves_eval_via_defUseOk_exiting
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (defined : P.Ident → Bool) (declared : P.Ident → Bool)
+    (hdef : Block.defUseWellFormed defined declared ss = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasOps.getOps (P := P) e, declared n)
+    (hexit : StepStmtStar P EvalCmd extendFactory (.stmts ss ρ) (.exiting lbl ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  apply block_preserves_eval_on_disjoint_exiting P EvalCmd extendFactory hwf_ext ss ρ ρ' lbl
+    σ' e _ hexit
+  intro n hn hop
+  have h_undecl := Block.funcDeclNames_disjoint_of_declared defined declared ss hdef n hn
+  have h_decl := he n hop
+  rw [h_decl] at h_undecl
+  cases h_undecl
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Statement-level analog of `block_preserves_eval_via_defUseOk` (terminal). -/
+theorem stmt_preserves_eval_via_defUseOk
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (s : Stmt P CmdT) (ρ ρ' : Env P)
+    (defined : P.Ident → Bool) (declared : P.Ident → Bool)
+    (hdef : Stmt.defUseWellFormed defined declared s = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasOps.getOps (P := P) e, declared n)
+    (hterm : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.terminal ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext hterm σ' e
+    (by
+      intro n hn hop
+      have h_undecl := Stmt.funcDeclNames_disjoint_of_declared defined declared s hdef n
+        (by simpa [Config.funcDeclNames] using hn)
+      have h_decl := he n hop
+      rw [h_decl] at h_undecl
+      cases h_undecl)
+    (by simp [Config.factorySnapAgrees])
+  intro v
+  simpa [Config.getEnv] using h v
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Statement-level analog of `block_preserves_eval_via_defUseOk_exiting`. -/
+theorem stmt_preserves_eval_via_defUseOk_exiting
+    [DecidableEq P.Ident] [HasVarsImp P CmdT] [HasVarsPure P CmdT] [HasFvars P]
+    [HasInt P] [HasIntOps P] [HasOps P] [HasOpsImp P CmdT]
+    (hwf_ext : WFFactoryExtension P extendFactory)
+    (s : Stmt P CmdT) (ρ ρ' : Env P) (lbl : String)
+    (defined : P.Ident → Bool) (declared : P.Ident → Bool)
+    (hdef : Stmt.defUseWellFormed defined declared s = true)
+    (σ' : SemanticStore P) (e : P.Expr)
+    (he : ∀ n ∈ HasOps.getOps (P := P) e, declared n)
+    (hexit : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.exiting lbl ρ')) :
+    ∀ v, P.eval ρ.factory σ' e = some v ↔ P.eval ρ'.factory σ' e = some v := by
+  have h := star_preserves_eval_on_disjoint P EvalCmd extendFactory hwf_ext hexit σ' e
+    (by
+      intro n hn hop
+      have h_undecl := Stmt.funcDeclNames_disjoint_of_declared defined declared s hdef n
+        (by simpa [Config.funcDeclNames] using hn)
+      have h_decl := he n hop
+      rw [h_decl] at h_undecl
+      cases h_undecl)
+    (by simp [Config.factorySnapAgrees])
+  intro v
+  simpa [Config.getEnv] using h v
 
 end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
+variable (P : PureExpr) [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasInt P] [HasIntOps P] [HasOps P]
 variable (extendFactory : ExtendFactory P)
 
-omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -743,7 +1036,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmt (.block ..) _ | .stmt (.ite ..) _
   | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
     simp [isAtAssert]
-  | .stmt (.loop _ m inv _ _) _ =>
+  | .stmt (.loop _ _ inv _ _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
     intro hat
     exact hno.1 label expr hat rfl
@@ -758,7 +1051,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmts ((.exit ..) :: _) _
   | .stmts ((.funcDecl ..) :: _) _ | .stmts ((.typeDecl ..) :: _) _ =>
     simp [isAtAssert]
-  | .stmts ((.loop _ m inv _ _) :: _) _ =>
+  | .stmts ((.loop _ _ inv _ _) :: _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert,
       Stmt.noMatchingAssert] at hno
     intro hat
@@ -767,7 +1060,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] in
+omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [HasFvars P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -821,7 +1114,7 @@ private def step_preserves_noMatchingAssert
   | step_block_exit_match => trivial
   | step_block_exit_mismatch => trivial
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- The syntactic check implies that no reachable config from `st`
     satisfies `isAtAssert` for the given label and expression. -/
 theorem noMatchingAssert_implies_no_reachable_assert
@@ -845,7 +1138,7 @@ theorem noMatchingAssert_implies_no_reachable_assert
 
 /-! ## isAtAssert inversion lemmas -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a block reaches a config where isAtAssert holds,
     then the config must be `.block label inner` where `inner` is reachable
     from the block's body and satisfies `isAtAssert`. -/
@@ -875,7 +1168,7 @@ theorem block_isAtAssert_inner
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a seq reaches a config where isAtAssert holds,
     then either the inner config matches (first disjunct), or the inner
     completed and we're in the tail (second disjunct). -/
@@ -906,21 +1199,22 @@ theorem seq_isAtAssert_cases
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- For a single assert command, any config reachable from `.stmts [assert] ρ`
-    that satisfies `isAtAssert` has getStore = ρ.store. -/
+    that satisfies `isAtAssert` has getStore = ρ.store and its env's factory
+    equal to ρ.factory.  (Assert steps are no-ops on the store and factory.) -/
 theorem assert_tail_getStore
     (ρ : Env P) (l : String) (e : P.Expr) (md : MetaData P)
     (cfg : Config P (Cmd P)) (a : AssertId P)
     (hstar : StepStmtStar P (EvalCmd P) extendFactory
       (.stmts [Stmt.cmd (Cmd.assert l e md)] ρ) cfg)
     (hat : isAtAssert P cfg a) :
-    cfg.getStore = ρ.store := by
+    cfg.getStore = ρ.store ∧ cfg.getEnv.factory = ρ.factory := by
   cases hstar with
-  | refl => exact rfl
+  | refl => exact ⟨rfl, rfl⟩
   | step _ _ _ h1 hr1 => cases h1 with
     | step_stmts_cons => cases hr1 with
-      | refl => exact rfl
+      | refl => exact ⟨rfl, rfl⟩
       | step _ _ _ h2 hr2 =>
         cases h2 with
         | step_seq_inner hi =>
@@ -949,7 +1243,7 @@ evaluator `EvalCmd`, and an `IsAtAssert` predicate.  Language extensions
 `IsAtAssert` predicate together with a few simple hypotheses relating it
 to the loop / seq / block structure of configurations. -/
 
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Helper: when all asserts at a loop config pass (via `hv`), the
     loop-step's `hasInvFailure` boolean is forced to `false`. -/
 theorem loop_step_hasInvFailure_false
@@ -981,7 +1275,7 @@ theorem loop_step_hasInvFailure_false
     rw [he_ff] at htt
     exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
 
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Single-step: if hasFailure is false and all reachable asserts pass,
     then hasFailure stays false after one step.
 
@@ -1041,7 +1335,7 @@ theorem step_preserves_noFailure
         hv a (.block _ _ _ cfg) (block_inner_star P EvalCmd extendFactory _ _ _ _ _ hr) (h_IsAtAssert_block hat)) hnf
   | _ => intros; exact hnf
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem allAssertsValid_preserves_noFailure
     {ρ₀ ρ' : Env P}
     (st : Stmt P (Cmd P))
@@ -1098,7 +1392,7 @@ theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendFactory : ExtendFactory P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
+  [HasBool P] [HasBoolOps P] [HasOps P]:
   EvalStmtSmall P EvalCmd extendFactory ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
@@ -1129,7 +1423,7 @@ theorem EvalStmtsSmall_hasFailure_monotone
 theorem StepStmtStar_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendFactory : ExtendFactory P}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
+  [HasBool P] [HasBoolOps P] [HasOps P]
   {c c' : Config P CmdT}
   (hstar : StepStmtStar P EvalCmd extendFactory c c')
   (hf : c.getEnv.hasFailure = true) :
@@ -1142,7 +1436,7 @@ theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
   {extendFactory : ExtendFactory P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
+  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]:
   EvalStmtSmall P EvalCmd extendFactory ρ s ρ' →
   ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.factory = ρ.factory →
   ∃ ρ₂', EvalStmtSmall P EvalCmd extendFactory ρ₂ s ρ₂' ∧
@@ -1162,12 +1456,12 @@ theorem EvalStmtsSmall_hasFailure_irrel
   -- Reuse the simulation-based proof from StmtSemantics
   -- smallStep_hasFailure_irrel works on .stmt configs; we need .stmts
   -- Use the same simulation technique directly
-  suffices h_sim : ∀ (c₁ c₂ : Config P CmdT),
+  suffices h_gen : ∀ (c₁ c₂ : Config P CmdT),
       ConfigSE P c₁ c₂ →
       ∀ c₁', StepStmtStar P EvalCmd extendFactory c₁ c₁' →
       ∃ c₂', StepStmtStar P EvalCmd extendFactory c₂ c₂' ∧ ConfigSE P c₁' c₂' by
     have heq_init : ConfigSE P (.stmts ss ρ) (.stmts ss ρ₂) := ⟨rfl, Hstore.symm, Hfac.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := h_sim _ _ heq_init _ Heval
+    have ⟨c₂', hstar₂, heq₂⟩ := h_gen _ _ heq_init _ Heval
     match c₂', heq₂ with
     | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
   intro c₁ c₂ heq c₁' hstar
@@ -1182,11 +1476,13 @@ end -- section
 
 section AssertSetProps
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasInt P] [HasIntOps P] [HasOps P]
 variable {extendFactory : ExtendFactory P}
 
 /-! ### Assert command properties (statement-level) -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_assert_store_cst :
   EvalStmtSmall P (EvalCmd P) extendFactory ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
   intro Heval
@@ -1198,6 +1494,7 @@ theorem eval_stmt_assert_store_cst :
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmts_assert_store_cst :
   EvalStmtsSmall P (EvalCmd P) extendFactory ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
   intro Heval
@@ -1214,7 +1511,7 @@ theorem eval_stmts_assert_store_cst :
         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
   exact eval_stmt_assert_store_cst hstmt
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_assert_eq_of_pure_expr_eq :
   WellFormedSemanticEvalBool (P := P) ρ.factory →
   (EvalStmtSmall P (EvalCmd P) extendFactory ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
@@ -1238,6 +1535,7 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq :
 
 /-! ### Assert elimination -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmts_assert_elim :
   WellFormedSemanticEvalBool (P := P) ρ.factory →
   EvalStmtsSmall P (EvalCmd P) extendFactory ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
@@ -1273,7 +1571,7 @@ theorem eval_stmts_assert_elim :
         have hf1 : (Env.mk ρ.store ρ.factory (ρ.hasFailure || true)).hasFailure = true := by simp
         exact absurd (EvalStmtsSmall_hasFailure_monotone htail hf1) (by simp [Hf])
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem assert_elim :
   WellFormedSemanticEvalBool (P := P) ρ.factory →
   EvalStmtsSmall P (EvalCmd P) extendFactory ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
@@ -1322,6 +1620,7 @@ theorem assert_elim :
 
 /-! ### Set command commutation -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident]:
@@ -1347,8 +1646,9 @@ theorem eval_stmt_set_comm
     simp
     exact eval_cmd_set_comm Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
+omit [HasInt P] [HasIntOps P] in
 theorem eval_stmts_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
   [DecidableEq P.Ident] :
   WellFormedSemanticEvalExprCongr (P := P) ρ.factory →
   WellFormedStore ρ.store ρ.factory →
@@ -1392,10 +1692,10 @@ and the command-evaluation parameter. -/
 section ReflTransTHelpers
 
 variable {P : PureExpr} {CmdT : Type}
-  [HasBool P] [HasBoolOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
   {EvalCmd : EvalCmdParam P CmdT} {extendFactory : ExtendFactory P}
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a `.seq` execution reaching terminal in `ReflTransT`: the inner
     terminates first, then the tail stmts run to terminal.  Length bound
     is strict so callers can recurse on `hstar.len`. -/
@@ -1415,7 +1715,7 @@ theorem seqT_reaches_terminal
     match hrest with
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a `.stmts (s :: rest)` execution reaching terminal in `ReflTransT`. -/
 theorem stmtsT_cons_terminal
     {s : Stmt P CmdT} {rest : List (Stmt P CmdT)} {ρ₀ ρ' : Env P}
@@ -1428,7 +1728,7 @@ theorem stmtsT_cons_terminal
     have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal hrest
     exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching terminal when the inner config cannot
     exit: the inner reaches terminal with a strictly shorter derivation. -/
 theorem blockT_reaches_terminal_noExit
@@ -1459,7 +1759,7 @@ theorem blockT_reaches_terminal_noExit
     match hrest with
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts (ss₁ ++ [s])` reaching terminal into: a full `.stmts ss₁`
     run to some intermediate `ρ₁` followed by a strictly shorter `s`-run.
     The escape-free hypothesis `hcov` rules out the exiting case. -/
@@ -1489,7 +1789,7 @@ theorem stmtsT_append_terminal
 
 /-! ## Failing-state decomposition helpers -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose a `.seq` execution reaching a failing config in `ReflTransT`:
     either failure happens inside `inner`, or `inner` terminates and
     failure happens in the tail. -/
@@ -1519,7 +1819,7 @@ theorem seqT_canfail
     | .refl _ => exact .inl ⟨_, .refl _, hf, by simp [ReflTransT.len]⟩
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- An empty-statement-list run that reaches a failing config must already
     have been failing. -/
 theorem stmts_nil_canfail_env
@@ -1535,7 +1835,7 @@ theorem stmts_nil_canfail_env
       | refl => exact hf
       | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts [s] ρ₀` reaching a failing config: extract a failing
     trace from `.stmt s ρ₀`, with a length bound `≤`. -/
 theorem stmtsT_singleton_canfail
@@ -1561,7 +1861,7 @@ theorem stmtsT_singleton_canfail
       refine ⟨_, h1, hf_x, ?_⟩
       simp [ReflTransT.len] at hlen ⊢; omega
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts (ss₁ ++ [s])` reaching a failing config: either
     failure happens before reaching `s`, or `ss₁` terminates at `ρ₁` and
     the failure happens in `s`. -/
@@ -1613,7 +1913,7 @@ theorem stmtsT_append_canfail
           exact .inr ⟨ρ₂, ReflTrans_Transitive _ _ _ _ hpre hterm_rest,
             cfg₂, hs, hf₂, by simp [ReflTransT.len]; omega⟩
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Unwrap a failing `.block l σ_parent f_parent inner` execution to a failing run on `inner`. -/
 theorem block_canfail_to_inner
     {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
@@ -1644,7 +1944,7 @@ theorem block_canfail_to_inner
       | .refl _ => refine ⟨_, ?_, .refl _⟩; simp [Config.getEnv] at hf ⊢; exact hf
       | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Type-level variant of `block_canfail_to_inner` preserving length bounds
     on the inner derivation.  Required when the inner derivation must
     decrease for a recursive call. -/
@@ -1683,7 +1983,7 @@ theorem blockT_canfail_to_inner
   termination_by hstar.len
   decreasing_by all_goals (simp_wf; try simp [ReflTransT.len]; try omega)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Prop-level seq-canfail decomposition (without length bounds). -/
 theorem seq_canfail_prop
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
@@ -1707,11 +2007,11 @@ section NoFuncDeclFactory
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendFactory : ExtendFactory P)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem block_noFuncDecl_preserves_factory
     (body : List (Stmt P CmdT)) (ρ₀ ρ' : Env P)
     (hnofd : Block.noFuncDecl body = true)
@@ -1733,48 +2033,11 @@ theorem block_noFuncDecl_preserves_factory
       rw [ih hnofd_mid, heq]
     intro c₁' c₂' hstep' hnofd_c'
     induction hstep' with
-    | step_cmd => exact ⟨rfl, trivial⟩
-    | step_block =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c', rfl⟩
-    | step_ite_true =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.1, rfl⟩
-    | step_ite_false =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.2, rfl⟩
-    | step_ite_nondet_true =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.1, rfl⟩
-    | step_ite_nondet_false =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd_c'
-      exact ⟨rfl, hnofd_c'.2, rfl⟩
-    | step_loop_enter =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
-      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-      · exact hnofd_c'
-      · rfl
-      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
-    | step_loop_exit => exact ⟨rfl, trivial⟩
-    | step_loop_nondet_enter =>
-      simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd_c'
-      refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-      · exact hnofd_c'
-      · rfl
-      · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd_c']
-    | step_loop_nondet_exit => exact ⟨rfl, trivial⟩
-    | step_exit => exact ⟨rfl, trivial⟩
+    -- The only rule that touches the factory is `step_funcDecl`, which
+    -- contradicts `noFuncDecl`.
     | step_funcDecl =>
       exact absurd hnofd_c' (by simp [Config.noFuncDecl, Stmt.noFuncDecl])
-    | step_typeDecl => exact ⟨rfl, trivial⟩
-    | step_stmts_nil => exact ⟨rfl, trivial⟩
-    | step_stmts_cons =>
-      simp only [Config.noFuncDecl, Block.noFuncDecl, Bool.and_eq_true] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c'.1, hnofd_c'.2⟩
-    | step_seq_done =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨rfl, hnofd_c'.2⟩
-    | step_seq_exit => exact ⟨rfl, trivial⟩
+    -- Recursive rules on inner configs: use the IH plus book-keeping.
     | step_seq_inner _ ih_inner =>
       simp only [Config.noFuncDecl] at hnofd_c' ⊢
       have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
@@ -1783,15 +2046,65 @@ theorem block_noFuncDecl_preserves_factory
       simp only [Config.noFuncDecl] at hnofd_c' ⊢
       have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
       exact ⟨hfac, hnofd', hfac ▸ hnofd_c'.2⟩
-    | step_block_done =>
+    -- Block-exit rules: restore `f_parent`; the factory of the exiting env
+    -- is the parent's, which the incoming `noFuncDecl` carries.
+    | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
       simp only [Config.noFuncDecl] at hnofd_c' ⊢
       exact ⟨hnofd_c'.2, trivial⟩
-    | step_block_exit_match =>
+    -- All other rules leave the factory unchanged; the residual
+    -- `noFuncDecl` follows by unfolding.
+    | _ =>
+      refine ⟨?_, ?_⟩ <;>
+      simp_all [Config.noFuncDecl, Stmt.noFuncDecl, Block.noFuncDecl, Config.getEnv]
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Statement-level analog of `block_noFuncDecl_preserves_factory`: a
+    `.stmt s → .terminal ρ'` chain over a `noFuncDecl` statement preserves the
+    factory. -/
+theorem stmt_noFuncDecl_preserves_factory
+    (s : Stmt P CmdT) (ρ ρ' : Env P)
+    (hnofd : Stmt.noFuncDecl s = true)
+    (hstar : StepStmtStar P EvalCmd extendFactory (.stmt s ρ) (.terminal ρ')) :
+    ρ'.factory = ρ.factory := by
+  suffices h_gen : ∀ (c₁ c₂ : Config P CmdT),
+      Config.noFuncDecl c₁ →
+      StepStmtStar P EvalCmd extendFactory c₁ c₂ →
+      c₂.getEnv.factory = c₁.getEnv.factory by
+    exact h_gen _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
+  intro c₁ c₂ hnofd_c hstar_c
+  induction hstar_c with
+  | refl => rfl
+  | step _ mid _ hstep _ ih =>
+    suffices h_step : ∀ (c₁ c₂ : Config P CmdT),
+        StepStmt P EvalCmd extendFactory c₁ c₂ → Config.noFuncDecl c₁ →
+        c₂.getEnv.factory = c₁.getEnv.factory ∧ Config.noFuncDecl c₂ by
+      have ⟨heq, hnofd_mid⟩ := h_step _ _ hstep hnofd_c
+      rw [ih hnofd_mid, heq]
+    intro c₁' c₂' hstep' hnofd_c'
+    induction hstep' with
+    -- The only rule that touches the factory is `step_funcDecl`, which
+    -- contradicts `noFuncDecl`.
+    | step_funcDecl =>
+      exact absurd hnofd_c' (by simp [Config.noFuncDecl, Stmt.noFuncDecl])
+    -- Recursive rules on inner configs: use the IH plus book-keeping.
+    | step_seq_inner _ ih_inner =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
+      exact ⟨hfac, hnofd', hnofd_c'.2⟩
+    | step_block_body _ ih_inner =>
+      simp only [Config.noFuncDecl] at hnofd_c' ⊢
+      have ⟨hfac, hnofd'⟩ := ih_inner hnofd_c'.1
+      exact ⟨hfac, hnofd', hfac ▸ hnofd_c'.2⟩
+    -- Block-exit rules: restore `f_parent`; the factory of the exiting env
+    -- is the parent's, which the incoming `noFuncDecl` carries.
+    | step_block_done | step_block_exit_match | step_block_exit_mismatch =>
       simp only [Config.noFuncDecl] at hnofd_c' ⊢
       exact ⟨hnofd_c'.2, trivial⟩
-    | step_block_exit_mismatch =>
-      simp only [Config.noFuncDecl] at hnofd_c' ⊢
-      exact ⟨hnofd_c'.2, trivial⟩
+    -- All other rules leave the factory unchanged; the residual
+    -- `noFuncDecl` follows by unfolding.
+    | _ =>
+      refine ⟨?_, ?_⟩ <;>
+      simp_all [Config.noFuncDecl, Stmt.noFuncDecl, Block.noFuncDecl, Config.getEnv]
 
 end NoFuncDeclFactory
 

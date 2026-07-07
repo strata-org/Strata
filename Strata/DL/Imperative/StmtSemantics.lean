@@ -50,6 +50,37 @@ inductive FactoryExtensionOf {P : PureExpr} (extendFactory : ExtendFactory P) :
       FactoryExtensionOf extendFactory f_parent f →
       FactoryExtensionOf extendFactory f_parent (extendFactory f σ decl)
 
+/-- A well-formed factory extension preserves all `WellFormedSemanticEval*`
+    predicates through funcDecl steps.  This is the only step that modifies the
+    factory (`step_funcDecl`); all other small-step rules leave it unchanged. -/
+structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
+    (extendFactory : ExtendFactory P) : Prop where
+  /-- The whole `WellFormedSemanticEval` bundle is preserved through
+      `funcDecl` extensions. -/
+  preserves_wfEval : ∀ f σ decl, WellFormedSemanticEval (P := P) f →
+    WellFormedSemanticEval (P := P) (extendFactory f σ decl)
+  /-- If the base factory `f` already evaluated expression `e` to some value `v`,
+    `extendFactory` shouldn't change the returned value. -/
+  preserves_eval_some_on_disjoint_op : ∀ f σ decl σ' e v,
+    decl.name ∉ HasOps.getOps (P := P) e →
+    P.eval f σ' e = some v →
+    P.eval (extendFactory f σ decl) σ' e = some v
+  /-- The backward (reverse) direction of `preserves_eval_some_on_disjoint_op`:
+      if the extended factory reduces `e` to `some v`, and `e` didn't contain
+      any operation using `decl`, then the original factory already did `e` .
+      This is supposed to hold by case analysis. Let's assume that `decl` is
+      some function `f`.
+      (1) If `e` directly used `.op f`: contradicts with `decl.name ∉ HasOps.getOps`
+      (2) If `e` didn't use `.op f`, but say use `.op g` and the definition of `g`
+          transitively uses `f`: this is impossible because definition of `g`
+          couldn't have seen `f` before `f` is declared.
+  -/
+  preserves_eval_some_on_disjoint_op_back : ∀ f σ decl σ' e v,
+    decl.name ∉ HasOps.getOps (P := P) e →
+    P.eval (extendFactory f σ decl) σ' e = some v →
+    P.eval f σ' e = some v
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -202,7 +233,7 @@ def Config.noFuncDecl : Config P CmdT → Prop
 
 section
 
-variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P]
+variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /--
 `StepStmt` defines a single execution step from one configuration to another.
@@ -437,7 +468,7 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
   (extendFactory : ExtendFactory P)
 
@@ -466,11 +497,44 @@ def IsTerminal
     (c : Config P CmdT) : Prop :=
   ∀ c', ¬ StepStmt P EvalCmd extendFactory c c'
 
+/-! ## Config-level WF predicates -/
+
+variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+
+/-- Config-level `WellFormedSemanticEval` invariant: the whole bundle holds on
+    the current factory AND on every captured `f_parent` snapshot stored inside
+    enclosing blocks (recursively).  Required because `step_block_done`
+    restores the factory to `f_parent`, so we need to know `f_parent` itself
+    was WF. -/
+def Config.wfEval : Config P CmdT → Prop
+  | .stmt _ ρ => WellFormedSemanticEval (P := P) ρ.factory
+  | .stmts _ ρ => WellFormedSemanticEval (P := P) ρ.factory
+  | .terminal ρ => WellFormedSemanticEval (P := P) ρ.factory
+  | .exiting _ ρ => WellFormedSemanticEval (P := P) ρ.factory
+  | .block _ _ f_parent inner =>
+    WellFormedSemanticEval (P := P) f_parent ∧ Config.wfEval inner
+  | .seq inner _ => Config.wfEval inner
+
+/-! ## Factory preservation on disjoint expressions -/
+
+/-- All captured `f_parent` snapshots in the config agree **bidirectionally**
+    with the inner factory on `(σ', e)` in `some`-monotone form. -/
+def Config.factorySnapAgrees (σ' : SemanticStore P) (e : P.Expr) :
+    Config P CmdT → Prop
+  | .stmt _ _ => True
+  | .stmts _ _ => True
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ _ f_p inner =>
+    (∀ v, P.eval f_p σ' e = some v ↔ P.eval inner.getEnv.factory σ' e = some v) ∧
+      Config.factorySnapAgrees σ' e inner
+  | .seq inner _ => Config.factorySnapAgrees σ' e inner
+
 end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 variable (extendFactory : ExtendFactory P)
 
 /-! ## Assertion Identity -/
