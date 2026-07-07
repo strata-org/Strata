@@ -269,9 +269,75 @@ Constrained types propagating facts through the type system.
 
 TODO, add example using polymorphic types, like a wrapping Container<T> that takes a `nat` and we still have the `nat` fact on the other side.
 
-## Implicit conversions
+## Type inference
+
+To be designed.. but here is some subject to change content.
+
+Laurel can statically infer the types of variables, which, when the inferred types where otherwise not available in the source program, can enable emitting code that can be verified more efficiently.
+
+Here's an example related to nullable reference types:
+
+Input program:
+```
+var foo := new Foo;
+foo.x := 1;
+
+var bar := foo;
+bar := null;
+bar.x := 2
+```
+
+Without type inference, we can not judge whether the variable `foo` should have type `Foo` or `Nullable<Foo>`, so we have to pick defensively:
+```
+datatype Nullable<T> = from_NotNull(as_notNull: T) | from_Null
+
+var foo: Nullable<Foo> := from_NotNull(new Foo);
+as_notNull(foo).x := 1;
+
+var bar: Nullable<Foo> := foo;
+bar := null;
+as_notNull(bar).x := 2
+```
+
+With type inference, we can infer that `foo` is never nullable:
+```
+var foo: Foo := new Foo;
+foo.x := 1;
+
+var bar: Nullable<Foo> := from_NotNull(foo);
+bar := null;
+as_notNull(bar).x := 2
+```
+
+Note the coercion `from_NotNull` that was inserted in the assignment to `bar`. Laurel can be given a list of coercions that can be inserted automatically. Laurel can also be given a list of type coercions, which it can use to change the type annotations of variables, from for example `T` to `Nullable<T>`.
+
+## Flow based types
+
+Flow based types allow the type of a variable to change throughout the control-flow of the program, which enables having more precise types which improves verification performance.
+
+Source program:
+```
+var foo := new Foo;
+foo.x := 1;
+foo := null;
+foo.x := 2;
+```
+
+Inferred program:
+```
+var foo := new Foo;
+foo.x := 1;
+var foo_2: Nullabe<Foo> := from_NotNull(foo);
+foo_2 := null;
+as_notNull(foo_2).x := 2;
+```
+
+## Inference of composite types
 
 To be designed..
+
+Useful for dynamic languages. Infers composites types based on fields assigned to values.
+Composite types perform better than maps because reading from them incurs no domain check.
 
 # Verification without side-effects
 
