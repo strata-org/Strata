@@ -250,13 +250,14 @@ inductive InitVars : SemanticStore P → List P.Ident → SemanticStore P → Pr
     InitVars σ' xs σ'' →
     InitVars σ (x :: xs) σ''
 
-inductive HavocVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
+inductive HavocVars {P : PureExpr} [HasVal P] : P.Factory → SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | update_none :
-    HavocVars σ [] σ
+    HavocVars f σ [] σ
   | update_some :
     UpdateState P σ x v σ' →
-    HavocVars σ' xs σ'' →
-    HavocVars σ (x :: xs) σ''
+    HasVal.value f v →
+    HavocVars f σ' xs σ'' →
+    HavocVars f σ (x :: xs) σ''
 
 inductive TouchVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | none :
@@ -304,9 +305,9 @@ def updatedStates
 -- where this condition will be asserted at procedures utilizing those two-state functions
 -/
 def WellFormedCoreEvalTwoState (f : Expression.Factory) (σ₀ σ : CoreStore) : Prop :=
-      (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
+      (∃ vs vs' σ₁, HavocVars f σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
-        (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
+        (HavocVars f σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
         ∀ v,
           -- "old g" in the post-state holds the pre-state value of g
           (v ∈ vs →
@@ -558,7 +559,7 @@ inductive EvalCommandContract : (String → Option Procedure)  →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasFvars.getFvars) σAO pre ∧
       Expression.eval fac σAO pre = .some HasBool.tt) →
-    HavocVars σAO (ListMap.keys p.header.outputs) σO →
+    HavocVars fac σAO (ListMap.keys p.header.outputs) σO →
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasFvars.getFvars) σAO post ∧
       Expression.eval fac σO post = .some HasBool.tt) →

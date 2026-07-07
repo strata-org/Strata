@@ -269,6 +269,7 @@ private theorem PrefixStepsOK_nondet_init_cons
     (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (x : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
+    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_rest : PrefixStepsOK π φ rest ρ)
     (h_some : ((prefixInitEnv rest ρ).store x).isSome) :
@@ -281,9 +282,11 @@ private theorem PrefixStepsOK_nondet_init_cons
     have h_some' := h_some
     rw [Option.isSome_iff_exists] at h_some'
     obtain ⟨v, hv⟩ := h_some'
+    have h_wfStore' := prefixInitEnv_store_wf rest ρ h_wfStore
     exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y x rfl hne).symm))
+      (h_wfStore' x v hv)
       h_wfVar)
 
 /-- PrefixStepsOK for a list of nondet init statements from a map. -/
@@ -291,6 +294,7 @@ private theorem PrefixStepsOK_nondet_init_map
     (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory)
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
+    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
     (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_defined : ∀ id ∈ entries.map Prod.fst,
       (ρ.store id).isSome)
@@ -304,6 +308,7 @@ private theorem PrefixStepsOK_nondet_init_map
     simp only [List.map] at h_defined h_nodup ⊢
     rw [List.nodup_cons] at h_nodup
     apply PrefixStepsOK_nondet_init_cons π φ id (Lambda.LTy.forAll [] ty)
+    · exact h_wfStore
     · exact h_wfVar
     · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi)) h_nodup.2
     · -- Need: ((prefixInitEnv (rest.map ...) ρ).store id).isSome
@@ -599,10 +604,13 @@ theorem procToVerifyStmt_structure
       have h_wfVar_old : WellFormedSemanticEvalVar (P := Expression)
           (prefixInitEnv oldInoutInits ρ₀).factory := by
         rw [prefixInitEnv_factory]; exact h_wf.wfVar
+      have h_wfStore_old : Imperative.WellFormedStore (prefixInitEnv oldInoutInits ρ₀).store
+          (prefixInitEnv oldInoutInits ρ₀).factory := by
+        rw [prefixInitEnv_factory]; exact prefixInitEnv_store_wf oldInoutInits ρ₀ h_wf.storeValues
       rw [PrefixStepsOK_append]
       constructor
       · -- outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_old
+        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfStore_old h_wfVar_old
         · intro id hid
           rw [prefixInitEnv_store_not_init]
           · rw [← ListMap.keys_eq_map_fst] at hid
@@ -619,7 +627,12 @@ theorem procToVerifyStmt_structure
         have h_wfVar_out' : WellFormedSemanticEvalVar (P := Expression)
             (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
           rw [prefixInitEnv_factory, prefixInitEnv_factory]; exact h_wf.wfVar
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_out'
+        have h_wfStore_out' : Imperative.WellFormedStore
+            (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).store
+            (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).factory := by
+          rw [prefixInitEnv_factory]
+          exact prefixInitEnv_store_wf outputOnlyInits (prefixInitEnv oldInoutInits ρ₀) h_wfStore_old
+        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfStore_out' h_wfVar_out'
         · intro id hid
           rw [prefixInitEnv_store_not_init]
           · rw [prefixInitEnv_store_not_init]

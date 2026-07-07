@@ -162,9 +162,12 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
     ---
     EvalCmd f σ (.init x _ (.det e) _) σ' false
 
-  /-- Initialize `x` with an unconstrained value (havoc semantics). -/
+  /-- Initialize `x` with an unconstrained value (havoc semantics).  The
+  havoc'd value `v` is still required to be a value, so a nondet write
+  preserves store well-formedness. -/
   | eval_init_unconstrained :
     InitState P σ x v σ' →
+    HasVal.value f v →
     WellFormedSemanticEvalVar (P := P) f →
     ---
     EvalCmd f σ (.init x _ .nondet _) σ' false
@@ -177,9 +180,12 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
     ----
     EvalCmd f σ (.set x (.det e) _) σ' false
 
-  /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
+  /-- Assign `x` an arbitrary value `v` according to `UpdateState`.  The
+  havoc'd value `v` is still required to be a value, so a nondet write
+  preserves store well-formedness. -/
   | eval_set_nondet :
     UpdateState P σ x v σ' →
+    HasVal.value f v →
     WellFormedSemanticEvalVar (P := P) f →
     ----
     EvalCmd f σ (.set x .nondet _) σ' false
