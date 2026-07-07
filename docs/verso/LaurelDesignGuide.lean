@@ -41,7 +41,7 @@ Goals:
   1. property based testing
   2. data-flow analysis
   3. symbolic execution (aka verification), both bounded and unbounded
-2. Reduce code duplication in the analysis of popular languages by being a target for compilation from those languages, and including features common to them. Note that we expect source languages to reduce their existing compilers when possible, so language features that can be compiled away don't need to be considered.
+2. Reduce code duplication in the analysis of popular languages by being a target for compilation from those languages, and including features common to them. Note that we expect source languages to reuse their existing compilers when possible, so language features that can be compiled away don't need to be considered.
 3. Have a great user experience
 4. Enable modular verification
 5. Minimize the amount of user code needed to enable verification.
@@ -207,6 +207,30 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
    * ✓
    * —
    * ~
+ *
+   * Reflection / runtime metaprogramming (dynamic field/method or prototype mutation)
+   * ✗
+   * ✓
+   * ✓
+   * ✓
+ *
+   * `eval` / dynamic code loading
+   * ✗
+   * ~
+   * ✓
+   * ✓
+ *
+   * Shared-memory concurrency (threads, locks, memory model)
+   * WIP
+   * ✓
+   * ~
+   * ✓
+ *
+   * Garbage-collection observability (finalizers, weak references)
+   * ✗
+   * ✓
+   * ✓
+   * ✓
 :::
 
 Notes on the partial (~) entries:
@@ -221,6 +245,13 @@ Notes on the partial (~) entries:
 - *Assignments in expression positions* — Laurel allows assignments (and other imperative constructs) to appear where an expression is expected, and lifts them out into preceding statements. Java and JavaScript treat assignment as an expression directly. In Python assignments are statements; only the walrus operator `:=` provides a restricted assignment expression.
 - *Algebraic datatypes / pattern matching* — Java (sealed types + `switch` patterns) and Python (`match`) support a subset; JavaScript has none.
 - *Exceptions* — Java has checked exceptions; JavaScript and Python have exceptions, but unchecked.
+
+Notes on the not-planned (✗) entries. These are features that survive the source language's own compilation (they are not mere syntactic sugar) yet Laurel deliberately does not model, because they cannot be lowered into static Laurel constructs without either embedding a runtime interpreter or losing soundness, and they are fundamentally at odds with modular static verification.
+- *Reflection / runtime metaprogramming* — all three source languages allow a program to inspect and rewrite its own structure at runtime: Java through `java.lang.reflect` and dynamic proxies, Python through `getattr`/`setattr`, `__dict__` mutation, metaclasses, and monkey-patching, and JavaScript through `Proxy`/`Reflect` and prototype mutation (`Object.setPrototypeOf`). Laurel's static and flow-based typing, and its inference of composite types from a fixed set of assigned fields, assume the set of fields and methods of a type is known statically, so arbitrary self-modification is out of scope.
+- *`eval` / dynamic code loading* — code that does not exist until runtime cannot be verified ahead of time. Python (`eval`/`exec`) and JavaScript (`eval`) have it directly; Java exposes it more indirectly through scripting and dynamic class loading (~).
+- *Garbage-collection observability* — finalizers and weak references (Java `finalize`/`WeakReference`, Python `__del__`/`weakref`, JavaScript `WeakRef`/`FinalizationRegistry`) expose the nondeterministic timing of collection. Laurel models the heap abstractly and does not expose when, or whether, an object is collected.
+
+Note on the *shared-memory concurrency* entry (WIP): Java has real shared-memory threads governed by the Java Memory Model (`synchronized`, `volatile`, happens-before); Python has threads under the GIL (✓); JavaScript is single-threaded and only achieves parallelism through workers that communicate by message passing (~). Laurel is currently sequential, and reasoning under a relaxed memory model is a large, separable piece of work, so this is planned rather than available.
 
 # Modular Verification
 To achieve goal (4), Laurel has the following features related to modular verification.
@@ -237,7 +268,7 @@ Since modifies clauses are a type of postcondition, they are also only allowed o
 To achieve goal (5), minimize the amount of user code needed to enable verification, Laurel has the following features:
 
 ## Transparent procedures
-Laurel procedures are transparent by default, meaning that a call can use the body of the callee to prove facts about the result of the call. Laurel will allow any procedure to be transparent, although currently there are some restrictions. In particular, Laurel will allow procedures that contains loops or that modify the heap, to be transparent as well.
+Laurel procedures are transparent by default, meaning that a call can use the body of the callee to prove facts about the result of the call. Laurel will allow any procedure to be transparent, although currently there are some restrictions. In particular, Laurel will allow procedures that contain loops or that modify the heap, to be transparent as well.
 
 By allowing any procedure to be transparent, Laurel prevents users from having to repeat the body of a procedure in a postcondition. Here's an example that shows an opaque procedure that would have been easier to define as being transparent, without any loss of readability:
 
@@ -264,11 +295,16 @@ TODO, fill in
 # Automated proof search
 Goal 6 was enabling the finding of proofs through automated search.
 
-Loop invariants. These enable unbounded symbolic execution. TODO, say more.
+## Loop invariants
+These enable unbounded symbolic execution. TODO, say more.
 
+## Reads clauses
 Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
 
-Frozen types (To be designed). A reads clause specifies that a procedure always returns the same value, if the reads reference have the same values and if the explicit input arguments, which excludes the heap, are the same. A procedure that returns a newly created object, which has a reference counter that depends on the counter of the input heap, can thus never satisfy a reads clause. For this purpose Laurel allows erasing the counter from a reference value. A Laurel `Frozen` type takes a regular reference type, and produces a type that is the same except that it does not support reference equality or mutation of its fields. Record types are composite types that are frozen by default.
+## Frozen types
+Frozen types (To be designed). A reads clause specifies that a procedure always returns the same value, if the reads references have the same values and if the explicit input arguments, which excludes the heap, are the same. A procedure that returns a newly created object, which has a reference counter that depends on the counter of the input heap, can thus never satisfy a reads clause. For this purpose Laurel allows erasing the counter from a reference value. A Laurel `Frozen` type takes a regular reference type, and produces a type that is the same except that it does not support reference equality or mutation of its fields. Record types are composite types that are frozen by default.
+
+TODO, add example with a `record Tuple..` and a `composite MutableTuple` and a `Frozen<MutableTuple>` that are all three created in and returned from different procedures that each have an empty reads clause. Returning the `MutableTuple` fails to prove the reads clause.
 
 # Use complete algorithms to reduce workload
 To achieve goal 7, to reduce the verification work through the use of complete algorithms, Laurel has the following features.
@@ -336,7 +372,7 @@ Inferred program:
 ```
 var foo := new Foo;
 foo.x := 1;
-var foo_2: Nullabe<Foo> := from_NotNull(foo);
+var foo_2: Nullable<Foo> := from_NotNull(foo);
 foo_2 := null;
 as_notNull(foo_2).x := 2;
 ```
@@ -352,9 +388,11 @@ Composite types perform better than maps because reading from them incurs no dom
 
 To support goal 8, for verification code not to affect the outcome of executing the program, Laurel has rules for code that exists only for verification purposes.
 
-TODO, Rules for contracts:
+Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
+
+TODO, add examples
 
 # Great user experience
 
