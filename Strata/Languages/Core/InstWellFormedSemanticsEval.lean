@@ -82,6 +82,14 @@ theorem coreEvaluator_WellFormedSemanticEvalExprCongr (f : Expression.Factory)
     (fun x v hx => Lambda.isCanonicalValue_getVars_nil f v (h_wfs' x v hx))
     e hagree
 
+/-- The Core evaluator is monotone under store extension: a successful `evalFully`
+    is preserved when the store retains every binding it held. This is the
+    `WellFormedSemanticEvalMono` property for Core, discharged by the concrete
+    `Lambda.evalFully_mono`. -/
+theorem coreEvaluator_WellFormedSemanticEvalMono (f : Expression.Factory) :
+    WellFormedSemanticEvalMono (P := Expression) f :=
+  fun e v σ σ' hext heval => Lambda.evalFully_mono f σ σ' hext e v heval
+
 open Lambda in
 /-- Characterization of `eval (n+1) (not e)` as a `.value true` result:  it is
     `.value true` iff `eval n e` was itself `.value true` on a `boolConst β`.
@@ -541,6 +549,7 @@ def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
   var := coreEvaluator_WellFormedSemanticEvalVar f
   exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF
   int := coreEvaluator_WellFormedSemanticEvalInt f hILt
+  mono := coreEvaluator_WellFormedSemanticEvalMono f
 
 /-- Specialization of `coreEvaluator_WellFormedSemanticEval` to the concrete
     `Core.Factory`, which is unconditionally well-formed and resolves

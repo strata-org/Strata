@@ -91,6 +91,15 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
     P.eval f σ (HasIntOps.lt x y) = some HasBool.tt ∨
     P.eval f σ (HasIntOps.lt x y) = some HasBool.ff
 
+/-- The evaluator is monotone under store extension: if `σ'` retains every
+    binding of `σ`, a successful evaluation at `σ` succeeds identically at `σ'`.
+    A successful result depends only on the bindings the evaluation reads, so
+    growing the store preserves it. -/
+@[expose] def WellFormedSemanticEvalMono {P : PureExpr}
+    (f : P.Factory) : Prop :=
+    ∀ e v σ σ', (∀ x w, σ x = some w → σ' x = some w) →
+      P.eval f σ e = some v → P.eval f σ' e = some v
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
 structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
@@ -106,6 +115,8 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
   exprCongr : WellFormedSemanticEvalExprCongr f
   /-- The evaluator reduces integer comparisons to booleans. -/
   int : WellFormedSemanticEvalInt f
+  /-- The evaluator is monotone under store extension. -/
+  mono : WellFormedSemanticEvalMono f
 
 
 /-- ### Predicates on `SemanticStore`s -/

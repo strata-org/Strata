@@ -1573,4 +1573,403 @@ theorem evalFully_of_value_true (F : @Factory Tbase) (env : Env Tbase) (e : LExp
 
 end evalFully_of_value_true
 
+/-! ## Part IV: Store-extension frame for `.value true` (`eval_frame`)
+
+A fully-reduced (`.value true`) evaluation result is preserved when the
+environment is extended pointwise (`EnvExtends`).  This is the store-extension
+monotonicity the Imperative pipeline needs of the evaluator; it culminates in
+`evalFully_mono`.
+
+Contrast with `eval_env_congr` (Part I): that lemma demands the two environments
+*agree* on every free variable of `e` (`∀ x ∈ getVars e, env₁ x = env₂ x`).  A
+`.value true` evaluation, however, need not read every syntactic free variable —
+e.g. an untaken `ite` branch's variables are in `getVars e` yet never consulted,
+so they may be undefined in `env` and defined in `env'`.  Such an `(env, env')`
+pair satisfies `EnvExtends` but *not* `eval_env_congr`'s agreement premise, so
+congruence cannot discharge the pipeline's obligation.  The frame lemma relies
+instead on the weaker `EnvExtends`: the `.value true` flag certifies every
+variable the evaluation actually read resolved in `env`, and extension leaves
+those bindings unchanged, so the result is preserved.
+-/
+
+section eval_frame
+
+/-- Frame for `evalIte`: transport a `.value true` result from `env` to `env'`
+at the same fuel, given the sub-evaluation transport `ih_eval`. -/
+private theorem evalIte_frame
+    (n' : Nat) (F : @Factory Tbase) (env env' : Env Tbase)
+    (m : Tbase.Metadata) (c t f v : LExpr Tbase.mono)
+    (ih_eval : ∀ e' v', LExpr.eval n' F env e' = (v', .value true) →
+        LExpr.eval n' F env' e' = (v', .value true))
+    (h : LExpr.evalIte n' F env m c t f = (v, .value true)) :
+    LExpr.evalIte n' F env' m c t f = (v, .value true) := by
+  simp only [LExpr.evalIte] at h ⊢
+  have closer : ∀ (br : LExpr Tbase.mono) (mc : Tbase.Metadata)
+      (bcond : Bool)
+      (_h_c_eq : (LExpr.eval n' F env c).fst = LExpr.const mc (LConst.boolConst bcond))
+      (h : ((LExpr.eval n' F env br).fst,
+             (LExpr.eval n' F env br).snd.combineValueFlag
+               (LExpr.eval n' F env c).snd.isValueTrue) = (v, .value true)),
+      LExpr.eval n' F env' c = (LExpr.const mc (LConst.boolConst bcond), .value true) ∧
+      LExpr.eval n' F env' br = (v, .value true) := by
+    intro br mc bcond h_c_eq h
+    have h_fst : (LExpr.eval n' F env br).fst = v := by
+      have := congrArg Prod.fst h; simp at this; exact this
+    have h_snd_and : (LExpr.eval n' F env br).snd.combineValueFlag
+        (LExpr.eval n' F env c).snd.isValueTrue = .value true := by
+      have := congrArg Prod.snd h; simp at this; exact this
+    have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd_and
+    have h_c_snd : LExpr.eval n' F env c =
+        ((LExpr.eval n' F env c).fst, .value true) := by
+      rw [← (isValueTrue_eq_true_iff _).mp h_and.2]
+    have h_br_snd : LExpr.eval n' F env br =
+        ((LExpr.eval n' F env br).fst, .value true) := by rw [← h_and.1]
+    refine ⟨?_, ?_⟩
+    · have h_c_lift := ih_eval c _ h_c_snd; rw [h_c_eq] at h_c_lift; exact h_c_lift
+    · have h_br_lift := ih_eval _ _ h_br_snd; rw [h_fst] at h_br_lift; exact h_br_lift
+  split at h
+  · rename_i mc h_c_eq
+    obtain ⟨h_c_lift, h_t_lift⟩ := closer t mc true h_c_eq h
+    rw [h_c_lift, h_t_lift]
+    simp [LExpr.EvalResult.combineValueFlag, LExpr.EvalResult.isValueTrue]
+  · rename_i mc h_c_eq
+    obtain ⟨h_c_lift, h_f_lift⟩ := closer f mc false h_c_eq h
+    rw [h_c_lift, h_f_lift]
+    simp [LExpr.EvalResult.combineValueFlag, LExpr.EvalResult.isValueTrue]
+  · exfalso; have := congrArg Prod.snd h; simp at this
+
+/-- Frame for `evalEq`. -/
+private theorem evalEq_frame
+    (n' : Nat) (F : @Factory Tbase) (env env' : Env Tbase)
+    (m : Tbase.Metadata) (e1 e2 v : LExpr Tbase.mono)
+    (ih_eval : ∀ e' v', LExpr.eval n' F env e' = (v', .value true) →
+        LExpr.eval n' F env' e' = (v', .value true))
+    (h : LExpr.evalEq n' F env m e1 e2 = (v, .value true)) :
+    LExpr.evalEq n' F env' m e1 e2 = (v, .value true) := by
+  simp only [LExpr.evalEq] at h ⊢
+  split at h
+  · rename_i b0 h_eql
+    have h_fst : LExpr.const m (LConst.boolConst b0) = v := by
+      have := congrArg Prod.fst h; simp at this; exact this
+    have h_snd_pair : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
+                      (LExpr.eval n' F env e2).snd.isValueTrue = true := by
+      have := congrArg Prod.snd h; simp at this; exact this
+    have h_e1_snd : LExpr.eval n' F env e1 =
+        ((LExpr.eval n' F env e1).fst, .value true) := by
+      rw [← (isValueTrue_eq_true_iff _).mp h_snd_pair.1]
+    have h_e2_snd : LExpr.eval n' F env e2 =
+        ((LExpr.eval n' F env e2).fst, .value true) := by
+      rw [← (isValueTrue_eq_true_iff _).mp h_snd_pair.2]
+    rw [ih_eval _ _ h_e1_snd, ih_eval _ _ h_e2_snd]
+    simp only
+    rw [h_eql]
+    simp [LExpr.EvalResult.isValueTrue]
+    exact h_fst
+  · exfalso
+    have := congrArg Prod.snd h; simp at this
+
+/-- Frame for `evalApp`. -/
+private theorem evalApp_frame
+    (n' : Nat) (F : @Factory Tbase) (env env' : Env Tbase)
+    (e e1 e2 v : LExpr Tbase.mono)
+    (ih_eval : ∀ e' v', LExpr.eval n' F env e' = (v', .value true) →
+        LExpr.eval n' F env' e' = (v', .value true))
+    (h : LExpr.evalApp n' F env e e1 e2 = (v, .value true)) :
+    LExpr.evalApp n' F env' e e1 e2 = (v, .value true) := by
+  simp only [LExpr.evalApp] at h ⊢
+  have closer : ∀ (inner : LExpr Tbase.mono)
+      (h : ((LExpr.eval n' F env inner).fst,
+             (LExpr.eval n' F env inner).snd.combineValueFlag
+               ((LExpr.eval n' F env e1).snd.isValueTrue &&
+                (LExpr.eval n' F env e2).snd.isValueTrue)) = (v, .value true)),
+      LExpr.eval n' F env' e1 = ((LExpr.eval n' F env e1).fst, .value true) ∧
+      LExpr.eval n' F env' e2 = ((LExpr.eval n' F env e2).fst, .value true) ∧
+      LExpr.eval n' F env' inner = (v, .value true) := by
+    intro inner h
+    have h_fst : (LExpr.eval n' F env inner).fst = v := by
+      have := congrArg Prod.fst h; simp at this; exact this
+    have h_snd : (LExpr.eval n' F env inner).snd.combineValueFlag
+        ((LExpr.eval n' F env e1).snd.isValueTrue &&
+         (LExpr.eval n' F env e2).snd.isValueTrue) = .value true := by
+      have := congrArg Prod.snd h; simp at this; exact this
+    have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd
+    have h_e12 : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
+                 (LExpr.eval n' F env e2).snd.isValueTrue = true := by
+      rw [Bool.and_eq_true] at h_and; exact h_and.2
+    have h_e1_snd : LExpr.eval n' F env e1 =
+        ((LExpr.eval n' F env e1).fst, .value true) := by
+      rw [← (isValueTrue_eq_true_iff _).mp h_e12.1]
+    have h_e2_snd : LExpr.eval n' F env e2 =
+        ((LExpr.eval n' F env e2).fst, .value true) := by
+      rw [← (isValueTrue_eq_true_iff _).mp h_e12.2]
+    have h_inner_snd : LExpr.eval n' F env inner =
+        ((LExpr.eval n' F env inner).fst, .value true) := by rw [← h_and.1]
+    refine ⟨ih_eval _ _ h_e1_snd, ih_eval _ _ h_e2_snd, ?_⟩
+    have := ih_eval _ _ h_inner_snd; rw [h_fst] at this; exact this
+  split at h
+  · rename_i mAbs prettyName ty0 body1' h_e1_eq
+    split at h
+    · exfalso; have := congrArg Prod.snd h; simp at this
+    · rename_i h_neq
+      obtain ⟨h_e1_lift, h_e2_lift, h_inner_lift⟩ := closer _ h
+      rw [h_e1_lift, h_e2_lift]
+      rw [h_e1_eq]
+      simp only
+      rw [if_neg h_neq, h_inner_lift]
+      simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
+  · rename_i h_e1_not_abs
+    split at h
+    · exfalso; have := congrArg Prod.snd h; simp at this
+    · rename_i h_neq
+      obtain ⟨h_e1_lift, h_e2_lift, h_inner_lift⟩ := closer _ h
+      rw [h_e1_lift, h_e2_lift]
+      split
+      · rename_i mAbs' nm' ty' body' h_abs_eq
+        exact absurd h_abs_eq (h_e1_not_abs mAbs' nm' ty' body')
+      · rename_i h_other
+        rw [if_neg h_neq, h_inner_lift]
+        simp [LExpr.EvalResult.isValueTrue, LExpr.EvalResult.combineValueFlag]
+
+/-- Frame for `evalCore`. -/
+private theorem evalCore_frame
+    (n' : Nat) (F : @Factory Tbase) (env env' : Env Tbase)
+    (hext : EnvExtends env env') (e v : LExpr Tbase.mono)
+    (ih_eval : ∀ e' v', LExpr.eval n' F env e' = (v', .value true) →
+        LExpr.eval n' F env' e' = (v', .value true))
+    (h : LExpr.evalCore n' F env e = (v, .value true)) :
+    LExpr.evalCore n' F env' e = (v, .value true) := by
+  cases e with
+  | const m c =>
+    simp only [LExpr.evalCore] at h ⊢; exact h
+  | op m n args =>
+    simp only [LExpr.evalCore] at h
+    exfalso; have := congrArg Prod.snd h; simp at this
+  | bvar m n =>
+    simp only [LExpr.evalCore] at h
+    exfalso; have := congrArg Prod.snd h; simp at this
+  | fvar m x ty =>
+    simp only [LExpr.evalCore] at h ⊢
+    cases hxb : env x with
+    | none =>
+      rw [hxb] at h
+      exfalso; have := congrArg Prod.snd h; simp at this
+    | some w =>
+      rw [hxb] at h
+      rw [hext x w hxb]
+      exact h
+  | abs m n ty body =>
+    simp only [LExpr.evalCore] at h ⊢
+    rw [Prod.mk.injEq] at h
+    obtain ⟨h_fst, h_snd⟩ := h
+    split at h_snd
+    · rename_i hcan
+      have hnil := isCanonicalValue_getVars_nil F _ hcan
+      have hag := env_agree_of_subst_getVars_nil env env' hext (LExpr.abs m n ty body) hnil
+      have hsub_eq : LExpr.substFvarsFromEnv env' (LExpr.abs m n ty body) =
+          LExpr.substFvarsFromEnv env (LExpr.abs m n ty body) :=
+        substFvarsFromEnv_env_congr env' env (LExpr.abs m n ty body)
+          (fun x hx => (hag x hx).symm)
+      rw [hsub_eq, if_pos hcan, h_fst]
+    · exact absurd h_snd (by simp)
+  | quant m qk n ty tr body =>
+    simp only [LExpr.evalCore] at h ⊢
+    rw [Prod.mk.injEq] at h
+    obtain ⟨h_fst, h_snd⟩ := h
+    split at h_snd
+    · rename_i hcan
+      have hnil := isCanonicalValue_getVars_nil F _ hcan
+      have hag := env_agree_of_subst_getVars_nil env env' hext (LExpr.quant m qk n ty tr body) hnil
+      have hsub_eq : LExpr.substFvarsFromEnv env' (LExpr.quant m qk n ty tr body) =
+          LExpr.substFvarsFromEnv env (LExpr.quant m qk n ty tr body) :=
+        substFvarsFromEnv_env_congr env' env (LExpr.quant m qk n ty tr body)
+          (fun x hx => (hag x hx).symm)
+      rw [hsub_eq, if_pos hcan, h_fst]
+    · exact absurd h_snd (by simp)
+  | app m e1 e2 =>
+    simp only [LExpr.evalCore] at h ⊢
+    exact evalApp_frame n' F env env' _ _ _ _ ih_eval h
+  | eq m e1 e2 =>
+    simp only [LExpr.evalCore] at h ⊢
+    exact evalEq_frame n' F env env' _ _ _ _ ih_eval h
+  | ite m c t f =>
+    simp only [LExpr.evalCore] at h ⊢
+    exact evalIte_frame n' F env env' _ _ _ _ _ ih_eval h
+
+/-- **Store-extension frame lemma for `LExpr.eval`.** A fully-reduced result is
+preserved under any pointwise extension of the environment.
+
+Unlike `eval_env_congr`, which requires the two environments to agree on *all*
+of `e`'s free variables, this lemma only requires `env' ⊇ env` (`EnvExtends`).
+The `.value true` result flag certifies that every free variable actually
+consulted resolved in `env` — so extension, which cannot disturb an existing
+binding, preserves the result even when `env` and `env'` disagree on variables
+`eval` never reads (e.g. those under an untaken `ite` branch). -/
+theorem eval_frame
+    (F : @Factory Tbase) (env env' : Env Tbase) (hext : EnvExtends env env') :
+    ∀ (n : Nat) (e v : LExpr Tbase.mono),
+      LExpr.eval n F env e = (v, LExpr.EvalResult.value true) →
+      LExpr.eval n F env' e = (v, LExpr.EvalResult.value true) := by
+  intro n
+  induction n with
+  | zero =>
+    intro e v h
+    simp only [LExpr.eval] at h
+    by_cases hcan : LExpr.isCanonicalValue F e = true
+    · rw [if_pos hcan] at h
+      have hfe : v = e := by
+        have := congrArg Prod.fst h; simp at this; exact this.symm
+      subst hfe
+      exact eval_canonical_identity 0 F env' v hcan
+    · rw [if_neg hcan] at h
+      have := congrArg Prod.snd h; simp at this
+  | succ n' ih =>
+    intro e v h
+    have arg_lift : ∀ a, (LExpr.eval n' F env a).snd.isValueTrue = true →
+        LExpr.eval n' F env' a = ((LExpr.eval n' F env a).fst, .value true) := by
+      intro a h_ivt
+      have h_a_snd : LExpr.eval n' F env a =
+          ((LExpr.eval n' F env a).fst, .value true) := by
+        rw [← (isValueTrue_eq_true_iff _).mp h_ivt]
+      exact ih _ _ h_a_snd
+    have args_from_andValue : ∀ (inner : LExpr Tbase.mono)
+        (args : List (LExpr Tbase.mono)),
+        (LExpr.eval n' F env inner).snd.combineValueFlag
+          (args.all (fun a => (LExpr.eval n' F env a).snd.isValueTrue))
+            = LExpr.EvalResult.value true →
+        LExpr.eval n' F env inner =
+          ((LExpr.eval n' F env inner).fst, .value true) ∧
+        (∀ a ∈ args, (LExpr.eval n' F env a).snd.isValueTrue = true) := by
+      intro inner args h_snd
+      have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd
+      refine ⟨?_, ?_⟩
+      · rw [← h_and.1]
+      · rw [← List.all_eq_true]; exact h_and.2
+    have list_lifts : ∀ (args : List (LExpr Tbase.mono))
+        (h_all : ∀ a ∈ args, (LExpr.eval n' F env a).snd.isValueTrue = true),
+        args.map (fun a => (LExpr.eval n' F env' a).fst) =
+          args.map (fun a => (LExpr.eval n' F env a).fst) ∧
+        (args.all fun a => (LExpr.eval n' F env' a).snd.isValueTrue) = true := by
+      intro args h_all
+      refine ⟨?_, ?_⟩
+      · apply List.map_congr_left
+        intro a ha; rw [arg_lift a (h_all a ha)]
+      · rw [List.all_eq_true]
+        intro a ha; rw [arg_lift a (h_all a ha)]
+        simp [LExpr.EvalResult.isValueTrue]
+    simp only [LExpr.eval] at h
+    revert h
+    split
+    · rename_i hcan; intro h
+      have hfe : v = e := by
+        have := congrArg Prod.fst h; simp at this; exact this.symm
+      subst hfe
+      exact eval_canonical_identity (n' + 1) F env' v hcan
+    · rename_i h_not_can
+      split
+      · rename_i op_expr args lfunc h_call
+        split
+        · -- inline branch
+          rename_i h_cond
+          have h_body_isSome : lfunc.body.isSome = true := by
+            simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
+          split
+          · rename_i tySubst h_ts
+            intro h
+            let inner := LExpr.substFvarsLifting
+                ((lfunc.body.get h_body_isSome).applySubst tySubst)
+                (lfunc.inputs.keys.zip
+                  (List.map (fun a => (LExpr.eval n' F env a).fst) args))
+            have h_fst : (LExpr.eval n' F env inner).fst = v := by
+              have := congrArg Prod.fst h; simp at this; exact this
+            have h_snd_and : (LExpr.eval n' F env inner).snd.combineValueFlag
+                (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
+              have := congrArg Prod.snd h; simp at this; exact this
+            obtain ⟨h_inner_snd, h_argsAllFull⟩ := args_from_andValue inner args h_snd_and
+            obtain ⟨h_map_eq', h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
+            have h_new_lift := ih _ _ h_inner_snd
+            have h_map_eq'_prod : List.map Prod.fst
+                (args.map (fun a => LExpr.eval n' F env' a)) =
+                List.map Prod.fst (args.map (fun a => LExpr.eval n' F env a)) := by
+              rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]; exact h_map_eq'
+            show LExpr.eval (n'+1) F env' e = (v, .value true)
+            conv => lhs; rw [LExpr.eval]
+            rw [if_neg h_not_can, h_call]
+            dsimp only
+            split
+            · rename_i h_cond_lift
+              rw [h_map_eq'_prod, h_ts]
+              simp only [LExpr.EvalResult.combineValueFlag,
+                LExpr.List_map_fst_map_eval, LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
+              rw [h_new_lift]
+              simp only [h_argsAllFull_lift, h_fst]
+              simp
+            · rename_i h_cond_lift
+              exfalso; apply h_cond_lift; rw [h_map_eq'_prod]; exact h_cond
+          · intro h
+            exfalso; have := congrArg Prod.snd h; simp at this
+        · -- non-inline branch
+          rename_i h_cond
+          split
+          · rename_i h_eval_cond
+            split
+            · intro h; exfalso; have := congrArg Prod.snd h; simp at this
+            · rename_i ceval h_ceval
+              split
+              · rename_i e' h_ceval_res
+                intro h
+                have h_fst : (LExpr.eval n' F env e').fst = v := by
+                  have := congrArg Prod.fst h; simp at this; exact this
+                have h_snd_and : (LExpr.eval n' F env e').snd.combineValueFlag
+                    (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
+                  have := congrArg Prod.snd h; simp at this; exact this
+                obtain ⟨h_e'_snd, h_argsAllFull⟩ := args_from_andValue _ _ h_snd_and
+                obtain ⟨h_map_eq, h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
+                have h_map_eq_prod : List.map Prod.fst
+                    (args.map (fun a => LExpr.eval n' F env' a)) =
+                    List.map Prod.fst (args.map (fun a => LExpr.eval n' F env a)) := by
+                  rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]; exact h_map_eq
+                have h_e'_lift := ih _ _ h_e'_snd
+                show LExpr.eval (n'+1) F env' e = (v, .value true)
+                conv => lhs; rw [LExpr.eval]
+                rw [if_neg h_not_can, h_call]
+                dsimp only
+                split
+                · rename_i h_cond_lift
+                  exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
+                · rename_i h_cond_lift
+                  simp only [LExpr.List_map_fst_map_eval] at h_ceval_res
+                  rw [h_map_eq_prod, if_pos h_eval_cond]
+                  simp only [LExpr.List_map_fst_map_eval]
+                  rw [h_ceval]
+                  dsimp only
+                  rw [h_ceval_res]
+                  simp only [LExpr.combineEvalResValueFlag_eq_pair]
+                  rw [h_e'_lift]
+                  simp only [LExpr.EvalResult.combineValueFlag,
+                    LExpr.List_all_snd_isValueTrue_map_eval]
+                  rw [h_argsAllFull_lift, h_fst]
+                  simp
+              · intro h; exfalso; have := congrArg Prod.snd h; simp at this
+          · intro h; exfalso; have := congrArg Prod.snd h; simp at this
+      · rename_i h_nocall
+        intro h
+        have h_ec := evalCore_frame n' F env env' hext e v
+          (fun e' v' hev => ih e' v' hev) h
+        simp only [LExpr.eval]
+        rw [if_neg h_not_can, h_nocall]
+        exact h_ec
+
+/-- **Store-extension monotonicity of `LExpr.evalFully`.**  A successful
+`evalFully` is preserved when the environment retains every binding it held.
+This is the `WellFormedSemanticEvalMono` property for the concrete evaluator. -/
+theorem evalFully_mono
+    (F : @Factory Tbase) (env env' : Env Tbase) (hext : EnvExtends env env')
+    (e v : LExpr Tbase.mono)
+    (heval : LExpr.evalFully F env e = some v) :
+    LExpr.evalFully F env' e = some v := by
+  obtain ⟨n, hn, _⟩ := evalFully_some_exists F env e v heval
+  exact evalFully_of_value_true F env' e n v (eval_frame F env env' hext n e v hn)
+
+end eval_frame
+
 end Lambda

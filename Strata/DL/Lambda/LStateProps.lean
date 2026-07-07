@@ -189,4 +189,67 @@ theorem getVars_substFvarsFromEnv_mem {Tbase : LExprParams} (env : Env Tbase)
     · exact Or.inl (ih1 h)
     · exact Or.inr (ih2 h)
 
+/-- `env'` extends `env`: every binding present in `env` is present, identically,
+    in `env'`. -/
+def EnvExtends {T : LExprParams} (env env' : Env T) : Prop :=
+  ∀ x w, env x = some w → env' x = some w
+
+/-- If `x` is a free variable of `e` unbound by `env`, it survives
+    `substFvarsFromEnv` (dual to `getVars_substFvarsFromEnv_mem`: an unbound
+    variable is left in place rather than removed). -/
+theorem getVars_mem_substFvarsFromEnv_of_none {Tbase : LExprParams}
+    (env : Env Tbase) (e : LExpr Tbase.mono) (x : Tbase.Identifier)
+    (hx : x ∈ LExpr.LExpr.getVars e) (hnone : env x = none) :
+    x ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e) := by
+  induction e with
+  | const | op | bvar => simp [LExpr.LExpr.getVars] at hx
+  | fvar m name ty =>
+    simp only [LExpr.LExpr.getVars, List.mem_singleton] at hx
+    subst hx
+    simp only [LExpr.substFvarsFromEnv, hnone, LExpr.LExpr.getVars, List.mem_singleton]
+  | abs _ _ _ _ ih => exact ih hx
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
+    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
+    rcases hx with h | h
+    · exact Or.inl (iht h)
+    · exact Or.inr (ihb h)
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
+    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
+    rcases hx with h | h
+    · exact Or.inl (ih1 h)
+    · exact Or.inr (ih2 h)
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
+    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
+    rcases hx with (h | h) | h
+    · exact Or.inl (Or.inl (ih1 h))
+    · exact Or.inl (Or.inr (ih2 h))
+    · exact Or.inr (ih3 h)
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
+    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
+    rcases hx with h | h
+    · exact Or.inl (ih1 h)
+    · exact Or.inr (ih2 h)
+
+/-- If `substFvarsFromEnv env e` is closed (no free variables), then `env` and
+    any extension `env'` agree on all free variables of `e`: every such variable
+    must be bound by `env` (else it would survive per
+    `getVars_mem_substFvarsFromEnv_of_none`), and extension preserves those
+    bindings. -/
+theorem env_agree_of_subst_getVars_nil {Tbase : LExprParams}
+    (env env' : Env Tbase) (hext : EnvExtends env env') (e : LExpr Tbase.mono)
+    (hnil : LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e) = []) :
+    ∀ x ∈ LExpr.LExpr.getVars e, env x = env' x := by
+  intro x hx
+  cases hxb : env x with
+  | none =>
+    exfalso
+    have hmem := getVars_mem_substFvarsFromEnv_of_none env e x hx hxb
+    rw [hnil] at hmem
+    exact absurd hmem (by simp)
+  | some w => rw [hext x w hxb]
+
 end Lambda
