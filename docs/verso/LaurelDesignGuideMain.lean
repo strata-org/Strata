@@ -11,8 +11,9 @@ open Verso.Genre.Manual (RenderConfig manualMain)
 
 def config : RenderConfig where
   emitTeX := false
-  emitHtmlSingle := .immediately
-  emitHtmlMulti := .no
+  -- Multi-page output so the sidebar navigation is nested.
+  emitHtmlSingle := .no
+  emitHtmlMulti := .immediately
   htmlDepth := 2
 
 def main := manualMain (%doc LaurelDesignGuide) (config := config)

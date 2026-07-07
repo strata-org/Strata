@@ -16,9 +16,9 @@ lake build Strata:docs
 cd "${curpwd}"
 lake exe ddm --with-html-single --output _out/ddm
 lake exe langdef --with-html-single --output _out/langdef
-lake exe laureldesign --with-html-single --output _out/laureldesign
-lake exe laurelimpl --with-html-single --output _out/laurelimpl
-lake exe laurelguide --with-html-single --output _out/laurelguide
+lake exe laureldesign --with-html-multi --output _out/laureldesign
+lake exe laurelimpl --with-html-multi --output _out/laurelimpl
+lake exe laurelguide --with-html-multi --output _out/laurelguide
 lake exe transforms --with-html-single --output _out/transforms
 lake exe irtranslation --with-html-single --output _out/irtranslation
 cp strata-hourglass.png _out/langdef/html-single/
