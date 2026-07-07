@@ -51,7 +51,7 @@ Goals:
 7. Code used to enable verification may not affect execution behavior.
 
 # Reduce duplication between source languages
-To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with whch input languages.
+To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with which input languages.
 
 TODO, add a table with Laurel features as rows, and a list of languages in columns (Java, Kotlin, C#, JavaScript, Python, GoLang). Split up language feature whenever relevant for the columns.
 
@@ -70,7 +70,7 @@ To achieve goal 1.3, enable proving properties through verification, Laurel has 
 - Assumptions (more about gradual verification)
 
 # Modular Verification
-The achieve goal (4), Laurel has the following features related to modular verification.
+To achieve goal (4), Laurel has the following features related to modular verification.
 
 ## Preconditions
 Preconditions enable proving the assertions in a procedure's body without having to consider the callers. This way, each assertion only needs to be proven once, instead of once for each transitive call-site.
@@ -78,11 +78,11 @@ Preconditions enable proving the assertions in a procedure's body without having
 ## Encapsulation
 Postconditions enable encapsulating the behavior of a procedure through a simpler condition. This simplifies reasoning at the call-site.
 
-Since procedure can mutate references as well, once we add encapsulation through postconditions, we also need modifies clauses to enable encapsulating reference modifying procedures.
+Since procedures can mutate references as well, once we add encapsulation through postconditions, we also need modifies clauses to enable encapsulating reference modifying procedures.
 
-Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modified clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
+Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
 
-## Reduce verification through complete analysis
+# Reduce verification through complete analysis
 To achieve goal 5, Laurel has the following features.
 
 ## Constrained types
@@ -115,7 +115,7 @@ procedure increment(counter: Counter) opaque
 ## Heap mutation in contracts
 A contract in Laurel may not modify any object that exists outside of that contract, as if the contract has an empty modifies clause. However, new objects may be created and modified inside the contract.
 
-A common design choice in verification aware programming language is not to allow creating or modifying objects in contracts. A good reason for this is that objects are more complex to reason about than immutable data, and contracts are intended to contain easy to reason about code. Laurel still allows this because code might be declared to operate specifically through the use of reference types, and Laurel does not want to restrict users from using such code even in contracts.
+A common design choice in verification-aware programming languages is not to allow creating or modifying objects in contracts. A good reason for this is that objects are more complex to reason about than immutable data, and contracts are intended to contain easy to reason about code. Laurel still allows creating and modifying new objects inside contracts because code might be declared to operate specifically through the use of reference types, and Laurel does not want to restrict users from using such code even in contracts.
 
 A second reason for not allowing any heap modification inside contracts is that this is prone to soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does not allow assigning to variable defined outside the contract, from inside the contract, no modification can escape the contract. The heap used inside a contract is a separate heap variable.
 
