@@ -97,6 +97,13 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
     writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
     callees := bodyResult.callees ++ precondResult.callees }
 
+/-- Per-procedure input to `transitiveEffectClosure`: the procedure `name`,
+    whether it has the effect `directly`, and its static `callees`. -/
+structure ProcEffectInfo (α : Type) where
+  name : α
+  directly : Bool
+  callees : List α
+
 /-- Transitive call-graph closure of a direct effect, shared by the reads-heap
     and writes-heap analyses. Given, per procedure, its `name`, whether it has
     the effect `directly`, and its static `callees`, returns the set of
@@ -109,25 +116,25 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
     so the two heap-effect analyses share one engine instead of duplicating the
     fixpoint. -/
 def transitiveEffectClosure {α : Type} [BEq α] [Hashable α]
-    (info : List (α × Bool × List α)) : Std.HashSet α :=
-  let direct := info.filterMap fun (n, directly, _) => if directly then some n else none
+    (info : List (ProcEffectInfo α)) : Std.HashSet α :=
+  let direct := info.filterMap fun i => if i.directly then some i.name else none
   let rec fixpoint (fuel : Nat) (current : Std.HashSet α) : Std.HashSet α :=
     match fuel with
     | 0 => current
     | fuel' + 1 =>
-      let next := info.foldl (fun acc (n, _, callees) =>
-        if current.contains n || callees.any current.contains then acc.insert n else acc)
+      let next := info.foldl (fun acc i =>
+        if current.contains i.name || i.callees.any current.contains then acc.insert i.name else acc)
         current
       if next.size == current.size then current else fixpoint fuel' next
   fixpoint info.length (Std.HashSet.ofList direct)
 
 def computeReadsHeap (procs : List Procedure) : Std.HashSet Identifier :=
   transitiveEffectClosure (procs.map fun p =>
-    let r := analyzeProc p; (p.name, r.readsHeapDirectly, r.callees))
+    let r := analyzeProc p; { name := p.name, directly := r.readsHeapDirectly, callees := r.callees })
 
 def computeWritesHeap (procs : List Procedure) : Std.HashSet Identifier :=
   transitiveEffectClosure (procs.map fun p =>
-    let r := analyzeProc p; (p.name, r.writesHeapDirectly, r.callees))
+    let r := analyzeProc p; { name := p.name, directly := r.writesHeapDirectly, callees := r.callees })
 
 end Strata.Laurel
 
