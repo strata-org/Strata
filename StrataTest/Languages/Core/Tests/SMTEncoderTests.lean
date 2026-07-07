@@ -75,7 +75,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (ctx := { ufs := .ofArray #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] })
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
@@ -87,7 +87,7 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 #eval toSMTCommandsWithAssert
    (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] #[] #[] [] #[] {} [] 0 false false)
+   (ctx := { ufs := .ofArray #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] })
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
 
@@ -250,7 +250,7 @@ end ArrayTheory
   let ctx := { ctx with useArrayTheory := true }
   let (.ok (_, ctx)) := LMonoTy.toSMTType (.tcons "Map" [.tcons "int" [], .tcons "int" []]) ctx
     | unreachable!
-  return (ctx.sorts, ctx.sorts.all (fun s => s.name ∉ ["int", "bool", "Array"]))
+  return (ctx.sorts.toArray, ctx.sorts.toArray.all (fun s => s.name ∉ ["int", "bool", "Array"]))
 
 /-! ## Test that get-value ids exclude non-nullary UFs -/
 
@@ -265,7 +265,7 @@ end ArrayTheory
   let uf_f := UF.mk "f" [TermType.int] TermType.int
   -- Nullary UF: c : Int — should be included in ids
   let uf_c := UF.mk "c" [] TermType.int
-  let ctx : SMT.Context := { SMT.Context.default with ufs := #[uf_f, uf_c] }
+  let ctx : SMT.Context := { SMT.Context.default with ufs := .ofArray #[uf_f, uf_c] }
   let obligationTerm := Term.prim (.bool true)
   let md : Imperative.MetaData Core.Expression := #[]
   let b ← IO.mkRef { : IO.FS.Stream.Buffer }

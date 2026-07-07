@@ -715,13 +715,13 @@ Build the full translation scope for an SMT context:
 -/
 def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
-  let p ← withTypeDecls ctx.sorts <| withTypeDefs ctx.tySubst <|
-          withFunDecls ctx.ufs <| withFunDefs ctx.ifs do
+  let p ← withTypeDecls ctx.sorts.toArray <| withTypeDefs ctx.tySubst <|
+          withFunDecls ctx.ufs.toArray <| withFunDefs ctx.ifs.toArray do
     let f as a := do
       let (_, a) ← translateTerm a
       modify fun s => { s with level := s.level + 1 }
       return (as.push a)
-    let as ← ctx.axms.foldlM f #[]
+    let as ← ctx.axms.toArray.foldlM f #[]
     let a ← k
     return as.foldr mkArrow a
   set state

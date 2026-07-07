@@ -45,13 +45,14 @@ structure SanitizedContext where
 deriving Repr, Inhabited, DecidableEq
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
-  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+  { sorts := ctx.sorts.toArray, ufs := ctx.ufs.toArray, ifs := ctx.ifs.toArray,
+    axms := ctx.axms.toArray, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
-  { sorts := ctx.sorts
-    ufs := ctx.ufs
-    ifs := ctx.ifs
-    axms := ctx.axms
+  { sorts := .ofArray ctx.sorts
+    ufs := .ofArray ctx.ufs
+    ifs := .ofArray ctx.ifs
+    axms := .ofArray ctx.axms
     tySubst := ctx.tySubst
     typeFactory := #[]
     seenDatatypes := {}

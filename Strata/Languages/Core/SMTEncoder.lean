@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.SMT.Factory
 public import Strata.Languages.Core.Env
 public import Strata.Util.Name
+public import Strata.Util.OrderedSet
 public import Strata.Util.Statistics
 public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
 import Strata.Languages.Core.Statistics
@@ -19,6 +20,7 @@ import Strata.Util.Tactics
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
+open Strata.Util (OrderedSet)
 
 public section
 /--
@@ -63,10 +65,14 @@ SMT.Context also has fields that are invariant during translation; they are
 explicitly marked as invariant in their comments.
 -/
 structure SMT.Context where
-  sorts : Array Strata.DL.SMT.Sort := #[]
-  ufs : Array UF := #[]
-  ifs : Array IF := #[]
-  axms : Array Term := #[]
+  /-- Declared SMT sorts, plus uninterpreted functions, defined functions, and
+  axioms. Each is an `OrderedSet`, which keeps insertion order for emit while
+  deduplicating in O(1) via a built-in membership index (the array and index
+  cannot drift apart). -/
+  sorts : OrderedSet Strata.DL.SMT.Sort := .empty
+  ufs : OrderedSet UF := .empty
+  ifs : OrderedSet IF := .empty
+  axms : OrderedSet Term := .empty
   tySubst: Map String TermType := []
   /-- Stores the TypeFactory purely for ordering datatype declarations
   correctly (TypeFactory in topological order).
@@ -92,21 +98,16 @@ deriving Repr, Inhabited
 def SMT.Context.default : SMT.Context := {}
 
 def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Context :=
-  if sort ∈ ctx.sorts then ctx else
-  { ctx with sorts := ctx.sorts.push sort }
+  { ctx with sorts := ctx.sorts.insert sort }
 
 def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
-  if fn ∈ ctx.ufs then ctx else
-  { ctx with ufs := ctx.ufs.push fn }
+  { ctx with ufs := ctx.ufs.insert fn }
 
 def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term) : SMT.Context :=
-  let smtif : IF := { id, args, out, body }
-  if smtif ∈ ctx.ifs then ctx else
-  { ctx with ifs := ctx.ifs.push smtif }
+  { ctx with ifs := ctx.ifs.insert { id, args, out, body } }
 
 def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
-  if axm ∈ ctx.axms then ctx else
-  { ctx with axms := ctx.axms.push axm }
+  { ctx with axms := ctx.axms.insert axm }
 
 /-- Commit a resolved function definition: emit its interpreted body (`addIF`)
     or uninterpreted declaration (`addUF`), followed by its axioms (`addAxiom`). -/
@@ -122,7 +123,7 @@ def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) :
 /-- True if the function `uf`'s declaration has already been committed: it is
     in `ufs` (uninterpreted) or `ifs` (interpreted). -/
 def SMT.Context.committedFn (ctx : SMT.Context) (uf : UF) : Bool :=
-  ctx.ufs.contains uf || ctx.ifs.any (·.toUF == uf)
+  ctx.ufs.contains uf || ctx.ifs.toArray.any (·.toUF == uf)
 
 /-- True if the function `uf` is already committed in `ctx` or scheduled in the
     pending queue `pending`. Used to dedup function scheduling. -/
@@ -142,7 +143,7 @@ def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
     pre-declared to the solver. Used to pre-populate the encoder's `usedNames`
     registry so that later UF/function encoding cannot collide with them. -/
 def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
-  let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+  let sortNames := ctx.sorts.toArray.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
   let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
       if ctx.seenDatatypes.contains d.name then

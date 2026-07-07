@@ -1297,7 +1297,7 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   -- Datatypes not supported yet
   if !ctx.typeFactory.isEmpty || !ctx.seenDatatypes.isEmpty || !ctx.datatypeFuns.isEmpty then none
   let stmt := assums.foldr (.app .implies [·, ·] (.prim .bool)) conc
-  let t := ctx.axms.foldr (.app .implies [·, ·] (.prim .bool)) stmt
+  let t := ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool)) stmt
   let uss := ctx.sorts.toList.reverse
   let iss := (mkISContext ctx.tySubst).reverse
   let ufs := ctx.ufs.toList.reverse

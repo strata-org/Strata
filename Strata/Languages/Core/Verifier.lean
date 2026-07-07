@@ -317,7 +317,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     : m (τ × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
-  for s in ctx.sorts do
+  for s in ctx.sorts.toArray do
     -- Skip sorts that will be defined as datatypes by emitDatatypesAbstract,
     -- since strict solver APIs (e.g. cvc5 FFI) reject redefinition.
     if !ctx.seenDatatypes.contains s.name then
@@ -330,21 +330,21 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
   -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+  let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
+    else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
   let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
   -- Pre-populate encoder state with managed variable names so encodeTerm
   -- recognizes them without emitting declareFun
   let estate := if managedNames.isEmpty then estate
     else
-      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+      let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
         { estate with base := { estate.base with
           functions := estate.base.functions.insert uf uf.id
           isFunUninterp := estate.base.isFunUninterp.insert uf false
           usedNames := estate.base.usedNames.insert uf.id } }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
+  let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
+  let (_axms, estate) ← ctx.axms.toArray.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     solver.assert id
   -- Emit variable declarations as declareFun
@@ -382,7 +382,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   phase "prelude" do
     prelude
 
-  let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
+  let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
   ctx.emitDatatypes
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
@@ -392,25 +392,25 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let preDeclaredNames := ctx.preDeclaredNames
 
   let estate ← phase "encodeUFs" do
-    let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-      else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+    let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
+      else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
     let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
   let estate ← phase "encodeFunctions" do
     let estate := if managedNames.isEmpty then estate
       else
-        let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+        let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
         managedUfs.foldl (init := estate) fun estate uf =>
           { estate with
             functions := estate.functions.insert uf uf.id
             isFunUninterp := estate.isFunUninterp.insert uf false
             usedNames := estate.usedNames.insert uf.id }
-    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunctionDef fn) |>.run estate
+    let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => encodeFunctionDef fn) |>.run estate
     pure estate
 
   let (_axms, estate) ← phase "encodeAxioms" do
-    ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+    ctx.axms.toArray.mapM (fun ax => encodeTerm ax) |>.run estate
 
   for id in _axms do
     Solver.assert id
