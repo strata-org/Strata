@@ -63,8 +63,29 @@ To achieve goal 1.2, enable proving properties through verification, Laurel has 
 - Assumptions (more about gradual verification. what about bodiless procedures?)
 
 ## Unbounded verification
-Loop invariants.
-These enable unbounded symbolic execution. TODO, say more.
+Bounded symbolic execution unrolls a loop a fixed number of times, so on its own it cannot prove a property for every run of a loop whose iteration count is not statically known. Loop invariants close that gap. A `while` loop may carry one or more `invariant` clauses, each an expression that must hold when the loop is first reached and be preserved by every iteration.
+
+```
+procedure countUp()
+{
+    var n: int := 5;
+    var i: int := 0;
+    while (i < n)
+      invariant i >= 0
+      invariant i <= n
+    {
+        i := i + 1
+    };
+    assert i == n
+};
+```
+
+The invariants let Laurel replace the loop with three obligations that stand in for it no matter how many times it runs:
+1. the invariants hold on entry to the loop;
+2. assuming the invariants and the guard, one iteration of the body re-establishes the invariants;
+3. after the loop, the invariants together with the negation of the guard may be assumed.
+
+None of these obligations mentions a concrete iteration count, so an invariant strong enough to imply the property discharges it for an unbounded loop. Each invariant is checked independently and reports a failure against its own source range, so a diagnostic points at the specific invariant that does not hold rather than at the whole loop.
 
 # Prevent duplicate work
 To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with which input languages.
@@ -298,8 +319,20 @@ A common design choice in verification-aware programming languages is not to all
 A second reason for not allowing any heap modification inside contracts is that this is prone to soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does not allow assigning to variable defined outside the contract, from inside the contract, no modification can escape the contract. The heap used inside a contract is a separate heap variable.
 
 ## Invoke on
+The postcondition of an opaque procedure is exposed to callers as an axiom: the ensures clause, universally quantified over the procedure's inputs. Left unrestricted, the solver may instantiate such an axiom on any matching term, which is a common cause of slow and unpredictable verification.
 
-TODO, fill in
+An `invokeOn` clause names the SMT trigger for that axiom. It takes an expression over the procedure's inputs, and the axiom is only instantiated when a term matching that expression appears in the proof context.
+
+```
+procedure PAndQ(x: int)
+  invokeOn P(x)
+  opaque
+  ensures P(x) && Q(x);
+```
+
+This emits the axiom `forall x. {P(x)} P(x) && Q(x)`, triggered on `P(x)`. An obligation that mentions `P(x)` pulls in `P(x) && Q(x)`, so it can establish both `P(x)` and `Q(x)`. An obligation that mentions only `Q(x)` does not match the trigger, so the axiom stays dormant and `Q(x)` is not proved. The trigger controls *when* the fact is instantiated, but not *where*: the axiom is emitted at the top level of the program, so once a matching term appears the fact becomes available to every proof obligation in the program, not just to a particular caller or region.
+
+This global availability is a deliberate simplification for the first version of the feature. It is enough to make an opaque procedure's postcondition usable, but it gives no control over scope: a fact intended for one caller is visible everywhere its trigger matches, which can slow down or perturb unrelated proofs. `invokeOn` is expected to evolve toward finer-grained control over where facts are made available — for example scoping a fact to specific callers, modules, or call sites — so that authors can expose a postcondition exactly where it is useful rather than program-wide.
 
 # Automated proof search
 Goal 5 was enabling the finding of proofs through automated search.
@@ -310,15 +343,49 @@ Reads clauses are useful to improve verification performance. The facts they pro
 ## Frozen types
 Frozen types (To be designed). A reads clause specifies that a procedure always returns the same value, if the reads references have the same values and if the explicit input arguments, which excludes the heap, are the same. A procedure that returns a newly created object, which has a reference counter that depends on the counter of the input heap, can thus never satisfy a reads clause. For this purpose Laurel allows erasing the counter from a reference value. A Laurel `Frozen` type takes a regular reference type, and produces a type that is the same except that it does not support reference equality or mutation of its fields. Record types are composite types that are frozen by default.
 
-TODO, add example with a `record Tuple..` and a `composite MutableTuple` and a `Frozen<MutableTuple>` that are all three created in and returned from different procedures that each have an empty reads clause. Returning the `MutableTuple` fails to prove the reads clause.
+The following sketch (syntax illustrative — reads clauses, records, and `Frozen` are still being designed) shows why the erasure matters. Each procedure declares an empty reads clause, claiming its result depends on nothing in the heap:
+
+```
+record Tuple { var fst: int; var snd: int }
+composite MutableTuple { var fst: int; var snd: int }
+
+procedure makeRecord() reads {} returns (r: Tuple)
+{ return Tuple(1, 2) };                  // ok: records are frozen, no reference identity
+
+procedure makeFrozen() reads {} returns (r: Frozen<MutableTuple>)
+{ ... };                                 // ok: the counter is erased, so the result is heap-independent
+
+procedure makeMutable() reads {} returns (r: MutableTuple)
+//                      ^^^^^^^^ fails: the new object's identity depends on the heap counter
+{ return new MutableTuple(1, 2) };
+```
+
+`makeRecord` and `makeFrozen` satisfy the empty reads clause because neither result carries a heap-dependent reference counter, so calling either twice with the same inputs yields equal results. `makeMutable` returns a fresh `MutableTuple` whose reference identity is drawn from the heap's allocation counter, so its result differs between calls and cannot satisfy an empty reads clause.
 
 # Use complete algorithms to reduce workload
 To achieve goal 6, to reduce the verification work through the use of complete algorithms, Laurel has the following features.
 
 ## Constrained types
-Constrained types propagating facts through the type system.
+A constrained type refines an existing type with a predicate, so that a fact established once travels through the program as part of the type instead of being re-proved at each use. It is declared with a base type, a `where` predicate, and a `witness` value that shows the constraint is inhabited.
 
-TODO, add example using polymorphic types, like a wrapping Container<T> that takes a `nat` and we still have the `nat` fact on the other side.
+```
+constrained nat = x: int where x >= 0 witness 0
+```
+
+The property that matters for reducing proof effort is that the fact survives flow through code that knows nothing about it. Consider a polymorphic `identity`, which returns its argument unchanged for any type `T`:
+
+```
+// syntax illustrative — generics are still in progress
+procedure identity<T>(x: T) returns (r: T) { return x };
+
+procedure usesIdentity() {
+  var n: nat := 5;
+  var m: nat := identity(n);
+  assert m >= 0            // still available: the `nat` constraint survived the round-trip
+};
+```
+
+`identity` is verified once, generically, with no knowledge of `nat` or its predicate. Yet because the constraint rides along with the type, instantiating `T` with `nat` lets the caller recover `m >= 0` on the result with no extra annotation or proof at the call site. The fact is neither dropped when the value enters the generic procedure nor re-derived when it leaves. That is what lets constrained types cut proof effort across a whole program: a property proved at one point remains available everywhere the constrained value flows, even through procedures that are entirely agnostic to the constraint.
 
 ## Type inference
 
@@ -398,7 +465,19 @@ Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
 
-TODO, add examples
+For example, the body of the procedure below changes `p`, and that effect is declared with `modifies p`; `old(p.x)` in the ensures clause refers to the pre-state:
+
+```
+procedure shift(p: Point, dx: int)
+  opaque
+  ensures p.x == old(p.x) + dx
+  modifies p
+{
+  p.x := p.x + dx
+};
+```
+
+The ensures expression may read the heap and build temporary values while it is evaluated, but it cannot assign to `p`, to `dx`, or to any variable declared outside it, and it contributes no modifies effect of its own. Even if the postcondition called a helper that allocated and mutated a scratch object, that would run against a copy of the heap and remain invisible to callers, which still see every pre-existing object unchanged across the evaluation of the contract. As a result, adding, strengthening, or removing the ensures clause never changes how the program executes.
 
 # Great user experience
 
