@@ -106,6 +106,12 @@ private def resultVarName : String := "$result"
 private def thrownVarName : String := "$thrown"
 /-- Synthesized local: the in-flight exception value. -/
 private def excVarName : String := "$exc"
+/-- Synthesized local (F18): `true` once a `return` is unwinding out of one or
+    more enclosing `try` blocks, so their `finally` arms run on the way out. A
+    `return` inside a `try` sets it and exits to the nearest `try` label (rather
+    than jumping straight to `bodyLabel`); each `try`'s tail re-checks it and
+    keeps unwinding to the next enclosing `try` (or `bodyLabel`). -/
+private def returningVarName : String := "$returning"
 
 /-- Core type of an in-flight exception value. After heap parameterization every
     exception (a composite) is represented as a heap `Composite` reference, so
@@ -666,13 +672,23 @@ partial def translateStmt (stmt : StmtExprMd)
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
   | .Return valueOpt =>
+      -- A value payload should have been eliminated by EliminateValueReturns;
+      -- flag it but continue as a valueless return.
       match valueOpt with
-      | none =>
-          return [.exit bodyLabel md]
+      | none => pure ()
       | some _ =>
-          let d := md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-          emitCoreDiagnostic d
-          return [.exit bodyLabel md]
+          emitCoreDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
+      -- F18: if this `return` is inside a `try`, exit to the nearest `try` label
+      -- (setting `$returning`) so that `try`'s `finally` runs on the way out; the
+      -- `try` tail re-checks `$returning` and keeps unwinding. With no enclosing
+      -- `try`, jump straight to `bodyLabel` as before.
+      let st ← get
+      match st.tryLabelStack.head? with
+      | none => return [.exit bodyLabel md]
+      | some tryLbl =>
+          modify fun s => { s with currentProcUsedExc := true }
+          return [ Core.Statement.set ⟨returningVarName, ()⟩ (.const () (.boolConst true)) md,
+                   Imperative.Stmt.exit tryLbl md ]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -725,8 +741,12 @@ partial def translateStmt (stmt : StmtExprMd)
       -- for it in each predicate/handler (rather than declaring a local), which
       -- also sidesteps clauses that reuse the same binding name.
       --
-      -- NOTE: `return`/`exit` inside `B` with a pending `finally` (F18 masking)
-      -- is not yet modeled — `finally` is only placed on the fall-through edge.
+      -- F18: a `return` inside `B` sets `$returning` and exits to `tryLbl` (not
+      -- straight to `bodyLabel`), so it lands ahead of the catch chain — which is
+      -- guarded on `$thrown` and therefore skipped — and the `finally` still
+      -- runs. After `finally`, a `$returning` re-check unwinds to the enclosing
+      -- `try` (or `bodyLabel`), so outer `finally` arms run too. (A `return`
+      -- inside a `catch` handler is not yet routed through this `finally`.)
       modify fun s => { s with currentProcUsedExc := true }
       let savedStack := (← get).tryLabelStack
       let tryId ← freshId
@@ -756,7 +776,14 @@ partial def translateStmt (stmt : StmtExprMd)
       let fStmts ← match finally? with
         | some f => translateStmt f
         | none => pure []
-      return Imperative.Stmt.block tryLbl bStmts md :: (catchChain ++ fStmts)
+      -- F18 re-dispatch: if a `return` unwound into this `try` (so `finally` has
+      -- now run), keep unwinding to the enclosing `try` label — or `bodyLabel`
+      -- if this is the outermost — so any outer `finally` arms run too.
+      let outerTarget := savedStack.head?.getD bodyLabel
+      let returnDispatch : List Core.Statement :=
+        [ Imperative.Stmt.ite (.det (.fvar () ⟨returningVarName, ()⟩ (some LMonoTy.bool)))
+            [Imperative.Stmt.exit outerTarget md] [] md ]
+      return Imperative.Stmt.block tryLbl bStmts md :: (catchChain ++ fStmts ++ returnDispatch)
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
@@ -810,7 +837,12 @@ private def buildProcedureOutputsAndBody
       [ Core.Statement.init ⟨thrownVarName, ()⟩ (LTy.forAll [] LMonoTy.bool)
           (.det (.const () (.boolConst false))) mdWithUnknownLoc,
         Core.Statement.init ⟨excVarName, ()⟩ (LTy.forAll [] exceptionCoreTy)
-          .nondet mdWithUnknownLoc ]
+          .nondet mdWithUnknownLoc,
+        -- F18: `$returning` tracks a `return` unwinding through enclosing `try`
+        -- blocks so their `finally` arms run. Declared whenever the exceptional
+        -- channel is used (every `try` sets `currentProcUsedExc`).
+        Core.Statement.init ⟨returningVarName, ()⟩ (LTy.forAll [] LMonoTy.bool)
+          (.det (.const () (.boolConst false))) mdWithUnknownLoc ]
     else []
   if !procThrows then
     let outputs ← proc.outputs.mapM translateParameterToCore

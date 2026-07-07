@@ -119,3 +119,68 @@ procedure firstMatchWinsOnOverlap()
   assert r == 1
 };
 #end
+-- `finally` runs on an early `return` out of the try body (F18): the return
+-- unwinds through the `try`, so `finally` sets `ran := 99` before the procedure
+-- exits, and the statement after the `try` is skipped.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure earlyReturnRunsFinally()
+  returns (ran: int)
+  opaque
+  ensures ran == 99
+{
+  ran := 0;
+  try {
+    return
+  } finally {
+    ran := 99
+  };
+  ran := 7
+};
+#end
+
+-- A `return` in the try body skips the `catch` (no exception is in flight) but
+-- still runs `finally`: the handler's `r := 1` does not fire; `finally` sets
+-- `r := 5`.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure returnSkipsCatchRunsFinally()
+  returns (r: int)
+  opaque
+  ensures r == 5
+{
+  r := 0;
+  try {
+    return
+  } catch c {
+    r := 1
+  } finally {
+    r := 5
+  }
+};
+#end
+
+-- Nested try/finally: a `return` in the innermost body runs both `finally` arms
+-- on the way out (inner then outer), so `log` ends at 3.
+#eval testLaurel <|
+#strata
+program Laurel;
+procedure nestedReturnRunsAllFinally()
+  returns (log: int)
+  opaque
+  ensures log == 3
+{
+  log := 0;
+  try {
+    try {
+      return
+    } finally {
+      log := log + 1
+    }
+  } finally {
+    log := log + 2
+  }
+};
+#end
