@@ -98,9 +98,9 @@ private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr
     | _ => e) expr
 
 /-- Apply `redirectCallsToFunctional` to a procedure's implementation and
-    postcondition expressions. Used when `alwaysCallAsFunction` is set so that
-    calls to transparent, single-output procedures become pure function
-    applications at their call sites. -/
+    postcondition expressions. Used in `AnalysisMode.Verify` so that calls to
+    transparent, single-output procedures become pure function applications at
+    their call sites. -/
 private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Procedure) : Procedure :=
   let r := redirectCallsToFunctional redirectNames
   match proc.body with
