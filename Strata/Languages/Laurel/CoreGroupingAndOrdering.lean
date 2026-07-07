@@ -39,7 +39,6 @@ def collectTypeRefs : HighTypeMd → List String
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.Applied base args, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
   | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
   | ⟨.TCore name, _⟩ => [name]
   | _ => []

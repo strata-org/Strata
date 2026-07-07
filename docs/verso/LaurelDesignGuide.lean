@@ -94,12 +94,6 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
    * ~
    * ✓
  *
-   * Value (structural) types
-   * ✓
-   * ~
-   * —
-   * ~
- *
    * Runtime type test and cast (`is` / `as`)
    * ✓
    * ✓
@@ -172,6 +166,12 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
    * ✓
    * —
  *
+   * Assignments in expression positions
+   * ✓
+   * ✓
+   * ✓
+   * ~
+ *
    * Short-circuit boolean operators (`&&` / `||`)
    * ✓
    * ✓
@@ -206,12 +206,12 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
 Notes on the partial (~) entries:
 - *Multiple supertypes for subtyping* — Laurel's `extending` list lets a type declare several supertypes for `is`/`as` and subtyping. Java gets this from implementing multiple interfaces (and Python from its MRO). JavaScript has only a single prototype chain and no interface concept.
 - *Multiple implementation inheritance* — this is the stronger form Python needs: inheriting fields and method implementations from several concrete parents, resolved by an MRO. Only Python has it fully; JavaScript relies on ad-hoc mixin patterns, and Java has none (interfaces provide default methods but no fields).
-- *Value (structural) types* — Java has records and primitives; Python has frozen dataclasses and tuples; JavaScript has no value objects.
 - *Arbitrary-precision integers* — only Python has them as the default `int`; Java and JavaScript expose them through a library (`BigInteger`, `BigInt`).
 - *Fixed-width bitvector operations* — JavaScript's bitwise operators are 32-bit; Python integers are arbitrary width.
 - *`do`/`while` loops* — Python has none.
 - *`break` / `continue`* — Laurel does not yet have dedicated `break`/`continue` keywords (WIP). It already provides the more general primitive underneath them: a labelled block `{ … } L` and an `exit L` statement that jumps to the end of that block. `break` is an exit of the block wrapping the loop, and `continue` an exit of the block wrapping the loop body, so the one primitive covers both. On the labelled-exit row, Python has `break`/`continue` without labels.
 - *Increment / decrement* — Python has no such operators.
+- *Assignments in expression positions* — Laurel allows assignments (and other imperative constructs) to appear where an expression is expected, and lifts them out into preceding statements. Java and JavaScript treat assignment as an expression directly. In Python assignments are statements; only the walrus operator `:=` provides a restricted assignment expression.
 - *Algebraic datatypes / pattern matching* — Java (sealed types + `switch` patterns) and Python (`match`) support a subset; JavaScript has none.
 - *Exceptions* — Java has checked exceptions; JavaScript and Python have exceptions, but unchecked.
 

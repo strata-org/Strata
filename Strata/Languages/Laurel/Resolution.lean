@@ -360,9 +360,6 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
     pure (.Applied base' args')
-  | .Pure base =>
-    let base' ← resolveHighType base
-    pure (.Pure base')
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
@@ -2794,7 +2791,6 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | .Applied base args =>
     let map := collectHighType map base
     args.foldl collectHighType map
-  | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
   | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map

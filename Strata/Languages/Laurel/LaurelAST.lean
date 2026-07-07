@@ -162,8 +162,6 @@ inductive HighType : Type where
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : AstNode HighType) (typeArguments : List (AstNode HighType))
-  /-- A pure (value) variant of a composite type that uses structural equality instead of reference equality. -/
-  | Pure (base : AstNode HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
@@ -546,7 +544,6 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TCore s1, HighType.TCore s2 => s1 == s2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
-  | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
   | HighType.Unknown, HighType.Unknown => true
@@ -640,7 +637,7 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    All child-carrying constructors are INVARIANT by design: `isConsistent`
    bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
-   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   `Applied`, and `Intersection`. So `TSet Unknown ~
    TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
    never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
    collections, where covariance would be unsound; if you don't know the
@@ -651,11 +648,6 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    tuple of independent procedure-output values matched against multi-assignment
    targets, so per-element consistency (letting an `Unknown` output flow into
    one slot) is correct rather than unsound.
-
-   `Pure b` is invariant today, but it is the one constructor where covariance
-   would be SOUND and desirable — it is the immutable value-view of a composite,
-   and immutability is exactly the condition that makes covariance safe.
-   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
 
    `Applied` (generics) is invariant as the safe default for not-yet-designed
    parametric types; real variance is per-constructor and deliberately deferred.
