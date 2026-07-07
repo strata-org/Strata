@@ -10,6 +10,7 @@ import all Strata.DL.SMT.TermType
 import all Strata.DL.SMT.Term
 import all Strata.DL.SMT.Op
 import all Strata.Languages.Core.SMTEncoder
+import Std.Data.HashMap.Lemmas
 
 meta section
 
@@ -45,7 +46,7 @@ private theorem option_pure_bind {f : PUnit → Option β} :
 macro "denoteQuery_rfl" : tactic =>
   `(tactic| (simp only [denoteQuery, hashset_empty_isEmpty, array_empty_isEmpty, map_empty_isEmpty,
                          Strata.Util.OrderedSet.ofArray, Strata.Util.OrderedSet.empty,
-                         Strata.Util.OrderedSet.toArray, Strata.Util.OrderedSet.toList,
+                         Strata.Util.OrderedSet.toArray, Strata.Util.OrderedSet.toList, Std.HashMap.isEmpty_empty,
                          Bool.not_true, Bool.false_or, Bool.false_eq_true, ↓reduceIte,
                          option_bind_some, option_map_some, option_pure_bind, Option.map];
              rfl))
@@ -62,6 +63,7 @@ macro "denoteQuery_sorts_rfl" : tactic =>
   `(tactic| (
     unfold denoteQuery;
     simp only [hashset_empty_isEmpty, array_empty_isEmpty, map_empty_isEmpty,
+               Std.HashMap.isEmpty_empty,
                Strata.Util.OrderedSet.ofArray, Strata.Util.OrderedSet.empty,
                Strata.Util.OrderedSet.toArray, Strata.Util.OrderedSet.toList,
                Bool.not_true, Bool.false_or, Bool.false_eq_true, ↓reduceIte,

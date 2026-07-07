@@ -56,7 +56,7 @@ def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
     tySubst := ctx.tySubst
     typeFactory := #[]
     seenDatatypes := {}
-    datatypeFuns := Map.empty }
+    datatypeFuns := {} }
 
 abbrev SMTVC := String × SanitizedContext × List Term × Term
 abbrev SMTVCs := List SMTVC

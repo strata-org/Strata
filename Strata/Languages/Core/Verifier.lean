@@ -552,6 +552,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
+  (termCache : Option (IO.Ref (Std.HashMap Term String)) := none)
   (pctx : PipelineContext)
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
@@ -575,6 +576,7 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
     (skipSolver := options.skipSolver)
+    (termCache := termCache)
     (pctx := pctx)
 
 /-- Discharge a proof obligation using the incremental solver backend.
@@ -1562,6 +1564,8 @@ abbrev CoreSMTSolver :=
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
   List Expression.TypedIdent → Imperative.MetaData Expression → String →
+  -- Term→SMT-LIB string cache; `none` on the parallel path.
+  Option (IO.Ref (Std.HashMap Term String)) →
   PipelineContext → DischargeFn
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
@@ -1572,6 +1576,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
     (label : String)
+    (termCache : Option (IO.Ref (Std.HashMap Term String)))
     (pctx : PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
@@ -1586,6 +1591,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
+        (termCache := termCache)
         (pctx := pctx)
 
 /--
@@ -1672,8 +1678,9 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext)
     : IO (Except DiagnosticModel VCResult) := do
+  -- Parallel path: no shared term cache (workers must not share a mutable ref).
   let discharge := mkDischarge options counter tempDir
-    job.typedVarsInObligation job.obligation.metadata job.obligation.label pctx
+    job.typedVarsInObligation job.obligation.metadata job.obligation.label none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
@@ -1764,6 +1771,10 @@ def verifySingleEnv (oblProgram : Program)
   let mut solverJobs : List SolverJob := []
   let mut solverJobIndices : List Nat := []
   let useParallel := options.parallelWorkers > 1
+  -- Term→SMT-LIB string cache shared across this procedure's obligations, which
+  -- often share many assumption terms. Sequential path only; parallel passes `none`.
+  let termCache ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+    (IO.mkRef (∅ : Std.HashMap Term String))
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1847,7 +1858,7 @@ def verifySingleEnv (oblProgram : Program)
                                   checkMode := options.checkMode, lexprModel := [] }
       else
         let discharge := mkDischarge options counter tempDir
-          typedVarsInObligation obligation.metadata obligation.label pctx
+          typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
         let result ← pctx.withRepeatedPhase "solver" do
           getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       discharge needSatCheck needValCheck (externalPhases ++ corePhases)

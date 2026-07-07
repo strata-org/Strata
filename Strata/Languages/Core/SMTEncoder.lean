@@ -82,7 +82,7 @@ structure SMT.Context where
   them are actually used. -/
   typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
   seenDatatypes : Std.HashSet String := {}
-  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
+  datatypeFuns : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := {}
   /-- Global counter for generating unique bound variable names across all terms. -/
   bvCounter : Nat := 0
   /-- When true, always use `$__bv{N}` names for bound variables instead of
@@ -164,10 +164,14 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
   if ctx.hasDatatype d.name then ctx
   else
     let (c, i, s, u) := d.genFunctionMaps
-    let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
-    let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
-    let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
-    let m := Map.union m (u.fmap (fun (_, x) => (.selector, x)))
+    -- First binding for a name wins (matching `Map.union` semantics), hence `insertIfNew`.
+    let insertNew := fun (m : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta))
+        (kind : Op.DatatypeFuncs) (entries : Map String (LDatatype CoreLParams.IDMeta × LConstr CoreLParams.IDMeta)) =>
+      entries.toList.foldl (fun m (name, _, c) => m.insertIfNew name (kind, c)) m
+    let m := insertNew ctx.datatypeFuns .constructor c
+    let m := insertNew m .tester i
+    let m := insertNew m .selector s
+    let m := insertNew m .selector u
     { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
@@ -546,7 +550,7 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  match ctx.datatypeFuns.find? fn.name with
+  match ctx.datatypeFuns.get? fn.name with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
@@ -1059,7 +1063,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
 Extract the set of datatype constructor names from an `SMT.Context`.
 -/
 def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
-  ctx.datatypeFuns.toList.foldl (init := {}) fun acc (name, (kind, _)) =>
+  ctx.datatypeFuns.fold (init := {}) fun acc name (kind, _) =>
     if kind == .constructor then acc.insert name else acc
 
 /--

@@ -40,7 +40,7 @@ inductive TermPrim : Type where
   | real   : Decimal → TermPrim
   | bitvec : ∀ {n}, BitVec n → TermPrim
   | string : String → TermPrim
-deriving instance Repr, Inhabited, DecidableEq for TermPrim
+deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrim
 
 def TermPrim.mkName : TermPrim → String
   | .bool _   => "bool"
@@ -121,14 +121,25 @@ end
 
 instance : DecidableEq Term := Term.hasDecEq
 
+mutual
+/-- Structural hash of a `Term`, recursing into `app` args and `quant` trigger/body. -/
 def hashTerm (t: Term): UInt64 :=
   match t with
-    | .prim _ => 2
-    | .var _ => 3
-    | .none _ => 5
-    | .some _ => 7
-    | .app op _ retTy => 11 * (hash op) * (hash retTy)
-    | .quant qk args _ _ => 13 * (hash qk) * (hash args)
+    | .prim p => mixHash 2 (hash p)
+    | .var v => mixHash 3 (hash v)
+    | .none ty => mixHash 5 (hash ty)
+    | .some t => mixHash 7 (hashTerm t)
+    | .app op args retTy =>
+        mixHash (mixHash 11 (mixHash (hash op) (hash retTy))) (hashTermList args)
+    | .quant qk args tr body =>
+        mixHash (mixHash 13 (mixHash (hash qk) (hash args)))
+                (mixHash (hashTerm tr) (hashTerm body))
+
+def hashTermList (ts : List Term) : UInt64 :=
+  match ts with
+  | [] => 17
+  | t :: rest => mixHash (hashTerm t) (hashTermList rest)
+end
 
 instance : Hashable Term where
   hash := hashTerm
