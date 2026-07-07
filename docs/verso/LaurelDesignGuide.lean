@@ -94,6 +94,12 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
    * ~
    * ✓
  *
+   * Record types (immutable, structural equality)
+   * WIP
+   * ✓
+   * —
+   * ~
+ *
    * Runtime type test and cast (`is` / `as`)
    * ✓
    * ✓
@@ -206,6 +212,7 @@ Legend: the *Laurel* column records Laurel's own status — ✓ implemented, WIP
 Notes on the partial (~) entries:
 - *Multiple supertypes for subtyping* — Laurel's `extending` list lets a type declare several supertypes for `is`/`as` and subtyping. Java gets this from implementing multiple interfaces (and Python from its MRO). JavaScript has only a single prototype chain and no interface concept.
 - *Multiple implementation inheritance* — this is the stronger form Python needs: inheriting fields and method implementations from several concrete parents, resolved by an MRO. Only Python has it fully; JavaScript relies on ad-hoc mixin patterns, and Java has none (interfaces provide default methods but no fields).
+- *Record types* — an immutable aggregate compared by structural equality. Java has `record`s directly. Python has `@dataclass`/`NamedTuple` (~, library/decorator-based). JavaScript has no record type (the Records & Tuples proposal is not shipped).
 - *Arbitrary-precision integers* — only Python has them as the default `int`; Java and JavaScript expose them through a library (`BigInteger`, `BigInt`).
 - *Fixed-width bitvector operations* — JavaScript's bitwise operators are 32-bit; Python integers are arbitrary width.
 - *`do`/`while` loops* — Python has none.
