@@ -39,23 +39,32 @@ Laurel tries to include any features that are common to those three languages.
 Goals:
 1. Enable proving both correctness and incorrectness properties of software, through a combination of:
   1. property based testing
-  2. data-flow analysis
-  3. symbolic execution (aka verification), both bounded and unbounded
+  2. symbolic execution (aka verification), both bounded and unbounded
+  3. data-flow analysis
 2. Reduce code duplication in the analysis of popular languages by being a target for compilation from those languages, and including features common to them. Note that we expect source languages to reuse their existing compilers when possible, so language features that can be compiled away don't need to be considered.
-3. Have a great user experience
-4. Enable modular verification
-5. Minimize the amount of user code needed to enable verification.
-6. Enable finding proofs through an automated search.
-7. Use complete analysis algorithms to reduce the required proof effort.
-8. Code used to enable verification may not affect execution behavior.
+3. Enable modular verification
+4. Minimize the amount of user code needed to enable verification.
+5. Enable finding proofs through an automated search.
+6. Use complete analysis algorithms to reduce the required proof effort.
+7. Code used to enable verification may not affect execution behavior.
+8. Have a great user experience
 
-# Enable Verification
-To achieve goal 1.3, enable proving properties through verification, Laurel has the following features.
+# Correctness checking features
+
+## Property-based testing
+To be designed..
+
+## Verification
+To achieve goal 1.2, enable proving properties through verification, Laurel has the following features.
 - Assertions
 - Quantifiers
-- Old/allocated/fresh
-- Decreases clauses
-- Assumptions (more about gradual verification)
+- Old/allocated/fresh (what's allocated for?)
+- Decreases clauses (relates to soundness and ghost-code as well)
+- Assumptions (more about gradual verification. what about bodiless procedures?)
+
+## Unbounded verification
+Loop invariants.
+These enable unbounded symbolic execution. TODO, say more.
 
 # Prevent duplicate work
 To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with which input languages.
@@ -254,7 +263,7 @@ Notes on the not-planned (✗) entries. These are features that survive the sour
 Note on the *shared-memory concurrency* entry (WIP): Java has real shared-memory threads governed by the Java Memory Model (`synchronized`, `volatile`, happens-before); Python has threads under the GIL (✓); JavaScript is single-threaded and only achieves parallelism through workers that communicate by message passing (~). Laurel is currently sequential, and reasoning under a relaxed memory model is a large, separable piece of work, so this is planned rather than available.
 
 # Modular Verification
-To achieve goal (4), Laurel has the following features related to modular verification.
+To achieve goal (3), Laurel has the following features related to modular verification.
 
 ## Preconditions
 Preconditions enable proving the assertions in a procedure's body without having to consider the callers. This way, each assertion only needs to be proven once, instead of once for each transitive call-site.
@@ -265,10 +274,10 @@ Laurel allows a procedure to be marked as opaque, which means that callers won't
 Since modifies clauses are a type of postcondition, they are also only allowed on opaque procedures.
 
 # Minimize Verification Code
-To achieve goal (5), minimize the amount of user code needed to enable verification, Laurel has the following features:
+To achieve goal (4), minimize the amount of user code needed to enable verification, Laurel has the following features:
 
 ## Transparent procedures
-Laurel procedures are transparent by default, meaning that a call can use the body of the callee to prove facts about the result of the call. Laurel will allow any procedure to be transparent, although currently there are some restrictions. In particular, Laurel will allow procedures that contain loops or that modify the heap, to be transparent as well.
+Laurel procedures are transparent by default, meaning that a call can use the body of the callee to prove facts about the result of the call. Laurel aims to allow any procedure to be transparent; some restrictions still remain for now. In particular, Laurel will allow procedures that contain loops or that modify the heap to be transparent as well.
 
 By allowing any procedure to be transparent, Laurel prevents users from having to repeat the body of a procedure in a postcondition. Here's an example that shows an opaque procedure that would have been easier to define as being transparent, without any loss of readability:
 
@@ -293,10 +302,7 @@ A second reason for not allowing any heap modification inside contracts is that 
 TODO, fill in
 
 # Automated proof search
-Goal 6 was enabling the finding of proofs through automated search.
-
-## Loop invariants
-These enable unbounded symbolic execution. TODO, say more.
+Goal 5 was enabling the finding of proofs through automated search.
 
 ## Reads clauses
 Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
@@ -307,7 +313,7 @@ Frozen types (To be designed). A reads clause specifies that a procedure always 
 TODO, add example with a `record Tuple..` and a `composite MutableTuple` and a `Frozen<MutableTuple>` that are all three created in and returned from different procedures that each have an empty reads clause. Returning the `MutableTuple` fails to prove the reads clause.
 
 # Use complete algorithms to reduce workload
-To achieve goal 7, to reduce the verification work through the use of complete algorithms, Laurel has the following features.
+To achieve goal 6, to reduce the verification work through the use of complete algorithms, Laurel has the following features.
 
 ## Constrained types
 Constrained types propagating facts through the type system.
@@ -386,7 +392,7 @@ Composite types perform better than maps because reading from them incurs no dom
 
 # Verification without side-effects
 
-To support goal 8, for verification code not to affect the outcome of executing the program, Laurel has rules for code that exists only for verification purposes.
+To support goal 7, for verification code not to affect the outcome of executing the program, Laurel has rules for code that exists only for verification purposes.
 
 Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
