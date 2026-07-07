@@ -123,9 +123,14 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
     | .External => {}
   -- Also analyze preconditions
   let precondResult := (proc.preconditions.forM (collectExprMd ·.condition)).run {} |>.2
-  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
-    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
-    callees := bodyResult.callees ++ precondResult.callees }
+  -- ...and `onThrow` exceptional postconditions (E4): they may dereference
+  -- composite parameters (e.g. `e is IndexError ==> i >= a#length`), so their
+  -- heap use must count toward the reads/writes classification, just like an
+  -- ordinary postcondition.
+  let onThrowResult := (proc.onThrow.forM (collectExprMd ·.predicate)).run {} |>.2
+  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly || onThrowResult.readsHeapDirectly,
+    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly || onThrowResult.writesHeapDirectly,
+    callees := bodyResult.callees ++ precondResult.callees ++ onThrowResult.callees }
 
 def computeReadsHeap (procs : List Procedure) : List Identifier :=
   let info := procs.map fun p => (p.name, analyzeProc p)
@@ -515,10 +520,16 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Abstract postconds')
       | .External => pure .External
 
+    -- `onThrow` predicates may dereference composite parameters, so they are
+    -- heap-transformed like postconditions (field reads become `readField $heap …`).
+    let onThrow' ← proc.onThrow.mapM fun c => do
+      pure { c with predicate := ← heapTransformExpr heapName model c.predicate }
+
     return { proc with
       inputs := inputs',
       outputs := outputs',
       preconditions := preconditions',
+      onThrow := onThrow',
       body := body' }
 
   else if readsHeap then
@@ -544,9 +555,15 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Abstract postconds')
       | .External => pure .External
 
+    -- `onThrow` predicates may dereference composite parameters, so they are
+    -- heap-transformed like postconditions (field reads become `readField $heap …`).
+    let onThrow' ← proc.onThrow.mapM fun c => do
+      pure { c with predicate := ← heapTransformExpr heapName model c.predicate }
+
     return { proc with
       inputs := inputs',
       preconditions := preconditions',
+      onThrow := onThrow',
       body := body' }
 
   else

@@ -766,10 +766,11 @@ Translate a list of checks (preconditions or postconditions) to Core checks.
 Each check gets a label like `"requires"` or `"requires_0"`, `"requires_1"`, etc.
 -/
 private def translateChecks (checks : List Condition) (labelBase : String) (overrideFree: Bool)
+    (wrap : Core.Expression.Expr → Core.Expression.Expr := id)
     : TranslateM (ListMap Core.CoreLabel Core.Procedure.Check) :=
   checks.mapIdxM (fun i check => do
     let label := if checks.length == 1 then labelBase else s!"{labelBase}_{i}"
-    let checkExpr ← translateExpr check.condition [] (isPureContext := true)
+    let checkExpr := wrap (← translateExpr check.condition [] (isPureContext := true))
     let baseMd := astNodeToCoreMd check.condition
     let md := match check.summary with
       | some msg => baseMd.pushElem Imperative.MetaData.propertySummary (.msg msg)
@@ -877,14 +878,54 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
+  -- E4/E7: a throwing procedure's Core output is a single `Result<Val, Composite>`
+  -- (`$result`). Normal (`ensures`) postconditions describe the *Good* path only,
+  -- and the `onThrow` clauses describe the *Bad* path. Build the `Result`
+  -- projections used to phrase both as ordinary Core postconditions so the
+  -- exceptional contract is checked on exit and assumed at call sites.
+  let inputNames := proc.inputs.map (·.name)
+  let valueOutputs := proc.outputs.filter (fun o => !inputNames.contains o.name)
+  let valTy ← match valueOutputs with
+    | [outParam] => translateType outParam.type
+    | _ => pure LMonoTy.bool
+  let resultTy : LMonoTy := .tcons resultDatatypeName [valTy, exceptionCoreTy]
+  let resultFvar : Core.Expression.Expr := .fvar () ⟨resultVarName, ()⟩ (some resultTy)
+  let mkResultApp (fn : String) : Core.Expression.Expr := mkExceptionCtorApp fn resultFvar
+  -- Good-path wrapper: guard a normal postcondition with `Result..isGood($result)`
+  -- and rewrite the (single) value output to `Result..value($result)`. Identity
+  -- for a non-throwing procedure.
+  let goodWrap (e : Core.Expression.Expr) : Core.Expression.Expr :=
+    if procThrows then
+      let e' := match valueOutputs with
+        | [o] => LExpr.substFvar e ⟨o.name.text, ()⟩ (mkResultApp "Result..value")
+        | _ => e
+      .ite () (mkResultApp "Result..isGood") e' (.boolConst () true)
+    else e
   -- Translate postconditions for Opaque and Abstract bodies. A bodiless
   -- procedure (bodyStmts = none) gets its postconditions marked `free`
   -- (overrideFree) so they are assumed, not checked — and an empty body.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds s!"postcondition" bodyStmts.isNone
+        translateChecks postconds s!"postcondition" bodyStmts.isNone (wrap := goodWrap)
     | _ => pure []
+  -- E4: `onThrow` exceptional postconditions constrain the Bad path. Each is
+  -- `Result..isBad($result) ==> P[binding := Result..err($result)]`, mirroring the
+  -- `catch`-binding substitution in the `try` lowering. Checked on exit when the
+  -- procedure has a body; assumed (free) for a bodiless procedure.
+  let onThrowChecks : ListMap Core.CoreLabel Core.Procedure.Check ←
+    if procThrows then
+      proc.onThrow.mapIdxM (fun i c => do
+        let pe ← translateExpr c.predicate
+        let pe' := LExpr.substFvar pe ⟨c.binding.text, ()⟩ (mkResultApp "Result..err")
+        let guarded : Core.Expression.Expr :=
+          .ite () (mkResultApp "Result..isBad") pe' (.boolConst () true)
+        let label := if proc.onThrow.length == 1 then "onThrow" else s!"onThrow_{i}"
+        let attr := if bodyStmts.isNone then Core.Procedure.CheckAttr.Free else .Default
+        let md := astNodeToCoreMd c.predicate
+        pure (label, ({ expr := guarded, attr, md } : Core.Procedure.Check)))
+    else pure []
+  let postconditions := postconditions.union onThrowChecks
   -- Assemble outputs + body: a labeled block so early returns (exit) work, plus
   -- the `Result` wrapping for throwing procedures (E7). `bodyLabel` is the
   -- shared "$body" constant the resolver pre-registers.

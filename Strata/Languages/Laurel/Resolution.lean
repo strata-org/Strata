@@ -3058,6 +3058,15 @@ private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Proced
   let map := proc.outputs.foldl collectParameter map
   let map := proc.preconditions.foldl (fun map c => collectStmtExpr map c.condition) map
   let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
+  -- E4: register each `onThrow` binding (typed at the channel root
+  -- `BaseException`, like a `catch` binding) so that references to it in the
+  -- exceptional postcondition resolve during Core translation. Mirrors the
+  -- `.Try`/catch handling in `collectStmtExpr`. Without this, the binding is
+  -- absent from `refToDef` and its type reads back as `Unknown`.
+  let map := proc.onThrow.foldl (fun map c =>
+    let bindTy : HighTypeMd := ⟨.UserDefined (mkId baseExceptionTypeName), c.binding.source⟩
+    let map := register map c.binding (.var c.binding bindTy)
+    collectStmtExpr map c.predicate) map
   collectBody map proc.body
 
 private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)
