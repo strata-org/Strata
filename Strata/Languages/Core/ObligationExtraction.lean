@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.EvalContext
+import all Strata.DL.Imperative.EvalContext
 public import Strata.Languages.Core.Program
 /-! # Proof Obligation Extraction
 
@@ -46,10 +47,50 @@ def isValidObligationInput : Statements → Bool
   | s :: rest => isValidObligationStatement s && isValidObligationInput rest
 end
 
+/-- A path-condition accumulator whose newest scope is stored reversed
+    (most-recent-first) so that appending a statement is O(1).
+
+    Orientation is encoded in the type: entries only ever enter through
+    `prepend` (which pushes onto the front of the newest scope), and the only
+    way to read the accumulator back out is `consume` (which restores natural
+    order). -/
+structure RevPathConditions where
+  /-- Scopes with the newest (head) scope held in most-recent-first order. -/
+  scopes : PathConditions Expression
+
+/-- O(1) prepend of a new entry to the newest scope. -/
+private def RevPathConditions.prepend (r : RevPathConditions)
+    (e : PathConditionEntry Expression) : RevPathConditions :=
+  ⟨match r.scopes with
+   | [] => [[e]]
+   | p :: rest => (e :: p) :: rest⟩
+
+/-- Restore natural (oldest-first) order, producing a
+    `PathConditions Expression` suitable for a `ProofObligation`.
+
+    Only the head scope is reversed; the walker `extractGo`
+    never `push`es a second scope onto the accumulator (the only `push` in the
+    pass is `Array.push` on the obligation result). -/
+private def RevPathConditions.consume (r : RevPathConditions) : PathConditions Expression :=
+  match r.scopes with
+  | [] => []
+  | p :: rest => p.reverse :: rest
+
+/-- Prepending an entry to RevPathConditions and then consuming
+    is equivalent to adding an entry to PathConditions -/
+private theorem RevPathConditions.consume_prepend (r : RevPathConditions)
+    (e : PathConditionEntry Expression) :
+    (r.prepend e).consume = (r.consume).addEntry e := by
+  cases r with | mk scopes => cases scopes <;>
+    simp [RevPathConditions.prepend, RevPathConditions.consume,
+          PathConditions.addEntry, List.reverse_cons]
+
 mutual
 /-- Core recursive worker for `extractFromStatements`. Walks the statement list,
-    accumulating path conditions and collecting proof obligations. -/
-def extractGo (pc : PathConditions Expression) : Statements →
+    accumulating path conditions in a `RevPathConditions` (newest scope stored
+    most-recent-first for O(1) growth) and collecting proof obligations. Each
+    captured obligation restores natural order via `RevPathConditions.consume`. -/
+def extractGo (pc : RevPathConditions) : Statements →
     Array (ProofObligation Expression) →
     Except String (Array (ProofObligation Expression))
   | [], acc => .ok acc
@@ -57,13 +98,13 @@ def extractGo (pc : PathConditions Expression) : Statements →
     match s with
     | .cmd (.cmd (.assert label e md)) =>
       let propType := convertMetaDataPropertyType md
-      extractGo pc rest (acc.push (ProofObligation.mk label propType pc e md))
+      extractGo pc rest (acc.push (ProofObligation.mk label propType pc.consume e md))
 
     | .cmd (.cmd (.cover label e md)) =>
-      extractGo pc rest (acc.push (ProofObligation.mk label .cover pc e md))
+      extractGo pc rest (acc.push (ProofObligation.mk label .cover pc.consume e md))
 
     | .cmd (.cmd (.assume label e _md)) =>
-      extractGo (pc.addInNewest [.assumption label e]) rest acc
+      extractGo (pc.prepend (.assumption label e)) rest acc
 
     | .ite .nondet thenSs elseSs _md => do
       let thenObs ← extractFromStatements pc thenSs
@@ -71,7 +112,7 @@ def extractGo (pc : PathConditions Expression) : Statements →
       extractGo pc rest (acc ++ thenObs ++ elseObs)
 
     | .cmd (.cmd (.init name ty e _md)) =>
-      extractGo (pc.addEntry (.varDecl name ty e)) rest acc
+      extractGo (pc.prepend (.varDecl name ty e)) rest acc
 
     | _other =>
       .error s!"ObligationExtraction: unsupported statement"
@@ -84,7 +125,7 @@ def extractGo (pc : PathConditions Expression) : Statements →
 
     Returns the extracted obligations. -/
 def extractFromStatements
-    (pathConditions : PathConditions Expression)
+    (pathConditions : RevPathConditions)
     (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
   extractGo pathConditions ss #[]
 end
@@ -106,18 +147,20 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
       .ok (globalPc ++ [.distinct (toString name) es], allObs)
     | .proc proc _md => do
       let obs ← match proc.body with
-        | .structured ss => extractFromStatements [globalPc] ss
+        -- Start from one empty scope and prepend the global facts in declaration order;
+        | .structured ss =>
+          extractFromStatements (globalPc.foldl (·.prepend ·) { scopes := [[]] }) ss
         -- CFG bodies are not supported on procedure-body branch.
         | .cfg _ => .ok #[]
       .ok (globalPc, allObs ++ obs)
     | _ => .ok (globalPc, allObs)
   return allObs
 
-@[simp] theorem extractFromStatements_eq (pc : PathConditions Expression) (ss : Statements) :
+@[simp] theorem extractFromStatements_eq (pc : RevPathConditions) (ss : Statements) :
     extractFromStatements pc ss = extractGo pc ss #[] := by
   unfold extractFromStatements; rfl
 
-private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
+private theorem extractGo_ok (pc : RevPathConditions) (ss : Statements)
     (acc : Array (ProofObligation Expression))
     (h : isValidObligationInput ss = true) :
     (extractGo pc ss acc).isOk = true := by
@@ -150,7 +193,7 @@ private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
 
 /-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
     never returns an error. -/
-theorem extractFromStatements_ok (pc : PathConditions Expression) (ss : Statements)
+theorem extractFromStatements_ok (pc : RevPathConditions) (ss : Statements)
     (h : isValidObligationInput ss = true) :
     (extractFromStatements pc ss).isOk = true := by
   unfold extractFromStatements; exact extractGo_ok pc ss #[] h
