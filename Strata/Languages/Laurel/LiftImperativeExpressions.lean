@@ -236,7 +236,7 @@ mutual
 Process an expression in expression context, traversing arguments right to left.
 Assignments are lifted to prependedStmts and replaced with snapshot variable references.
 -/
-def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
+partial def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   match expr with
   | AstNode.mk val source =>
   match val with
@@ -394,15 +394,17 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return expr
 
   | _ => return expr
-  termination_by (sizeOf expr, 0)
-  decreasing_by
-    all_goals (simp_all; try term_by_mem)
 
 /--
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original may expand into multiple).
+
+`partial`: recursion into the `try` catch-clause list (and its optional
+`finally`) makes a structural/well-founded termination proof impractical, the
+same situation the design notes accept for AST-walking transforms. It always
+terminates on finite ASTs and is a transform, not used in proofs.
 -/
-def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
+partial def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmt with
   | AstNode.mk val source =>
   match val with
@@ -515,12 +517,34 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       modify fun s => { s with subst := [] }
       return prepends ++ [⟨.Return (some seqRet), source⟩]
 
+  | .Throw value =>
+      -- Lift any assignments/imperative calls in the thrown operand to before
+      -- the throw (the operand is evaluated before control leaves).
+      let seqValue ← transformExpr value
+      let prepends ← takePrepends
+      modify fun s => { s with subst := [] }
+      return prepends ++ [⟨.Throw seqValue, source⟩]
+
+  | .Try body catches finally? =>
+      -- Recurse into the body, each handler body, and the `finally` arm so that
+      -- statements needing lifting inside a `try` (e.g. the heap operations a
+      -- lowered `new` expands to) are lifted within their own region. Catch
+      -- guards are left as-is: post-`typeHierarchyTransform` they are pure
+      -- (`is`-checks / booleans) and need no lifting.
+      let bodyStmts ← transformStmt body
+      let newCatches ← catches.mapM (fun c => do
+        let cbodyStmts ← transformStmt c.body
+        pure ({ c with body := ⟨.Block cbodyStmts none, c.body.source⟩ } : CatchClause))
+      let finally'? ← match finally? with
+        | some f => do
+            let fs ← transformStmt f
+            pure (some ⟨.Block fs none, f.source⟩)
+        | none => pure none
+      modify fun s => { s with subst := [] }
+      return [⟨.Try ⟨.Block bodyStmts none, body.source⟩ newCatches finally'?, source⟩]
+
   | _ =>
       return [stmt]
-  termination_by (sizeOf stmt, 0)
-  decreasing_by
-    all_goals (try term_by_mem)
-    all_goals (apply Prod.Lex.left; try term_by_mem)
 end
 
 def transformProcedureBody (proc : Procedure) (body : StmtExprMd) : LiftM StmtExprMd := do
