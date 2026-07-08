@@ -59,10 +59,53 @@ To be designed..
 Work in progress section
 
 To achieve goal 1.2, enable proving properties through verification, Laurel has the following features.
-- Assertions (TODO: add some explanation of what assert enables, including an example.)
-- Postconditions (TODO: add some explanation. Explain how a postcondition is usually where we want to put assertions, so we can think in terms of entire procedures)
-- Quantifiers (TODO: also relate universal quantifier to soundness mode checking on procedures, and existential quantifier to bug finding mode)
-- Old (TODO: explain how old can be use to express mutation using mutation free code)
+
+### Assertions
+An `assert` states a property that must hold at the point where it appears. An assertion is the basic unit of proof: everything else in this section is a way of making the facts an assertion needs available, or of stating such properties more conveniently.
+
+```
+procedure abs(x: int) returns (r: int)
+{
+    if x < 0 then { r := -x } else { r := x };
+    assert r >= 0
+};
+```
+
+Here the assertion holds on both branches, so it is discharged; had a branch left `r` negative, the assertion would report a failure.
+
+### Quantifiers
+Laurel supports universal (`forall`) and existential (`exists`) quantifiers in properties, written `forall(x: T) => P(x)` and `exists(x: T) => P(x)`. They let a single property range over unboundedly many values.
+
+```
+procedure allNonNegativeSquares()
+  opaque
+{
+    assert forall(x: int) => x * x >= 0
+};
+
+procedure someMultipleOf42()
+  opaque
+{
+    assert exists(x: int) => x == 42
+};
+```
+
+The two quantifiers correspond to the two analysis modes. A universal quantifier is what soundness (correctness) checking needs: to prove a procedure correct, its properties must hold for *all* inputs and *all* reachable states, so proving a `forall` establishes the property for every case. An existential quantifier fits bug finding (incorrectness) mode: exhibiting *some* state that satisfies a property is enough to witness that a situation is reachable, for example a state that violates an intended invariant. Because unrestricted quantifier instantiation is a common cause of slow verification, a `forall` may carry an explicit trigger, written `forall(i: int) { P(i) } => …`, that tells the solver which terms may instantiate it.
+
+### Old
+In a postcondition, `old(e)` denotes the value of the expression `e` in the procedure's pre-state, before the body ran. This lets a contract relate the final state to the initial one, which is how mutation is specified. The specification is written in a mutation-free style: `old` and the current value are both just expressions, and comparing them describes the effect of the mutation without the contract itself performing any mutation.
+
+```
+procedure increment(counter: Counter)
+  opaque
+  ensures counter.value == old(counter.value) + 1
+  modifies counter
+{
+  counter.value := counter.value + 1
+};
+```
+
+The postcondition `counter.value == old(counter.value) + 1` captures the mutation performed by the body, yet it is a pure comparison between two values. A caller learns exactly how the field changed relative to its prior value without the contract mutating anything, keeping verification code erasable (see goal 7).
 
 ## Unbounded verification
 Bounded symbolic execution unrolls a loop a fixed number of times, so on its own it cannot prove a property for every run of a loop whose iteration count is not statically known. Loop invariants close that gap. A `while` loop may carry one or more `invariant` clauses, each an expression that must hold when the loop is first reached and be preserved by every iteration.
@@ -302,8 +345,12 @@ To achieve goal (3), Laurel has the following features related to modular verifi
 ## Preconditions
 Preconditions enable proving the assertions in a procedure's body without having to consider the callers. This way, each assertion only needs to be proven once, instead of once for each transitive call-site.
 
-## Opaque procedures
-Laurel allows a procedure to be marked as opaque, which means that callers won't get access to the body of the procedure. Laurel only allows postconditions for opaque procedures. This restriction is because a postcondition can only contain information that can also be inferred from the body, and redundant information is bad for verification performance.
+## Postconditions and opaque procedures
+Laurel allows a procedure to be marked as opaque, which means that callers won't get access to the body of the procedure. Once a procedure is opaque, Laurel allows defining postconditions for it. The postconditions will remain available to the caller. Postcondition and opaque bodies allow encapsulating the body of a procedure, making it easier to reason about by callers.
+
+Laurel does not allow postconditions on procedures with transparent bodies, because a postcondition can only contain information that can also be inferred from the body, and redundant information is bad for verification performance.
+
+For proving properties on top of a procedure's body or postconditions, define a separate procedure that calls the target one.
 
 Since modifies clauses are a type of postcondition, they are also only allowed on opaque procedures.
 

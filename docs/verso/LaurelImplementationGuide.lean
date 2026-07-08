@@ -110,7 +110,12 @@ shortTitle := "Laurel Implementation"
 # Language definition
 The Laurel language definitions consists of its type, its grammar and its semantics. Currently the semantics is split into a static part, called the resolver, and a dynamic part.
 
-TODO map the different parts of the language definition to the files that implement them.
+The parts of the language definition map onto the implementation files as follows:
+
+- *Type* — `LaurelAST.lean` defines the Laurel AST, including the program structure (`StmtExpr`, declarations, procedures) and the type language (`HighType`). `LaurelTypes.lean` computes the `HighType` of an expression from these annotations, and `TypeHierarchy.lean` captures the subtyping relation between user-defined types.
+- *Grammar* — `Grammar/LaurelGrammar.st` is the DDM dialect that defines Laurel's concrete syntax; it is loaded into Lean by `Grammar/LaurelGrammar.lean`. `Grammar/ConcreteToAbstractTreeTranslator.lean` turns the parsed concrete tree into the `LaurelAST` type, and `Grammar/AbstractToConcreteTreeTranslator.lean` goes the other way to render an AST back to concrete syntax.
+- *Static semantics (resolver)* — `Resolution.lean` resolves references and type checks the program, producing diagnostics and a `SemanticModel` (defined in `SemanticModel.lean`) that links references to their definitions.
+- *Dynamic semantics* — Laurel has no standalone interpreter; its runtime meaning is given operationally by the compilation to Core described below. The pass files under `Strata/Languages/Laurel/` and the pipeline in `LaurelCompilationPipeline.lean` therefore constitute the dynamic semantics, delegating to Core's own execution and verification semantics.
 
 ## Resolution
 The static semantics of Laurel are defined by `Resolution.lean`. This is where Laurel references are resolved and where type checking is done. Calling `resolve` will produce diagnostics and a `SemanticModel` that can be used to navigate between definitions and references.
