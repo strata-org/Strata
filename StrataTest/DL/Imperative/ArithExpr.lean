@@ -37,7 +37,7 @@ inductive Ty where
   deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat Ty where
-  format t := match t with | .Num => "Num" | .Bool => ".Bool"
+  format t := match t with | .Num => "Num" | .Bool => "Bool"
 
 /--
 A type environment maps variable names to types.
