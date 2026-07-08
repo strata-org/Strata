@@ -86,6 +86,6 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_build]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, SendMessage, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

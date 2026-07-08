@@ -141,11 +141,21 @@ async def verified_loop(
 
     for round_num in range(max_rounds):
         # Determine input for this round
-        inp = initial_input if round_num == 0 else f"{feedback_prefix}: {last_error}\nFix the issue and try again."
+        if round_num == 0:
+            inp = initial_input
+        # Run the agent (fix rounds get fewer turns — just enough to fix compilation)
+        turns = max_turns if round_num == 0 else min(max_turns, 12)
 
-        # Run the agent
+        if round_num > 0:
+            inp = (
+                f"{feedback_prefix}: {last_error}\n\n"
+                f"Your allocated turns are over. The guide will review your work and advise\n"
+                f"on how to proceed or whether the current direction is right.\n"
+                f"You have {turns} turns to ONLY fix the compilation error so the file compiles.\n"
+                f"Do NOT continue proving — leave sorry where needed. Just make it compile."
+            )
         if use_run_ai:
-            result = await agent_ctx.run_ai(inp=inp, result_type=result_type, max_turns=max_turns)
+            result = await agent_ctx.run_ai(inp=inp, result_type=result_type, max_turns=turns)
         else:
             result = await agent_ctx.run(inp=inp, result_type=result_type)
 

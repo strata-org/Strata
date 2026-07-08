@@ -28,6 +28,7 @@ system_prompt: >
   2. SEARCH FIRST — before writing any tactic:
      - Use ledger_search to find proved lemmas with similar types/names
      - Ask SearchAgent: "How is <similar_theorem> proved? Show me the proof body."
+     - SearchAgent: ask for definitions/lemmas via send_message(to="SearchAgent", message="...")
      - Ask SearchAgent: "What lemmas in the codebase have conclusion type <X>?"
      - If a proved lemma exists that matches your goal, use add_import_safely and `exact`/`apply` it
   3. If no existing lemma works, look for PROOF PATTERNS:
@@ -99,6 +100,6 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_build]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, SendMessage, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

@@ -868,3 +868,224 @@ noncomputable def loop_sim
       (loop_sim smaller)
 termination_by hstarT.len
 ```
+
+---
+
+## Termination Proofs — Critical Patterns
+
+### The Invisible Sorry Problem
+
+`decreasing_by all_goals sorry` is **invisible to Lean's diagnostic tools**. It does not
+appear as a sorry warning — but it means the proof is incomplete and the function may
+loop at runtime. NEVER leave `decreasing_by all_goals sorry` in a file.
+
+**Fix 1 — Factor into a named helper:**
+```lean
+theorem decreasing_helper (args...) : smaller_trace.len < hstarT.len := by sorry
+
+theorem main_theorem ... := by
+  ...
+  exact main_theorem smaller_trace
+termination_by hstarT.len
+decreasing_by exact decreasing_helper ...
+```
+This makes the sorry visible and extractable by tooling.
+
+**Fix 2 — Fuel-based induction (avoids termination_by entirely):**
+```lean
+theorem main_theorem (fuel : Nat) (h_bound : trace.len ≤ fuel) : ... := by
+  induction fuel generalizing ... with
+  | zero => omega  -- trace can't have zero length if it took a step
+  | succ n ih =>
+    ...
+    exact main_theorem n (by omega) smaller_trace
+```
+No `termination_by` needed — Lean's structural recursion on `fuel` handles it.
+
+**Fix 3 — Use `ReflTransT.len` directly:**
+```lean
+theorem loop_sim (hstarT : ReflTransT ...) : ... := by
+  ...
+termination_by hstarT.len
+decreasing_by
+  -- Must show: recursive_call_trace.len < hstarT.len
+  -- Key: seq_reaches_terminal gives a sub-trace strictly smaller than the input
+  -- Use omega after establishing the size relationship
+  simp [ReflTransT.len] at *
+  omega
+```
+
+### When Termination Proofs Fail
+
+If you cannot close `decreasing_by`:
+1. Check if you can use fuel-based induction instead (always works, just adds a parameter)
+2. Factor the decreasing obligation into a separate named theorem with sorry
+3. NEVER use `decreasing_by all_goals sorry` — invisible to tooling
+4. Consider whether the recursion structure is correct — wrong induction variable = unprovable termination
+
+---
+
+## Mutual Recursion — When and How
+
+### When You MUST Use Mutual Blocks
+
+Mutual recursion arises naturally when proving properties about nested/recursive
+data types. If type `A` contains type `B` (e.g., a statement list contains statements),
+and proving a property about `A` requires proving it for each `B`, and proving it
+for certain `B` constructors (e.g., loops, blocks) requires proving it about an `A`
+again — that's mutual recursion.
+
+**The signature:** You need mutual blocks when theorem X's proof calls theorem Y,
+and theorem Y's proof calls theorem X (possibly through intermediaries). This is
+NOT a cycle or a bug — it reflects the recursive structure of the data.
+
+**These CANNOT be separate lemmas in separate files.** Separate files would create
+circular imports. They must live in ONE `mutual...end` block in a single file.
+
+```lean
+mutual
+theorem property_for_list (xs : List T) ... := by
+  match xs with
+  | [] => ...
+  | x :: rest =>
+    have hHead := property_for_element x ...
+    have hTail := property_for_list rest ...
+    ...
+
+theorem property_for_element (x : T) ... := by
+  cases x with
+  | simple_case => ...
+  | recursive_case inner_list =>
+    exact property_for_list inner_list ...
+  | iterating_case body =>
+    -- May call property_for_list for body AND itself recursively
+    have hBody := property_for_list body ...
+    have hRec := property_for_iterating ...
+    ...
+end
+termination_by
+  property_for_list => trace.len
+  property_for_element => trace.len
+```
+
+### Key Rules for Mutual Blocks
+
+1. ALL mutually-recursive theorems go in ONE `mutual...end` block
+2. Use a SHARED `termination_by` — typically on execution trace length
+3. The decreasing argument: each recursive call processes a strict sub-trace
+4. NEVER extract one theorem from a mutual block into a separate file — it creates an import cycle
+5. Helper lemmas that DON'T participate in the recursion go OUTSIDE and ABOVE the mutual block
+6. `termination_by` after `end` applies to ALL theorems in the block
+
+### Recognizing Mutual Recursion
+
+You have mutual recursion when the data type is nested/recursive AND proving
+a property requires structural descent through multiple type constructors that
+reference each other. Ask: "does proving this for constructor C require a lemma
+whose proof needs THIS theorem back?" If yes → mutual block.
+
+Common pattern in transformation proofs:
+- Nested inductives (a type contains a list of itself)
+- Loop constructs (a loop body is a list of statements, each of which could be a loop)
+- Block/statement duality (blocks contain statements, statements contain blocks)
+
+The trace-length argument works because each recursive call operates on a strict
+sub-trace of the original execution. When you split a trace into "head executes"
+and "tail executes," both sub-traces are strictly shorter than the combined trace.
+
+### What Goes OUTSIDE the Mutual Block
+
+A helper belongs OUTSIDE (above) the mutual block if:
+- Its proof does NOT call any theorem in the mutual block
+- It only uses structural properties of the data (not simulation)
+- It provides a fact the mutual block USES but doesn't depend back on
+
+Examples: inversion lemmas, translation-implies-property lemmas, trace utilities,
+monotonicity lemmas. These are safe to extract as separate proved lemmas.
+
+---
+
+## Proof Strategy Decision Tree
+
+### Given a theorem with sorry, decide:
+
+```
+1. Is it a single sorry in a non-recursive theorem?
+   → Direct tactic proof (simp, cases, exact, omega)
+
+2. Does it involve StepStmtStar (multi-step trace)?
+   → Use inversion: seq_reaches_terminal, match on step constructors
+   → Chain sub-proofs with ReflTrans_Transitive
+
+3. Does it involve a loop?
+   → Well-founded induction on trace length (termination_by hStar.len)
+   → OR fuel-based induction (add Nat fuel parameter)
+
+4. Does it require proving both block AND stmt cases?
+   → Mutual block with shared termination_by
+   → NEVER separate into different files
+
+5. Does the proof need a fact about the translation function?
+   → Structural recursion on the translation definition
+   → Often a separate helper (no mutual dependency)
+
+6. Is it a CanFail proof?
+   → Case split on hasFailure, construct witness trace
+   → Use hasFailure_monotone for the flag propagation
+
+7. Is it a WF-preservation proof?
+   → Usually follows from noFuncDecl + star_preserves_*
+```
+
+### The "Prove It Now or Extract It" Decision
+
+When you encounter a sorry inside a mutual block:
+
+```
+Can the proof of this sorry call a theorem FROM this mutual block?
+├── YES → It MUST stay in the mutual block. Prove it inline.
+│         Add it as another theorem in mutual...end.
+└── NO  → It CAN be extracted as a separate helper.
+          Factor it out ABOVE the mutual block.
+```
+
+---
+
+## Common Mistakes in Transformation Proofs
+
+### Mistake: Extracting mutual-recursive cases into separate files
+
+**Symptom:** Cycle detection reports a circular import, or "environment already contains X"
+**Cause:** The extracted helper's proof calls a theorem defined in the parent mutual block
+**Fix:** Keep it in the mutual block. Add shared `termination_by`.
+
+### Mistake: Using `induction` on Stmt directly
+
+**Symptom:** "nested inductive type" error from Lean
+**Cause:** Stmt contains Block (= List Stmt) — nested inductive
+**Fix:** Use `cases st with` + mutual recursion pattern (see above)
+
+### Mistake: Forgetting `ReflTransT` conversion for structural recursion
+
+**Symptom:** Can't match on the trace, or termination_by fails
+**Cause:** `ReflTrans` lives in `Prop` — can't pattern-match
+**Fix:** Convert: `have hT := reflTrans_to_T hStar` then match/induct on `hT`
+
+### Mistake: Wrong `termination_by` measure
+
+**Symptom:** `decreasing_by` can't be proved, omega fails
+**Cause:** The measure doesn't actually decrease on the recursive call
+**Fix:** Use `.len` of the trace passed to the recursive call. Make sure each call
+gets a STRICT sub-trace. If the trace is split by `seq_reaches_terminal`, the
+sub-traces are both strictly smaller than the original.
+
+### Mistake: `simp` destroying a hypothesis needed later
+
+**Symptom:** After `simp [...] at h`, the `h` is gone or changed and later proofs fail
+**Cause:** `simp` rewrites eagerly and can eliminate or rename hypotheses
+**Fix:** Capture what you need BEFORE the simp:
+```lean
+have h_len := hrest.len  -- save before simp
+simp only [...] at hrest
+-- Now use h_len (which still refers to the original length)
+```

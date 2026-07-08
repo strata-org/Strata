@@ -20,6 +20,7 @@ Per-lemma state (LemmaContext):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import shutil
@@ -29,7 +30,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
-from .po_agents import verified_loop, run_splitter
+from .po_agents import verified_loop, run_splitter, LoopOutcome
 from .po_lean import get_lean_tools, MoveSession
 from .po_util import setup_child_workspace
 from .lemma_ledger import LemmaLedger, LemmaEntry, LemmaStatus
@@ -37,6 +38,8 @@ from .cycle_detection import detect, MatchType
 from .verifiers.proof_writer_verifier import make_proof_writer_verifier
 from .._helpers import swarm_agent
 from .._lean_tools_mcp import create_extractor_mcp_server
+from .._tokens import CancellationToken
+from .._agent import SwarmAgent
 
 T = TypeVar("T")
 
@@ -69,6 +72,7 @@ class Trans(str, Enum):
     PICKED = "picked"
     PROVED = "proved"
     HAS_SORRY = "has_sorry"
+    CONTINGENT = "contingent"
     CONTRADICTORY = "contradictory"
     EXTRACTED = "extracted"
     CHECKED = "checked"
@@ -90,6 +94,7 @@ TRANSITIONS: dict[tuple[str, str], str] = {
 
     (Phase.PROVE, Trans.PROVED):          Phase.UPDATE,
     (Phase.PROVE, Trans.HAS_SORRY):       Phase.EXTRACT,
+    (Phase.PROVE, Trans.CONTINGENT):      Phase.UPDATE,
     (Phase.PROVE, Trans.CONTRADICTORY):   Phase.UPDATE,
     (Phase.PROVE, Trans.RETRY):           Phase.PROVE,
 
@@ -171,10 +176,17 @@ async def _consult_guide_raw(agent, state: PO5State, ledger: LemmaLedger,
 async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
                                  entry: LemmaEntry, cwd: Path,
                                  options: list[str],
-                                 task: str | None = None) -> tuple[str, str]:
-    """Send a prompt + force a structured decision. Returns (choice, reason).
+                                 task: str | None = None,
+                                 post_prompt: str = "",
+                                 post_prompt_parser: callable = None,
+                                 ) -> tuple[str, str, dict]:
+    """Send a prompt + force a structured decision.
 
-    Same task resolution as _consult_guide_raw.
+    Returns (choice, reason, extras).
+    extras is empty dict unless post_prompt_parser is provided.
+
+    post_prompt: additional lines appended to the decision prompt (e.g. "TURNS: <50-100>")
+    post_prompt_parser: callable(raw_text) -> dict of extra parsed fields
     """
     guide = await _get_guide(agent, entry, state, ledger)
 
@@ -193,8 +205,11 @@ async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
         f"DECIDE one of: [{options_str}]\n"
         f"Reply EXACTLY:\n"
         f"DECISION: <{options_str}>\n"
-        f"REASON: <one sentence>"
     )
+    if post_prompt:
+        prompt += post_prompt + "\n"
+    prompt += "REASON: <one sentence>"
+
     result = await guide.run_ai(inp=prompt)
     raw = result.raw_result or ""
 
@@ -204,7 +219,8 @@ async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
 
     decision = match.group(1).lower() if match else options[0]
     reason = reason_match.group(1).strip() if reason_match else raw[:100]
-    return decision, reason
+    extras = post_prompt_parser(raw) if post_prompt_parser else {}
+    return decision, reason, extras
 
 
 async def _dump_guide_to_disk(agent, state: PO5State, ledger: LemmaLedger,
@@ -294,6 +310,14 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
 
     ledger = LemmaLedger(cwd / workspace_rel / "lemma_ledger.json")
     agent._workflow_state = state
+
+    # Stale state recovery: if state references a lemma not in ledger, reset to init
+    if state.stage != "init" and state.current_lemma_id:
+        if ledger.get(state.current_lemma_id) is None:
+            await agent._emit("message", "[PO5] Stale state (lemma not in ledger) — resetting to init")
+            state.stage = "init"
+            state.current_lemma_id = ""
+            state.root_id = ""
 
     await agent._emit("message", f"[PO5] Starting: {theorem_name} in {workspace_rel} (phase={state.stage})")
 
@@ -399,6 +423,13 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         f"cycles={state.cycles_detected}, time={elapsed/60:.1f}min, cost=${total_cost:.2f}")
     ledger.save()
 
+    # Checkpoint swarm state
+    if hasattr(agent, 'swarm') and hasattr(agent.swarm, '_checkpoint_manager') and agent.swarm._checkpoint_manager:
+        try:
+            agent.swarm._checkpoint_manager.save("prover_done")
+        except Exception:
+            pass
+
     status = AgentStatus.COMPLETED if state.stage == "done" else AgentStatus.FAILED
     return AgentResult(name=agent.spec.name, status=status,
                        output={"stage": state.stage, "proved": state.lemmas_proved,
@@ -437,7 +468,7 @@ async def _phase_select(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
         children_desc = "\n".join(
             f"  {i+1}. {c.name} (depth={c.depth}) (#lemmas using this={len(ledger.get_all_parents(c.id))}) — {(c.statement or '')[:80]}"
             for i, c in enumerate(pending_kids))
-        decision, reason = await _consult_guide_decide(
+        decision, reason, _extras = await _consult_guide_decide(
             agent, state, ledger, parent_entry, cwd,
             options=[c.id[:8] for c in pending_kids],
             task=(
@@ -473,6 +504,8 @@ async def _phase_prove(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
     if result == "proved":
         state.lemmas_proved += 1
         return Trans.PROVED
+    elif result == "contingent":
+        return Trans.CONTINGENT
     elif result == "has_sorry":
         return Trans.HAS_SORRY
     elif result == "retry":
@@ -516,13 +549,17 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             task=(
                 f"CONTEXT:\n{ledger_summary}\n\n"
                 f"We are proving '{entry.name}' in {stub_rel}.\n"
-                f"Read the cheat sheet, then advise on the best approach."
+                f"Read the cheat sheet, then advise on the best approach.\n"
+                f"Also specify TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> for how many turns "
+                f"the writer should get for the first attempt."
             ))
 
     # ── Step 2: Main loop ──
     total_turns = 0
     prev_sorry_count = None
-    chunk_budget = CHUNK_TURNS
+    # Extract initial turns from guide's advice
+    turns_match = re.search(r'TURNS:\s*(\d+)', advice)
+    chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1)))) if turns_match else CHUNK_TURNS
 
     while True:
         ledger.increment_attempts(entry.id)
@@ -540,14 +577,42 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
 
         # Writer works
         chunk = min(MAX_CHUNK_TURNS, max(MIN_CHUNK_TURNS, chunk_budget))
-        await verified_loop(
-            agent_ctx=writer,
-            initial_input=(
-                f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-                f"You have {chunk} turns. File MUST compile (sorry allowed)."
-            ),
-            verify=verify_fn, max_rounds=5, max_turns=chunk, use_run_ai=True,
+        # We will let the guide run in background meanwhile
+        cancellation_token = CancellationToken()
+
+        async def _run_guide_while_listening_to_messages():
+            result = await guide.run_while_listening_to_messages(cancellation_token=cancellation_token)
+            await agent._emit("message", f"[PO5] Guide stopped listening for messages: {result.raw_result or ''}")
+            return result.raw_result or ""
+
+        async def _run_writer_then_cancel():
+            result = await verified_loop(
+                agent_ctx=writer,
+                initial_input=(
+                    f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
+                    f"You have {chunk} turns. File MUST compile (sorry allowed)."
+                ),
+                verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
+            )
+            await agent._emit("message", f"[PO5] Writer finished chunk {entry.attempts} ({total_turns} total turns)")
+            cancellation_token.cancel()
+            await agent._emit("message", "[PO5] Cancelled guide listening to messages")
+            await asyncio.sleep(2)  # give guide a moment to stop listening
+            return result
+
+        outcome, _ = await asyncio.gather(
+            _run_writer_then_cancel(),
+            _run_guide_while_listening_to_messages(),
         )
+
+        # outcome = await verified_loop(
+        #     agent_ctx=writer,
+        #     initial_input=(
+        #         f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
+        #         f"You have {chunk} turns. File MUST compile (sorry allowed)."
+        #     ),
+        #     verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
+        # )
         total_turns += chunk
 
         # Check: proved?
@@ -558,7 +623,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 return "proved"
             else:
                 ledger.mark_contingent(entry.id)
-                return "has_sorry"
+                return "contingent"
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -568,27 +633,54 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         writer_pct = await writer.get_context_percentage()
 
         # Guide reviews → next advice
-        await agent._emit("message", f"[PO5] Guide reviews: {progress}")
+        compile_note = ""
+        if not outcome.success and outcome.last_error:
+            compile_note = f"\n⚠️ COMPILATION FAILED after {outcome.rounds} fix rounds: {outcome.last_error}\n"
+        await agent._emit("message", f"[PO5] Guide reviews: {progress}{' (NOT COMPILING)' if compile_note else ''}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk {entry.attempts} ({total_turns} total turns).\n"
                 f"Writer context: {writer_pct or 0:.0f}%\n"
                 f"{progress}\nFile: {stub_rel}\nSorries: {sorry_info}\n"
+                f"{compile_note}"
                 f"Diagnose and advise what to try next."
             ))
 
         # Guide decides
-        decision, reason = await _consult_guide_decide(
+        def _parse_turns(raw: str) -> dict:
+            m = re.search(r'TURNS:\s*(\d+)', raw)
+            return {"turns": int(m.group(1))} if m else {}
+
+        # Track consecutive no-reduction chunks
+        if not hasattr(entry, '_stuck_count'):
+            entry._stuck_count = 0
+        if sorry_count > 0 and prev_sorry_count is not None and sorry_count >= prev_sorry_count:
+            entry._stuck_count = getattr(entry, '_stuck_count', 0) + 1
+        else:
+            entry._stuck_count = 0
+
+        stuck_hint = ""
+        if entry._stuck_count >= 3:
+            stuck_hint = (
+                f"\n⚠️ STUCK: {entry._stuck_count} consecutive chunks with no sorry reduction. "
+                f"Consider decompose even if context is low — the writer may be unable to close "
+                f"these obligations in the current file.\n"
+            )
+
+        decision, reason, extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["continue", "decompose", "fresh_start", "give_up"],
             task=(
                 f"Writer context: {writer_pct or 0:.0f}%\n"
                 f"- continue: Keep trying in this file.\n"
-                f"- decompose: Needs helpers in separate files (only if writer ≥ 65%).\n"
+                f"- decompose: Needs helpers in separate files.\n"
                 f"- fresh_start: Current approach exhausted, start over.\n"
-                f"- give_up: Statement is false.\n"
-                f"If continue: include turns ({MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}) in REASON."
-            ))
+                f"- give_up: Statement is false."
+                f"{stuck_hint}"
+            ),
+            post_prompt=f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)",
+            post_prompt_parser=_parse_turns,
+        )
 
         if decision == "give_up":
             await agent._emit("message", f"[PO5] Guide gives up: {reason}")
@@ -608,9 +700,8 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             await _dump_guide_to_disk(agent, state, ledger, entry, cwd)
             break
         else:
-            turns_match = re.search(r'(\d+)', reason)
-            if turns_match:
-                chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1))))
+            if "turns" in extras:
+                chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, extras["turns"]))
 
     # ── Max depth: no extraction ──
     if entry.depth >= MAX_DEPTH:
@@ -676,7 +767,7 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
                 return "proved"
             else:
                 ledger.mark_contingent(entry.id)
-                return "has_sorry"
+                return "contingent"
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -697,16 +788,22 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             ))
 
         # Guide decides — only continue/fresh_start/give_up (NO decompose)
-        decision, reason = await _consult_guide_decide(
+        def _parse_turns_deep(raw: str) -> dict:
+            m = re.search(r'TURNS:\s*(\d+)', raw)
+            return {"turns": int(m.group(1))} if m else {}
+
+        decision, reason, extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["continue", "fresh_start", "give_up"],
             task=(
                 f"Writer context: {writer_pct or 0:.0f}%\n"
                 f"- continue: Keep trying.\n"
                 f"- fresh_start: Current approach exhausted, try new strategy.\n"
-                f"- give_up: Cannot be proved.\n"
-                f"If continue: include turns ({MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}) in REASON."
-            ))
+                f"- give_up: Cannot be proved."
+            ),
+            post_prompt=f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)",
+            post_prompt_parser=_parse_turns_deep,
+        )
 
         if decision == "give_up":
             await agent._emit("message", f"[PO5] Deep guide gives up: {reason}")
@@ -720,9 +817,8 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             ctx.failure_context = f"Max depth, fresh start: {reason}"
             return "retry"
         else:
-            turns_match = re.search(r'(\d+)', reason)
-            if turns_match:
-                chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1))))
+            if "turns" in extras:
+                chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, extras["turns"]))
 
 
 
@@ -770,7 +866,7 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
                 return "proved"
             else:
                 ledger.mark_contingent(entry.id)
-                return "has_sorry"
+                return "contingent"
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         cur = sum(len(sorry_info.get(n, [])) for n in protected_names)
@@ -845,18 +941,24 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
         )
 
     if not outcome.success:
+        extract_error = outcome.last_error or "unknown error"
         session.revert()
-        decision, reason = await _consult_guide_decide(
+        decision, reason, _extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["retry", "give_up"],
-            task="Extraction failed (file didn't compile after moves). Retry or give up?")
+            task=(
+                f"Extraction FAILED. The extractor could not produce compilable output.\n"
+                f"Error: {extract_error}\n"
+                f"The file has been reverted to pre-extraction state.\n"
+                f"Options: retry proving (different factoring), or give up."
+            ))
         if decision == "give_up":
-            ctx.failure_context = f"Extraction failed, gave up: {reason}"
+            ctx.failure_context = f"Extraction failed ({extract_error}), gave up: {reason}"
             ledger.mark_failed(entry.id, f"Extraction failed, gave up: {reason}")
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' extraction failed: {reason}")
             return Trans.CONTRADICTORY
-        ctx.failure_context = f"Extraction failed: {reason}"
-        ctx.current_task = "Re-prove with a different factoring strategy."
+        ctx.failure_context = f"Extraction failed: {extract_error}"
+        ctx.current_task = "Extraction tooling failed. Try a different decomposition approach — fewer helpers, or prove more inline before extracting."
         return Trans.RETRY
 
     session.finalize()
@@ -864,11 +966,25 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
     await agent._emit("message", f"[PO5] Extraction done: {len(new_files)} files staged")
 
     if not new_files:
-        return Trans.EXTRACTED
+        # Extractor ran but produced nothing — either no eligible helpers, or all were in mutual blocks
+        tools_check = get_lean_tools()
+        split = tools_check.split_theorems(stub_rel)
+        helper_count = len([b for b in split.blocks if b.name != entry.name]) if split and not split.error else 0
+        ctx.failure_context = (
+            f"Extraction produced 0 files despite {helper_count} helpers in file. "
+            f"Possible causes: all helpers are in mutual blocks (can't be extracted), "
+            f"or the extractor couldn't move them cleanly."
+        )
+        ctx.current_task = (
+            "Extraction failed to produce separate files. Either prove remaining sorry inline, "
+            "or restructure: move helpers OUT of mutual blocks (above them) so they become extractable."
+        )
+        await agent._emit("message", f"[PO5] 0 files extracted ({helper_count} helpers in file) — returning to PROVE")
+        return Trans.RETRY
 
     # Guide reviews decomposition
     file_list = "\n".join(f"  - {f.stem}" for f in new_files)
-    decision, reason = await _consult_guide_decide(
+    decision, reason, _extras = await _consult_guide_decide(
         agent, state, ledger, entry, cwd,
         options=["proceed", "revert"],
         task=(
@@ -913,7 +1029,7 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
         cycle_info = [v for v in verdicts if v.match_type == "cycle"]
         cycle_desc = "\n".join(f"  - {v.name} needs {v.matched_name} (ancestor)" for v in cycle_info)
 
-        decision, reason = await _consult_guide_decide(
+        decision, reason, _extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["expand_mutual", "different_decomposition", "fresh_start", "give_up"],
             task=(
@@ -954,7 +1070,7 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
     duplicates = [v for v in verdicts if v.name in existing_names]
     if duplicates:
         dup_names = [v.name for v in duplicates]
-        decision, reason = await _consult_guide_decide(
+        decision, reason, _extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["revert", "proceed"],
             task=f"Duplicate names: {dup_names}. Revert and import existing, or proceed?")
@@ -1009,7 +1125,7 @@ async def _phase_check(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
 
     root_entry = ledger.get(state.root_id)
     if root_entry:
-        decision, reason = await _consult_guide_decide(
+        decision, reason, _extras = await _consult_guide_decide(
             agent, state, ledger, root_entry, cwd,
             options=["unblock", "give_up"],
             task=f"STUCK: No pending work.\nStuck:\n{stuck_desc}\nCan we unblock or give up?")
@@ -1073,7 +1189,7 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
         # Fixer works
         fixed = await _run_fixer(agent, state, cwd, error_text, advice)
         if not fixed:
-            decision, reason = await _consult_guide_decide(
+            decision, reason, _extras = await _consult_guide_decide(
                 agent, state, ledger, root_entry, cwd,
                 options=["retry", "give_up"],
                 task=f"Fixer failed (attempt {attempt+1}/3). Retry or give up?")
@@ -1096,7 +1212,7 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
 # Helpers — agent management
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger):
+async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger) -> SwarmAgent:
     """Get or create persistent guide for this lemma. Reads .md on creation."""
     from .._ledger_mcp import create_ledger_mcp_server
     attr = f"_guide_{entry.id}"
@@ -1133,8 +1249,13 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLe
     from .._lean_tools_mcp import create_writer_import_server
     attr = f"_writer_{entry.id}"
     if getattr(agent, attr, None) is None:
-        tools = get_lean_tools()
-        import_mcp = create_writer_import_server(tools, entry.workspace)
+        ancestor_modules = []
+        for anc_id in ledger.get_ancestry(entry.id):
+            anc = ledger.get(anc_id)
+            if anc:
+                ancestor_modules.append(anc.workspace.replace("/", "."))
+        stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
+        import_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger, current_entry_id=entry.id)
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace,
@@ -1146,6 +1267,7 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLe
         setattr(agent, attr, internal)
         state.agent_registry[entry.id] = state.agent_registry.get(entry.id, {})
         state.agent_registry[entry.id]["writer"] = internal.spec.name
+        _remove_guide_from_visibility(agent, entry, internal)
     return getattr(agent, attr)
 
 
@@ -1154,8 +1276,13 @@ async def _get_proof_closer(agent, entry: LemmaEntry, state: PO5State, ledger: L
     from .._lean_tools_mcp import create_writer_import_server
     attr = f"_closer_{entry.id}"
     if getattr(agent, attr, None) is None:
-        tools = get_lean_tools()
-        import_mcp = create_writer_import_server(tools, entry.workspace)
+        ancestor_modules = []
+        for anc_id in ledger.get_ancestry(entry.id):
+            anc = ledger.get(anc_id)
+            if anc:
+                ancestor_modules.append(anc.workspace.replace("/", "."))
+        stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
+        import_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger, current_entry_id=entry.id)
         ctx = swarm_agent(
             "proof_closer", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace,
@@ -1167,7 +1294,20 @@ async def _get_proof_closer(agent, entry: LemmaEntry, state: PO5State, ledger: L
         setattr(agent, attr, internal)
         state.agent_registry[entry.id] = state.agent_registry.get(entry.id, {})
         state.agent_registry[entry.id]["closer"] = internal.spec.name
+        _remove_guide_from_visibility(agent, entry, internal)
     return getattr(agent, attr)
+
+
+def _remove_guide_from_visibility(agent, entry: LemmaEntry, writer_agent):
+    """Remove any guide agent from the writer's visibility set."""
+    writer_name = writer_agent.spec.name
+    registry = agent.swarm._registry
+    visible = registry.visibility_graph.get(writer_name)
+    if visible is None:
+        return
+    guide_names = [n for n in visible if "guide" in n]
+    for g in guide_names:
+        visible.discard(g)
 
 
 async def _cleanup_agents(agent, entry: LemmaEntry):
@@ -1586,7 +1726,7 @@ def _build_ledger_summary(ledger: LemmaLedger, entry: LemmaEntry) -> str:
 
 def _save_state(cwd: Path, state: PO5State):
     import yaml
-    state_dir = cwd / "strataswarm" / "temp"
+    state_dir = cwd / "StrataAgent" / "strataswarm" / "temp"
     state_dir.mkdir(parents=True, exist_ok=True)
     data = {
         "root_workspace": state.root_workspace,
@@ -1599,12 +1739,12 @@ def _save_state(cwd: Path, state: PO5State):
         "cycles_detected": state.cycles_detected,
     }
     (state_dir / "po5_state.yaml").write_text(
-        __import__("yaml").dump(data, default_flow_style=False))
+        yaml.dump(data, default_flow_style=False))
 
 
 def _load_state(cwd: Path, workspace_rel: str) -> PO5State | None:
     import yaml
-    state_file = cwd / "strataswarm" / "temp" / "po5_state.yaml"
+    state_file = cwd / "StrataAgent" / "strataswarm" / "temp" / "po5_state.yaml"
     if not state_file.exists():
         return None
     try:

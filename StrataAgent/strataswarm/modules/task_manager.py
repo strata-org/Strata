@@ -71,6 +71,7 @@ class Handler(str, Enum):
 TRANSITIONS: dict[tuple[Stage, Transition], Stage] = {
     (Stage.IDLE, Transition.MESSAGE_RECEIVED):  Stage.THINKING,
     (Stage.IDLE, Transition.MONITOR_TICK):      Stage.THINKING,
+    (Stage.IDLE, Transition.PROVER_DONE):       Stage.VALIDATE,
 
     (Stage.THINKING, Transition.NEW_TASK):      Stage.SETUP,
     (Stage.THINKING, Transition.PROCEED):       Stage.DISPATCH,
@@ -239,12 +240,14 @@ async def _state_idle(state: WorkflowState, agent) -> Transition:
     has_msg = await messages_ch.wait_for_message(timeout=wait_timeout)
 
     if not has_msg:
-        # Check if prover task crashed without sending a message
+        # Check if prover task completed
         if state.mode == WorkflowMode.PROVING and hasattr(agent, '_prover_task'):
             if agent._prover_task and agent._prover_task.done():
-                state.raw_input = "Prover task completed without sending a message."
+                state.prover_done = True
+                state.raw_input = "Prover task completed."
                 state.sender = "system"
-                return Transition.MESSAGE_RECEIVED
+                await agent._emit("message", "[TM] Prover task done — moving to validation.")
+                return Transition.PROVER_DONE
         return Transition.MONITOR_TICK
 
     summary = messages_ch.peek_summary()

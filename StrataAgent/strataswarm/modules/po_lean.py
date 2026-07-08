@@ -238,78 +238,265 @@ class MoveSession:
         return f"OK: registered move for '{decl_name}'"
 
     def commit(self) -> ExtractResult:
-        """Validate extraction: build all extracted files, then verify Stub.lean compiles.
+        """Atomically extract all registered declarations into separate files.
 
-        Does NOT rewrite Stub.lean — move_lines already handles that incrementally.
-        Checks:
-        1. Each extracted file has at most one sorry lemma (unless mutual block)
-        2. All extracted files compile
-        3. Stub.lean compiles
+        This is the ONLY method that mutates files. It:
+        1. Re-parses Stub.lean fresh (ignoring any prior move_lines state)
+        2. For each registered move_decl, extracts the declaration text
+        3. Writes each helper file with ONLY its needed imports (not all of them)
+        4. Rewrites Stub.lean: removes extracted blocks, adds imports
+        5. Verifies everything compiles
+
+        All-or-nothing: if any step fails, revert() can restore the original.
         """
         import subprocess
 
         root = self._tools._root
+        source = root / self._file_path
         out_path = root / self._workspace / self._output_subdir
 
-        # Collect all extracted files
-        created_files: list[str] = []
-        if out_path.exists():
-            for f in sorted(out_path.glob("lemma_helper_*.lean")):
-                created_files.append(str(f.relative_to(root)))
+        if not self._moves:
+            return ExtractResult(error="No declarations registered for extraction")
 
-        if not created_files:
-            return ExtractResult(error="No extracted files found")
+        # Take backup if not already done
+        if self._backup is None:
+            self._backup = source.read_text()
 
-        # Validate: each file must have at most one sorry lemma (unless mutual)
-        for f in created_files:
-            split = self._tools.split_theorems(f)
-            if not split or split.error:
+        # Re-parse fresh from the ORIGINAL file (not any modified state)
+        source.write_text(self._backup)
+        split = self._tools.split_theorems(self._file_path)
+        if not split or split.error:
+            return ExtractResult(error=f"Cannot parse file: {split.error if split else 'unknown'}")
+
+        # Build block lookup
+        block_by_name = {b.name: b for b in split.blocks}
+
+        # Determine the stable header: imports + open + variable lines from the original
+        original_lines = self._backup.splitlines()
+        header_lines = []
+        for l in original_lines:
+            stripped = l.strip()
+            if stripped.startswith("import ") or stripped.startswith("open ") or \
+               stripped.startswith("variable ") or stripped == "" or \
+               stripped.startswith("set_option") or stripped.startswith("section") or \
+               stripped.startswith("namespace"):
+                header_lines.append(l)
+            else:
+                break
+        base_header = "\n".join(header_lines)
+
+        # Resolve which blocks to extract
+        blocks_to_extract: list[tuple[str, list["TheoremBlock"]]] = []  # (safe_name, blocks)
+        names_being_extracted: set[str] = set()
+
+        for move in self._moves:
+            block = block_by_name.get(move.decl_name)
+            if not block:
                 continue
-            sorry_blocks = [b for b in split.blocks if b.has_sorry
-                            and b.decl_type in ("theorem", "def")
-                            and "private " not in b.text[:50]]
-            if len(sorry_blocks) > 1:
-                mutual_groups = {b.mutual_group for b in sorry_blocks if b.mutual_group is not None}
-                if not mutual_groups or len(mutual_groups) > 1 or any(b.mutual_group is None for b in sorry_blocks):
-                    names = [b.name for b in sorry_blocks]
-                    return ExtractResult(
-                        error=f"File {f} has {len(sorry_blocks)} sorry lemmas ({names}) — "
-                              f"each file must have at most 1 sorry lemma (unless they share a mutual block)",
-                        created_files=created_files)
 
-        # Build each extracted file — collect errors
-        all_errors = []
-        for f in created_files:
-            module = f.replace("/", ".").removesuffix(".lean")
-            result = subprocess.run(["lake", "build", module],
-                                    cwd=str(root), capture_output=True, text=True, timeout=120)
-            output = result.stdout + "\n" + result.stderr
-            errors = [l for l in output.splitlines() if ": error:" in l]
-            if errors:
-                all_errors.append(f"{f}: {errors[0]}")
+            # If mutual group, extract all members together
+            if block.mutual_group is not None:
+                group_names = split.mutual_groups.get(block.mutual_group, [move.decl_name])
+                group_blocks = [block_by_name[n] for n in group_names if n in block_by_name]
+                safe_name = move.decl_name
+                blocks_to_extract.append((safe_name, group_blocks))
+                names_being_extracted.update(group_names)
+            else:
+                blocks_to_extract.append((move.decl_name, [block]))
+                names_being_extracted.add(move.decl_name)
 
-        if all_errors:
+        if not blocks_to_extract:
+            return ExtractResult(error="No valid declarations found to extract")
+
+        # Pre-check: find private helpers that stay in Stub but are used by extracted blocks.
+        # Make them public (remove 'private' keyword) so extracted files can access them.
+        names_staying = set(block_by_name.keys()) - names_being_extracted
+        private_staying = {n for n in names_staying
+                          if n in block_by_name and "private " in block_by_name[n].text[:50]}
+        extracted_text_all = "\n".join(
+            b.text for _, blocks in blocks_to_extract for b in blocks)
+        made_public = []
+        for priv_name in private_staying:
+            if priv_name in extracted_text_all:
+                # This private helper is used by an extracted file — make it public
+                block = block_by_name[priv_name]
+                old_text = block.text
+                new_text = old_text.replace("private theorem", "theorem", 1).replace("private def", "def", 1)
+                if new_text != old_text:
+                    # Update the block text and rewrite the original lines
+                    start_idx = block.start - 1
+                    end_idx = block.end
+                    block_original_lines = original_lines[start_idx:end_idx]
+                    for i, l in enumerate(block_original_lines):
+                        if "private " in l:
+                            block_original_lines[i] = l.replace("private ", "", 1)
+                            break
+                    original_lines[start_idx:end_idx] = block_original_lines
+                    made_public.append(priv_name)
+
+        # If we made anything public, rewrite the backup and source
+        if made_public:
+            self._backup = "\n".join(original_lines)
+            source.write_text(self._backup)
+            # Re-parse since line numbers may have shifted (shouldn't, but be safe)
+            split = self._tools.split_theorems(self._file_path)
+            if not split or split.error:
+                return ExtractResult(error=f"Re-parse after making public failed: {split.error if split else 'unknown'}")
+            block_by_name = {b.name: b for b in split.blocks}
+
+        # Create output directory
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        # Auto-extract shared dependencies transitively: if a non-extracted, non-main
+        # helper is referenced by any extracted block, extract it too. Repeat until
+        # no new deps are found (transitive closure). Mutual groups are extracted as a unit.
+        auto_extracted = []
+        already_handled_groups: set[int] = set()
+        changed = True
+        while changed:
+            changed = False
+            extracted_text_all_fresh = "\n".join(
+                b.text for _, blocks in blocks_to_extract for b in blocks)
+            for staying_name in list(names_staying):
+                if staying_name == self._main_theorem:
+                    continue
+                if staying_name in extracted_text_all_fresh:
+                    block = block_by_name.get(staying_name)
+                    if not block:
+                        continue
+                    if block.mutual_group is not None:
+                        if block.mutual_group in already_handled_groups:
+                            continue
+                        already_handled_groups.add(block.mutual_group)
+                        group_names = split.mutual_groups.get(block.mutual_group, [])
+                        if self._main_theorem in group_names:
+                            continue
+                        group_blocks = [block_by_name[n] for n in group_names if n in block_by_name]
+                        blocks_to_extract.append((group_names[0], group_blocks))
+                        names_being_extracted.update(group_names)
+                        for gn in group_names:
+                            names_staying.discard(gn)
+                        auto_extracted.extend(group_names)
+                        changed = True
+                    else:
+                        blocks_to_extract.append((staying_name, [block]))
+                        names_being_extracted.add(staying_name)
+                        names_staying.discard(staying_name)
+                        auto_extracted.append(staying_name)
+                        changed = True
+
+        # Build dependency graph: which extracted decl uses which other extracted decl
+        deps: dict[str, list[str]] = {}  # safe_name → [dep_safe_names]
+        for safe_name, blocks in blocks_to_extract:
+            block_text = "\n".join(b.text for b in blocks)
+            my_deps = []
+            for other_name, _ in blocks_to_extract:
+                if other_name == safe_name:
+                    continue
+                if other_name in block_text:
+                    my_deps.append(other_name)
+            deps[safe_name] = my_deps
+
+        # Write each helper file with only the imports it needs
+        created_files: list[str] = []
+        for safe_name, blocks in blocks_to_extract:
+            fs_name = safe_name.replace(" ", "_").replace("/", "_")
+            target_file = out_path / f"lemma_helper_{fs_name}.lean"
+
+            # Build imports for this file: base Stub.Def + only the helpers it depends on
+            file_imports = [f"import {self._workspace}.Stub.Def".replace("/", ".")]
+            for dep in deps.get(safe_name, []):
+                dep_fs = dep.replace(" ", "_").replace("/", "_")
+                module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{dep_fs}".replace("/", ".")
+                file_imports.append(f"import {module}")
+
+            # Also add additional_imports from the move intent
+            move_intent = next((m for m in self._moves if m.decl_name == safe_name), None)
+            if move_intent and move_intent.additional_imports:
+                for ai in move_intent.additional_imports:
+                    ai_fs = ai.replace(" ", "_").replace("/", "_")
+                    module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{ai_fs}".replace("/", ".")
+                    imp_line = f"import {module}"
+                    if imp_line not in file_imports:
+                        file_imports.append(imp_line)
+
+            # Extract open/variable/namespace from header (not imports — we build our own)
+            non_import_header = "\n".join(
+                l for l in header_lines
+                if not l.strip().startswith("import ") and l.strip()
+            )
+
+            # Build file content
+            imports_text = "\n".join(file_imports)
+            blocks_text = "\n\n".join(b.text for b in blocks)
+            file_content = f"{imports_text}\n\n{non_import_header}\n\n{blocks_text}\n"
+            target_file.write_text(file_content)
+            created_files.append(str(target_file.relative_to(root)))
+
+        # Rewrite Stub.lean: remove extracted blocks, add imports for them
+        # Determine which line ranges to remove
+        lines_to_remove: set[int] = set()  # 0-indexed
+        for _, blocks in blocks_to_extract:
+            for block in blocks:
+                for i in range(block.start - 1, block.end):  # start/end are 1-indexed
+                    lines_to_remove.add(i)
+
+        # Build new Stub.lean
+        new_lines = []
+        # First: add all existing imports
+        import_section_end = 0
+        for i, l in enumerate(original_lines):
+            if l.strip().startswith("import "):
+                import_section_end = i + 1
+
+        # Copy original imports
+        for i in range(import_section_end):
+            new_lines.append(original_lines[i])
+
+        # Add new imports for extracted helpers
+        for safe_name, _ in blocks_to_extract:
+            fs_name = safe_name.replace(" ", "_").replace("/", "_")
+            module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{fs_name}".replace("/", ".")
+            imp_line = f"import {module}"
+            if imp_line not in new_lines:
+                new_lines.append(imp_line)
+
+        # Copy remaining lines, skipping extracted blocks
+        for i in range(import_section_end, len(original_lines)):
+            if i not in lines_to_remove:
+                new_lines.append(original_lines[i])
+
+        # Clean up multiple blank lines
+        cleaned = []
+        prev_blank = False
+        for l in new_lines:
+            if l.strip() == "":
+                if not prev_blank:
+                    cleaned.append(l)
+                prev_blank = True
+            else:
+                cleaned.append(l)
+                prev_blank = False
+
+        source.write_text("\n".join(cleaned))
+
+        # Verify: build Stub.lean (which transitively builds all imported helpers)
+        stub_module = self._file_path.replace("/", ".").removesuffix(".lean")
+        result = subprocess.run(["lake", "build", stub_module],
+                                cwd=str(root), capture_output=True, text=True, timeout=300)
+        output = result.stdout + "\n" + result.stderr
+        errors = [l for l in output.splitlines() if ": error:" in l]
+
+        if errors:
+            # Categorize errors by file
+            error_summary = "\n".join(errors[:10])
             return ExtractResult(
-                error="Extracted files have compilation errors:\n" + "\n".join(all_errors[:5]),
-                created_files=created_files)
-
-        # Verify Stub.lean compiles
-        cr = self._tools.check_compiles(self._file_path)
-        if not cr.success:
-            # Get actual errors for feedback
-            stub_module = self._file_path.replace("/", ".").removesuffix(".lean")
-            result = subprocess.run(["lake", "build", stub_module],
-                                    cwd=str(root), capture_output=True, text=True, timeout=120)
-            output = result.stdout + "\n" + result.stderr
-            errors = [l for l in output.splitlines() if ": error:" in l]
-            error_detail = errors[0] if errors else "unknown error"
-            return ExtractResult(
-                error=f"Stub.lean doesn't compile: {error_detail}",
+                error=f"Build failed after extraction:\n{error_summary}",
                 created_files=created_files)
 
         self._committed = True
         self._created_files = created_files
-        self._extracted_names = [f.split("lemma_helper_")[-1].removesuffix(".lean") for f in created_files]
+        self._extracted_names = [n for n, _ in blocks_to_extract]
 
         return ExtractResult(created_files=created_files, extracted_names=self._extracted_names)
 

@@ -1,5 +1,6 @@
 name: SearchAgent
 description: "Codebase search. Finds definitions, lemmas, types."
+model: "global.anthropic.claude-opus-4-6-v1[1m]"
 stateless: false
 reply_only: true
 replicas: 1

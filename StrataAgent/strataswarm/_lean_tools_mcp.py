@@ -326,9 +326,11 @@ def create_extractor_mcp_server(session: "MoveSession"):
 
     Tools:
       - get_declarations: see all declarations in the file
-      - move_decl: register a declaration to be moved to its own file
-      - commit: execute all moves, rewrite Stub.lean, build, verify
+      - move_decl: register a declaration to be moved (intent only, no file mutation)
+      - commit: atomically extract ALL registered declarations, rewrite Stub.lean, verify
       - revert: undo everything, back to original for retry
+
+    Workflow: get_declarations → move_decl (repeat) → commit → done (or revert + retry)
     """
     from .modules.po_lean import MoveSession
 
@@ -369,9 +371,11 @@ def create_extractor_mcp_server(session: "MoveSession"):
     @tool(
         name="commit",
         description=(
-            "Execute all registered moves: write decomposed files, rewrite Stub.lean "
-            "(header + imports + main theorem only), build everything, verify Stub.lean "
-            "compiles sorry-free. Returns success or error."
+            "Execute all registered moves ATOMICALLY: parse the file fresh, extract all registered "
+            "declarations into separate files (each with only its needed imports), rewrite Stub.lean "
+            "(removes extracted blocks, adds imports), then build everything. "
+            "All-or-nothing: either all files compile or use revert to undo. "
+            "Call move_decl for all declarations FIRST, then commit once."
         ),
         input_schema={"type": "object", "properties": {}, "required": []},
     )
@@ -379,7 +383,7 @@ def create_extractor_mcp_server(session: "MoveSession"):
         result = session.commit()
         if result.error:
             return {"content": [{"type": "text", "text": f"FAILED: {result.error}"}]}
-        return {"content": [{"type": "text", "text": f"SUCCESS: {len(result.created_files)} files created, Stub.lean compiles sorry-free"}]}
+        return {"content": [{"type": "text", "text": f"SUCCESS: {len(result.created_files)} files created, Stub.lean compiles"}]}
 
     @tool(
         name="revert",
@@ -390,85 +394,34 @@ def create_extractor_mcp_server(session: "MoveSession"):
         result = session.revert()
         return {"content": [{"type": "text", "text": result}]}
 
-    @tool(
-        name="move_lines",
-        description=(
-            "Move lines start-end (1-indexed, inclusive) from Stub.lean into lemma_helper_<name>.lean. "
-            "Use this when move_decl fails (e.g. for set_option...in mutual blocks, or complex declarations). "
-            "The agent reads the file, identifies the exact line range, and moves it. "
-            "IMPORTANT: Move entire mutual blocks together (from 'mutual' or 'set_option' to 'end')."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "start": {"type": "integer", "description": "Start line (1-indexed, inclusive)"},
-                "end": {"type": "integer", "description": "End line (1-indexed, inclusive)"},
-                "name": {"type": "string", "description": "Name for the helper (creates lemma_helper_<name>.lean)"},
-            },
-            "required": ["start", "end", "name"],
-        },
-    )
-    async def move_lines_tool(input: dict[str, Any]) -> dict[str, Any]:
-        result = session.move_lines(input["start"], input["end"], input["name"])
-        return {"content": [{"type": "text", "text": result}]}
 
     @tool(
-        name="add_imports",
+        name="verify_build",
         description=(
-            "Add imports to lemma_helper_<name>.lean. "
-            "Pass helper names (e.g. 'detBlockSim') — they resolve to the correct module path automatically. "
-            "Or pass full module paths (e.g. 'StrataAgent.Sandbox.Stub.Def')."
+            "Re-build Stub.lean and all extracted files WITHOUT re-extracting. "
+            "Use this after manually fixing compilation errors (via Edit) post-commit. "
+            "Returns success or the specific compilation errors."
         ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "imports": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Helper names or full module paths to import",
-                },
-                "name": {"type": "string", "description": "Target helper name (the file to add imports to)"},
-            },
-            "required": ["imports", "name"],
-        },
-    )
-    async def add_imports_tool(input: dict[str, Any]) -> dict[str, Any]:
-        result = session.add_imports(input["imports"], input["name"])
-        return {"content": [{"type": "text", "text": result}]}
-
-    @tool(
-        name="compile_check",
-        description=(
-            "Check if lemma_helper_<name>.lean compiles. "
-            "Returns 'OK: compiles (has sorry)' or 'OK: compiles (sorry-free)' or error details. "
-            "Use after move_lines/add_imports to verify before final commit."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Helper name to check"},
-            },
-            "required": ["name"],
-        },
-    )
-    async def compile_check_tool(input: dict[str, Any]) -> dict[str, Any]:
-        result = session.compile_check(input["name"])
-        return {"content": [{"type": "text", "text": result}]}
-
-    @tool(
-        name="revert_last",
-        description="Undo the last move_lines: restores Stub.lean to its state before that move and deletes the extracted file. Can be called multiple times to undo several moves in reverse order.",
         input_schema={"type": "object", "properties": {}, "required": []},
     )
-    async def revert_last_tool(input: dict[str, Any]) -> dict[str, Any]:
-        result = session.revert_last()
-        return {"content": [{"type": "text", "text": result}]}
+    async def verify_build_tool(input: dict[str, Any]) -> dict[str, Any]:
+        import subprocess
+        root = session._tools._root
+        stub_module = session._file_path.replace("/", ".").removesuffix(".lean")
+        result = subprocess.run(["lake", "build", stub_module],
+                                cwd=str(root), capture_output=True, text=True, timeout=300)
+        output = result.stdout + "\n" + result.stderr
+        errors = [l for l in output.splitlines() if ": error:" in l]
+        if errors:
+            return {"content": [{"type": "text", "text": "BUILD FAILED:\n" + "\n".join(errors[:10])}]}
+        has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
+        status = "compiles (has sorry)" if has_sorry else "compiles (sorry-free)"
+        return {"content": [{"type": "text", "text": f"BUILD OK: {status}"}]}
 
     return create_sdk_mcp_server(
         name="extractor_tools",
         version="1.0.0",
-        tools=[get_declarations_tool, move_decl_tool, move_lines_tool,
-               add_imports_tool, compile_check_tool, revert_last_tool, commit_tool, revert_tool],
+        tools=[get_declarations_tool, move_decl_tool, commit_tool, revert_tool, verify_build_tool],
     )
 
 

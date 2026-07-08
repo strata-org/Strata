@@ -1201,6 +1201,10 @@ class SwarmDashboard:
                 max_outbound_response=spec_req.max_outbound_length,
             )
 
+            # Apply swarm default model if agent has no model set
+            if not agent_spec.model and self._swarm._default_model:
+                agent_spec.model = self._swarm._default_model
+
             if shard_config and shard_config.replicas > 1:
                 from copy import copy
                 for i in range(shard_config.replicas):

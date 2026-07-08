@@ -183,7 +183,7 @@ class SwarmAgent:
     # ─── Response consumption ────────────────────────────────────────────
 
     async def _consume_response(self, result: AgentResult[T], start_time: float,
-                                query: str | None = None) -> bool:
+                                query: str | None = None, cancellation_token: CancellationToken | None = None) -> bool:
         """Send query (if given) + consume response from backend, under lock.
         Returns True to continue outer loop, False to break."""
         async with self._backend_lock:
@@ -194,9 +194,9 @@ class SwarmAgent:
                 await self._emit("query", query_preview)
                 await self.backend.send_query(query)
                 await self._emit("message", "[Query sent]")
-            return await self._consume_response_inner(result, start_time)
+            return await self._consume_response_inner(result, start_time, cancellation_token)
 
-    async def _consume_response_inner(self, result: AgentResult[T], start_time: float) -> bool:
+    async def _consume_response_inner(self, result: AgentResult[T], start_time: float, cancellation_token: CancellationToken | None = None) -> bool:
         """Inner consume logic (called under lock)."""
         await self._emit("message", "[Waiting for backend response...]")
         self._last_message_time = time.monotonic()  # watchdog timestamp
@@ -256,6 +256,11 @@ class SwarmAgent:
 
             if self.cancellation.is_cancelled:
                 await self.backend.interrupt()
+                result.halted_by = "cancelled"
+                result.status = AgentStatus.CANCELLED
+                return False
+            
+            if cancellation_token and cancellation_token.is_cancelled:
                 result.halted_by = "cancelled"
                 result.status = AgentStatus.CANCELLED
                 return False
@@ -486,6 +491,21 @@ class SwarmAgent:
 
         return await self._run_inner(inp, result_type)
 
+    async def run_while_listening_to_messages(self, cancellation_token: CancellationToken) -> AgentResult[str]:
+        """Run the agent in stateful mode, listening for messages until cancelled.
+
+        Returns:
+            AgentResult with final status (COMPLETED, CANCELLED, or FAILED).
+        """
+        result = await self._listen_messages(cancellation_token)
+        if cancellation_token.is_cancelled:
+            result.halted_by = "cancelled"
+            result.status = AgentStatus.CANCELLED
+        else:
+            result.halted_by = "completed"
+            result.status = AgentStatus.COMPLETED
+        return result
+
     async def _run_inner(self, inp: Any = None, result_type: type[T] | None = None) -> AgentResult[T]:
         """The actual agent loop. Called by run() (after module check) and run_ai() (direct)."""
         if inp is not None:
@@ -626,4 +646,33 @@ class SwarmAgent:
         result.duration_ms = int((time.monotonic() - start_time) * 1000)
         out_ch = self.channel_bus.get_or_create(f"{self.spec.name}:result")
         await out_ch.send(ChannelMessage(sender=self.spec.name, payload=result))
+        return result
+
+
+    async def _listen_messages(self, cancellation_token: CancellationToken) -> None:
+        """Listen for messages on the agent's channel and emit them to the backend."""
+        result: AgentResult[str] = AgentResult(name=self.spec.name, status=AgentStatus.PENDING)
+        has_messaging = bool(
+            self._mcp_servers_override and "agent_messaging" in self._mcp_servers_override
+        )
+        start_time = time.monotonic()
+        # Check for pending messages
+        if has_messaging:
+            should_continue = cancellation_token.is_cancelled is False
+            while should_continue:
+                await asyncio.sleep(1) # yield to event loop
+                messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
+                msg = await messages_ch.receive(timeout=0.1)
+                if msg:
+                    if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
+                        ms = self._mcp_servers_override.get("agent_messaging")
+                        if ms and isinstance(ms, dict) and "_pending_replies" in ms:
+                            ms["_pending_replies"].append(msg.sender)
+                    await self._emit("message_received", f"from:{msg.sender}")
+                    ts = datetime.now().strftime("%H:%M:%S")
+                    injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
+                    await self._emit("message", injection)
+                    # Send + consume under lock
+                    should_continue = await self._consume_response(result, start_time, query=injection, cancellation_token=cancellation_token)
+                should_continue = should_continue and not cancellation_token.is_cancelled
         return result

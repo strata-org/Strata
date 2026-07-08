@@ -17,6 +17,7 @@ echo "  ✓ Session logs cleared"
 # Checkpoints
 rm -rf "$SCRIPT_DIR/strataswarm/temp/checkpoints/"*
 rm -f "$SCRIPT_DIR/strataswarm/temp/tm_checkpoint.json"
+rm -f "$SCRIPT_DIR/strataswarm/temp/po5_state.yaml"
 echo "  ✓ Checkpoints cleared"
 
 # Server logs
