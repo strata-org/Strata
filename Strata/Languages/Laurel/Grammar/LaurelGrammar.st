@@ -219,6 +219,10 @@ op throwsClause(throwsType: LaurelType): ThrowsClause => "\n  throws " throwsTyp
 category OnThrowClause;
 op onThrowClause(binding: Ident, predicate: StmtExpr): OnThrowClause => "\n  onThrow (" binding ") " predicate:0;
 
+category OnThrowsClause;
+op onThrowsClause(condition: StmtExpr, binding: Ident, postcondition: StmtExpr): OnThrowsClause =>
+  "\n  when " condition:0 " throws (" binding ") " postcondition:0;
+
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
 op externalBody: Body => "external";
@@ -230,10 +234,11 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   requires: Seq RequiresClause,
   throws: Option ThrowsClause,
   onThrow: Seq OnThrowClause,
+  onThrows: Seq OnThrowsClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires throws onThrow invokeOn opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
@@ -241,10 +246,11 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   requires: Seq RequiresClause,
   throws: Option ThrowsClause,
   onThrow: Seq OnThrowClause,
+  onThrows: Seq OnThrowsClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires throws onThrow invokeOn opaqueSpec body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

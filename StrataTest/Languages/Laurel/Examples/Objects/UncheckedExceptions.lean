@@ -92,9 +92,14 @@ procedure getFBad(xIsNull: bool, x: Obj)
 
 Java:
     int get(int[] a, int i) { return a[i]; }
-`a[i]` throws when `i < 0 || i >= a.length`. The contract records that the
-result equals `a[i]` on the normal path, and that an escaping `IndexError`
-implies the index was out of bounds. -/
+`a[i]` throws when `i < 0 || i >= a.length`. This example uses both exceptional
+contract forms together:
+  * `onThrow (e) e is IndexError ==> …` — a postcondition on *every* exceptional
+    exit: "if it threw an `IndexError`, the index was out of bounds";
+  * `when (i < 0) || (i >= alen) throws (e) e is IndexError` — a behavior case:
+    "if the index is out of bounds on entry, it *does* throw an `IndexError`".
+The first lets a caller reason backward from a caught exception; the second lets
+a caller conclude a throw *will* happen for a bad index. -/
 
 #eval testLaurel <|
 #strata
@@ -105,6 +110,7 @@ procedure get(a: Map int int, alen: int, i: int)
   returns (r: int)
   throws Exception
   onThrow (e) e is IndexError ==> (i < 0) || (i >= alen)
+  when (i < 0) || (i >= alen) throws (e) e is IndexError
   opaque
   ensures r == select(a, i)
 {

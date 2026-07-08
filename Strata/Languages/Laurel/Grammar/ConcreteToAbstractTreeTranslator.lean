@@ -536,9 +536,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, throwsArg, onThrowArg, invokeOnArg, opaqueSpecArg, bodyArg]
+      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, bodyArg]
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, throwsArg, onThrowArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
+      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -576,6 +576,19 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
               pure ({ binding := binding, predicate := predicate } : OnThrowClause)
             | _, _ => TransM.error s!"Expected onThrowClause, got {repr cOp.name}"
           | _ => TransM.error "Expected operation in onThrow sequence"
+      | _ => pure []
+    -- Parse `when C throws (e) P` exceptional behavior cases (E4 - zero or more)
+    let onThrows ← match onThrowsArg with
+      | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+          | .op cOp => match cOp.name, cOp.args with
+            | q`Laurel.onThrowsClause, #[condArg, bindingArg, postArg] => do
+              let condition ← translateStmtExpr condArg
+              let binding ← translateIdent bindingArg
+              let postcondition ← translateStmtExpr postArg
+              pure ({ condition := condition, binding := binding,
+                      postcondition := postcondition } : OnThrowsClause)
+            | _, _ => TransM.error s!"Expected onThrowsClause, got {repr cOp.name}"
+          | _ => TransM.error "Expected operation in onThrows sequence"
       | _ => pure []
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
@@ -625,11 +638,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       invokeOn := invokeOn
       throwsType := throwsType
       onThrow := onThrow
+      onThrows := onThrows
       body := procBody
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 10 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 11 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 

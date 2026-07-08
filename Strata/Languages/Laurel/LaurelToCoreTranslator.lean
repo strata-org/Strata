@@ -1001,6 +1001,25 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
         pure (label, ({ expr := guarded, attr, md } : Core.Procedure.Check)))
     else pure []
   let postconditions := postconditions.union onThrowChecks
+  -- E4: `when C throws (e) P` behavior cases constrain *when* the Bad path is taken
+  -- and what then holds. Each lowers to `C ==> (Result..isBad($result) ∧
+  -- P[e := Result..err($result)])`: so a caller can conclude the procedure throws
+  -- when `C` holds and that `P` holds of the thrown value. Checked on exit when
+  -- the procedure has a body; assumed (free) for a bodiless procedure.
+  let onThrowsChecks : ListMap Core.CoreLabel Core.Procedure.Check ←
+    if procThrows then
+      proc.onThrows.mapIdxM (fun i c => do
+        let ce ← translateExpr c.condition [] (isPureContext := true)
+        let pe ← translateExpr c.postcondition [] (isPureContext := true)
+        let pe' := LExpr.substFvar pe ⟨c.binding.text, ()⟩ (mkResultApp "Result..err")
+        let conj := LExpr.mkApp () boolAndOp [mkResultApp "Result..isBad", pe']
+        let guarded : Core.Expression.Expr := .ite () ce conj (.boolConst () true)
+        let label := if proc.onThrows.length == 1 then "onThrows" else s!"onThrows_{i}"
+        let attr := if bodyStmts.isNone then Core.Procedure.CheckAttr.Free else .Default
+        let md := astNodeToCoreMd c.condition
+        pure (label, ({ expr := guarded, attr, md } : Core.Procedure.Check)))
+    else pure []
+  let postconditions := postconditions.union onThrowsChecks
   -- Assemble outputs + body: a labeled block so early returns (exit) work, plus
   -- the `Result` wrapping for throwing procedures (E7). `bodyLabel` is the
   -- shared "$body" constant the resolver pre-registers.

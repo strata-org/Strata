@@ -237,6 +237,15 @@ structure Procedure : Type where
   /-- Exceptional postconditions (E4): predicates that hold when the procedure
       exits on the exceptional channel. Recorded, not enforced. -/
   onThrow : List OnThrowClause := []
+  /-- Exceptional behavior cases (E4): each `when C throws (e) P` clause pairs a
+      pre-state trigger `C` with an exceptional postcondition `P` (with `e` bound
+      to the thrown value). Meaning: if `C` holds on entry, the procedure exits
+      exceptionally *and* `P` holds. Lowered to a Core postcondition
+      `C ==> (Result..isBad($result) ∧ P[e := err])` — checked on exit and assumed
+      at call sites, so a caller can conclude a throw *will* happen (and what then
+      holds). Distinct from `onThrow` (`isBad ==> P`), which constrains every
+      exceptional exit without forcing one. -/
+  onThrows : List OnThrowsClause := []
 
 /--
 A typed parameter for a procedure.
@@ -290,6 +299,24 @@ structure OnThrowClause where
   binding : Identifier
   /-- The exceptional-postcondition predicate (checked at `TBool`). -/
   predicate : AstNode StmtExpr
+
+/--
+An `when C throws (e) P` exceptional *behavior case* (E4). It pairs a pre-state
+trigger condition `C` (a boolean predicate over the procedure's inputs) with an
+exceptional postcondition `P` in which `e` is bound to the thrown value (typed at
+the channel root `BaseException`). Meaning: if `C` holds on entry, the procedure
+exits on the exceptional channel and `P` holds of the thrown value. Compare
+`OnThrowClause`, which constrains *every* exceptional exit but does not force
+one. See `docs/design/laurel_extensions.md` (extension E4).
+-/
+structure OnThrowsClause where
+  /-- The pre-state trigger predicate `C` (checked at `TBool`; `e` not in scope). -/
+  condition : AstNode StmtExpr
+  /-- The identifier bound to the thrown value in `P` (typed `BaseException`). -/
+  binding : Identifier
+  /-- The exceptional postcondition `P` that holds when `C` triggers a throw
+      (checked at `TBool`, with `binding` in scope). -/
+  postcondition : AstNode StmtExpr
 
 /--
 The body of a procedure. A body can be transparent (with a visible

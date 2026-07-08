@@ -2771,7 +2771,7 @@ def resolveBody (body : Body) : ResolveM Body := do
     boolean predicate). Recorded for the verifier; not enforced — Java-style
     declare-or-catch is front-end policy. See `laurel_extensions.md` (E4). -/
 def resolveExceptionalContract (proc : Procedure)
-    : ResolveM (Option HighTypeMd × List OnThrowClause) := do
+    : ResolveM (Option HighTypeMd × List OnThrowClause × List OnThrowsClause) := do
   let throwsType' ← proc.throwsType.mapM fun t => do
     let t' ← resolveHighType t
     let baseTy ← resolveHighType
@@ -2787,7 +2787,19 @@ def resolveExceptionalContract (proc : Procedure)
     let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
     let predicate' ← Check.resolveStmtExpr c.predicate { val := .TBool, source := c.predicate.source }
     pure ({ binding := binding', predicate := predicate' } : OnThrowClause)
-  pure (throwsType', onThrow')
+  -- `when C throws (e) P` behavior cases: the trigger `C` is a pre-state predicate
+  -- over the inputs (no exception binder), resolved at `bool` like a
+  -- precondition; the postcondition `P` is resolved at `bool` with the binding
+  -- `e` (typed at `BaseException`) in scope, like an `onThrow`.
+  let onThrows' ← proc.onThrows.mapM fun c => do
+    let condition' ← Check.resolveStmtExpr c.condition { val := .TBool, source := c.condition.source }
+    withScope do
+      let bindTy ← resolveHighType
+        { val := .UserDefined (mkId baseExceptionTypeName), source := c.binding.source }
+      let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
+      let postcondition' ← Check.resolveStmtExpr c.postcondition { val := .TBool, source := c.postcondition.source }
+      pure ({ condition := condition', binding := binding', postcondition := postcondition' } : OnThrowsClause)
+  pure (throwsType', onThrow', onThrows')
 
 /-- (Procedure)
     ```
@@ -2824,12 +2836,12 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- (e.g. destructive assignments) inside a transparent body. So there is
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
-    let (throwsType', onThrow') ← resolveExceptionalContract proc
+    let (throwsType', onThrow', onThrows') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
-             throwsType := throwsType', onThrow := onThrow',
+             throwsType := throwsType', onThrow := onThrow', onThrows := onThrows',
              body := body' }
 
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
@@ -2867,12 +2879,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
       modify fun s => { s with errors := s.errors.push diag }
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
-    let (throwsType', onThrow') ← resolveExceptionalContract proc
+    let (throwsType', onThrow', onThrows') ← resolveExceptionalContract proc
     return { name := procName', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
-             throwsType := throwsType', onThrow := onThrow',
+             throwsType := throwsType', onThrow := onThrow', onThrows := onThrows',
              body := body' }
 
 /-- Resolve a type definition. -/
@@ -3075,6 +3087,13 @@ private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Proced
     let bindTy : HighTypeMd := ⟨.UserDefined (mkId baseExceptionTypeName), c.binding.source⟩
     let map := register map c.binding (.var c.binding bindTy)
     collectStmtExpr map c.predicate) map
+  -- E4: `when C throws (e) P` behavior cases — register the binding `e` (like an
+  -- `onThrow`) and collect both the trigger and the postcondition.
+  let map := proc.onThrows.foldl (fun map c =>
+    let bindTy : HighTypeMd := ⟨.UserDefined (mkId baseExceptionTypeName), c.binding.source⟩
+    let map := register map c.binding (.var c.binding bindTy)
+    let map := collectStmtExpr map c.condition
+    collectStmtExpr map c.postcondition) map
   collectBody map proc.body
 
 private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)

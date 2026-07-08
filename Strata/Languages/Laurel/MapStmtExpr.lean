@@ -234,7 +234,9 @@ def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure)
     preconditions := ← proc.preconditions.mapM (·.mapM f)
     decreases := ← proc.decreases.mapM f
     invokeOn := ← proc.invokeOn.mapM f
-    onThrow := ← proc.onThrow.mapM (fun c => do pure { c with predicate := ← f c.predicate }) }
+    onThrow := ← proc.onThrow.mapM (fun c => do pure { c with predicate := ← f c.predicate })
+    onThrows := ← proc.onThrows.mapM (fun c => do
+      pure { c with condition := ← f c.condition, postcondition := ← f c.postcondition }) }
 
 /-- Apply a monadic transformation to procedure bodies in a program.
     Does **not** traverse preconditions, decreases, or invokeOn — use

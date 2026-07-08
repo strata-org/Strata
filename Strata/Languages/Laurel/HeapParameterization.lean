@@ -128,9 +128,12 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   -- heap use must count toward the reads/writes classification, just like an
   -- ordinary postcondition.
   let onThrowResult := (proc.onThrow.forM (collectExprMd ·.predicate)).run {} |>.2
-  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly || onThrowResult.readsHeapDirectly,
-    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly || onThrowResult.writesHeapDirectly,
-    callees := bodyResult.callees ++ precondResult.callees ++ onThrowResult.callees }
+  -- ...and `when C throws (e) P` behavior cases (E4), whose trigger/postcondition
+  -- may dereference composite parameters, just like a precondition.
+  let onThrowsResult := (proc.onThrows.forM (fun c => do collectExprMd c.condition; collectExprMd c.postcondition)).run {} |>.2
+  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly || onThrowResult.readsHeapDirectly || onThrowsResult.readsHeapDirectly,
+    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly || onThrowResult.writesHeapDirectly || onThrowsResult.writesHeapDirectly,
+    callees := bodyResult.callees ++ precondResult.callees ++ onThrowResult.callees ++ onThrowsResult.callees }
 
 def computeReadsHeap (procs : List Procedure) : List Identifier :=
   let info := procs.map fun p => (p.name, analyzeProc p)
@@ -539,11 +542,20 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       let p ← heapTransformExpr heapName model c.predicate
       pure { c with predicate := dropCastAsserts p }
 
+    -- `when C throws (e) P` cases: transform the trigger (like a precondition) and
+    -- the postcondition (like `onThrow`, dropping cast-assert coercions since `P`
+    -- may dereference the binding via a cast).
+    let onThrows' ← proc.onThrows.mapM fun c => do
+      let cond ← heapTransformExpr heapName model c.condition
+      let post ← heapTransformExpr heapName model c.postcondition
+      pure { c with condition := dropCastAsserts cond, postcondition := dropCastAsserts post }
+
     return { proc with
       inputs := inputs',
       outputs := outputs',
       preconditions := preconditions',
       onThrow := onThrow',
+      onThrows := onThrows',
       body := body' }
 
   else if readsHeap then
@@ -576,10 +588,19 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       let p ← heapTransformExpr heapName model c.predicate
       pure { c with predicate := dropCastAsserts p }
 
+    -- `when C throws (e) P` cases: transform the trigger (like a precondition) and
+    -- the postcondition (like `onThrow`, dropping cast-assert coercions since `P`
+    -- may dereference the binding via a cast).
+    let onThrows' ← proc.onThrows.mapM fun c => do
+      let cond ← heapTransformExpr heapName model c.condition
+      let post ← heapTransformExpr heapName model c.postcondition
+      pure { c with condition := dropCastAsserts cond, postcondition := dropCastAsserts post }
+
     return { proc with
       inputs := inputs',
       preconditions := preconditions',
       onThrow := onThrow',
+      onThrows := onThrows',
       body := body' }
 
   else

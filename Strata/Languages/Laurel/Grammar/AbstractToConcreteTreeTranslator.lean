@@ -262,6 +262,8 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     laurelOp "throwsClause" #[highTypeToArg t])
   let onThrowArgs := proc.onThrow.map (fun c =>
     laurelOp "onThrowClause" #[ident c.binding.text, stmtExprToArg c.predicate]) |>.toArray
+  let onThrowsArgs := proc.onThrows.map (fun c =>
+    laurelOp "onThrowsClause" #[stmtExprToArg c.condition, ident c.binding.text, stmtExprToArg c.postcondition]) |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
   let (opaqueSpecArg, bodyArg) := match proc.body with
@@ -287,6 +289,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       seqArg requiresArgs,
       throwsArg,
       seqArg onThrowArgs,
+      seqArg onThrowsArgs,
       invokeOnArg,
       opaqueSpecArg,
       bodyArg
