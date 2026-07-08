@@ -485,6 +485,18 @@ where
       simp_all
       omega)
 
+/-- Drop the downcast `assert` introduced when heap-lowering a cast `(e as T)`
+    (which becomes `Block [assert (e is T); e]`). Used only on `onThrow`
+    predicates: those are pure contracts (which cannot execute an `assert`, and
+    where a user `assert` is impossible), and any cast validity is conditioned by
+    the clause's own guard (e.g. `e is T ==> (e as T)#f …`). Body statements
+    (including `catch` handlers) keep the assert, so a downcast there is still
+    checked. -/
+private def dropCastAsserts (e : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun node => match node.val with
+    | .Block [⟨.Assert _, _⟩, v] none => v
+    | _ => node) e
+
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
   let readsHeap := (← get).heapReaders.contains proc.name
@@ -521,9 +533,11 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .External => pure .External
 
     -- `onThrow` predicates may dereference composite parameters, so they are
-    -- heap-transformed like postconditions (field reads become `readField $heap …`).
+    -- heap-transformed like postconditions (field reads become `readField $heap …`),
+    -- then cast-assert coercions are dropped (see `dropCastAsserts`).
     let onThrow' ← proc.onThrow.mapM fun c => do
-      pure { c with predicate := ← heapTransformExpr heapName model c.predicate }
+      let p ← heapTransformExpr heapName model c.predicate
+      pure { c with predicate := dropCastAsserts p }
 
     return { proc with
       inputs := inputs',
@@ -556,9 +570,11 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .External => pure .External
 
     -- `onThrow` predicates may dereference composite parameters, so they are
-    -- heap-transformed like postconditions (field reads become `readField $heap …`).
+    -- heap-transformed like postconditions (field reads become `readField $heap …`),
+    -- then cast-assert coercions are dropped (see `dropCastAsserts`).
     let onThrow' ← proc.onThrow.mapM fun c => do
-      pure { c with predicate := ← heapTransformExpr heapName model c.predicate }
+      let p ← heapTransformExpr heapName model c.predicate
+      pure { c with predicate := dropCastAsserts p }
 
     return { proc with
       inputs := inputs',

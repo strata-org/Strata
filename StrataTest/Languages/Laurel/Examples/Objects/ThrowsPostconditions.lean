@@ -200,3 +200,114 @@ procedure valueBad(a: IntArray, elems: Map int int, i: int)
   r := select(elems, i)
 };
 #end
+/-! ## `onThrow` dereferencing the exception binding
+
+An `onThrow` predicate may narrow the binding with a cast and read a field of the
+thrown value: `onThrow (e) e is T ==> (e as T)#f ...`. It is an exceptional
+postcondition of the form "if the procedure exits by throwing a `T`, then this
+property of the thrown value holds".
+
+Here the offending index is recorded on the exception (`IndexError#badIndex`) and
+the `onThrow` states the *condition* that it is out of bounds — not a specific
+value. The array is a `Map int int` with a separate `alen` length. -/
+
+-- Positive: `value(a, i)` throws `IndexError` recording the offending index when
+-- `i` is out of bounds, and the `onThrow` states that the recorded index is out
+-- of bounds (a condition, no specific value) — which holds because it equals `i`
+-- on the throwing path.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Exception extends BaseException {}
+composite IndexError extends Exception {
+  badIndex: int
+}
+procedure value(a: Map int int, alen: int, i: int)
+  returns (r: int)
+  throws Exception
+  onThrow (e) e is IndexError ==> ((e as IndexError)#badIndex < 0) || ((e as IndexError)#badIndex >= alen)
+  opaque
+  ensures r == select(a, i)
+{
+  if (i < 0) || (i >= alen) then {
+    var ei: IndexError := new IndexError;
+    ei#badIndex := i;
+    throw ei
+  };
+  r := select(a, i)
+};
+#end
+
+-- Negative: the `onThrow` claims the recorded index is *in* bounds, which
+-- contradicts the throwing condition, so it cannot be proved.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Exception extends BaseException {}
+composite IndexError extends Exception {
+  badIndex: int
+}
+procedure valueBadContract(a: Map int int, alen: int, i: int)
+  returns (r: int)
+  throws Exception
+  onThrow (e) e is IndexError ==> ((e as IndexError)#badIndex >= 0) && ((e as IndexError)#badIndex < alen)
+//            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+  opaque
+  ensures r == select(a, i)
+{
+  if (i < 0) || (i >= alen) then {
+    var ei: IndexError := new IndexError;
+    ei#badIndex := i;
+    throw ei
+  };
+  r := select(a, i)
+};
+#end
+/-! ## Simple field-value demos (concrete numbers)
+
+The same binding field-dereference, in its simplest form: the thrown exception
+carries a concrete value and the `onThrow` / `catch` reads it back. Easier to
+follow at a glance than the relational versions above. -/
+
+-- onThrow reads back a concrete field value (42).
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Exception extends BaseException {}
+composite IndexError extends Exception {
+  index: int
+}
+procedure throwsFortyTwo()
+  throws Exception
+  onThrow (e) e is IndexError ==> (e as IndexError)#index == 42
+  opaque
+{
+  var ei: IndexError := new IndexError;
+  ei#index := 42;
+  throw ei
+};
+#end
+
+-- catch handler reads back a concrete field value (5), so `... - 5 == 0`.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Exception extends BaseException {}
+composite IndexError extends Exception {
+  index: int
+}
+procedure catchReadsFortyTwo()
+  returns (r: int)
+  opaque
+  ensures r == 0
+{
+  r := 0;
+  var ei: IndexError := new IndexError;
+  ei#index := 5;
+  try {
+    throw ei
+  } catch c when c is IndexError {
+    r := (c as IndexError)#index - 5
+  }
+};
+#end

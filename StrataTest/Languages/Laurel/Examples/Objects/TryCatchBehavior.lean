@@ -234,3 +234,33 @@ procedure returnInCatchNestedFinally()
   }
 };
 #end
+-- A `catch` handler dereferences a field of the (cast) exception binding and
+-- checks a *condition* on it: the caught `IndexError` records the offending
+-- index, and on the handler path (reached only via the out-of-bounds throw) that
+-- recorded index is provably out of bounds.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Exception extends BaseException {}
+composite IndexError extends Exception {
+  badIndex: int
+}
+procedure catchReadsField(alen: int, i: int)
+  returns (r: int)
+  opaque
+  ensures r >= 0
+{
+  r := 0;
+  var ei: IndexError := new IndexError;
+  ei#badIndex := i;
+  try {
+    if (i < 0) || (i >= alen) then {
+      throw ei
+    };
+    r := i
+  } catch c when c is IndexError {
+    assert ((c as IndexError)#badIndex < 0) || ((c as IndexError)#badIndex >= alen);
+    r := 0
+  }
+};
+#end

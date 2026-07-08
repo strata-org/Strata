@@ -260,6 +260,14 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
           | .UserDefined typRef => pure (some typRef.text)
           | _ => pure none
         | none => pure none
+  | .AsType _ castTy =>
+    -- A cast `(e as T)` fixes the static type to `T` for a following field
+    -- access, e.g. `(e as IndexError)#index`. This is what lets a `catch`/
+    -- `onThrow` binding (typed at the root `BaseException`) be narrowed to a
+    -- subtype before dereferencing its fields.
+    match castTy.val with
+    | .UserDefined typRef => pure (some typRef.text)
+    | _ => pure none
   | _ => pure none
   termination_by sizeOf target
   decreasing_by

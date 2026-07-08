@@ -745,6 +745,19 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
     match a'.val, b'.val with
     | .Unknown, _ | _, .Unknown => true
     | .TCore _, _ | _, .TCore _ => true
+    | .UserDefined n1, .UserDefined n2 =>
+      -- After heap parameterization every composite reference is erased to the
+      -- synthesized `Composite` type, but the `catch`/`onThrow` exception binding
+      -- keeps its declared root type `BaseException` (it has no AST type node to
+      -- rewrite, decision #12). Treat the two names as consistent so a heap
+      -- operation on the binding — e.g. `readField $heap e …` produced by
+      -- lowering `(e as T)#f` — type-checks. Pre-heap-parameterization the
+      -- synthesized `Composite` type does not appear in user code, so this only
+      -- fires post-erasure. (String-keyed like the rest of the `Composite` /
+      -- `BaseException` boundary; see the design notes' §5.4 caveat.)
+      highEq a' b'
+        || ((n1.text == baseExceptionTypeName || n1.text == "Composite")
+              && (n2.text == baseExceptionTypeName || n2.text == "Composite"))
     | _, _ => highEq a' b'
   termination_by (SizeOf.sizeOf a)
   decreasing_by
