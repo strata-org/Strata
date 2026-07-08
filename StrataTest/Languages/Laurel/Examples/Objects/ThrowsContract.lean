@@ -160,3 +160,22 @@ procedure handled()
   r := 0
 };
 #end
+
+-- A throwing procedure lowers to a single `Result<Val, Composite>` output, so it
+-- can carry at most one value output. A `throws` procedure with two value
+-- outputs is rejected loudly (rather than silently degrading the `Result`
+-- payload to a placeholder).
+#eval testLaurel <|
+#strata
+program Laurel;
+composite E extends BaseException {}
+procedure twoOut()
+//        ^^^^^^ not-yet-implemented: at most one value output
+  returns (a: int, b: int)
+  throws E
+  opaque
+{
+  a := 1;
+  b := 2
+};
+#end

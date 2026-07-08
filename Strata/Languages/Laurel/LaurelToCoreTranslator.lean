@@ -952,6 +952,14 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- exceptional contract is checked on exit and assumed at call sites.
   let inputNames := proc.inputs.map (·.name)
   let valueOutputs := proc.outputs.filter (fun o => !inputNames.contains o.name)
+  -- E7 limitation: a throwing procedure lowers to a single `Result<Val, Composite>`
+  -- output, so it can carry at most one value output on the Good path. Reject a
+  -- multi-value-output thrower loudly rather than silently degrading `Val` to a
+  -- `bool` placeholder (which would misrepresent the result).
+  if procThrows && valueOutputs.length >= 2 then
+    emitCoreDiagnostic (diagnosticFromSource proc.name.source
+      s!"throwing procedure '{proc.name.text}' has {valueOutputs.length} value outputs; a procedure declaring `throws` may have at most one value output (its result is a single `Result` value). Combine the outputs (e.g. into a composite) or drop the `throws` clause."
+      DiagnosticType.NotYetImplemented)
   let valTy ← match valueOutputs with
     | [outParam] => translateType outParam.type
     | _ => pure LMonoTy.bool
