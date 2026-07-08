@@ -281,6 +281,7 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   | .bitvecConst 16 n => pure (.bv16Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 32 n => pure (.bv32Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 64 n => pure (.bv64Lit default ⟨default, n.toNat⟩)
+  | .bitvecConst 128 n => pure (.bv128Lit default ⟨default, n.toNat⟩)
   | .bitvecConst w _ => do
     ToCSTM.logError "lconstToExpr" "unsupported bitvec width" (toString w)
     pure (.bv64Lit default ⟨default, w⟩)

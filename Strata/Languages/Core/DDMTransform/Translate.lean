@@ -860,6 +860,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
     return .bitvecConst () 64 n
+  | .fn _ q`Core.bv128Lit, [xa] =>
+    let n ← translateBitVec 128 xa
+    return .bitvecConst () 128 n
   | .fn _ q`Core.strLit, [xa] =>
     let x ← translateStr xa
     return .strConst () x
