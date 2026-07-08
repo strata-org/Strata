@@ -38,6 +38,26 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
 /-- Set of names that are translated to Core functions (not procedures) -/
 @[expose] abbrev FunctionNames := List Identifier
 
+/-- Per-`try` exit targets used while lowering a `try`/`catch`/`finally` (E3/E5,
+    F18). A `try` is lowered as two nested blocks:
+    ```
+    block $tryfin {
+      block $try { <body> }   -- `throwTarget`: a `throw` in the body enters the catch chain
+      <catch chain>
+    }
+    <finally>                 -- reached by falling out of, or `exit`-ing, $tryfin
+    <re-dispatch on $thrown / $returning>
+    ```
+    - `throwTarget` is where an in-flight `throw` jumps: `$try` while lowering the
+      body (so the catch chain runs), `$tryfin` while lowering a catch handler (so
+      a re-throw skips the chain but still runs `finally`).
+    - `finallyTarget` (`$tryfin`) is where a `return` unwinds to so that `finally`
+      runs before control leaves the `try`. -/
+structure TryTarget where
+  throwTarget : String
+  finallyTarget : String
+  deriving Inhabited
+
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
   /-- Diagnostics accumulated during translation -/
@@ -64,10 +84,11 @@ structure TranslateState where
       even in a procedure that does not itself declare `throws` (e.g. one whose
       only exceptional construct is a `try` that catches locally). -/
   currentProcUsedExc : Bool := false
-  /-- E7: stack of enclosing `try` block labels, innermost first. A `throw`
-      (or a propagating call) exits to the head of this stack; when empty it
-      exits `bodyLabel`, escaping the procedure on the exceptional channel. -/
-  tryLabelStack : List String := []
+  /-- E7/F18: stack of enclosing `try` exit targets, innermost first. A `throw`
+      (or a propagating call) exits to the head's `throwTarget`; a `return` exits
+      to the head's `finallyTarget` so pending `finally` arms run. When empty,
+      both fall back to `bodyLabel`, escaping the procedure. -/
+  tryLabelStack : List TryTarget := []
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -595,7 +616,7 @@ partial def translateStmt (stmt : StmtExprMd)
               let tmpExpr : Core.Expression.Expr := .fvar () tmpId (some resTy)
               let tmpInit := Core.Statement.init tmpId (LTy.forAll [] resTy) .nondet md
               let callStmt := Core.Statement.call calleeId.text (callArgs ++ [.outArg tmpId]) md
-              let target := st.tryLabelStack.head?.getD bodyLabel
+              let target := (st.tryLabelStack.head?.map (·.throwTarget)).getD bodyLabel
               let badBranch : List Core.Statement :=
                 [ Core.Statement.set ⟨excVarName, ()⟩ (mkExceptionCtorApp "Result..err" tmpExpr) md,
                   Core.Statement.set ⟨thrownVarName, ()⟩ (.const () (.boolConst true)) md,
@@ -685,10 +706,10 @@ partial def translateStmt (stmt : StmtExprMd)
       let st ← get
       match st.tryLabelStack.head? with
       | none => return [.exit bodyLabel md]
-      | some tryLbl =>
+      | some entry =>
           modify fun s => { s with currentProcUsedExc := true }
           return [ Core.Statement.set ⟨returningVarName, ()⟩ (.const () (.boolConst true)) md,
-                   Imperative.Stmt.exit tryLbl md ]
+                   Imperative.Stmt.exit entry.finallyTarget md ]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -724,38 +745,45 @@ partial def translateStmt (stmt : StmtExprMd)
       else
         modify fun s => { s with currentProcUsedExc := true }
         let ve ← translateExpr value
-        let target := st.tryLabelStack.head?.getD bodyLabel
+        let target := (st.tryLabelStack.head?.map (·.throwTarget)).getD bodyLabel
         return [ Core.Statement.set ⟨excVarName, ()⟩ ve md,
                  Core.Statement.set ⟨thrownVarName, ()⟩ (.const () (.boolConst true)) md,
                  Imperative.Stmt.exit target md ]
   | .Try body catches finally? =>
-      -- E7 (E3/E5): lower `try B catch eᵢ when Pᵢ { Hᵢ } … finally { F }` using
-      -- the existing `Block`/`Exit` control flow. `B` runs inside a labeled
-      -- block; a `throw` in `B` exits to that label (leaving `$thrown`/`$exc`
-      -- set). After the block, a first-match-wins chain of guarded handlers runs
-      -- (each guard is `$thrown && Pᵢ`; a matching handler clears `$thrown`
-      -- before running). An unmatched exception leaves `$thrown` set so it
-      -- propagates outward. `finally` runs on the fall-through edge.
+      -- E7 (E3/E5/F18): lower `try B catch eᵢ when Pᵢ { Hᵢ } … finally { F }` with
+      -- two nested labeled blocks so `finally` runs on *every* exit edge:
+      --
+      --   block $tryfin {
+      --     block $try { B }        -- a `throw` in B exits $try → runs the catch chain
+      --     <catch chain>           -- first-match-wins; a match clears `$thrown`
+      --   }
+      --   F                         -- reached by falling out of, or exiting, $tryfin
+      --   if $thrown    then exit <enclosing throw target | $body>   -- (re-)propagate
+      --   if $returning then exit <enclosing finally target | $body> -- keep unwinding
+      --
+      -- A `throw` in B targets $try (so the catch chain runs); a `throw` in a
+      -- handler (re-throw) targets $tryfin (so it skips the chain but still runs
+      -- F). A `return` anywhere in B or a handler targets $tryfin, landing ahead
+      -- of F (the catch chain is guarded on `$thrown`, so a return skips it).
+      -- After F, the re-dispatch keeps a pending throw/return unwinding through
+      -- the enclosing `try` (so its F runs too), or to `$body` to leave the proc.
       --
       -- The catch binding is bound to the in-flight value by substituting `$exc`
-      -- for it in each predicate/handler (rather than declaring a local), which
-      -- also sidesteps clauses that reuse the same binding name.
-      --
-      -- F18: a `return` inside `B` sets `$returning` and exits to `tryLbl` (not
-      -- straight to `bodyLabel`), so it lands ahead of the catch chain — which is
-      -- guarded on `$thrown` and therefore skipped — and the `finally` still
-      -- runs. After `finally`, a `$returning` re-check unwinds to the enclosing
-      -- `try` (or `bodyLabel`), so outer `finally` arms run too. (A `return`
-      -- inside a `catch` handler is not yet routed through this `finally`.)
+      -- for it in each predicate/handler (rather than declaring a local).
       modify fun s => { s with currentProcUsedExc := true }
       let savedStack := (← get).tryLabelStack
       let tryId ← freshId
       let tryLbl := s!"$try_{tryId}"
-      modify fun s => { s with tryLabelStack := tryLbl :: savedStack }
+      let tryFinLbl := s!"$tryfin_{tryId}"
+      -- Body phase: a `throw` enters the catch chain ($try); a `return` runs
+      -- `finally` first ($tryfin).
+      modify fun s => { s with tryLabelStack :=
+        { throwTarget := tryLbl, finallyTarget := tryFinLbl } :: savedStack }
       let bStmts ← translateStmt body
-      -- Restore the stack before handlers/finally, so a re-throw there targets
-      -- the *enclosing* try (or the body), not this same try.
-      modify fun s => { s with tryLabelStack := savedStack }
+      -- Catch phase: a re-`throw` or `return` in a handler exits $tryfin, so it
+      -- skips the (remaining) catch chain but still runs `finally`.
+      modify fun s => { s with tryLabelStack :=
+        { throwTarget := tryFinLbl, finallyTarget := tryFinLbl } :: savedStack }
       let excFvar : Core.Expression.Expr := .fvar () ⟨excVarName, ()⟩ (some exceptionCoreTy)
       let thrownFvar : Core.Expression.Expr := .fvar () ⟨thrownVarName, ()⟩ (some LMonoTy.bool)
       let clauses ← catches.mapM (fun c => do
@@ -773,17 +801,24 @@ partial def translateStmt (stmt : StmtExprMd)
         clauses.foldr
           (fun gh elseB => [Imperative.Stmt.ite (.det gh.1) gh.2 elseB md])
           []
+      -- Finally phase: a `throw`/`return` in F itself targets the enclosing `try`.
+      modify fun s => { s with tryLabelStack := savedStack }
       let fStmts ← match finally? with
         | some f => translateStmt f
         | none => pure []
-      -- F18 re-dispatch: if a `return` unwound into this `try` (so `finally` has
-      -- now run), keep unwinding to the enclosing `try` label — or `bodyLabel`
-      -- if this is the outermost — so any outer `finally` arms run too.
-      let outerTarget := savedStack.head?.getD bodyLabel
-      let returnDispatch : List Core.Statement :=
-        [ Imperative.Stmt.ite (.det (.fvar () ⟨returningVarName, ()⟩ (some LMonoTy.bool)))
-            [Imperative.Stmt.exit outerTarget md] [] md ]
-      return Imperative.Stmt.block tryLbl bStmts md :: (catchChain ++ fStmts ++ returnDispatch)
+      -- Re-dispatch: after `finally`, keep any pending exception or return
+      -- unwinding to the enclosing `try` (running its `finally` too) or to
+      -- `$body`. `$thrown`/`$returning` are mutually exclusive on any one path.
+      let enclosing := savedStack.head?
+      let thrownExit := (enclosing.map (·.throwTarget)).getD bodyLabel
+      let returnExit := (enclosing.map (·.finallyTarget)).getD bodyLabel
+      let returningFvar : Core.Expression.Expr := .fvar () ⟨returningVarName, ()⟩ (some LMonoTy.bool)
+      let reDispatch : List Core.Statement :=
+        [ Imperative.Stmt.ite (.det thrownFvar) [Imperative.Stmt.exit thrownExit md] [] md,
+          Imperative.Stmt.ite (.det returningFvar) [Imperative.Stmt.exit returnExit md] [] md ]
+      let tryFinBlock := Imperative.Stmt.block tryFinLbl
+        (Imperative.Stmt.block tryLbl bStmts md :: catchChain) md
+      return tryFinBlock :: (fStmts ++ reDispatch)
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md

@@ -184,3 +184,53 @@ procedure nestedReturnRunsAllFinally()
   }
 };
 #end
+-- `finally` also runs on a `return` from inside a `catch` handler (the
+-- two-label case): the caught `throw` runs the handler, whose `return` unwinds
+-- through `finally` (`r := 5`) before leaving the procedure.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite MyError extends BaseException {}
+procedure returnInCatchRunsFinally()
+  returns (r: int)
+  opaque
+  ensures r == 5
+{
+  var e: MyError := new MyError;
+  r := 0;
+  try {
+    throw e
+  } catch c when c is MyError {
+    return
+  } finally {
+    r := 5
+  }
+};
+#end
+
+-- A `return` from a `catch` handler runs both the inner and outer `finally`
+-- arms (nested), so `log` ends at 3.
+#eval testLaurel <|
+#strata
+program Laurel;
+composite MyError extends BaseException {}
+procedure returnInCatchNestedFinally()
+  returns (log: int)
+  opaque
+  ensures log == 3
+{
+  var e: MyError := new MyError;
+  log := 0;
+  try {
+    try {
+      throw e
+    } catch c when c is MyError {
+      return
+    } finally {
+      log := log + 1
+    }
+  } finally {
+    log := log + 2
+  }
+};
+#end
