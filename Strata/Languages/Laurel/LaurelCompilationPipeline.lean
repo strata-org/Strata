@@ -22,6 +22,7 @@ import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.EliminateExceptions
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -125,7 +126,15 @@ def laurelPipeline : Array LaurelPass := #[
   desugarShortCircuitPass,
   liftExpressionAssignmentsPass,
   mergeAndLiftReturnsPass,
-  constrainedTypeElimPass
+  constrainedTypeElimPass,
+  -- E7: lower the exceptional channel (throw/try/catch/finally, throws/onThrow)
+  -- into ordinary Laurel (labeled blocks, exits, Result construction, and
+  -- postconditions over `$result`). Runs last: after heap parameterization (so
+  -- exceptions are heap `Composite` references and `is`-tests are lowered) and
+  -- after return/expression lifting (so it sees the same fully-lowered body the
+  -- Core translator used to). Needs a re-resolve so the synthesized `$thrown`/
+  -- `$exc`/`$result` locals get uniqueIds.
+  eliminateExceptionsPass
 ]
 
 /-- Every `comesBefore` constraint is respected by the pipeline order.
@@ -192,7 +201,13 @@ private def runLaurelPasses
     -- Run resolve after the pass if needed
     if pass.needsResolves then
       let result := resolve program (some model)
-      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      -- Only treat *new* post-pass resolution errors as an internal bug when the
+      -- program was well-formed to begin with. If initial resolution already
+      -- failed (or an earlier pass reported an error), the program is invalid
+      -- and translation is skipped regardless, so a lowering pass rewriting the
+      -- ill-typed fragment must not cascade a confusing `StrataBug` on top.
+      let hadErrors := !resolutionErrors.isEmpty || allDiags.any (fun d => d.type != .Warning)
+      let newErrors := if hadErrors then #[] else result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
           { d with

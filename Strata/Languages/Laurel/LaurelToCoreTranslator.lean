@@ -38,26 +38,6 @@ def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
 /-- Set of names that are translated to Core functions (not procedures) -/
 @[expose] abbrev FunctionNames := List Identifier
 
-/-- Per-`try` exit targets used while lowering a `try`/`catch`/`finally` (E3/E5,
-    F18). A `try` is lowered as two nested blocks:
-    ```
-    block $tryfin {
-      block $try { <body> }   -- `throwTarget`: a `throw` in the body enters the catch chain
-      <catch chain>
-    }
-    <finally>                 -- reached by falling out of, or `exit`-ing, $tryfin
-    <re-dispatch on $thrown / $returning>
-    ```
-    - `throwTarget` is where an in-flight `throw` jumps: `$try` while lowering the
-      body (so the catch chain runs), `$tryfin` while lowering a catch handler (so
-      a re-throw skips the chain but still runs `finally`).
-    - `finallyTarget` (`$tryfin`) is where a `return` unwinds to so that `finally`
-      runs before control leaves the `try`. -/
-structure TryTarget where
-  throwTarget : String
-  finallyTarget : String
-  deriving Inhabited
-
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
   /-- Diagnostics accumulated during translation -/
@@ -74,21 +54,6 @@ structure TranslateState where
       Used by the `.Old (Var (Local n))` arm to defensively check `n` against
       the procedure's inout list. Empty when not translating a procedure body. -/
   currentProcInouts : List String := []
-  /-- E7: whether the procedure currently being translated declares `throws`.
-      When `true`, the procedure returns a `Result<Val, Composite>` and has the
-      synthesized `$thrown`/`$exc` locals, so a `throw` lowers to setting those
-      and exiting (rather than reporting not-yet-implemented). -/
-  currentProcThrows : Bool := false
-  /-- E7: set to `true` while translating a procedure body when a `throw` or
-      `try` is lowered. Signals that the `$thrown`/`$exc` locals must be declared
-      even in a procedure that does not itself declare `throws` (e.g. one whose
-      only exceptional construct is a `try` that catches locally). -/
-  currentProcUsedExc : Bool := false
-  /-- E7/F18: stack of enclosing `try` exit targets, innermost first. A `throw`
-      (or a propagating call) exits to the head's `throwTarget`; a `return` exits
-      to the head's `finallyTarget` so pending `finally` arms run. When empty,
-      both fall back to `bodyLabel`, escaping the procedure. -/
-  tryLabelStack : List TryTarget := []
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -109,42 +74,6 @@ def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
-
-/-! ### E7: exception-lowering names and helpers
-
-A throwing procedure lowers to one that returns a `Result<Val, Composite>`
-(the generic datatype defined in the exception prelude). In-flight exception
-state is carried by two synthesized locals, `$thrown` and `$exc`; after the
-body block runs, the result is constructed (`Bad($exc)` when thrown, else
-`Good(val)`). All names are `$`-prefixed, so they are outside the user
-namespace (no source identifier can contain `$`). -/
-
-/-- The generic result datatype's name (from `exceptionDefinitionsForLaurel`). -/
-private def resultDatatypeName : String := "Result"
-/-- Synthesized Core output of a throwing procedure: its `Result<Val, Composite>`. -/
-private def resultVarName : String := "$result"
-/-- Synthesized local: `true` once an exception is in flight. -/
-private def thrownVarName : String := "$thrown"
-/-- Synthesized local: the in-flight exception value. -/
-private def excVarName : String := "$exc"
-/-- Synthesized local (F18): `true` once a `return` is unwinding out of one or
-    more enclosing `try` blocks, so their `finally` arms run on the way out. A
-    `return` inside a `try` sets it and exits to the nearest `try` label (rather
-    than jumping straight to `bodyLabel`); each `try`'s tail re-checks it and
-    keeps unwinding to the next enclosing `try` (or `bodyLabel`). -/
-private def returningVarName : String := "$returning"
-
-/-- Core type of an in-flight exception value. After heap parameterization every
-    exception (a composite) is represented as a heap `Composite` reference, so
-    the `Err` component of the result is always `Composite` — the declared
-    `throws` type is not needed at this point. (Keyed on the same `"Composite"`
-    name the heap prelude uses; see `HeapParameterizationConstants`.) -/
-private def exceptionCoreTy : LMonoTy := .tcons "Composite" []
-
-/-- Build a datatype constructor application `Ctor(arg)`, the same shape
-    `translateExpr` produces when lowering a `StaticCall` to a constructor. -/
-private def mkExceptionCtorApp (ctor : String) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.op () ⟨ctor, ()⟩ none) arg
 
 /-
 Translate Laurel HighType to Core Type
@@ -588,49 +517,10 @@ partial def translateStmt (stmt : StmtExprMd)
         -- Value (non-inout) targets receive the callee's genuine outputs.
         let valueLhs := lhs.filter (fun id => !calleeInoutNames.contains id.name)
         let outArgs : List (Core.CallArg Core.Expression) := valueLhs.map .outArg
-        let calleeProc? : Option Procedure := match model.get calleeId with
-          | .staticProcedure p => some p
-          | .instanceProcedure _ p => some p
-          | _ => none
-        match calleeProc? with
-        | some p =>
-          if p.throwsType.isSome then
-            -- E7: a call to a procedure declaring `throws` returns a
-            -- `Result<Val, Composite>`. Bind it to a temp; if `Bad`, put the
-            -- error in flight and exit to the nearest `try` (or the body, to
-            -- escape); if `Good`, unwrap the value into the target.
-            let st ← get
-            if st.tryLabelStack.isEmpty && !st.currentProcThrows then
-              throwStmtDiagnostic $ md.toDiagnostic
-                s!"a call to throwing procedure '{calleeId.text}' whose exception could escape a procedure that does not declare `throws` is not yet supported (E4 no-escape enforcement)"
-                DiagnosticType.NotYetImplemented
-            else
-              modify fun s => { s with currentProcUsedExc := true }
-              let inNames := p.inputs.map (·.name)
-              let calleeValTy ← match p.outputs.filter (fun o => !inNames.contains o.name) with
-                | [o] => translateType o.type
-                | _ => pure LMonoTy.bool
-              let resTy : LMonoTy := .tcons resultDatatypeName [calleeValTy, exceptionCoreTy]
-              let tid ← freshId
-              let tmpId : Core.CoreIdent := ⟨s!"$callres_{tid}", ()⟩
-              let tmpExpr : Core.Expression.Expr := .fvar () tmpId (some resTy)
-              let tmpInit := Core.Statement.init tmpId (LTy.forAll [] resTy) .nondet md
-              let callStmt := Core.Statement.call calleeId.text (callArgs ++ [.outArg tmpId]) md
-              let target := (st.tryLabelStack.head?.map (·.throwTarget)).getD bodyLabel
-              let badBranch : List Core.Statement :=
-                [ Core.Statement.set ⟨excVarName, ()⟩ (mkExceptionCtorApp "Result..err" tmpExpr) md,
-                  Core.Statement.set ⟨thrownVarName, ()⟩ (.const () (.boolConst true)) md,
-                  Imperative.Stmt.exit target md ]
-              let goodBranch : List Core.Statement := match valueLhs with
-                | [vid] => [ Core.Statement.set vid (mkExceptionCtorApp "Result..value" tmpExpr) md ]
-                | _ => []
-              let dispatch := Imperative.Stmt.ite (.det (mkExceptionCtorApp "Result..isBad" tmpExpr))
-                badBranch goodBranch md
-              return inits ++ [tmpInit, callStmt, dispatch]
-          else
-            return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
-        | none =>
-          return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
+        -- Calls to throwing procedures are rewritten to bind and unwrap a
+        -- `Result` by the `EliminateExceptions` pass, so by translation every
+        -- call is an ordinary (non-throwing) procedure call.
+        return inits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md]
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .StaticCall callee args =>
@@ -699,17 +589,10 @@ partial def translateStmt (stmt : StmtExprMd)
       | none => pure ()
       | some _ =>
           emitCoreDiagnostic $ md.toDiagnostic "Return statement with value should have been eliminated by EliminateValueReturns pass" DiagnosticType.StrataBug
-      -- F18: if this `return` is inside a `try`, exit to the nearest `try` label
-      -- (setting `$returning`) so that `try`'s `finally` runs on the way out; the
-      -- `try` tail re-checks `$returning` and keeps unwinding. With no enclosing
-      -- `try`, jump straight to `bodyLabel` as before.
-      let st ← get
-      match st.tryLabelStack.head? with
-      | none => return [.exit bodyLabel md]
-      | some entry =>
-          modify fun s => { s with currentProcUsedExc := true }
-          return [ Core.Statement.set ⟨returningVarName, ()⟩ (.const () (.boolConst true)) md,
-                   Imperative.Stmt.exit entry.finallyTarget md ]
+      -- A valueless `return` exits the procedure body block. (Routing a `return`
+      -- out of a `try` through pending `finally` arms is handled earlier by the
+      -- `EliminateExceptions` pass.)
+      return [.exit bodyLabel md]
   | .While cond invariants decreasesExpr body =>
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
@@ -730,95 +613,14 @@ partial def translateStmt (stmt : StmtExprMd)
       -- Hole in statement position: treat as havoc (no-op).
       -- This can occur when an unmodeled call's Block is flattened.
       return []
-  | .Throw value =>
-      -- E7: put the thrown value in flight (`$exc`), mark `$thrown`, and exit to
-      -- the nearest enclosing `try` label — or `bodyLabel` to escape the
-      -- procedure, where `translateProcedure` constructs `Bad($exc)`.
-      let st ← get
-      if st.tryLabelStack.isEmpty && !st.currentProcThrows then
-        -- A `throw` with no enclosing `try` that would escape a procedure not
-        -- declaring `throws` is the E4 no-escape violation; enforcement (and
-        -- lowering of the escape) lands with E7's contract check.
-        throwStmtDiagnostic $ md.toDiagnostic
-          "`throw` in a procedure that does not declare `throws` is not yet supported (E4 no-escape enforcement)"
-          DiagnosticType.NotYetImplemented
-      else
-        modify fun s => { s with currentProcUsedExc := true }
-        let ve ← translateExpr value
-        let target := (st.tryLabelStack.head?.map (·.throwTarget)).getD bodyLabel
-        return [ Core.Statement.set ⟨excVarName, ()⟩ ve md,
-                 Core.Statement.set ⟨thrownVarName, ()⟩ (.const () (.boolConst true)) md,
-                 Imperative.Stmt.exit target md ]
-  | .Try body catches finally? =>
-      -- E7 (E3/E5/F18): lower `try B catch eᵢ when Pᵢ { Hᵢ } … finally { F }` with
-      -- two nested labeled blocks so `finally` runs on *every* exit edge:
-      --
-      --   block $tryfin {
-      --     block $try { B }        -- a `throw` in B exits $try → runs the catch chain
-      --     <catch chain>           -- first-match-wins; a match clears `$thrown`
-      --   }
-      --   F                         -- reached by falling out of, or exiting, $tryfin
-      --   if $thrown    then exit <enclosing throw target | $body>   -- (re-)propagate
-      --   if $returning then exit <enclosing finally target | $body> -- keep unwinding
-      --
-      -- A `throw` in B targets $try (so the catch chain runs); a `throw` in a
-      -- handler (re-throw) targets $tryfin (so it skips the chain but still runs
-      -- F). A `return` anywhere in B or a handler targets $tryfin, landing ahead
-      -- of F (the catch chain is guarded on `$thrown`, so a return skips it).
-      -- After F, the re-dispatch keeps a pending throw/return unwinding through
-      -- the enclosing `try` (so its F runs too), or to `$body` to leave the proc.
-      --
-      -- The catch binding is bound to the in-flight value by substituting `$exc`
-      -- for it in each predicate/handler (rather than declaring a local).
-      modify fun s => { s with currentProcUsedExc := true }
-      let savedStack := (← get).tryLabelStack
-      let tryId ← freshId
-      let tryLbl := s!"$try_{tryId}"
-      let tryFinLbl := s!"$tryfin_{tryId}"
-      -- Body phase: a `throw` enters the catch chain ($try); a `return` runs
-      -- `finally` first ($tryfin).
-      modify fun s => { s with tryLabelStack :=
-        { throwTarget := tryLbl, finallyTarget := tryFinLbl } :: savedStack }
-      let bStmts ← translateStmt body
-      -- Catch phase: a re-`throw` or `return` in a handler exits $tryfin, so it
-      -- skips the (remaining) catch chain but still runs `finally`.
-      modify fun s => { s with tryLabelStack :=
-        { throwTarget := tryFinLbl, finallyTarget := tryFinLbl } :: savedStack }
-      let excFvar : Core.Expression.Expr := .fvar () ⟨excVarName, ()⟩ (some exceptionCoreTy)
-      let thrownFvar : Core.Expression.Expr := .fvar () ⟨thrownVarName, ()⟩ (some LMonoTy.bool)
-      let clauses ← catches.mapM (fun c => do
-        let pExpr ← match c.predicate with
-          | some p =>
-            let pe ← translateExpr p
-            pure (LExpr.substFvar pe ⟨c.binding.text, ()⟩ excFvar)
-          | none => pure (.const () (.boolConst true))
-        let hStmts ← translateStmt c.body
-        let hStmts := hStmts.map (fun s => Core.Statement.substFvar s ⟨c.binding.text, ()⟩ excFvar)
-        let guard := LExpr.mkApp () boolAndOp [thrownFvar, pExpr]
-        let handler := Core.Statement.set ⟨thrownVarName, ()⟩ (.const () (.boolConst false)) md :: hStmts
-        pure (guard, handler))
-      let catchChain : List Core.Statement :=
-        clauses.foldr
-          (fun gh elseB => [Imperative.Stmt.ite (.det gh.1) gh.2 elseB md])
-          []
-      -- Finally phase: a `throw`/`return` in F itself targets the enclosing `try`.
-      modify fun s => { s with tryLabelStack := savedStack }
-      let fStmts ← match finally? with
-        | some f => translateStmt f
-        | none => pure []
-      -- Re-dispatch: after `finally`, keep any pending exception or return
-      -- unwinding to the enclosing `try` (running its `finally` too) or to
-      -- `$body`. `$thrown`/`$returning` are mutually exclusive on any one path.
-      let enclosing := savedStack.head?
-      let thrownExit := (enclosing.map (·.throwTarget)).getD bodyLabel
-      let returnExit := (enclosing.map (·.finallyTarget)).getD bodyLabel
-      let returningFvar : Core.Expression.Expr := .fvar () ⟨returningVarName, ()⟩ (some LMonoTy.bool)
-      let reDispatch : List Core.Statement :=
-        [ Imperative.Stmt.ite (.det thrownFvar) [Imperative.Stmt.exit thrownExit md] [] md,
-          Imperative.Stmt.ite (.det returningFvar) [Imperative.Stmt.exit returnExit md] [] md ]
-      let tryFinBlock := Imperative.Stmt.block tryFinLbl
-        (Imperative.Stmt.block tryLbl bStmts md :: catchChain) md
-      return tryFinBlock :: (fStmts ++ reDispatch)
+  | .Throw _ =>
+      -- The exceptional channel (throw/try/catch/finally) is lowered to ordinary
+      -- Laurel control flow by the `EliminateExceptions` pass before translation.
+      throwStmtDiagnostic $ md.toDiagnostic
+        "throw should have been eliminated by the EliminateExceptions pass" DiagnosticType.StrataBug
+  | .Try _ _ _ =>
+      throwStmtDiagnostic $ md.toDiagnostic
+        "try/catch should have been eliminated by the EliminateExceptions pass" DiagnosticType.StrataBug
   | _ =>
       -- Expression in statement position: preserve as an unused variable init
       exprAsUnusedInit stmt md
@@ -849,69 +651,17 @@ def translateParameterToCore (param : Parameter) : TranslateM (Core.CoreIdent ×
   let ty ← translateType param.type
   return (ident, ty)
 
-/--
-E7: assemble a procedure's Core outputs and body statements.
-
-For a non-throwing procedure this is the usual single labeled body block. For a
-throwing procedure (one declaring `throws`) the procedure instead returns a
-single `Result<Val, Composite>` output: the normal output becomes an internal
-local (assigned by return-elimination), `$thrown`/`$exc` track the in-flight
-exception, and after the body block the result is constructed — `Bad($exc)` if
-an exception is in flight, otherwise `Good(val)`.
--/
+/-- Assemble a procedure's Core outputs and body: a single labeled body block so
+    early returns (`exit bodyLabel`) work. The exceptional channel — including a
+    throwing procedure's `Result` output and result construction — is lowered to
+    ordinary Laurel by the `EliminateExceptions` pass before translation, so
+    nothing exception-specific happens here. -/
 private def buildProcedureOutputsAndBody
-    (proc : Procedure) (procThrows : Bool) (bodyStmts : List Core.Statement)
+    (proc : Procedure) (bodyStmts : List Core.Statement)
     : TranslateM (List (Core.CoreIdent × LMonoTy) × List Core.Statement) := do
   let bodyBlock : Core.Statement := .block bodyLabel bodyStmts mdWithUnknownLoc
-  -- The `$thrown`/`$exc` locals are needed whenever the body uses the exceptional
-  -- channel: a throwing procedure always does, and a non-throwing one does if it
-  -- lowered a `throw`/`try` (recorded in `currentProcUsedExc`).
-  let usedExc := (← get).currentProcUsedExc
-  let excStateInit : List Core.Statement :=
-    if procThrows || usedExc then
-      [ Core.Statement.init ⟨thrownVarName, ()⟩ (LTy.forAll [] LMonoTy.bool)
-          (.det (.const () (.boolConst false))) mdWithUnknownLoc,
-        Core.Statement.init ⟨excVarName, ()⟩ (LTy.forAll [] exceptionCoreTy)
-          .nondet mdWithUnknownLoc,
-        -- F18: `$returning` tracks a `return` unwinding through enclosing `try`
-        -- blocks so their `finally` arms run. Declared whenever the exceptional
-        -- channel is used (every `try` sets `currentProcUsedExc`).
-        Core.Statement.init ⟨returningVarName, ()⟩ (LTy.forAll [] LMonoTy.bool)
-          (.det (.const () (.boolConst false))) mdWithUnknownLoc ]
-    else []
-  if !procThrows then
-    let outputs ← proc.outputs.mapM translateParameterToCore
-    return (outputs, excStateInit ++ [bodyBlock])
-  -- Throwing procedure: return a single `Result<Val, Composite>`, but keep any
-  -- inout outputs (a parameter appearing in both inputs and outputs — notably
-  -- the heap `$heap` added by heap parameterization, needed by the two-state
-  -- `old($heap)` postcondition). Only the genuine *value* return is folded into
-  -- the `Result`.
-  let inputNames := proc.inputs.map (·.name)
-  let inoutOutputs := proc.outputs.filter (fun o => inputNames.contains o.name)
-  let valueOutputs := proc.outputs.filter (fun o => !inputNames.contains o.name)
-  let coreInoutOutputs ← inoutOutputs.mapM translateParameterToCore
-  let valTy ← match valueOutputs with
-    | [outParam] => translateType outParam.type
-    | _ => pure LMonoTy.bool  -- no value output (void): unit placeholder, matching TVoid
-  let resultTy : LMonoTy := .tcons resultDatatypeName [valTy, exceptionCoreTy]
-  let resultIdent : Core.CoreIdent := ⟨resultVarName, ()⟩
-  let excIdent : Core.CoreIdent := ⟨excVarName, ()⟩
-  -- The value output becomes a local the body assigns via return-elimination;
-  -- capture it to wrap in `Good` on the normal path (unit placeholder if none).
-  let (origOutInit, goodArg) ←
-    match valueOutputs with
-    | [outParam] =>
-      let outIdent : Core.CoreIdent := ⟨outParam.name.text, ()⟩
-      pure (([Core.Statement.init outIdent (LTy.forAll [] valTy) .nondet mdWithUnknownLoc] : List Core.Statement),
-            ((.fvar () outIdent (some valTy)) : Core.Expression.Expr))
-    | _ => pure (([] : List Core.Statement), ((.const () (.boolConst true)) : Core.Expression.Expr))
-  let construct : Core.Statement :=
-    Imperative.Stmt.ite (.det (.fvar () ⟨thrownVarName, ()⟩ (some LMonoTy.bool)))
-      [ Core.Statement.set resultIdent (mkExceptionCtorApp "Bad" (.fvar () excIdent (some exceptionCoreTy))) mdWithUnknownLoc ]
-      [ Core.Statement.set resultIdent (mkExceptionCtorApp "Good" goodArg) mdWithUnknownLoc ]
-      mdWithUnknownLoc
-  return (coreInoutOutputs ++ [(resultIdent, resultTy)], excStateInit ++ origOutInit ++ [bodyBlock, construct])
+  let outputs ← proc.outputs.mapM translateParameterToCore
+  return (outputs, [bodyBlock])
 
 /--
 Translate Laurel Procedure to Core Procedure using `TranslateM`.
@@ -920,16 +670,10 @@ are emitted into the monad state.
 -/
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Track inout parameter names for the `.Old (Var (Local n))` defensive check.
-  -- `currentProcThrows` (E7) records whether this procedure declares `throws`,
-  -- so `throw` in its body lowers to `$thrown`/`$exc` + exit; the try-label
-  -- stack is reset per procedure. All are set fresh here (implicitly resetting
-  -- any leftover state from a sibling procedure).
-  let procThrows := proc.throwsType.isSome
-  modify fun s => { s with
-    currentProcInouts := procInoutNames proc
-    currentProcThrows := procThrows
-    currentProcUsedExc := false
-    tryLabelStack := [] }
+  -- (The exceptional channel — `throws`/`onThrow`/`when-throws` and the `Result`
+  -- lowering — is handled by the `EliminateExceptions` pass, so by translation a
+  -- procedure has ordinary outputs and ordinary postconditions.)
+  modify fun s => { s with currentProcInouts := procInoutNames proc }
   let inputs ← proc.inputs.mapM translateParameterToCore
   -- Translate preconditions
   let preconditions ← translateChecks proc.preconditions "requires" false
@@ -945,85 +689,17 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
     | _ =>
       pure none
 
-  -- E4/E7: a throwing procedure's Core output is a single `Result<Val, Composite>`
-  -- (`$result`). Normal (`ensures`) postconditions describe the *Good* path only,
-  -- and the `onThrow` clauses describe the *Bad* path. Build the `Result`
-  -- projections used to phrase both as ordinary Core postconditions so the
-  -- exceptional contract is checked on exit and assumed at call sites.
-  let inputNames := proc.inputs.map (·.name)
-  let valueOutputs := proc.outputs.filter (fun o => !inputNames.contains o.name)
-  -- E7 limitation: a throwing procedure lowers to a single `Result<Val, Composite>`
-  -- output, so it can carry at most one value output on the Good path. Reject a
-  -- multi-value-output thrower loudly rather than silently degrading `Val` to a
-  -- `bool` placeholder (which would misrepresent the result).
-  if procThrows && valueOutputs.length >= 2 then
-    emitCoreDiagnostic (diagnosticFromSource proc.name.source
-      s!"throwing procedure '{proc.name.text}' has {valueOutputs.length} value outputs; a procedure declaring `throws` may have at most one value output (its result is a single `Result` value). Combine the outputs (e.g. into a composite) or drop the `throws` clause."
-      DiagnosticType.NotYetImplemented)
-  let valTy ← match valueOutputs with
-    | [outParam] => translateType outParam.type
-    | _ => pure LMonoTy.bool
-  let resultTy : LMonoTy := .tcons resultDatatypeName [valTy, exceptionCoreTy]
-  let resultFvar : Core.Expression.Expr := .fvar () ⟨resultVarName, ()⟩ (some resultTy)
-  let mkResultApp (fn : String) : Core.Expression.Expr := mkExceptionCtorApp fn resultFvar
-  -- Good-path wrapper: guard a normal postcondition with `Result..isGood($result)`
-  -- and rewrite the (single) value output to `Result..value($result)`. Identity
-  -- for a non-throwing procedure.
-  let goodWrap (e : Core.Expression.Expr) : Core.Expression.Expr :=
-    if procThrows then
-      let e' := match valueOutputs with
-        | [o] => LExpr.substFvar e ⟨o.name.text, ()⟩ (mkResultApp "Result..value")
-        | _ => e
-      .ite () (mkResultApp "Result..isGood") e' (.boolConst () true)
-    else e
   -- Translate postconditions for Opaque and Abstract bodies. A bodiless
   -- procedure (bodyStmts = none) gets its postconditions marked `free`
   -- (overrideFree) so they are assumed, not checked — and an empty body.
   let postconditions : ListMap Core.CoreLabel Core.Procedure.Check ←
     match proc.body with
     | .Opaque postconds _ _ | .Abstract postconds =>
-        translateChecks postconds s!"postcondition" bodyStmts.isNone (wrap := goodWrap)
+        translateChecks postconds s!"postcondition" bodyStmts.isNone
     | _ => pure []
-  -- E4: `onThrow` exceptional postconditions constrain the Bad path. Each is
-  -- `Result..isBad($result) ==> P[binding := Result..err($result)]`, mirroring the
-  -- `catch`-binding substitution in the `try` lowering. Checked on exit when the
-  -- procedure has a body; assumed (free) for a bodiless procedure.
-  let onThrowChecks : ListMap Core.CoreLabel Core.Procedure.Check ←
-    if procThrows then
-      proc.onThrow.mapIdxM (fun i c => do
-        let pe ← translateExpr c.predicate
-        let pe' := LExpr.substFvar pe ⟨c.binding.text, ()⟩ (mkResultApp "Result..err")
-        let guarded : Core.Expression.Expr :=
-          .ite () (mkResultApp "Result..isBad") pe' (.boolConst () true)
-        let label := if proc.onThrow.length == 1 then "onThrow" else s!"onThrow_{i}"
-        let attr := if bodyStmts.isNone then Core.Procedure.CheckAttr.Free else .Default
-        let md := astNodeToCoreMd c.predicate
-        pure (label, ({ expr := guarded, attr, md } : Core.Procedure.Check)))
-    else pure []
-  let postconditions := postconditions.union onThrowChecks
-  -- E4: `when C throws (e) P` behavior cases constrain *when* the Bad path is taken
-  -- and what then holds. Each lowers to `C ==> (Result..isBad($result) ∧
-  -- P[e := Result..err($result)])`: so a caller can conclude the procedure throws
-  -- when `C` holds and that `P` holds of the thrown value. Checked on exit when
-  -- the procedure has a body; assumed (free) for a bodiless procedure.
-  let onThrowsChecks : ListMap Core.CoreLabel Core.Procedure.Check ←
-    if procThrows then
-      proc.onThrows.mapIdxM (fun i c => do
-        let ce ← translateExpr c.condition [] (isPureContext := true)
-        let pe ← translateExpr c.postcondition [] (isPureContext := true)
-        let pe' := LExpr.substFvar pe ⟨c.binding.text, ()⟩ (mkResultApp "Result..err")
-        let conj := LExpr.mkApp () boolAndOp [mkResultApp "Result..isBad", pe']
-        let guarded : Core.Expression.Expr := .ite () ce conj (.boolConst () true)
-        let label := if proc.onThrows.length == 1 then "onThrows" else s!"onThrows_{i}"
-        let attr := if bodyStmts.isNone then Core.Procedure.CheckAttr.Free else .Default
-        let md := astNodeToCoreMd c.condition
-        pure (label, ({ expr := guarded, attr, md } : Core.Procedure.Check)))
-    else pure []
-  let postconditions := postconditions.union onThrowsChecks
-  -- Assemble outputs + body: a labeled block so early returns (exit) work, plus
-  -- the `Result` wrapping for throwing procedures (E7). `bodyLabel` is the
-  -- shared "$body" constant the resolver pre-registers.
-  let (outputs, body) ← buildProcedureOutputsAndBody proc procThrows (bodyStmts.getD [])
+  -- Assemble outputs + body: a labeled block so early returns (exit) work.
+  -- `bodyLabel` is the shared "$body" constant the resolver pre-registers.
+  let (outputs, body) ← buildProcedureOutputsAndBody proc (bodyStmts.getD [])
   let header : Core.Procedure.Header := {
     name := proc.name.text
     typeArgs := []
