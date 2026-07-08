@@ -38,15 +38,16 @@ Laurel tries to include any features that are common to those three languages.
 
 Goals:
 1. Enable proving both correctness and incorrectness properties of software, through a combination of:
-  1. property based testing
-  2. symbolic execution (aka verification), both bounded and unbounded
-  3. data-flow analysis
+  1. Property based testing
+  2. Symbolic execution (aka verification), both bounded and unbounded
+  3. Hybrid concrete and symbolic property checking
+  3. Data-flow analysis
 2. Reduce code duplication in the analysis of popular languages by being a target for compilation from those languages, and including features common to them. Note that we expect source languages to reuse their existing compilers when possible, so language features that can be compiled away don't need to be considered.
 3. Enable modular verification
 4. Minimize the amount of user code needed to enable verification.
 5. Enable finding proofs through an automated search.
 6. Use complete analysis algorithms to reduce the required proof effort.
-7. Code used to enable verification may not affect execution behavior.
+7. Verification must be erasable. Removing verification code may not affect execution behavior.
 8. Have a great user experience
 
 # Correctness checking features
@@ -55,12 +56,13 @@ Goals:
 To be designed..
 
 ## Verification
+Work in progress section
+
 To achieve goal 1.2, enable proving properties through verification, Laurel has the following features.
-- Assertions
-- Quantifiers
-- Old/allocated/fresh (what's allocated for?)
-- Decreases clauses (relates to soundness and ghost-code as well)
-- Assumptions (more about gradual verification. what about bodiless procedures?)
+- Assertions (TODO: add some explanation of what assert enables, including an example.)
+- Postconditions (TODO: add some explanation. Explain how a postcondition is usually where we want to put assertions, so we can think in terms of entire procedures)
+- Quantifiers (TODO: also relate universal quantifier to soundness mode checking on procedures, and existential quantifier to bug finding mode)
+- Old (TODO: explain how old can be use to express mutation using mutation free code)
 
 ## Unbounded verification
 Bounded symbolic execution unrolls a loop a fixed number of times, so on its own it cannot prove a property for every run of a loop whose iteration count is not statically known. Loop invariants close that gap. A `while` loop may carry one or more `invariant` clauses, each an expression that must hold when the loop is first reached and be preserved by every iteration.
@@ -86,6 +88,17 @@ The invariants let Laurel replace the loop with three obligations that stand in 
 3. after the loop, the invariants together with the negation of the guard may be assumed.
 
 None of these obligations mentions a concrete iteration count, so an invariant strong enough to imply the property discharges it for an unbounded loop. Each invariant is checked independently and reports a failure against its own source range, so a diagnostic points at the specific invariant that does not hold rather than at the whole loop.
+
+## Hybrid property checking
+Laurel allows bypassing the symbolic checking of properties in various ways:
+- Assumptions
+- Bodyless procedures
+
+By bypassing the symbolic check, a concrete can check (property-based testing) can be used instead. How exactly Laurel will guarantee a correct hand-off between concrete and symbolic property checking, is yet to be designed.
+
+## Data-flow analysis
+
+To be designed..
 
 # Prevent duplicate work
 To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains many features shared between several languages. The following table shows which features are shared with which input languages.
@@ -334,6 +347,12 @@ This emits the axiom `forall x. {P(x)} P(x) && Q(x)`, triggered on `P(x)`. An ob
 
 This global availability is a deliberate simplification for the first version of the feature. It is enough to make an opaque procedure's postcondition usable, but it gives no control over scope: a fact intended for one caller is visible everywhere its trigger matches, which can slow down or perturb unrelated proofs. `invokeOn` is expected to evolve toward finer-grained control over where facts are made available — for example scoping a fact to specific callers, modules, or call sites — so that authors can expose a postcondition exactly where it is useful rather than program-wide.
 
+## Aliasing
+
+Potential aliasing of heap allocated objects makes can make verification more complicated. Laurel introduced the `allocated` and `fresh` concepts that make it easier to specify which references are disjunct.
+
+<example where a callee ensures the returned reference is fresh, so the caller knows it's not equal to any existing objects>
+
 # Automated proof search
 Goal 5 was enabling the finding of proofs through automated search.
 
@@ -457,13 +476,14 @@ To be designed..
 Useful for dynamic languages. Infers composites types based on fields assigned to values.
 Composite types perform better than maps because reading from them incurs no domain check.
 
-# Verification without side-effects
+# Verification code must be erasable
 
 To support goal 7, for verification code not to affect the outcome of executing the program, Laurel has rules for code that exists only for verification purposes.
 
 Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
+- Contract code must terminate, so removing it does not whether execution code is reachable or not.
 
 For example, the body of the procedure below changes `p`, and that effect is declared with `modifies p`; `old(p.x)` in the ensures clause refers to the pre-state:
 
@@ -478,6 +498,9 @@ procedure shift(p: Point, dx: int)
 ```
 
 The ensures expression may read the heap and build temporary values while it is evaluated, but it cannot assign to `p`, to `dx`, or to any variable declared outside it, and it contributes no modifies effect of its own. Even if the postcondition called a helper that allocated and mutated a scratch object, that would run against a copy of the heap and remain invisible to callers, which still see every pre-existing object unchanged across the evaluation of the contract. As a result, adding, strengthening, or removing the ensures clause never changes how the program executes.
+
+## Decreases clauses
+To enable proving that contracts terminate, Laurel uses decreasing clauses to enable proving the termination of procedure calls.
 
 # Great user experience
 
