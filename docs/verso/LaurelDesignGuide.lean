@@ -41,7 +41,7 @@ Goals:
   1. Property based testing
   2. Symbolic execution (aka verification), both bounded and unbounded
   3. Hybrid concrete and symbolic property checking
-  3. Data-flow analysis
+  4. Data-flow analysis
 2. Reduce code duplication in the analysis of popular languages by being a target for compilation from those languages, and including features common to them. Note that we expect source languages to reuse their existing compilers when possible, so language features that can be compiled away don't need to be considered.
 3. Enable modular verification
 4. Minimize the amount of user code needed to enable verification.
@@ -137,7 +137,7 @@ Laurel allows bypassing the symbolic checking of properties in various ways:
 - Assumptions
 - Bodyless procedures
 
-By bypassing the symbolic check, a concrete can check (property-based testing) can be used instead. How exactly Laurel will guarantee a correct hand-off between concrete and symbolic property checking, is yet to be designed.
+By bypassing the symbolic check, a concrete check (property-based testing) can be used instead. How exactly Laurel will guarantee a correct hand-off between concrete and symbolic property checking, is yet to be designed.
 
 ## Data-flow analysis
 
@@ -363,8 +363,10 @@ Laurel procedures are transparent by default, meaning that a call can use the bo
 By allowing any procedure to be transparent, Laurel prevents users from having to repeat the body of a procedure in a postcondition. Here's an example that shows an opaque procedure that would have been easier to define as being transparent, without any loss of readability:
 
 ```
-procedure increment(counter: Counter) opaque
-  // In Laurel, this ensures clause can be left out
+procedure increment(counter: Counter)
+  // In Laurel, the next three lines can be left out and callers will get the same information
+  opaque
+  modifies counter
   ensures counter.value == old(counter.value) + 1
 {
   counter.value := counter.value + 1
@@ -376,7 +378,7 @@ A contract in Laurel may not modify any object that exists outside of that contr
 
 A common design choice in verification-aware programming languages is not to allow creating or modifying objects in contracts. A good reason for this is that objects are more complex to reason about than immutable data, and contracts are intended to contain easy to reason about code. Laurel still allows creating and modifying new objects inside contracts because code might be declared to operate specifically through the use of reference types, and Laurel does not want to restrict users from using such code even in contracts.
 
-A second reason for not allowing any heap modification inside contracts is that this is prone to soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does not allow assigning to variable defined outside the contract, from inside the contract, no modification can escape the contract. The heap used inside a contract is a separate heap variable.
+A second reason for not allowing any heap modification inside contracts is that this is prone to soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does not allow assigning to a variable defined outside the contract, from inside the contract, no modification can escape the contract. The heap used inside a contract is a separate heap variable.
 
 ## Invoke on
 The postcondition of an opaque procedure is exposed to callers as an axiom: the ensures clause, universally quantified over the procedure's inputs. Left unrestricted, the solver may instantiate such an axiom on any matching term, which is a common cause of slow and unpredictable verification.
@@ -396,9 +398,24 @@ This global availability is a deliberate simplification for the first version of
 
 ## Aliasing
 
-Potential aliasing of heap allocated objects makes can make verification more complicated. Laurel introduced the `allocated` and `fresh` concepts that make it easier to specify which references are disjunct.
+Potential aliasing of heap-allocated objects can make verification more complicated. Laurel introduced the `allocated` and `fresh` concepts that make it easier to specify which references are disjoint.
 
-<example where a callee ensures the returned reference is fresh, so the caller knows it's not equal to any existing objects>
+```
+procedure allocate() returns (r: Node)
+  opaque
+  ensures fresh(r)
+{
+  return new Node
+};
+
+procedure usesAllocate(existing: Node) {
+  var created: Node := allocate();
+  assert created != existing   // holds: `fresh(r)` tells the caller `created`
+                               // is distinct from every object that already existed
+};
+```
+
+Because `allocate` ensures `fresh(r)`, the caller learns that `created` was newly allocated and therefore cannot alias `existing`, or any other reference that existed before the call, without the caller having to track allocation itself.
 
 # Automated proof search
 Goal 5 was enabling the finding of proofs through automated search.
@@ -457,7 +474,7 @@ procedure usesIdentity() {
 
 To be designed.. but here is some subject to change content.
 
-Laurel can statically infer the types of variables, which, when the inferred types where otherwise not available in the source program, can enable emitting code that can be verified more efficiently.
+Laurel can statically infer the types of variables, which, when the inferred types were otherwise not available in the source program, can enable emitting code that can be verified more efficiently.
 
 Here's an example related to nullable reference types:
 
@@ -471,7 +488,7 @@ bar := null;
 bar.x := 2
 ```
 
-Without type inference, we can not judge whether the variable `foo` should have type `Foo` or `Nullable<Foo>`, so we have to pick defensively:
+Without type inference, we cannot judge whether the variable `foo` should have type `Foo` or `Nullable<Foo>`, so we have to pick defensively:
 ```
 datatype Nullable<T> = from_NotNull(as_notNull: T) | from_Null
 
@@ -520,7 +537,7 @@ as_notNull(foo_2).x := 2;
 
 To be designed..
 
-Useful for dynamic languages. Infers composites types based on fields assigned to values.
+Useful for dynamic languages. Infers composite types based on fields assigned to values.
 Composite types perform better than maps because reading from them incurs no domain check.
 
 # Verification code must be erasable
@@ -530,7 +547,7 @@ To support goal 7, for verification code not to affect the outcome of executing 
 Rules for contracts:
 - Contract code may not modify variables defined outside the contract scope.
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
-- Contract code must terminate, so removing it does not whether execution code is reachable or not.
+- Contract code must terminate, so removing it does not affect whether execution code is reachable or not.
 
 For example, the body of the procedure below changes `p`, and that effect is declared with `modifies p`; `old(p.x)` in the ensures clause refers to the pre-state:
 
@@ -547,7 +564,7 @@ procedure shift(p: Point, dx: int)
 The ensures expression may read the heap and build temporary values while it is evaluated, but it cannot assign to `p`, to `dx`, or to any variable declared outside it, and it contributes no modifies effect of its own. Even if the postcondition called a helper that allocated and mutated a scratch object, that would run against a copy of the heap and remain invisible to callers, which still see every pre-existing object unchanged across the evaluation of the contract. As a result, adding, strengthening, or removing the ensures clause never changes how the program executes.
 
 ## Decreases clauses
-To enable proving that contracts terminate, Laurel uses decreasing clauses to enable proving the termination of procedure calls.
+To enable proving that contracts terminate, Laurel uses decreases clauses to enable proving the termination of procedure calls.
 
 # Great user experience
 
