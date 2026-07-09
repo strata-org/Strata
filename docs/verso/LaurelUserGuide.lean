@@ -12,6 +12,9 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
+-- Provides `Strata.parseLaurelText`, used by the `laurel` code block below to
+-- parse-check every example at doc-elaboration time.
+import Strata.Languages.Laurel
 
 -- This gets access to most of the manual genre
 open Verso.Genre Manual
@@ -86,6 +89,46 @@ def «example» : Verso.Doc.Elab.DirectiveExpanderOf LaurelExampleConfig
     let args ← stxs.mapM Verso.Doc.Elab.elabBlock
     ``(Verso.Doc.Block.other (Block.«example» $(Lean.quote title)) #[ $[ $args ],* ])
 
+/-- Configuration for the `laurel` code block. The `+unchecked` flag opts a
+    block out of parse checking — use it for illustrative or partial snippets
+    that are not intended to parse as a complete Laurel program. -/
+structure LaurelCodeConfig where
+  unchecked : Bool := false
+
+instance : Verso.ArgParse.FromArgs LaurelCodeConfig Verso.Doc.Elab.DocElabM where
+  fromArgs := LaurelCodeConfig.mk <$> .flag `unchecked false
+
+/-- A ````laurel```` code block. Renders like an ordinary code block, but also
+    *parse-checks* its contents at doc-elaboration time so a syntax error in an
+    example fails the documentation build.
+
+    Only parsing and AST translation are run — not resolution or verification —
+    so examples that deliberately illustrate a verification *failure* (a failing
+    `assert`, a violated precondition, …) still pass, since they are
+    syntactically valid. A snippet that is not a complete program (it omits the
+    `program Laurel;` header) is wrapped before checking. Pass `+unchecked` to
+    skip checking entirely. -/
+@[code_block]
+def laurel : Verso.Doc.Elab.CodeBlockExpanderOf LaurelCodeConfig
+  | config, str => do
+    -- `parseLaurelText` parses a bare sequence of declarations (the `.laurel.st`
+    -- file form), and the `program Laurel;` header is an artifact of the embedded
+    -- style that readers shouldn't see. Strip an optional leading `program …;`
+    -- header line so it is neither checked against nor rendered.
+    let content := str.getString
+    let source :=
+      if content.startsWith "program" then
+        match content.splitOn "\n" with
+        | _header :: rest => "\n".intercalate rest
+        | [] => content
+      else content
+    unless config.unchecked do
+      try
+        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.Program)
+      catch e =>
+        throwErrorAt str m!"Laurel example failed to parse:\n{e.toMessageData}"
+    ``(Verso.Doc.Block.code $(Lean.quote source))
+
 #doc (Manual) "The Laurel User Guide" =>
 %%%
 shortTitle := "Laurel User Guide"
@@ -122,7 +165,7 @@ A Laurel program is a sequence of declarations. The most important one is the
 introduced with `returns`, an optional contract, and a body enclosed in braces.
 Statements inside the body are separated by semicolons.
 
-```
+```laurel
 program Laurel;
 procedure addOne(x: int) returns (r: int)
   opaque
@@ -863,7 +906,7 @@ fields and may declare *instance procedures* (methods). Fields are read and
 written with the `#` selector, instances are created with `new`, and a method is
 invoked with the same `#` syntax.
 
-```
+```laurel
 program Laurel;
 composite Counter {
   var count: int
@@ -894,7 +937,7 @@ Field selection and method calls chain, so you can reach through one object to
 another: `o#inner#x` reads field `x` of the object stored in `o`'s `inner` field,
 and `o#inner#isOne()` calls a method on it.
 
-```
+```laurel
 composite Inner { var x: int }
 composite Outer { var inner: Inner }
 
@@ -914,7 +957,7 @@ An `assert` states a fact that Laurel must prove holds at that point in the
 program. If the solver cannot prove it, verification fails and the failing
 `assert` is reported.
 
-```
+```laurel
 procedure checkPositive(x: int)
   requires x > 0
   opaque
@@ -929,7 +972,7 @@ from that point on, Laurel reasons as if the assumed expression is true. Assumin
 something false makes everything afterwards trivially provable, which is
 occasionally useful but should be used with care.
 
-```
+```laurel
 procedure assumeThenProve()
   opaque
 {
@@ -956,7 +999,7 @@ A loop invariant serves two purposes. Inside the loop it tells Laurel what is
 true, which is what lets it prove that operations in the body are safe. After the
 loop it combines with the negated guard to describe the state on exit.
 
-```
+```laurel
 procedure countUp()
   opaque
 {
@@ -987,7 +1030,7 @@ procedure is called. It has two effects. It restricts callers: every call site
 must prove the precondition holds for the arguments it passes. And it gives the
 body an assumption to work from when proving its own obligations.
 
-```
+```laurel
 procedure halve(x: int) returns (r: int)
   requires x > 0
   opaque
@@ -1007,7 +1050,7 @@ procedure caller()
 A procedure may have several `requires` clauses; they are conjoined. A call must
 satisfy all of them.
 
-```
+```laurel
 procedure addBoth(x: int, y: int) returns (r: int)
   requires x > 0
   requires y > 0
@@ -1020,13 +1063,13 @@ procedure addBoth(x: int, y: int) returns (r: int)
 
 ## Postconditions
 
-A postcondition for a procedure is a condition that is guaranteed to hold after the procedure executes. Sometimes, we can capture the entire desired behavior of a procedure with a postcondition that is simpler than the procedure's implementation. A typical example of sorting a list of numbers: the end result, that the list is sorted, is simpler to describe the the algorithm to do the sorting.
+A postcondition for a procedure is a condition that is guaranteed to hold after the procedure executes. Sometimes, we can capture the entire desired behavior of a procedure with a postcondition that is simpler than the procedure's implementation. A typical example of sorting a list of numbers: the end result, that the list is sorted, is simpler to describe than the algorithm to do the sorting.
 
 When a postcondition can capture the entire desired behavior of a procedure, and is simpler than the body, then adding it allows improving the correctness guarantee of your program, since only the simpler postcondition needs to be reviewed for correctness. Also, when postconditions are added to a procedure, callers will only be able to use the postconditions to reason about the call, and not the body. This simplifies reasoning at the call-site, improving verification results.
 
 In Laurel, to be explicit, a procedure with postconditions must be marked as `opaque`, indicating that its body is not visible to callers. A procedure without postconditions can also be marked `opaque`, although then callers will know nothing about the result of the call. By default Laurel procedures have a transparent body, meaning that callers can use the callee's body for reasoning about the call's result.
 
-```
+```laurel
 procedure max(x: int, y: int) returns (r: int)
   opaque
   ensures r >= x
@@ -1040,7 +1083,7 @@ procedure max(x: int, y: int) returns (r: int)
 
 At a call site, the postcondition is all the caller knows about the result:
 
-```
+```laurel
 procedure useMax()
   opaque
 {
@@ -1064,7 +1107,7 @@ A `forall` states that its body holds for every value of the bound variables; an
 `exists` states that there is at least one value for which the body holds. Both
 take one or more typed binders and a body introduced with `=>`.
 
-```
+```laurel
 procedure quantifiers()
   opaque
 {
@@ -1077,7 +1120,7 @@ The implication operator `==>` is frequently used inside quantifiers to restrict
 the range of interest — for instance, to say something about every index of an
 array within bounds:
 
-```
+```laurel
 procedure inContract(n: int)
   requires n > 0
   opaque
@@ -1091,7 +1134,7 @@ checked by enumeration, the solver reasons about it logically. To control how it
 instantiates a quantifier, you can attach a *trigger* — a pattern in braces that
 tells the solver which terms should cause the quantified fact to fire:
 
-```
+```laurel
 procedure P(x: int): int;
 procedure withTrigger()
   opaque
@@ -1113,11 +1156,11 @@ TODO, fill in
 
 ## Modifies clauses
 
-As previously mentioned, Laurel procedures have a transparent body by default, so callers can reason about the callee's body. This works also when the callee mutates the heap in its body. However, when we make a heap-mutatijng procedure `opaque`, and the body is no longer available for reasoning, then the caller must accept the possibility that the entire heap was mutated, meaning that nothing can be proven about the heap any more, a really bad thing. To enable heap reasoning after calling opaque heap-mutating procedures, Laurel has modifies clauses.
+As previously mentioned, Laurel procedures have a transparent body by default, so callers can reason about the callee's body. This works also when the callee mutates the heap in its body. However, when we make a heap-mutating procedure `opaque`, and the body is no longer available for reasoning, then the caller must accept the possibility that the entire heap was mutated, meaning that nothing can be proven about the heap any more, a really bad thing. To enable heap reasoning after calling opaque heap-mutating procedures, Laurel has modifies clauses.
 
 A modifies clause specifies the heap references that may have been modified by the procedure. Example:
 
-```
+```laurel
 composite Container {
   var value: int
 }
@@ -1137,18 +1180,18 @@ procedure caller()
   var x: int := a#value;
   var y: int := b#value;
   bump(b);
-  assert x == a#value   // holds: only b is in bump's modifies clause
+  assert x == a#value;  // holds: only b is in bump's modifies clause
   assert y == b#value   // fails: b is in bump's modifies clause
 };
 ```
 
-A opaque procedure that writes to an object it has not listed in the modifies clause is rejected, also when this write is done through another procedure call. You can list several references by repeating the clause (`modifies c; modifies d`), and the wildcard `modifies *` permits modifying any object — at the cost of telling callers that nothing on the heap is preserved.
+An opaque procedure that writes to an object it has not listed in the modifies clause is rejected, also when this write is done through another procedure call. You can list several references by repeating the clause (`modifies c; modifies d`), and the wildcard `modifies *` permits modifying any object — at the cost of telling callers that nothing on the heap is preserved.
 
 Objects allocated with `new` *inside* the procedure body are exempt: a freshly
 allocated object may be modified freely without appearing in the `modifies`
 clause, because no caller could hold any prior knowledge about it.
 
-```
+```laurel
 composite Container { var value: int }
 
 procedure makeOne()
@@ -1172,7 +1215,7 @@ to the state when it was entered. Wrapping an expression in `old(...)` evaluates
 that expression in the *pre-state* — the heap as it was on entry. This is the
 standard way to specify a procedure that mutates its arguments.
 
-```
+```laurel
 composite Cell {
   var value: int
 }
@@ -1194,7 +1237,7 @@ clause would read `c#value == c#value + 1`, which no implementation can satisfy.
 sub-expression: `old(2 * c#value + 3)` means the same as `2 * old(c#value) + 3`.
 It may also appear inside quantifiers and conditionals in a postcondition:
 
-```
+```laurel
 composite Cell { var value: int }
 
 procedure strictBump(c: Cell)
@@ -1209,7 +1252,7 @@ procedure strictBump(c: Cell)
 A caller can reproduce the two-state reasoning by snapshotting the pre-state into
 a local variable before the call and asserting against it afterwards:
 
-```
+```laurel
 program Laurel;
 composite Cell { var value: int }
 
