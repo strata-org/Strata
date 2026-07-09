@@ -96,14 +96,14 @@ In a postcondition, `old(e)` denotes the value of the expression `e` in the proc
 ```
 procedure increment(counter: Counter)
   opaque
-  ensures counter.value == old(counter.value) + 1
+  ensures counter#value == old(counter#value) + 1
   modifies counter
 {
-  counter.value := counter.value + 1
+  counter#value := counter#value + 1
 };
 ```
 
-The postcondition `counter.value == old(counter.value) + 1` captures the mutation performed by the body, yet it is a pure comparison between two values. A caller learns exactly how the field changed relative to its prior value without the contract mutating anything, keeping verification code erasable (see goal 7).
+The postcondition `counter#value == old(counter#value) + 1` captures the mutation performed by the body, yet it is a pure comparison between two values. A caller learns exactly how the field changed relative to its prior value without the contract mutating anything, keeping verification code erasable (see goal 7).
 
 ## Unbounded verification
 Bounded symbolic execution unrolls a loop a fixed number of times, so on its own it cannot prove a property for every run of a loop whose iteration count is not statically known. Loop invariants close that gap. A `while` loop may carry one or more `invariant` clauses, each an expression that must hold when the loop is first reached and be preserved by every iteration.
@@ -365,9 +365,9 @@ procedure increment(counter: Counter)
   // In Laurel, the next three lines can be left out and callers will get the same information
   opaque
   modifies counter
-  ensures counter.value == old(counter.value) + 1
+  ensures counter#value == old(counter#value) + 1
 {
-  counter.value := counter.value + 1
+  counter#value := counter#value + 1
 };
 ```
 
@@ -396,7 +396,9 @@ This global availability is a deliberate simplification for the first version of
 
 ## Aliasing
 
-Potential aliasing of heap-allocated objects can make verification more complicated. Laurel introduced the `allocated` and `fresh` concepts that make it easier to specify which references are disjoint.
+Potential aliasing of heap-allocated objects can make verification more complicated. Laurel builds on two related notions to make it easier to specify which references are disjoint. A reference is *allocated* (in a given state) when it already exists in that state's heap; internally this is the condition that the reference predates the state's allocation counter. A reference is *fresh* when it is the negation of that: newly created by the procedure and therefore not allocated in the pre-state.
+
+Today only `fresh` has surface syntax — the `fresh(e)` predicate, which may only target reference (impure composite) types. It is exactly what a caller needs to conclude that a returned reference cannot alias anything that was already allocated.
 
 ```
 procedure allocate() returns (r: Node)
@@ -413,7 +415,20 @@ procedure usesAllocate(existing: Node) {
 };
 ```
 
-Because `allocate` ensures `fresh(r)`, the caller learns that `created` was newly allocated and therefore cannot alias `existing`, or any other reference that existed before the call, without the caller having to track allocation itself.
+Because `allocate` ensures `fresh(r)`, the caller learns that `created` was newly allocated and therefore cannot alias `existing`, or any other reference that was already allocated before the call, without the caller having to track allocation itself.
+
+An `allocated(e)` predicate is planned as the dual of `fresh`. Where `fresh(e)` asserts a reference is new, `allocated(e)` will assert that a reference already existed in the current state's heap — useful, for example, in a precondition that requires an argument to be a pre-existing object rather than a fresh one. The following sketch (syntax illustrative — `allocated` is not yet implemented) shows the intended shape:
+
+```
+// syntax illustrative — `allocated` is planned, not yet implemented
+procedure store(container: Container, item: Node)
+  requires allocated(item)   // reject fresh items; only pre-existing ones may be stored
+  opaque
+  modifies container
+{
+  container#head := item
+};
+```
 
 # Automated proof search
 Goal 5 was enabling the finding of proofs through automated search.
@@ -479,11 +494,11 @@ Here's an example related to nullable reference types:
 Input program:
 ```
 var foo := new Foo;
-foo.x := 1;
+foo#x := 1;
 
 var bar := foo;
 bar := null;
-bar.x := 2
+bar#x := 2
 ```
 
 Without type inference, we cannot judge whether the variable `foo` should have type `Foo` or `Nullable<Foo>`, so we have to pick defensively:
@@ -491,21 +506,21 @@ Without type inference, we cannot judge whether the variable `foo` should have t
 datatype Nullable<T> = from_NotNull(as_notNull: T) | from_Null
 
 var foo: Nullable<Foo> := from_NotNull(new Foo);
-as_notNull(foo).x := 1;
+as_notNull(foo)#x := 1;
 
 var bar: Nullable<Foo> := foo;
 bar := null;
-as_notNull(bar).x := 2
+as_notNull(bar)#x := 2
 ```
 
 With type inference, we can infer that `foo` is never nullable:
 ```
 var foo: Foo := new Foo;
-foo.x := 1;
+foo#x := 1;
 
 var bar: Nullable<Foo> := from_NotNull(foo);
 bar := null;
-as_notNull(bar).x := 2
+as_notNull(bar)#x := 2
 ```
 
 Note the coercion `from_NotNull` that was inserted in the assignment to `bar`. Laurel can be given a list of coercions that can be inserted automatically. Laurel can also be given a list of type coercions, which it can use to change the type annotations of variables, from for example `T` to `Nullable<T>`.
@@ -517,18 +532,18 @@ Flow based types allow the type of a variable to change throughout the control-f
 Source program:
 ```
 var foo := new Foo;
-foo.x := 1;
+foo#x := 1;
 foo := null;
-foo.x := 2;
+foo#x := 2;
 ```
 
 Inferred program:
 ```
 var foo := new Foo;
-foo.x := 1;
+foo#x := 1;
 var foo_2: Nullable<Foo> := from_NotNull(foo);
 foo_2 := null;
-as_notNull(foo_2).x := 2;
+as_notNull(foo_2)#x := 2;
 ```
 
 ## Inference of composite types
@@ -547,15 +562,15 @@ Rules for contracts:
 - Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
 - Contract code must terminate, so removing it does not affect whether execution code is reachable or not.
 
-For example, the body of the procedure below changes `p`, and that effect is declared with `modifies p`; `old(p.x)` in the ensures clause refers to the pre-state:
+For example, the body of the procedure below changes `p`, and that effect is declared with `modifies p`; `old(p#x)` in the ensures clause refers to the pre-state:
 
 ```
 procedure shift(p: Point, dx: int)
   opaque
-  ensures p.x == old(p.x) + dx
+  ensures p#x == old(p#x) + dx
   modifies p
 {
-  p.x := p.x + dx
+  p#x := p#x + dx
 };
 ```
 

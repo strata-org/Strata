@@ -140,7 +140,7 @@ The Laurel to Core translation pipeline uses these IRs:
 
 Most of the passes are in the Laurel IR.
 The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
-The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
+The ordering pass goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`.
 And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
 ## Passes
