@@ -56,8 +56,6 @@ Goals:
 To be designed..
 
 ## Verification
-Work in progress section
-
 To achieve goal 1.2, enable proving properties through verification, Laurel has the following features.
 
 ### Assertions
@@ -421,7 +419,7 @@ Because `allocate` ensures `fresh(r)`, the caller learns that `created` was newl
 Goal 5 was enabling the finding of proofs through automated search.
 
 ## Reads clauses
-Reads clauses are useful to improve verification performance. The facts they prove work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
+Reads clauses are useful to improve verification performance. The facts they provide work well together with the facts provided by modifies clauses, making it easier to prove which procedure values have remained unchanged after objects were modified.
 
 ## Frozen types
 Frozen types (To be designed). A reads clause specifies that a procedure always returns the same value, if the reads references have the same values and if the explicit input arguments, which excludes the heap, are the same. A procedure that returns a newly created object, which has a reference counter that depends on the counter of the input heap, can thus never satisfy a reads clause. For this purpose Laurel allows erasing the counter from a reference value. A Laurel `Frozen` type takes a regular reference type, and produces a type that is the same except that it does not support reference equality or mutation of its fields. Record types are composite types that are frozen by default.
@@ -569,7 +567,7 @@ To enable proving that contracts terminate, Laurel uses decreases clauses to ena
 # Great user experience
 
 ## Parameter lists
-Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
 
 At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
 `assign x, y := multiOutCall(a, b)`
