@@ -136,27 +136,17 @@ shortTitle := "Laurel User Guide"
 
 # Summary
 
-TODO: generalize this section since it's too verification focussed.
-
-Laurel is an intermediate verification language. It is the common target for
-verifiers built on top of garbage-collected, imperative source languages such
+Laurel is an intermediate analysis language. It is the common target for
+code analysers built on top of garbage-collected, imperative source languages such
 as Java, Python, and JavaScript. You usually do not write Laurel by hand;
-a front-end translates your annotated source program into Laurel, and Laurel is
-then checked for correctness. Understanding Laurel helps you understand what the
-front-end checks and why a verification succeeds or fails.
+a front-end translates your, possibly annotated, source program into Laurel,
+and Laurel is then used to analyse your sources.
+Understanding Laurel helps you build such front-ends.
 
-Laurel is built to be both *complete* and *accurate*. It is complete because you
-can specify any behavior you want and have it checked against the
-implementation. It is accurate because, when the underlying solver cannot decide
-whether a program meets its specification, you can supply hints — extra
-assertions, loop invariants, or contracts — that let it reach a definite answer.
-Some properties, such as the absence of common runtime errors, are checked
-without you having to state them.
-
-Under the hood, Laurel discharges its proof obligations using a Satisfiability
-Modulo Theories (SMT) solver. For simple obligations the solver finds a proof on
-its own. For harder ones it needs guidance, and most of this guide is about the
-constructs you use to provide that guidance.
+Laurel out of the box supports these kinds of analysis:
+- Property-based testing
+- Bounded verification
+- Unbounded verification
 
 ## A first program
 
@@ -167,9 +157,9 @@ Statements inside the body are separated by semicolons.
 
 ```laurel
 program Laurel;
-procedure addOne(x: int) returns (r: int)
+procedure addTwo(x: int) returns (r: int)
   opaque
-  ensures r == x + 1
+  ensures r == x + 2
 {
   r := x;
   r++;
@@ -182,7 +172,6 @@ Some constructors and properties in the Laurel AST are marked for internal usage
 Having these internal properties and constructors allows us to define an incremental translation to Core which improves maintainability.
 
 # Resolution
-
 
 ## Bidirectional type checking
 
@@ -823,7 +812,6 @@ named-output assignment.
 
 # Execution
 
-TODO, cover all the non-verification language parts
 
 ## Types
 
@@ -987,7 +975,7 @@ ultimately checked by turning them into assertions at the right program points.
 
 ## Erased code
 
-TODO, show that assignments inside a contract may not be to variables declared outside the contract.
+To be designed..
 
 ## Loop invariants
 
@@ -1150,7 +1138,165 @@ To be designed..
 
 ## Constrained types
 
-TODO, fill in
+A *constrained type* (a refinement type) is a base type narrowed by a
+predicate. It is introduced with the `constrained` keyword and has four parts: a
+name, a value binder together with its base type, a `where` predicate that
+values of the type must satisfy, and a `witness` value that proves the type is
+inhabited.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+```
+
+This declares `nat` as the integers that are at least zero. The binder `x`
+ranges over the base type `int`, `x >= 0` is the constraint, and `0` is the
+witness — a concrete value Laurel checks against the predicate to be sure the
+type is not empty. A witness that fails its own predicate is rejected:
+
+```laurel
+constrained bad = x: int where x > 0 witness -1
+// error: the witness -1 does not satisfy x > 0
+```
+
+A constrained type is checked at every point where a value *acquires* the type,
+and it is available as an assumption at every point where a value is *known* to
+have the type. The rest of this section walks through those points.
+
+### Inputs
+
+A parameter of constrained type contributes a precondition. Callers must prove
+the argument satisfies the constraint, and in exchange the body may assume it.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure inputAssumed(n: nat)
+  opaque
+{
+  assert n >= 0   // holds: the nat constraint is assumed for inputs
+};
+```
+
+Passing an argument that cannot be shown to satisfy the constraint fails at the
+call site, exactly like any other {ref "rules-verification-statements"}[precondition].
+
+### Outputs
+
+An output of constrained type contributes a postcondition. The procedure must
+establish the constraint on its result, and callers may then assume it.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure outputValid() returns (r: nat)
+  opaque
+{
+  r := 3          // ok: 3 satisfies x >= 0
+};
+```
+
+Returning a value that violates the constraint fails as a postcondition:
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure outputInvalid() returns (r: nat)
+  opaque
+{
+  r := -1         // error: postcondition does not hold (-1 is not a nat)
+};
+```
+
+Because the constraint travels with the output, a caller of an `opaque`
+procedure learns it from the contract alone, without seeing the body:
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure opaqueNat() returns (r: nat)
+  opaque;
+
+procedure callerAssumes()
+  opaque
+{
+  var v: int := opaqueNat();
+  assert v >= 0   // holds: opaqueNat's result is a nat
+};
+```
+
+### Local variables
+
+Initializing or assigning to a constrained-typed local asserts the constraint
+on the assigned value. Both the initial value and every later reassignment are
+checked.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure assignLocal()
+  opaque
+{
+  var y: nat := 5;   // ok
+  y := -1            // error: assignment violates the nat constraint
+};
+```
+
+A constrained-typed local that is *declared without an initializer* is treated
+as an arbitrary value that satisfies the constraint: the constraint is assumed,
+but nothing more. In particular you cannot assume it holds the witness value.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure uninitialized()
+  opaque
+{
+  var y: nat;
+  assert y >= 0   // holds: the constraint is assumed
+};
+```
+
+### Quantifiers
+
+When a quantifier binds a variable of constrained type, the constraint is
+injected into the body so the bound variable ranges only over values of the
+type. For `forall` the constraint becomes an antecedent; for `exists` it becomes
+a conjunct.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure quantifiedNat()
+  opaque
+{
+  // provable only because n >= 0 is injected: false over all integers
+  assert forall(n: nat) => n + 1 > 0;
+  // 42 witnesses the existential and satisfies n >= 0
+  assert exists(n: nat) => n == 42
+};
+```
+
+### Nested constrained types
+
+A constrained type may refine another constrained type. The constraints then
+compose: a value of the inner type must satisfy its own predicate *and* every
+predicate up the chain.
+
+```laurel
+constrained even = x: int where x % 2 == 0 witness 0
+constrained evenpos = x: even where x > 0 witness 2
+
+procedure nested(x: evenpos)
+  opaque
+{
+  assert x > 0;      // evenpos's own constraint
+  assert x % 2 == 0  // inherited from even
+};
+```
+
+Because algebraic datatypes can be encoded as constrained types over a base
+type, this composition is what lets a value carry several layers of invariant at
+once.
 
 # Verification - Objects
 
