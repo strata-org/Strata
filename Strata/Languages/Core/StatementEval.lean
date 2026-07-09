@@ -37,7 +37,7 @@ instance : ToString CondType where
   | .Requires => "Requires"
   | .Ensures => "Ensures"
 
-private abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
+abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
 
 /--
 Create proof obligations and path conditions originating from
@@ -80,9 +80,16 @@ For example, if we have `call x := Inc(8)` where `Inc` returns a variable named 
 Return mapping: `[("ret", fresh_var)]`
 LHS mapping: `[("x", fresh_var)]`
 -/
-private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
+def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
     VarSubst × VarSubst × Env :=
-  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  -- `lhs` and `proc.header.outputs` are positionally aligned and equal length:
+  -- type-checking enforces this arity (and the pipeline runs it before symbolic
+  -- evaluation), so the declared output type at position `i` is the slot type
+  -- for `lhs[i]`. On a caller-state miss, recover that declared type rather than
+  -- leaving the fresh var untyped (`none`), which would fail to encode.
+  let output_tys := proc.header.outputs.values
+  let lhs_tys := lhs.mapIdx fun i l =>
+    (E.exprEnv.state.findD l (none, .fvar () l none)).fst.orElse fun _ => output_tys[i]?
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
