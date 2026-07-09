@@ -11,192 +11,183 @@ open Strata
 open Strata.Laurel
 
 /-
-Reviewability test for the `EliminateExceptions` pass (E7).
+Golden test for the `EliminateExceptions` pass (E7), in the style of
+`StrataTest/Transform/PrecondElim`: each case's *before* is an authored
+`#strata` program (a `def`), and the *after* is the pass's output, pinned by
+`#guard_msgs`. The pass is re-run on every build and its formatted output is
+compared against the pinned expectation, so a regression fails the test.
 
-The exceptional channel — `throw`, `try`/`catch`/`finally`, and the
-`throws`/`onThrow`/`when-throws` procedure contract — is lowered to ordinary
-Laurel by a single Laurel-to-Laurel pass (`EliminateExceptions`) rather than
-inside the final Core translator. Each `#eval` below runs the pipeline on a
-small program and prints the Laurel *before* and *after* that pass, so the
-transformation is reviewable as Laurel-to-Laurel.
+## How this runs the pass
 
-The cases build up from minimal to complex, each isolating one feature:
+`runPass` resolves the surface program and runs *only* the
+`EliminateExceptions` pass on it (`resolve` + `eliminateExceptionsTransform`),
+not the full pipeline. Running it directly on the surface program keeps the
+output clean: heap parameterization has not run, so exception values are not yet
+heap `Composite` references, there is no `$heap` threading or `modifies`-clause
+noise, and a `catch … is T` guard shows as the surface `$exc is T` rather than
+the lowered type-tag test. This isolates the pass's own rewrite — the same
+reason the `Transform/*` tests run a single transform on a hand-written program.
 
-  1. a bare `throw` in a `throws` procedure     — signature → `Result`, `$thrown`/`$exc`, `Bad`/`Good`
-  2. `onThrow` contract                         — exceptional postcondition over `$result`
-  3. a local `try`/`catch`                      — labeled blocks + guarded catch chain
-  4. a call to a throwing procedure             — bind/unwrap `Result`, propagate on `Bad`
-  5. `finally` + `return` (F18)                 — `$returning` + re-dispatch runs `finally`
-  6. multi-clause `catch` + `finally`           — first-match-wins chain (each match clears `$thrown`)
-
-Notes:
-  - The pass runs after heap parameterization, so the snapshots are the
-    heap-parameterized form (exceptions are heap `Composite` references, `is`
-    tests are already lowered).
-  - The shared prelude and datatype declarations (`Heap`/`Composite`/`Result`/…)
-    are identical before and after, so the printout is trimmed to the
-    procedures — the only declarations the pass rewrites.
-  - Each case also asserts that the surface exceptional keywords
-    (`throw`/`catch`/`onThrow`/`throws`) are gone afterward, replaced by the
-    `$thrown`/`$exc`/`Result` encoding.
+The pass's interaction with heap parameterization (notably threading the inout
+`$heap` through a throwing call) is therefore *not* exercised here; that path is
+covered by the full-pipeline verifying tests (`TryHeapCalls`,
+`ThrowsPostconditions`, `TryCatchBehavior`, …). Output is trimmed to the
+procedures (the shared prelude/datatype declarations are unchanged by the pass).
 -/
 
-/-- Substring containment. -/
-private def containsSub (haystack needle : String) : Bool :=
-  (haystack.splitOn needle).length > 1
+/-- Strip trailing spaces from a line (the pretty-printer emits e.g. `return `
+    with a trailing space; keeping it would break the golden and trip the repo's
+    trailing-whitespace lint). -/
+private def rstrip (l : String) : String :=
+  String.ofList (l.toList.reverse.dropWhile (· == ' ')).reverse
 
-/-- Drop the (unchanged) prelude/datatype preamble, keeping only the procedures
-    — the declarations the pass actually rewrites. -/
-private def procsOnly (s : String) : String :=
-  "\n".intercalate ((s.splitOn "\n").dropWhile (fun l => !l.startsWith "procedure "))
+/-- Format a program, keeping only the procedures (dropping the unchanged
+    prelude/datatype preamble), right-trimming lines and trailing blanks. -/
+private def fmtProcs (p : Program) : Std.Format :=
+  let s := (Std.format p).pretty
+  let kept := ((s.splitOn "\n").dropWhile (fun l => !l.startsWith "procedure ")).map rstrip
+  Std.format ("\n".intercalate (kept.reverse.dropWhile (·.isEmpty)).reverse)
 
-/-- Run the pipeline on `prog`, printing the procedures before and after the
-    `EliminateExceptions` pass, then assert the surface exceptional keywords are
-    gone afterward. -/
-private def showCase (title : String) (prog : StrataDDM.Program) : IO Unit := do
-  let laurel ← translateLaurel prog
-  IO.FS.withTempDir fun dir => do
-    let pfx := (dir / "step").toString
-    let _ ← translateWithLaurel { keepAllFilesPrefix := some pfx } laurel
-    let entries ← dir.readDir
-    let readSuffix (suffix : String) : IO String := do
-      match entries.find? (fun e => e.fileName.endsWith suffix) with
-      | some e => IO.FS.readFile e.path
-      | none => throw (IO.userError s!"expected an emitted file ending in '{suffix}'")
-    -- `EliminateExceptions` is the last Laurel pass; the pass just before it is
-    -- `ConstrainedTypeElim`, whose emitted program is its input ("before").
-    let before ← readSuffix ".ConstrainedTypeElim.laurel.st"
-    let after ← readSuffix ".EliminateExceptions.laurel.st"
-    IO.println s!"══════════════════════════════════════════════════════════"
-    IO.println s!"CASE {title}"
-    IO.println s!"══════════════════════════════════════════════════════════"
-    IO.println "----- BEFORE (procedures) -----"
-    IO.println (procsOnly before)
-    IO.println "----- AFTER (procedures) -----"
-    IO.println (procsOnly after)
-    for kw in ["throw ", "catch", "onThrow", "throws"] do
-      if containsSub after kw then
-        throw (IO.userError s!"CASE {title}: 'after' program should not contain '{kw}'")
+/-- Parse a `#strata` program into a Laurel program (pure; panics on a parse
+    error, which cannot happen for the well-formed literals below). -/
+private def parseLaurel (t : StrataDDM.Program) : Program :=
+  match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram t) with
+  | .ok p => p
+  | .error e => panic! s!"parse failed: {e}" -- nopanic:ok
 
--- 1. Minimal: a bare `throw` in a `throws` procedure (void return). Shows the
---    signature rewrite to `Result<bool, Composite>` (bool placeholder for void),
---    the `$thrown`/`$exc` locals, and the `Bad`/`Good` construction.
---
---    Java equivalent:
---      void validate() throws ValidationException {
---        ValidationException error = new ValidationException();
---        throw error;
---      }
-#eval showCase "1 — minimal throw (void return)" <| StrataDDM.SourcedProgram.program <|
-#strata
-program Laurel;
-composite ValidationException extends BaseException {}
-procedure validate()
-  throws ValidationException
-  opaque
-{
-  var error: ValidationException := new ValidationException;
-  throw error
-};
-#end
+/-- Resolve the surface program (with the preludes prepended, as the pipeline
+    does) and run *only* the `EliminateExceptions` pass on it. -/
+private def runPass (b : StrataDDM.SourcedProgram) : Program :=
+  let program := parseLaurel b.program
+  let program := { program with
+    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
+    types := coreDefinitionsForLaurel.types ++ program.types }
+  let program :=
+    if (referencedNames program).contains baseExceptionTypeName then
+      { program with types := exceptionDefinitionsForLaurel.types ++ program.types }
+    else program
+  let result := resolve program
+  (eliminateExceptionsTransform result.model result.program).1
 
--- 2. `onThrow` contract: the exceptional postcondition becomes an ordinary
---    `ensures Result..isBad($result) ==> …` over the result.
---
---    Java equivalent:
---      int parsePositive(int input) throws NegativeInputException {
---        if (input < 0) throw new NegativeInputException();
---        return input;
---      }
---      // contract: if it throws, then input < 0 held.
-#eval showCase "2 — onThrow contract + value output" <| StrataDDM.SourcedProgram.program <|
+/-! ### 1. `onThrow` contract on a bodiless (contract-only) thrower
+
+The `throws` clause makes the result a `Result`, and `onThrow` becomes an
+ordinary postcondition `Result..isBad($result) ==> …`. -/
+
+def onThrowContract : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
 composite NegativeInputException extends BaseException {}
 procedure parsePositive(input: int)
   returns (result: int)
   throws NegativeInputException
-  onThrow (e) input < 0
-  opaque
-{
-  if input < 0 then {
-    var error: NegativeInputException := new NegativeInputException;
-    throw error
-  };
-  result := input
-};
+  onThrow (e) input < 0;
 #end
 
--- 3. A local `try`/`catch`: the procedure catches its own throw, so it stays
---    non-throwing. Shows the two-label `$try`/`$tryfin` blocks and the guarded
---    catch chain (a match clears `$thrown`).
---
---    Java equivalent:
---      int loadSetting() {
---        ConfigError error = new ConfigError();
---        int value = 0;
---        try { throw error; }
---        catch (ConfigError caught) { value = 2; }
---        return value;
---      }
-#eval showCase "3 — local try/catch" <| StrataDDM.SourcedProgram.program <|
+/--
+info: procedure parsePositive(input: int)
+  returns ($result: (Result<int, Composite>))
+  opaque
+  ensures Result..isBad($result) ==> input < 0;
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass onThrowContract))
+
+/-! ### 2. `when C throws (e) P` behavior case (bodiless)
+
+Becomes `C ==> (Result..isBad($result) ∧ P[e := err])`. -/
+
+def whenThrows : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
-composite ConfigError extends BaseException {}
-procedure loadSetting()
-  returns (value: int)
+composite ArithmeticException extends BaseException {}
+procedure divide(a: int, b: int)
+  returns (result: int)
+  throws ArithmeticException
+  when b == 0 throws (e) e is ArithmeticException;
+#end
+
+/--
+info: procedure divide(a: int, b: int)
+  returns ($result: (Result<int, Composite>))
+  opaque
+  ensures b == 0 ==> Result..isBad($result) & Result..err($result) is ArithmeticException;
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass whenThrows))
+
+/-! ### 3. A call to a throwing procedure inside `try`/`catch`
+
+Bind and unwrap its `Result`, propagate on `Bad`, and a guarded catch clause. -/
+
+def callAndCatch : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite NotFoundException extends BaseException {}
+procedure fetchRecord(id: int) returns (result: int) throws NotFoundException;
+procedure loadUser(id: int)
+  returns (result: int)
   opaque
 {
-  var error: ConfigError := new ConfigError;
-  value := 0;
   try {
-    throw error;
-    value := 1
-  } catch caught when caught is ConfigError {
-    value := 2
+    result := fetchRecord(id)
+  } catch caught when caught is NotFoundException {
+    result := 0
   }
 };
 #end
 
--- 4. A call to a throwing procedure that is propagated (the caller also declares
---    `throws`). Shows the multi-target `[$heap, $callres] := fetchRecord(…)` bind,
---    the `Result..isBad` propagation, and the `Result..value` unwrap.
---
---    Java equivalent:
---      int fetchRecord(int id) throws NotFoundException {
---        if (id < 0) throw new NotFoundException();
---        return id;
---      }
---      int loadUser(int id) throws NotFoundException {   // doesn't catch → propagates
---        return fetchRecord(id);
---      }
-#eval showCase "4 — call a thrower + propagate" <| StrataDDM.SourcedProgram.program <|
-#strata
-program Laurel;
-composite NotFoundException extends BaseException {}
-procedure fetchRecord(id: int) returns (result: int) throws NotFoundException opaque {
-  if id < 0 then {
-    var error: NotFoundException := new NotFoundException;
-    throw error
-  };
-  result := id
-};
-procedure loadUser(id: int) returns (result: int) throws NotFoundException opaque {
-  result := fetchRecord(id)
-};
-#end
+/--
+info: procedure fetchRecord(id: int)
+  returns ($result: (Result<int, Composite>))
+  opaque;
 
--- 5. `finally` + `return` (F18): the `return` unwinds through the `try`, so the
---    `$returning` flag and the post-`finally` re-dispatch make `finally` run
---    before the procedure exits.
---
---    Java equivalent:
---      int closeAndReturn() {
---        int status = 0;
---        try { return status; }
---        finally { status = 5; }   // runs on the way out
---      }
-#eval showCase "5 — finally runs on return (F18)" <| StrataDDM.SourcedProgram.program <|
+procedure loadUser(id: int): int
+  opaque
+{
+  var $thrown: bool := false;
+  var $exc: Composite;
+  var $returning: bool := false;
+  {
+    {
+      {
+        {
+          {
+            var $callres_1: (Result<int, Composite>) := fetchRecord(id);
+            if Result..isBad($callres_1) then {
+              $exc := Result..err($callres_1);
+              $thrown := true;
+              exit $try_0
+            };
+            result := Result..value($callres_1)
+          }
+        }$try_0;
+        if $thrown & $exc is NotFoundException then {
+          $thrown := false;
+          {
+            result := 0
+          }
+        }
+      }$tryfin_0;
+      if $thrown then {
+        exit $exnexit
+      };
+      if $returning then {
+        exit $exnexit
+      }
+    }
+  }$exnexit
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass callAndCatch))
+
+/-! ### 4. `finally` runs on `return` (F18)
+
+`return` sets `$returning`, jumps to `$tryfin`, `finally` runs, then the
+re-dispatch continues the exit. -/
+
+def finallyOnReturn : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
 procedure closeAndReturn()
@@ -212,107 +203,59 @@ procedure closeAndReturn()
 };
 #end
 
--- 6. More complex: two throws dispatched by a multi-clause `catch` (first-match
---    wins) with a `finally`. Shows the sequential guarded catch chain plus the
---    re-dispatch after `finally`.
---
---    Java equivalent:
---      int parseDocument(int input) {
---        SyntaxError syntaxError = new SyntaxError();
---        IoError ioError = new IoError();
---        int result = 0;
---        try {
---          if (input < 0)  throw syntaxError;
---          if (input == 0) throw ioError;
---          result = input;
---        } catch (SyntaxError caught) { result = -1; }
---          catch (IoError caught)     { result = -2; }
---          finally                    { result = result + 100; }
---        return result;
---      }
-#eval showCase "6 — multi-clause catch + finally" <| StrataDDM.SourcedProgram.program <|
-#strata
-program Laurel;
-composite SyntaxError extends BaseException {}
-composite IoError extends BaseException {}
-procedure parseDocument(input: int)
-  returns (result: int)
+/--
+info: procedure closeAndReturn()
+  returns (status: int)
   opaque
 {
-  var syntaxError: SyntaxError := new SyntaxError;
-  var ioError: IoError := new IoError;
-  result := 0;
-  try {
-    if input < 0 then {
-      throw syntaxError
-    };
-    if input == 0 then {
-      throw ioError
-    };
-    result := input
-  } catch caught when caught is SyntaxError {
-    result := -1
-  } catch caught when caught is IoError {
-    result := -2
-  } finally {
-    result := result + 100
-  }
+  var $thrown: bool := false;
+  var $exc: Composite;
+  var $returning: bool := false;
+  {
+    {
+      status := 0;
+      {
+        {
+          {
+            $returning := true;
+            exit $tryfin_0
+          }
+        }$try_0
+      }$tryfin_0;
+      {
+        status := 5
+      };
+      if $thrown then {
+        exit $exnexit
+      };
+      if $returning then {
+        exit $exnexit
+      }
+    }
+  }$exnexit
 };
-#end
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass finallyOnReturn))
 
--- 7. `when C throws (e) P` behavior case: the trigger + exceptional
---    postcondition becomes `C ==> (Result..isBad($result) ∧ P[e := err])` — so a
---    caller can conclude a throw *will* happen when `C` holds.
---
---    Java equivalent:
---      int divide(int a, int b) throws ArithmeticException {
---        if (b == 0) throw new ArithmeticException();
---        return a / b;
---      }
---      // behavior case: when b == 0, divide throws an ArithmeticException.
-#eval showCase "7 — when C throws (e) P behavior case" <| StrataDDM.SourcedProgram.program <|
-#strata
-program Laurel;
-composite ArithmeticException extends BaseException {}
-procedure divide(a: int, b: int)
-  returns (result: int)
-  throws ArithmeticException
-  when b == 0 throws (e) e is ArithmeticException
-  opaque
-{
-  if b == 0 then {
-    var error: ArithmeticException := new ArithmeticException;
-    throw error
-  };
-  result := a / b
-};
-#end
+/-! ### 5. Re-throw from inside a `catch`, with `finally` (the two-label case)
 
--- 8. Re-throw from inside a `catch`, with a `finally` (the two-label case): the
---    handler's `throw` targets `$tryfin` (skipping the rest of the catch chain
---    but still running `finally`), then the re-dispatch propagates it out.
---
---    Java equivalent:
---      int retry() throws NetworkError {
---        NetworkError error = new NetworkError();
---        int r = 0;
---        try { throw error; }
---        catch (NetworkError caught) { throw caught; }   // re-throw
---        finally { r = 7; }
---      }
-#eval showCase "8 — re-throw from catch + finally" <| StrataDDM.SourcedProgram.program <|
+The handler's `throw` targets `$tryfin` (skipping the rest of the catch chain
+but still running `finally`); the caught exception is re-thrown (`$exc := $exc`),
+no allocation. -/
+
+def rethrowFromCatch : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
 composite NetworkError extends BaseException {}
-procedure retry()
+procedure attempt(x: int) returns (r: int) throws NetworkError;
+procedure retry(x: int)
   returns (r: int)
   throws NetworkError
   opaque
 {
-  var error: NetworkError := new NetworkError;
-  r := 0;
   try {
-    throw error
+    r := attempt(x)
   } catch caught when caught is NetworkError {
     throw caught
   } finally {
@@ -321,19 +264,69 @@ procedure retry()
 };
 #end
 
--- 9. Nested `try`/`finally`: a `return` in the innermost body unwinds through
---    both `finally` arms (inner then outer). Shows the nested `$try`/`$tryfin`
---    blocks and the re-dispatch chaining `$returning` outward.
---
---    Java equivalent:
---      int nested() {
---        int log = 0;
---        try {
---          try { return log; }
---          finally { log = log + 1; }
---        } finally { log = log + 2; }
---      }
-#eval showCase "9 — nested try/finally (return unwinds both)" <| StrataDDM.SourcedProgram.program <|
+/--
+info: procedure attempt(x: int)
+  returns ($result: (Result<int, Composite>))
+  opaque;
+
+procedure retry(x: int)
+  returns ($result: (Result<int, Composite>))
+  opaque
+{
+  var $thrown: bool := false;
+  var $exc: Composite;
+  var $returning: bool := false;
+  var r: int;
+  {
+    {
+      {
+        {
+          {
+            var $callres_1: (Result<int, Composite>) := attempt(x);
+            if Result..isBad($callres_1) then {
+              $exc := Result..err($callres_1);
+              $thrown := true;
+              exit $try_0
+            };
+            r := Result..value($callres_1)
+          }
+        }$try_0;
+        if $thrown & $exc is NetworkError then {
+          $thrown := false;
+          {
+            $exc := $exc;
+            $thrown := true;
+            exit $tryfin_0
+          }
+        }
+      }$tryfin_0;
+      {
+        r := 7
+      };
+      if $thrown then {
+        exit $exnexit
+      };
+      if $returning then {
+        exit $exnexit
+      }
+    }
+  }$exnexit;
+  if $thrown then {
+    $result := Bad($exc)
+  } else {
+    $result := Good(r)
+  }
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass rethrowFromCatch))
+
+/-! ### 6. Nested `try`/`finally`
+
+A `return` in the inner body unwinds through both `finally` arms (inner then
+outer) via the chained re-dispatch (`if $returning then exit $tryfin_0`). -/
+
+def nestedFinally : StrataDDM.SourcedProgram :=
 #strata
 program Laurel;
 procedure nested()
@@ -352,3 +345,134 @@ procedure nested()
   }
 };
 #end
+
+/--
+info: procedure nested()
+  returns (log: int)
+  opaque
+{
+  var $thrown: bool := false;
+  var $exc: Composite;
+  var $returning: bool := false;
+  {
+    {
+      log := 0;
+      {
+        {
+          {
+            {
+              {
+                {
+                  $returning := true;
+                  exit $tryfin_1
+                }
+              }$try_1
+            }$tryfin_1;
+            {
+              log := log + 1
+            };
+            if $thrown then {
+              exit $try_0
+            };
+            if $returning then {
+              exit $tryfin_0
+            }
+          }
+        }$try_0
+      }$tryfin_0;
+      {
+        log := log + 2
+      };
+      if $thrown then {
+        exit $exnexit
+      };
+      if $returning then {
+        exit $exnexit
+      }
+    }
+  }$exnexit
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass nestedFinally))
+
+/-! ### 7. Multi-clause `catch` + `finally`
+
+First-match-wins is a sequence of else-less guarded `if`s (each match clears
+`$thrown`), then `finally`. -/
+
+def multiCatch : StrataDDM.SourcedProgram :=
+#strata
+program Laurel;
+composite SyntaxError extends BaseException {}
+composite IoError extends BaseException {}
+procedure parseStrict(input: int) returns (result: int) throws SyntaxError;
+procedure parseDocument(input: int)
+  returns (result: int)
+  opaque
+{
+  try {
+    result := parseStrict(input)
+  } catch caught when caught is SyntaxError {
+    result := -1
+  } catch caught when caught is IoError {
+    result := -2
+  } finally {
+    result := result + 100
+  }
+};
+#end
+
+/--
+info: procedure parseStrict(input: int)
+  returns ($result: (Result<int, Composite>))
+  opaque;
+
+procedure parseDocument(input: int): int
+  opaque
+{
+  var $thrown: bool := false;
+  var $exc: Composite;
+  var $returning: bool := false;
+  {
+    {
+      {
+        {
+          {
+            var $callres_1: (Result<int, Composite>) := parseStrict(input);
+            if Result..isBad($callres_1) then {
+              $exc := Result..err($callres_1);
+              $thrown := true;
+              exit $try_0
+            };
+            result := Result..value($callres_1)
+          }
+        }$try_0;
+        if $thrown & $exc is SyntaxError then {
+          $thrown := false;
+          {
+            result := -1
+          }
+        };
+        if $thrown & $exc is IoError then {
+          $thrown := false;
+          {
+            result := -2
+          }
+        }
+      }$tryfin_0;
+      {
+        result := result + 100
+      };
+      if $thrown then {
+        exit $exnexit
+      };
+      if $returning then {
+        exit $exnexit
+      }
+    }
+  }$exnexit
+};
+-/
+#guard_msgs in
+#eval (fmtProcs (runPass multiCatch))
