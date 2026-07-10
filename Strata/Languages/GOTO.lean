@@ -9,6 +9,9 @@ public import Strata.Languages.GOTO.CFGToCProverGOTO
 public import Strata.Languages.GOTO.CoreToCProverGOTO
 public import Strata.Languages.GOTO.LambdaToCProverGOTO
 public import Strata.Languages.GOTO.Program
+public import Strata.Languages.GOTO.Semantics
+public import Strata.Languages.GOTO.SemanticsEval
+public import Strata.Languages.GOTO.SemanticsProps
 public import Strata.Languages.GOTO.ToCProverGOTO
 
 /-! # GOTO
