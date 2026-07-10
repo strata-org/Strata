@@ -260,7 +260,7 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
         match e.val with
         | .StaticCall callee _ =>
           if callee.text.endsWith "$asFunction" then
-            modify (·.insert (callee.text.dropRight "$asFunction".length))
+            modify (·.insert (callee.text.dropEnd "$asFunction".length).toString)
           else pure ()
         | _ => pure ()) e
     let collectTwins : StateM (Std.HashSet String) Unit := do
