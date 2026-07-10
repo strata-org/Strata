@@ -231,6 +231,12 @@ def Program.Procedure.find? (P : Program) (x : Expression.Ident) : Option Proced
   | none => none
   | some d => some $ d.getProc $ Program.find?_kind H
 
+/-- A `String → Option Procedure` view of a `Program`, suitable for use as
+    the `π` argument to the Core small-step semantics. -/
+@[expose] def Program.findProcByString?
+    (p : Program) (n : String) : Option Procedure :=
+  (p.find? .proc ⟨n, ()⟩).bind Decl.getProc?
+
 def Program.Function.find? (P : Program) (x : Expression.Ident)
   : Option Function :=
   go P.decls

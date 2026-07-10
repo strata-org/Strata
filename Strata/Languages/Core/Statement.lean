@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.Stmt
 import Std.Tactic.BVDecide.Normalize.Prop
 
 namespace Core
@@ -191,6 +192,37 @@ def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
+end
+
+---------------------------------------------------------------------
+
+mutual
+/--
+Collect the `AssertId Expression` of every reachable assertion in `s`:
+`.assert` commands and each entry of a `.loop`'s invariant list. Mirrors
+the shape of `coreIsAtAssert`.
+
+NOTE: Once loop invariant is dropped from coreIsAtAssert, this will be a simple
+filtering of .assert commands.
+-/
+def Statement.collectAssertIds (s : Statement) : List (Imperative.AssertId Expression) :=
+  match s with
+  | .cmd (.cmd (.assert label expr _)) => [⟨label, expr⟩]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectAssertIds inner_ss
+  | .ite _ then_ss else_ss _ =>
+    Statements.collectAssertIds then_ss ++ Statements.collectAssertIds else_ss
+  | .loop _ _ inv body_ss _ =>
+    inv.map (fun lp => ⟨lp.1, lp.2⟩) ++ Statements.collectAssertIds body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []
+  termination_by Imperative.Stmt.sizeOf s
+
+/-- Collect all `AssertId Expression`s in a list of statements. -/
+def Statements.collectAssertIds (ss : Statements) : List (Imperative.AssertId Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss => Statement.collectAssertIds s ++ Statements.collectAssertIds ss
+  termination_by Imperative.Block.sizeOf ss
 end
 
 ---------------------------------------------------------------------

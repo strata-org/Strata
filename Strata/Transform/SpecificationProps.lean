@@ -434,8 +434,10 @@ omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
 
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (h₁ : Sound L₁ L₂ T₁) (h₂ : Sound L₂ L₃ T₂) :
-    Sound L₁ L₃ (fun s => T₁ s >>= T₂) := by
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (h₁ : Sound L₁ L₂ T₁ params₁ params₂) (h₂ : Sound L₂ L₃ T₂ params₂ params₃) :
+    Sound L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro s s'' a hrun hvalid
   simp [bind, Option.bind] at hrun
   match h1 : T₁ s with
@@ -444,17 +446,21 @@ theorem sound_comp (L₁ L₂ L₃ : Lang P)
 
 theorem sound_assertValid (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT) (a : AssertId P)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT)
-    (ht : T s = some s') (hsound : Sound L₁ L₂ T) (hvalid : AssertValid L₂ s' a) :
-    AssertValid L₁ s a := hsound s s' a ht hvalid
+    (ht : T s = some s') (hsound : Sound L₁ L₂ T params₁ params₂)
+    (hvalid : AssertValidWhen L₂ (L₂.initEnvWF params₂ s') s' a) :
+    AssertValidWhen L₁ (L₁.initEnvWF params₁ s) s a := hsound s s' a ht hvalid
 
 theorem sound_allAsserts (L₁ L₂ : Lang P)
     (T : L₁.StmtT → Option L₂.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
     (s : L₁.StmtT) (s' : L₂.StmtT) (ht : T s = some s')
-    (hsound : Sound L₁ L₂ T) (hvalid : AllAssertsValid L₂ s') :
-    AllAssertsValid L₁ s := fun a => hsound s s' a ht (hvalid a)
+    (hsound : Sound L₁ L₂ T params₁ params₂)
+    (hvalid : AllAssertsValidWhen L₂ (L₂.initEnvWF params₂ s') s') :
+    AllAssertsValidWhen L₁ (L₁.initEnvWF params₁ s) s := fun a => hsound s s' a ht (hvalid a)
 
-theorem sound_id : Sound L L some := by
+theorem sound_id (params : L.InitEnvWFParamsTy) : Sound L L some params params := by
   intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
 
 end Connection
@@ -501,44 +507,19 @@ theorem overapproximatesWhen_triple (L₁ L₂ : Lang P)
   exact htriple ρ₀ ρ' hpre hr.2.2 hf₀
     (by obtain ⟨ρ'', heq, hstar'⟩ := (hr.1 ρ').1 hstar; subst heq; exact hstar')
 
+end OverapproxHoareConnection
+
 
 /-! ## Properties of the `Overapproximates` family. -/
+
+section OverapproxProps
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
 
 theorem overapproximates_id (L₁ : Lang P) (params₁ : L₁.InitEnvWFParamsTy) :
     Overapproximates L₁ L₁ some params₁ params₁ := by
   intro st s' ht _ ρ₀ ρ₀' heq hinit
   simp at ht; subst ht; subst heq
   exact ⟨fun ρ' => ⟨fun h => ⟨ρ', rfl, h⟩, fun _ h => ⟨ρ', rfl, h⟩⟩, fun h => h, hinit⟩
-
-/-- Composition of two overapproximations: the intermediate WF passed to `h₂`
-    is exactly the target-WF conclusion of `h₁`, so no extra bridging
-    hypothesis is needed. -/
-theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
-    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
-    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
-    (params₃ : L₃.InitEnvWFParamsTy)
-    (h₁ : Overapproximates L₁ L₂ T₁ params₁ params₂)
-    (h₂ : Overapproximates L₂ L₃ T₂ params₂ params₃) :
-    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
-  intro st s'' ht _ ρ₀ ρ₀' heq hinit
-  subst heq
-  simp [bind, Option.bind] at ht
-  match h : T₁ st with
-  | some s' =>
-    rw [h] at ht
-    have hr₁ := h₁ st s' h trivial ρ₀ ρ₀ rfl hinit
-    have hr₂ := h₂ s' s'' ht trivial ρ₀ ρ₀ rfl hr₁.2.2
-    refine ⟨fun ρ' => ⟨?_, ?_⟩, ?_, hr₂.2.2⟩
-    · intro hstar
-      obtain ⟨ρ₁, heq₁, hstar₁⟩ := (hr₁.1 ρ').1 hstar
-      subst heq₁
-      exact (hr₂.1 ρ').1 hstar₁
-    · intro lbl hstar
-      obtain ⟨ρ₁, heq₁, hstar₁⟩ := (hr₁.1 ρ').2 lbl hstar
-      subst heq₁
-      exact (hr₂.1 ρ').2 lbl hstar₁
-    · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
-  | none => rw [h] at ht; exact absurd ht (by nofun)
 
 /-- Composition of two overapproximations under relation composition. -/
 theorem overapproximatesUpto_comp (L₁ L₂ L₃ : Lang P)
@@ -569,7 +550,62 @@ theorem overapproximatesUpto_comp (L₁ L₂ L₃ : Lang P)
     · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
-/-! ## Properties of `Underapproximates` and `SemanticallyEquivalent`. -/
+/-- Composition of two overapproximations. -/
+theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (h₁ : Overapproximates L₁ L₂ T₁ params₁ params₂)
+    (h₂ : Overapproximates L₂ L₃ T₂ params₂ params₃) :
+    Overapproximates L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+  have hcomp := overapproximatesUpto_comp L₁ L₂ L₃ (· = ·) (· = ·) T₁ T₂
+    params₁ params₂ params₃ h₁ h₂
+  intro st s'' ht _ ρ₀ ρ₀' heq hinit
+  subst heq
+  have hr := hcomp st s'' ht trivial ρ₀ ρ₀ ⟨ρ₀, rfl, rfl⟩ hinit
+  refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, hr.2.1, hr.2.2⟩
+  · obtain ⟨ρ'', ⟨b, hb₁, hb₂⟩, hstar''⟩ := (hr.1 ρ').1 hstar
+    exact ⟨ρ'', hb₁.trans hb₂, hstar''⟩
+  · obtain ⟨ρ'', ⟨b, hb₁, hb₂⟩, hstar''⟩ := (hr.1 ρ').2 lbl hstar
+    exact ⟨ρ'', hb₁.trans hb₂, hstar''⟩
+
+/-- Composition of two aggressive overapproximations. -/
+theorem overapproximatesAggressively_comp (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    (h₁ : OverapproximatesAggressively L₁ L₂ T₁ params₁ params₂)
+    (h₂ : OverapproximatesAggressively L₂ L₃ T₂ params₂ params₃) :
+    OverapproximatesAggressively L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
+  intro st s'' ht _ ρ₀ hinit
+  simp [bind, Option.bind] at ht
+  match hT₁ : T₁ st with
+  | some s' =>
+    rw [hT₁] at ht
+    have ha₁ := h₁ st s' hT₁ trivial ρ₀ hinit
+    have ha₂ := h₂ s' s'' ht trivial ρ₀ ha₁.2.2.2
+    refine ⟨?_, ?_, fun hcf => ha₂.2.2.1 (ha₁.2.2.1 hcf), ha₂.2.2.2⟩
+    · -- Terminal case
+      intro ρ' hstar
+      match ha₁.1 ρ' hstar with
+      | .inl hcf₂ => exact .inl (ha₂.2.2.1 hcf₂)
+      | .inr hmid =>
+        by_cases hf : ρ'.hasFailure = false
+        · match ha₂.1 ρ' (hmid hf) with
+          | .inl hcf₃ => exact .inl hcf₃
+          | .inr hstep₃ => exact .inr (fun _ => hstep₃ hf)
+        · exact .inr (fun hf' => absurd hf' hf)
+    · -- Exiting case
+      intro lbl ρ' hstar
+      match ha₁.2.1 lbl ρ' hstar with
+      | .inl hcf₂ => exact .inl (ha₂.2.2.1 hcf₂)
+      | .inr hmid =>
+        by_cases hf : ρ'.hasFailure = false
+        · match ha₂.2.1 lbl ρ' (hmid hf) with
+          | .inl hcf₃ => exact .inl hcf₃
+          | .inr hstep₃ => exact .inr (fun _ => hstep₃ hf)
+        · exact .inr (fun hf' => absurd hf' hf)
+  | none => rw [hT₁] at ht; exact absurd ht (by nofun)
 
 /-- `Underapproximates` identity: the identity transform under-approximates
     itself.  Dual of `overapproximates_id`. -/
@@ -663,16 +699,12 @@ theorem OverapproximatesAggressively.toWhen (L₁ L₂ : Lang P)
     OverapproximatesAggressivelyWhen L₁ L₂ T pre params₁ params₂ :=
   OverapproximatesAggressivelyWhen.strengthen L₁ L₂ T params₁ params₂ (fun _ _ => trivial) h
 
-end OverapproxHoareConnection
+end OverapproxProps
 
 
-/-! ## Statement-list overapproximation (Imperative-specific)
+/-! ## Structured statements-specific results -/
 
-Uses `Overapproximates L L T` (single-language): the proof decomposes
-seq execution into terminal/exiting outcomes of individual statements,
-which is exactly what `Overapproximates` provides. -/
-
-section ImperativeStmts
+section StructuredStmts
 
 variable {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
 variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
@@ -1070,7 +1102,7 @@ theorem overapproximatesAggressively_stmts
       params₁ params₂ hsem ss ss' hmap ρ₀ hwf
       ⟨cfg, hfcfg, hstar⟩
 
-end ImperativeStmts
+end StructuredStmts
 
 end Transform
 end Specification

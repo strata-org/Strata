@@ -537,14 +537,6 @@ section
 variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
 variable (extendFactory : ExtendFactory P)
 
-/-! ## Assertion Identity -/
-
-/-- An assertion identifier: the label + expression attached to an
-    `assert` command. -/
-structure AssertId where
-  label : String
-  expr  : P.Expr
-
 /-! ## Detecting an assert in a configuration -/
 
 /-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
