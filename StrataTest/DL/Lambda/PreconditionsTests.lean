@@ -107,5 +107,50 @@ info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arro
 #eval collectWFObligations testFactory
   esM[((λ (int): %0) ((~safeDiv a) b))]
 
+-- Regression: a hypothesis captured OUTSIDE a binder must have
+-- its de Bruijn indices shifted when the binder's body generates an obligation.
+-- Without the shift the hypothesis silently rebinds to the inner variable. In
+-- both tests the hypothesis `Int.Gt %0` (%0 = an enclosing binder's variable)
+-- must lift to `Int.Gt %1` inside the binder, while the binder's own variable
+-- fed to safeDiv is `%0`.
+
+-- `.abs` branch: (v > 0) ==> (\x. safeDiv(v, x)).
+/-- info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arrow bool bool))) (~Int.Gt %1 #0) (~!= %0 #0))), ())] -/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Implies ((~Int.Gt %0) #0))
+      (λ (int): ((~safeDiv %1) %0)))]
+
+-- `.app (.abs …)` let-encoding branch: (v > 0) ==> (let x := a in safeDiv(2, x)).
+/--
+info: [WFObligation(safeDiv, ((λ (bvar:int) ((~Bool.Implies : (arrow bool (arrow bool bool))) (~Int.Gt %1 #0) (~!= %0 #0)))
+ a), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Implies ((~Int.Gt %0) #0))
+      ((λ (int): ((~safeDiv #2) %0)) a))]
+
+-- `.quant` branch: (v > 0) ==> (∀ x. safeDiv(v, x)).
+/-- info: [WFObligation(safeDiv, (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arrow bool bool))) (~Int.Gt %1 #0) (~!= %0 #0))), ())] -/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Implies ((~Int.Gt %0) #0))
+      (∀ (int): ((~safeDiv %1) %0)))]
+
+-- Two nested `.quant` binders: the shift compounds, applied once per binder, so
+-- the hypothesis `Int.Gt %0` (v) lifts to `Int.Gt %2` inside `∀ x. ∀ y`, while
+-- `safeDiv(v, y)` reads v as `%2` and y as `%0`.
+-- (v > 0) ==> (∀ x. ∀ y. safeDiv(v, y)).
+/--
+info: [WFObligation(safeDiv, (∀ (bvar:int) (∀ (bvar:int) ((~Bool.Implies : (arrow bool (arrow bool bool)))
+   (~Int.Gt %2 #0)
+   (~!= %0 #0)))), ())]
+-/
+#guard_msgs in
+#eval collectWFObligations factoryWithImplies
+  esM[((~Bool.Implies ((~Int.Gt %0) #0))
+      (∀ (int): (∀ (int): ((~safeDiv %2) %0))))]
+
 end Lambda
 end
