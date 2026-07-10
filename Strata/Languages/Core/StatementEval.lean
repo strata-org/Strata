@@ -166,7 +166,7 @@ def Command.inlineCallContract (E : Env)
     let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
     let preconditions := preconditions.map
         (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions.consume preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 
     -- Apply type substitution to postconditions to instantiate type variables.
@@ -583,7 +583,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .ite cond then_ss else_ss _ =>
     match cond with
     | .nondet =>
-      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
+      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.scopes.length}", ()⟩
       let freshVar : Expression.Expr := .fvar () freshName none
       let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
       let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
@@ -594,7 +594,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
       | .true _ | .false _ =>
         let (ss_live, ss_dead) :=
           if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-        let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+        let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions.consume
         let (Ewns, liveStats, nextSplitId) := evalSub Ewn ss_live nextSplitId
         match Ewns with
         | [] => ([], liveStats, nextSplitId)

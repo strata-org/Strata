@@ -47,50 +47,12 @@ def isValidObligationInput : Statements → Bool
   | s :: rest => isValidObligationStatement s && isValidObligationInput rest
 end
 
-/-- A path-condition accumulator whose newest scope is stored reversed
-    (most-recent-first) so that appending a statement is O(1).
-
-    Orientation is encoded in the type: entries only ever enter through
-    `prepend` (which pushes onto the front of the newest scope), and the only
-    way to read the accumulator back out is `consume` (which restores natural
-    order). -/
-structure RevPathConditions where
-  /-- Scopes with the newest (head) scope held in most-recent-first order. -/
-  scopes : PathConditions Expression
-
-/-- O(1) prepend of a new entry to the newest scope. -/
-private def RevPathConditions.prepend (r : RevPathConditions)
-    (e : PathConditionEntry Expression) : RevPathConditions :=
-  ⟨match r.scopes with
-   | [] => [[e]]
-   | p :: rest => (e :: p) :: rest⟩
-
-/-- Restore natural (oldest-first) order, producing a
-    `PathConditions Expression` suitable for a `ProofObligation`.
-
-    Only the head scope is reversed; the walker `extractGo`
-    never `push`es a second scope onto the accumulator (the only `push` in the
-    pass is `Array.push` on the obligation result). -/
-private def RevPathConditions.consume (r : RevPathConditions) : PathConditions Expression :=
-  match r.scopes with
-  | [] => []
-  | p :: rest => p.reverse :: rest
-
-/-- Prepending an entry to RevPathConditions and then consuming
-    is equivalent to adding an entry to PathConditions -/
-private theorem RevPathConditions.consume_prepend (r : RevPathConditions)
-    (e : PathConditionEntry Expression) :
-    (r.prepend e).consume = (r.consume).addEntry e := by
-  cases r with | mk scopes => cases scopes <;>
-    simp [RevPathConditions.prepend, RevPathConditions.consume,
-          PathConditions.addEntry, List.reverse_cons]
-
 mutual
 /-- Core recursive worker for `extractFromStatements`. Walks the statement list,
     accumulating path conditions in a `RevPathConditions` (newest scope stored
     most-recent-first for O(1) growth) and collecting proof obligations. Each
     captured obligation restores natural order via `RevPathConditions.consume`. -/
-def extractGo (pc : RevPathConditions) : Statements →
+def extractGo (pc : RevPathConditions Expression) : Statements →
     Array (ProofObligation Expression) →
     Except String (Array (ProofObligation Expression))
   | [], acc => .ok acc
@@ -125,42 +87,39 @@ def extractGo (pc : RevPathConditions) : Statements →
 
     Returns the extracted obligations. -/
 def extractFromStatements
-    (pathConditions : RevPathConditions)
+    (pathConditions : RevPathConditions Expression)
     (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
   extractGo pathConditions ss #[]
 end
 
 /-- Extract proof obligations from a program. Axioms become global assumptions
-    and `distinct` declarations become distinctness facts; both are prepended,
-    in declaration order, to the path conditions of every subsequent
-    procedure's obligations. -/
+    and `distinct` declarations become distinctness facts. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
   -- Accumulate global path-condition facts (axioms and distinct groups) and
   -- obligations as we walk declarations in order.
   let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
     match decl with
     | .ax a _ =>
-      -- Add axiom to path conditions for subsequent procedures
-      .ok (globalPc ++ [.assumption a.name a.e], allObs)
+      .ok (.assumption a.name a.e :: globalPc, allObs)
     | .distinct name es _ =>
-      -- Add distinctness fact to path conditions for subsequent procedures
-      .ok (globalPc ++ [.distinct (toString name) es], allObs)
+      .ok (.distinct (toString name) es :: globalPc, allObs)
     | .proc proc _md => do
       let obs ← match proc.body with
-        -- Start from one empty scope and prepend the global facts in declaration order;
         | .structured ss =>
-          extractFromStatements (globalPc.foldl (·.prepend ·) { scopes := [[]] }) ss
+          -- `globalPC` is accumulated newest-first (via ::) which
+          -- is what RevPathConditions expects.
+          extractFromStatements ⟨[globalPc]⟩ ss
         -- CFG bodies are not supported on procedure-body branch.
         | .cfg _ => .ok #[]
       .ok (globalPc, allObs ++ obs)
     | _ => .ok (globalPc, allObs)
   return allObs
 
-@[simp] theorem extractFromStatements_eq (pc : RevPathConditions) (ss : Statements) :
+@[simp] theorem extractFromStatements_eq (pc : RevPathConditions Expression) (ss : Statements) :
     extractFromStatements pc ss = extractGo pc ss #[] := by
   unfold extractFromStatements; rfl
 
-private theorem extractGo_ok (pc : RevPathConditions) (ss : Statements)
+private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statements)
     (acc : Array (ProofObligation Expression))
     (h : isValidObligationInput ss = true) :
     (extractGo pc ss acc).isOk = true := by
@@ -193,7 +152,7 @@ private theorem extractGo_ok (pc : RevPathConditions) (ss : Statements)
 
 /-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
     never returns an error. -/
-theorem extractFromStatements_ok (pc : RevPathConditions) (ss : Statements)
+theorem extractFromStatements_ok (pc : RevPathConditions Expression) (ss : Statements)
     (h : isValidObligationInput ss = true) :
     (extractFromStatements pc ss).isOk = true := by
   unfold extractFromStatements; exact extractGo_ok pc ss #[] h

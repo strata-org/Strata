@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.MetaData
 
 public import Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.EvalContextProps
 public import Strata.DL.Imperative.CmdType
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.CmdSemanticsProps

@@ -100,6 +100,48 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
 def PathConditions.removeByNames [ToFormat P.Ident] (ps : PathConditions P) (names : List String) : PathConditions P :=
   ps.map (fun pc => pc.filter (fun e => !names.contains e.name))
 
+/-- A path-condition accumulator whose scopes are each stored reversed
+    (most-recent-first), so that growing the newest scope is O(1).
+
+    Invariant: every scope in `scopes` is stored most-recent-first.
+    The methods (`push`, `prepend`, `addInNewest`) maintain this.
+    Constructing this struct directly, bypasses these operations, so
+    the caller is responsible for supplying scopes already in
+    most-recent-first order. -/
+structure RevPathConditions (P : PureExpr) where
+  scopes : PathConditions P
+
+def RevPathConditions.newest (r : RevPathConditions P) : PathCondition P :=
+  match r.scopes with
+  | [] => []
+  /- Since we're emitting a PathCondition, we need to output the insertion order. -/
+  | p :: _ => p.reverse
+
+def RevPathConditions.pop (r : RevPathConditions P) : RevPathConditions P :=
+  match r.scopes with
+  | [] => ⟨[]⟩
+  | _ :: rest => ⟨rest⟩
+
+def RevPathConditions.push (r : RevPathConditions P) (p : PathCondition P) : RevPathConditions P :=
+  /- RevPathConditions store an individual PathCondition in reversed order. -/
+  ⟨p.reverse :: r.scopes⟩
+
+def RevPathConditions.prepend (r : RevPathConditions P) (e : PathConditionEntry P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[[e]]⟩
+  | p :: rest => ⟨(e :: p) :: rest⟩
+
+def RevPathConditions.addInNewest (r : RevPathConditions P) (m : PathCondition P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[m.reverse]⟩
+  | _  => m.foldl (·.prepend ·) r
+
+def RevPathConditions.consume (r : RevPathConditions P) : PathConditions P :=
+  /- Since we're emitting PathConditions, we need to reverse each scope to be in insertion order. -/
+  r.scopes.map (·.reverse)
+
 inductive PropertyType where
   | cover
   | assert

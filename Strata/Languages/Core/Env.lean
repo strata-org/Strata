@@ -154,7 +154,7 @@ structure Env where
   exprEnv : Lambda.LState ⟨ExpressionMetadata, Unit⟩
   datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
-  pathConditions : Imperative.PathConditions Expression
+  pathConditions : Imperative.RevPathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
   pathCap : Option Nat := .none
@@ -168,7 +168,7 @@ def Env.init (empty_factory:=false): Env :=
     exprEnv := σ,
     datatypes := #[],
     distinct := [],
-    pathConditions := [],
+    pathConditions := ⟨[]⟩,
     warnings := []
     deferred := ∅
     pathCap := .none }
@@ -186,7 +186,7 @@ instance : ToFormat Env where
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\
-              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
+              Path Conditions:{Format.line}{PathConditions.format pathConditions.consume}{Format.line}{Format.line}\
               Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 

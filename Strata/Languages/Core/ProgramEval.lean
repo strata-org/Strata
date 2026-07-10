@@ -40,12 +40,12 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
     | .ax a _ =>
       -- All axioms go into the top-level path condition before anything is executed.
       -- There should be exactly one entry in the path condition stack at this point.
-      if declsE.pathConditions.length != 1 then
+      if declsE.pathConditions.scopes.length != 1 then
         .error (Strata.DiagnosticModel.fromMessage
             "Internal error: path condition stack misaligned when adding axiom")
       else
         let declsE := { declsE with pathConditions :=
-                      declsE.pathConditions.addEntry (.assumption (toString a.name) a.e) }
+                      declsE.pathConditions.prepend (.assumption (toString a.name) a.e) }
         go rest declsE stats
 
     | .distinct _ es _ =>
