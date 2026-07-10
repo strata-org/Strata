@@ -195,6 +195,19 @@ private def mkEuclideanMod (a b : CProverGOTO.Expr) : CProverGOTO.Expr :=
   let correction : Expr := { id := .ternary .ite, type := .Integer, operands := [modNeg, absB, zero] }
   { id := .multiary .Plus, type := .Integer, operands := [tmod, correction] }
 
+/-- Map a Core free-variable name to a GOTO expression. Core names the value of
+`old(x)` in postconditions `"old <x>"` (a space-separated sentinel that cannot
+clash with a real identifier). Emit those as a canonical `history_exprt`
+(`ID_old`) over the base symbol, so CBMC/cprover's contract instrumentation
+binds the pre-state value (`old::x`) rather than leaving an unbound `old <x>`
+symbol (which is not in the namespace and yields a wrong/unsound result). -/
+def oldAwareSymbol (name : String) (gty : CProverGOTO.Ty) : CProverGOTO.Expr :=
+  if name.startsWith "old " then
+    { id := .unary .Old, type := gty,
+      operands := [CProverGOTO.Expr.symbol (name.drop 4).toString gty] }
+  else
+    CProverGOTO.Expr.symbol name gty
+
 def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LExprT TBase) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
@@ -206,7 +219,7 @@ def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LE
   -- Variables
   | .fvar m v _ =>
     let gty ← m.type.toGotoType
-    return (Expr.symbol (toString v) gty)
+    return (oldAwareSymbol (toString v) gty)
   -- Ternary Functions
   | .app m (.app _ (.app _ (.op _ fn _) e1) e2) e3 =>
     let op ← fnToGotoID (toString fn)
@@ -303,7 +316,7 @@ def LExpr.toGotoExprCtx {TBase: LExprParams} [ToString $ LExpr TBase.mono]
   -- Variables
   | .fvar _ v (some ty) =>
     let gty ← ty.toGotoType
-    return (Expr.symbol (toString v) gty)
+    return (oldAwareSymbol (toString v) gty)
   -- Bound variables (de Bruijn index)
   | .bvar _ n =>
     match bvars[n]? with

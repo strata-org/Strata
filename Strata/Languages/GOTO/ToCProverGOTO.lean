@@ -347,9 +347,15 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     let hasAnnotation := !invariants.isEmpty || measure.isSome
     if hasAnnotation then
       let mut backGuard := Expr.true
-      for (_invLabel, inv) in invariants do
-        let inv_expr ← G.toGotoExpr inv
-        backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
+      if !invariants.isEmpty then
+        -- CBMC stores the individual loop-invariant clauses as the operands of
+        -- the `#spec_loop_invariant` annotation (cf. the C front end). Emit that
+        -- canonical form; storing a bare clause expression directly would make
+        -- consumers (e.g. cprover) mis-read its sub-expressions as the clauses.
+        let invExprs ← invariants.mapM (fun (_invLabel, inv) => G.toGotoExpr inv)
+        let invAnnotation : Expr :=
+          { id := .multiary .And, type := Ty.Boolean, operands := invExprs }
+        backGuard := backGuard.setNamedField "#spec_loop_invariant" invAnnotation
       if let some meas := measure then
         let meas_expr ← G.toGotoExpr meas
         backGuard := backGuard.setNamedField "#spec_decreases" meas_expr

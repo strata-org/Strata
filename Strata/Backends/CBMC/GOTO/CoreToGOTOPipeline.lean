@@ -236,9 +236,14 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for (_, inv) in invariants do
-            let inv_expr ← toExpr (renameExpr rn inv)
-            backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
+          if !invariants.isEmpty then
+            -- CBMC stores the individual loop-invariant clauses as the operands
+            -- of the `#spec_loop_invariant` annotation (cf. the C front end).
+            let invExprs ← invariants.mapM (fun (_, inv) => toExpr (renameExpr rn inv))
+            let invAnnotation : CProverGOTO.Expr :=
+              { id := .multiary .And, type := CProverGOTO.Ty.Boolean,
+                operands := invExprs }
+            backGuard := backGuard.setNamedField "#spec_loop_invariant" invAnnotation
           match measure with
             | some meas =>
               let meas_expr ← toExpr (renameExpr rn meas)
@@ -301,8 +306,17 @@ def procedureToGotoCtx
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
+  -- Base-name substitutions (`x → test::1::x`, etc.).
+  let basePairs := formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals
+  -- Core encodes `old(x)` as a single fvar named `"old x"` (`CoreIdent.mkOld`).
+  -- Mirror every base entry with its `old`-prefixed counterpart so `renameExpr`
+  -- rewrites `"old x" → "old test::1::x"` before `oldAwareSymbol` strips the
+  -- `"old "` prefix; otherwise the pre-state operand is emitted as the bare,
+  -- unnamespaced `symbol("x")`, which is unbound in cprover's namespace.
+  let oldPairs := basePairs.map fun (k, v) =>
+    (Core.CoreIdent.oldStr ++ k, Core.CoreIdent.oldStr ++ v)
   let rn : Std.HashMap String String :=
-    (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
+    (basePairs ++ oldPairs).foldl
       (init := {}) fun m (k, v) => m.insert k v
   -- Seed the type environment with renamed input and output parameter types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=

@@ -135,7 +135,7 @@ instance : ToFormat Binary where
     | .Ge => ">="
     | .Le => "<="
     | .Equal => "="
-    | .NotEqual => "!="
+    | .NotEqual => "notequal"
     | .Bitand => "bitand"
     | .Bitor => "bitor"
     | .Bitxor => "bitxor"
