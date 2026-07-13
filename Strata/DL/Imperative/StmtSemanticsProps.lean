@@ -241,7 +241,7 @@ private theorem step_preserves_factoryExtendsOf
   -- The only rule that mutates the active eval.
   | step_funcDecl =>
     simp only [Config.factoryExtendsOf] at hinv ⊢
-    rename_i decl _ _ _
+    rename_i decl _ _
     exact .step _ decl hinv
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
@@ -722,7 +722,7 @@ private theorem step_preserves_factory_noFuncDecl
 
 /-! ## WF preservation under WFFactoryExtension (no `noFuncDecl` requirement) -/
 
-variable [HasFvar P]
+variable [HasFvar P] [HasSubstFvar P]
 
 /-- Single step preserves `Config.wfEval` when the evaluator extension is
     well-formed (no `noFuncDecl` requirement). -/
@@ -808,7 +808,7 @@ private theorem step_preserves_eval_on_disjoint
   induction hstep with
   -- Only `step_funcDecl` mutates the factory; use the disjoint-op assumptions.
   | step_funcDecl =>
-    rename_i decl _ ρ_inst _
+    rename_i decl _ ρ_inst
     have hname : decl.name ∉ HasOps.getOps (P := P) e := by
       apply hdisj decl.name
       simp [Config.funcDeclNames, Stmt.funcDeclNames]

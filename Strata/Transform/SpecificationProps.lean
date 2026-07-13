@@ -26,7 +26,7 @@ namespace Imperative
 
 namespace Specification
 
-variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P] [HasSubstFvar P]
     [HasInt P] [HasIntOps P]
 variable (L : Lang P)
 
@@ -38,7 +38,7 @@ namespace Hoare
 
 section
 
-omit [HasOps P] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P]
+omit [HasOps P] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasSubstFvar P]
 
 /-- False precondition proves anything -/
 theorem false_pre (params : L.InitEnvWFParamsTy) (s : L.StmtT) (Post : Env P → Prop) :
@@ -257,7 +257,7 @@ end StmtRules
 
 section StandardConnection
 
-variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P']
+variable (P' : PureExpr) [HasFvar P'] [HasFvars P'] [HasOps P'] [HasBool P'] [HasBoolOps P'] [HasSubstFvar P']
     [HasInt P'] [HasIntOps P']
 variable (extendFactory : ExtendFactory P')
 
@@ -430,7 +430,7 @@ namespace Transform
 /-! ## Connection between Sound, AssertValid and AllAssertsValid -/
 
 section Connection
-omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
+omit [HasOps P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
 theorem sound_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
@@ -469,7 +469,7 @@ end Connection
 /-! ## Connection between the `Overapproximates` family and `Hoare.Triple` -/
 
 section OverapproxHoareConnection
-omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
 /-- If `T` overapproximates and a Hoare triple holds on `T(st)` in L₂,
     then the triple holds on `st` in L₁. -/
@@ -513,7 +513,7 @@ end OverapproxHoareConnection
 /-! ## Properties of the `Overapproximates` family. -/
 
 section OverapproxProps
-omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
 theorem overapproximates_id (L₁ : Lang P) (params₁ : L₁.InitEnvWFParamsTy) :
     Overapproximates L₁ L₁ some params₁ params₁ := by

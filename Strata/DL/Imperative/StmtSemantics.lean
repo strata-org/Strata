@@ -54,7 +54,7 @@ inductive FactoryExtensionOf {P : PureExpr} (extendFactory : ExtendFactory P) :
     predicates through funcDecl steps.  This is the only step that modifies the
     factory (`step_funcDecl`); all other small-step rules leave it unchanged. -/
 structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasOps P] [HasSubstFvar P]
     (extendFactory : ExtendFactory P) : Prop where
   /-- The whole `WellFormedSemanticEval` bundle is preserved through
       `funcDecl` extensions. -/
@@ -372,7 +372,7 @@ inductive StepStmt
       (.exiting label ρ)
 
   /-- A function declaration extends the factory with the new function. -/
-  | step_funcDecl [HasSubstFvar P] :
+  | step_funcDecl :
     StepStmt EvalCmd extendFactory
       (.stmt (.funcDecl decl md) ρ)
       (.terminal { ρ with factory := extendFactory ρ.factory ρ.store decl })
@@ -499,7 +499,7 @@ def IsTerminal
 
 /-! ## Config-level WF predicates -/
 
-variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
 
 /-- Config-level `WellFormedSemanticEval` invariant: the whole bundle holds on
     the current factory AND on every captured `f_parent` snapshot stored inside

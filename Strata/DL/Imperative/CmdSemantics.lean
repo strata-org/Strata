@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Util.Map
 import all Strata.DL.Util.ListUtils
 
 ---------------------------------------------------------------------
@@ -100,9 +101,51 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
     ∀ e v σ σ', (∀ x w, σ x = some w → σ' x = some w) →
       P.eval f σ e = some v → P.eval f σ' e = some v
 
+/-! ### Variable-renaming substitutions -/
+
+/-- The substitution `sm` maps every key to a free variable that is defined in
+    the post store `σ'`: each codomain entry is itself a free-variable expression
+    (so `sm` renames variables to variables), and that target variable is bound in
+    `σ'`.
+
+    `sm` is a `Map P.Ident P.Expr` rather than `Map P.Ident P.Ident` so that it can
+    be applied by `HasSubstFvar.substFvars` (whose codomain is expressions); the
+    variable-only conjunct recovers the target identifier via `HasFvar.getFvar`. -/
+@[expose] def SubstVarsDefined {P : PureExpr} [HasFvar P]
+    (σ' : SemanticStore P) (sm : Map P.Ident P.Expr) : Prop :=
+  ∀ k w, @Map.find? P.Ident P.Expr P.EqIdent sm k = some w →
+    ∃ y, HasFvar.getFvar w = some y ∧ (σ' y).isSome
+
+/-- Store substitution along a variable-only *expression* substitution `sm`:
+    read `x` through its rename target when `sm` maps `x` to a variable
+    (`HasFvar.getFvar`), otherwise read `x` directly.  This is the
+    expression-substitution view that `WellFormedSemanticEvalRename` uses, so
+    its codomain matches `HasSubstFvar.substFvars`. -/
+@[expose] def substStoreExpr {P : PureExpr} [HasFvar P]
+    (σ' : SemanticStore P) (sm : Map P.Ident P.Expr) : SemanticStore P :=
+  fun x =>
+    match @Map.find? P.Ident P.Expr P.EqIdent sm x with
+    | some w =>
+      match HasFvar.getFvar w with
+      | some y => σ' y
+      | none => σ' x
+    | none => σ' x
+
+/-- The evaluator commutes with variable renaming, under definedness of the
+    rename targets.  For a variable-only `sm` whose targets are all defined in
+    the well-formed store `σ'`, evaluating the renamed expression in `σ'` equals
+    evaluating the original in the pulled-back store.  The `WellFormedStore σ'`
+    guard rules out the non-canonical store bindings under which a step-indexed
+    evaluator could otherwise diverge. -/
+@[expose] def WellFormedSemanticEvalRename {P : PureExpr} [HasVal P] [HasFvar P] [HasSubstFvar P]
+    (f : P.Factory) : Prop :=
+    ∀ e σ' sm, WellFormedStore σ' f →
+      SubstVarsDefined (P := P) σ' sm →
+      P.eval f σ' (HasSubstFvar.substFvars e sm) = P.eval f (substStoreExpr σ' sm) e
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
 structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
-    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (f : P.Factory) : Prop where
   /-- The evaluator respects boolean negation:
       `eval e = some tt` iff `eval (not e) = some ff`, and dually. -/
@@ -117,6 +160,8 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
   int : WellFormedSemanticEvalInt f
   /-- The evaluator is monotone under store extension. -/
   mono : WellFormedSemanticEvalMono f
+  /-- The evaluator commutes with variable renaming (targets defined). -/
+  rename : WellFormedSemanticEvalRename f
 
 
 /-- ### Predicates on `SemanticStore`s -/

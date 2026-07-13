@@ -112,7 +112,7 @@ structure Lang (P : PureExpr) where
     `WellFormedSemanticEval` on the initial env's factory.  The Core language
     overrides both. -/
 abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
-    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (CmdT : Type) (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (isAtAssert : Config P CmdT → AssertId P → Prop)
     (ParamsTy : Type := Unit)
@@ -124,7 +124,7 @@ abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /-- The standard `Lang` for `Cmd P` / `EvalCmd P` / `isAtAssert`. -/
 abbrev Lang.standard (P : PureExpr) [HasBool P] [HasBoolOps P]
-    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     (extendFactory : ExtendFactory P) : Lang P :=
   Lang.imperative P (Cmd P) (EvalCmd P) extendFactory (Imperative.isAtAssert P)
 
@@ -223,7 +223,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
     The output configuration is allowed to be still in an exiting mode
     (see Config.exiting) because the outer block can catch the exit. -/
 @[expose] def TripleBlock {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (Pre : Env P → Prop) (ss : List (Stmt P CmdT)) (Post : Env P → Prop) : Prop :=
   ∀ (ρ₀ ρ' : Env P),
@@ -468,7 +468,7 @@ variable (isAtAssertFn : Config P CmdT → AssertId P → Prop)
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
 abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     {CmdT : Type} (evalCmd : EvalCmdParam P CmdT) (extendFactory : ExtendFactory P)
     (isAtAssertFn : Config P CmdT → AssertId P → Prop) : Lang P where
   StmtT := List (Stmt P CmdT)

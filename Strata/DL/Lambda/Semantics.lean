@@ -636,7 +636,7 @@ private theorem substFvars_getLFuncCall_go_eraseMetadata
 -- (which is the case whenever callOfLFunc succeeds)
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [Inhabited Tbase.IDMeta] in
-private theorem getLFuncCall_go_substFvars
+theorem getLFuncCall_go_substFvars
     (e : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (m_op : Tbase.Metadata) (name_op : Identifier Tbase.IDMeta)

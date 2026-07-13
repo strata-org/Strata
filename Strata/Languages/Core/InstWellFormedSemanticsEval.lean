@@ -535,6 +535,46 @@ theorem coreFactory_intLt :
   rw [hCoreFactory, ← hname]
   exact Lambda.Factory.get?_ofArray_of_mem hmem hnodup
 
+/-- The Core evaluator commutes with variable renaming under target-definedness,
+    discharged by the generic `Lambda.rename_commute`.  The `WellFormedStore σ'`
+    guard supplies the canonical-store premise `rename_commute` consumes;
+    `CoreIdent = Lambda.Identifier Unit`, so the name-injectivity premise holds
+    trivially.  The generic `SubstVarsDefined`/`substStoreExpr` (phrased via
+    `HasFvar.getFvar`) yield the Lambda-level `VarOnly`/`TargetsDefined`/`substStoreExpr`
+    (phrased via the `fvar` pattern) for Core, because
+    `HasFvar.getFvar (.fvar _ v _) = some v`. -/
+theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
+    (hWF : Lambda.FactoryWF f) :
+    WellFormedSemanticEvalRename (P := Expression) f := by
+  intro e σ' sm hwfs hVarsDef
+  have hIdent : ∀ a b : CoreIdent, a.name = b.name → a = b := by
+    intro a b h; cases a; cases b; cases h; rfl
+  have hwfs' : ∀ x v, σ' x = some v → Lambda.LExpr.isCanonicalValue f v = true := by
+    intro x v hx
+    have := hwfs x v hx
+    simpa only [HasVal.value] using this
+  have hVar' : Lambda.VarOnly (Tbase := CoreLParams) sm := by
+    intro k w hk
+    obtain ⟨y, hy, _⟩ := hVarsDef k w hk
+    cases w with
+    | fvar m z ty => exact ⟨m, z, ty, rfl⟩
+    | _ => simp only [HasFvar.getFvar, reduceCtorEq] at hy
+  have hTgt' : Lambda.TargetsDefined (Tbase := CoreLParams) σ' sm := by
+    intro k m x ty hk
+    obtain ⟨y, hy, hdef⟩ := hVarsDef k (.fvar m x ty) hk
+    simp only [HasFvar.getFvar, Option.some.injEq] at hy
+    subst hy; exact hdef
+  have hpb : substStoreExpr σ' sm = Lambda.substStoreExpr (Tbase := CoreLParams) σ' sm := by
+    funext x
+    unfold substStoreExpr Lambda.substStoreExpr
+    cases hf : Map.find? sm x with
+    | none => rfl
+    | some w => cases w <;> rfl
+  show Lambda.LExpr.evalFully f σ' (Lambda.LExpr.substFvars e sm)
+      = Lambda.LExpr.evalFully f (substStoreExpr σ' sm) e
+  rw [hpb]
+  exact Lambda.rename_commute hIdent f σ' hWF hwfs' sm hVar' hTgt' e
+
 /-!
 ## Instance of the full `WellFormedSemanticEval` bundle
 --/
@@ -550,6 +590,7 @@ def coreEvaluator_WellFormedSemanticEval (f : Expression.Factory)
   exprCongr := coreEvaluator_WellFormedSemanticEvalExprCongr f hWF
   int := coreEvaluator_WellFormedSemanticEvalInt f hILt
   mono := coreEvaluator_WellFormedSemanticEvalMono f
+  rename := coreEvaluator_WellFormedSemanticEvalRename f hWF
 
 /-- Specialization of `coreEvaluator_WellFormedSemanticEval` to the concrete
     `Core.Factory`, which is unconditionally well-formed and resolves
