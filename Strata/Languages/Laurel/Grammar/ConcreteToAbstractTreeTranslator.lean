@@ -523,11 +523,21 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
-  match op.name, op.args with
+  -- Transitional shim: the `procedure` operator gained a positional
+  -- `entry: Option EntryClause` argument (8 → 9 args). Accept the pre-`entry`
+  -- 8-argument shape emitted by older producers by splicing in an absent entry
+  -- clause at its position, so a post-CR binary can still consume Ion artifacts
+  -- produced against the previous grammar.
+  let args : Array Arg ← match op.name, op.args with
+    | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+        requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
+      pure #[nameArg, paramArg, returnTypeArg, returnParamsArg,
+             requiresArg, invokeOnArg, .option SourceRange.none none, opaqueSpecArg, bodyArg]
+    | _, other => pure other
+
+  match op.name, args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, opaqueSpecArg, bodyArg]
-  | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
+      requiresArg, invokeOnArg, entryArg, opaqueSpecArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -557,6 +567,19 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected invokeOnClause operation, got {repr invokeOnOp.name}"
       | .option _ none => pure none
       | _ => pure none
+    -- Parse optional entry marker (producer-set entry point for interpretation)
+    let isInterpretEntry ← match entryArg with
+      | .option _ (some (.op entryOp)) => match entryOp.name, entryOp.args with
+        | q`Laurel.entryClause, #[] => pure true
+        | _, _ => TransM.error s!"Expected entryClause operation, got {repr entryOp.name}"
+      | .option _ none => pure false
+      | _ => pure false
+    -- An `entry`-marked procedure is invoked with no arguments by `runEntry`,
+    -- so it cannot take inputs. Reject the combination here rather than
+    -- silently running with unbound inputs at interpretation time.
+    if isInterpretEntry && !parameters.isEmpty then
+      TransM.error s!"entry procedure '{name.text}' cannot take inputs: \
+                      an entry point is invoked with no arguments"
     -- Parse optional opaqueSpec (contains ensures and modifies)
     let (isOpaque, postconditions, modifies) ← match opaqueSpecArg with
       | .option _ (some (.op opaqueSpecOp)) => match opaqueSpecOp.name, opaqueSpecOp.args with
@@ -594,13 +617,13 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       preconditions := preconditions
       decreases := none
       invokeOn := invokeOn
+      isInterpretEntry := isInterpretEntry
       body := procBody
     }
-  | q`Laurel.procedure, args
-  | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 8 arguments, got {args.size}"
+  | q`Laurel.procedure, args =>
+    TransM.error s!"parseProcedure expects 8 or 9 arguments, got {args.size}"
   | _, _ =>
-    TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
+    TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
 def parseField (arg : Arg) : TransM Field := do
   let .op op := arg

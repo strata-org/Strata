@@ -259,6 +259,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let requiresArgs := proc.preconditions.map requiresClauseToArg |>.toArray
   let invokeOnArg := optionArg (proc.invokeOn.map fun e =>
     laurelOp "invokeOnClause" #[stmtExprToArg e])
+  let entryArg := optionArg (if proc.isInterpretEntry then some (laurelOp "entryClause" #[]) else none)
   let (opaqueSpecArg, bodyArg) := match proc.body with
     | .Transparent body =>
       (optionArg none, optionArg (some (laurelOp "body" #[stmtExprToArg body])))
@@ -281,6 +282,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
       returnParamsArg,
       seqArg requiresArgs,
       invokeOnArg,
+      entryArg,
       opaqueSpecArg,
       bodyArg
     ] }

@@ -380,6 +380,26 @@ procedure earlyExit(b: bool)
 { if b then { return }; assert true };
 #end)
 
+-- Additional coverage: producer-marked `entry` point (interpreter entry marker)
+
+/--
+info: procedure runMe()
+  entry
+  opaque
+{
+  assert true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure runMe()
+  entry
+  opaque
+{ assert true };
+#end)
+
 -- Do-while (issue #1358): a `do … while` parses to a post-test `While`
 -- (`postTest := true`) and round-trips through the DDM tree via the `doWhile`
 -- serialization arm (whose `#[body, cond, invariants]` arg order this

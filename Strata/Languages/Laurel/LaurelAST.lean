@@ -254,6 +254,13 @@ structure Procedure : Type where
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- When `true`, the producer marked this procedure as an entry point for
+      concrete interpretation (`laurelInterpret`). It has no effect on
+      verification.
+
+      Distinct from `Core.EntryPoint` (the verifier's `.main | .roots | .all`
+      target selector) — this marker drives the concrete interpreter only. -/
+  isInterpretEntry : Bool := false
   /-- Axioms to emit alongside this procedure. Populated by the contract pass from
       `invokeOn` and ensures clauses. -/
   axioms : List (AstNode StmtExpr) := []

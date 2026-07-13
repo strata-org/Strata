@@ -200,7 +200,12 @@ def createFunctionsForTransparentBodies (program : Program) (options : LaurelTra
   -- A transparent procedure whose body is purely functional (no Assume/Assert
   -- from contract instrumentation) needs only a function copy, not a procedural
   -- twin. This matches the old `isFunctional` behavior for condition helpers.
-  let needsProcTwin (p : Procedure) : Bool := match p.body with
+  -- Exception: an `entry`-marked procedure is a concrete-interpretation entry
+  -- point, so it must survive as a Core procedure even when its body has no
+  -- assertions — otherwise the schema pass's `interpretEntry` metadata is
+  -- emitted only on the discarded proc arm and `entryProcedures` sees nothing.
+  let needsProcTwin (p : Procedure) : Bool :=
+    p.isInterpretEntry || match p.body with
     | .Transparent b => blockContainsAssumeOrAssert b
     | _ => true
   let (imperativeProcs, _) := toUpdate.partition needsProcTwin

@@ -183,6 +183,16 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 @[match_pattern]
 abbrev MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
 
+/-- Marks a procedure as a producer-chosen entry point for concrete
+    interpretation (see `laurelInterpret`). Carried as a `.switch true`
+    value; has no effect on verification.
+
+    Not to be confused with `Core.EntryPoint`, which is the verifier's
+    target-selector (`.main | .roots | .all`) and is unrelated to the
+    concrete interpreter. -/
+@[match_pattern]
+abbrev MetaData.interpretEntry : MetaDataElem.Field P := .label "interpretEntry"
+
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 @[match_pattern]

@@ -179,6 +179,9 @@ op returnType(returnType: LaurelType): ReturnType => ": " returnType;
 category InvokeOnClause;
 op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:0;
 
+category EntryClause;
+op entryClause: EntryClause => "\n  entry";
+
 // `requires`/`ensures` lower to both an assertion and an assumption by default.
 // `free` keeps only the assumption (assumed but never checked); `checked` keeps
 // only the assertion (checked but never exposed as an assumption).
@@ -213,9 +216,10 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
+  entry: Option EntryClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn entry opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

@@ -2680,6 +2680,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     return { name := procName', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             isInterpretEntry := proc.isInterpretEntry,
              axioms := axioms',
              body := body' }
 
@@ -2717,6 +2718,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     return { name := procName', inputs := inputs', outputs := outputs',
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
+             isInterpretEntry := proc.isInterpretEntry,
              axioms := axioms',
              body := body' }
 

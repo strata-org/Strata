@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Env
 public import Strata.Util.Statistics
 import Strata.Languages.Core.ProcedureEval
+import Strata.Languages.Core.StatementEval
 
 ---------------------------------------------------------------------
 
@@ -99,6 +100,47 @@ def run (prog : Program) : Except DiagnosticModel Env := do
   let σ ← Lambda.LState.init.addFactory factory
   let E: Env := { Env.init with exprEnv := σ, program := prog }
   prog.decls.foldlM (fun E d => Decl.run d E) E
+
+/--
+Run a single procedure as an entry point in the concrete interpreter.
+
+Generates fresh variables for the procedure's outputs, binds them, then invokes
+the procedure with no arguments under the given `fuel` bound, returning the
+resulting environment. Inspect `.error` on the result to detect a runtime
+assertion failure (`AssertFail`), fuel exhaustion (`OutOfFuel`), or another
+evaluation error (`Misc`).
+
+`E` is expected to be a freshly-initialized environment, e.g. the result of
+`Program.run` on the type-checked program containing `proc`.
+
+Note: this is the *concrete interpreter's* entry-point runner, driven by the
+producer-set `interpretEntry` marker. It is unrelated to `Core.EntryPoint`,
+which is the verifier's target selector (`.main | .roots | .all`) used to
+decide which procedures the SMT verifier targets.
+-/
+def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
+  let outputNames := proc.header.outputs.keys.map (·.name)
+  let (lhs, exprEnv) := Env.genVars outputNames E.exprEnv
+  let E := { E with exprEnv }
+  Statement.Command.runCall lhs proc.header.name.name [] fuel E
+
+/--
+All procedures the producer marked as concrete-interpretation entry points,
+via the `interpretEntry` metadata on their declaration (see
+`Imperative.MetaData.interpretEntry`). The marker is set on a Laurel procedure's
+`entry` clause and carried into Core metadata by the Laurel→Core translator.
+
+Distinct from `Core.EntryPoint` (verifier target selector); this returns the
+procedures the *concrete interpreter* should enter.
+-/
+def entryProcedures (prog : Program) : List Procedure :=
+  prog.decls.filterMap fun d =>
+    match d.getProc? with
+    | some p =>
+      match d.metadata.findElem Imperative.MetaData.interpretEntry with
+      | some { value := .switch true, .. } => some p
+      | _ => none
+    | none => none
 
 end -- public section
 

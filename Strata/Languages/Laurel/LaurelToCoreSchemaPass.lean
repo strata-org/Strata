@@ -854,7 +854,13 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
       let axiomDecls ← proc.axioms.mapM fun ax => do
         let coreExpr ← translateExpr ax [] (isPureContext := true)
         return Core.Decl.ax { name := s!"invokeOn_{proc.name.text}", e := coreExpr } (identifierToCoreMd proc.name)
-      return [Core.Decl.proc procDecl (identifierToCoreMd proc.name)] ++ axiomDecls
+      -- Carry the producer's interpret-entry marker into Core metadata so the
+      -- interpreter can find the entry without name mangling.
+      let procMd := identifierToCoreMd proc.name
+      let procMd := if proc.isInterpretEntry
+        then procMd.pushElem Imperative.MetaData.interpretEntry (.switch true)
+        else procMd
+      return [Core.Decl.proc procDecl procMd] ++ axiomDecls
     | .datatypes dts => do
       let ldatatypes ← dts.mapM translateDatatypeDefinition
       return [Core.Decl.type (.data ldatatypes) mdWithUnknownLoc]
