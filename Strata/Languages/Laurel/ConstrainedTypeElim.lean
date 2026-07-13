@@ -86,7 +86,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := baseType }]
-    outputs := [{ name := mkId "result", type := { val := .TBool, source := none } }]
+    outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := none } }]
     body := .Transparent { val := .Return bodyExpr, source := none }
     decreases := none
     preconditions := [] }

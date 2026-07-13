@@ -546,7 +546,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       | .option _ (some (.op returnTypeOp)) => match returnTypeOp.name, returnTypeOp.args with
         | q`Laurel.returnType, #[typeArg] =>
           let retType ← translateHighType typeArg
-          pure [{ name := "result", type := retType : Parameter }]
+          pure [{ name := resultOutputName, type := retType : Parameter }]
         | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
       | .option _ none =>
         -- No return type, check returnParamsArg instead

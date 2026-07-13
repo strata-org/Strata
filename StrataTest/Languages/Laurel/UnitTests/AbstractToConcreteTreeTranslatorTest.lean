@@ -135,11 +135,54 @@ procedure test(x: int): int
 { if x > 0 then x else 0 - x };
 #end)
 
+-- A user parameter named `result` under the short `: T` return form must survive
+-- the concrete↔abstract roundtrip unchanged. The short-form auto-output is the
+-- reserved `$result` (printed back as `: int`), so the user `result` parameter
+-- is never confused with the internal return name: it stays `result`, and the
+-- `return result` body still references the parameter.
+/--
+info: procedure echo(result: int): int
+{
+  return result
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure echo(result: int): int
+{ return result };
+#end)
+
+-- A user-named single return output `result` must NOT be collapsed into the
+-- short `: T` form: only the reserved `$result` auto-output is (the printer now
+-- checks `single.name == resultOutputName`, not the literal `"result"`). So this
+-- prints as the explicit `returns (result: int)`, preserving the user's name.
+/--
+info: procedure foo()
+  returns (result: int)
+{
+  return 42
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure foo() returns (result: int)
+{ return 42 };
+#end)
+
+-- NOTE: these `divide` roundtrip fixtures put a parameter (`x`) in their
+-- `ensures`, not `result`. The short `: T` return form's auto-output is the
+-- reserved `$result`, so a bare `result` is just a free identifier now; these
+-- tests only exercise `ensures`/`free`/`checked` grammar, so any in-scope name
+-- works.
 /--
 info: procedure divide(x: int, y: int): int
   requires y != 0
   opaque
-  ensures result >= 0
+  ensures x >= 0
 {
   x / y
 };
@@ -151,7 +194,7 @@ program Laurel;
 procedure divide(x: int, y: int): int
   requires y != 0
   opaque
-  ensures result >= 0
+  ensures x >= 0
 { x / y };
 #end)
 
@@ -163,9 +206,9 @@ info: procedure divide(x: int, y: int): int
   free requires y != 1
   checked requires y != 2
   opaque
-  ensures result >= 0
-  free ensures result >= 1
-  checked ensures result >= 2
+  ensures x >= 0
+  free ensures x >= 1
+  checked ensures x >= 2
 {
   x / y
 };
@@ -179,9 +222,9 @@ procedure divide(x: int, y: int): int
   free requires y != 1
   checked requires y != 2
   opaque
-  ensures result >= 0
-  free ensures result >= 1
-  checked ensures result >= 2
+  ensures x >= 0
+  free ensures x >= 1
+  checked ensures x >= 2
 { x / y };
 #end)
 

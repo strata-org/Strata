@@ -243,14 +243,14 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let returnTypeArg : Arg :=
     match proc.outputs with
     | [single] =>
-      if single.name == "result"
+      if single.name == resultOutputName
       then optionArg (some (laurelOp "returnType" #[highTypeToArg single.type]))
       else optionArg none
     | _ => optionArg none
   let returnParamsArg : Arg :=
     match proc.outputs with
     | [single] =>
-      if single.name == "result"
+      if single.name == resultOutputName
       then optionArg none
       else optionArg (some (laurelOp "returnParameters" #[commaSep #[parameterToArg single]]))
     | _ =>

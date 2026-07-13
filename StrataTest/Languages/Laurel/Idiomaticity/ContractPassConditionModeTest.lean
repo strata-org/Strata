@@ -63,26 +63,22 @@ invokes it so the call-site checks are generated too. In the lowered output:
     not the `checked` one (assert-only postconditions are not assumed). -/
 
 /--
-info: procedure callee$pre0(x: int)
-  returns ($result: bool)
+info: procedure callee$pre0(x: int): bool
 {
   $result := x > 0;
   exit $return
 }$return;
-procedure callee$pre1(x: int)
-  returns ($result: bool)
+procedure callee$pre1(x: int): bool
 {
   $result := x > 1;
   exit $return
 }$return;
-procedure callee$pre2(x: int)
-  returns ($result: bool)
+procedure callee$pre2(x: int): bool
 {
   $result := x > 2;
   exit $return
 }$return;
-procedure callee$post0(x: int, r$out: int)
-  returns ($result: bool)
+procedure callee$post0(x: int, r$out: int): bool
 {
   assume x > 0;
   assume x > 1;
@@ -90,8 +86,7 @@ procedure callee$post0(x: int, r$out: int)
   $result := r$out > 0;
   exit $return
 }$return;
-procedure callee$post1(x: int, r$out: int)
-  returns ($result: bool)
+procedure callee$post1(x: int, r$out: int): bool
 {
   assume x > 0;
   assume x > 1;
@@ -99,8 +94,7 @@ procedure callee$post1(x: int, r$out: int)
   $result := r$out > 1;
   exit $return
 }$return;
-procedure callee$post2(x: int, r$out: int)
-  returns ($result: bool)
+procedure callee$post2(x: int, r$out: int): bool
 {
   assume x > 0;
   assume x > 1;

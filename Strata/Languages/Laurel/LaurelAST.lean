@@ -968,6 +968,13 @@ structure Program where
   constants : List Constant := []
   deriving Inhabited
 
+/-- Reserved internal name of a function's anonymous (short `: T`) return
+    output. The leading `$` follows Strata's reserved-name convention and
+    cannot be written as a surface identifier, so user parameters/locals named
+    `result` never collide with the return value. To refer to the return value
+    explicitly, use the named-return form `returns (r: T)`. -/
+def resultOutputName : String := "$result"
+
 end -- public section
 
 end Laurel
