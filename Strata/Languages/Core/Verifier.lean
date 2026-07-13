@@ -1848,14 +1848,8 @@ All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
 When `keepAllFilesPrefix` is provided, the program state after each pipeline
-phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1).
-
-This `…WithStats` variant additionally returns the accumulated evaluator
-`Statistics` (pipeline-transform + per-VC stats merged). `verify` discards
-these; the differential harness (`verifyToMetrics`) consumes them here.
-Splitting it out keeps `verify`'s signature — and every existing caller —
-unchanged. -/
-def verifyWithStats (program : Program)
+phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1). -/
+def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
@@ -1866,7 +1860,7 @@ def verifyWithStats (program : Program)
     (solver : Option CoreSMTSolver := none)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
-    : EIO DiagnosticModel (VCResults × Statistics) := do
+    : EIO DiagnosticModel VCResults := do
   let profile := options.profile
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
@@ -1903,26 +1897,7 @@ def verifyWithStats (program : Program)
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
   let results : VCResults := (VCss.map (·.fst)).toArray.flatten
-  .ok (results.mergeByAssertion, allStats)
-
-/-- Verify a Core program, returning merged `VCResults`. Thin wrapper over
-    `verifyWithStats` that drops the evaluator statistics; signature preserved so
-    existing callers are unaffected. -/
-def verify (program : Program)
-    (tempDir : System.FilePath)
-    (proceduresToVerify : Option (List String) := none)
-    (options : VerifyOptions := VerifyOptions.default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
-    (externalPhases : List AbstractedPhase := [])
-    (prefixPhases : List PipelinePhase := [])
-    (keepAllFilesPrefix : Option String := none)
-    (solver : Option CoreSMTSolver := none)
-    (mkDischarge : MkDischargeFn := mkDischargeFn)
-    (pipelineCtx : Option PipelineContext := none)
-    : EIO DiagnosticModel VCResults := do
-  let (results, _stats) ← verifyWithStats program tempDir proceduresToVerify options
-    moreFns externalPhases prefixPhases keepAllFilesPrefix solver mkDischarge pipelineCtx
-  .ok results
+  .ok results.mergeByAssertion
 
 end -- public section
 end Core

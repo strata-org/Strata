@@ -12,13 +12,13 @@ meta import StrataDDM.Util.IO
 meta import Strata.Languages.Laurel.Grammar.LaurelGrammar
 meta import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 meta import Strata.Languages.Laurel.LaurelCompilationPipeline
-meta import all StrataTest.Languages.Laurel.VerifyMetricsHarness
+meta import all StrataTest.Util.LaurelCorpusHarness
 
 /-!
 # Polymorphism corpus
 
 The feature corpus for user-level polymorphism, driven by the shared `Case`/`checkCase`
-harness (`VerifyMetricsHarness`). Each block is a `List Case` table + a `checkCases` runner,
+harness (`StrataTest.Util.LaurelCorpusHarness`). Each block is a `List Case` table + a `checkCases` runner,
 with must-fail twins pinning soundness. Areas: a genuinely polymorphic function; polymorphic
 procedures (freshening + monomorphization + witness); generic composites (monomorphization,
 nested generics, `new C<τ>`, chained writes); generic datatypes (native Core parametric
@@ -56,7 +56,6 @@ procedure useIt()
 
 def runPolyIdTest : IO Unit := do
   let m ← corpusMetricsOf "poly_id" polyIdProgram
-  IO.println (serializeMetrics "poly_id" m)
   unless m.translated do
     throw (IO.userError "poly_id: a polymorphic function failed to translate to Core")
   unless m.numFailures == 0 do
@@ -233,6 +232,9 @@ def polyProcedureCorpus : List Case := [
   { name := "tc_tvarbody_int_eq_true", outcome := .rejected,
     why := "the `.TVar` wildcard must not blanket-disable checking inside a poly body: `var y: int := true` still rejects"
     src := "procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { var y: int := true; r := x };" },
+  { name := "tc_polyfn_return_type_mismatch", outcome := .rejected,
+    why := "an ill-typed poly FUNCTION (`coerce<A,B>(x: A): B { x }` returns an `A` where `B` is required) is rejected — the Core type error is RETURNED as a diagnostic, not thrown (translated=false)"
+    src := "function coerce<A, B>(x: A): B { x };\nprocedure u() opaque { assert 1 == 1 };" },
   -- proc↔composite FIXPOINT: a poly proc whose body calls another poly proc passing the
   -- generic-composite param (`outer<T>` calls `inner<T>`). The unified worklist clones
   -- `outer$int`, discovers the now-concrete `inner(b:Box<int>)` call, clones `inner$int`,
@@ -829,7 +831,6 @@ procedure useRef()
 
 def runPolyRefFunctionTest : IO Unit := do
   let m ← corpusMetricsOf "poly_ref_fn" polyRefFunctionProgram
-  IO.println (serializeMetrics "poly_ref_fn" m)
   unless m.translated do
     throw (IO.userError "poly_ref_fn: a polymorphic function over a REFERENCE arg failed to translate — the ftvar/Composite unification regressed")
   unless m.numFailures == 0 do
