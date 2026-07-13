@@ -80,7 +80,16 @@ private def translateFromTermPrim (t:SMT.TermPrim):
         (.qi_ident smtProv (mkIdentifier "-"))
         (smtAnn #[posTerm])
   | .real dec =>
-    return .spec_constant_term smtProv (.sc_decimal smtProv dec)
+    if dec.mantissa < 0 then
+      -- SMT-LIB decimals are unsigned; a bare `-6.28…` lexes as a free symbol.
+      -- Mirror the negative-integer path and wrap in unary minus.
+      let absDec := { dec with mantissa := -dec.mantissa }
+      let posTerm := Term.spec_constant_term smtProv (.sc_decimal smtProv absDec)
+      return .qual_identifier_args smtProv
+        (.qi_ident smtProv (mkIdentifier "-"))
+        (smtAnn #[posTerm])
+    else
+      return .spec_constant_term smtProv (.sc_decimal smtProv dec)
   | .bitvec (n := n) bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
     let val:Index Provenance := .ind_numeral smtProv n
