@@ -69,6 +69,29 @@ private instance : Coe String TestParams.Identifier where
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[∀ (%0 == #5)]
          return (format $ ans.fst)
 
+-- An unannotated quantifier binder whose body is the bound variable itself:
+-- the body's fresh type variable is unified with `bool`, so the binder is
+-- inferred to have type `bool`.
+/-- info: ok: (∀(bool) (%0 : bool)) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[∀ %0]
+         return (format $ ans.fst)
+
+-- A quantifier body that is genuinely non-Boolean (here `#5 : int`) is rejected
+-- because its type cannot unify with `bool`.
+/-- info: error: Impossible to unify int with bool. -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[∀ #5]
+         return (format $ ans.fst)
+
+-- Nested quantifiers: the inner body must unify to `bool`, and the substitution
+-- threads through both binder layers. The unused outer binder stays a fresh
+-- type variable.
+/-- info: ok: (∀($__ty0) (∀(bool) (%0 : bool))) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[∀ (∀ %0)]
+         return (format $ ans.fst)
+
 /-- info: ok: ((λ (%0 : $__ty0)) : (arrow $__ty0 $__ty0)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[λ(%0)]
