@@ -61,6 +61,11 @@ public def insert (s : OrderedSet α) (a : α) : OrderedSet α :=
 @[expose] public def ofArray (xs : Array α) : OrderedSet α :=
   .mk (Std.HashSet.ofList xs.toList) xs
 
+/-- Order-preserving deduplication backed by a hashed membership index.
+    Keeps the first occurrence of each element. -/
+public def eraseDups {α : Type _} [BEq α] [Hashable α] (xs : List α) : List α :=
+  (xs.foldl OrderedSet.insert (OrderedSet.empty : OrderedSet α)).toList
+
 end OrderedSet
 
 end Strata.Util
