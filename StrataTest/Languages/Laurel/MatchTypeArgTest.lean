@@ -39,9 +39,8 @@ def run : IO Unit := do
   -- (6) bare T vs concrete composite → T = that composite
   let r6 := matchTypeArg (tv "T") (ud "Widget") e
   match look r6 "T" with | some (.UserDefined n) => unless n.text == "Widget" do throw (IO.userError "case6 name") | _ => throw (IO.userError "case6: T should be Widget")
-  -- (7) DIFFERENT base names, same arity (Box<T> vs Pair<int>) → none (item-10C self-guard).
-  --     Before the guard this bound T=int on arity alone (the heads are both UserDefined and the
-  --     head recursion binds nothing); now monomorphization is self-guarding on the base name.
+  -- (7) DIFFERENT base names, same arity (Box<T> vs Pair<int>) → none: monomorphization
+  --     self-guards on the base name, so mismatched heads don't bind T=int on arity alone.
   let r7 := matchTypeArg (app (ud "Box") [tv "T"]) (app (ud "Pair") [.TInt]) e
   unless r7.isNone do throw (IO.userError "case7: different base names must FAIL (none)")
   IO.println "matchTypeArg: all 7 cases OK"

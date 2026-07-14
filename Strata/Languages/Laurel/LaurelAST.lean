@@ -660,9 +660,9 @@ deriving instance BEq for HighType
     land, since two distinct same-named types would otherwise share an
     inheritance chain. -/
 structure TypeLattice where
-  -- Per alias/constrained NAME: its type-param names (empty for monomorphic) + the target/base
-  -- type. The params let `unfold` substitute a generic alias's args (`Foo<int>` ⇒ target[T↦int])
-  -- so the consistency relation agrees with what `TypeAliasElim` produces.
+  -- The type-param names let `unfold` substitute a generic alias's args
+  -- (`Foo<int>` ⇒ target[T↦int]) so the consistency relation agrees with what
+  -- `TypeAliasElim` produces (empty param list for a monomorphic alias).
   unfoldMap : Std.HashMap String (List Identifier × HighTypeMd) := {}
   extendingMap : Std.HashMap String (List String) := {}
   -- Per composite NAME: its type-param names + its parent type
@@ -800,7 +800,7 @@ partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
     | (curName, curArgs) :: rest =>
       work := rest
       match ctx.parentExprMap.get? curName with
-      | none => pure ()  -- no parents (or not a known composite)
+      | none => pure ()
       | some (params, parentExprs) =>
         let subst : Std.HashMap String HighTypeMd :=
           (params.zip curArgs).foldl (fun m (p, a) => m.insert p.text a) {}

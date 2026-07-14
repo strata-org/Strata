@@ -847,11 +847,9 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- composites) BEFORE the monomorphs, so a monomorph child `Box$a1$int extends Base`
   -- comes AFTER its concrete parent `Base`. Re-resolution builds a composite's
   -- field-inheritance typeScope in list order (`resolveTypeDefinition`), looking up the
-  -- parent's already-built scope; parent-after-child left the inherited field
-  -- unresolved ("'tag' is not defined") → un-lowered field access → StrataBug. A
-  -- monomorph never extends another monomorph in supported code (generic-parent
-  -- inheritance is rejected at resolution), so all monomorph parents are concrete
-  -- and live in `types'`. Witnesses are zero-field/no-extends → position-independent.
+  -- parent's already-built scope, so a parent must precede its child. A monomorph
+  -- never extends another monomorph in supported code (generic-parent inheritance is
+  -- rejected at resolution), so all monomorph parents are concrete and live in `types'`.
   let program := { program with types := types' ++ monoComposites ++ witnessComposites,
                                 staticProcedures := staticProcs',
                                 constants := constants', staticFields := staticFields' }
