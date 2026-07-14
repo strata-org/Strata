@@ -42,6 +42,13 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
   fun s => ((), { s with errors := s.errors.push msg })
   return panic msg
 
+/-- Record a translation error without panicking, then continue with `fallback`.
+    Use for malformed user input (as opposed to internal invariant violations,
+    which use `TransM.error`). -/
+def TransM.recordError (msg : String) (fallback : α) : TransM α := do
+  fun s => ((), { s with errors := s.errors.push msg })
+  return fallback
+
 ---------------------------------------------------------------------
 
 /- Metadata -/
@@ -1000,6 +1007,15 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
     return .realConst () (StrataDDM.Decimal.toRat x)
+  | .fn _ q`Core.fracLit, [na, da] =>
+    let num ← translateNat na
+    let den ← translateNat da
+    if den == 0 then
+      -- A zero denominator is invalid user input, so record the error
+      -- and fall back to `realConst 0`.
+      TransM.recordError "fracLit: denominator must be non-zero" (.realConst () 0)
+    else
+      return .realConst () (mkRat (Int.ofNat num) den)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa

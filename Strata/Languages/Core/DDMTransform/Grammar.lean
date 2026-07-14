@@ -122,6 +122,13 @@ fn as_bv64  (e : int) : bv64  => "as_bv64"  "(" e ")";
 fn as_bv128 (e : int) : bv128 => "as_bv128" "(" e ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
+// Exact rational literal `frac{num, den}`, used to print reals whose value has
+// no terminating decimal representation (e.g. `1/3`). The leading token is
+// `frac{` (containing `{`, like the `bv{N}` literals) rather than a bare `frac`
+// keyword, so `frac` stays a valid identifier and does not collide with a
+// user-declared function named `frac`. The brace form also avoids a collision
+// with `safediv_expr`, which owns the infix `/` token.
+fn fracLit (num : Num, den : Num) : real => "frac{" num ", " den "}";
 
 fn if (tp : Type, c : bool, t : tp, f : tp) : tp => @[prec(2)] "if " c:0 " then " t:0 " else " f:0;
 

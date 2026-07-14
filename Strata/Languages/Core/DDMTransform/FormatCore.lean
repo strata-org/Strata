@@ -304,9 +304,20 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   | .realConst r =>
     match StrataDDM.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
-    | none => do
-      ToCSTM.logError "lconstToExpr" "unsupported real" (toString r)
-      pure (.realLit default ⟨default, default⟩)
+    | none =>
+      -- `r` has no terminating decimal representation (e.g. `1/3`), so it
+      -- cannot be printed as a `realLit`. Emit the exact rational literal
+      -- `frac{num, den}` instead, which the transform maps back to `realConst
+      -- (mkRat num den)` and so round-trips to the same value. The `frac{...}`
+      -- operands are non-negative `Num` tokens, so a negative value is wrapped
+      -- in `neg_expr`, mirroring the `intConst` case above.
+      let ty := CoreType.tvar default unknownTypeVar
+      let fracExpr :=
+        CoreDDM.Expr.fracLit default ⟨default, r.num.natAbs⟩ ⟨default, r.den⟩
+      if r.num < 0 then
+        pure (.neg_expr default ty fracExpr)
+      else
+        pure fracExpr
   | .strConst s => pure (.strLit default ⟨default, s⟩)
   | .bitvecConst 1 n => pure (.bv1Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 8 n => pure (.bv8Lit default ⟨default, n.toNat⟩)

@@ -781,6 +781,206 @@ spec {
 #guard_msgs in
 #eval ASTtoCST strPrefixSuffixPgm
 
+-------------------------------------------------------------------------------
+-- Real literals with no terminating decimal representation are printed as the
+-- exact rational literal `frac{n, d}`.
+-------------------------------------------------------------------------------
+
+-- Wrap a real expression as the body of `function f () : real { … }` and print.
+private def showReal (e : Core.Expression.Expr) : IO Unit :=
+  formatCore { decls := [
+    .func { name := "f", typeArgs := [], inputs := [], output := .real,
+            body := some e } .empty ] }
+
+/--
+info: program Core;
+
+function f () : real {
+  frac{1, 3}
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (1/3 : Rat))
+
+/--
+info: program Core;
+
+function f () : real {
+  frac{1, 7}
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (1/7 : Rat))
+
+/--
+info: program Core;
+
+function f () : real {
+  -(frac{2, 3})
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (-2/3 : Rat))
+
+-- A `Rat` keeps its sign in the numerator, so the denominator is never
+-- negative. Writing the sign on the denominator (`1 / (-3)`) normalizes to
+-- `num = -1, den = 3`.
+/--
+info: program Core;
+
+function f () : real {
+  -(frac{1, 3})
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (1 / (-3) : Rat))
+
+-- Terminating decimals are unaffected: they still print as decimals.
+/--
+info: program Core;
+
+function f () : real {
+  0.5
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (1/2 : Rat))
+
+-------------------------------------------------------------------------------
+-- Round-trip: `frac{n, d}` written in surface syntax parses back to the exact
+-- rational.
+-------------------------------------------------------------------------------
+
+private def fracRoundtripPgm : Program :=
+#strata
+program Core;
+
+function oneThird () : real { frac{1, 3} }
+function negTwoThirds () : real { -frac{2, 3} }
+#end
+
+/--
+info: program Core;
+
+function oneThird () : real {
+  frac{1, 3}
+}
+function negTwoThirds () : real {
+  -(frac{2, 3})
+}
+-/
+#guard_msgs in
+#eval ASTtoCST fracRoundtripPgm
+
+-- A non-normalized fraction like `frac{2, 6}` parses to the reduced rational
+-- `1/3` (Lean `Rat` normalizes), so it re-prints in reduced form.
+private def fracReducePgm : Program :=
+#strata
+program Core;
+
+function f () : real { frac{2, 6} }
+#end
+
+/--
+info: program Core;
+
+function f () : real {
+  frac{1, 3}
+}
+-/
+#guard_msgs in
+#eval ASTtoCST fracReducePgm
+
+-- The formatter only emits `frac{...}` on the
+-- `Decimal.fromRat = none` (non-terminating) path.
+private def fracTerminatingPgm : Program :=
+#strata
+program Core;
+
+function f () : real { frac{1, 2} }
+#end
+
+/--
+info: program Core;
+
+function f () : real {
+  0.5
+}
+-/
+#guard_msgs in
+#eval ASTtoCST fracTerminatingPgm
+
+-------------------------------------------------------------------------------
+-- A zero denominator has no rational value. The translator records an error
+-- (without panicking) and falls back to a benign `realConst 0`; `ASTtoCST`
+-- prints the collected error alongside the program.
+-------------------------------------------------------------------------------
+
+private def fracZeroDenomPgm : Program :=
+#strata
+program Core;
+
+function f () : real { frac{1, 0} }
+#end
+
+-- Note: the error is caught at CST->AST time (during translateProgram.)
+/--
+info: CST to AST Error: #[fracLit: denominator must be non-zero]
+program Core;
+
+function f () : real {
+  0.0
+}
+-/
+#guard_msgs in
+#eval ASTtoCST fracZeroDenomPgm
+
+-- Note: we don't need a zero-denominator check for reals in the Core formatter:
+-- a Lean `Rat` cannot hold a zero denominator (`den_nz : den ≠ 0` is a field of
+-- the structure), so `mkRat _ 0` (and thus `(1/0 : Rat)`) is just `0` at
+-- construction.
+/-- info: 0 -/
+#guard_msgs in
+#eval (1 / 0 : Rat)
+
+/--
+info: program Core;
+
+function f () : real {
+  0.0
+}
+-/
+#guard_msgs in
+#eval showReal (.realConst () (1/0 : Rat))
+
+-------------------------------------------------------------------------------
+-- The `frac{...}` literal uses `frac{` as its leading token (like `bv{N}`), so
+-- bare `frac` remains a valid identifier: a user may declare and call a
+-- function named `frac` with no collision against the literal syntax.
+-------------------------------------------------------------------------------
+
+private def fracIdentifierPgm : Program :=
+#strata
+program Core;
+
+function frac (x : int, y : int) : bool { true }
+
+function g () : bool { frac(1, 2) }
+#end
+
+/--
+info: program Core;
+
+function frac (x : int, y : int) : bool {
+  true
+}
+function g () : bool {
+  frac(1, 2)
+}
+-/
+#guard_msgs in
+#eval ASTtoCST fracIdentifierPgm
+
 end Strata.Test
 
 end
