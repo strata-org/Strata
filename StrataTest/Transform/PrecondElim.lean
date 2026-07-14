@@ -36,7 +36,7 @@ def transformProgram (t : StrataDDM.Program) : Core.Program :=
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
-    | .ok program => program.eraseTypes.stripMetaData
+    | .ok program => program.stripMetaData
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -532,10 +532,10 @@ datatype Outer {
 };
 procedure bug$$wf (p : Outer)
 {
-  assert [bug_body_calls_Inner..x_0]: forall m : ($__unknown_type) :: forall j : ($__unknown_type) :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
+  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
 };
 function bug (p : Outer) : bool {
-  exists m : ($__unknown_type) :: p == Outer_A(m) && exists j : ($__unknown_type) :: Inner..x(m) == j
+  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
 }
 -/
 #guard_msgs in
