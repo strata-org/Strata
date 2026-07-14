@@ -678,9 +678,9 @@ def parseComposite (arg : Arg) : TransM TypeDefinition := do
     let extending ← match extendsArg with
       | .option _ (some (.op extendsOp)) => match extendsOp.name, extendsOp.args with
         | q`Laurel.extends, #[parentsArg] =>
-          -- Parents are now `CommaSepBy LaurelType`: each is a full type
+          -- Parents are a `CommaSepBy LaurelType`: each is a full type
           -- (`Base` or generic `Base<T>`), translated via `translateHighType` — the same
-          -- path `appliedType` args already use. (Was `translateIdent`, bare names only.)
+          -- path `appliedType` args already use.
           match parentsArg with
           | .seq _ .comma args => args.toList.mapM translateHighType
           | singleArg => do let parent ← translateHighType singleArg; pure [parent]

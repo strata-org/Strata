@@ -114,11 +114,9 @@ def laurelPipeline : Array LoweringPass := #[
   constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
-  -- NOTE (merge of #1381): #1381 inserted `liftInstanceProceduresPass` here so it runs
-  -- before `eliminateValueInReturnsPass` (so value-returning instance methods get lowered).
-  -- The instance-procedure lift already moved that pass to position 0 (it must precede monomorphization),
-  -- which ALSO satisfies #1381's before-eliminateValueInReturns requirement — so the single
-  -- pos-0 entry is correct for both; #1381's duplicate insertion is dropped.
+  -- `liftInstanceProceduresPass` runs at position 0 (it must precede monomorphization);
+  -- that also places it before `eliminateValueInReturnsPass`, as value-returning
+  -- instance methods require, so no entry is needed here.
   eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
@@ -319,16 +317,13 @@ def verifyToVcResults (program : Program)
   | some coreProgram =>
     match ← runVerify coreProgram options with
     | .ok ioResult => return (some ioResult, translateDiags)
-    -- Reconstruct the throwing path: stringify the structured error exactly as
-    -- the previous `EIO.toIO (fun f => .userError (toString f))` did (#1367).
-    -- NOTE (merge): our polymorphism work needs Core errors FOLDED, not thrown
-    -- (a poly fn whose body mismatches its signature must surface as
-    -- `translated=false`, not a Lean exception). That fold lives in the CAPTURING
-    -- entry point our consumers use — `verifyToDiagnosticModelsCapturing` —
-    -- which routes through the same
-    -- `runVerify` boundary and returns `.error` as a value. `verifyToVcResults`
-    -- keeps #1367's throwing behavior for the production CLI path (its only
-    -- external caller, `Languages/Laurel.lean`).
+    -- Throwing path: stringify the structured error (as #1367 did). A poly fn whose
+    -- body mismatches its signature must surface as a Core error FOLDED into the
+    -- result (`translated=false`), not a Lean exception — that fold lives in the
+    -- CAPTURING entry point consumers use, `verifyToDiagnosticModelsCapturing`, which
+    -- routes through this same `runVerify` boundary and returns `.error` as a value.
+    -- `verifyToVcResults` keeps #1367's throwing behavior for the production CLI path
+    -- (its only external caller, `Languages/Laurel.lean`).
     | .error dm => throw (IO.userError (toString dm))
   | none => return (none, translateDiags)
 

@@ -496,13 +496,10 @@ def genericCompositeCorpus : List Case := [
     src := "composite Inner { var v: int }\ncomposite Outer { var i: Inner }\nprocedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5; assert o#i#v == 6 };" },
   -- Item-5 guard: a heap-writer with a USER output named `$heap` must FAIL LOUD (never translate),
   -- because HeapParameterization prepends a synth `$heap` inout to a writer's inputs AND outputs.
-  -- NB (verified by ablation): on the landed code this ALREADY rejects even without the
-  -- `resolveOutputParameter` seen-outputs dup-check — the re-resolution fold type-checks the user
-  -- `$heap` against the synth `$heap: Heap` and fails loud (`expected 'Heap', got 'int'`), so the
-  -- FOLLOWUPS-claimed silent wrong-accept does NOT reproduce. The dup-check's only observable effect
-  -- is a cleaner diagnostic (`Duplicate definition '$heap'`) instead of the type mismatch — both
-  -- `!translated`. This case therefore pins ONLY "a user `$heap` output never translates", not a
-  -- wrong-accept ablation. The sanity twin pins that the legit single synth `$heap` inout still merges.
+  -- The re-resolution fold type-checks the user `$heap` against the synth `$heap: Heap` and fails
+  -- loud (`expected 'Heap', got 'int'`, or `Duplicate definition '$heap'` via the seen-outputs
+  -- dup-check) — either way `!translated`. This pins only "a user `$heap` output never translates";
+  -- the sanity twin pins that the legit single synth `$heap` inout still merges.
   { name := "user_heap_output_rejected", outcome := .rejected (some .StrataBug),
     why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution internal-error net (.StrataBug — `Duplicate definition '$heap'` and/or the `expected 'Heap', got 'int'` type-mismatch). The .StrataBug tag pins that it rejects via that net, NOT which specific diagnostic (the dup-check's effect is cosmetic — cleaner message — not separately machine-checked here)"
     src := "composite Inner { var v: int }\nprocedure u() returns ($heap: int) opaque { var o: Inner := new Inner; o#v := 5; $heap := 0 };" },
