@@ -9,7 +9,7 @@ public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.UnorderedCore
 import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.MapStmtExpr
-import Strata.Languages.Laurel.EliminateIncrDecr
+import Strata.Languages.Laurel.EliminateIncrDecrAndCompoundAssign
 import Strata.Languages.Laurel.TransparencyPass
 
 /-!
@@ -96,8 +96,8 @@ private def inlinePre (_used : Bool) (e : StmtExprMd) : InlineM (Option (List St
     - Blocks and quantifiers close their scope here.
 
     `IncrDecr` (a mutation, equally invalid on an inlined local) is not handled
-    here: the `comesAfter eliminateIncrDecrPass` constraint guarantees those
-    nodes are already gone by the time this pass runs. -/
+    here: the `comesAfter eliminateIncrDecrAndCompoundAssignPass` constraint
+    guarantees those nodes are already gone by the time this pass runs. -/
 private def inlinePost (_used : Bool) (e : StmtExprMd) : InlineM (List StmtExprMd) := do
   let source := e.source
   match e.val with
@@ -164,7 +164,7 @@ public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes Un
   documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core."
   comesAfter := [
     ⟨ transparencyPass.meta, "Inlining of local variables in functions only makes sense after the transparency pass has created the functions"⟩,
-    ⟨ eliminateIncrDecrPass.meta, "IncrDecr is a mutation of a local; once it is eliminated, inlining only needs to reject plain assignments to inlined locals, not increments/decrements"⟩
+    ⟨ eliminateIncrDecrAndCompoundAssignPass.meta, "IncrDecr is a mutation of a local; once it is eliminated, inlining only needs to reject plain assignments to inlined locals, not increments/decrements"⟩
   ]
   run := fun _ p _ =>
     let (uc, diags) := inlineLocalVariablesInFunctions p

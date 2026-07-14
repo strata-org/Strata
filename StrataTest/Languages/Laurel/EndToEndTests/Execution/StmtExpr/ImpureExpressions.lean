@@ -205,4 +205,24 @@ procedure imperativeCallInThenBranch(l: int) returns (r: bool)
   opaque
 if l >= 0 then imperativeCall(l) == l else true;
 
+// Regression: a `while` loop (whose body assigns) as a block statement inside an
+// if-branch in expression position. `containsAssignmentOrImperativeCall` classifies
+// this branch via the generic `anyStmtExpr` traversal, which descends into the `while`
+// body (the earlier hand-rolled version did not). This pins that such a branch still
+// lowers and verifies — the loop's invariant is checked and the `if` yields a value.
+procedure whileInBranch(b: bool)
+  opaque
+{
+  var x: int := 0;
+  var z: int := (if b
+    then {
+      while (x < 3) invariant x >= 0 {
+        x := x + 1
+      };
+      x
+    }
+    else { 0 });
+  assert z >= 0
+};
+
 #end

@@ -297,7 +297,10 @@ def translateExpr (expr : StmtExprMd)
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .IncrDecr _ _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source
-        "IncrDecr should have been eliminated by EliminateIncrDecr pass" DiagnosticType.StrataBug
+        "IncrDecr should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
+  | .CompoundAssign _ _ _ =>
+      throwExprDiagnostic $ diagnosticFromSource expr.source
+        "CompoundAssign should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
   | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in transparent bodies or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"

@@ -98,6 +98,12 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
       match target.val with
       | .Declare param => collectHighTypeNames param.type
       | .Field _ _ | .Local _ => pure ()
+    | .CompoundAssign _ target _ =>
+      -- `rhs` and any `.Field` object subtree are recursed into by `foldStmtExprM`;
+      -- only a `.Declare` target directly introduces a type name here.
+      match target.val with
+      | .Declare param => collectHighTypeNames param.type
+      | .Field _ _ | .Local _ => pure ()
     | .Var (.Declare param) => collectHighTypeNames param.type
     | .Quantifier _ param _ _ => collectHighTypeNames param.type
     | .AsType _ ty | .IsType _ ty => collectHighTypeNames ty

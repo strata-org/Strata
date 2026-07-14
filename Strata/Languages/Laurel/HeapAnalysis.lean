@@ -63,9 +63,15 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
           | .Local _ | .Declare _ => pure ()
     -- `c#f++` / `c#f--` mutate a field just like `.Assign` with a `.Field`
     -- target. This analysis runs at initial resolution, before
-    -- `EliminateIncrDecr` lowers `IncrDecr` to `.Assign .Field`, so the
+    -- `EliminateIncrDecrAndCompoundAssign` lowers `IncrDecr` to `.Assign .Field`, so the
     -- `IncrDecr` form must be recognized here too.
     | .IncrDecr _ _ target =>
+        match target.val with
+        | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
+        | .Local _ | .Declare _ => pure ()
+    -- `c#f += e` mutates a field just like `c#f++`; recognized here for the same
+    -- reason (analysis runs before `EliminateIncrDecrAndCompoundAssign` lowers it).
+    | .CompoundAssign _ target _ =>
         match target.val with
         | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
         | .Local _ | .Declare _ => pure ()

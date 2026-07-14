@@ -39,6 +39,18 @@ procedure incrFloat(g: float64) opaque {
   f++
 //^^^ error: only supported on 'int' and int-based constrained types
 };
+// A composite-typed target is also rejected at resolution (not just the numeric
+// non-int types above): `++` is only defined on int. This is caught early here
+// rather than as a downstream error after the `x := x + 1` lowering — matching how
+// compound assignment (`+=`) rejects the same target.
+procedure incrComposite() opaque {
+  var c: IncrCounter := new IncrCounter;
+  c++
+//^^^ error: only supported on 'int' and int-based constrained types
+};
+composite IncrCounter {
+  var n: int
+}
 #end
 
 /-! ## Accepted: `++`/`--` on an int-based constrained type (e.g. `nat`) -/

@@ -107,6 +107,11 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩, source⟩
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
+  | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩ (← mapStmtExprUsedM f true rhs), source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op target (← mapStmtExprUsedM f true rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprUsedM f true target) fieldName (← mapStmtExprUsedM f true newValue), source⟩
   | .StaticCall callee args =>
@@ -222,6 +227,12 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
       pure ⟨.IncrDecr mode op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩, source⟩
     | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure e
+    -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
+    | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+      pure ⟨.CompoundAssign op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩
+        (collapse (← go true rhs) rhs.source), source⟩
+    | .CompoundAssign op target rhs =>
+      pure ⟨.CompoundAssign op target (collapse (← go true rhs) rhs.source), source⟩
     | .PureFieldUpdate target fieldName newValue =>
       pure ⟨.PureFieldUpdate (collapse (← go true target) target.source) fieldName
         (collapse (← go true newValue) newValue.source), source⟩
@@ -300,6 +311,12 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
     | ⟨.Local _, _⟩
     | ⟨.Declare _, _⟩ => pure expr
+  -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
+  | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩
+      (← mapStmtExprPrePostM pre post rhs), source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op target (← mapStmtExprPrePostM pre post rhs), source⟩
 
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
@@ -389,6 +406,11 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   | .IncrDecr _ _ target => match target with
     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+  | .CompoundAssign _ target rhs =>
+    (match target with
+     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
+     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ())
+    foldStmtExprM f rhs
   | .PureFieldUpdate target _ newValue =>
     foldStmtExprM f target; foldStmtExprM f newValue
   | .StaticCall _ args =>
@@ -516,6 +538,8 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
     pure ⟨.Assign targets' value, source⟩
   | .IncrDecr mode op target =>
     pure ⟨.IncrDecr mode op ⟨← mapVariableHighTypesM f target.val, target.source⟩, source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op ⟨← mapVariableHighTypesM f target.val, target.source⟩ rhs, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode { param with type := ← f param.type } trigger body, source⟩
   | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩

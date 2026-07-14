@@ -9,6 +9,7 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.TransparencyPass
 
 namespace Strata
@@ -145,55 +146,21 @@ private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
 (recursively). When `liftsAssertsAssumes` is set, asserts and assumes also
 count — these are lifted into statement position by `transformExpr`, so an
 if-then-else whose branch contains one must itself be lifted to keep the
-statement guarded by the condition. -/
+statement guarded by the condition.
+
+Recursion is delegated to the generic `anyStmtExpr` traversal; this predicate only
+classifies a single node. `imperativeCallees`/`liftsAssertsAssumes` are constant for a
+call, so the closure captures them. Note `anyStmtExpr` also descends into `.While`
+bodies, which the earlier hand-rolled version skipped; the visited-node difference is
+unobservable in the lowered output (a `while` — being `TVoid` — only reaches this as a
+block statement in a branch, and that branch's lift decision is unchanged). -/
 def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr : StmtExprMd)
     (liftsAssertsAssumes : Bool := false) : Bool :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .Assign .. => true
-  | .IncrDecr .. => true
-  | .StaticCall name args1 =>
-    imperativeCallees.contains name.text ||
-      args1.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
-  | .PrimitiveOp _ args2 _ => args2.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
-  | .Block stmts _ => stmts.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
-  | .IfThenElse cond th el =>
-      containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes ||
-      containsAssignmentOrImperativeCall imperativeCallees th liftsAssertsAssumes ||
-      match el with | some e => containsAssignmentOrImperativeCall imperativeCallees e liftsAssertsAssumes | none => false
-  | .Assume cond => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes
-  | .Assert cond _ => liftsAssertsAssumes || containsAssignmentOrImperativeCall imperativeCallees cond liftsAssertsAssumes
-  | .InstanceCall target _ args =>
-      containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes ||
-      args.attach.any (fun x => containsAssignmentOrImperativeCall imperativeCallees x.val liftsAssertsAssumes)
-  | .Quantifier _ _ trigger body =>
-      containsAssignmentOrImperativeCall imperativeCallees body liftsAssertsAssumes ||
-      match trigger with | some t => containsAssignmentOrImperativeCall imperativeCallees t liftsAssertsAssumes | none => false
-  | .Old value => containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes
-  | .Fresh value => containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes
-  | .ProveBy value proof =>
-      containsAssignmentOrImperativeCall imperativeCallees value liftsAssertsAssumes ||
-      containsAssignmentOrImperativeCall imperativeCallees proof liftsAssertsAssumes
-  | .ReferenceEquals lhs rhs =>
-      containsAssignmentOrImperativeCall imperativeCallees lhs liftsAssertsAssumes ||
-      containsAssignmentOrImperativeCall imperativeCallees rhs liftsAssertsAssumes
-  | .PureFieldUpdate target _ newValue =>
-      containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes ||
-      containsAssignmentOrImperativeCall imperativeCallees newValue liftsAssertsAssumes
-  | .AsType target _ => containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes
-  | .IsType target _ => containsAssignmentOrImperativeCall imperativeCallees target liftsAssertsAssumes
-  | .Assigned name => containsAssignmentOrImperativeCall imperativeCallees name liftsAssertsAssumes
-  | .ContractOf _ func => containsAssignmentOrImperativeCall imperativeCallees func liftsAssertsAssumes
-  | .Return (some v) => containsAssignmentOrImperativeCall imperativeCallees v liftsAssertsAssumes
-  | _ => false
-  termination_by expr
-  decreasing_by
-    all_goals (try cases x)
-    all_goals (try simp_all)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals omega
+  anyStmtExpr (fun e => match e.val with
+    | .Assign .. | .IncrDecr .. | .CompoundAssign .. => true
+    | .StaticCall name _ => imperativeCallees.contains name.text
+    | .Assert .. | .Assume .. => liftsAssertsAssumes
+    | _ => false) expr
 
 mutual
 
