@@ -8,12 +8,15 @@
 # appears in CBMC output with the correct status.
 #
 # Environment variables:
-#   CBMC   - path to cbmc binary (default: cbmc)
+#   CBMC              - path to cbmc binary (default: cbmc)
+#   GOTO_CC           - path to goto-cc binary (default: goto-cc)
+#   GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
 
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 EXPECTED="$TESTS_DIR/cbmc_expected.txt"
 
 passed=0
@@ -40,7 +43,7 @@ for lr_file in "$TESTS_DIR"/*.lr.st; do
   fi
 
   # Run the pipeline
-  output=$("$SCRIPT_DIR/laurel_to_cbmc.sh" "$lr_file" 2>&1)
+  output=$(lake -d "$PROJECT_ROOT" env lean --run "$PROJECT_ROOT/Scripts/LaurelToCBMC.lean" "$lr_file" 2>&1)
   if [ $? -ne 0 ] && ! echo "$output" | grep -q "VERIFICATION"; then
     echo "ERR:  $bn (pipeline error)"
     echo "$output" | tail -3

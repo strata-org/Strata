@@ -34,6 +34,7 @@ import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.StructuredToUnstructuredCorrect
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
