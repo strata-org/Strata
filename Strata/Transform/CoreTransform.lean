@@ -317,9 +317,9 @@ def runProgram
 
   let mut anyChanged := false
   let mut newDecls := p.decls
-  for i in [:p.decls.length] do
-    match p.decls[i]? with
-    | some (.proc proc md) =>
+  for (decl, i) in p.decls.zipIdx do
+    match decl with
+    | .proc proc md =>
       let isTargetProc := match targetProcList with
          | .none => true
          | .some pl => proc.header.name.1 ∈ pl
