@@ -743,8 +743,8 @@ private def lambdaHigherOrderPgm : Core.Program := { decls := [
 
 /-- info: program Core;
 
-function applyFn () : int -> int -> int -> int {
-  fun f : int -> int => fun x : int => f(x)
+function applyFn () : (int -> int) -> int -> int {
+  fun f : (int -> int) => fun x : int => f(x)
 }-/
 #guard_msgs in
 #eval formatCore lambdaHigherOrderPgm
