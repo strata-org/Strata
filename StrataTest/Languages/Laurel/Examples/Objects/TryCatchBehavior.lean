@@ -264,3 +264,40 @@ procedure catchReadsField(alen: int, i: int)
   }
 };
 #end
+
+-- Nested `catch`: a handler's binding must survive a throw that occurs *inside*
+-- that handler and is caught by a nested `try`/`catch`. The outer handler binds
+-- `a` (an `Outer` carrying tag == 1); inside it a nested `try` throws `Inner`,
+-- which is caught. Afterwards the outer handler reads `a` again — it must still
+-- refer to the original `Outer` (tag == 1), not the inner exception. This
+-- exercises the per-handler snapshot of the caught value (a single shared `$exc`
+-- is overwritten by the inner throw).
+#eval testLaurel <|
+#strata
+program Laurel;
+composite Outer extends BaseException {
+  tag: int
+}
+composite Inner extends BaseException {}
+procedure nestedCatchKeepsBinding()
+  returns (r: int)
+  opaque
+  ensures r == 1
+{
+  var outerExn: Outer := new Outer;
+  outerExn#tag := 1;
+  var innerExn: Inner := new Inner;
+  r := 0;
+  try {
+    throw outerExn
+  } catch a when a is Outer {
+    try {
+      throw innerExn
+    } catch b when b is Inner {
+      r := 0
+    };
+    assert (a as Outer)#tag == 1;
+    r := (a as Outer)#tag
+  }
+};
+#end

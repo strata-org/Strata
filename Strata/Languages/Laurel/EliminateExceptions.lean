@@ -117,6 +117,15 @@ private def substLocal (name : String) (repl : StmtExprMd) (e : StmtExprMd) : St
     | .Var (.Local id) => if id.text == name then repl else n
     | _ => n) e
 
+/-- Whether a reference `Var (.Local name)` occurs anywhere in `e`. -/
+private def localOccurs (name : String) (e : StmtExprMd) : Bool :=
+  ((mapStmtExprM (m := StateM Bool)
+      (fun n => do
+        match n.val with
+        | .Var (.Local id) => if id.text == name then set true else pure ()
+        | _ => pure ()
+        pure n) e).run false).2
+
 /-! ### Callee lookup -/
 
 /-- The resolved callee procedure, if `callee` names one. -/
@@ -256,13 +265,28 @@ private partial def lowerTry (ctx : Ctx) (src : Option FileRange)
   -- catch chain but still runs `finally` ($tryfin).
   let catchCtx : Ctx := { ctx with tryStack := (tryFinLbl, tryFinLbl) :: saved }
   let clauses ← catches.mapM (fun c => do
+    -- The guard reads the shared `$exc` directly: it is evaluated at dispatch
+    -- time, before the handler runs, so no nested throw has clobbered it yet.
     let pExpr := match c.predicate with
       | some p => substLocal c.binding.text (localRef exnExcVar) p
       | none => litBool true
     let hStmts ← lowerStmt catchCtx c.body
-    let hStmts := hStmts.map (substLocal c.binding.text (localRef exnExcVar))
+    -- Snapshot the caught exception into a fresh per-handler local when the
+    -- handler references its binding. A `throw`/throwing-call *inside* this
+    -- handler that is itself caught (e.g. a nested `try`/`catch`) overwrites the
+    -- shared `$exc`; without the snapshot a later use of this handler's binding
+    -- would read that inner exception instead. Skipped when the binding is
+    -- unused, to avoid an inert local in the common case.
+    let (bindDecls, hStmts) ←
+      if hStmts.any (localOccurs c.binding.text) then do
+        let bid ← freshNat
+        let bindLocal := s!"$exc_{c.binding.text}_{bid}"
+        pure ([declInit bindLocal compositeTy (localRef exnExcVar)],
+              hStmts.map (substLocal c.binding.text (localRef bindLocal)))
+      else
+        pure ([], hStmts)
     let guard := andOf (localRef exnThrownVar) pExpr
-    let handler := setLocal exnThrownVar (litBool false) :: hStmts
+    let handler := setLocal exnThrownVar (litBool false) :: (bindDecls ++ hStmts)
     pure (guard, handler))
   -- First-match-wins is enforced by clearing `$thrown` on a match: once a clause
   -- fires, later `$thrown && guardⱼ` guards are false. So the chain is a *sequence*

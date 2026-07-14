@@ -247,8 +247,10 @@ info: procedure closeAndReturn()
 /-! ### 5. Re-throw from inside a `catch`, with `finally` (the two-label case)
 
 The handler's `throw` targets `$tryfin` (skipping the rest of the catch chain
-but still running `finally`); the caught exception is re-thrown (`$exc := $exc`),
-no allocation. -/
+but still running `finally`). Because the handler references its binding
+(`throw caught`), the caught value is first snapshotted into a fresh per-handler
+local (`$exc_caught_2`) so a nested throw could not clobber it; the re-throw then
+restores it (`$exc := $exc_caught_2`), no allocation. -/
 
 def rethrowFromCatch : StrataDDM.SourcedProgram :=
 #strata
@@ -301,8 +303,9 @@ procedure retry(x: int)
         }$try_0;
         if $thrown & $exc is NetworkError then {
           $thrown := false;
+          var $exc_caught_2: Composite := $exc;
           {
-            $exc := $exc;
+            $exc := $exc_caught_2;
             $thrown := true;
             exit $tryfin_0
           }
