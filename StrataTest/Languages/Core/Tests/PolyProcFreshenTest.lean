@@ -248,4 +248,68 @@ Result: ✅ pass
 
 end Strata.PolyProcFreshenNoAbortMask
 
+---------------------------------------------------------------------
+
+namespace Strata.PolyProcFreshenOldInout
+
+-- Exercises the `old`-typed inout freshening branch specifically (the `oldVars`
+-- path in `callElimCmd`, distinct from the plain input/output and postcondition
+-- freshening the cases above cover). `bump<a>` takes an inout `g : a` and a
+-- `free ensures (z == old g)`, so the type of the `old g` temp is the callee's
+-- SOURCE type variable `a` and must be freshened per call site like every other
+-- slot. `g := 5` before the call makes `old g` load-bearing (≠ the post-call `g`),
+-- and the inlined assume becomes `r == 5`, so `assert (r == 5)` passes only if the
+-- freshened `old`-typed temp resolved correctly.
+def oldInoutPgm : Program :=
+#strata
+program Core;
+procedure bump<a>(inout g : a, out z : a)
+spec {
+  free ensures (z == old g);
+}
+{
+  z := g;
+};
+procedure Test(inout g : int, out r : int) spec { ensures true; }
+{
+  g := 5;
+  call bump(g, out g, out r);
+  assert (r == 5);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Property: assert
+Assumptions:
+callElimAssume_bump_ensures_0_5: r@2 == 5
+Obligation:
+r@2 == 5
+
+Label: Test_ensures_0
+Property: assert
+Assumptions:
+callElimAssume_bump_ensures_0_5: r@2 == 5
+Obligation:
+true
+
+---
+info:
+Obligation: assert_0
+Property: assert
+Result: ✅ pass
+
+Obligation: Test_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify oldInoutPgm
+
+end Strata.PolyProcFreshenOldInout
+
 end
