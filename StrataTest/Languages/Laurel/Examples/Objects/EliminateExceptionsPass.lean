@@ -95,7 +95,11 @@ info: procedure parsePositive(input: int)
 
 /-! ### 2. `when C throws (e) P` behavior case (bodiless)
 
-Becomes `C ==> (Result..isBad($result) ∧ P[e := err])`. -/
+Becomes `C ==> (Result..isBad($result) ∧ P[e := err])`. The first `ensures` is
+the *synthesized* `onThrow (e) e is T`: because `divide` declares `throws
+ArithmeticException` but states no explicit `onThrow`, resolution adds
+`onThrow (e) e is ArithmeticException` so the declared exception type is
+preserved as `Result..isBad($result) ==> Result..err($result) is …`. -/
 
 def whenThrows : StrataDDM.SourcedProgram :=
 #strata
@@ -111,6 +115,7 @@ procedure divide(a: int, b: int)
 info: procedure divide(a: int, b: int)
   returns ($result: (Result<int, Composite>))
   opaque
+  ensures Result..isBad($result) ==> Result..err($result) is ArithmeticException
   ensures b == 0 ==> Result..isBad($result) & Result..err($result) is ArithmeticException;
 -/
 #guard_msgs in
@@ -140,7 +145,8 @@ procedure loadUser(id: int)
 /--
 info: procedure fetchRecord(id: int)
   returns ($result: (Result<int, Composite>))
-  opaque;
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is NotFoundException;
 
 procedure loadUser(id: int): int
   opaque
@@ -267,11 +273,13 @@ procedure retry(x: int)
 /--
 info: procedure attempt(x: int)
   returns ($result: (Result<int, Composite>))
-  opaque;
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is NetworkError;
 
 procedure retry(x: int)
   returns ($result: (Result<int, Composite>))
   opaque
+  ensures Result..isBad($result) ==> Result..err($result) is NetworkError
 {
   var $thrown: bool := false;
   var $exc: Composite;
@@ -426,7 +434,8 @@ procedure parseDocument(input: int)
 /--
 info: procedure parseStrict(input: int)
   returns ($result: (Result<int, Composite>))
-  opaque;
+  opaque
+  ensures Result..isBad($result) ==> Result..err($result) is SyntaxError;
 
 procedure parseDocument(input: int): int
   opaque

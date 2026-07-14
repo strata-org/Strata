@@ -2772,16 +2772,48 @@ def resolveBody (body : Body) : ResolveM Body := do
     declare-or-catch is front-end policy. See `laurel_extensions.md` (E4). -/
 def resolveExceptionalContract (proc : Procedure)
     : ResolveM (Option HighTypeMd × List OnThrowClause × List OnThrowsClause) := do
-  let throwsType' ← proc.throwsType.mapM fun t => do
+  -- Resolve the `throws` type and record whether it is a well-formed
+  -- `BaseException` subtype (used to gate the synthesized `onThrow` below — we
+  -- must not synthesize `e is T` for an invalid `T`, which would cascade a
+  -- spurious "cannot test unrelated type" diagnostic on top of the real error).
+  let throwsInfo ← proc.throwsType.mapM fun t => do
     let t' ← resolveHighType t
     let baseTy ← resolveHighType
       { val := .UserDefined (mkId baseExceptionTypeName), source := t.source }
     let ctx := (← get).typeLattice
-    unless isConsistentSubtype ctx t' baseTy do
+    let ok := isConsistentSubtype ctx t' baseTy
+    unless ok do
       modify fun s => { s with errors := s.errors.push (diagnosticFromSource t.source
         s!"throws type must be a subtype of '{baseExceptionTypeName}'") }
-    pure t'
-  let onThrow' ← proc.onThrow.mapM fun c => withScope do
+    pure (t', ok)
+  let throwsType' := throwsInfo.map Prod.fst
+  let throwsValid := (throwsInfo.map Prod.snd).getD false
+  -- Preserve the declared exception type as a Bad-path postcondition: when a
+  -- procedure declares `throws T` but states no explicit `onThrow`, synthesize
+  -- `onThrow (e) e is T`. Without this a bare `throws` is consumed only by the
+  -- (early, static) `ExceptionEscapeCheck` and the type is otherwise dropped at
+  -- lowering (`EliminateExceptions` turns `onThrow`s into `isBad ==> …`
+  -- postconditions over `$result`, but a `throws` clause on its own contributes
+  -- nothing there). Emitting the clause here lets it flow through the normal
+  -- passes: heap parameterization + the type-hierarchy transform lower its
+  -- `e is T` test, and `EliminateExceptions` turns it into
+  -- `Result..isBad($result) ==> Result..err($result) is T`.
+  --
+  -- Idempotent under re-resolution: after the first resolve `proc.onThrow` is
+  -- non-empty, so the guard below no longer fires. Skipped when the author
+  -- already wrote an `onThrow` (they are responsible for describing the
+  -- exceptional postcondition, and may state the type there).
+  let onThrowInput : List OnThrowClause :=
+    match proc.throwsType with
+    | some tyNode =>
+      if throwsValid && proc.onThrow.isEmpty then
+        let e : Identifier := mkId "e"
+        let eRef : AstNode StmtExpr := { val := .Var (.Local e), source := tyNode.source }
+        [{ binding := e,
+           predicate := { val := .IsType eRef tyNode, source := tyNode.source } }]
+      else proc.onThrow
+    | none => proc.onThrow
+  let onThrow' ← onThrowInput.mapM fun c => withScope do
     let bindTy ← resolveHighType
       { val := .UserDefined (mkId baseExceptionTypeName), source := c.binding.source }
     let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
