@@ -849,5 +849,340 @@ theorem Constraints.unify_sound (constraints : Constraints) (S_old S_new : Subst
     simp only [Except.ok.injEq] at h; subst h
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).sound
 
+/-! ## Most-general-unifier (MGU) helpers
+
+An arbitrary unifier `R` "factors through" a substitution `S` exactly when
+`Subst.absorbs R S` holds (`LMonoTy.subst_absorbs`: applying `S` first does not
+change `R`'s result). The MGU theorems below show every unifier of the input
+constraints that factors through the input substitution also factors through
+the output substitution — i.e. the output is most general. -/
+
+/-- A substitution `R` absorbs the singleton `[[(id, lty)]]` as soon as it
+    identifies `id` with `lty`. -/
+private theorem absorbs_single_of_subst_eq_h' (R : Subst) (id : TyIdentifier) (lty : LMonoTy)
+    (h : LMonoTy.subst R lty = LMonoTy.subst R (.ftvar id)) :
+    Subst.absorbs R [[(id, lty)]] := by
+  intro a t h_find
+  have h_at : id = a ∧ t = lty := by
+    unfold Maps.find? Map.find? at h_find
+    split at h_find <;> rename_i heq
+    · simp [Maps.find?] at h_find
+    · simp only [Option.some.injEq] at h_find
+      subst h_find
+      split at heq <;> simp_all [Map.find?]
+  obtain ⟨h1, h2⟩ := h_at
+  subst h1; subst h2
+  exact h
+
+/-- Inverse image of `Map.find?` through `SubstOne.applyLogic`: a hit in the
+    rewritten scope comes from a hit in the original scope. -/
+private theorem Map.find?_applyLogic_inv_h' {new old : SubstOne} {a : TyIdentifier}
+    {t' : LMonoTy}
+    (h : Map.find? (SubstOne.applyLogic new old) a = some t') :
+    ∃ t, Map.find? old a = some t ∧ t' = LMonoTy.subst [new] t := by
+  induction old with
+  | nil => simp [SubstOne.applyLogic, Map.find?] at h
+  | cons hd rest ih =>
+    simp only [SubstOne.applyLogic, Map.find?] at h ⊢
+    grind
+
+/-- Inverse image of `Maps.find?` through `Subst.apply`. -/
+private theorem Maps.find?_apply_inv_h' {new : SubstOne} {old : Subst} {a : TyIdentifier}
+    {t' : LMonoTy}
+    (h : Maps.find? (Subst.apply new old) a = some t') :
+    ∃ t, Maps.find? old a = some t ∧ t' = LMonoTy.subst [new] t := by
+  induction old with
+  | nil => simp [Subst.apply, Maps.find?] at h
+  | cons m rest ih =>
+    simp only [Subst.apply, Maps.find?] at h
+    rw [SubstOne.apply_eq_applyLogic] at h
+    cases h_al : Map.find? (SubstOne.applyLogic new m) a with
+    | none =>
+      rw [h_al] at h
+      obtain ⟨t, hf, he⟩ := ih h
+      have h_ma : Map.find? m a = none := by
+        cases h_ma : Map.find? m a with
+        | none => rfl
+        | some v =>
+          exfalso
+          rw [Map.find?_applyLogic_some_h' h_ma] at h_al
+          simp at h_al
+      exact ⟨t, by simp [Maps.find?, h_ma, hf], he⟩
+    | some v =>
+      rw [h_al] at h
+      simp only [Option.some.injEq] at h
+      subst h
+      obtain ⟨t, hf, he⟩ := Map.find?_applyLogic_inv_h' h_al
+      exact ⟨t, by simp [Maps.find?, hf], he⟩
+
+/-- **MGU core step**: if `R` absorbs `S` and identifies `id` with `lty`, then
+    `R` absorbs the extension `(Subst.apply [(id, lty)] S).insert id lty` that
+    `unifyOne` builds in its binding case. -/
+private theorem absorbs_insert_apply_of_h' (R : Subst) (S : Subst)
+    (id : TyIdentifier) (lty : LMonoTy)
+    (hRS : Subst.absorbs R S)
+    (h_id : LMonoTy.subst R lty = LMonoTy.subst R (.ftvar id)) :
+    Subst.absorbs R ((Subst.apply [(id, lty)] S).insert id lty) := by
+  have h_single := absorbs_single_of_subst_eq_h' R id lty h_id
+  intro a t h_find
+  by_cases h_a : a = id
+  · subst h_a
+    rw [Maps.find?_insert_self] at h_find
+    simp only [Option.some.injEq] at h_find; subst h_find
+    exact h_id
+  · rw [Maps.find?_insert_ne _ _ _ _ h_a] at h_find
+    obtain ⟨t₀, h_find₀, h_eq⟩ := Maps.find?_apply_inv_h' h_find
+    subst h_eq
+    calc LMonoTy.subst R (LMonoTy.subst [[(id, lty)]] t₀)
+        = LMonoTy.subst R t₀ := LMonoTy.subst_absorbs R [[(id, lty)]] t₀ h_single
+      _ = LMonoTy.subst R (.ftvar a) := hRS a t₀ h_find₀
+
+/-- Pointwise version of `LMonoTys.substLogic` equality on equal-length lists. -/
+private theorem substLogic_zip_h' (R : Subst) (args1 args2 : LMonoTys)
+    (h_len : args1.length = args2.length)
+    (h : LMonoTys.substLogic R args1 = LMonoTys.substLogic R args2) :
+    ∀ p ∈ List.zip args1 args2, LMonoTy.subst R p.1 = LMonoTy.subst R p.2 := by
+  by_cases h_empty : Subst.hasEmptyScopes R
+  · rw [LMonoTys.substLogic_emptyS h_empty, LMonoTys.substLogic_emptyS h_empty] at h
+    subst h
+    intro p hp
+    obtain ⟨i, hi, h_eq⟩ := List.mem_iff_getElem.mp hp
+    rw [List.getElem_zip] at h_eq
+    cases h_eq
+    rfl
+  · induction args1 generalizing args2 with
+    | nil => intro p hp; simp at hp
+    | cons a1 r1 ih =>
+      match args2 with
+      | [] => simp at h_len
+      | a2 :: r2 =>
+        unfold LMonoTys.substLogic at h
+        rw [if_neg h_empty, if_neg h_empty] at h
+        simp only [List.cons.injEq] at h
+        intro p hp
+        simp only [List.zip_cons_cons, List.mem_cons] at hp
+        rcases hp with h_p | h_p
+        · subst h_p; exact h.1
+        · exact ih r2 (by simpa using h_len) h.2 p h_p
+
+/-- Pointwise unification of `tcons` arguments: if `R` unifies two equal-length
+    `tcons` applications, it unifies every zipped argument pair. -/
+private theorem subst_tcons_zip_h' (R : Subst) (name : String) (args1 args2 : LMonoTys)
+    (h_len : args1.length = args2.length)
+    (h : LMonoTy.subst R (.tcons name args1) = LMonoTy.subst R (.tcons name args2)) :
+    ∀ p ∈ List.zip args1 args2, LMonoTy.subst R p.1 = LMonoTy.subst R p.2 := by
+  rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons] at h
+  simp only [LMonoTy.tcons.injEq, true_and] at h
+  rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic] at h
+  exact substLogic_zip_h' R args1 args2 h_len h
+
+/-- **MGU (most general unifier), `unifyOne` level.** Any substitution `R`
+    that unifies the constraint and factors through the input substitution
+    (`Subst.absorbs R S.subst`) also factors through the output substitution.
+    With `Constraint.unifyOne_sound` this says the computed substitution is a
+    most general unifier: every solution is an instance of it. -/
+theorem Constraint.unifyOne_mgu (c : Constraint) (S : SubstInfo)
+    (relS : ValidSubstRelation [c] S)
+    (h : Constraint.unifyOne c S = .ok relS)
+    (R : Subst)
+    (hR : LMonoTy.subst R c.1 = LMonoTy.subst R c.2)
+    (hRS : Subst.absorbs R S.subst) :
+    Subst.absorbs R relS.newS.subst := by
+  suffices ∀ relS, Constraint.unifyOne c S = .ok relS → ∀ R,
+      LMonoTy.subst R c.1 = LMonoTy.subst R c.2 → Subst.absorbs R S.subst →
+      Subst.absorbs R relS.newS.subst from this relS h R hR hRS
+  apply Constraint.unifyOne.induct
+    (motive1 := fun c S => ∀ relS, Constraint.unifyOne c S = .ok relS → ∀ R,
+      LMonoTy.subst R c.1 = LMonoTy.subst R c.2 → Subst.absorbs R S.subst →
+      Subst.absorbs R relS.newS.subst)
+    (motive2 := fun cs S => ∀ relS, Constraints.unifyCore cs S = .ok relS → ∀ R,
+      (∀ p ∈ cs, LMonoTy.subst R p.1 = LMonoTy.subst R p.2) → Subst.absorbs R S.subst →
+      Subst.absorbs R relS.newS.subst)
+  -- Case 1: t1 == t2 — substitution unchanged
+  · intro S t1 t2 h_eq _ relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · simp only [Except.ok.injEq] at h; subst h; exact hRS
+    · exact absurd h_eq ‹_›
+  -- Case 2: ftvar id, orig_lty; ftvar id == lty — substitution unchanged
+  · intro S id orig_lty h_neq _lty _ _ h_eq_lty relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; exact hRS
+  -- Case 3: occurs check — error
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_occurs relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 4: ftvar id with existing binding sty — recursive
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        split at h
+        · simp at h
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h]
+          -- R unifies (sty, subst S orig_lty): chain through the id binding.
+          have h_unif : LMonoTy.subst R sty
+              = LMonoTy.subst R (LMonoTy.subst S.subst orig_lty) := by
+            calc LMonoTy.subst R sty
+                = LMonoTy.subst R (.ftvar id) := hRS id sty h_some
+              _ = LMonoTy.subst R orig_lty := hR
+              _ = LMonoTy.subst R (LMonoTy.subst S.subst orig_lty) :=
+                  (LMonoTy.subst_absorbs R S.subst orig_lty hRS).symm
+          exact ih_rec relS' h_call R h_unif hRS
+      · rename_i h_none'
+        rw [h_some] at h_none'; simp at h_none'
+  -- Case 5: ftvar id unbound — insert+apply extension
+  · intro S id orig_lty h_neq _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        have h_id : LMonoTy.subst R (LMonoTy.subst S.subst orig_lty)
+            = LMonoTy.subst R (.ftvar id) := by
+          rw [LMonoTy.subst_absorbs R S.subst orig_lty hRS]; exact hR.symm
+        exact absorbs_insert_apply_of_h' R S.subst id (LMonoTy.subst S.subst orig_lty) hRS h_id
+  -- Case 6: orig_lty, ftvar id; ftvar id == lty — substitution unchanged
+  · intro S orig_lty id h_neq _ _lty _ _ h_eq_lty relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; exact hRS
+  -- Case 7: occurs check (symmetric) — error
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_occurs relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 8: existing binding sty (symmetric to case 4)
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs sty h_some ih_rec relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        split at h
+        · simp at h
+        · rename_i relS' h_call
+          simp only [Except.ok.injEq] at h; rw [← h]
+          have h_unif : LMonoTy.subst R sty
+              = LMonoTy.subst R (LMonoTy.subst S.subst orig_lty) := by
+            calc LMonoTy.subst R sty
+                = LMonoTy.subst R (.ftvar id) := hRS id sty h_some
+              _ = LMonoTy.subst R orig_lty := hR.symm
+              _ = LMonoTy.subst R (LMonoTy.subst S.subst orig_lty) :=
+                  (LMonoTy.subst_absorbs R S.subst orig_lty hRS).symm
+          exact ih_rec relS' h_call R h_unif hRS
+      · rename_i h_none'
+        rw [h_some] at h_none'; simp at h_none'
+  -- Case 9: unbound (symmetric to case 5)
+  · intro S orig_lty id h_neq _ _lty _ _ h_neq_lty h_not_occurs h_none _ _ _ns h' _nS _ _ relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        have h_id : LMonoTy.subst R (LMonoTy.subst S.subst orig_lty)
+            = LMonoTy.subst R (.ftvar id) := by
+          rw [LMonoTy.subst_absorbs R S.subst orig_lty hRS]; exact hR
+        exact absorbs_insert_apply_of_h' R S.subst id (LMonoTy.subst S.subst orig_lty) hRS h_id
+  -- Case 10: bitvec n1 == n2 — contradiction with t1 ≠ t2
+  · intro S n1 n2 h_neq h_eq_n relS h R hR hRS; grind
+  -- Case 11: bitvec n1 ≠ n2 — error
+  · intro S n1 n2 h_neq h_neq_n relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 12: tcons match — recursive unifyCore on zipped args
+  · intro S name1 args1 name2 args2 h_neq h_match _nc ih_core relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [bind, Except.bind] at h
+      split at h
+      · simp at h
+      · rename_i relS' h_call
+        simp only [Except.ok.injEq] at h; rw [← h]
+        have h_name_eq : name1 = name2 := by
+          have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).1; exact eq_of_beq this
+        have h_len_eq : args1.length = args2.length := by
+          have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).2; exact of_decide_eq_true this
+        subst h_name_eq
+        exact ih_core relS' h_call R (subst_tcons_zip_h' R name1 args1 args2 h_len_eq hR) hRS
+  -- Case 13: tcons mismatch — error
+  · intro S name1 args1 name2 args2 h_neq h_mismatch relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 14: bitvec, tcons — error
+  · intro S size name args h_neq relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 15: tcons, bitvec — error
+  · intro S name args size h_neq relS h R hR hRS
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- Case 16: unifyCore [] — substitution unchanged
+  · intro S relS h R hR hRS
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Except.ok.injEq] at h; subst h; exact hRS
+  -- Case 17: unifyCore c :: rest — compose
+  · intro S c c_rest ih1 ih2 relS h R hR hRS
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    split at h
+    · simp at h
+    · rename_i relS_one h_one_raw
+      have h_one := Except.mapError_ok_h' h_one_raw
+      split at h
+      · simp at h
+      · rename_i relS_rest h_rest
+        simp only [Except.ok.injEq] at h; subst h
+        have h_abs_one := ih1 relS_one h_one R (hR c (List.mem_cons_self ..)) hRS
+        exact ih2 relS_one relS_rest h_rest R
+          (fun p hp => hR p (List.mem_cons_of_mem c hp)) h_abs_one
+
+/-- MGU at the `unifyCore` level: list induction delegating to
+    `Constraint.unifyOne_mgu` per head constraint (mirrors
+    `Constraints.unifyCore_sound`). -/
+theorem Constraints.unifyCore_mgu (cs : Constraints) (S : SubstInfo)
+    (relS : ValidSubstRelation cs S)
+    (h : Constraints.unifyCore cs S = .ok relS) :
+    ∀ R, (∀ p ∈ cs, LMonoTy.subst R p.1 = LMonoTy.subst R p.2) →
+      Subst.absorbs R S.subst → Subst.absorbs R relS.newS.subst := by
+  induction cs generalizing S with
+  | nil =>
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Except.ok.injEq] at h; subst h
+    exact fun R _ hRS => hRS
+  | cons c rest ih =>
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    split at h
+    · simp at h
+    · rename_i relS_one h_one_raw
+      have h_one := Except.mapError_ok_h' h_one_raw
+      split at h
+      · simp at h
+      · rename_i relS_rest h_rest
+        simp only [Except.ok.injEq] at h; subst h
+        intro R hR hRS
+        have h_abs_one := Constraint.unifyOne_mgu c S relS_one h_one R
+          (hR c (List.mem_cons_self ..)) hRS
+        exact ih relS_one.newS relS_rest h_rest R
+          (fun p hp => hR p (List.mem_cons_of_mem c hp)) h_abs_one
+
+/-- **MGU, `unify` level.** Any substitution `R` that unifies all constraints
+    and factors through the input substitution also factors through the output
+    substitution: with `Constraints.unify_sound`, the substitution `unify`
+    computes is a most general unifier — every solution `R` is an instance of
+    it (`LMonoTy.subst R (LMonoTy.subst S_new.subst ty) = LMonoTy.subst R ty`
+    for all `ty`, by `LMonoTy.subst_absorbs`). -/
+theorem Constraints.unify_mgu (constraints : Constraints) (S_old S_new : SubstInfo)
+    (h : Constraints.unify constraints S_old = .ok S_new)
+    (R : Subst)
+    (hR : ∀ p ∈ constraints, LMonoTy.subst R p.1 = LMonoTy.subst R p.2)
+    (hRS : Subst.absorbs R S_old.subst) :
+    Subst.absorbs R S_new.subst := by
+  simp only [Constraints.unify, bind, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i relS h_core
+    simp only [Except.ok.injEq] at h; subst h
+    exact Constraints.unifyCore_mgu constraints S_old relS h_core R hR hRS
+
 end -- public section
 end Lambda
