@@ -422,6 +422,15 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     -- re-resolution. (Generic DATATYPES are not in either map; a wrong-arity datatype use
     -- is already caught fail-loud downstream by the Core type checker, so it is left to that
     -- path rather than duplicated here — only the message is less specific.)
+    -- NOTE: the check lives HERE (`.Applied`), not in the `.UserDefined` arm, because that
+    -- arm is also where the BASE of an applied type is resolved — the `.Applied` case above
+    -- recurses `resolveHighType base`, so `Box` (the base of `Box<int>`) arrives at
+    -- `.UserDefined` as a bare name with zero type args, indistinguishable from a genuinely
+    -- bare `Box`. A zero-args arity check in `.UserDefined` therefore fires on every applied
+    -- type's base and rejects `Box<int>` itself (verified). Consequence: a bare generic name
+    -- used AS A COMPLETE TYPE (`var m: MyPair` for `type MyPair<A,B>`) is NOT caught here and
+    -- reaches Core as a dangling ref → a StrataBug. That residual gap is accepted: it is
+    -- fail-loud (a rejection, never a wrong-accept), just with a less precise message.
     (do
       let ctx := (← get).typeLattice
       if let some name := highBaseName? base'.val then
