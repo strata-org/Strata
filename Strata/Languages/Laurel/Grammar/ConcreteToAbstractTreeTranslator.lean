@@ -175,11 +175,11 @@ def translateNewTypeArgs (arg : Arg) : TransM (List HighTypeMd) := do
     | _, _ => TransM.error s!"Expected newTypeArgs operation, got {repr op.name}"
   | _ => pure []
 
-/-- Translate a `FieldPath` (the chained-field-write target object,) into a
-    `StmtExprMd`. `fieldPathRoot name` → `.Var (.Local name)`; `fieldPathStep obj field`
-    → `.Var (.Field <obj> field)`, recursively. A dedicated category (not `StmtExpr`)
-    so it can't collide with a `multiAssign` value; this builds the same `.Var (.Field …)`
-    chain a field READ produces, so downstream lowering is uniform. -/
+/-- Translate a `FieldPath` (the chained-field-write target object) into a `StmtExprMd`:
+    `fieldPathRoot name` → `.Var (.Local name)`; `fieldPathStep obj field` → `.Var (.Field
+    <obj> field)`, recursively. This builds the same `.Var (.Field …)` chain a field READ
+    produces, so downstream lowering is uniform. (`FieldPath` is a dedicated grammar category
+    rather than `StmtExpr` — see `LaurelGrammar.st` for why.) -/
 partial def translateFieldPath (arg : Arg) : TransM StmtExprMd := do
   let src ← getArgFileRange arg
   let .op op := arg
