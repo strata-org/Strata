@@ -81,6 +81,75 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
   | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
   | _ => True
 
+/-- Declarative specification of `OpsConsistent`, phrased as an inductive
+relation. The only interesting case is `.op`: an operator node in the factory
+is consistent when there *exists* a type substitution that turns the function's
+generic type `mkArrow' fn.output fn.inputs.values` into the node's annotation.
+Operators not in the factory are unconstrained, mirroring `OpsConsistent`.
+
+This is the natural specification; `OpsConsistent` is the operational check that
+derives the witness substitution by unification (`opTypeSubst`). See
+`OpsConsistent_OpsConsistentR` for the soundness direction. -/
+inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
+  | const {m c} : OpsConsistentR F (.const m c)
+  | bvar {m i} : OpsConsistentR F (.bvar m i)
+  | fvar {m name ty} : OpsConsistentR F (.fvar m name ty)
+  /-- An operator whose name is not in the factory is unconstrained. -/
+  | op_notin {m name ty} (h : F[name.name]? = none) : OpsConsistentR F (.op m name ty)
+  /-- An operator in the factory must be annotated with some instantiation of the
+  function's generic type. -/
+  | op_in {m name ty_op fn tySubst}
+      (hfn : F[name.name]? = some fn)
+      (hty : ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst) :
+      OpsConsistentR F (.op m name (some ty_op))
+  | app {m fn arg} :
+      OpsConsistentR F fn → OpsConsistentR F arg → OpsConsistentR F (.app m fn arg)
+  | abs {m name ty body} : OpsConsistentR F body → OpsConsistentR F (.abs m name ty body)
+  | ite {m c t f} :
+      OpsConsistentR F c → OpsConsistentR F t → OpsConsistentR F f →
+      OpsConsistentR F (.ite m c t f)
+  | eq {m e1 e2} :
+      OpsConsistentR F e1 → OpsConsistentR F e2 → OpsConsistentR F (.eq m e1 e2)
+  | quant {m k name ty tr body} :
+      OpsConsistentR F tr → OpsConsistentR F body →
+      OpsConsistentR F (.quant m k name ty tr body)
+
+omit [DecidableEq T.IDMeta] in
+/-- Soundness of the operational check w.r.t. the declarative relation:
+`OpsConsistent` implies `OpsConsistentR`. The witness substitution for the `.op`
+case is exactly the one computed by `opTypeSubst`. -/
+theorem OpsConsistent_OpsConsistentR {F : @Factory T} :
+    ∀ {e : LExpr T.mono}, OpsConsistent F e → OpsConsistentR F e := by
+  intro e
+  induction e with
+  | const m c => intro _; exact .const
+  | bvar m i => intro _; exact .bvar
+  | fvar m name ty => intro _; exact .fvar
+  | op m name ty =>
+    intro h
+    unfold OpsConsistent at h
+    cases hfn : F[name.name]? with
+    | none => exact .op_notin hfn
+    | some fn =>
+      simp only [hfn] at h
+      cases hts : LFunc.opTypeSubst fn (.op m name ty) with
+      | none => simp only [hts] at h
+      | some tySubst =>
+        simp only [hts] at h
+        cases ty with
+        | none => exact absurd h id
+        | some ty_op => exact .op_in hfn h
+  | app m fn arg ihfn iharg =>
+    intro h; exact .app (ihfn h.1) (iharg h.2)
+  | abs m name ty body ih =>
+    intro h; exact .abs (ih h)
+  | ite m c t f ihc iht ihf =>
+    intro h; exact .ite (ihc h.1) (iht h.2.1) (ihf h.2.2)
+  | eq m e1 e2 ih1 ih2 =>
+    intro h; exact .eq (ih1 h.1) (ih2 h.2)
+  | quant m k name ty tr body ihtr ihbody =>
+    intro h; exact .quant (ihtr h.1) (ihbody h.2)
+
 /-! ### Factory assumptions -/
 
 /-- A factory is well-typed when every function body type-checks at the
