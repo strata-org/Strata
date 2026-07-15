@@ -239,12 +239,10 @@ private theorem destructArrow_singleton_of_not_arrow (mty : LMonoTy)
   · rfl
 
 
-/-- The last element of a `destructArrow` output is arrow-atomic: it destructs to itself.
-    Guarded by `knownInstance`/`h_arrow2` so that no malformed UNARY `"arrow"` node occurs (a
-    unary arrow `tcons "arrow" [t1]` would make the last element a kept-whole domain, which need
-    not be atomic). Under the binary invariant the last element is the final codomain, reached via
-    the `_ => [mty]` base case, hence non-arrow-headed. Stated over `getLast?` to avoid dependent
-    `getLast` proofs; the list version threads `knownInstances`. -/
+/-- The last element of a `destructArrow` output destructs to itself. Guarded by
+    `knownInstance`/`h_arrow2`: without the binary invariant a malformed unary `tcons "arrow" [t1]`
+    could put a non-atomic kept-whole domain last. Stated over `getLast?` to avoid dependent
+    `getLast` proofs. -/
 private theorem getLast?_destructArrow_atomic (ks : Lambda.KnownTypes)
     (h_arrow2 : ∀ k, ks.contains { name := "arrow", metadata := k } = true → k = 2) (n : Nat) :
     (∀ (mty : LMonoTy), icSize mty ≤ n → LMonoTy.knownInstance mty ks = true →
@@ -923,11 +921,8 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
     simp only [List.take_zero, List.drop_zero]
     refine ⟨?_, ?_⟩
     · -- output: subst ρ (mkArrow' (getLast da / getD) (dropLast da)) ≈ func.output.
-      -- The counterexample (non-binary "arrow" in v_inst.fst) is excluded by `h_known`:
-      -- `mkArrow'_destructArrow_roundtrip` recovers `v_inst.fst` from its own destructArrow spine,
-      -- so the reconstruction is `subst ρ v_inst.fst`, and `resolveAliases_aliasEquiv` + `h_ra`
-      -- gives `AliasEquiv aliases func.output (subst ρ v_inst.fst)`; take symm.
-      -- Roundtrip on v_inst.fst (binary-arrow canonical form via h_known + h_arrow2).
+      -- `v_inst.fst` roundtrips through its destructArrow spine (binary via `h_known`), so the
+      -- reconstruction is `subst ρ v_inst.fst`; `resolveAliases_aliasEquiv` + `h_ra` + symm close it.
       have h_rt : LMonoTy.mkArrow'
           (v_inst.fst.destructArrow.getLast?.getD
             (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst)))
@@ -969,9 +964,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
     have h_known_subst : LMonoTy.knownInstance (LMonoTy.subst ρ v_inst.fst) C.knownTypes = true :=
       (knownInstance_subst_renaming ρ C.knownTypes h_ρ_ftvar (icSize v_inst.fst)).1
         v_inst.fst (Nat.le_refl _) h_known
-    -- Flatten `mkArrow rhd (r_irest ++ r_outspine)` via the atomic-last generalized crux.
-    -- The last element of the tail is atomic (it's the last of the knownInstance spine).
-    -- `r_outspine` is nonempty (resolve preserves length; output.destructArrow nonempty).
+    -- `r_outspine` is nonempty (resolve preserves length; `output.destructArrow` nonempty).
     have h_ros_ne : r_outspine ≠ [] := by
       intro h_eq
       have h_len_os := resolveAliasesList_length func.output.destructArrow Env r_outspine Env h_r_outspine
@@ -982,19 +975,11 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       resolveAliasesList_length irest Env r_irest Env h_r_irest
     have h_n : func.inputs.keys.length = 1 + irest.length := by
       rw [h_len, h_iv]; simp only [List.length_cons]; omega
-    -- The spine of `subst ρ v_inst.fst` = map (subst ρ) da (h_da_map), and it also equals
-    -- destructArrow (mkArrow rhd (r_irest ++ r_outspine)) via h_svfst. Cons-peel that:
-    -- The full spine `map (subst ρ) da`, via cons-peel of `mkArrow rhd (r_irest ++ r_outspine)`.
-    -- Peel with the arrow shape directly (r_irest ++ r_outspine nonempty).
     have h_tail_ne : r_irest ++ r_outspine ≠ [] :=
       fun h => absurd (List.append_eq_nil_iff.mp h).2 h_ros_ne
-    -- spine = rhd :: (r_irest ++ r_outspine) is FALSE in general; instead keep the peeled form.
-    -- But for `take n` we only need the first n = 1 + r_irest.length elements, which are
-    -- `rhd :: r_irest` regardless of how r_outspine flattens (domains kept whole).
     have h_dropLast : (r_irest ++ r_outspine).dropLast = r_irest ++ r_outspine.dropLast :=
       List.dropLast_append_of_ne_nil h_ros_ne
-    -- destructArrow (mkArrow rhd (r_irest ++ r_outspine)) — cons-peel form, avoiding dependent getLast
-    -- by using that r_irest ++ r_outspine = r_irest ++ (r_od ++ [r_ol]) with r_outspine's split.
+    -- Split `r_outspine = r_od ++ [r_ol]` to peel the spine without a dependent `getLast`.
     obtain ⟨r_od, r_ol, h_ros_split⟩ : ∃ r_od r_ol, r_outspine = r_od ++ [r_ol] :=
       ⟨r_outspine.dropLast, r_outspine.getLast h_ros_ne, (List.dropLast_concat_getLast h_ros_ne).symm⟩
     -- spine = destructArrow (mkArrow rhd (r_irest ++ r_od ++ [r_ol]))
@@ -1095,9 +1080,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       rw [h_oll_eq] at h_ros_app
       have h := List.append_inj h_ros_app (by rw [h_r_od_len, h_r_odi_len])
       exact ⟨h.1, by have := h.2; simpa using this⟩
-    -- Now the reconstruction. subst ρ (mkArrow' R DL) where R,DL from drop n da.
-    -- da.map subst = spine = (rhd :: (r_irest ++ r_od)) ++ r_ol.destructArrow  (h_spine).
-    -- drop n (spine): n = 1 + irest.length = 1 + r_irest.length. drop peels rhd + r_irest.
+    -- `drop n` of the spine peels `rhd :: r_irest` (n = 1 + r_irest.length), leaving the output spine.
     have h_drop : LMonoTy.subst ρ <$> (List.drop func.inputs.keys.length v_inst.fst.destructArrow)
         = r_od ++ r_ol.destructArrow := by
       show List.map (LMonoTy.subst ρ) (List.drop func.inputs.keys.length v_inst.fst.destructArrow) = _
@@ -1115,12 +1098,8 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
           (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast)
         = LMonoTy.mkArrow' r_odlast r_odi := by
       rw [subst_mkArrow']
-      -- subst ρ (getLast?.getD ..) and map subst dropLast — relate to h_drop.
-      -- Reconstruct via mkArrow' over `r_od ++ r_ol.destructArrow` = drop-mapped.
-      -- Show subst ρ (mkArrow' (getLast? drop) (dropLast drop)) = mkArrow' (last of r_od++r_ol.da) (init).
-      -- Cleanest: mkArrow' over the mapped drop equals mkArrow' over (r_od ++ r_ol.destructArrow).
-      -- arrowsBinary r_ol: r_ol ∈ r_outspine ⊆ (r_irest ++ r_outspine), and
-      -- subst ρ v_inst.fst = mkArrow rhd (r_irest ++ r_outspine) is knownInstance ⇒ arrowsBinary.
+      -- `arrowsBinary r_ol`: `r_ol ∈ r_outspine ⊆ (r_irest ++ r_outspine)`, and
+      -- `subst ρ v_inst.fst = mkArrow rhd (r_irest ++ r_outspine)` is a known instance.
       have h_ab_svfst : LMonoTy.arrowsBinary (LMonoTy.subst ρ v_inst.fst) = true :=
         (arrowsBinary_of_knownInstance C.knownTypes h_arrow2 (icSize (LMonoTy.subst ρ v_inst.fst))).1
           (LMonoTy.subst ρ v_inst.fst) (Nat.le_refl _) h_known_subst
