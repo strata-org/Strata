@@ -798,7 +798,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   --     discovered against the PRISTINE body (the clone's cleared ids aren't in `model`).
   -- TERMINATION: a divergent recursive generic grows type-arg DEPTH; `maxInstDepth` refuses
   -- to enqueue past the cap, recording ONE `NotYetImplemented` per base so divergence fails
-  -- LOUD (and gates translation, suppressing downstream Core noise). `fuel` is a coarse backstop.
+  -- LOUD (and gates translation, suppressing downstream Core noise).
   -- The bound (8) is a pragmatic ceiling: realistic generic nesting (e.g. `Pair<Box<int>, …>`)
   -- is only a few levels deep, while a divergent `L<L<T>>` blows past it within a handful of
   -- iterations — so 8 rejects divergence promptly without over-rejecting hand-written code. A
@@ -812,8 +812,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
     monoComposites := [], procClones := [], emitted := {}, clonedProcs := {},
     clonedBases := {}, diags := [], rejectedBases := {},
     worklist := (insts.toList.map (fun kv => Sum.inl kv.2)) ++ (procInsts.toList.map (fun kv => Sum.inr kv.2)) }
-  -- Drain the worklist to a fixpoint (`fuel` a coarse backstop; `maxInstDepth` the real
-  -- divergence guard, checked inside `processWorklistItem`).
+  -- Drain to a fixpoint (see `drainWorklist`).
   let fuel : Nat := 1024
   st := drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel st
 

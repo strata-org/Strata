@@ -2804,9 +2804,9 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     -- The generic-composite-parameter shape `f<T>(b: Box<T>)` is supported via procedure
-    -- monomorphization in `MonomorphizeComposites` (an earlier guard rejecting it here was
-    -- removed). An instantiation the monomorphizer still can't handle fails loud later (its
-    -- depth bound / translation), not pre-rejected here.
+    -- monomorphization in `MonomorphizeComposites`, so it is NOT pre-rejected here; an
+    -- instantiation the monomorphizer still can't handle fails loud later (its depth bound /
+    -- translation).
     let (outputsRev, _) ← proc.outputs.foldlM
       (fun (acc : List Parameter × List String) p => do
         let (p', seen') ← resolveOutputParameter inputNames acc.2 p
@@ -2906,7 +2906,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let (extending', fields', instProcs') ← withScope do
       let _ ← ct.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
       -- Resolve each parent as a TYPE (handles `Base` and generic `Base<T>` uniformly,
-      -- scoping the child's type vars). Was `resolveRef` over bare-name Identifiers.
+      -- scoping the child's type vars).
       let extending' ← ct.extending.mapM resolveHighType
       -- KIND-CHECK the parents: a composite may only extend another COMPOSITE (or a type
       -- var, for a generic parent `extends Base<T>`). `resolveHighType` happily resolves
