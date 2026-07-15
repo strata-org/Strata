@@ -4,6 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+/-
+Unit tests for `matchTypeArg` (MonomorphizeComposites), the type-argument inference
+that binds a declared type's type variables against a concrete actual type (e.g.
+`Box<T>` vs `Box<int>` ⇒ `T = int`) to drive procedure monomorphization. Covers
+recursion, consistent/inconsistent repeated vars, arity + base-name mismatches.
+-/
 meta import StrataDDM.Util.IO
 meta import Strata.Languages.Laurel.MonomorphizeComposites
 meta section
