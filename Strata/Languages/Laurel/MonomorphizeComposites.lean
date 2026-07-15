@@ -14,7 +14,7 @@ import Strata.Languages.Laurel.LaurelTypes
 # Monomorphize generic composites
 
 Lowers user-level generic composites (`composite Box<T> { val: T }`) by emitting
-one concrete composite per *used* instantiation (`Box<int>` → `Box$int` with
+one concrete composite per *used* instantiation (`Box<int>` → `Box$a1$int` with
 `val: int`) and rewriting every `Box<int>` type reference — and the matching
 `new Box` allocation — to the monomorphic name. After this pass no
 `HighType.Applied` (over a generic composite) and no generic composite definition
@@ -596,6 +596,23 @@ def processWorklistItem (genComposites : Std.HashMap String (List Identifier))
       | none => pure ()
   return s
 
+/-- Drain the worklist to a fixpoint, processing one item per step via
+    `processWorklistItem`, up to `fuel` steps. `fuel` is a coarse backstop; the real
+    divergence guard is `maxInstDepth` (checked inside the helper). Returns the final
+    state — a non-empty `worklist` means fuel ran out (the caller fails loud). Both
+    drains in `monomorphizeComposites` (the main drain and the post-witness drain) go
+    through this, so they can't drift. -/
+def drainWorklist (genComposites : Std.HashMap String (List Identifier))
+    (genDefs : Std.HashMap String CompositeType) (polyProcDefs : Std.HashMap String Procedure)
+    (model : SemanticModel) (maxInstDepth : Nat) : Nat → MonoState → MonoState
+  | 0, s => s
+  | fuel+1, s =>
+    match s.worklist with
+    | [] => s
+    | item :: rest =>
+      drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel
+        (processWorklistItem genComposites genDefs polyProcDefs model maxInstDepth item { s with worklist := rest })
+
 /-- Topologically order monomorph composites by the `extends` relation so a monomorph
     PARENT precedes its monomorph CHILD. The worklist is FIFO and a child enqueues its
     parent AFTER itself (child-before-parent), but re-resolution builds a composite's
@@ -795,16 +812,10 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
     monoComposites := [], procClones := [], emitted := {}, clonedProcs := {},
     clonedBases := {}, diags := [], rejectedBases := {},
     worklist := (insts.toList.map (fun kv => Sum.inl kv.2)) ++ (procInsts.toList.map (fun kv => Sum.inr kv.2)) }
-  -- Drain the worklist to a fixpoint, processing one item per step (see
-  -- `processWorklistItem`). `fuel` is a coarse backstop; `maxInstDepth` is the real
-  -- divergence guard (checked inside the helper).
-  let mut fuel : Nat := 1024
-  while !st.worklist.isEmpty && fuel > 0 do
-    fuel := fuel - 1
-    match st.worklist with
-    | [] => pure ()
-    | item :: rest =>
-      st := processWorklistItem genComposites genDefs polyProcDefs model maxInstDepth item { st with worklist := rest }
+  -- Drain the worklist to a fixpoint (`fuel` a coarse backstop; `maxInstDepth` the real
+  -- divergence guard, checked inside `processWorklistItem`).
+  let fuel : Nat := 1024
+  st := drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel st
 
   -- 3b. (gap: uncalled monomorphized poly procs) An indexed poly proc absent from
   -- `clonedBases` is genuinely UNCALLED (the proc→proc edge cloned every reachable proc,
@@ -831,13 +842,7 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- Second drain: same per-item processing, now over the witness proc instantiations (and
   -- the composite instantiations they spawn). Witness args are concrete `.UserDefined`, so
   -- they monomorphize like any other concrete type.
-  fuel := 1024
-  while !st.worklist.isEmpty && fuel > 0 do
-    fuel := fuel - 1
-    match st.worklist with
-    | [] => pure ()
-    | item :: rest =>
-      st := processWorklistItem genComposites genDefs polyProcDefs model maxInstDepth item { st with worklist := rest }
+  st := drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel st
 
   -- Unpack the worklist state into local accumulators for the assembly below.
   let mut monoComposites : List TypeDefinition := st.monoComposites
