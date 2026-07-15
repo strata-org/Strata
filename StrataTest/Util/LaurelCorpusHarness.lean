@@ -16,14 +16,10 @@ meta import Strata.Languages.Laurel.LaurelCompilationPipeline
 /-!
 # Laurel corpus-case harness — shared test infrastructure
 
-The `Case`/`checkCase` harness used by the feature corpora (`PolymorphismCorpusTest`,
-`DynamicDispatchTest`): each case pairs a Laurel source with its expected verification
-`Expect`, asserted at one point (a mismatch throws → fails the build). Verdicts are
-derived from the diagnostics/VC-results path (`verifyToMergedResults`) — no evaluator
-statistics or cost measurement. No `#eval`s live here: this is pure infrastructure.
-
-- `corpusParse` / `corpusMetricsOf` — parse a Laurel source string and run it to a `CaseResult`.
-- `Expect` / `Case` / `checkCase` / `checkCases` — the corpus-case harness.
+The `Case`/`checkCase` harness used by the feature corpora (`GenericCompositeTest`,
+`DynamicDispatchTest`, …): each case pairs a Laurel source with its expected `Expect`,
+asserted at one point (a mismatch throws → fails the build under `#guard_msgs`). Verdicts
+come from the VC-results path (`verifyToMergedResults`).
 -/
 
 meta section
@@ -36,9 +32,7 @@ open StrataDDM.Elab (parseStrataProgramFromDialect)
 namespace Strata.Laurel
 
 /-- The verification outcome a corpus case asserts on: did the program translate,
-    how many VCs were emitted, and how many failed. Derived entirely from the
-    diagnostics/VC-results path (`verifyToMergedResults`, over plain `Core.verify`) —
-    no evaluator statistics, so the corpus harness carries no measurement machinery. -/
+    how many VCs were emitted, and how many failed. -/
 structure CaseResult where
   translated  : Bool
   numVCs      : Nat
@@ -63,8 +57,8 @@ def corpusMetricsOf (name : String) (source : String) : IO CaseResult := do
       let numFailures := results.foldl (fun acc vcr => if vcr.isNotSuccess then acc + 1 else acc) 0
       return { translated := true, numVCs := results.size, numFailures := numFailures }
 
-/-- Parse a Laurel source string to a `Program` (shared by the metrics path and
-    the established `verifyToDiagnostics` path for the cross-check below). -/
+/-- Parse a Laurel source string to a `Program` (used by the kind-checking pass in
+    `checkCase`, which needs the program to re-run the diagnostic-capturing path). -/
 def corpusParse (name : String) (source : String) : IO Program := do
   let input := StrataDDM.Parser.stringInputContext name source
   let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
@@ -76,34 +70,25 @@ def corpusParse (name : String) (source : String) : IO Program := do
 
 /-! ## Corpus case harness
 
-A corpus case pairs a Laurel `src` with its expected verification `Expect`, so the
-expected outcome lives in ONE place (the `expect` field) rather than being duplicated
-across a test name suffix, an `unless` condition, and a throw message. `checkCase` is the
-single assertion point; a mismatch throws (and under `#guard_msgs` that fails the build —
-verified by deliberately breaking a case). The `why` is a one-line rationale folded into
-the failure message; longer design rationale stays as comments above the relevant table. -/
+`checkCase` is the single assertion point: a mismatch throws, which fails the build under
+`#guard_msgs`. The `why` is a one-line rationale folded into the failure message; longer
+design rationale stays as comments above the relevant table. -/
 
 /-- Expected verification outcome of a corpus program. -/
 inductive Expect
   | verifies                 -- translated, numFailures == 0, numVCs > 0 (non-vacuous)
   | failsExactly (n : Nat)   -- translated, numFailures == n (n ≥ 1; the false-twins)
   | failsAtLeast (n : Nat)   -- translated, numFailures ≥ n (e.g. a gated precondition)
-  -- !translated (a type error / unsupported shape: fails loud). The optional `kind` pins
-  -- WHICH diagnostic kind fired (checked via a 2nd `verifyToDiagnosticModelsCapturing` pass,
-  -- since `VerifyMetrics` carries no message). Tag `.UserError` for a clean user rejection,
-  -- `.StrataBug` for the re-resolution internal-error net — so any future move BETWEEN the
-  -- two fails loud. `none` (default) keeps the coarse `!translated`-only check; a `.rejected`
-  -- case left coarse must be authored so its ONLY translation failure is the intended one.
-  -- NOTE: `.rejected (some k)` asserts k is PRESENT, not exclusive — a spurious extra
-  -- diagnostic of another kind alongside it still passes. Use `.rejectedExactly` when the
-  -- rejection must be CLEAN (see below).
+  -- !translated (fails loud). The optional `kind` pins WHICH diagnostic fired: `.UserError`
+  -- for a clean user rejection vs `.StrataBug` for the re-resolution internal-error net, so a
+  -- move between the two fails loud. `some k` asserts k is PRESENT, not exclusive — a spurious
+  -- extra diagnostic of another kind alongside it still passes; use `.rejectedExactly` when
+  -- that matters. `none` keeps the coarse `!translated`-only check.
   | rejected (kind : Option DiagnosticType := none)
-  -- !translated AND every non-Warning diagnostic is exactly `kind` — i.e. no OTHER kind
-  -- leaked in. The strict form of `.rejected (some kind)`: it catches a spurious cascade
-  -- piled on top of the intended rejection (e.g. a divergent generic that correctly emits
-  -- `.NotYetImplemented` but must NOT also fold a `.StrataBug` internal-error on top). Prefer
-  -- this for cases where a suppression/cascade regression would otherwise hide behind a
-  -- presence-only pin.
+  -- !translated AND every non-Warning diagnostic is exactly `kind` (no OTHER kind leaked in).
+  -- Catches a spurious cascade piled on the intended rejection — e.g. a divergent generic
+  -- that must emit `.NotYetImplemented` with NO `.StrataBug` folded on top, which a
+  -- presence-only `.rejected (some k)` pin would miss.
   | rejectedExactly (kind : DiagnosticType)
 
 def Expect.descr : Expect → String
@@ -136,10 +121,8 @@ def checkCase (c : Case) : IO Unit := do
   unless ok do
     throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
       got translated={m.translated} numVCs={m.numVCs} numFailures={m.numFailures}")
-  -- For a `.rejected` case with an expected diagnostic kind, re-run the capturing path
-  -- (which carries `.type`/`.message`, unlike `VerifyMetrics`) and assert that a diagnostic
-  -- of the expected kind fired. Distinguishes a clean `.UserError` reject from the
-  -- re-resolution `.StrataBug` internal-error net.
+  -- A kind-pinned rejection re-runs the capturing path (which carries `.type`, unlike the
+  -- VC-results path) to check the diagnostic kind.
   match c.outcome with
   | .rejected (some expectedKind) =>
     let prog ← corpusParse c.name c.src
@@ -149,7 +132,6 @@ def checkCase (c : Case) : IO Unit := do
       throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
         no diagnostic of kind {repr expectedKind}; got kinds {kinds}")
   | .rejectedExactly expectedKind =>
-    -- Every non-Warning diagnostic must be exactly `expectedKind` — no other kind leaked in.
     let prog ← corpusParse c.name c.src
     let diags ← verifyToDiagnosticModelsCapturing prog
     let nonWarning := diags.filter (·.type != .Warning)
