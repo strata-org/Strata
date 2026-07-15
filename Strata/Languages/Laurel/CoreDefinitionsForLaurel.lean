@@ -17,13 +17,11 @@ public section
 
 /--
 Core map operations (`select`, `update`, `const`) expressed in Laurel syntax.
-These are internal stand-ins for Core's native, already-polymorphic map
-primitives (the real `∀ k v` signatures live in `Core.Factory`). Declared
-`external`, they are filtered out before Core translation and never reach Core
-themselves; calls resolve to the Core primitives by name. Their parameters use a
-concrete `int` placeholder ON PURPOSE: although Laurel now supports user-level
-polymorphism, parameterizing these internal built-ins would buy nothing, since the
-polymorphic behavior comes from the Core primitives they map to.
+These are internal stand-ins for Core's native, already-polymorphic map primitives
+(the real `∀ k v` signatures live in `Core.Factory`). Declared `external`, they are
+filtered out before Core translation and never reach Core; calls resolve to the Core
+primitives by name. The `int` parameter/return types are inert placeholders — the
+polymorphism comes from the Core primitives, so parameterizing these would buy nothing.
 -/
 def coreDefinitionsForLaurelDDM :=
 #strata
@@ -33,8 +31,6 @@ datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 datatype LaurelUnit { MkLaurelUnit() }
 
-// Concrete `int` placeholders ON PURPOSE: these `external` stand-ins are filtered
-// out before Core, where the real polymorphic select/update/const live.
 function select(map: int, key: int) : int
   external;
 
