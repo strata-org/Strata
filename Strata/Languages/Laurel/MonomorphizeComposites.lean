@@ -59,16 +59,22 @@ partial def tyDepth : HighType → Nat
   | _ => 1
 
 /-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
-    against an ACTUAL concrete type, accumulating bindings `tv ↦ concrete`. This is
-    the type-argument inference for procedure monomorphization:
-    matching the declared param `Box<T>` against an arg of type `Box<int>` yields
-    `T ↦ int`. It is NOT a general unifier — Laurel has no inference, all types are
-    explicit, so this is a one-directional positional walk: wherever the declared
-    side is a `.TVar`, bind it to the actual side.
+    against an ACTUAL type, accumulating bindings `tv ↦ actual`. This is the
+    type-argument inference for procedure monomorphization: matching the declared
+    param `Box<T>` against an arg of type `Box<int>` yields `T ↦ int`.
+
+    Matching, not unification (binds a `.TVar` only on the DECLARED side): we infer one
+    procedure's type args from a single call's arg types, so no two-sided `F<X>` vs `F<Y>`
+    constraint ever arises. The actual side is NOT always ground — a pristine poly body's
+    internal call can pass `b : Box<T>` — so matching may bind `T ↦ .TVar T`; that bogus
+    binding isn't special-cased here but rejected by `inferProcInst`'s concreteness gate
+    (every inferred arg must be `tyTag`-taggable), deferring the call until cloning makes
+    the arg concrete. (The occurs-check analogue — a divergent recursive generic — is the
+    worklist depth cap's job.)
 
     Returns the extended binding map, or `none` on a structural mismatch (different
     head constructors / arities) or an INCONSISTENT binding (a `tv` matched to two
-    different concrete types — a genuine type error the caller surfaces loudly).
+    different types — a genuine type error the caller surfaces loudly).
     `acc` threads bindings across multiple parameters. -/
 partial def matchTypeArg (declared actual : HighType)
     (acc : Std.HashMap String HighType) : Option (Std.HashMap String HighType) :=
