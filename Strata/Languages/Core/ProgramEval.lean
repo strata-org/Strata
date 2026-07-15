@@ -94,9 +94,16 @@ def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
 /--
 Initialize an environment and evaluate all of the declarations
 from a type-checked program.
+
+`moreFns` are extra factory functions (beyond the Core built-ins)
+that are used for both the type-checker and evaluator. Callers of
+run can register language-specific functions this way and have them
+type-checked and evaluated just like Core's own built-ins.
 -/
-def run (prog : Program) : Except DiagnosticModel Env := do
+def run (prog : Program) (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
+  let factory ← factory.addFactory moreFns
   let σ ← Lambda.LState.init.addFactory factory
   let E: Env := { Env.init with exprEnv := σ, program := prog }
   prog.decls.foldlM (fun E d => Decl.run d E) E

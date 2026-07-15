@@ -1557,7 +1557,7 @@ abbrev DischargeFn :=
     solver that shares path-condition state across assertions.
 
     The solver receives the factory extensions (custom functions from external
-    phases, e.g. `ReFactory`) and the obligation program (in CoreSMT format
+    phases, e.g. `RuntimeFactory`) and the obligation program (in CoreSMT format
     after all pipeline transformations), and returns verification results
     together with statistics. The factory parameter ensures custom solvers
     can build the environment with the same function definitions as the
