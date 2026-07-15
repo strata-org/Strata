@@ -55,10 +55,9 @@ partial def highTypeValToArg : HighType → Arg
   -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base args =>
-    -- Faithfully emit `Base<arg…>` as the grammar's `appliedType` op (whose name slot
-    -- is an `Ident`, so peel the base to its name — mirrors `newTypeArgs`/`isType`
-    -- emission). Previously this dropped the args (`Base<int>` → bare `Base`), which is
-    -- lossy and breaks round-tripping a generic `extends Base<T>`.
+    -- Emit `Base<arg…>` as the grammar's `appliedType` op (whose name slot is an `Ident`,
+    -- so peel the base to its name — mirrors `newTypeArgs`/`isType` emission). Emitting the
+    -- args (not just the bare base) is what round-trips a generic `extends Base<T>`.
     match highBaseName? base.val with
     | some n => laurelOp "appliedType" #[ident n.text, commaSep (args.map highTypeToArg).toArray]
     | none => highTypeToArg base  -- unnameable base: best-effort (shouldn't occur)
