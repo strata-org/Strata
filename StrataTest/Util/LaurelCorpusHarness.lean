@@ -94,7 +94,17 @@ inductive Expect
   -- `.StrataBug` for the re-resolution internal-error net — so any future move BETWEEN the
   -- two fails loud. `none` (default) keeps the coarse `!translated`-only check; a `.rejected`
   -- case left coarse must be authored so its ONLY translation failure is the intended one.
+  -- NOTE: `.rejected (some k)` asserts k is PRESENT, not exclusive — a spurious extra
+  -- diagnostic of another kind alongside it still passes. Use `.rejectedExactly` when the
+  -- rejection must be CLEAN (see below).
   | rejected (kind : Option DiagnosticType := none)
+  -- !translated AND every non-Warning diagnostic is exactly `kind` — i.e. no OTHER kind
+  -- leaked in. The strict form of `.rejected (some kind)`: it catches a spurious cascade
+  -- piled on top of the intended rejection (e.g. a divergent generic that correctly emits
+  -- `.NotYetImplemented` but must NOT also fold a `.StrataBug` internal-error on top). Prefer
+  -- this for cases where a suppression/cascade regression would otherwise hide behind a
+  -- presence-only pin.
+  | rejectedExactly (kind : DiagnosticType)
 
 def Expect.descr : Expect → String
   | .verifies       => "verifies"
@@ -102,6 +112,7 @@ def Expect.descr : Expect → String
   | .failsAtLeast n => s!"fails ≥{n}"
   | .rejected none       => "rejected"
   | .rejected (some k)   => s!"rejected ({repr k})"
+  | .rejectedExactly k   => s!"rejected (only {repr k})"
 
 /-- One corpus case: a stable `name`, Laurel `src`, expected `outcome`, and a one-line
     `why` (the rationale, surfaced in the failure message). -/
@@ -121,6 +132,7 @@ def checkCase (c : Case) : IO Unit := do
     | .failsExactly n => m.translated && m.numFailures == n
     | .failsAtLeast n => m.translated && m.numFailures >= n
     | .rejected _     => !m.translated
+    | .rejectedExactly _ => !m.translated
   unless ok do
     throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
       got translated={m.translated} numVCs={m.numVCs} numFailures={m.numFailures}")
@@ -136,6 +148,15 @@ def checkCase (c : Case) : IO Unit := do
       let kinds := diags.map (fun d => s!"{repr d.type}")
       throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
         no diagnostic of kind {repr expectedKind}; got kinds {kinds}")
+  | .rejectedExactly expectedKind =>
+    -- Every non-Warning diagnostic must be exactly `expectedKind` — no other kind leaked in.
+    let prog ← corpusParse c.name c.src
+    let diags ← verifyToDiagnosticModelsCapturing prog
+    let nonWarning := diags.filter (·.type != .Warning)
+    unless nonWarning.any (·.type == expectedKind) && nonWarning.all (·.type == expectedKind) do
+      let kinds := nonWarning.map (fun d => s!"{repr d.type}")
+      throw (IO.userError s!"{c.name} [expected {c.outcome.descr}]: {c.why} — \
+        expected every non-Warning diagnostic to be {repr expectedKind}; got kinds {kinds}")
   | _ => pure ()
 
 /-- Run every case in a feature table. -/

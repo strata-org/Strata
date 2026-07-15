@@ -267,8 +267,8 @@ procedure u() opaque { assert 1 == 1 };"},
   { name := "poly_proc_chain_fixpoint_multi", outcome := .verifies,
     why := "the outer→inner chain at int AND bool each monomorphize independently through the fixpoint"
     src := outerInner ++ "procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; var gi: int := outer(bi); var bb: Box<bool> := new Box<bool>; bb#val := true; var gb: bool := outer(bb); assert gi == 7 && gb == true };" },
-  { name := "poly_proc_chain_divergent", outcome := .rejected (some .NotYetImplemented),
-    why := "an unbounded proc chain (`grow<T>` deepening via `Box<Box<T>>`) must FAIL LOUD (depth cap), not hang/emit garbage"
+  { name := "poly_proc_chain_divergent", outcome := .rejectedExactly .NotYetImplemented,
+    why := "an unbounded proc chain (`grow<T>` deepening via `Box<Box<T>>`) must FAIL LOUD via the depth cap with ONLY `.NotYetImplemented` — no `.StrataBug` cascade folded on top (the re-resolution net must suppress the dangling-monomorph internal error once the depth cap already rejected)"
     src := r"
 composite Box<T> { var val: T }
 procedure grow<T>(b: Box<T>) returns (r: T) opaque ensures true { var bb: Box<Box<T>> := new Box<Box<T>>; var x: Box<T> := grow(bb); r := b#val };
@@ -343,8 +343,8 @@ procedure used<T>(b: Box<T>) returns (r: T) opaque ensures r == b#val { r := b#v
 procedure unused<T>(b: Box<T>) returns (r: int) opaque ensures r == 5 { r := 6 };
 procedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 7; var got: int := used(bx); assert got == 7 };"},
 
-  { name := "poly_proc_uncalled_divergent_witness", outcome := .rejected (some .NotYetImplemented),
-    why := "an UNCALLED divergent poly proc must FAIL LOUD via the depth cap on the witness/second-drain path"
+  { name := "poly_proc_uncalled_divergent_witness", outcome := .rejectedExactly .NotYetImplemented,
+    why := "an UNCALLED divergent poly proc must FAIL LOUD via the depth cap on the witness/second-drain path, with ONLY `.NotYetImplemented` — no `.StrataBug` cascade folded on top"
     src := r"
 composite Box<T> { var val: T }
 procedure grow<T>(b: Box<T>) returns (r: T) opaque ensures true { var bb: Box<Box<T>> := new Box<Box<T>>; var x: Box<T> := grow(bb); r := b#val };
