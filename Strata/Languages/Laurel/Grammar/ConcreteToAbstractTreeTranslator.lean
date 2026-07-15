@@ -99,29 +99,58 @@ def translateNat (arg : Arg) : TransM Nat := do
     | TransM.error s!"translateNat expects num literal"
   return n
 
-partial def translateHighType (arg : Arg) : TransM HighTypeMd := do
+def translateHighType (arg : Arg) : TransM HighTypeMd := do
   let src ← getArgFileRange arg
-  match arg with
+  match _harg : arg with
   | .op op =>
-    match op.name, op.args with
-    | q`Laurel.intType, _ => return mkHighTypeMd .TInt src
-    | q`Laurel.boolType, _ => return mkHighTypeMd .TBool src
-    | q`Laurel.float64Type, _ => return mkHighTypeMd .TFloat64 src
-    | q`Laurel.realType, _ => return mkHighTypeMd .TReal src
-    | q`Laurel.stringType, _ => return mkHighTypeMd .TString src
-    | q`Laurel.bvType, #[widthArg] =>
-      let width ← translateNat widthArg
-      return mkHighTypeMd (.TBv width) src
-    | q`Laurel.coreType, #[.ident _ name] => return mkHighTypeMd (.UserDefined name) src
-    | q`Laurel.mapType, #[keyArg, valArg] =>
-      let keyType ← translateHighType keyArg
-      let valType ← translateHighType valArg
-      return mkHighTypeMd (.TMap keyType valType) src
-    | q`Laurel.compositeType, #[nameArg] =>
-      let name ← translateIdent nameArg
-      return mkHighTypeMd (.UserDefined name) src
-    | _, _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    -- Dispatch on the operator name via `if` chains and match `op.args.toList`;
+    -- this structure lets Lean generate the match equations needed for
+    -- well-founded recursion.
+    if op.name == q`Laurel.intType then return mkHighTypeMd .TInt src
+    else if op.name == q`Laurel.boolType then return mkHighTypeMd .TBool src
+    else if op.name == q`Laurel.float64Type then return mkHighTypeMd .TFloat64 src
+    else if op.name == q`Laurel.realType then return mkHighTypeMd .TReal src
+    else if op.name == q`Laurel.stringType then return mkHighTypeMd .TString src
+    else if op.name == q`Laurel.bvType then
+      match op.args.toList with
+      | [widthArg] =>
+        let width ← translateNat widthArg
+        return mkHighTypeMd (.TBv width) src
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else if op.name == q`Laurel.coreType then
+      match op.args.toList with
+      | [.ident _ name] => return mkHighTypeMd (.UserDefined name) src
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else if op.name == q`Laurel.mapType then
+      match _hargs : op.args.toList with
+      | [keyArg, valArg] =>
+        let keyType ← translateHighType keyArg
+        let valType ← translateHighType valArg
+        return mkHighTypeMd (.TMap keyType valType) src
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else if op.name == q`Laurel.compositeType then
+      match op.args.toList with
+      | [nameArg] =>
+        let name ← translateIdent nameArg
+        return mkHighTypeMd (.UserDefined name) src
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
+  termination_by sizeOf arg
+  decreasing_by
+    all_goals (
+      have hmk : keyArg ∈ op.args := by
+        have h1 : keyArg ∈ op.args.toList := by simp [_hargs]
+        simpa using h1
+      have hmv : valArg ∈ op.args := by
+        have h1 : valArg ∈ op.args.toList := by simp [_hargs]
+        simpa using h1
+      have h2k := Array.sizeOf_lt_of_mem hmk
+      have h2v := Array.sizeOf_lt_of_mem hmv
+      subst _harg
+      cases op
+      simp at h2k h2v ⊢
+      omega)
 
 def translateString (arg : Arg) : TransM String := do
   let .strlit _ s := arg

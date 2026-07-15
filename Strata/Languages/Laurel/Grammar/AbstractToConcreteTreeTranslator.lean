@@ -33,12 +33,14 @@ private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolonNewline a
 
 private def seqArg (args : Array Arg) : Arg := .seq sr .none args
 
--- Internal-only: these are public because `mutual`/`partial` prevents `private`
+-- Internal-only: these are public because `mutual` prevents `private`
 mutual
 
-partial def highTypeToArg (t : HighTypeMd) : Arg := highTypeValToArg t.val
+def highTypeToArg (t : HighTypeMd) : Arg := highTypeValToArg t.val
+  termination_by sizeOf t
+  decreasing_by cases t; simp; omega
 
-partial def highTypeValToArg : HighType → Arg
+def highTypeValToArg : HighType → Arg
   | .TInt => laurelOp "intType"
   | .TBool => laurelOp "boolType"
   | .TFloat64 => laurelOp "float64Type"
@@ -60,6 +62,8 @@ partial def highTypeValToArg : HighType → Arg
     | t :: _ => highTypeToArg t
   | .Unknown => laurelOp "compositeType" #[ident "Unknown"]
   | .MultiValuedExpr _ => laurelOp "compositeType" #[ident "BUG_MultiValuedExpr"]
+  termination_by t => sizeOf t
+  decreasing_by all_goals (simp; try omega)
 
 end
 

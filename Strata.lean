@@ -50,6 +50,7 @@ import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
 import Strata.Languages.GOTO
 import Strata.Languages.Laurel.FilterPrelude
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslatorProps
 
 /- DDM -/
 import StrataDDM
