@@ -12,7 +12,7 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added `when C throws (e) P` exceptional behavior-case clause on procedures/functions.
+-- Last grammar change: `onThrow modifies …` exceptional-frame clause placed after the `opaque` block (next to the normal `modifies`).
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

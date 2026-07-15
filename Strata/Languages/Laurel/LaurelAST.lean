@@ -246,6 +246,13 @@ structure Procedure : Type where
       holds). Distinct from `onThrow` (`isBad ==> P`), which constrains every
       exceptional exit without forcing one. -/
   onThrows : List OnThrowsClause := []
+  /-- Exceptional frame (`onThrow modifies …`): the modifies clause that applies
+      on the *throwing* path, mirroring the normal `modifies` (in `Body.Opaque`)
+      that applies on the normal-return path. Lowered by `EliminateExceptions`
+      to a frame condition guarded by `Result..isBad($result)` — so on the
+      exceptional exit only these locations may change. Empty means the throwing
+      path is left unconstrained (backward-compatible default). -/
+  onThrowModifies : List (AstNode StmtExpr) := []
 
 /--
 A typed parameter for a procedure.

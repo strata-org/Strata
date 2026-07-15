@@ -131,8 +131,12 @@ def analyzeProc (proc : Procedure) : AnalysisResult :=
   -- ...and `when C throws (e) P` behavior cases (E4), whose trigger/postcondition
   -- may dereference composite parameters, just like a precondition.
   let onThrowsResult := (proc.onThrows.forM (fun c => do collectExprMd c.condition; collectExprMd c.postcondition)).run {} |>.2
+  -- ...and the exceptional frame (`onThrow modifies …`): naming heap locations
+  -- that may change on the throwing path means the procedure writes the heap,
+  -- so `$heap` must be threaded in (mirrors the `!modif.isEmpty` rule for the
+  -- normal modifies above).
   { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly || onThrowResult.readsHeapDirectly || onThrowsResult.readsHeapDirectly,
-    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly || onThrowResult.writesHeapDirectly || onThrowsResult.writesHeapDirectly,
+    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly || onThrowResult.writesHeapDirectly || onThrowsResult.writesHeapDirectly || !proc.onThrowModifies.isEmpty,
     callees := bodyResult.callees ++ precondResult.callees ++ onThrowResult.callees ++ onThrowsResult.callees }
 
 def computeReadsHeap (procs : List Procedure) : List Identifier :=
@@ -550,12 +554,17 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       let post ← heapTransformExpr heapName model c.postcondition
       pure { c with condition := dropCastAsserts cond, postcondition := dropCastAsserts post }
 
+    -- Exceptional frame targets are Composite references; heap-transform them
+    -- like the normal modifies entries.
+    let onThrowModifies' ← proc.onThrowModifies.mapM (heapTransformExpr heapName model ·)
+
     return { proc with
       inputs := inputs',
       outputs := outputs',
       preconditions := preconditions',
       onThrow := onThrow',
       onThrows := onThrows',
+      onThrowModifies := onThrowModifies',
       body := body' }
 
   else if readsHeap then
@@ -596,11 +605,16 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       let post ← heapTransformExpr heapName model c.postcondition
       pure { c with condition := dropCastAsserts cond, postcondition := dropCastAsserts post }
 
+    -- Exceptional frame targets are Composite references; heap-transform them
+    -- like the normal modifies entries.
+    let onThrowModifies' ← proc.onThrowModifies.mapM (heapTransformExpr heapName model ·)
+
     return { proc with
       inputs := inputs',
       preconditions := preconditions',
       onThrow := onThrow',
       onThrows := onThrows',
+      onThrowModifies := onThrowModifies',
       body := body' }
 
   else

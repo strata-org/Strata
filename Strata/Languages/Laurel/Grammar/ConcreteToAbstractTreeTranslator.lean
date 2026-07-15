@@ -536,9 +536,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   match op.name, op.args with
   | q`Laurel.procedure, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, bodyArg]
+      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, onThrowModifiesArg, bodyArg]
   | q`Laurel.function, #[nameArg, paramArg, returnTypeArg, returnParamsArg,
-      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, bodyArg] =>
+      requiresArg, throwsArg, onThrowArg, onThrowsArg, invokeOnArg, opaqueSpecArg, onThrowModifiesArg, bodyArg] =>
     let name ← translateIdent nameArg
     let parameters ← translateParameters paramArg
     -- Either returnTypeArg or returnParamsArg may have a value, not both
@@ -590,6 +590,21 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
             | _, _ => TransM.error s!"Expected onThrowsClause, got {repr cOp.name}"
           | _ => TransM.error "Expected operation in onThrows sequence"
       | _ => pure []
+    -- Parse `onThrow modifies …` exceptional-frame clauses (E4 - zero or more);
+    -- collect all their comma-separated refs into a single list.
+    let onThrowModifies ← match onThrowModifiesArg with
+      | .seq _ _ clauses => do
+        let mut all : List StmtExprMd := []
+        for arg in clauses do
+          match arg with
+          | .op cOp => match cOp.name, cOp.args with
+            | q`Laurel.onThrowModifiesClause, #[refsArg] =>
+              let refs ← translateModifiesExprs refsArg
+              all := all ++ refs
+            | _, _ => TransM.error s!"Expected onThrowModifiesClause, got {repr cOp.name}"
+          | _ => TransM.error "Expected operation in onThrowModifies sequence"
+        pure all
+      | _ => pure []
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
       | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
@@ -639,11 +654,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       throwsType := throwsType
       onThrow := onThrow
       onThrows := onThrows
+      onThrowModifies := onThrowModifies
       body := procBody
     }
   | q`Laurel.procedure, args
   | q`Laurel.function, args =>
-    TransM.error s!"parseProcedure expects 11 arguments, got {args.size}"
+    TransM.error s!"parseProcedure expects 12 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure or function, got {repr op.name}"
 

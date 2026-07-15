@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.SemanticModel
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Util.Tactics
 
 /-!
@@ -452,7 +453,22 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
     let p' := substLocal c.binding.text (resultApp "Result..err" (localRef exnResultVar)) c.postcondition
     let conj := andOf (resultApp "Result..isBad" (localRef exnResultVar)) p'
     ({ condition := withSrc c.condition.source (impliesOf c.condition conj), free := isBodiless } : Condition))
-  let allPosts := wrappedPosts ++ onThrowPosts ++ onThrowsPosts
+  -- Exceptional frame (`onThrow modifies …`): a two-state frame axiom guarded by
+  -- `Result..isBad($result)`, so on the throwing path only the listed locations
+  -- may change. Built here (not in `ModifiesClauses`, which runs earlier) because
+  -- `$result` only exists after this pass. Emitted only when the user declared an
+  -- exceptional frame; otherwise the throwing path is left unconstrained (the
+  -- normal `modifies` frame is already `isGood`-guarded via `goodWrap` above, so
+  -- it says nothing on the Bad path). Reuses the normal frame-axiom builder.
+  let onThrowModifiesPosts : List Condition :=
+    if proc.onThrowModifies.isEmpty then []
+    else match buildModifiesEnsures proc model proc.onThrowModifies (mkId "$heap") with
+      | some frame =>
+        [{ condition := withSrc proc.name.source
+             (impliesOf (resultApp "Result..isBad" (localRef exnResultVar)) frame)
+           free := isBodiless }]
+      | none => []
+  let allPosts := wrappedPosts ++ onThrowPosts ++ onThrowsPosts ++ onThrowModifiesPosts
   -- Body assembly (only when there is an implementation).
   let goodArg := match valName? with | some n => localRef n | none => litBool true
   let construct := iteOf (localRef exnThrownVar)
@@ -471,7 +487,8 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
     body := newBody
     throwsType := none
     onThrow := []
-    onThrows := [] }
+    onThrows := []
+    onThrowModifies := [] }
 where
   /-- The `$thrown`/`$exc`/`$returning` declarations, emitted when the body uses
       the exceptional channel. -/

@@ -223,6 +223,10 @@ category OnThrowsClause;
 op onThrowsClause(condition: StmtExpr, binding: Ident, postcondition: StmtExpr): OnThrowsClause =>
   "\n  when " condition:0 " throws (" binding ") " postcondition:0;
 
+// Exceptional frame (E4): the modifies clause that applies on the throwing path.
+category OnThrowModifiesClause;
+op onThrowModifiesClause(refs: CommaSepBy StmtExpr): OnThrowModifiesClause => "\n  onThrow modifies " refs;
+
 category Body;
 op body(body: StmtExpr): Body => "\n" body:0;
 op externalBody: Body => "external";
@@ -237,8 +241,9 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   onThrows: Seq OnThrowsClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
+  onThrowModifies: Seq OnThrowModifiesClause,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec onThrowModifies body ";";
 
 op function (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
@@ -249,8 +254,9 @@ op function (name : Ident, parameters: CommaSepBy Parameter,
   onThrows: Seq OnThrowsClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
+  onThrowModifies: Seq OnThrowModifiesClause,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec body ";";
+  "function " name "(" parameters ")" returnType returnParameters requires throws onThrow onThrows invokeOn opaqueSpec onThrowModifies body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 
