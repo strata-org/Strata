@@ -182,18 +182,13 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
-/-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation.
-    `Bx<int>` → `Bx$a1$int`, distinct from `Bx<bool>` → `Bx$a1$bool`, so each
-    instantiation gets its OWN box constructor/destructor — preserving the type
-    distinctness that the native parametric datatype gives us between different
-    instantiations of the same datatype. Mirrors `MonomorphizeComposites.tyTag`'s
-    `$`-delimited rendering (inlined here rather than imported, to avoid a pass↔pass
-    import cycle), and inherits its NON-injectivity: it distinguishes `int` from `bool`,
-    but a user name containing `$` (e.g. a datatype named `Bx$a1$int`) can render the same
-    string — that clash is caught downstream by the Core type checker when the boxed value
-    sorts differ, not prevented here (see the injectivity caveat on `instTagCommon`).
-    Returns `none` for a shape that can't be rendered (e.g. an `.Applied` over a
-    non-datatype, a `.TVar` arg), which keeps the caller on its loud-failure fallback. -/
+/-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation,
+    so `Bx<int>` and `Bx<bool>` get distinct box constructors/destructors (`Bx$a1$int` vs
+    `Bx$a1$bool`) — preserving the instantiation-distinctness the native parametric datatype
+    gives us. Shares `instTagCommon` with `MonomorphizeComposites.tyTag` (inlined, not imported,
+    to avoid a pass↔pass cycle), so it inherits that kernel's non-injectivity caveat: a `$`-clash
+    is caught downstream by the Core type checker, not here. Returns `none` on an un-renderable
+    shape (`.Applied` over a non-datatype, a `.TVar` arg), keeping the caller on its loud fallback. -/
 private partial def appliedBoxTag : HighType → Option String
   | .TCore n => some n                       -- heap-box naming accepts `Core` types; `.TVoid` it does NOT
   | ty => instTagCommon appliedBoxTag ty     -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TVoid/… (unsupported)
@@ -218,10 +213,9 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "Box..compositeVal!"
   | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
-  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`:
-  -- one box variant per instantiation, named via the shared injective tag.
-  -- (`.TSet` is unreachable — no Set surface production yet, LaurelGrammar.st has only `mapType`
-  -- — kept for symmetry with `.TMap`, like the `.TSet` arm in `isConsistent`.)
+  -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
+  -- instantiation, named via `appliedBoxTag`. (`.TSet` is unreachable — LaurelGrammar.st has
+  -- only `mapType`, no Set production — kept for symmetry with `.TMap`.)
   | .Applied .. | .TMap .. | .TSet .. =>
     match appliedBoxTag ty with
     | some tag => s!"Box..{tag}Val!"
