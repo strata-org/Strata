@@ -221,40 +221,40 @@ procedure u() opaque { var x: Box<int> := new Box; x#val := 7; var got: int := t
   -- registration; recursive `.Applied` arm; bare-name~instantiation arm) must NOT weaken the
   -- checker. Each of these is a type-incorrect program that must still be REJECTED; a leak
   -- here = the consistency relation was over-relaxed (and every accept-side test would stay green).
-  { name := "tc_baseline_int_eq_true", outcome := .rejected,
+  { name := "tc_baseline_int_eq_true", outcome := .rejected (some .UserError),
     why := "#1121's non-poly checking untouched: `var x: int := true` rejects"
     src := r"procedure u() opaque { var x: int := true; assert 1 == 1 };"},
-  { name := "tc_baseline_cross_composite", outcome := .rejected,
+  { name := "tc_baseline_cross_composite", outcome := .rejected (some .UserError),
     why := "`var x: Dog := new Cat` (cross-composite) rejects"
     src := r"
 composite Dog { var a: int }
 composite Cat { var b: int }
 procedure u() opaque { var x: Dog := new Cat; assert 1 == 1 };"},
 
-  { name := "tc_boxint_to_boxbool", outcome := .rejected,
+  { name := "tc_boxint_to_boxbool", outcome := .rejected (some .UserError),
     why := "the recursive `.Applied` arm keeps strictness: `Box<int>` is NOT consistent with `Box<bool>`"
     src := r"
 composite Box<T> { var val: T }
 procedure u() opaque { var a: Box<int> := new Box<int>; var b: Box<bool> := a; assert 1 == 1 };"},
 
-  { name := "tc_boxint_arg_to_boolparam", outcome := .rejected,
+  { name := "tc_boxint_arg_to_boolparam", outcome := .rejected (some .UserError),
     why := "passing `Box<int>` to a `Box<bool>` param rejects"
     src := r"
 composite Box<T> { var val: T }
 procedure needsBool(b: Box<bool>) opaque { assert 1 == 1 };
 procedure u() opaque { var a: Box<int> := new Box<int>; needsBool(a); assert 1 == 1 };"},
 
-  { name := "tc_barename_wrong_base", outcome := .rejected,
+  { name := "tc_barename_wrong_base", outcome := .rejected (some .UserError),
     why := "the bare-name~instantiation arm fires only on matching bases: bare `new Dog` into `Box<int>` rejects"
     src := r"
 composite Box<T> { var val: T }
 composite Dog { var a: int }
 procedure u() opaque { var b: Box<int> := new Dog; assert 1 == 1 };"},
 
-  { name := "tc_tvarbody_int_eq_true", outcome := .rejected,
+  { name := "tc_tvarbody_int_eq_true", outcome := .rejected (some .UserError),
     why := "the `.TVar` wildcard must not blanket-disable checking inside a poly body: `var y: int := true` still rejects"
     src := r"procedure idp<T>(x: T) returns (r: T) opaque ensures r == x { var y: int := true; r := x };"},
-  { name := "tc_polyfn_return_type_mismatch", outcome := .rejected,
+  { name := "tc_polyfn_return_type_mismatch", outcome := .rejected (some .UserError),
     why := "an ill-typed poly FUNCTION (`coerce<A,B>(x: A): B { x }` returns an `A` where `B` is required) is rejected — the Core type error is RETURNED as a diagnostic, not thrown (translated=false)"
     src := r"
 function coerce<A, B>(x: A): B { x };
@@ -272,7 +272,7 @@ procedure u() opaque { assert 1 == 1 };"},
   { name := "poly_proc_chain_fixpoint_multi", outcome := .verifies,
     why := "the outer→inner chain at int AND bool each monomorphize independently through the fixpoint"
     src := outerInner ++ "procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; var gi: int := outer(bi); var bb: Box<bool> := new Box<bool>; bb#val := true; var gb: bool := outer(bb); assert gi == 7 && gb == true };" },
-  { name := "poly_proc_chain_divergent", outcome := .rejected,
+  { name := "poly_proc_chain_divergent", outcome := .rejected (some .NotYetImplemented),
     why := "an unbounded proc chain (`grow<T>` deepening via `Box<Box<T>>`) must FAIL LOUD (depth cap), not hang/emit garbage"
     src := r"
 composite Box<T> { var val: T }
@@ -348,7 +348,7 @@ procedure used<T>(b: Box<T>) returns (r: T) opaque ensures r == b#val { r := b#v
 procedure unused<T>(b: Box<T>) returns (r: int) opaque ensures r == 5 { r := 6 };
 procedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 7; var got: int := used(bx); assert got == 7 };"},
 
-  { name := "poly_proc_uncalled_divergent_witness", outcome := .rejected,
+  { name := "poly_proc_uncalled_divergent_witness", outcome := .rejected (some .NotYetImplemented),
     why := "an UNCALLED divergent poly proc must FAIL LOUD via the depth cap on the witness/second-drain path"
     src := r"
 composite Box<T> { var val: T }

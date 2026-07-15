@@ -79,7 +79,7 @@ datatype Pr { MkPr(a: int, b: int) }
 procedure u() opaque { var p1: Pr := MkPr(1, 2); var p2: Pr := MkPr(1, 2); assert p1 == p2 };"},
   -- CROSS-INSTANTIATION DISTINCTNESS: `Bx<int>` and `Bx<bool>` are DISTINCT Core sorts, not
   -- erased to a single sort — so assigning one to the other is rejected.
-  { name := "generic_datatype_cross_instantiation_rejected", outcome := .rejected,
+  { name := "generic_datatype_cross_instantiation_rejected", outcome := .rejected (some .UserError),
     why := "assigning `Bx<int>` to a `Bx<bool>` var must be REJECTED (distinct sorts; cross-inst confusion = unsound)"
     src := r"
 datatype Bx<T> { MkBx(v: T) }

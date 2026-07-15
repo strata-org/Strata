@@ -32,7 +32,7 @@ namespace Strata.Laurel
 /-! ## Generic composites verify end-to-end (monomorphization)
 
 `composite Box<T>` is lowered by emitting one concrete composite per used
-instantiation (`Box$int`, `Box$bool`) and rewriting `Box<int>` type references +
+instantiation (`Box$a1$int`, `Box$a1$bool`) and rewriting `Box<int>` type references +
 `new Box` allocations to the monomorphic name. Proven: single instantiation with
 field write/read, and two distinct instantiations coexisting. -/
 def genericBoxProgram := r"
@@ -127,7 +127,7 @@ procedure u() opaque { var mm: Map int bool; var rr: Map int bool := idm(mm); as
 procedure idm<K,V>(m: Map K V) returns (r: Map K V) opaque ensures r == m { r := m };
 procedure u() opaque { var mm: Map int bool; var nn: Map int bool; var rr: Map int bool := idm(mm); assert rr == nn };"},
 
-  { name := "map_concrete_mismatch", outcome := .rejected,
+  { name := "map_concrete_mismatch", outcome := .rejected (some .UserError),
     why := "STRICTNESS: a concrete `Map int int` into a `Map int bool` param must be REJECTED — the `.TMap` arm recurses but stays strict on concrete leaves (no hole opened)"
     src := r"
 procedure needsIB(m: Map int bool) opaque { assert 1 == 1 };
@@ -433,7 +433,7 @@ type Foo<T> = Box<T>
 procedure take(b: Foo<int>) returns (r: int) opaque ensures r == b#val { r := b#val };
 procedure u() opaque { var x: Box<int> := new Box<int>; x#val := 9; var g: int := take(x); assert g == 9 };"},
 
-  { name := "generic_alias_wrong_arg", outcome := .rejected,
+  { name := "generic_alias_wrong_arg", outcome := .rejected (some .UserError),
     why := "SOUNDNESS: a `Box<bool>` value must NOT satisfy a `Foo<int>` (= Box<int>) param — unfold-then-compare stays strict on the arg"
     src := r"
 composite Box<T> { var val: T }
