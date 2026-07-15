@@ -35,37 +35,17 @@ namespace Strata.Laurel
 instantiation (`Box$a1$int`, `Box$a1$bool`) and rewriting `Box<int>` type references +
 `new Box` allocations to the monomorphic name. Proven: single instantiation with
 field write/read, and two distinct instantiations coexisting. -/
-def genericBoxProgram := r"
-composite Box<T> { var val: T }
-
-procedure useBox()
-  opaque
-{
-    var b: Box<int> := new Box;
-    b#val := 42;
-    assert b#val == 42
-};"
-
-def genericBoxMultiProgram := r"
-composite Box<T> { var val: T }
-
-procedure useTwo()
-  opaque
-{
-    var a: Box<int> := new Box;
-    a#val := 7;
-    var b: Box<bool> := new Box;
-    b#val := true;
-    assert a#val == 7
-};"
-
 def genericCompositeCorpus : List Case := [
   { name := "generic_box", outcome := .verifies,
     why := "composite Box<T> instantiated at Box<int> monomorphizes + verifies"
-    src := genericBoxProgram },
+    src := r"
+composite Box<T> { var val: T }
+procedure useBox() opaque { var b: Box<int> := new Box; b#val := 42; assert b#val == 42 };"},
   { name := "generic_box_multi", outcome := .verifies,
     why := "two instantiations (Box<int>+Box<bool>) monomorphize independently"
-    src := genericBoxMultiProgram },
+    src := r"
+composite Box<T> { var val: T }
+procedure useTwo() opaque { var a: Box<int> := new Box; a#val := 7; var b: Box<bool> := new Box; b#val := true; assert a#val == 7 };"},
   -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type.
   -- `instTagCommon` tags `.TMap` (`Map$a2$int$int`), so this monomorphizes and verifies.
   -- SOUND, not coalescing — the `map_fields_distinct` twin below pins that distinct
@@ -189,35 +169,35 @@ composite Box<T> { var val: T }
 datatype Wrap { MkWrap(b: Box<Map int int>) }
 procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; var w: Wrap := MkWrap(b); assert w == MkWrap(b) };"},
   -- NESTED GENERICS: a composite whose field is a generic instantiation of the same param
-  -- (`Wrap<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
+  -- (`Nest<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
   { name := "nested_generic", outcome := .verifies,
-    why := "Wrap<int> with field Box<int> (Box<int> also named) resolves + verifies"
+    why := "Nest<int> with field Box<int> (Box<int> also named) resolves + verifies"
     src := r"
 composite Box<T> { var val: T }
-composite Wrap<T> { var b: Box<T> }
-procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Wrap<int> := new Wrap; p#b := inner; var got: Box<int> := p#b; assert got#val == 5 };"},
+composite Nest<T> { var b: Box<T> }
+procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Nest<int> := new Nest; p#b := inner; var got: Box<int> := p#b; assert got#val == 5 };"},
 
   { name := "nested_generic_wrong", outcome := .failsExactly 1,
     why := "a FALSE read of the nested field must FAIL — sound, not vacuous"
     src := r"
 composite Box<T> { var val: T }
-composite Wrap<T> { var b: Box<T> }
-procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Wrap<int> := new Wrap; p#b := inner; var got: Box<int> := p#b; assert got#val == 6 };"},
+composite Nest<T> { var b: Box<T> }
+procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Nest<int> := new Nest; p#b := inner; var got: Box<int> := p#b; assert got#val == 6 };"},
   -- (B) the fixpoint worklist: inner inst reachable ONLY through the outer's substituted
   -- field (`q#b := p#b`, Box<int> named nowhere else) is now discovered + emitted.
   { name := "nested_generic_via_field_only", outcome := .verifies,
     why := "`q#b := p#b` (inner Box<int> reachable only via the field) translates (fixpoint worklist)"
     src := r"
 composite Box<T> { var val: T }
-composite Wrap<T> { var b: Box<T> }
-procedure u() opaque { var p: Wrap<int> := new Wrap; var q: Wrap<int> := new Wrap; q#b := p#b; assert 1 == 1 };"},
+composite Nest<T> { var b: Box<T> }
+procedure u() opaque { var p: Nest<int> := new Nest; var q: Nest<int> := new Nest; q#b := p#b; assert 1 == 1 };"},
 
   { name := "nested_generic_via_field_wrong", outcome := .failsExactly 1,
     why := "a FALSE read of the field-only-reachable nested monomorph must FAIL — sound, not vacuous"
     src := r"
 composite Box<T> { var val: T }
-composite Wrap<T> { var b: Box<T> }
-procedure u() opaque { var p: Wrap<int> := new Wrap; var inner: Box<int> := new Box; inner#val := 7; p#b := inner; var got: Box<int> := p#b; assert got#val == 8 };"},
+composite Nest<T> { var b: Box<T> }
+procedure u() opaque { var p: Nest<int> := new Nest; var inner: Box<int> := new Box; inner#val := 7; p#b := inner; var got: Box<int> := p#b; assert got#val == 8 };"},
   -- TERMINATION + clean rejection: a divergent recursive generic (`L<T>{ next: L<L<T>> }`)
   -- is cut off at the depth bound and rejected LOUD — not a hang, not dead monomorphs.
   { name := "recursive_generic_rejected", outcome := .rejected (some .NotYetImplemented),
@@ -289,12 +269,12 @@ procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i
 composite Inner { var v: int }
 composite Outer { var i: Inner }
 procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5; assert o#i#v == 6 };"},
-  -- A heap-writer with a USER output named `$heap` must FAIL LOUD (never translate),
-  -- because HeapParameterization prepends a synth `$heap` inout to a writer's inputs AND outputs.
-  -- The re-resolution fold type-checks the user `$heap` against the synth `$heap: Heap` and fails
-  -- loud (`expected 'Heap', got 'int'`, or `Duplicate definition '$heap'` via the seen-outputs
-  -- dup-check) — either way `!translated`. This pins only "a user `$heap` output never translates";
-  -- the sanity twin pins that the legit single synth `$heap` inout still merges.
+  -- A heap-writer with a USER output named `$heap` must FAIL LOUD (never translate): a heap
+  -- pass synthesizes a `$heap` name, so the user's `$heap` collides with it. Re-resolution
+  -- catches the clash as `Duplicate definition '$heap'` and reports it as a `.UserError` with a
+  -- rename hint (the collision-classification net — the colliding name is user-provided, so it
+  -- is a user error, not an internal `.StrataBug`). The sanity twin below pins that a writer
+  -- WITHOUT a user `$heap` still gets its single synth inout and verifies.
   { name := "user_heap_output_rejected", outcome := .rejected (some .UserError),
     why := "a user output named `$heap` on a heap-writer collides with the synth heap inout and must never translate; rejects via the re-resolution net as a `.UserError` (the colliding name is user-provided, so it is a user error — `Duplicate definition '$heap'` with a rename hint — not an `Internal error`/`.StrataBug`)"
     src := r"
@@ -338,9 +318,9 @@ procedure u() opaque { var b: Box<int> := new Box<int>; assert b is Box<bool> };
     src := r"
 composite Box<T> { var val: T }
 procedure u() opaque { var b: Box<int> := new Box<int>; var c: Box<int> := b as Box<int>; assert c#val == c#val };"},
-  -- Type-alias surface form `type Name = Target`. Backend (`TypeAliasElim`) was wired;
-  -- this exercises the new grammar/parse + the `resolveFieldInTypeScope` alias-unfold for
-  -- composite-typed aliases. NOTE: no trailing `;` after the alias (next keyword delimits).
+  -- Type-alias surface form `type Name = Target` (grammar/parse + `TypeAliasElim`), with
+  -- `resolveFieldInTypeScope`'s alias-unfold for composite-typed aliases. NOTE: no trailing
+  -- `;` after the alias (the next keyword delimits it).
   { name := "alias_primitive", outcome := .verifies,
     why := "`type MyInt = int` resolves transitively; the alias really is `int`"
     src := r"
