@@ -1345,6 +1345,17 @@ def TEnv.addTypeAlias (alias : TypeAlias) (C: LContext T) (Env : TEnv T.IDMeta) 
               Name: {alias.name}\n\
               Type Arguments: {alias.typeArgs}\n\
               Type Definition: {alias.type}"
+  -- Reject *phantom* type arguments: every declared type argument must actually occur
+  -- free in the alias body. Without this, a phantom alias like `Phantom α := int` is WF
+  -- yet `AliasEquiv (Phantom a) int` drops `a`, so alias resolution can lose a free type
+  -- variable — breaking `HasType_context_aliasEquiv` (whose `tgen` case needs funcContext
+  -- formal types to introduce no free var absent from their resolved form). Requiring
+  -- `typeArgs ⊆ freeVars(type)` makes aliases non-dropping, so `AliasEquiv` preserves free vars.
+  else if !(alias.typeArgs ⊆ alias.type.freeVars) then
+    .error f!"[TEnv.addTypeAlias] Type definition has unused (phantom) type arguments!\n\
+              Name: {alias.name}\n\
+              Type Arguments: {alias.typeArgs}\n\
+              Type Definition: {alias.type}"
   else if C.knownTypes.containsName alias.name then
     .error f!"This type declaration's name is reserved!\n\
               {alias}\n\

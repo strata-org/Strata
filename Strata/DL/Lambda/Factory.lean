@@ -98,6 +98,14 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
               quantified type identifiers!\
               {Format.line}\
               {f.typeArgs}"
+  -- Reject any arrow type with ≠ 2 arguments (a well-formed function type is always binary
+  -- `t1 → t2`). Without this, a malformed `tcons "arrow" [a,b,c]` in the output is silently
+  -- flattened by `destructArrow` below and re-nested binary, so the reconstructed signature would
+  -- disagree with the original output — breaking function soundness (`bodyTyped` would assert the
+  -- body has the original non-binary output type, which it does not).
+  else if !(f.output.arrowsBinary && Lambda.LMonoTys.arrowsBinary f.inputs.values) then
+    .error f!"[{f.name}] Signature contains an arrow type with ≠ 2 arguments; \
+              function types must be binary (t1 -> t2)."
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   match input_tys with

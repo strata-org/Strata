@@ -12,6 +12,7 @@ import all Strata.DL.Lambda.LExprResolveProps
 import all Strata.DL.Lambda.LExprTypeSpec
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import all Strata.DL.Util.Nodup
+import all Strata.Languages.Core.InverseComponents
 
 /-! ## Soundness of Function Typechecker
 
@@ -1140,8 +1141,7 @@ private theorem freeVars_rename_subset
       cases h_tgts : tgts.take (a :: rest).length with
       | nil => rw [h_tgts] at h_len; simp at h_len
       | cons f frest => rfl
-    exact LMonoTy.freeVars_subst_closed (a :: rest) (tgts.take (a :: rest).length) h_len W
-      h_closed hSNE v hv
+    exact LMonoTy.freeVars_subst_closed (a :: rest) (tgts.take (a :: rest).length) h_len W h_closed v hv
 
 /-- **D2 (coverage).** The distinct free vars of an `LTy.instantiateWithCheck` output number
     at most the scheme's bound variables. The output's free vars are all freshly generated
@@ -1211,7 +1211,7 @@ private theorem instantiateWithCheck_freeVars_eraseDups_length_le
           cases freshtvs with
           | nil => simp at h_flen
           | cons f frest => rfl
-        exact LMonoTy.freeVars_subst_closed (a :: rest) freshtvs h_flen body h_sub hSNE v hv
+        exact LMonoTy.freeVars_subst_closed (a :: rest) freshtvs h_flen body h_sub v hv
     obtain ⟨freshtvs, h_len, h_cover_inst⟩ := h_inst_cover
     exact ⟨freshtvs, h_len, fun v hv => h_cover_inst v (h_ra_sub v hv)⟩
   obtain ⟨freshtvs, h_len, h_cover⟩ := h_fresh_cover
@@ -1292,7 +1292,7 @@ theorem instantiateWithCheck_freeVars_gen_prefixed
         | nil => simp at h_flen
         | cons f frest => rfl
       have h_v_fresh : v ∈ freshtvs :=
-        LMonoTy.freeVars_subst_closed (a :: rest) freshtvs h_flen body h_sub hSNE v hv
+        LMonoTy.freeVars_subst_closed (a :: rest) freshtvs h_flen body h_sub v hv
       obtain ⟨k, _, h_eq⟩ := TGenEnv.genTyVars_is_genName (T := CoreLParams)
         (a :: rest).length Env.genEnv freshtvs genEnv2 h_gen v h_v_fresh
       exact ⟨k, h_eq⟩
@@ -1871,6 +1871,7 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
   simp only [LFunc.type, bind, Except.bind, pure, Except.pure] at h_type
   split at h_type <;> try contradiction
   split at h_type <;> try contradiction
+  split at h_type <;> try contradiction
   -- A common closing step shared by both `inputs.values` cases: from `v ∈ sigBody.freeVars`,
   -- the guard `sigBody.freeVars.removeAll func.typeArgs = []` gives `v ∈ func.typeArgs`.
   have h_guard : ∀ sigBody : LMonoTy, type = LTy.forAll func.typeArgs sigBody →
@@ -1903,40 +1904,88 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
       · right; left; exact h
     · right; right; exact LMonoTy.freeVars_subset_destructArrow func.output h
 
-/-- **Shared per-component alias adapter.** Consumes the general structural inverse
-    `LTy_instantiateWithCheck_inverse` (which gives a renaming `ρ` with
-    `resolveAliases SIG = subst ρ v_inst.fst`, where `SIG = toMonoTypeUnsafe type` is the
-    raw signature monotype) and produces the two *per-component* alias facts the
-    `_instantiated` lemmas need, for BOTH `bodyTyped` and `measureTyped`:
+-- `Function.typeCheck_inverse_components` (the shared per-component alias adapter) now lives in
+-- `Strata/Languages/Core/InverseComponents.lean` (proven, 0 sorry). It gains two hypotheses
+-- `h_known`/`h_arrow2`, discharged at the call sites below.
 
-    - **output:** `AliasEquiv aliases (subst ρ RO) func.output`, where `RO` is the
-      reconstructed output (`mkArrow'` of the `drop n` destructArrow slice);
-    - **inputs:** `AliasEquivList aliases (subst ρ (take n da)) func.inputs.values`.
+/-- **`h_fresh` bridge.** From `TContextAliasEquiv` (the Γ→Γ' direction, giving
+    `AliasEquiv mty' mty` per key), non-dropping aliases, and a domain-containment fact
+    (`h_dom`: every key bound in Γ' is bound in Γ), derive the Γ'→Γ per-key freshness
+    reflection that `HasType_context_aliasEquiv` requires. The free-var equality along
+    each per-key `AliasEquiv` is `AliasEquiv_preserves_freeVars`, which holds precisely
+    because the `TEnv.addTypeAlias` phantom guard makes aliases non-dropping. -/
+theorem Function.hfresh_of_aliasEquiv
+    (aliases : List TypeAlias) (Γ Γ' : TContext CoreLParams.IDMeta)
+    (h_ali : AliasesNonDropping aliases)
+    (h_ctx : TContextAliasEquiv (T := CoreLParams) aliases Γ Γ')
+    (h_dom : ∀ (x : CoreLParams.Identifier) ty', Γ'.types.find? x = some ty' →
+      ∃ ty0, Γ.types.find? x = some ty0) :
+    ∀ (x : CoreLParams.Identifier) (ty' : LTy), Γ'.types.find? x = some ty' →
+      ∀ a, a ∈ LTy.freeVars ty' →
+        ∃ ty0, Γ.types.find? x = some ty0 ∧ a ∈ LTy.freeVars ty0 := by
+  intro x ty' h_find' a h_a
+  obtain ⟨ty0, h_find0⟩ := h_dom x ty' h_find'
+  obtain ⟨mty, mty', h_ty0_eq, h_find'_eq, h_ae⟩ := h_ctx x ty0 h_find0
+  rw [h_find'_eq] at h_find'
+  simp only [Option.some.injEq] at h_find'
+  subst h_find'
+  subst h_ty0_eq
+  refine ⟨.forAll [] mty, h_find0, ?_⟩
+  simp only [LTy.freeVars, List.removeAll_nil] at h_a ⊢
+  exact (AliasEquiv_preserves_freeVars aliases h_ali mty' mty h_ae a).mp h_a
 
-    Both follow by peeling the `n = inputs.length` leading arrows of `SIG` (valid because
-    no alias is named `"arrow"`, so `resolveAliases` distributes over the arrow spine),
-    then `resolveAliases_aliasEquiv` on each raw component. The arrow-spine slicing is
-    sound even for arrow-bodied aliases: inputs sit in atomic `t1` positions of
-    `destructArrow`, so `take n` recovers exactly the `n` resolved inputs (verified). -/
-theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : TEnv Unit)
-    (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst) (Env_r : TEnv Unit)
-    (h_type : LFunc.type func = .ok type)
-    (h_ra : LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe type) Env
-      = .ok (LMonoTy.subst ρ v_inst.fst, Env_r))
-    (h_aw : TContext.AliasesWF Env.context)
-    (h_aliases_not_known : ∀ a ∈ Env.context.aliases, a.name ≠ "arrow") :
-    -- output component
-    (Lambda.AliasEquiv Env.context.aliases
-      (LMonoTy.subst ρ
-        (((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
-            (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst))).mkArrow'
-          (List.drop func.inputs.keys.length v_inst.fst.destructArrow).dropLast))
-      func.output) ∧
-    -- input components
-    (Lambda.AliasEquivList Env.context.aliases
-      (LMonoTy.subst ρ <$> (List.take func.inputs.keys.length v_inst.fst.destructArrow))
-      func.inputs.values) := by
-  sorry
+/-- **`h_dom` for the base lemma's contexts.** Every key bound in `funcContext Env.context func`
+    is bound in `TContext.subst Γ0 ρ`, given the same `h_find_eq` key-agreement used by
+    `contextAliasEquiv_base` plus the formals/`take`-slice length match. This is the
+    domain-containment fact `hfresh_of_aliasEquiv` needs to produce the Γ'→Γ freshness
+    reflection. Existence-only (no per-key value bridge), so it is far simpler than the
+    `TContextAliasEquiv` walk. -/
+theorem Function.hdom_base (Env : TEnv Unit)
+    (func : Function) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst)
+    (Γ0 : TContext Unit)
+    (h_len : (List.take func.inputs.keys.length v_inst.fst.destructArrow).length
+      = func.inputs.keys.length)
+    (h_find_eq : ∀ x,
+      Maps.find? Γ0.types x =
+        Maps.find?
+          ((List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))
+            :: Env.context.types) x) :
+    ∀ (x : CoreLParams.Identifier) ty', (funcContext Env.context func).types.find? x = some ty' →
+      ∃ ty0, (TContext.subst Γ0 ρ).types.find? x = some ty0 := by
+  intro x ty' h_find'
+  unfold funcContext at h_find'
+  simp only [Maps.push, Maps.find?] at h_find'
+  suffices h_base : ∃ ty0, Maps.find?
+      ((List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+          (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))
+        :: Env.context.types) x = some ty0 by
+    obtain ⟨ty0, h0⟩ := h_base
+    rw [← h_find_eq x] at h0
+    exact ⟨LTy.subst ρ ty0, TContext.subst_find_some Γ0 ρ x ty0 h0⟩
+  simp only [Maps.find?]
+  cases h_fm : Map.find?
+      (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+        (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))) x with
+  | some tyF => exact ⟨tyF, rfl⟩
+  | none =>
+    have h_inp_none : Map.find? (List.map (fun x => (x.fst, LTy.forAll [] x.snd)) func.inputs) x = none := by
+      have h_comp : ∀ (l : List (Identifier Unit × LMonoTy)),
+          l.map (Prod.fst ∘ (fun p => (p.1, LTy.forAll [] p.2))) = l.map Prod.fst := by
+        intro l; apply List.map_congr_left; intro a _; rfl
+      have h_notin_fm : x ∉ (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+          (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))).map Prod.fst :=
+        Map.findNone_eq_notmem_mapfst.mpr h_fm
+      rw [List.map_map, h_comp] at h_notin_fm
+      have h_zip_keys : (func.inputs.keys.zip
+          (List.take func.inputs.keys.length v_inst.fst.destructArrow)).map Prod.fst
+          = func.inputs.keys := List.map_fst_zip (Nat.le_of_eq h_len.symm)
+      rw [h_zip_keys] at h_notin_fm
+      apply Map.findNone_eq_notmem_mapfst.mp
+      rw [List.map_map, h_comp]
+      rwa [← ListMap.keys_eq_map_fst]
+    rw [h_inp_none] at h_find'
+    exact ⟨ty', h_find'⟩
 
 /-- **Shared context-alias core.** The genuinely-common part of the body and measure
     context-alias proofs, parameterized over the resolution context `Γ0` by a single
@@ -1956,8 +2005,10 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
     (h_ae_ins : AliasEquivList Env.context.aliases
       (LMonoTy.subst ρ <$> List.take func.inputs.keys.length v_inst.fst.destructArrow)
       func.inputs.values)
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = [])
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
+    -- Aliases are non-dropping (WF + reverse), enforced by `TEnv.addTypeAlias`. Drives the
+    -- Γ'→Γ freshness reflection (3rd conjunct) via `AliasEquiv_preserves_freeVars`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
     -- `Γ0`'s stored types agree with `FORMALS :: Env.context.types` at every key.
     -- This is where each consumer discharges that its inner subst layers are the
     -- identity on visible bindings.
@@ -1969,12 +2020,27 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
             :: Env.context.types) x) :
     (TContext.subst Γ0 ρ).aliases = (funcContext Env.context func).aliases ∧
     TContextAliasEquiv (T := CoreLParams) (funcContext Env.context func).aliases
-      (TContext.subst Γ0 ρ) (funcContext Env.context func) := by
-  refine ⟨?_, ?_⟩
-  · -- aliases equality: ρ preserves aliases; `funcContext` keeps `Env`'s aliases.
+      (TContext.subst Γ0 ρ) (funcContext Env.context func) ∧
+    (∀ (x : CoreLParams.Identifier) (ty' : LTy),
+      (funcContext Env.context func).types.find? x = some ty' →
+      ∀ a, a ∈ LTy.freeVars ty' →
+        ∃ ty0, (TContext.subst Γ0 ρ).types.find? x = some ty0 ∧ a ∈ LTy.freeVars ty0) := by
+  -- Length fact for `hdom_base`, from the input alias-equiv list.
+  have h_len : (List.take func.inputs.keys.length v_inst.fst.destructArrow).length
+      = func.inputs.keys.length := by
+    have h_ae_len := AliasEquivList.length_eq h_ae_ins
+    rw [show (LMonoTy.subst ρ <$> List.take func.inputs.keys.length v_inst.fst.destructArrow)
+        = (List.take func.inputs.keys.length v_inst.fst.destructArrow).map (LMonoTy.subst ρ)
+      from rfl, List.length_map] at h_ae_len
+    rw [h_ae_len, ListMap.keys_eq_map_fst, List.length_map, ListMap.values_eq_map_snd,
+      List.length_map]
+  have h_alias_conj : (TContext.subst Γ0 ρ).aliases = (funcContext Env.context func).aliases := by
+    -- aliases equality: ρ preserves aliases; `funcContext` keeps `Env`'s aliases.
     rw [TContext.subst_aliases, h_aliases0]
     rfl
-  · -- TContextAliasEquiv
+  have h_equiv : TContextAliasEquiv (T := CoreLParams) (funcContext Env.context func).aliases
+      (TContext.subst Γ0 ρ) (funcContext Env.context func) := by
+    -- TContextAliasEquiv
     intro x ty h_find
     -- Peel the ρ layer, then rewrite through `h_find_eq` to the base context.
     rw [TContext.subst] at h_find
@@ -2021,7 +2087,7 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
       -- Region B (ambient scope).
       rw [h_formals] at h1
       simp only [] at h1
-      have h_bv : LTy.boundVars ty1 = [] := h_ambient_mono x ty1 h1
+      have h_bv : LTy.boundVars ty1 = [] := h_ambient_mono ty1 (Maps.find?_mem_values _ h1)
       cases ty1 with
       | forAll xs mty0 =>
         simp only [LTy.boundVars] at h_bv
@@ -2066,6 +2132,16 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
           rw [h_rhs_none]; exact h1
         refine ⟨mty0, mty0, ?_, h_rhs_lookup, Lambda.AliasEquiv.refl⟩
         rw [h_ty_eq, LTy.subst_forAll_nil, h_rho_id]
+  -- Assemble: aliases-eq, the equivalence, and the Γ'→Γ freshness reflection.
+  refine ⟨h_alias_conj, h_equiv, ?_⟩
+  -- freshness reflection via `hfresh_of_aliasEquiv` + `hdom_base` (needs `h_ali_nd`, `h_len`).
+  have h_ctx' : TContextAliasEquiv (T := CoreLParams) Env.context.aliases
+      (TContext.subst Γ0 ρ) (funcContext Env.context func) := by
+    have h_fc_al : (funcContext Env.context func).aliases = Env.context.aliases := rfl
+    rw [h_fc_al] at h_equiv; exact h_equiv
+  exact Function.hfresh_of_aliasEquiv Env.context.aliases (TContext.subst Γ0 ρ)
+    (funcContext Env.context func) h_ali_nd h_ctx'
+    (Function.hdom_base Env func v_inst ρ Γ0 h_len h_find_eq)
 
 /-- **Shared context-alias facts.** Both `typeCheck_bodyTyped_instantiated` and
     `typeCheck_measureTyped_instantiated` resolve their subject (body / measure) in the
@@ -2096,8 +2172,8 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
       func.inputs.values)
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = []) :
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
+    (h_ali_nd : AliasesNonDropping Env.context.aliases) :
     let FORMALS : Map (Identifier CoreLParams.IDMeta) LTy :=
       List.map (fun p => (p.fst, LTy.forAll [] p.snd))
         (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))
@@ -2106,7 +2182,11 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
       ((v_inst.snd.pushEmptyContext.addInNewestContext FORMALS).context.subst v_unify.subst).subst renameSubst
     (TContext.subst Γ_inst ρ).aliases = (funcContext Env.context func).aliases ∧
     TContextAliasEquiv (T := CoreLParams) (funcContext Env.context func).aliases
-      (TContext.subst Γ_inst ρ) (funcContext Env.context func) := by
+      (TContext.subst Γ_inst ρ) (funcContext Env.context func) ∧
+    (∀ (x : CoreLParams.Identifier) (ty' : LTy),
+      (funcContext Env.context func).types.find? x = some ty' →
+      ∀ a, a ∈ LTy.freeVars ty' →
+        ∃ ty0, (TContext.subst Γ_inst ρ).types.find? x = some ty0 ∧ a ∈ LTy.freeVars ty0) := by
   intro FORMALS renameSubst Γ_inst
   have h_ctx_eq : v_inst.snd.context = Env.context :=
     LTy_instantiateWithCheck_context' type C Env v_inst.fst v_inst.snd
@@ -2178,7 +2258,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
           -- Region B (ambient scope).
           rw [h_formals] at h_base
           simp only [] at h_base
-          have h_bv : LTy.boundVars ty0 = [] := h_ambient_mono x ty0 h_base
+          have h_bv : LTy.boundVars ty0 = [] := h_ambient_mono ty0 (Maps.find?_mem_values _ h_base)
           cases ty0 with
           | forAll xs mty0 =>
             simp only [LTy.boundVars] at h_bv
@@ -2225,7 +2305,20 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
       rw [h_id]
   -- Delegate the shared ρ-walk to the base lemma.
   exact Function.contextAliasEquiv_base Env func v_inst ρ Γ_inst
-    h_aliases0 h_ρ_keys h_ae_ins h_ambient_mono h_find_eq
+    h_aliases0 h_ρ_keys h_ae_ins h_ambient_mono h_ali_nd h_find_eq
+
+/-- Every value in a `forAll []`-map has no bound variables. Drives the FORMALS scope of
+    `internalContext_values_mono`. -/
+theorem mem_values_map_forAll_nil_boundVars (l : List (CoreLParams.Identifier × LMonoTy)) (ty : LTy)
+    (h : ty ∈ Map.values (List.map (fun p => (p.fst, LTy.forAll [] p.snd)) l)) :
+    ty.boundVars = [] := by
+  induction l with
+  | nil => simp [Map.values] at h
+  | cons hd tl ih =>
+    simp only [List.map_cons, Map.values, List.mem_cons] at h
+    rcases h with h | h
+    · rw [h]; rfl
+    · exact ih h
 
 /-- The internal body-resolution context `(FORMALS :: ambient)` is monomorphic: every
     value is `forAll [] _` (formals by construction; ambient by `h_ambient_mono`). Stated
@@ -2234,14 +2327,38 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
 theorem Function.internalContext_values_mono (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (h_inst : type.instantiateWithCheck C Env = .ok v_inst)
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty → LTy.boundVars ty = []) :
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = []) :
     ∀ ty ∈ Maps.values
       (v_inst.snd.pushEmptyContext.addInNewestContext
         (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
           (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context.types,
       ty.boundVars = [] := by
-  -- LAYER-3 LEAF — see ALPHAEQUIV_RENAMESUBST_PLAN.md §10k (mono-context obligation).
-  sorry
+  -- Reduce the internal context's types to `FORMALS :: Env.context.types`, then split
+  -- `Maps.values` into the FORMALS scope (all `forAll []` by construction) and the ambient
+  -- scope (all mono by the values-based `h_ambient_mono`).
+  have h_ctx_eq : v_inst.snd.context = Env.context :=
+    LTy_instantiateWithCheck_context' type C Env v_inst.fst v_inst.snd (by rw [Prod.eta]; exact h_inst)
+  have h_types : (v_inst.snd.pushEmptyContext.addInNewestContext
+      (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+        (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context.types
+      = (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+        (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))
+        :: Env.context.types := by
+    have e1 : (v_inst.snd.pushEmptyContext.addInNewestContext
+        (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+          (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context.types
+        = (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+          (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))
+          :: v_inst.snd.context.types := by
+      simp only [TEnv.pushEmptyContext, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
+        Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
+      rfl
+    rw [e1, h_ctx_eq]
+  intro ty h_mem
+  rw [h_types, Maps.values.eq_def, List.mem_append] at h_mem
+  rcases h_mem with h_formals | h_ambient
+  · exact mem_values_map_forAll_nil_boundVars _ ty h_formals
+  · exact h_ambient_mono ty h_ambient
 
 /-- **`v_unify` avoids the user type arguments.** Every key and range variable of the
     body's return-type unification substitution `v_unify` is disjoint from `func.typeArgs`.
@@ -2273,11 +2390,14 @@ theorem Function.vunify_avoids_typeArgs (C : LContext CoreLParams) (Env_int : TE
     (hA : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs)
     (h_ctx : ∀ v, v ∈ TContext.knownTypeVars Env_int.context → v ∉ func.typeArgs)
     (h_subin : ∀ v, (v ∈ Maps.keys Env_int.stateSubstInfo.subst ∨
-                      v ∈ Subst.freeVars Env_int.stateSubstInfo.subst) → v ∉ func.typeArgs) :
+                      v ∈ Subst.freeVars Env_int.stateSubstInfo.subst) → v ∉ func.typeArgs)
+    -- No generated type variable is a user `typeArg` (from the gen-prefix guard, extracted from `h`).
+    (h_gen_avoids : ∀ (k : Nat), (TState.tyPrefix ++ toString k) ∉ func.typeArgs) :
     (∀ k, k ∈ Maps.keys v_unify.subst → k ∉ func.typeArgs) ∧
     (∀ k, k ∈ Subst.freeVars v_unify.subst → k ∉ func.typeArgs) := by
   obtain ⟨hB, hC⟩ := resolve_freeVars_pred body v_resolve.fst C Env_int v_resolve.snd
     h_resolve h_envwf h_fwf h_resolved (· ∉ func.typeArgs) h_ctx h_subin
+    (fun v k h_eq => h_eq ▸ h_gen_avoids k)
   have h_cs : ∀ v, v ∈ Constraints.freeVars
       [(LMonoTy.mkArrow'
           ((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
@@ -2300,7 +2420,7 @@ theorem Function.vunify_avoids_typeArgs (C : LContext CoreLParams) (Env_int : TE
       `func.typeArgs`. From `Function.vunify_avoids_typeArgs` (+ its `$__ty`-world chain).
 
     LAYER-3 LEAF (sorry body) — detailed proof plan in ALPHAEQUIV_RENAMESUBST_PLAN.md §10m. -/
-theorem Function.bodyComposite_wf_hyps (C : LContext CoreLParams) (Env : TEnv Unit)
+theorem Function.bodyComposite_wf_hyps
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (v_unify : SubstInfo) (ρ₀ : SubstOne)
     (h_type : func.type = .ok type)
@@ -2339,8 +2459,8 @@ theorem Function.bodyComposite_wf_hyps (C : LContext CoreLParams) (Env : TEnv Un
     `hcover` (self-referential inner keys are covered by `ρ₀`) are proved here from the
     `bodyComposite_wf_hyps` bundle; only the inverse-pairing self-ref characterization (`hSelf`)
     remains a sub-leaf. -/
-theorem Function.bodyComposite_wf (C : LContext CoreLParams) (Env : TEnv Unit)
-    (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
+theorem Function.bodyComposite_wf
+    (func : Function) (v_inst : LMonoTy × TEnv Unit)
     (v_unify : SubstInfo) (ρ₀ : SubstOne)
     (h_wf_ρ : SubstWF [ρ₀] = true)
     -- ρ₀-contract from (strengthened) `LTy_instantiateWithCheck_inverse`:
@@ -2417,8 +2537,8 @@ theorem Function.bodyComposite_wf (C : LContext CoreLParams) (Env : TEnv Unit)
     Layer-2 helper: its body is the genuinely-new content of Route B. The `SubstWF`
     conjunct needs `ρ`'s range disjoint from the unify/instantiation variables, which
     is exposed by (the to-be-strengthened) `LTy_instantiateWithCheck_inverse`. -/
-theorem Function.bodyComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
-    (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
+theorem Function.bodyComposite_pack
+    (func : Function) (v_inst : LMonoTy × TEnv Unit)
     (v_resolve : LExprT ({ Metadata := ExpressionMetadata, IDMeta := Unit } : LExprParams).mono × TEnv Unit)
     (v_unify : SubstInfo) (ρ : Subst) (ρ₀ : SubstOne)
     (bodyty : LMonoTy)
@@ -2514,14 +2634,144 @@ theorem Function.typeCheck_input_typeArgs_no_gen_prefix (C : LContext CoreLParam
   rw [h_genprefix] at h_mem
   exact absurd h_mem (by simp)
 
+/-- Turn the negated `collidesWithAmbient` guard into the per-`typeArg` avoidance fact.
+    Shared by the extraction lemma and the body-soundness proof (both `h_ctx_avoids` and
+    `h_subin_avoids`), which have the negated guard in scope after unwrapping. -/
+theorem Function.not_collidesWithAmbient_avoid (Env : TEnv Unit) (func : Function)
+    (h : ¬ Function.collidesWithAmbient Env func = true) :
+    ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env := by
+  intro ta hta h_in
+  apply h
+  rw [Function.collidesWithAmbient, List.any_eq_true]
+  refine ⟨ta, hta, ?_⟩
+  simpa using h_in
+
+/-- A type variable in `knownTypeVars.go` of a `forAll []`-map comes from the freeVars of
+    one of the mapped monotypes. Used to split the FORMALS scope of the internal context. -/
+theorem mem_go_map_forAll_nil (l : List (CoreLParams.Identifier × LMonoTy)) (v : TyIdentifier)
+    (h : v ∈ TContext.types.knownTypeVars.go
+      (List.map (fun p => (p.fst, LTy.forAll [] p.snd)) l)) :
+    ∃ p ∈ l, v ∈ LMonoTy.freeVars p.snd := by
+  induction l with
+  | nil => simp [TContext.types.knownTypeVars.go] at h
+  | cons hd tl ih =>
+    simp only [List.map_cons, TContext.types.knownTypeVars.go, LTy.freeVars,
+      List.removeAll_nil, List.mem_append] at h
+    rcases h with h_hd | h_tl
+    · exact ⟨hd, List.mem_cons_self, h_hd⟩
+    · obtain ⟨p, hp, hpv⟩ := ih h_tl
+      exact ⟨p, List.mem_cons_of_mem _ hp, hpv⟩
+
+/-- `knownTypeVars` of the internal body-resolution context splits into the FORMALS scope
+    (`go FORMALS`) and the ambient `knownTypeVars`. The `pushEmptyContext` head contributes
+    nothing; `addInNewestContext` prepends FORMALS as the newest map. -/
+theorem knownTypeVars_pushEmpty_addInNewest (Env : TEnv Unit)
+    (FORMALS : List (CoreLParams.Identifier × LMonoTy)) :
+    TContext.knownTypeVars (Env.pushEmptyContext.addInNewestContext
+        (List.map (fun p => (p.fst, LTy.forAll [] p.snd)) FORMALS)).context =
+      TContext.types.knownTypeVars.go
+          (List.map (fun p => (p.fst, LTy.forAll [] p.snd)) FORMALS) ++
+        TContext.knownTypeVars Env.context := by
+  simp only [TEnv.pushEmptyContext, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
+    Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, TContext.knownTypeVars,
+    TContext.types.knownTypeVars]
+  rfl
+
+/-- Sibling of `typeCheck_input_typeArgs_no_gen_prefix` for the ambient-collision guard:
+    a successful `typeCheck` guarantees no `func.typeArg` collides with an ambient type
+    variable of `Env`. Extracted (not assumed) from the `collidesWithAmbient` guard. -/
+theorem Function.typeCheck_input_typeArgs_avoid_ambient (C : LContext CoreLParams) (Env : TEnv Unit)
+    (func func' : Function) (Env' : TEnv Unit)
+    (h : Function.typeCheck C Env func = .ok (func', Env')) :
+    ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env := by
+  simp only [Function.typeCheck, bind, Except.bind] at h
+  elim_err h
+  rename_i type h_type
+  elim_err h with h_genprefix
+  elim_err h            -- genprefix pure
+  elim_err h            -- concreteEval if
+  elim_err h            -- concreteEval pure
+  elim_err h            -- isConstr if
+  elim_err h            -- isConstr pure
+  elim_err h with h_ambient  -- ambient if
+  -- `h_ambient : ¬(Function.collidesWithAmbient Env func = true)`.
+  exact Function.not_collidesWithAmbient_avoid Env func h_ambient
+
+/-- **Shared: internal-context known-type-vars avoid `func.typeArgs`.** Used by BOTH the body
+    (`h_ctx_avoids`) and measure (`hSmKeys`) paths — the internal resolution context
+    (`pushEmptyContext.addInNewestContext FORMALS`) has the same shape in both. FORMALS scope →
+    `h_inst_avoids`; ambient scope → the ambient-collision guard (`h_avoid_ambient`). -/
+theorem Function.internalContext_knownTypeVars_avoid_typeArgs
+    (Env : TEnv Unit) (func : Function) (v_inst : LMonoTy × TEnv Unit)
+    (h_ctx_eq : v_inst.snd.context = Env.context)
+    (h_inst_avoids : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs)
+    (h_avoid_ambient : ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env) :
+    ∀ v, v ∈ TContext.knownTypeVars
+        (v_inst.snd.pushEmptyContext.addInNewestContext
+          (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context →
+        v ∉ func.typeArgs := by
+  intro v hv h_ta
+  rw [knownTypeVars_pushEmpty_addInNewest, List.mem_append] at hv
+  rcases hv with h_formals | h_ambient_kv
+  · obtain ⟨p, hp_mem, hpv⟩ := mem_go_map_forAll_nil _ v h_formals
+    have hp_slice : p.2 ∈ List.take func.inputs.keys.length v_inst.fst.destructArrow :=
+      (List.of_mem_zip hp_mem).2
+    have hv_inst : v ∈ LMonoTy.freeVars v_inst.fst :=
+      LMonoTy.mem_destructArrow_freeVars_subset v_inst.fst p.2
+        (List.mem_of_mem_take hp_slice) hpv
+    exact h_inst_avoids v hv_inst h_ta
+  · rw [h_ctx_eq] at h_ambient_kv
+    have h_amb : v ∈ Function.ambientTyVars Env := by
+      rw [Function.ambientTyVars]
+      exact List.mem_append_left _ (List.mem_append_left _ h_ambient_kv)
+    exact h_avoid_ambient v h_ta h_amb
+
+/-- **Shared: internal-context substitution avoids `func.typeArgs`.** Companion to
+    `internalContext_knownTypeVars_avoid_typeArgs` for keys/range of the env's substitution
+    (= the ambient substitution, since `pushEmptyContext`/`addInNewestContext`/`instantiateWithCheck`
+    do not change it). Used by both the body and measure paths. -/
+theorem Function.internalContext_subst_avoid_typeArgs
+    (type : LTy) (C : LContext CoreLParams) (Env : TEnv Unit) (func : Function)
+    (v_inst : LMonoTy × TEnv Unit)
+    (h_inst : LTy.instantiateWithCheck type C Env = .ok v_inst)
+    (h_avoid_ambient : ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env) :
+    ∀ v, (v ∈ Maps.keys
+          (v_inst.snd.pushEmptyContext.addInNewestContext
+            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst ∨
+        v ∈ Subst.freeVars
+          (v_inst.snd.pushEmptyContext.addInNewestContext
+            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst) →
+        v ∉ func.typeArgs := by
+  have h_sub_eq : (v_inst.snd.pushEmptyContext.addInNewestContext
+      (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
+        (func.inputs.keys.zip
+          (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst
+      = Env.stateSubstInfo.subst := by
+    rw [TEnv.addInNewestContext_stateSubstInfo]
+    show v_inst.snd.stateSubstInfo.subst = Env.stateSubstInfo.subst
+    rw [LTy_instantiateWithCheck_preserves_stateSubstInfo type C Env v_inst.fst v_inst.snd
+      (by rw [Prod.eta]; exact h_inst)]
+  intro v hv h_ta
+  rw [h_sub_eq] at hv
+  have h_amb : v ∈ Function.ambientTyVars Env := by
+    rw [Function.ambientTyVars]
+    rcases hv with h_keys | h_range
+    · exact List.mem_append_left _ (List.mem_append_right _ h_keys)
+    · exact List.mem_append_right _ h_range
+  exact h_avoid_ambient v h_ta h_amb
+
 /-- **Instantiated body judgment.** The `typeCheck` pipeline resolves the body in
     an *instantiated* context `Γ_inst` (formals bound to fresh-tyvar, alias-resolved
     monotypes) at an instantiated output `output_inst`, and constructs a renaming
     `ρ` (fresh → user names). Applying `ρ` to the whole judgment recovers the
     user-facing context/output *up to type-alias equivalence* (the body is checked
     against alias-resolved types, but the spec uses the raw `func` signature). The
-    top-level `typeCheck_bodyTyped` then chains three bridges: `HasType_TContext_subst`
-    (rename `ρ`), `talias` (output alias), `HasType_context_aliasEquiv` (context alias). -/
+    top-level `typeCheck_bodyTyped` then chains two bridges: `talias` (output alias) and
+    `HasType_context_aliasEquiv` (context alias). The rename `ρ` is already folded into the
+    resolve-core substitution (ROUTE B), so no `HasType_TContext_subst` bridge is needed. -/
 theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -2551,8 +2801,13 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     -- Needed for Region B of the `TContextAliasEquiv` conjunct: a polymorphic ambient entry
     -- (e.g. `forAll [a] (a→a)`, closed yet poly) would break the `forAll []` shape the
     -- relation requires, and is exactly what the `var`-init fix rules out.
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = []) :
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
+    -- TODO(preservation): aliases are non-dropping (WF + every declared arg occurs), enforced by
+    -- `TEnv.addTypeAlias` (LExprTypeEnv:1354, the phantom-arg guard). Needed for the Γ'→Γ freshness
+    -- reflection that `HasType_context_aliasEquiv`'s `tgen` case requires; discharged via
+    -- `AliasEquiv_preserves_freeVars`. Sibling to `h_aliases_not_known`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C) :
     ∀ body, func.body = some body →
       ∃ (Γ_inst : TContext Unit) (output_inst : LMonoTy) (ρ : Subst),
         HasType C (TContext.subst Γ_inst ρ) body (.forAll [] (LMonoTy.subst ρ output_inst)) ∧
@@ -2560,6 +2815,10 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
         (TContext.subst Γ_inst ρ).aliases = (funcContext Env.context func).aliases ∧
         TContextAliasEquiv (T := CoreLParams) (funcContext Env.context func).aliases
           (TContext.subst Γ_inst ρ) (funcContext Env.context func) ∧
+        (∀ (x : CoreLParams.Identifier) (ty' : LTy),
+          (funcContext Env.context func).types.find? x = some ty' →
+          ∀ a, a ∈ LTy.freeVars ty' →
+            ∃ ty0, (TContext.subst Γ_inst ρ).types.find? x = some ty0 ∧ a ∈ LTy.freeVars ty0) ∧
         _root_.Lambda.AliasEquiv (funcContext Env.context func).aliases
           (LMonoTy.subst ρ output_inst) func.output := by
   intro body h_body
@@ -2572,7 +2831,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
   elim_err h
   elim_err h
   elim_err h
-  elim_err h
+  elim_err h with h_ambient
   elim_err h
   elim_err h
   rename_i h_undecl
@@ -2758,7 +3017,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
       | none =>
         rw [h_fmls] at h_find
         simp only at h_find
-        exact h_ambient_mono x ty h_find
+        exact h_ambient_mono ty (Maps.find?_mem_values _ h_find)
     exact absurd h_mono h_bv
   have h_unify_typed := h_core.1 v_unify.subst h_absorbs h_wf_unify h_poly_fresh
   -- `output_inst = subst renameSubst (subst v_unify.subst bodyty)` equals the reconstructed
@@ -2779,9 +3038,19 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     rw [← h_unify_eq]; exact h_inv
   -- The declaration-order instantiation inverse `ρ` (NOT the appearance-order `userSubst`):
   -- `resolveAliases SIG = subst ρ v_inst.fst` (structural, general form).
-  obtain ⟨ρ₀, Env_r, h_wf_ρ, h_ra, h_ρ₀_keys, h_ρ₀_cover, h_ρ₀_range⟩ :=
+  obtain ⟨ρ₀, Env_r, h_wf_ρ, h_ra, h_ρ₀_keys, h_ρ₀_cover, h_ρ₀_range, h_ρ₀_ftvar⟩ :=
     LTy_instantiateWithCheck_inverse type C Env v_inst.fst v_inst.snd
-      (by rw [Prod.eta]; exact h_inst) h_wf.aliasesWF
+      (by rw [Prod.eta]; exact h_inst) h_wf.aliasesWF (by simpa [bne_iff_ne] using h_undecl)
+      (by
+        have h_filter_nil : List.filter
+            (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs = [] := by
+          simpa [bne_iff_ne] using h_genprefix
+        intro x hx h_pref
+        rw [LFunc.type_boundVars_eq_typeArgs func type h_type] at hx
+        have h_mem : x ∈ List.filter
+            (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs := by
+          rw [List.mem_filter]; exact ⟨hx, by simpa [TState.tyPrefix] using h_pref⟩
+        rw [h_filter_nil] at h_mem; exact absurd h_mem (by simp))
   -- The single-scope renaming, packaged as a `Subst` for the downstream lemmas.
   let ρ : Subst := [ρ₀]
   have hρ : ρ = [ρ₀] := rfl
@@ -2793,10 +3062,13 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
   obtain ⟨h_ae_out, h_ae_ins⟩ :=
     Function.typeCheck_inverse_components C Env func type v_inst ρ Env_r h_type h_ra
       h_wf.aliasesWF h_aliases_not_known
+      (by intro mty hmty; apply h_ρ₀_ftvar mty; simpa [hρ, Maps.values, Map.values, List.append_nil] using hmty)
+      h_arrow_wf
+      (knownInstance_of_instantiateWithCheck type C Env v_inst h_inst)
   -- Assemble the existential. The two context-alias conjuncts are the shared facts.
   have h_cae := Function.contextAliasEquiv_facts C Env func type v_inst ρ v_unify alphaMap
     h_inst h_alphaMap h_gen_none h_rigid_fixed h_ρ_keys
-    h_ae_ins h_ambient_rigid h_ambient_mono
+    h_ae_ins h_ambient_rigid h_ambient_mono h_ali_nd
   -- ROUTE B: the post-ρ body judgment, obtained by instantiating `resolve_HasType_core.1`
   -- at the composite of `v_unify.subst` with the (renameSubst ∘ ρ) renaming — NOT via the
   -- (false) `HasType_TContext_subst`. Stubbed here; discharged in step 3 below.
@@ -2847,22 +3119,17 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
       obtain ⟨k, h_eq⟩ := instantiateWithCheck_freeVars_gen_prefixed type C Env v_inst.fst v_inst.snd
         (by rw [Prod.eta]; exact h_inst) h_closed h_wf.aliasesWF v hv
       rw [h_eq]; exact h_gen_avoids k
-    have h_ctx_avoids : ∀ v, v ∈ TContext.knownTypeVars
-        (v_inst.snd.pushEmptyContext.addInNewestContext
-          (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
-            (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).context →
-        v ∉ func.typeArgs := by
-      sorry
-    have h_subin_avoids : ∀ v, (v ∈ Maps.keys
-          (v_inst.snd.pushEmptyContext.addInNewestContext
-            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
-              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst ∨
-        v ∈ Subst.freeVars
-          (v_inst.snd.pushEmptyContext.addInNewestContext
-            (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
-              (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow)))).stateSubstInfo.subst) →
-        v ∉ func.typeArgs := by
-      sorry
+    have h_ctx_eq : v_inst.snd.context = Env.context :=
+      LTy_instantiateWithCheck_context' type C Env v_inst.fst v_inst.snd
+        (by rw [Prod.eta]; exact h_inst)
+    have h_avoid_ambient : ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env :=
+      Function.not_collidesWithAmbient_avoid Env func h_ambient
+    -- FORMALS scope → `h_inst_avoids`; ambient scope → the ambient-collision guard. Shared lemma.
+    have h_ctx_avoids := Function.internalContext_knownTypeVars_avoid_typeArgs Env func v_inst
+      h_ctx_eq h_inst_avoids h_avoid_ambient
+    -- The internal env's substitution is the ambient one; keys/range ⊆ ambientTyVars. Shared lemma.
+    have h_subin_avoids := Function.internalContext_subst_avoid_typeArgs type C Env func v_inst
+      h_inst h_avoid_ambient
     have h_resolved_int : TContext.AliasesResolved
         (v_inst.snd.pushEmptyContext.addInNewestContext
           (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
@@ -2877,28 +3144,28 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
           (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))))
       func v_inst body v_resolve v_unify
       (by rw [Prod.eta]; exact h_resolve) h_internalwf h_fwf h_resolved_int h_unify'
-      h_inst_avoids h_ctx_avoids h_subin_avoids
+      h_inst_avoids h_ctx_avoids h_subin_avoids h_gen_avoids
     -- Provenance bundle for the composite `SubstWF`.
-    obtain ⟨hC1, hC2, hVU', hUT⟩ := Function.bodyComposite_wf_hyps C Env func type v_inst v_unify ρ₀
+    obtain ⟨hC1, hC2, hVU', hUT⟩ := Function.bodyComposite_wf_hyps func type v_inst v_unify ρ₀
       h_type h_ρ₀_range h_ρ₀_cover hVU hVUr h_inst_avoids
     -- The composite is `SubstWF` (via `SubstWF_compose_of_cover`; the inner 2-cycle is scrubbed).
-    have h_wf_S := Function.bodyComposite_wf C Env func type v_inst v_unify ρ₀
+    have h_wf_S := Function.bodyComposite_wf func v_inst v_unify ρ₀
       h_wf_ρ hC1 hC2 hVU' hUT
     -- Pack the threefold composite into a single `S` acting as `ρ ∘ rename ∘ v_unify`.
-    obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ := Function.bodyComposite_pack C Env func type
+    obtain ⟨S, h_ctx, h_ty, h_abs, h_wf, h_poly⟩ := Function.bodyComposite_pack func
       v_inst v_resolve v_unify ρ ρ₀ bodyty hρ h_absorbs h_mono_ctx h_wf_S
     rw [h_ctx, h_ty]
     exact h_core.1 S h_abs h_wf h_poly
-  refine ⟨_, _, ρ, h_ht_post, h_wf_ρ, h_cae.1, h_cae.2, ?_⟩
-  · -- output AliasEquiv
-    rw [h_out_eq]
-    show Lambda.AliasEquiv Env.context.aliases _ func.output
-    exact h_ae_out
+  refine ⟨_, _, ρ, h_ht_post, h_wf_ρ, h_cae.1, h_cae.2.1, h_cae.2.2, ?_⟩
+  -- output AliasEquiv
+  rw [h_out_eq]
+  show Lambda.AliasEquiv Env.context.aliases _ func.output
+  exact h_ae_out
 
 /-- `bodyTyped` for the original function: the unresolved body has the declared
     return type polymorphically in the formal-parameter context. Top-down: extract
-    the instantiated judgment + renaming, then chain the three bridges
-    (`HasType_TContext_subst` for tyvars, `talias` for the output alias,
+    the instantiated judgment (with the rename `ρ` already folded in via ROUTE B),
+    then chain the two alias bridges (`talias` for the output alias,
     `HasType_context_aliasEquiv` for the context alias). -/
 theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
@@ -2921,13 +3188,15 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
     -- Needed for Region B of the `TContextAliasEquiv` conjunct: a polymorphic ambient entry
     -- (e.g. `forAll [a] (a→a)`, closed yet poly) would break the `forAll []` shape the
     -- relation requires, and is exactly what the `var`-init fix rules out.
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = []) :
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
+    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C) :
     ∀ body, func.body = some body →
       HasType C (funcContext Env.context func) body (.forAll [] func.output) := by
   intro body h_body
-  obtain ⟨Γ_inst, output_inst, ρ, h_ht, h_wf_ρ, h_alias_eq, h_ctx_ae, h_out_ae⟩ :=
-    Function.typeCheck_bodyTyped_instantiated C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono body h_body
+  obtain ⟨Γ_inst, output_inst, ρ, h_ht, h_wf_ρ, h_alias_eq, h_ctx_ae, h_fresh, h_out_ae⟩ :=
+    Function.typeCheck_bodyTyped_instantiated C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ali_nd h_arrow_wf body h_body
   -- `h_ht` is ALREADY the post-ρ judgment (ROUTE B: ρ folded into the resolve-core
   -- substitution, no `HasType_TContext_subst`).
   -- Bridge 1: alias-bridge the output type `subst ρ output_inst ↝ func.output`.
@@ -2936,11 +3205,10 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
     exact HasType.talias _ body _ _ h_out_ae h_ht
   -- Bridge 2: alias-bridge the context `Γ_inst.subst ρ ↝ funcContext Env.context func`.
   -- `HasType_context_aliasEquiv` moves a judgment from Γ (= Γ_inst.subst ρ) to Γ'
-  -- (= funcContext …), needing `Γ'.aliases = Γ.aliases` and the equivalence stated
-  -- over `Γ.aliases`. Both come from `h_alias_eq` / `h_ctx_ae` after orienting.
-  refine HasType_context_aliasEquiv C (TContext.subst Γ_inst ρ) (funcContext Env.context func)
-    body (.forAll [] func.output) h_out_bridged h_alias_eq.symm ?_
-  rw [h_alias_eq]; exact h_ctx_ae
+  -- (= funcContext …), needing `Γ'.aliases = Γ.aliases`, the equivalence over `Γ.aliases`,
+  -- and the Γ'→Γ freshness reflection `h_fresh`. All come from the `_instantiated` result.
+  exact HasType_context_aliasEquiv C (TContext.subst Γ_inst ρ) (funcContext Env.context func)
+    body (.forAll [] func.output) h_out_bridged h_alias_eq.symm (h_alias_eq ▸ h_ctx_ae) h_fresh
 
 /-- **ROUTE B composite (measure).** The measure analogue of `bodyComposite_pack`,
     folding `ρ ∘ Sm` (`Sm = v_measure`'s resolve substitution) into one absorbing,
@@ -2949,16 +3217,59 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
 
     Layer-2 helper: shares the `SubstWF`-of-sequential-composite content with the
     body case (plan §10c). -/
-theorem Function.measureComposite_pack (C : LContext CoreLParams) (Env : TEnv Unit)
-    (func : Function) (v_inst : LMonoTy × TEnv Unit)
+theorem Function.measureComposite_pack
     (v_measure : LExprT ({ Metadata := ExpressionMetadata, IDMeta := Unit } : LExprParams).mono × TEnv Unit)
-    (ρ : Subst) (Γ_mbase : TContext Unit) :
+    (ρ : Subst) (ρ₀ : SubstOne) (Γ_mbase : TContext Unit)
+    -- `ρ` is single-scope (from the strengthened `LTy_instantiateWithCheck_inverse`).
+    (h_ρ_single : ρ = [ρ₀])
+    -- Every entry of the measure-base context is monomorphic (formals `forAll []`; ambient by
+    -- `h_ambient_mono`). Drives the context-composition law and `polyKeysFresh`.
+    (h_mono : ∀ ty ∈ Maps.values Γ_mbase.types, LTy.boundVars ty = [])
+    -- `SubstWF` of the composite `S = compose ρ₀ Sm`. Supplied by `measureComposite_wf` at the call
+    -- site (the measure analogue of `bodyComposite_wf`; the inner `Sm` need not be `SubstWF`).
+    (h_wf_S : SubstWF (Subst.compose ρ₀ v_measure.snd.stateSubstInfo.subst) = true) :
     ∃ S : Subst,
         (Γ_mbase.subst v_measure.snd.stateSubstInfo.subst).subst ρ = Γ_mbase.subst S ∧
         S.absorbs v_measure.snd.stateSubstInfo.subst ∧
         SubstWF S = true ∧
         Subst.polyKeysFresh (T := CoreLParams) S Γ_mbase := by
-  sorry
+  subst h_ρ_single
+  refine ⟨Subst.compose ρ₀ v_measure.snd.stateSubstInfo.subst, ?_, ?_, ?_, ?_⟩
+  · exact TContext.subst_compose_forAll_nil ρ₀ v_measure.snd.stateSubstInfo.subst Γ_mbase h_mono
+  · intro a t h_find
+    have h_self : LMonoTy.subst v_measure.snd.stateSubstInfo.subst t
+        = LMonoTy.subst v_measure.snd.stateSubstInfo.subst (.ftvar a) :=
+      Subst.absorbs_refl v_measure.snd.stateSubstInfo.subst
+        v_measure.snd.stateSubstInfo.isWF a t h_find
+    rw [← LMonoTy.subst_compose ρ₀ v_measure.snd.stateSubstInfo.subst t,
+        ← LMonoTy.subst_compose ρ₀ v_measure.snd.stateSubstInfo.subst (.ftvar a), h_self]
+  · exact h_wf_S
+  · intro a _ x ty h_find h_bv
+    exact absurd (h_mono ty (Maps.find?_mem_values Γ_mbase.types h_find)) h_bv
+
+/-- **`SubstWF` of the measure composite `ρ₀ ∘ Sm`.** The measure analogue of
+    `bodyComposite_wf`, but simpler: there is no `renameMap` layer (the measure is not
+    unified through the fresh→user renaming), so the inner factor is just the measure-resolve
+    substitution `Sm`, which is itself `SubstWF`. `SubstWF_compose_of_cover` needs (i) `Sm`'s
+    keys avoid `ρ₀`'s range (= user `typeArgs`) — the `$__ty`-provenance fact `hSmKeys`,
+    supplied by the caller (measure analogue of `vunify_avoids_typeArgs`); and (ii) the cover
+    obligation, which is VACUOUS because `Sm` is `SubstWF` (no key of `Sm` is free in `Sm`). -/
+theorem Function.measureComposite_wf (func : Function) (ρ₀ : SubstOne) (Sm : SubstInfo)
+    (h_wf_ρ : SubstWF [ρ₀] = true)
+    (hC1 : ∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ func.typeArgs)
+    (hSmKeys : ∀ k, k ∈ Maps.keys Sm.subst → k ∉ func.typeArgs) :
+    SubstWF (Subst.compose ρ₀ Sm.subst) = true := by
+  refine SubstWF_compose_of_cover ρ₀ Sm.subst h_wf_ρ ?hkeys ?hcover
+  case hkeys =>
+    intro k hk h_in_rho
+    exact hSmKeys k hk (hC1 k h_in_rho)
+  case hcover =>
+    -- Vacuous: `Sm` is `SubstWF`, so no key of `Sm` is free in `Sm`.
+    intro k hk h_fv
+    exfalso
+    have hwf := Sm.isWF
+    simp only [SubstWF, List.all_eq_true, decide_eq_true_eq] at hwf
+    exact hwf k hk h_fv
 
 /-- **Instantiated measure judgment.** As `typeCheck_bodyTyped_instantiated`, but
     for a non-variable measure: the measure resolves at type `int` in the
@@ -2970,7 +3281,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
-    (h_ws : ∀ body, func.body = some body → WellScoped body Env.context)
+    (h_resolved : TContext.AliasesResolved Env.context)
     -- TODO(preservation): see `typeCheck_bodyTyped_instantiated`. Context alias names are
     -- non-reserved (enforced by `TEnv.addTypeAlias`); to be discharged as a preserved invariant.
     (h_aliases_not_known :
@@ -2985,8 +3296,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     -- Needed for Region B of the `TContextAliasEquiv` conjunct: a polymorphic ambient entry
     -- (e.g. `forAll [a] (a→a)`, closed yet poly) would break the `forAll []` shape the
     -- relation requires, and is exactly what the `var`-init fix rules out.
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = [])
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
     -- A decreases clause is a parsed expression whose free variables are the
     -- function's parameters (in scope once the formals are pushed). Mirrors the
     -- body's `h_ws`: the resolve-based `HasType` route needs the subject to be
@@ -2995,7 +3305,10 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     -- so a captured `$__var`-prefixed fvar could resolve yet be ill-scoped.
     -- TODO(preservation): discharge as an invariant (parsed measures cannot use
     -- reserved `$__` names; their refs are exactly the declared parameters).
-    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context) :
+    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context)
+    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C) :
     ∀ m, func.measure = some m →
       (∀ mid x ann, m ≠ .fvar mid x ann) →
       ∃ (Γ_inst : TContext Unit) (ρ : Subst),
@@ -3003,7 +3316,11 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
         SubstWF ρ ∧
         (TContext.subst Γ_inst ρ).aliases = (funcContext Env.context func).aliases ∧
         TContextAliasEquiv (T := CoreLParams) (funcContext Env.context func).aliases
-          (TContext.subst Γ_inst ρ) (funcContext Env.context func) := by
+          (TContext.subst Γ_inst ρ) (funcContext Env.context func) ∧
+        (∀ (x : CoreLParams.Identifier) (ty' : LTy),
+          (funcContext Env.context func).types.find? x = some ty' →
+          ∀ a, a ∈ LTy.freeVars ty' →
+            ∃ ty0, (TContext.subst Γ_inst ρ).types.find? x = some ty0 ∧ a ∈ LTy.freeVars ty0) := by
   intro m h_measure h_nonfvar
   simp only [Function.typeCheck, bind, Except.bind] at h
   elim_err h
@@ -3080,7 +3397,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
       | some w => rw [hg] at h; simp only [reduceCtorEq] at h
       | none => rfl
     rw [h_gen_none] at h
-    simp only [pure, Except.pure] at h
+    simp only [] at h
     -- Now peel the measure branch. Rewrite `func.measure` to `some m` so the
     -- outer match reduces to the `some` arm.
     rw [h_measure] at h
@@ -3167,7 +3484,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
         | none =>
           rw [h_fmls] at h_find
           simp only at h_find
-          exact h_ambient_mono x ty h_find
+          exact h_ambient_mono ty (Maps.find?_mem_values _ h_find)
       exact absurd h_mono h_bv
     -- Instantiate the resolve-core judgment at `S := Sm` (absorbs reflexively).
     have h_sm_typed := h_core.1 Sm (Subst.absorbs_refl Sm v_measure.snd.stateSubstInfo.isWF)
@@ -3220,7 +3537,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
           | none =>
             rw [h_formals] at h_base
             simp only at h_base
-            have h_bv : LTy.boundVars ty0 = [] := h_ambient_mono x ty0 h_base
+            have h_bv : LTy.boundVars ty0 = [] := h_ambient_mono ty0 (Maps.find?_mem_values _ h_base)
             cases ty0 with
             | forAll xs mty0 =>
               simp only [LTy.boundVars] at h_bv
@@ -3241,9 +3558,19 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
               rw [LTy.subst_forAll_nil, h_m_id]
         rw [h_id]
     -- Obtain the renaming `ρ` (fresh → user, single scope) and per-component alias facts.
-    obtain ⟨ρ₀, Env_r, h_wf_ρ, h_ra, h_ρ₀_keys, _, _⟩ :=
+    obtain ⟨ρ₀, Env_r, h_wf_ρ, h_ra, h_ρ₀_keys, h_ρ₀_cover, h_ρ₀_range, h_ρ₀_ftvar⟩ :=
       LTy_instantiateWithCheck_inverse type C Env v_inst.fst v_inst.snd
-        (by rw [Prod.eta]; exact h_inst) h_wf.aliasesWF
+        (by rw [Prod.eta]; exact h_inst) h_wf.aliasesWF (by simpa [bne_iff_ne] using h_undecl)
+        (by
+          have h_filter_nil : List.filter
+              (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs = [] := by
+            simpa [bne_iff_ne] using h_genprefix
+          intro x hx h_pref
+          rw [LFunc.type_boundVars_eq_typeArgs func type h_type] at hx
+          have h_mem : x ∈ List.filter
+              (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs := by
+            rw [List.mem_filter]; exact ⟨hx, by simpa [TState.tyPrefix] using h_pref⟩
+          rw [h_filter_nil] at h_mem; exact absurd h_mem (by simp))
     let ρ : Subst := [ρ₀]
     have hρ : ρ = [ρ₀] := rfl
     have h_ρ_keys : ∀ x ∈ Maps.keys ρ, TContext.isFresh (T := CoreLParams) x Env.context := by
@@ -3253,6 +3580,9 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     obtain ⟨_, h_ae_ins⟩ :=
       Function.typeCheck_inverse_components C Env func type v_inst ρ Env_r h_type h_ra
         h_wf.aliasesWF h_aliases_not_known
+        (by intro mty hmty; apply h_ρ₀_ftvar mty; simpa [hρ, Maps.values, Map.values, List.append_nil] using hmty)
+        h_arrow_wf
+        (knownInstance_of_instantiateWithCheck type C Env v_inst h_inst)
     -- `measureBaseEnv.context.aliases = Env.context.aliases` (addInNewest touches only types).
     have h_aliases0 : measureBaseEnv.context.aliases = Env.context.aliases := by
       have e : measureBaseEnv.context.aliases = v_inst.snd.context.aliases := rfl
@@ -3260,7 +3590,8 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     -- The two shared context-alias conjuncts via the factored base lemma.
     have h_cae := Function.contextAliasEquiv_base Env func v_inst ρ
       (measureBaseEnv.context.subst Sm)
-      (by rw [TContext.subst_aliases]; exact h_aliases0) h_ρ_keys h_ae_ins h_ambient_mono h_find_eq
+      (by rw [TContext.subst_aliases]; exact h_aliases0) h_ρ_keys h_ae_ins h_ambient_mono
+      h_ali_nd h_find_eq
     -- ROUTE B: the post-ρ measure judgment, obtained by instantiating `resolve_HasType_core.1`
     -- at the composite of `Sm` with ρ — NOT via the (false) `HasType_TContext_subst`. Stubbed
     -- here; discharged in step 3 (shared with the body). `subst ρ .int = .int` (int is ground).
@@ -3271,15 +3602,67 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
       -- `subst S .int = .int` is automatic); only the context needs the composite.
       -- `h_core.1` is under the rigidified `Cm`; bridge to `C` via
       -- `HasType.of_rigidTypeVars_irrel`.
+      -- Measure-base context is monomorphic (FORMALS `forAll []` ++ ambient mono).
+      have h_mono_mbase : ∀ ty ∈ Maps.values measureBaseEnv.context.types, LTy.boundVars ty = [] := by
+        intro ty h_mem
+        rw [h_base_types, Maps.values.eq_def, List.mem_append] at h_mem
+        rcases h_mem with h_formals | h_ambient
+        · exact mem_values_map_forAll_nil_boundVars _ ty h_formals
+        · exact h_ambient_mono ty h_ambient
+      -- ρ₀-range ⊆ user typeArgs (from `right✝` + `type.boundVars = typeArgs`).
+      have h_type_bv : LTy.boundVars type = func.typeArgs :=
+        LFunc.type_boundVars_eq_typeArgs (T := CoreLParams) func type h_type
+      have hC1 : ∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ func.typeArgs := by
+        intro v hv; rw [← h_type_bv]; exact h_ρ₀_range v hv
+      -- Sm-keys avoid typeArgs: measure analogue of `vunify_avoids_typeArgs`, directly from
+      -- `resolve_freeVars_pred`'s output-subst conjunct (no unify step for the measure resolve).
+      -- Discharged in the same layer as `resolve_freeVars_pred` (+ its `h_gen` fix); the internal
+      -- context/subst facts are the already-proven `h_ctx_avoids`/`h_subin_avoids` analogues.
+      have hSmKeys : ∀ k, k ∈ Maps.keys Sm → k ∉ func.typeArgs := by
+        have h_closed : LTy.freeVars type = [] := by simpa [bne_iff_ne] using h_undecl
+        have h_ta_filter_nil : List.filter
+            (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs = [] := by
+          simpa [bne_iff_ne] using h_genprefix
+        have h_gen_avoids : ∀ (j : Nat), (TState.tyPrefix ++ toString j) ∉ func.typeArgs := by
+          intro j h_in
+          have h_mem : (TState.tyPrefix ++ toString j) ∈ List.filter
+              (fun ta => TState.tyPrefix.toList.isPrefixOf ta.toList) func.typeArgs := by
+            rw [List.mem_filter]; exact ⟨h_in, by simp [TState.tyPrefix]⟩
+          rw [h_ta_filter_nil] at h_mem; exact absurd h_mem (by simp)
+        have h_inst_avoids : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs := by
+          intro v hv
+          obtain ⟨j, h_eq⟩ := instantiateWithCheck_freeVars_gen_prefixed type C Env
+            v_inst.fst v_inst.snd (by rw [Prod.eta]; exact h_inst) h_closed h_wf.aliasesWF v hv
+          rw [h_eq]; exact h_gen_avoids j
+        have h_avoid_ambient : ∀ ta, ta ∈ func.typeArgs → ta ∉ Function.ambientTyVars Env :=
+          Function.not_collidesWithAmbient_avoid Env func (by assumption)
+        have h_resolved_m : TContext.AliasesResolved measureBaseEnv.context := by
+          have h_vinst_res : TContext.AliasesResolved v_inst.snd.context := by
+            rw [h_ctx_eq]; exact h_resolved
+          exact TContext.AliasesResolved.of_addInNewestContext (T := CoreLParams) _ _
+            (TContext.AliasesResolved.of_pushEmptyContext (T := CoreLParams) v_inst.snd h_vinst_res)
+        have hpred := resolve_freeVars_pred m v_measure.fst Cm measureBaseEnv v_measure.snd
+          (by rw [Prod.eta]; exact h_measure_resolve) h_internalwf h_fwf h_resolved_m
+          (· ∉ func.typeArgs)
+          (Function.internalContext_knownTypeVars_avoid_typeArgs Env func v_inst
+            h_ctx_eq h_inst_avoids h_avoid_ambient)
+          (Function.internalContext_subst_avoid_typeArgs type C Env func v_inst
+            h_inst h_avoid_ambient)
+          (fun v k h_eq => h_eq ▸ h_gen_avoids k)
+        intro k hk
+        exact hpred.2 k (Or.inl hk)
+      have h_wf_S : SubstWF (Subst.compose ρ₀ Sm) = true :=
+        Function.measureComposite_wf func ρ₀ v_measure.snd.stateSubstInfo h_wf_ρ hC1 hSmKeys
       obtain ⟨S, h_ctx, h_abs, h_wf, h_poly⟩ :=
-        Function.measureComposite_pack C Env func v_inst v_measure ρ measureBaseEnv.context
+        Function.measureComposite_pack v_measure ρ ρ₀ measureBaseEnv.context
+          hρ h_mono_mbase h_wf_S
       rw [h_ctx]
       have h_typed := h_core.1 S h_abs h_wf h_poly
       rw [h_int] at h_typed
       simp only [LMonoTy.subst_unfold] at h_typed
       exact HasType.of_rigidTypeVars_irrel h_typed
     exact ⟨measureBaseEnv.context.subst Sm, ρ,
-      h_sm_post, h_wf_ρ, h_cae.1, h_cae.2⟩
+      h_sm_post, h_wf_ρ, h_cae.1, h_cae.2.1, h_cae.2.2⟩
 
 /-- `measureTyped` for the original function: a non-variable measure has type `int`. -/
 theorem Function.typeCheck_measureTyped (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -3287,7 +3670,7 @@ theorem Function.typeCheck_measureTyped (C : LContext CoreLParams) (Env : TEnv U
     (h : Function.typeCheck C Env func = .ok (func', Env'))
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
-    (h_ws : ∀ body, func.body = some body → WellScoped body Env.context)
+    (h_resolved : TContext.AliasesResolved Env.context)
     -- TODO(preservation): see `typeCheck_bodyTyped_instantiated`. Context alias names are
     -- non-reserved (enforced by `TEnv.addTypeAlias`); to be discharged as a preserved invariant.
     (h_aliases_not_known :
@@ -3302,21 +3685,22 @@ theorem Function.typeCheck_measureTyped (C : LContext CoreLParams) (Env : TEnv U
     -- Needed for Region B of the `TContextAliasEquiv` conjunct: a polymorphic ambient entry
     -- (e.g. `forAll [a] (a→a)`, closed yet poly) would break the `forAll []` shape the
     -- relation requires, and is exactly what the `var`-init fix rules out.
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = [])
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
     -- Measure well-scopedness; see `typeCheck_measureTyped_instantiated`.
-    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context) :
+    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context)
+    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C) :
     ∀ m, func.measure = some m →
       (∀ mid x ann, m ≠ .fvar mid x ann) →
       HasType C (funcContext Env.context func) m (.forAll [] .int) := by
   intro m h_measure h_nonfvar
-  obtain ⟨Γ_inst, ρ, h_ht, h_wf_ρ, h_alias_eq, h_ctx_ae⟩ :=
-    Function.typeCheck_measureTyped_instantiated C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure m h_measure h_nonfvar
+  obtain ⟨Γ_inst, ρ, h_ht, h_wf_ρ, h_alias_eq, h_ctx_ae, h_fresh⟩ :=
+    Function.typeCheck_measureTyped_instantiated C Env func func' Env' h h_wf h_fwf h_resolved h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure h_ali_nd h_arrow_wf m h_measure h_nonfvar
   -- `h_ht` is ALREADY the post-ρ judgment at output `.int` (ROUTE B); no output bridge needed.
-  -- Bridge: alias-bridge the context only.
-  refine HasType_context_aliasEquiv C (TContext.subst Γ_inst ρ) (funcContext Env.context func)
-    m (.forAll [] .int) h_ht h_alias_eq.symm ?_
-  rw [h_alias_eq]; exact h_ctx_ae
+  -- Bridge: alias-bridge the context only (with the Γ'→Γ freshness reflection `h_fresh`).
+  exact HasType_context_aliasEquiv C (TContext.subst Γ_inst ρ) (funcContext Env.context func)
+    m (.forAll [] .int) h_ht h_alias_eq.symm (h_alias_eq ▸ h_ctx_ae) h_fresh
 
 /--
 Polymorphic soundness: if `Function.typeCheck` succeeds, the original function
@@ -3343,17 +3727,19 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     -- Needed for Region B of the `TContextAliasEquiv` conjunct: a polymorphic ambient entry
     -- (e.g. `forAll [a] (a→a)`, closed yet poly) would break the `forAll []` shape the
     -- relation requires, and is exactly what the `var`-init fix rules out.
-    (h_ambient_mono : ∀ x ty, Env.context.types.find? x = some ty →
-      LTy.boundVars ty = [])
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
     -- Measure well-scopedness; see `typeCheck_measureTyped_instantiated`.
-    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context) :
+    (h_ws_measure : ∀ m, func.measure = some m → WellScoped m Env.context)
+    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C) :
     FuncHasType C Env.context func := by
   exact {
     inputsNodup := Function.typeCheck_inputsNodup_orig C Env func func' Env' h
     typeArgsNodup := Function.typeCheck_typeArgsNodup_orig C Env func func' Env' h
     noUndeclaredVars := Function.typeCheck_noUndeclaredVars_orig C Env func func' Env' h
-    bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono
-    measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure
+    bodyTyped := Function.typeCheck_bodyTyped C Env func func' Env' h h_wf h_fwf h_resolved h_ws h_aliases_not_known h_ambient_rigid h_ambient_mono h_ali_nd h_arrow_wf
+    measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_resolved h_aliases_not_known h_ambient_rigid h_ambient_mono h_ws_measure h_ali_nd h_arrow_wf
   }
 
 /-- `Function.typeCheck` copies `concreteEval` and `isConstr` unchanged from the input
