@@ -31,9 +31,9 @@ namespace Strata.Laurel
 
 /-! ## Generic datatypes verify end-to-end (native Core parametric datatypes)
 
-Unlike generic composites (which monomorphize to dodge the SMT wall), generic datatypes
-map to NATIVE Core parametric datatypes (`declare-datatypes` with sort params) — a
-pass-through, no monomorphization. Front-end plumbing: `datatype Bx<T> { … }` grammar
+Unlike generic composites (which are monomorphized to a concrete type per instantiation),
+generic datatypes map to NATIVE Core parametric datatypes (`declare-datatypes` with sort
+params) — a pass-through, no monomorphization. Front-end plumbing: `datatype Bx<T> { … }` grammar
 binder → `DatatypeDefinition.typeArgs` → resolution scopes `T` as `.TVar` → `translateType`
 lowers `Bx<int>` to `.tcons "Bx" [int]`.
 
@@ -77,8 +77,8 @@ procedure u() opaque { var xs: Lst<int> := Cons(1, Nil()); assert xs == Cons(2, 
     src := r"
 datatype Pr { MkPr(a: int, b: int) }
 procedure u() opaque { var p1: Pr := MkPr(1, 2); var p2: Pr := MkPr(1, 2); assert p1 == p2 };"},
-  -- CROSS-INSTANTIATION DISTINCTNESS: `Bx<int>` and `Bx<bool>` are DISTINCT sorts, not
-  -- erased to one — assigning across is rejected. This is what "escapes the SMT wall" means.
+  -- CROSS-INSTANTIATION DISTINCTNESS: `Bx<int>` and `Bx<bool>` are DISTINCT Core sorts, not
+  -- erased to a single sort — so assigning one to the other is rejected.
   { name := "generic_datatype_cross_instantiation_rejected", outcome := .rejected,
     why := "assigning `Bx<int>` to a `Bx<bool>` var must be REJECTED (distinct sorts; cross-inst confusion = unsound)"
     src := r"
@@ -107,9 +107,9 @@ datatype Bx<T> { MkBx(v: T) }
 composite Holder { var bi: Bx<int> var bb: Bx<bool> }
 procedure u() opaque { var h: Holder := new Holder; h#bi := MkBx(1); h#bb := MkBx(true); var yi: Bx<int> := h#bi; assert yi == MkBx(1) };"} ]
 
-/-- Generic DATATYPES. Unlike generic composites (which monomorphize to dodge the SMT
-    wall), generic datatypes map to NATIVE Core parametric datatypes (`declare-datatypes`
-    with sort params) — a pass-through, no monomorphization. -/
+/-- Generic DATATYPES. Unlike generic composites (which are monomorphized to a concrete
+    type per instantiation), generic datatypes map to NATIVE Core parametric datatypes
+    (`declare-datatypes` with sort params) — a pass-through, no monomorphization. -/
 def runGenericDatatypeTest : IO Unit := checkCases genericDatatypeCorpus
 
 #guard_msgs (drop info, error) in
