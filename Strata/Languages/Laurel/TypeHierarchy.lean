@@ -120,11 +120,8 @@ def lowerNew (name : Identifier) (source : Option FileRange) : THM StmtExprMd :=
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
 private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := do
   match exprMd.val with
-  -- By this point MonomorphizeComposites has rewritten any generic `new C<τ>` to
-  -- a bare monomorphic `new C$…` (empty type args); a non-generic `new C` also has
-  -- empty args. So lowering keys off the (now concrete) type name; any residual
-  -- type args are ignored (they only persist on an un-monomorphizable `new`, which
-  -- is reported earlier).
+  -- Type args are already stripped by MonomorphizeComposites (`new C<τ>` → `new C$…`),
+  -- so lowering keys off the concrete name and the residual `_` is safely ignored.
   | .New name _ => lowerNew name exprMd.source
   | .IsType target ty => return lowerIsType target ty exprMd.source
   | _ => return exprMd
