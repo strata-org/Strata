@@ -5,6 +5,12 @@
 -/
 module
 
+-- `public import`s expose the signature symbols (`Factory`, `LExpr`, `LMonoTy`,
+-- `LFunc`) referenced by the `public` `OpsConsistentR` inductive below; the
+-- `import all`s additionally bring in the private internals used by the proofs.
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Semantics
 import all Strata.DL.Lambda.TypeFactoryWF
@@ -89,8 +95,12 @@ Operators not in the factory are unconstrained, mirroring `OpsConsistent`.
 
 This is the natural specification; `OpsConsistent` is the operational check that
 derives the witness substitution by unification (`opTypeSubst`). See
-`OpsConsistent_OpsConsistentR` for the soundness direction. -/
-inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
+`OpsConsistent_OpsConsistentR` for the soundness direction.
+
+Marked `public` so downstream (non-`module`) clients can name it directly without
+mirroring it through an `import all` shim; its constructors reference only public
+API (`Factory` lookup, `LMonoTy.mkArrow'`, `LMonoTy.subst`). -/
+public inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
   | const {m c} : OpsConsistentR F (.const m c)
   | bvar {m i} : OpsConsistentR F (.bvar m i)
   | fvar {m name ty} : OpsConsistentR F (.fvar m name ty)
