@@ -43,8 +43,12 @@ public section
     component type first, then apply `f` to the rebuilt node. Constructors with
     no component types are passed to `f` unchanged. Analogous to `mapStmtExpr`
     but for types — a pass that only rewrites a few type constructors can
-    pattern-match in `f` and fall through for the rest. -/
-partial def HighType.mapType (f : HighType → HighType) : HighType → HighType
+    pattern-match in `f` and fall through for the rest.
+
+    Total (structural recursion on the type's size), so properties of the
+    traversal can be proven — see `MapStmtExprProps.lean`. -/
+def HighType.mapType (f : HighType → HighType) (ty : HighType) : HighType :=
+  match ty with
   | .TSet e => f (.TSet ⟨HighType.mapType f e.val, e.source⟩)
   | .TMap k v =>
     f (.TMap ⟨HighType.mapType f k.val, k.source⟩ ⟨HighType.mapType f v.val, v.source⟩)
@@ -56,6 +60,16 @@ partial def HighType.mapType (f : HighType → HighType) : HighType → HighType
   | .MultiValuedExpr tys =>
     f (.MultiValuedExpr (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
   | ty => f ty
+  termination_by SizeOf.sizeOf ty
+  decreasing_by
+    all_goals first
+      | (cases e; term_by_mem)
+      | (cases k; term_by_mem)
+      | (cases v; term_by_mem)
+      | (cases base; term_by_mem)
+      | (cases a; term_by_mem)
+      | (cases t; term_by_mem)
+      | term_by_mem
 
 /--
 Bottom-up monadic traversal that also tells `f` whether the node's *result is

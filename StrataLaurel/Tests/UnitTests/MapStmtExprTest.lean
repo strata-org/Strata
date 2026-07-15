@@ -11,6 +11,7 @@ is the identity: applying it to a parsed program produces identical output.
 
 import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.MapStmtExprProps
 import StrataLaurel.Implementation.Resolution
 
 open Strata
@@ -76,20 +77,34 @@ procedure test(x: int, b: bool) returns (r: int)
 #end
 
 
--- Direct coverage for `HighType.mapType`'s recursion — including the
--- `.Applied` branch `ConstrainedTypeElim.resolveBaseType` relies on to lower a
+-- Coverage for `HighType.mapType`'s recursion — including the `.Applied`
+-- branch `ConstrainedTypeElim.resolveBaseType` relies on to lower a
 -- constrained type nested inside a generic type application. Laurel has no
 -- surface syntax for a generic/`.Applied`-typed datatype field, so it is
 -- exercised here at the `HighType` level via the shared combinator; the
 -- callback lowers `int32` to `int` (`.TInt`), mirroring `resolveBaseType`'s
--- lookup. The `.TSet`/`.TMap`/`.Intersection`/`.MultiValuedExpr`
--- recursive branches are pinned below (`.TMap` is additionally covered
--- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`).
+-- lookup.
+--
+-- Coverage comes in three layers (see `StrataLaurel.Implementation.MapStmtExprProps`):
+--  1. `mapType_substUserDefined_eq` — the OUTPUT of `mapType` with a leaf
+--     substitution is pinned exactly (against the independent recursive spec
+--     `substUserDefinedAll`), for every constructor at every depth; a bug
+--     lowering `int32` to the wrong type fails it.
+--  2. `mapType_substUserDefined_names` — the name-elimination property, and
+--     `mapType_id` — structure preservation.
+--  3. Concrete per-constructor `#guard`s below — executable smoke checks
+--     that run the compiled evaluator (theorems check the logic), pinning
+--     exact output shapes (`.TMap` is additionally covered end-to-end by
+--     `ConstrainedTypes/ConstrainedDatatypeField.lean`).
 section MapTypeCoverage
 
-private def lowerInt32 : HighType → HighType
-  | .UserDefined name => if name.text == "int32" then .TInt else .UserDefined name
-  | t => t
+/-- The `int32`-lowering leaf callback, phrased via `substUserDefined` so the
+    `MapStmtExprProps` theorems apply to it definitionally. -/
+private def lowerInt32Leaf : Identifier → HighType :=
+  fun name => if name.text == "int32" then .TInt else .UserDefined name
+
+private def lowerInt32 : HighType → HighType :=
+  HighType.substUserDefined lowerInt32Leaf
 
 -- `Box int32` -> `Box int`: the callback fires inside `.Applied`'s type argument;
 -- the generic base `Box` is left untouched.
@@ -104,7 +119,21 @@ private def lowerInt32 : HighType → HighType
   == .Applied ⟨.UserDefined (mkId "Box"), default⟩
       [⟨.Applied ⟨.UserDefined (mkId "Wrap"), default⟩ [⟨.TInt, default⟩], default⟩]
 
--- `Set int32` -> `Set int`: recursion through `.TSet`'s element type.
+/-- Lowering with `lowerInt32` leaves no `int32` in any `HighType` (layer 2). -/
+example (ty : HighType) :
+    ∀ n' ∈ (HighType.mapType lowerInt32 ty).userDefinedNames, n' ≠ "int32" := by
+  apply mapType_substUserDefined_names (p := (· ≠ "int32")) lowerInt32Leaf
+  intro n n' h
+  simp only [lowerInt32Leaf] at h
+  split at h <;> simp_all [HighType.userDefinedNames]
+
+/-- `mapType lowerInt32` is `substUserDefinedAll lowerInt32Leaf` on every
+    `HighType` (layer 1). -/
+example (ty : HighType) :
+    HighType.mapType lowerInt32 ty = HighType.substUserDefinedAll lowerInt32Leaf ty :=
+  mapType_substUserDefined_eq lowerInt32Leaf ty
+
+-- Layer 3: one `#guard` per recursive constructor.
 #guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), default⟩)
   == HighType.TSet ⟨.TInt, default⟩
 
@@ -114,15 +143,9 @@ private def lowerInt32 : HighType → HighType
 #guard HighType.mapType lowerInt32
     (.TMap ⟨.UserDefined (mkId "int32"), default⟩ ⟨.TString, default⟩)
   == HighType.TMap ⟨.TInt, default⟩ ⟨.TString, default⟩
-
--- `int32 & T` -> `int & T`: recursion through `.Intersection`'s components;
--- the non-constrained component is untouched.
 #guard HighType.mapType lowerInt32
     (.Intersection [⟨.UserDefined (mkId "int32"), default⟩, ⟨.UserDefined (mkId "T"), default⟩])
   == HighType.Intersection [⟨.TInt, default⟩, ⟨.UserDefined (mkId "T"), default⟩]
-
--- `(int32, bool)` -> `(int, bool)`: recursion through `.MultiValuedExpr`'s
--- components; the non-constrained component is untouched.
 #guard HighType.mapType lowerInt32
     (.MultiValuedExpr [⟨.UserDefined (mkId "int32"), default⟩, ⟨.TBool, default⟩])
   == HighType.MultiValuedExpr [⟨.TInt, default⟩, ⟨.TBool, default⟩]

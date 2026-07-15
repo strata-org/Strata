@@ -8,6 +8,7 @@ module
 public import StrataLaurel.Implementation.MapStmtExpr
 public import StrataLaurel.Implementation.LaurelNodeKindProps
 import all StrataLaurel.Implementation.MapStmtExpr
+import Strata.Util.Tactics
 
 /-!
 # MapStmtExpr Properties
@@ -25,6 +26,9 @@ to `LaurelProgram` is in that same file.
 ## Key results
 
 * `mapStmtExprUsedM_contains` — the traversal lemma;
+* `mapType_id`, `mapType_substUserDefined_names`, `mapType_substUserDefined_eq`
+  — the universal properties of the `HighType` traversal `HighType.mapType`
+  (see the section of that name below);
 * `ShapeStable` / `mapStmtExprUsedM_isVarLocal` — its one side condition;
 * `Rebuilt` — what the traversal hands the rewrite;
 * `PostM` and its combinators — `post_bind`, `post_mapM`,
@@ -529,6 +533,207 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
 theorem ne_nil_of_length {α β : Type} {l' : List β} {l : List α}
     (hlen : l'.length = l.length) (h : l' ≠ []) : l ≠ [] := by
   cases l' <;> cases l <;> simp_all
+
+/-! ## Properties of `HighType.mapType`
+
+Universal properties of the `HighType` traversal, stated over every
+constructor: `mapType_id`, `mapType_substUserDefined_names` and
+`mapType_substUserDefined_eq`. The latter two are stated with
+`HighType.userDefinedNames`, `HighType.substUserDefined` and the recursive
+specification `HighType.substUserDefinedAll`. -/
+
+/-- All `UserDefined` names occurring anywhere in a `HighType`. -/
+def HighType.userDefinedNames (ty : HighType) : List String :=
+  match ty with
+  | .UserDefined n => [n.text]
+  | .TSet e => HighType.userDefinedNames e.val
+  | .TMap k v => HighType.userDefinedNames k.val ++ HighType.userDefinedNames v.val
+  | .Applied base args =>
+    HighType.userDefinedNames base.val
+      ++ args.flatMap fun a => HighType.userDefinedNames a.val
+  | .Intersection tys => tys.flatMap fun t => HighType.userDefinedNames t.val
+  | .MultiValuedExpr tys => tys.flatMap fun t => HighType.userDefinedNames t.val
+  | _ => []
+  termination_by SizeOf.sizeOf ty
+  decreasing_by
+    all_goals first
+      | (cases e; term_by_mem)
+      | (cases k; term_by_mem)
+      | (cases v; term_by_mem)
+      | (cases base; term_by_mem)
+      | (cases b; term_by_mem)
+      | (cases a; term_by_mem)
+      | (cases t; term_by_mem)
+      | term_by_mem
+
+/-- Leaf-substitution callback for `mapType`: rewrite `UserDefined` leaves via
+    `g`, leave every other constructor unchanged. This is the callback shape
+    `ConstrainedTypeElim.resolveBaseType` instantiates. -/
+def HighType.substUserDefined (g : Identifier → HighType) : HighType → HighType
+  | .UserDefined n => g n
+  | t => t
+
+/-- **Identity law**: `mapType` with the identity callback rebuilds every
+    constructor unchanged. Subsumes any per-constructor "the traversal
+    preserves structure" example test. -/
+theorem mapType_id (ty : HighType) : HighType.mapType (fun t => t) ty = ty := by
+  fun_induction HighType.mapType (fun t => t) ty with
+  | case1 e ih => cases e; simp_all
+  | case2 k v ih1 ih2 => cases k; cases v; simp_all
+  | case3 base args ihbase ihargs =>
+    cases base
+    show HighType.Applied _ _ = _
+    congr 1
+    · simp_all
+    · rw [List.map_congr_left fun a ha => by rw [ihargs a ha]]
+      exact List.map_id' args
+  | case4 tys ih =>
+    show HighType.Intersection _ = _
+    congr 1
+    rw [List.map_congr_left fun t ht => by rw [ih t ht]]
+    exact List.map_id' tys
+  | case5 tys ih =>
+    show HighType.MultiValuedExpr _ = _
+    congr 1
+    rw [List.map_congr_left fun t ht => by rw [ih t ht]]
+    exact List.map_id' tys
+  | case6 => rfl
+
+/-- **Name-elimination**: for a leaf-substitution callback, every `UserDefined`
+    name in the traversal's output satisfies any predicate `p` that holds on
+    the callback's image. Instantiating `p := (· ∉ constrainedNames)` gives:
+    after a `resolveBaseType`-style lowering, no constrained-type reference
+    survives under **any** constructor — the universal form of per-constructor
+    `.TSet`/`.TMap`/`.Intersection`/`.MultiValuedExpr`/`.Applied`
+    lowering tests. -/
+theorem mapType_substUserDefined_names (p : String → Prop)
+    (g : Identifier → HighType)
+    (hg : ∀ n, ∀ n' ∈ (g n).userDefinedNames, p n')
+    (ty : HighType) :
+    ∀ n' ∈ (HighType.mapType (HighType.substUserDefined g) ty).userDefinedNames, p n' := by
+  fun_induction HighType.mapType (HighType.substUserDefined g) ty with
+  | case1 e ih =>
+    intro n' hn'
+    simp only [HighType.substUserDefined, HighType.userDefinedNames] at hn'
+    exact ih n' hn'
+  | case2 k v ih1 ih2 =>
+    intro n' hn'
+    simp only [HighType.substUserDefined, HighType.userDefinedNames, List.mem_append] at hn'
+    rcases hn' with h | h
+    · exact ih1 n' h
+    · exact ih2 n' h
+  | case3 base args ihbase ihargs =>
+    intro n' hn'
+    simp only [HighType.substUserDefined, HighType.userDefinedNames, List.mem_append,
+      List.flatMap_map, List.mem_flatMap] at hn'
+    rcases hn' with h | ⟨a, ha, h⟩
+    · exact ihbase n' h
+    · exact ihargs a ha n' h
+  | case4 tys ih =>
+    intro n' hn'
+    simp only [HighType.substUserDefined, HighType.userDefinedNames,
+      List.flatMap_map, List.mem_flatMap] at hn'
+    obtain ⟨t, ht, h⟩ := hn'
+    exact ih t ht n' h
+  | case5 tys ih =>
+    intro n' hn'
+    simp only [HighType.substUserDefined, HighType.userDefinedNames,
+      List.flatMap_map, List.mem_flatMap] at hn'
+    obtain ⟨t, ht, h⟩ := hn'
+    exact ih t ht n' h
+  | case6 ty h1 h2 h3 h4 h5 =>
+    intro n' hn'
+    match ty, h1, h2, h3, h4, h5 with
+    | .UserDefined n, _, _, _, _, _ =>
+      simp only [HighType.substUserDefined] at hn'
+      exact hg n n' hn'
+    | .TVoid, _, _, _, _, _ | .TBool, _, _, _, _, _ | .TInt, _, _, _, _, _
+    | .TFloat64, _, _, _, _, _ | .TReal, _, _, _, _, _ | .TString, _, _, _, _, _
+    | .TBv _, _, _, _, _, _ | .TVar _, _, _, _, _, _ | .Unknown, _, _, _, _, _ =>
+      simp [HighType.substUserDefined, HighType.userDefinedNames] at hn'
+    | .TSet e, h1, _, _, _, _ => exact absurd rfl (h1 e)
+    | .TMap k v, _, h2, _, _, _ => exact absurd rfl (h2 k v)
+    | .Applied b as, _, _, h3, _, _ => exact absurd rfl (h3 b as)
+    | .Intersection ts, _, _, _, h4, _ => exact absurd rfl (h4 ts)
+    | .MultiValuedExpr ts, _, _, _, _, h5 => exact absurd rfl (h5 ts)
+
+/-- **Specification** for recursive leaf substitution: apply `g` to every
+    `UserDefined` leaf, recurse through all component types, and preserve every
+    other constructor together with its source annotations. Deliberately
+    written as a direct recursion (no traversal combinator, no callback applied
+    at interior nodes) so that `mapType_substUserDefined_eq` pins `mapType`'s
+    output against an independently auditable definition. -/
+def HighType.substUserDefinedAll (g : Identifier → HighType) (ty : HighType) : HighType :=
+  match ty with
+  | .UserDefined n => g n
+  | .TSet e => .TSet ⟨HighType.substUserDefinedAll g e.val, e.source⟩
+  | .TMap k v =>
+    .TMap ⟨HighType.substUserDefinedAll g k.val, k.source⟩
+          ⟨HighType.substUserDefinedAll g v.val, v.source⟩
+  | .Applied base args =>
+    .Applied ⟨HighType.substUserDefinedAll g base.val, base.source⟩
+      (args.map fun a => ⟨HighType.substUserDefinedAll g a.val, a.source⟩)
+  | .Intersection tys =>
+    .Intersection (tys.map fun t => ⟨HighType.substUserDefinedAll g t.val, t.source⟩)
+  | .MultiValuedExpr tys =>
+    .MultiValuedExpr (tys.map fun t => ⟨HighType.substUserDefinedAll g t.val, t.source⟩)
+  | t => t
+  termination_by SizeOf.sizeOf ty
+  decreasing_by
+    all_goals first
+      | (cases e; term_by_mem)
+      | (cases k; term_by_mem)
+      | (cases v; term_by_mem)
+      | (cases base; term_by_mem)
+      | (cases b; term_by_mem)
+      | (cases a; term_by_mem)
+      | (cases t; term_by_mem)
+      | term_by_mem
+
+/-- **Output characterization**: `mapType` with a leaf-substitution callback
+    computes exactly the recursive substitution `substUserDefinedAll` — every
+    constructor and source annotation preserved, every `UserDefined` leaf
+    replaced by the callback's value, at every depth. This pins the concrete
+    output for every input (per-constructor `#guard`s are instances), not just
+    a property of it. -/
+theorem mapType_substUserDefined_eq (g : Identifier → HighType) (ty : HighType) :
+    HighType.mapType (HighType.substUserDefined g) ty
+      = HighType.substUserDefinedAll g ty := by
+  fun_induction HighType.mapType (HighType.substUserDefined g) ty with
+  | case1 e ih =>
+    simp [HighType.substUserDefined, HighType.substUserDefinedAll, ih]
+  | case2 k v ih1 ih2 =>
+    simp [HighType.substUserDefined, HighType.substUserDefinedAll, ih1, ih2]
+  | case3 base args ihbase ihargs =>
+    show HighType.Applied _ _ = _
+    simp only [HighType.substUserDefinedAll]
+    congr 1
+    · simp [ihbase]
+    · exact List.map_congr_left fun a ha => by rw [ihargs a ha]
+  | case4 tys ih =>
+    show HighType.Intersection _ = _
+    simp only [HighType.substUserDefinedAll]
+    congr 1
+    exact List.map_congr_left fun t ht => by rw [ih t ht]
+  | case5 tys ih =>
+    show HighType.MultiValuedExpr _ = _
+    simp only [HighType.substUserDefinedAll]
+    congr 1
+    exact List.map_congr_left fun t ht => by rw [ih t ht]
+  | case6 ty h1 h2 h3 h4 h5 =>
+    match ty, h1, h2, h3, h4, h5 with
+    | .UserDefined n, _, _, _, _, _ =>
+      simp [HighType.substUserDefined, HighType.substUserDefinedAll]
+    | .TVoid, _, _, _, _, _ | .TBool, _, _, _, _, _ | .TInt, _, _, _, _, _
+    | .TFloat64, _, _, _, _, _ | .TReal, _, _, _, _, _ | .TString, _, _, _, _, _
+    | .TBv _, _, _, _, _, _ | .TVar _, _, _, _, _, _ | .Unknown, _, _, _, _, _ =>
+      simp [HighType.substUserDefined, HighType.substUserDefinedAll]
+    | .TSet e, h1, _, _, _, _ => exact absurd rfl (h1 e)
+    | .TMap k v, _, h2, _, _, _ => exact absurd rfl (h2 k v)
+    | .Applied b as, _, _, h3, _, _ => exact absurd rfl (h3 b as)
+    | .Intersection ts, _, _, _, h4, _ => exact absurd rfl (h4 ts)
+    | .MultiValuedExpr ts, _, _, _, _, h5 => exact absurd rfl (h5 ts)
+
 end -- public section
 
 end Strata.Laurel
