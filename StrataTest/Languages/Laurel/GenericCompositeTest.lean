@@ -189,35 +189,35 @@ composite Box<T> { var val: T }
 datatype Wrap { MkWrap(b: Box<Map int int>) }
 procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; var w: Wrap := MkWrap(b); assert w == MkWrap(b) };"},
   -- NESTED GENERICS: a composite whose field is a generic instantiation of the same param
-  -- (`Pair<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
+  -- (`Wrap<T> { b: Box<T> }`). (A) sound when the inner inst is also named directly.
   { name := "nested_generic", outcome := .verifies,
-    why := "Pair<int> with field Box<int> (Box<int> also named) resolves + verifies"
+    why := "Wrap<int> with field Box<int> (Box<int> also named) resolves + verifies"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<T> { var b: Box<T> }
-procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Pair<int> := new Pair; p#b := inner; var got: Box<int> := p#b; assert got#val == 5 };"},
+composite Wrap<T> { var b: Box<T> }
+procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Wrap<int> := new Wrap; p#b := inner; var got: Box<int> := p#b; assert got#val == 5 };"},
 
   { name := "nested_generic_wrong", outcome := .failsExactly 1,
     why := "a FALSE read of the nested field must FAIL — sound, not vacuous"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<T> { var b: Box<T> }
-procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Pair<int> := new Pair; p#b := inner; var got: Box<int> := p#b; assert got#val == 6 };"},
+composite Wrap<T> { var b: Box<T> }
+procedure u() opaque { var inner: Box<int> := new Box; inner#val := 5; var p: Wrap<int> := new Wrap; p#b := inner; var got: Box<int> := p#b; assert got#val == 6 };"},
   -- (B) the fixpoint worklist: inner inst reachable ONLY through the outer's substituted
   -- field (`q#b := p#b`, Box<int> named nowhere else) is now discovered + emitted.
   { name := "nested_generic_via_field_only", outcome := .verifies,
     why := "`q#b := p#b` (inner Box<int> reachable only via the field) translates (fixpoint worklist)"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<T> { var b: Box<T> }
-procedure u() opaque { var p: Pair<int> := new Pair; var q: Pair<int> := new Pair; q#b := p#b; assert 1 == 1 };"},
+composite Wrap<T> { var b: Box<T> }
+procedure u() opaque { var p: Wrap<int> := new Wrap; var q: Wrap<int> := new Wrap; q#b := p#b; assert 1 == 1 };"},
 
   { name := "nested_generic_via_field_wrong", outcome := .failsExactly 1,
     why := "a FALSE read of the field-only-reachable nested monomorph must FAIL — sound, not vacuous"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<T> { var b: Box<T> }
-procedure u() opaque { var p: Pair<int> := new Pair; var inner: Box<int> := new Box; inner#val := 7; p#b := inner; var got: Box<int> := p#b; assert got#val == 8 };"},
+composite Wrap<T> { var b: Box<T> }
+procedure u() opaque { var p: Wrap<int> := new Wrap; var inner: Box<int> := new Box; inner#val := 7; p#b := inner; var got: Box<int> := p#b; assert got#val == 8 };"},
   -- TERMINATION + clean rejection: a divergent recursive generic (`L<T>{ next: L<L<T>> }`)
   -- is cut off at the depth bound and rejected LOUD — not a hang, not dead monomorphs.
   { name := "recursive_generic_rejected", outcome := .rejected (some .NotYetImplemented),
@@ -470,14 +470,14 @@ procedure u() opaque { var h: H := new H; var inner: Map int int := update(selec
     why := "`b is Box<Pair<int,bool>>` against the matching instantiation verifies (nested `>>` operand)"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<A,B> { var a: A }
+composite Pair<A,B> { var a: A var b: B }
 procedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<int,bool>> };"},
 
   { name := "is_nested_generic_operand_wrong", outcome := .rejected (some .UserError),
     why := "`Box<Pair<int,bool>> is Box<Pair<bool,int>>` — wrong inner instantiation is unrelated, rejected (param order matters)"
     src := r"
 composite Box<T> { var val: T }
-composite Pair<A,B> { var a: A }
+composite Pair<A,B> { var a: A var b: B }
 procedure u() opaque { var b: Box<Pair<int,bool>> := new Box<Pair<int,bool>>; assert b is Box<Pair<bool,int>> };"} ]
 
 /-- Generic composites verify end-to-end via monomorphization — across every type position,
