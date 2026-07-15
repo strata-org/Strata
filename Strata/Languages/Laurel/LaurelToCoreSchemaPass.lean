@@ -101,9 +101,13 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | _ => do -- resolution should have already emitted a diagnostic
       emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
-  -- A value-kinded type variable lowers to a Core free type variable (which Core's
-  -- HM instantiates at each call site). Reference-kinded `T` is erased to a
-  -- composite by an earlier pass, so it never reaches this arm as `.TVar`.
+  -- A type variable lowers to a Core free type variable, which Core's HM instantiates
+  -- at each call site. This is kind-agnostic: a value-kinded `T` unifies with `int`
+  -- etc., and a reference-kinded `T` unifies with the single `Composite` sort every
+  -- composite lowers to — so reference-`T` reaches here as `.TVar` and needs no
+  -- prior erase-to-composite pass (see `PolymorphicFunctionTest`). The one `.TVar`
+  -- that does NOT reach here is a generic composite materialized at a type var: the
+  -- monomorphizer clones that procedure away before translation.
   | .TVar name => return .ftvar name.text
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
