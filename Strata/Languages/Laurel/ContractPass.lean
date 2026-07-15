@@ -196,13 +196,8 @@ private def freshTemp : ContractM String := do
   set (n + 1)
   return s!"$cp_{n}"
 
-/-- Does a `HighType` mention a bound type variable (`.TVar`)? A contract call site
-    on a POLYMORPHIC callee declares its params at the type-VARIABLE type (`T`), but
-    the actual argument is concrete (`5 : int`). Typing the call-site temp at the raw
-    `T` would leave `T` unbound at Core (and force one `T` to be both `int` and `bool`
-    across instantiations). So when the declared param type mentions a `.TVar`, the
-    temp is typed from the ARGUMENT's concrete type (`computeExprType`) instead, giving
-    each call site its own instantiation (mirroring the un-contracted polymorphic path). -/
+/-- Does a `HighType` mention a bound type variable (`.TVar`), anywhere? Used by
+    `mkTempAssignments` to detect a polymorphic-callee param type (see the rationale there). -/
 private partial def mentionsTVar : HighType → Bool
   | .TVar _ => true
   | .Applied b args => mentionsTVar b.val || args.any (mentionsTVar ·.val)
