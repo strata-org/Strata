@@ -169,10 +169,9 @@ op isType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] ta
 op asType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] target " as " targetType;
 
 // Composite types with optional extends. Parents are LaurelTypes (not bare Idents) so a
-// generic composite can extend a generic parent at an instantiation: `extends Base<T>`.
-// A bare `extends Base` parses as a `compositeType`, `extends Base<T>` as an
-// `appliedType`. The parent list terminates cleanly at the following `{` (no trailing
-// LaurelType operator), so no parse ambiguity with the fields block.
+// generic composite can extend a generic parent instantiation (`extends Base<T>`). The
+// parent list terminates cleanly at the following `{` (no trailing LaurelType operator),
+// so there is no parse ambiguity with the fields block.
 category Extends;
 op extends(parents: CommaSepBy LaurelType): Extends => " extends " parents;
 
