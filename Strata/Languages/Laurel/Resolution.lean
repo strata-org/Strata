@@ -391,6 +391,23 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .Applied base args =>
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
+    -- Type-argument arity check for an applied type (`MyPair<int>`, `Box<int, bool>`).
+    -- The declared param count lives in `unfoldMap` for a generic ALIAS and in
+    -- `parentExprMap` for a generic COMPOSITE. A mismatch is a plain user error, reported
+    -- cleanly here; the ALIAS case is the one that needs it — without this an arity-wrong
+    -- alias reaches Core unfolded and fails as an "internal error" ('X is not defined') at
+    -- re-resolution. (Generic DATATYPES are not in either map; a wrong-arity datatype use
+    -- is already caught fail-loud downstream by the Core type checker, so it is left to that
+    -- path rather than duplicated here — only the message is less specific.)
+    (do
+      let ctx := (← get).typeLattice
+      if let some name := highBaseName? base'.val then
+        let declParams? := (ctx.unfoldMap.get? name.text).map (·.1)
+          |>.orElse (fun _ => (ctx.parentExprMap.get? name.text).map (·.1))
+        if let some declParams := declParams? then
+          unless declParams.length == args'.length do
+            modify fun st => { st with errors := st.errors.push (diagnosticFromSource ty.source
+              s!"'{name.text}' expects {declParams.length} type argument(s) but {args'.length} were provided") })
     pure (.Applied base' args')
   | .Pure base =>
     let base' ← resolveHighType base

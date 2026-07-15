@@ -168,6 +168,19 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      -- If the program ALREADY has a non-warning error (from the surface resolve or an
+      -- earlier pass), it is already rejected, and a "new" re-resolution error is a
+      -- downstream CASCADE — the same surface error restated over the rewritten types
+      -- (`Box<bool>` → `Box$a1$bool`, escaping the `resolutionErrors` dedup only because the
+      -- name changed), or a dangling reference to a name TypeAliasElim left unfolded because
+      -- the surface use was itself arity-wrong, or a monomorph the depth cap already rejected
+      -- as `.NotYetImplemented`. Folding that as an `Internal error`/`.StrataBug` wrongly
+      -- blames the compiler for the user's own already-reported error. Suppress the cascade
+      -- and keep the clean surface diagnostic; a genuine post-transform internal failure
+      -- still surfaces once the user fixes their error and re-runs on an otherwise-valid
+      -- program (the net below still fires then).
+      if !newErrors.isEmpty && allDiags.any (·.type != .Warning) then
+        return (program, model, allDiags, allStats)
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
           { d with

@@ -405,8 +405,8 @@ procedure u() opaque { var m: MyPair<int, bool> := const(false); assert select(m
 type Swapped<A,B> = Map B A
 procedure u() opaque { var m: Swapped<int, bool> := const(5); assert select(m, true) == 5 };"},
 
-  { name := "generic_alias_arity_wrong", outcome := .rejected,
-    why := "a generic alias applied at the wrong arity (`MyPair<int>`) must fail loud"
+  { name := "generic_alias_arity_wrong", outcome := .rejected (some .UserError),
+    why := "a generic alias applied at the wrong arity (`MyPair<int>`) is a clean UserError — the resolver's `.Applied`-arm arity check catches it before TypeAliasElim leaves a dangling unfolded reference (which used to surface as an internal StrataBug)"
     src := r"
 type MyPair<A,B> = Map A B
 procedure u() opaque { var m: MyPair<int> := const(false); assert true };"},
