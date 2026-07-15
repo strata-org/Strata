@@ -965,8 +965,15 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- assignment check sees `.UserDefined Box` vs `.Applied Box [int]`. All instantiations
   -- of a generic composite erase to the SAME Core `Composite` type, so distinguishing
   -- them by arity here would reject sound legacy programs ("expected 'Box', got 'Box'").
-  | .UserDefined n1, .Applied b2 _ | .Applied b2 _, .UserDefined n1 =>
-    (match b2.val with | .UserDefined n2 => n1.text == n2.text | _ => false)
+  -- Base names are compared AFTER unfolding aliases (`ctx.unfold` turns a generic-alias
+  -- application `Foo<int>` into its target `Opt<int>`, and a bare alias into its base), so
+  -- a var typed via a generic alias of a datatype (`type Foo<T> = Opt<T>`; `var o: Foo<int>
+  -- := Som(5)`, where the constructor `Som` synthesizes the bare `Opt`) matches. Unfolding
+  -- cannot widen this beyond same-base-name: distinct targets still differ.
+  | .UserDefined _, .Applied _ _ | .Applied _ _, .UserDefined _ =>
+    match highBaseName? (ctx.unfold a).val, highBaseName? (ctx.unfold b).val with
+    | some na, some nb => na.text == nb.text
+    | _, _ => false
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b

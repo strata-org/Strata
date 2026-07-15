@@ -105,7 +105,25 @@ procedure u() opaque { var h: Holder := new Holder; var x: Bx<int> := MkBx(9); v
     src := r"
 datatype Bx<T> { MkBx(v: T) }
 composite Holder { var bi: Bx<int> var bb: Bx<bool> }
-procedure u() opaque { var h: Holder := new Holder; h#bi := MkBx(1); h#bb := MkBx(true); var yi: Bx<int> := h#bi; assert yi == MkBx(1) };"} ]
+procedure u() opaque { var h: Holder := new Holder; h#bi := MkBx(1); h#bb := MkBx(true); var yi: Bx<int> := h#bi; assert yi == MkBx(1) };"},
+  -- Generic ALIAS of a generic DATATYPE. A datatype constructor synthesizes the BARE
+  -- datatype type (`Som(5) : Bx`, no args), so the assign `var o: Foo<int> := Som(5)` reaches
+  -- the bare-name~instantiation consistency arm as `Bx` vs `Foo<int>`. That arm unfolds the
+  -- alias (`Foo<int>` → `Bx<int>`, base `Bx`) before comparing base names, so it matches.
+  { name := "generic_datatype_alias", outcome := .verifies,
+    why := "`type Foo<T> = Bx<T>`; `var o: Foo<int> := Som(5)` (bare-constructor RHS into a generic-alias-typed var) verifies — the consistency arm unfolds the alias before the base-name compare"
+    src := r"
+datatype Bx<T> { Som(v: T) }
+type Foo<T> = Bx<T>
+procedure u() opaque { var o: Foo<int> := Som(5); assert 1 == 1 };"},
+
+  { name := "generic_datatype_alias_wrong", outcome := .rejected,
+    why := "SOUNDNESS guard: the alias unfold must NOT over-widen — a constructor of a DIFFERENT datatype (`MkOther`) into a `Foo<int>` (= alias of `Bx`) var must still be REJECTED"
+    src := r"
+datatype Bx<T> { Som(v: T) }
+datatype Other<T> { MkOther(v: T) }
+type Foo<T> = Bx<T>
+procedure u() opaque { var o: Foo<int> := MkOther(5); assert 1 == 1 };"} ]
 
 /-- Runs the generic datatype corpus. -/
 def runGenericDatatypeTest : IO Unit := checkCases genericDatatypeCorpus
