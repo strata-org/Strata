@@ -66,11 +66,10 @@ def genericCompositeCorpus : List Case := [
   { name := "generic_box_multi", outcome := .verifies,
     why := "two instantiations (Box<int>+Box<bool>) monomorphize independently"
     src := genericBoxMultiProgram },
-  -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type. Since
-  -- `instTagCommon` now tags `.TMap` (`Map$a2$int$int`), this monomorphizes and verifies
-  -- (previously an un-taggable fail-loud limitation). SOUND, not coalescing — the
-  -- `map_fields_distinct` twin below pins that distinct `(K,V)` Map fields stay distinct
-  -- boxes, and the `*_wrong` cases pin that false reads fail.
+  -- `Box<Map int int>`: a generic composite instantiated at a COLLECTION type.
+  -- `instTagCommon` tags `.TMap` (`Map$a2$int$int`), so this monomorphizes and verifies.
+  -- SOUND, not coalescing — the `map_fields_distinct` twin below pins that distinct
+  -- `(K,V)` Map fields stay distinct boxes, and the `*_wrong` cases pin that false reads fail.
   { name := "generic_box_map_arg", outcome := .verifies,
     why := "`Box<Map int int>` monomorphizes via the `.TMap` tag; field round-trips"
     src := r"
@@ -82,8 +81,8 @@ procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val :=
     src := r"
 composite Box<T> { var val: T }
 procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 3 };"},
-  -- Item 1: READING/WRITING a `Map`-typed COMPOSITE FIELD heap-boxes via the `.TMap`
-  -- instTagCommon arm (previously `boxDestructorNameError`, fail-loud). Sound: false read fails.
+  -- READING/WRITING a `Map`-typed COMPOSITE FIELD heap-boxes via the `.TMap`
+  -- instTagCommon arm. Sound: false read fails.
   { name := "map_field_read", outcome := .verifies,
     why := "read/write a `Map`-typed composite field round-trips (heap-boxed via the `.TMap` tag)"
     src := r"
@@ -111,10 +110,9 @@ composite H { var mib: Map int bool
 procedure u() opaque { var h: H := new H; h#mib := update(h#mib, 1, true); h#mii := update(h#mii, 1, 9); assert select(h#mii, 1) == 8 };"},
   -- A generic over a COLLECTION type (`Map K V`): the consistency relation recurses into
   -- `.TMap` element-wise (like `.Applied`) so a concrete `Map int bool` argument satisfies a
-  -- `Map K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. Without the
-  -- `.TMap` consistency arm this was spuriously over-rejected ("expected 'Map K V', got
-  -- 'Map int bool'"). The `ensures r == m` makes the accept OBSERVABLE (a real obligation),
-  -- not just translatable; the strictness twin pins that concrete-vs-concrete stays strict.
+  -- `Map K V` parameter — the nested `int`/`bool` reach the `.TVar` wildcard. The
+  -- `ensures r == m` makes the accept OBSERVABLE (a real obligation), not just translatable;
+  -- the strictness twin pins that concrete-vs-concrete stays strict.
   { name := "generic_map_param", outcome := .verifies,
     why := "a concrete `Map int bool` into a generic `Map K V` proc param verifies, returned map observed via `ensures r == m`"
     src := r"
@@ -187,7 +185,7 @@ composite C { var v: int }
 procedure u() opaque { var p: bool := forall(c: C) => c#v == 5; assert p };"},
 
   { name := "generic_box_map_in_datatype", outcome := .verifies,
-    why := "`Box<Map int int>` as a datatype ctor arg monomorphizes via the `.TMap` tag in this position too (was un-taggable fail-loud); construction round-trips by equality"
+    why := "`Box<Map int int>` as a datatype ctor arg monomorphizes via the `.TMap` tag in this position too; construction round-trips by equality"
     src := r"
 composite Box<T> { var val: T }
 datatype Wrap { MkWrap(b: Box<Map int int>) }
@@ -230,9 +228,9 @@ procedure u() opaque { var p: Pair<int> := new Pair; var inner: Box<int> := new 
 composite L<T> { var next: L<L<T>> }
 procedure u() opaque { var x: L<int> := new L; assert 1 == 1 };"},
   -- EXPLICIT `new C<τ>` SYNTAX: allocation carries its instantiation, so it works in every
-  -- position incl. field-write + call-arg (which previously crashed in Core on `C_TypeTag`).
+  -- position incl. field-write + call-arg.
   { name := "new_typeargs_field", outcome := .verifies,
-    why := "`new Box<int>` in a field-write context verifies (was a Box_TypeTag crash)"
+    why := "`new Box<int>` in a field-write context verifies"
     src := r"
 composite Box<T> { var val: T }
 composite Holder { var b: Box<int> }
@@ -246,7 +244,7 @@ composite Holder { var b: Box<int> }
 procedure u() opaque { var h: Holder := new Holder; var inner: Box<int> := new Box<int>; inner#val := 7; h#b := inner; var got: Box<int> := h#b; assert got#val == 8 };"},
 
   { name := "new_typeargs_arg", outcome := .verifies,
-    why := "`new Box<int>` as a call argument verifies (also previously crashed)"
+    why := "`new Box<int>` as a call argument verifies"
     src := r"
 composite Box<T> { var val: T }
 procedure take(x: Box<int>) opaque { assert 1 == 1 };
@@ -406,7 +404,7 @@ type Swapped<A,B> = Map B A
 procedure u() opaque { var m: Swapped<int, bool> := const(5); assert select(m, true) == 5 };"},
 
   { name := "generic_alias_arity_wrong", outcome := .rejected (some .UserError),
-    why := "a generic alias applied at the wrong arity (`MyPair<int>`) is a clean UserError — the resolver's `.Applied`-arm arity check catches it before TypeAliasElim leaves a dangling unfolded reference (which used to surface as an internal StrataBug)"
+    why := "a generic alias applied at the wrong arity (`MyPair<int>`) is a clean UserError — the resolver's `.Applied`-arm arity check catches it before TypeAliasElim leaves a dangling unfolded reference"
     src := r"
 type MyPair<A,B> = Map A B
 procedure u() opaque { var m: MyPair<int> := const(false); assert true };"},

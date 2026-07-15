@@ -31,20 +31,15 @@ namespace Strata.Laurel
 
 /-! ## Polymorphic procedures verify soundly (CallElim per-call-site freshening)
 
-Polymorphic *procedures* are now SUPPORTED. They route through TransparencyPass →
-`$asFunction` + CallElim contract-inlining; CallElim renames the callee's type
-variables to globally-fresh names at each call site (`freshenTypeArgsSubst`), so
-the same procedure can be instantiated at different concrete types in one body.
+Polymorphic *procedures* route through TransparencyPass → `$asFunction` + CallElim
+contract-inlining; CallElim renames the callee's type variables to globally-fresh
+names at each call site (`freshenTypeArgsSubst`), so the same procedure can be
+instantiated at different concrete types in one body without the shared variable
+forcing every site to unify with one sort.
 
-This SUPERSEDES the earlier `runUnsupportedGates` gate, which was based on a wrong
-premise: the gate's comment claimed poly procedures "silently mis-verify" via a
-`ProcedureType` separate-instantiation bug. Empirically that path is never taken —
-procedures are eliminated by CallElim *before* Core's `.call`/`ProcedureType` type
-check runs. The real (and only) failure was multi-instantiation in one body, which
-was a LOUD type error ("Impossible to unify T with bool") that ABORTED whole-program
-type checking and masked unrelated obligations. These tests pin the fix:
-single-instantiation is sound, multi-instantiation works, and a poison
-multi-instantiation no longer masks a sibling procedure's real bug. -/
+These tests pin: single-instantiation is sound (true assertion verifies, false one
+fails), multi-instantiation in one body works, and a poison multi-instantiation
+does not mask a sibling procedure's real bug. -/
 
 /-- Identity procedure with `ensures y == x`, instantiated at int. The true
     assertion must verify; the false one must fail (soundness). -/
@@ -53,8 +48,8 @@ procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
 procedure useGood() opaque { var a: int := idp(5); assert a == 5 };
 procedure useBad() opaque { var b: int := idp(5); assert b == 6 };"
 
-/-- Same procedure instantiated at TWO different types in ONE body — the case that
-    previously aborted with "Impossible to unify T with bool". Must verify. -/
+/-- Same procedure instantiated at TWO different types in ONE body — per-call-site
+    freshening keeps the two sites' type variables independent. Must verify. -/
 def polyProcMultiInst := r"
 procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
 procedure useTwo() opaque {
