@@ -75,4 +75,63 @@ procedure test(x: int, b: bool) returns (r: int)
 };
 #end
 
+
+-- Direct coverage for `HighType.mapType`'s recursion — including the
+-- `.Applied` branch `ConstrainedTypeElim.resolveBaseType` relies on to lower a
+-- constrained type nested inside a generic type application. Laurel has no
+-- surface syntax for a generic/`.Applied`-typed datatype field, so it is
+-- exercised here at the `HighType` level via the shared combinator; the
+-- callback lowers `int32` to `int` (`.TInt`), mirroring `resolveBaseType`'s
+-- lookup. The `.TSet`/`.TMap`/`.Pure`/`.Intersection`/`.MultiValuedExpr`
+-- recursive branches are pinned below (`.TMap` is additionally covered
+-- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`).
+section MapTypeCoverage
+
+private def lowerInt32 : HighType → HighType
+  | .UserDefined name => if name.text == "int32" then .TInt else .UserDefined name
+  | t => t
+
+-- `Box int32` -> `Box int`: the callback fires inside `.Applied`'s type argument;
+-- the generic base `Box` is left untouched.
+#guard HighType.mapType lowerInt32
+    (.Applied ⟨.UserDefined (mkId "Box"), none⟩ [⟨.UserDefined (mkId "int32"), none⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), none⟩ [⟨.TInt, none⟩]
+
+-- `Box (Wrap int32)` -> `Box (Wrap int)`: recursion through two `.Applied` layers.
+#guard HighType.mapType lowerInt32
+    (.Applied ⟨.UserDefined (mkId "Box"), none⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), none⟩ [⟨.UserDefined (mkId "int32"), none⟩], none⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), none⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), none⟩ [⟨.TInt, none⟩], none⟩]
+
+-- `Set int32` -> `Set int`: recursion through `.TSet`'s element type.
+#guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), none⟩)
+  == HighType.TSet ⟨.TInt, none⟩
+
+-- `Map int32 string` -> `Map int string`: recursion through `.TMap`'s key and
+-- value types (the non-constrained value type is untouched). Also covered
+-- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`.
+#guard HighType.mapType lowerInt32
+    (.TMap ⟨.UserDefined (mkId "int32"), none⟩ ⟨.TString, none⟩)
+  == HighType.TMap ⟨.TInt, none⟩ ⟨.TString, none⟩
+
+-- `Pure int32` -> `Pure int`: recursion through `.Pure`'s base type.
+#guard HighType.mapType lowerInt32 (.Pure ⟨.UserDefined (mkId "int32"), none⟩)
+  == HighType.Pure ⟨.TInt, none⟩
+
+-- `int32 & T` -> `int & T`: recursion through `.Intersection`'s components;
+-- the non-constrained component is untouched.
+#guard HighType.mapType lowerInt32
+    (.Intersection [⟨.UserDefined (mkId "int32"), none⟩, ⟨.UserDefined (mkId "T"), none⟩])
+  == HighType.Intersection [⟨.TInt, none⟩, ⟨.UserDefined (mkId "T"), none⟩]
+
+-- `(int32, bool)` -> `(int, bool)`: recursion through `.MultiValuedExpr`'s
+-- components; the non-constrained component is untouched.
+#guard HighType.mapType lowerInt32
+    (.MultiValuedExpr [⟨.UserDefined (mkId "int32"), none⟩, ⟨.TBool, none⟩])
+  == HighType.MultiValuedExpr [⟨.TInt, none⟩, ⟨.TBool, none⟩]
+
+end MapTypeCoverage
+
+
 end Strata.Laurel

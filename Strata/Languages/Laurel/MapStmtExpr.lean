@@ -36,6 +36,25 @@ macro_rules
 
 public section
 
+/-- Generic bottom-up traversal/rewrite of `HighType`: recurse into every
+    component type first, then apply `f` to the rebuilt node. Constructors with
+    no component types are passed to `f` unchanged. Analogous to `mapStmtExpr`
+    but for types — a pass that only rewrites a few type constructors can
+    pattern-match in `f` and fall through for the rest. -/
+partial def HighType.mapType (f : HighType → HighType) : HighType → HighType
+  | .TSet e => f (.TSet ⟨HighType.mapType f e.val, e.source⟩)
+  | .TMap k v =>
+    f (.TMap ⟨HighType.mapType f k.val, k.source⟩ ⟨HighType.mapType f v.val, v.source⟩)
+  | .Applied base args =>
+    f (.Applied ⟨HighType.mapType f base.val, base.source⟩
+       (args.map fun a => ⟨HighType.mapType f a.val, a.source⟩))
+  | .Pure base => f (.Pure ⟨HighType.mapType f base.val, base.source⟩)
+  | .Intersection tys =>
+    f (.Intersection (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
+  | .MultiValuedExpr tys =>
+    f (.MultiValuedExpr (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
+  | ty => f ty
+
 /--
 Bottom-up monadic traversal that also tells `f` whether the node's *result is
 used* (`resultUsed`): `true` when the node sits in a value position (an operand,

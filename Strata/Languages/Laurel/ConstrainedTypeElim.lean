@@ -35,12 +35,13 @@ def buildConstrainedTypeMap (types : List TypeDefinition) : ConstrainedTypeMap :
     match td with | .Constrained ct => m.insert ct.name.text ct | _ => m
 
 partial def resolveBaseType (ptMap : ConstrainedTypeMap) (ty : HighType) : HighType :=
-  match ty with
-  | .UserDefined name => match ptMap.get? name.text with
-    | some ct => resolveBaseType ptMap ct.base.val | none => ty
-  | .Applied ctor args =>
-    .Applied ctor (args.map fun a => ⟨resolveBaseType ptMap a.val, a.source⟩)
-  | _ => ty
+  -- Resolve every constrained `UserDefined` type to its base, recursing through
+  -- all component types via the generic `HighType.mapType` traversal.
+  ty.mapType fun
+    | .UserDefined name => match ptMap.get? name.text with
+      | some ct => resolveBaseType ptMap ct.base.val
+      | none => .UserDefined name
+    | t => t
 
 def resolveType (ptMap : ConstrainedTypeMap) (ty : HighTypeMd) : HighTypeMd :=
   ⟨resolveBaseType ptMap ty.val, ty.source⟩
@@ -187,7 +188,13 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     body := resolveBody body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
-    preconditions := (proc.preconditions ++ inputRequires).map (·.mapCondition resolve) }
+    -- Prepend the generated input type-constraint requires. This is a
+    -- semantics-preserving normalization, not a verification change: each
+    -- precondition lowers to its own `$preN` helper (ContractPass), so the
+    -- assume block at the callee body start and the independent asserts at
+    -- call sites do not depend on this order. Kept constraints-first for
+    -- readability.
+    preconditions := (inputRequires ++ proc.preconditions).map (·.mapCondition resolve) }
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source
@@ -231,6 +238,19 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
+      | .Datatype dt =>
+        -- Resolve constrained types used as datatype constructor field
+        -- types (e.g. `int32` -> `int`). Without this, the constrained
+        -- type reference dangles after its definition is dropped below,
+        -- and the Laurel-to-Core translator cannot resolve it.
+        -- This lowers the field *type* only; the range predicate is not
+        -- re-asserted on field reads, so field range constraints are
+        -- intentionally over-approximated away (a `MkCell(out_of_range).val`
+        -- read is not caught) — matching bare-parameter and `elimCompositeType`
+        -- handling.
+        some (.Datatype { dt with constructors := dt.constructors.map fun c =>
+          { c with args := c.args.map fun p =>
+            { p with type := resolveType ptMap p.type } } })
       | other => some other },
    [])
 
