@@ -44,6 +44,17 @@ def callElimCmd (cmd: Command)
 
         let some proc := Program.Procedure.find? p procName | throw (Strata.DiagnosticModel.fromFormat f!"Procedure {procName} not found in program")
 
+        -- Per-call-site type-variable freshening for polymorphic procedures.
+        -- The inlined contract carries the callee's source type vars (`x : T`). Copied
+        -- verbatim, the SAME `T` is shared across call sites, so two calls at different
+        -- concrete types (`idp(5)`, `idp(true)`) force `T` to unify with both `int` and
+        -- `bool` — a whole-program type-check abort masking unrelated obligations. Rename
+        -- the type vars to globally-fresh ones per call site. For a monomorphic callee
+        -- (`typeArgs = []`) the substitution is empty and the applications below are no-ops.
+        let tySubst ← freshenTypeArgsSubst proc.header.typeArgs
+        let freshTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
+        let freshExpr (e : Expression.Expr) : Expression.Expr := Lambda.LExpr.applySubst e tySubst
+
         -- Identify output parameters that also appear as input parameters
         -- and are referenced via "old" in postconditions.
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
@@ -54,12 +65,15 @@ def callElimCmd (cmd: Command)
           (inputNames.contains g && outputNames.contains g) && -- Inout params
           postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
 
-        let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
+        let freshInputs := proc.header.inputs.map (fun (id, ty) => (id, freshTy ty))
+        let freshOutputs := proc.header.outputs.map (fun (id, ty) => (id, freshTy ty))
+
+        let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy freshInputs) args
         let argTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Expr)
             ← genArgTrips
 
-        let genOutTrips := genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs) lhs
+        let genOutTrips := genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy freshOutputs) lhs
         let outTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOutTrips
@@ -69,7 +83,7 @@ def callElimCmd (cmd: Command)
         let genOldIdents ← genOldExprIdents oldVars
         let oldTys ← oldVars.mapM fun id => do
           match proc.header.inputs.find? id with
-          | some ty => pure (Lambda.LTy.forAll [] ty)
+          | some ty => pure (Lambda.LTy.forAll [] (freshTy ty))
           | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format id}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
@@ -93,8 +107,13 @@ def callElimCmd (cmd: Command)
             else none
         let oldSubst := createOldVarsSubst oldTrips ++ inputOnlyOldSubst
 
+        -- Freshen type variables in the postcondition expressions (binder/op/fvar
+        -- annotations) with the same per-call-site substitution used for the
+        -- temp types above, then substitute the "old" actuals. `freshExpr` only
+        -- rewrites type annotations; `substFvars` only rewrites fvar leaves — they
+        -- touch disjoint slots, so the order is immaterial.
         let postconditions : List Expression.Expr := proc.spec.postconditions.values.map
-          (fun c => Lambda.LExpr.substFvars c.expr oldSubst)
+          (fun c => Lambda.LExpr.substFvars (freshExpr c.expr) oldSubst)
 
         -- generate havoc for output variables
         let havocs := createHavocs lhs md
@@ -105,8 +124,12 @@ def callElimCmd (cmd: Command)
         let ret_subst : List (Expression.Ident × Expression.Expr)
                       := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
 
-        -- construct assumes and asserts in place of pre/post conditions
-        let asserts ← createAsserts (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free))
+        -- construct assumes and asserts in place of pre/post conditions.
+        -- Freshen type variables in the precondition expressions with the same
+        -- per-call-site substitution (no-op for monomorphic callees).
+        let freshPreconditions := (proc.spec.preconditions.filter (fun (_, check) => check.attr != .Free)).map
+          (fun (l, check) => (l, { check with expr := freshExpr check.expr }))
+        let asserts ← createAsserts freshPreconditions
                         (arg_subst ++ ret_subst)
                         md
                         callElimAssertPrefix
