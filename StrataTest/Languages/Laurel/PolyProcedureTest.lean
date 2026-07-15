@@ -41,15 +41,11 @@ These tests pin: single-instantiation is sound (true assertion verifies, false o
 fails), multi-instantiation in one body works, and a poison multi-instantiation
 does not mask a sibling procedure's real bug. -/
 
-/-- Identity procedure with `ensures y == x`, instantiated at int. The true
-    assertion must verify; the false one must fail (soundness). -/
 def polyProcSound := r"
 procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
 procedure useGood() opaque { var a: int := idp(5); assert a == 5 };
 procedure useBad() opaque { var b: int := idp(5); assert b == 6 };"
 
-/-- Same procedure instantiated at TWO different types in ONE body — per-call-site
-    freshening keeps the two sites' type variables independent. Must verify. -/
 def polyProcMultiInst := r"
 procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
 procedure useTwo() opaque {
@@ -59,9 +55,6 @@ procedure useTwo() opaque {
     assert b == true
 };"
 
-/-- A poison multi-instantiation in one procedure must NOT abort the whole program
-    and mask a real bug (`assert 1 == 2`) in a sibling procedure. Regression for
-    the abort-masking ship-blocker. -/
 def polyProcNoAbortMask := r"
 procedure idp<T>(x: T) returns (y: T) opaque ensures y == x { y := x };
 procedure realBug() opaque { assert 1 == 2 };

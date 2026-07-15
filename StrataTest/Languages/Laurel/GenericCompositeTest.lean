@@ -81,8 +81,6 @@ procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val :=
     src := r"
 composite Box<T> { var val: T }
 procedure u() opaque { var b: Box<Map int int> := new Box<Map int int>; b#val := update(b#val, 1, 2); assert select(b#val, 1) == 3 };"},
-  -- READING/WRITING a `Map`-typed COMPOSITE FIELD heap-boxes via the `.TMap`
-  -- instTagCommon arm. Sound: false read fails.
   { name := "map_field_read", outcome := .verifies,
     why := "read/write a `Map`-typed composite field round-trips (heap-boxed via the `.TMap` tag)"
     src := r"
@@ -291,7 +289,7 @@ procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i
 composite Inner { var v: int }
 composite Outer { var i: Inner }
 procedure u() opaque { var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5; assert o#i#v == 6 };"},
-  -- Item-5 guard: a heap-writer with a USER output named `$heap` must FAIL LOUD (never translate),
+  -- A heap-writer with a USER output named `$heap` must FAIL LOUD (never translate),
   -- because HeapParameterization prepends a synth `$heap` inout to a writer's inputs AND outputs.
   -- The re-resolution fold type-checks the user `$heap` against the synth `$heap: Heap` and fails
   -- loud (`expected 'Heap', got 'int'`, or `Duplicate definition '$heap'` via the seen-outputs
@@ -315,8 +313,8 @@ procedure u() opaque { var o: Inner := new Inner; o#v := 5; assert o#v == 5 };"}
     src := r"
 procedure two() returns (a: int, b: int) opaque ensures a == 1 ensures b == 2 { a := 1; b := 2 };
 procedure u() opaque { assign var x: int, var y: int := two(); assert x == 1 };"},
-  -- 7(B): `is`/`as` operands are now a full `LaurelType` (was a bare `Ident`), so a generic
-  -- instantiation can be the test/cast target. Baseline (monomorphic) first, then generic.
+  -- `is`/`as` operands are now a full `LaurelType` (was a bare `Ident`), so a generic
+  -- instantiation can be the test/cast target.
   { name := "is_monomorphic_baseline", outcome := .verifies,
     why := "`p is Plain` against a monomorphic composite verifies (the non-generic baseline)"
     src := r"
@@ -340,7 +338,7 @@ procedure u() opaque { var b: Box<int> := new Box<int>; assert b is Box<bool> };
     src := r"
 composite Box<T> { var val: T }
 procedure u() opaque { var b: Box<int> := new Box<int>; var c: Box<int> := b as Box<int>; assert c#val == c#val };"},
-  -- 7(C): type-alias surface form `type Name = Target`. Backend (`TypeAliasElim`) was wired;
+  -- Type-alias surface form `type Name = Target`. Backend (`TypeAliasElim`) was wired;
   -- this exercises the new grammar/parse + the `resolveFieldInTypeScope` alias-unfold for
   -- composite-typed aliases. NOTE: no trailing `;` after the alias (next keyword delimits).
   { name := "alias_primitive", outcome := .verifies,
@@ -384,7 +382,7 @@ procedure u() opaque { var p: P := new Pt; p#x := 3; assert p#x == 4 };"},
   -- GENERIC type aliases (`type Foo<T> = …`). The alias's `<T>` binders substitute into the target
   -- at the instantiation; `TypeAliasElim` (now before monomorphize) and `TypeLattice.unfold` (the
   -- `.Applied`-alias arm) both perform the param substitution, so the consistency relation agrees
-  -- with elimination. Aliases to Map/primitive and to generic composites are covered, with twins.
+  -- with elimination.
   { name := "generic_alias_map", outcome := .verifies,
     why := "`type MyPair<A,B> = Map A B` at <int,bool> substitutes to `Map int bool`; select works through it"
     src := r"
@@ -408,7 +406,7 @@ procedure u() opaque { var m: Swapped<int, bool> := const(5); assert select(m, t
     src := r"
 type MyPair<A,B> = Map A B
 procedure u() opaque { var m: MyPair<int> := const(false); assert true };"},
-  -- Generic alias of a generic COMPOSITE — the gap-(ii) case (unfold `.Applied`-alias + reorder).
+  -- Generic alias of a generic COMPOSITE (unfold `.Applied`-alias + reorder).
   { name := "generic_alias_composite", outcome := .verifies,
     why := "`type Foo<T> = Box<T>`; `var b: Foo<int> := new Box<int>` cross-spelling assignment verifies, field round-trips"
     src := r"

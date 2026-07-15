@@ -107,9 +107,7 @@ datatype Bx<T> { MkBx(v: T) }
 composite Holder { var bi: Bx<int> var bb: Bx<bool> }
 procedure u() opaque { var h: Holder := new Holder; h#bi := MkBx(1); h#bb := MkBx(true); var yi: Bx<int> := h#bi; assert yi == MkBx(1) };"} ]
 
-/-- Generic DATATYPES. Unlike generic composites (which are monomorphized to a concrete
-    type per instantiation), generic datatypes map to NATIVE Core parametric datatypes
-    (`declare-datatypes` with sort params) — a pass-through, no monomorphization. -/
+/-- Runs the generic datatype corpus. -/
 def runGenericDatatypeTest : IO Unit := checkCases genericDatatypeCorpus
 
 #guard_msgs (drop info, error) in

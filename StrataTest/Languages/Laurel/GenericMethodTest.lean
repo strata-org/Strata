@@ -45,9 +45,7 @@ composite Box<T> {
 }
 "
 
--- Methods on generic composites lift to poly procedures (carrying the composite's type
--- params, plus the method's own); the procedure monomorphizer then handles them per call
--- site. Inheritance monomorphizes the child + parent (concrete or generic parent), topo-
+-- Inheritance monomorphizes the child + parent (concrete or generic parent), topo-
 -- ordering the parent monomorph first. Upcast subtyping is REMAP-AWARE via
 -- `substitutedAncestors` (an earlier non-substituting version accepted the WRONG supertype
 -- — UNSOUND; these pin both the correct upcasts AND that the wrong targets are rejected).
@@ -147,7 +145,6 @@ procedure u() opaque { var b: Box<int> := new Box<int>; b#tag := 1; assert b#tag
 composite Base<T> { var tag: T }
 composite Box<T> extends Base<T> { var val: T }
 procedure u() opaque { var bi: Box<int> := new Box<int>; bi#tag := 9; var bb: Box<bool> := new Box<bool>; bb#tag := true; assert bi#tag == 9 && bb#tag == true };"},
-  -- Generic upcast — same-instantiation, reads the inherited field back through the parent.
   { name := "generic_upcast_same_inst", outcome := .verifies,
     why := "`Box<int>` → `Base<int>` (same-inst upcast) verifies, reading the inherited tag"
     src := r"
@@ -217,7 +214,7 @@ procedure u() opaque { var b: Box<int> := new Box<int>; var p: Other<int> := b; 
   -- `L<T>` and `R<T>`, each extending `Top<T>`) is ambiguous and the access must be REJECTED.
   -- The receiver is `D<int>` (an `.Applied` type), so the diamond check must peel the base
   -- name — else the access is missed pre-monomorphization and surfaces as an internal error
-  -- when the monomorph re-resolves. This pins the clean rejection on a generic receiver.
+  -- when the monomorph re-resolves.
   { name := "diamond_field_generic_receiver", outcome := .rejected,
     why := "a diamond-inherited field read on a generic receiver `D<int>` must be REJECTED cleanly (peel `.Applied` to base name), not an internal error"
     src := r"
@@ -269,8 +266,6 @@ composite Pair<X,Y> { var a: X var b: Y }
 composite Base<T> { var h: T }
 composite GHolder<T> extends Base<T> { var k: int }
 procedure u(g: GHolder<Pair<int,bool>>) opaque modifies g { var p: Pair<int,bool> := new Pair<int,bool>; g#h := p; assert 1 == 1 };"},
-  -- Remap stays sound through concretization: `GHolder<A,B> extends Base<B,A>`, inherited
-  -- `h:U` (Base<U,V>) at `GHolder<int,bool>` is `bool`; writing `7` (int) must reject.
   { name := "field_tvar_inherited_remap_write_wrong", outcome := .rejected,
     why := "with the `extends Base<B,A>` remap, inherited `g#h` at `GHolder<int,bool>` is `bool`; writing `7` must be REJECTED"
     src := r"

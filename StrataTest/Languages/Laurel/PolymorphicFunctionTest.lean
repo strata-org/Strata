@@ -61,7 +61,7 @@ def runPolyIdTest : IO Unit := do
 
 /-! ## Reference-kinded T through a function: already works (no erasure pass needed)
 
-Empirically established (this commit): a polymorphic `function id<T>` applied to a
+Empirically established: a polymorphic `function id<T>` applied to a
 **composite (reference) argument** verifies, because every composite lowers to the
 single `tcons "Composite"` type and Core's HM unifies `ftvar T` with `Composite`
 exactly as it does with `int`. The pass-through path is therefore *kind-agnostic*
