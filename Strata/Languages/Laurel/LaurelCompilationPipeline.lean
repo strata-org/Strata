@@ -168,44 +168,29 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
-      -- If the program ALREADY has a non-warning error (from the surface resolve or an
-      -- earlier pass), it is already rejected, and a "new" re-resolution error is a
-      -- downstream CASCADE — typically the same surface error restated over the rewritten
-      -- (e.g. monomorphized) types, which escapes the `resolutionErrors` dedup only because
-      -- the type names changed (`Box<bool>` → `Box$a1$bool`), a dangling reference to a
-      -- name TypeAliasElim left unfolded because the surface use was itself arity-wrong, or
-      -- a monomorph the depth cap already rejected as `.NotYetImplemented`. Folding that as
-      -- an `Internal error`/`.StrataBug` wrongly blames the compiler for the user's own
-      -- already-reported error. Suppress the cascade and keep the clean surface diagnostic;
-      -- a genuine post-transform internal failure still surfaces once the user fixes their
-      -- error and re-runs on an otherwise-valid program (the net below still fires then).
+      -- If the program ALREADY has a non-warning error, it is already rejected, so a "new"
+      -- re-resolution error is a downstream CASCADE of it (e.g. the same surface error
+      -- restated over monomorphized type names, escaping the `resolutionErrors` dedup only
+      -- because `Box<bool>` became `Box$a1$bool`). Folding that as an internal `.StrataBug`
+      -- would wrongly blame the compiler; suppress it and keep the clean surface diagnostic.
+      -- A genuine post-transform failure still fails loud below once the program is otherwise
+      -- valid.
       if !newErrors.isEmpty && allDiags.any (·.type != .Warning) then
         return (program, model, allDiags, allStats)
       if !newErrors.isEmpty then
-        -- Re-resolution fires after each `needsResolves := true` pass (lift at pos 0,
-        -- monomorphize at pos 1, and the elim/lift passes later). A NEW error here is
-        -- usually a genuine post-transform COMPILER failure (dangling monomorph ref,
-        -- unresolved inherited field) — folded in as a StrataBug so it fails loud
-        -- (translated=false). HeapParam and TypeHierarchy deliberately set
-        -- `needsResolves := false` because they are one logical pass whose intermediate
-        -- states are not independently re-resolvable. (This supersedes an earlier
-        -- polymorphism-branch workaround that SUPPRESSED these diagnostics — #1389 fixed
-        -- the spurious-error sources so folding is safe; the monomorphization
-        -- re-resolution path is exercised by the polymorphism corpus.)
+        -- On an otherwise-valid program, a new re-resolution error is a genuine post-transform
+        -- COMPILER failure (dangling monomorph ref, unresolved inherited field) — fold it as a
+        -- StrataBug so it fails loud (translated=false).
         --
-        -- EXCEPTION — user-caused name collisions are NOT compiler bugs. A synthetic name
-        -- minted by a pass (a monomorph `Box$a1$int`, a lifted method, a `$body`/`$heap`
-        -- label) can collide with a USER identifier, because `$` and the `$aN$` tag shape
-        -- are legal in source names (the tag encoders are not injective — see
-        -- `instTagCommon`). That surfaces here as a NEW `Duplicate definition` (a
-        -- genuine compiler-internal failure is a "not defined"-style dangling ref, never a
-        -- duplicate: two USER names would already have clashed in the first resolve, and
-        -- two generated names are deduped by the worklist — so a new duplicate is a user
-        -- name matching a generated one). Report those as a plain `UserError`, without the
-        -- "Internal error" prefix that wrongly blames the compiler.
-        -- TODO: the user's source location is lost here because the synthetic name carries
-        -- `source := none`; a pre-monomorphization check on `ct.name.source`/`proc.name.source`
-        -- (in `MonomorphizeComposites`) is the only place that location is still available.
+        -- EXCEPTION — a user identifier colliding with a pass-generated name (a monomorph
+        -- `Box$a1$int`, a `$heap` label) is NOT a compiler bug: `$` and the `$aN$` tag shape
+        -- are legal in source names (`instTagCommon` is non-injective). Such a collision
+        -- surfaces as a NEW `Duplicate definition` — and a duplicate can ONLY be a user/generated
+        -- clash (two user names would have clashed in the first resolve; two generated names are
+        -- worklist-deduped), so a genuine internal failure is always a "not defined" dangling ref,
+        -- never a duplicate. Report the duplicate as a plain `UserError` with a rename hint.
+        -- TODO: the user's source location is lost (the synthetic name carries `source := none`);
+        -- a pre-monomorphization check in `MonomorphizeComposites` is where it is still available.
         let isUserCollision (d : DiagnosticModel) : Bool :=
           (d.message.splitOn "Duplicate definition").length > 1
         let newDiags := newErrors.toList.map fun d =>
