@@ -1952,7 +1952,7 @@ type-check, partially evaluate, and discharge proof obligations via SMT.
 All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
-When `keepAllFilesPrefix` is provided, the program state after each pipeline
+When `options.keepAllFilesPrefix` is set, the program state after each pipeline
 phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1).
 
 When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
@@ -1966,7 +1966,6 @@ def verify (program : Program)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
     (externalPhases : List AbstractedPhase := [])
     (prefixPhases : List PipelinePhase := [])
-    (keepAllFilesPrefix : Option String := none)
     (solver : Option CoreSMTSolver := none)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
@@ -1985,7 +1984,7 @@ def verify (program : Program)
     let (prog, state) ← runTransforms program pipelinePhases
       (initState := { Transform.CoreTransformState.emp with factory := some factory })
       (pipelineCtx := some pctx)
-      (keepAllFilesPrefix := keepAllFilesPrefix)
+      (keepAllFilesPrefix := options.keepAllFilesPrefix)
     pure (prog, state.statistics)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>

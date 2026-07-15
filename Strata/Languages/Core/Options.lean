@@ -212,6 +212,12 @@ structure VerifyOptions where
       for quantified spec lemmas). Intended for local experimentation on the
       local solver invocation only. -/
   solverOptions : Array (String × String) := #[]
+  /-- When set, the program state after each pipeline phase is written to
+      `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
+      `--keep-all-files <dir>`, where the CLI derives the prefix as
+      `<dir>/<baseName>` so all intermediate files land inside the directory.
+      Threaded automatically into `Core.verify`; see `Cli/VerifyOptions.lean`. -/
+  keepAllFilesPrefix : Option String := none
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -235,6 +241,7 @@ def VerifyOptions.default : VerifyOptions := {
   solverOptions := #[]
   pathCap := .none
   parallelWorkers := 1
+  keepAllFilesPrefix := none
 }
 
 instance : Inhabited VerifyOptions where
