@@ -367,4 +367,24 @@ theorem lfunc_body_getVars_subset_keys
   rw [hyq, ListMap.keys_eq_map_fst]
   exact List.mem_map_of_mem hq_mem
 
+namespace LExpr
+open Strata.PtrCache
+
+/-- The pointer-address hash cache is a *transparent* optimization: it computes
+    exactly the pure structural hash `hashExpr`, on the nose, for every
+    expression. A one-line corollary of the generic `run'_output_eq` — the cache
+    is functionally indistinguishable from `hashExpr`. -/
+theorem hashExprCached_eq {T : LExprParamsT} [Hashable T.TypeType] (e : LExpr T) :
+    hashExprCached e = hashExpr e :=
+  run'_output_eq (hashExprPtrCache e) PtrCache.empty
+
+/-- The pointer-address `hasBVar` cache is a *transparent* optimization: it
+    computes exactly `hasBVar`, on the nose, for every expression. A one-line
+    corollary of the generic `run'_output_eq`. -/
+theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
+    hasBVarCached e = hasBVar e :=
+  run'_output_eq (hasBVarPtrCache e) PtrCache.empty
+
+end LExpr
+
 end Lambda

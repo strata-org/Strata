@@ -13,7 +13,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
 import Strata.Transform.LoopElim
-import Strata.Transform.ANFEncoder
+import Strata.Transform.CommonSubexprElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
@@ -760,7 +760,7 @@ def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
 
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
-    suitable for downstream phases (ANF encoding, SMT encoding). -/
+    suitable for downstream phases (CSE, SMT encoding). -/
 def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
@@ -812,7 +812,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
 
   -- Include function declarations and distinct constraints from the
   -- evaluation environment so the obligations program is self-contained
-  -- for downstream phases (ANF encoding, SMT encoding).
+  -- for downstream phases (CSE, SMT encoding).
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size
   let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
@@ -1496,8 +1496,8 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
   filterPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding.
-    ANF encoding runs after symbolic evaluation to extract common
+    type checking, symbolic evaluation, and common subexpression elim.
+    CSE runs after symbolic evaluation to extract common
     subexpressions introduced by partial evaluation inlining. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
@@ -1513,7 +1513,7 @@ def corePipelinePhases (procs : Option (List String) := none)
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, commonSubexprElimPhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)

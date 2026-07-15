@@ -102,7 +102,7 @@ def Core.typeCheckAndEval (options : Core.VerifyOptions) (program : Core.Program
 
 /--
 Type-check a Core program, then build the proof-obligation program suitable for
-downstream phases (ANF encoding, SMT encoding).
+downstream phases (Common subexpression elimination, SMT encoding).
 -/
 def Core.typeCheckAndBuildObligationProgram
     (options : Core.VerifyOptions) (program : Core.Program)
@@ -183,7 +183,7 @@ def Core.transformPipelinePhases (procs : Option (List String) := none)
   _root_.Core.transformPipelinePhases procs
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding. -/
+    type checking, symbolic evaluation, and common subexpression elim. -/
 def Core.corePipelinePhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
