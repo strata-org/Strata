@@ -5,11 +5,9 @@
 -/
 
 module
-
--- The Laurel dialect, loaded from `LaurelGrammar.st` (the grammar itself — every
--- `op`/`category` and its own comments — lives there).
--- NOTE: the build system does NOT track `LaurelGrammar.st` as an input of this file,
--- so edit this file to force a recompile after changing the grammar.
+-- Laurel dialect definition, loaded from LaurelGrammar.st
+-- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
+-- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands
