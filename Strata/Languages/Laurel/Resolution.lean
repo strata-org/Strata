@@ -3010,8 +3010,9 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     let map := register map dt.name (.datatypeDefinition dt)
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
-      -- Register the tester function in the refToDef map.
-      let testerProc := mkTesterProcedure dt ctor
+      -- Register the tester function in the refToDef map. Use `ctor.testerName`
+      -- (which carries its resolution-assigned uniqueId) as the procedure name.
+      let testerProc := { mkTesterProcedure dt ctor with name := ctor.testerName }
       let map := register map ctor.testerName (.staticProcedure testerProc)
       ctor.args.foldl (fun map p =>
         -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
@@ -3315,6 +3316,112 @@ def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
         DiagnosticType.UserError)
     else none
 
+/-- Effective output count of a procedure, counting the implicit heap output a
+    heap-writing procedure gains during heap parameterization: a writer has
+    `$heap` prepended to its outputs (`HeapParameterization`:
+    `outputs' := heapParam :: proc.outputs`), so its effective output count is
+    one more than declared. A procedure is "multi-output" when this count is
+    ≥ 2 — which is exactly when it cannot be lowered to a single-output Core
+    *function* and so cannot (yet) be called from a transparent body or a
+    contract.
+
+    `heapWriters` is keyed by resolution `uniqueId` (from `SemanticModel`),
+    not name text, so a heap-writing `A.foo` does not contaminate a same-named
+    pure `B.foo` in another composite. -/
+private def effectiveOutputCount (heapWriters : Std.HashSet Nat)
+    (proc : Procedure) : Except String Nat := do
+  let id ← Identifier.getUniqueId proc.name
+  let writesHeap := heapWriters.contains id
+  pure (proc.outputs.length + (if writesHeap then 1 else 0))
+
+/-- Every callee referenced by a `StaticCall`/`InstanceCall` anywhere in `e`,
+    in pre-order, paired with the source range of the whole call node (so a
+    diagnostic points at the call site). Both call forms carry the callee's
+    resolved `uniqueId` (an `InstanceCall`'s is stamped from the container-scoped
+    lookup — see `Synth.instanceCall`), which `validateMultiOutputCallContexts`
+    uses to resolve the callee to its correctly-scoped procedure. -/
+private def calleesOf (e : StmtExprMd) : List (Identifier × Option FileRange) :=
+  collectStmtExprList (fun n => match n.val with
+    | .StaticCall callee _ => [(callee, n.source)]
+    | .InstanceCall _ callee _ => [(callee, n.source)]
+    | _ => []) e
+
+/-- The expressions of a procedure that end up in a transparent body or a
+    contract — the two contexts a multi-output call may not (yet) appear in.
+
+    - A `.Transparent` body's whole implementation is transparent (the
+      `TransparencyPass` derives a pure `$asFunction` copy of it).
+    - Preconditions, postconditions, the `decreases` measure, and the `invokeOn`
+      trigger are contract expressions (the `ContractPass` translates
+      pre/postconditions into `$pre`/`$post` helpers, and calls inside them are
+      redirected to pure `$asFunction` twins).
+
+    An `.Opaque` body's *implementation* is deliberately excluded: it is ordinary
+    imperative code (verified as a procedure), so it may call multi-output
+    procedures via multi-assignment. Its postconditions are still contracts and
+    are included.
+
+    `.Abstract` bodies have no implementation, only postconditions — those are
+    contracts and are included. `.External` bodies have neither implementation
+    nor postconditions, so nothing is collected. -/
+private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
+  let contractExprs :=
+    proc.preconditions.map (·.condition)
+    ++ proc.decreases.toList
+    ++ proc.invokeOn.toList
+  let bodyExprs := match proc.body with
+    | .Transparent b => [b]
+    | .Opaque posts _impl _mods => posts.map (·.condition)
+    | .Abstract posts => posts.map (·.condition)
+    | .External => []
+  contractExprs ++ bodyExprs
+
+/-- Reject calling a multi-output procedure from a transparent procedure or a
+    contract. A Core *function* has exactly one output, so a multi-output
+    procedure (one declaring ≥ 2 outputs, or a heap writer, which gains an
+    implicit `$heap` output — see `effectiveOutputCount`) cannot be lowered to
+    the pure `$asFunction` twin that transparent bodies and contracts are
+    translated against. Until that is supported, such a call is a user error.
+
+    Only calls in a transparent body or a contract expression are flagged (see
+    `restrictedContextExprs`); calls from ordinary opaque implementations are
+    fine. Composite instance procedures are included because this runs at
+    initial resolution, before `LiftInstanceProcedures` moves them into the
+    static list.
+
+    Callees are resolved through the `SemanticModel`'s `refToDef` map by their
+    `uniqueId`, so `self#foo()` resolves to the `foo` of the receiver's
+    composite — not whichever same-named `foo` a text keying happened to pick.
+    Combined with the `uniqueId`-keyed heap-writer set (`model.heapWriters`),
+    this makes the check composite-scope correct: no false positive from another
+    composite's multi-output `foo`, and no false negative from another
+    composite's single-output `foo`. -/
+private def validateMultiOutputCallContexts (model : SemanticModel)
+    (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let allProcs := program.staticProcedures ++ instanceProcs
+  let heapWriters := model.heapWriters
+  allProcs.flatMap fun proc =>
+    (restrictedContextExprs proc).flatMap fun e =>
+      (calleesOf e).filterMap fun (callee, callSource) =>
+        -- Resolve the callee to its scoped procedure via `refToDef` (keyed by
+        -- the `uniqueId` the resolved call site carries), not by name text.
+        match model.get? callee with
+        | some (.staticProcedure callee')
+        | some (.instanceProcedure _ callee') =>
+          match effectiveOutputCount heapWriters callee' with
+          | .error e => some (DiagnosticModel.fromMessage
+              s!"Internal error: effectiveOutputCount: {e}" .StrataBug)
+          | .ok count =>
+            if count ≥ 2 then
+              some (diagnosticFromSource callSource
+                s!"calling multi-output procedure '{callee.text}' is not (yet) supported from a transparent procedure or contract"
+                DiagnosticType.UserError)
+            else none
+        | _ => none
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
@@ -3365,9 +3472,20 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
   let invokeOnErrors :=
     if existingModel.isNone then validateInvokeOnOutputRefs program' else []
+  -- Multi-output procedures cannot (yet) be called from a transparent body or a
+  -- contract (see `validateMultiOutputCallContexts`). This is a property of the
+  -- user's *source* program, phrased against the pre-lowering shape (transparent
+  -- bodies, contracts, and pre-heap-parameterization output arity augmented by
+  -- the heap-writer set), so it runs only on the initial resolution — later
+  -- passes rewrite these constructs into forms this check is not phrased against.
+  let multiOutputCallErrors :=
+    if existingModel.isNone then
+      validateMultiOutputCallContexts semanticModel program'
+    else []
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
+             ++ multiOutputCallErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
