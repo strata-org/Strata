@@ -68,7 +68,6 @@ system_prompt: >
 prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)
-  - Write(StrataAgent/Sandbox/**)
   - Edit(StrataAgent/Sandbox/**)
   - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_run_code
@@ -86,6 +85,7 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, SendMessage, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build]
+# Write is intentionally NOT granted: no file creation. Only Edits to the assigned file.
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, Write, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_tools__write_decomposed_lemma, mcp__lean_tools__write_helper_lemma, TaskCreate, TaskUpdate, TaskGet, TaskList]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

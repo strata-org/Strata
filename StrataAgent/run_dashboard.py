@@ -1,5 +1,6 @@
-"""Start the StrataSwarm v2 dashboard on port 8421."""
+"""Start the StrataSwarm v2 dashboard."""
 
+import argparse
 import asyncio
 import os
 import signal
@@ -12,11 +13,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from strataswarm._claude_backend import ClaudeBackend
 from strataswarm._server import SwarmDashboard
 
-PORT = 8421
+DEFAULT_PORT = 8421
 PID_FILE = Path(__file__).parent / "temp" / "dashboard.pid"
 
 
-def kill_stale_process():
+def kill_stale_process(port: int = DEFAULT_PORT):
     """Kill any stale dashboard process using our port or PID file."""
     # Try PID file first
     print(f"[CLEANUP] Checking for stale dashboard process using PID file {PID_FILE}")
@@ -35,7 +36,7 @@ def kill_stale_process():
     try:
         import subprocess
         result = subprocess.run(
-            ["lsof", "-ti", f":{PORT}"],
+            ["lsof", "-ti", f":{port}"],
             capture_output=True, text=True, timeout=5
         )
         if result.stdout.strip():
@@ -44,7 +45,7 @@ def kill_stale_process():
                     pid = int(pid_str.strip())
                     if pid != os.getpid():
                         os.kill(pid, signal.SIGTERM)
-                        print(f"[CLEANUP] Killed process {pid} holding port {PORT}")
+                        print(f"[CLEANUP] Killed process {pid} holding port {port}")
                         import time
                         time.sleep(1)
                 except (ValueError, ProcessLookupError, PermissionError):
@@ -53,8 +54,8 @@ def kill_stale_process():
         pass
 
 
-async def main() -> None:
-    kill_stale_process()
+async def main(port: int = DEFAULT_PORT) -> None:
+    kill_stale_process(port)
 
     pid = os.getpid()
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -64,10 +65,10 @@ async def main() -> None:
     dashboard = SwarmDashboard(
         backend_factory=ClaudeBackend,
         host="0.0.0.0",
-        port=PORT,
+        port=port,
     )
     await dashboard.start()
-    print(f"StrataSwarm v2 Dashboard running at http://localhost:{PORT} (PID: {pid})")
+    print(f"StrataSwarm v2 Dashboard running at http://localhost:{port} (PID: {pid})")
     try:
         await asyncio.Event().wait()
     finally:
@@ -75,4 +76,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="StrataSwarm v2 Dashboard")
+    parser.add_argument("-p", "--port", type=int, default=DEFAULT_PORT,
+                        help=f"Port to run the dashboard on (default: {DEFAULT_PORT})")
+    args = parser.parse_args()
+    asyncio.run(main(args.port))

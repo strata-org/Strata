@@ -1,14 +1,16 @@
 #!/bin/bash
 # Kill the strataswarm server and all its children
-# Usage: ./kill_dashboard.sh
+# Usage: ./kill_dashboard.sh [port]
 
-# Find the process LISTENING on port 8421 (not clients connected to it)
-SERVER_PID=$(lsof -ti :8421 -sTCP:LISTEN 2>/dev/null)
+PORT="${1:-8421}"
+
+# Find the process LISTENING on the port (not clients connected to it)
+SERVER_PID=$(lsof -ti :"$PORT" -sTCP:LISTEN 2>/dev/null)
 
 if [ -z "$SERVER_PID" ]; then
-    echo "No server listening on port 8421."
+    echo "No server listening on port $PORT."
 else
-    echo "Found server PID: $SERVER_PID"
+    echo "Found server PID: $SERVER_PID (port $PORT)"
     # Kill this process and its children
     CHILDREN=$(pstree -p "$SERVER_PID" 2>/dev/null | grep -oP '\(\K[0-9]+' | sort -rn)
     if [ -n "$CHILDREN" ]; then

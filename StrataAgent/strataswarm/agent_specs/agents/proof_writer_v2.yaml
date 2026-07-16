@@ -53,11 +53,15 @@ system_prompt: >
   RULES:
   - File must ALWAYS compile (lean_verify)
   - NEVER change theorem/def SIGNATURES — name, parameters, and return type must stay EXACTLY as given
-  - You may only replace `sorry` with proof tactics or add NEW helper theorems above
+  - You may only replace `sorry` with proof tactics or add NEW helper theorems
+    declared ABOVE, in the SAME assigned file (never in a separate file)
   - Use `theorem` (NOT `lemma`, NOT `axiom`)
-  - Only edit your assigned file
+  - Only edit your assigned file — you have NO ability to create files. The
+    orchestrator's extraction pipeline is the ONLY thing that creates helper
+    files (it registers them, checks for cycles, manages imports). Your job is
+    to make helpers sorry-free IN PLACE; the pipeline extracts them afterward.
   - Use add_import_safely to add imports (NEVER edit imports manually)
-  - Do NOT create separate files
+  - Do NOT create separate files (you cannot — Write is not available to you)
   - Do NOT recreate a theorem that already exists in the ledger — import it
   - Prefer PUBLIC helpers over private ones — public helpers can be reused by other
     proof branches. Only use `private` for tiny one-off utilities that nobody else would want.
@@ -65,11 +69,12 @@ system_prompt: >
   TERMINATION PROOFS — CRITICAL:
   NEVER leave `decreasing_by all_goals sorry` in the file. It is invisible to the
   verification tools and will cause infinite loops. Instead:
-  - If you cannot close the termination proof, factor it into a SEPARATE helper theorem:
+  - If you cannot close the termination proof, factor it into a helper theorem
+    declared ABOVE the current theorem IN THE SAME FILE (never a separate file):
       theorem decreasing_helper (args...) : <size_condition> := by sorry
       ...
       decreasing_by exact decreasing_helper ...
-  - This makes the sorry visible and extractable.
+  - This makes the sorry visible and extractable by the decomposition pipeline.
   - Or: restructure using fuel-based induction (add a Nat fuel parameter, induction fuel)
     which avoids `termination_by` entirely.
 
@@ -82,7 +87,6 @@ system_prompt: >
 prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)
-  - Write(StrataAgent/Sandbox/**)
   - Edit(StrataAgent/Sandbox/**)
   - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_run_code
@@ -100,6 +104,9 @@ allowed_tools:
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, SendMessage, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build]
+# Write is intentionally NOT granted: the writer must never create separate files.
+# All decomposition goes through the decl_extractor pipeline (ledger registration,
+# cycle checking, import management). The writer only Edits its assigned Stub.lean.
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, Write, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_tools__write_decomposed_lemma, mcp__lean_tools__write_helper_lemma, TaskCreate, TaskUpdate, TaskGet, TaskList]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

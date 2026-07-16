@@ -225,22 +225,8 @@ async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
 
 async def _dump_guide_to_disk(agent, state: PO5State, ledger: LemmaLedger,
                                entry: LemmaEntry, cwd: Path):
-    """Ask guide to summarize state → write .md → destroy guide+writer."""
-    guide = await _get_guide(agent, entry, state, ledger)
-    result = await guide.run_ai(
-        inp=(
-            "DUMP YOUR STATE: Summarize everything you know about this proof.\n"
-            "Include: strategies tried + outcomes, key insights, what to try next.\n"
-            "Be concise but complete. This will be your memory for next session."
-        ),
-        max_turns=3,
-    )
-    state_text = result.raw_result or ""
-    if state_text.strip():
-        guide_dir = cwd / entry.workspace / "guide_state"
-        guide_dir.mkdir(parents=True, exist_ok=True)
-        (guide_dir / f"{entry.name}.md").write_text(state_text)
-    await _cleanup_agents(agent, entry)
+    """Legacy wrapper — rotation is now handled inside _get_guide/_get_writer."""
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -527,12 +513,20 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         state.lemma_ctx[entry.id] = ctx
 
     stub_rel = _resolve_stub(entry, cwd, state)
+
+    # Repair inconsistent state: if decomposed/ exists but Stub.lean doesn't import from it,
+    # the extraction was lost (e.g. process crash). Re-add imports to make the file slim.
+    _repair_orphaned_decomposed(entry, cwd, stub_rel)
+
     original_content = (cwd / stub_rel).read_text()
 
-    # Fresh guide if requested
-    if ctx.needs_fresh_guide:
-        await _dump_guide_to_disk(agent, state, ledger, entry, cwd)
-        ctx.needs_fresh_guide = False
+    # Ensure cheat sheet exists in the workspace
+    ws_path = cwd / entry.workspace
+    cheat_dst = ws_path / "StrataProofCheatSheet.md"
+    if not cheat_dst.exists() and ws_path.is_dir():
+        cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
+        if cheat_src.exists():
+            shutil.copy2(cheat_src, cheat_dst)
 
     writer = await _get_writer(agent, entry, state, ledger)
     verify_fn = _make_verifier(entry, stub_rel, original_content, ledger, cwd)
@@ -565,15 +559,12 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         ledger.increment_attempts(entry.id)
         elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
         writer_pct = await writer.get_context_percentage()
+        # _get_guide handles rotation internally if >= 75%
         guide = await _get_guide(agent, entry, state, ledger)
         guide_pct = await guide.get_context_percentage()
         await agent._emit("message",
             f"[PO5] Chunk {entry.attempts} ({chunk_budget}t, total={total_turns}) "
             f"[{elapsed/60:.1f}min] | writer: {writer_pct or 0:.0f}% | guide: {guide_pct or 0:.0f}%")
-
-        if guide_pct and guide_pct >= 75.0:
-            await _dump_guide_to_disk(agent, state, ledger, entry, cwd)
-            ctx.needs_fresh_guide = True  # just dumped, will recreate on next _get_guide
 
         # Writer works
         chunk = min(MAX_CHUNK_TURNS, max(MIN_CHUNK_TURNS, chunk_budget))
@@ -622,8 +613,12 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                 return "proved"
             else:
-                ledger.mark_contingent(entry.id)
-                return "contingent"
+                # Transitive sorry — only contingent if children exist to wait on
+                if entry.children:
+                    ledger.mark_contingent(entry.id)
+                    return "contingent"
+                # No children registered: transitive sorry from untracked imports
+                # Fall through to extraction (will discover and register deps)
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -696,9 +691,25 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             return "retry"
         elif decision == "decompose":
             await agent._emit("message", f"[PO5] Decompose: {reason}")
-            guide = await _get_guide(agent, entry, state, ledger)
-            await _dump_guide_to_disk(agent, state, ledger, entry, cwd)
-            break
+            # Pre-extraction validation: ask guide which helpers are actually extractable
+            decompose_ok = await _validate_decompose(
+                agent, state, ledger, entry, cwd, tools, stub_rel, protected_names)
+            if decompose_ok is True:
+                break
+            # Guide determined nothing is extractable — get revised strategy and continue
+            await agent._emit("message", f"[PO5] Decompose blocked — proving inline")
+            advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
+                task=(
+                    f"Extraction was BLOCKED because some helpers recurse back into the parent.\n"
+                    f"Details: {decompose_ok}\n\n"
+                    f"Give the writer a concrete strategy to prove the recursive helpers INLINE\n"
+                    f"(with termination_by / fuel-based induction). Once those are closed,\n"
+                    f"any remaining standalone helpers can be extracted in a later pass.\n"
+                    f"Specify TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}>."
+                ))
+            turns_match = re.search(r'TURNS:\s*(\d+)', advice)
+            chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1)))) if turns_match else CHUNK_TURNS
+            continue
         else:
             if "turns" in extras:
                 chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, extras["turns"]))
@@ -711,6 +722,50 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     # ── Grace phase: factor sorry into external helpers ──
     return await _grace_phase(agent, state, ledger, entry, cwd,
                                writer, verify_fn, tools, stub_rel, protected_names)
+
+
+async def _validate_decompose(agent, state, ledger, entry, cwd, tools, stub_rel, protected_names):
+    """Ask guide to verify which sorry helpers are truly extractable before committing.
+
+    Returns True if decomposition should proceed, or a string with revised
+    instructions for the writer if nothing is extractable.
+    """
+    split = tools.split_theorems(stub_rel)
+    if not split or split.error:
+        return True  # can't analyze, let extraction try
+
+    sorry_helpers = [b for b in split.blocks
+                     if b.has_sorry and b.name not in protected_names]
+    if not sorry_helpers:
+        return True  # nothing to check
+
+    helper_list = "\n".join(
+        f"  - {b.name} (lines {b.start}-{b.end})" for b in sorry_helpers)
+
+    decision, reason, _extras = await _consult_guide_decide(
+        agent, state, ledger, entry, cwd,
+        options=["proceed_extract", "continue_inline"],
+        task=(
+            f"BEFORE EXTRACTING — verify each sorry helper is truly standalone.\n\n"
+            f"Sorry helpers that would be extracted:\n{helper_list}\n\n"
+            f"For EACH helper, answer: does its proof need to:\n"
+            f"  - Recurse back into '{entry.name}' (tail re-entry on shorter trace)?\n"
+            f"  - Use `ih` applied to the FULL statement (not just the body)?\n"
+            f"  - Call any theorem in the same mutual block?\n\n"
+            f"If YES for ANY helper → choose 'continue_inline' and explain what the\n"
+            f"writer must prove inline (with termination_by) vs what can be extracted later.\n\n"
+            f"If ALL helpers are genuinely standalone (no callbacks) → choose 'proceed_extract'."
+        ))
+
+    if decision == "proceed_extract":
+        return True
+    else:
+        return (
+            f"Guide reviewed helpers before extraction and determined they cannot be extracted:\n"
+            f"{reason}\n"
+            f"Prove the recursive/inline helpers first, then extract standalone ones."
+        )
+
 
 
 async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
@@ -766,8 +821,10 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
                 ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                 return "proved"
             else:
-                ledger.mark_contingent(entry.id)
-                return "contingent"
+                if entry.children:
+                    ledger.mark_contingent(entry.id)
+                    return "contingent"
+                # No children: transitive sorry from untracked imports — continue proving
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -852,7 +909,9 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
             initial_input=(
                 f"WRAP UP — grace {grace+1}.\n"
                 f"Sorry in protected block: {positions}\n"
-                f"Factor each into a standalone helper with sorry, use `exact helper ...`.\n"
+                f"Factor each sorry into a NEW helper theorem declared ABOVE, IN THIS SAME "
+                f"FILE (you cannot create files — the extraction pipeline moves them out "
+                f"later), then close the protected block with `exact helper ...`.\n"
                 f"Protected block ({sorted(protected_names)}) must be sorry-free."
                 f"{mutual_note}\nYou have {GRACE_TURNS} turns."
             ),
@@ -865,8 +924,10 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
                 ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                 return "proved"
             else:
-                ledger.mark_contingent(entry.id)
-                return "contingent"
+                if entry.children:
+                    ledger.mark_contingent(entry.id)
+                    return "contingent"
+                # No children: fall through to continue grace phase
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         cur = sum(len(sorry_info.get(n, [])) for n in protected_names)
@@ -936,8 +997,8 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
                 f"Main theorem: '{entry.name}' (do NOT move this).{do_not_move}\n"
                 f"Call get_declarations, then move_decl for each, then commit."
             ),
-            verify=lambda: _verify_extraction(tools, stub_rel, entry),
-            max_rounds=3, max_turns=30, use_run_ai=False,
+            verify=lambda: _verify_extraction(tools, stub_rel, entry, new_decomp_dir),
+            max_rounds=2, max_turns=50, use_run_ai=False,
         )
 
     if not outcome.success:
@@ -958,28 +1019,71 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' extraction failed: {reason}")
             return Trans.CONTRADICTORY
         ctx.failure_context = f"Extraction failed: {extract_error}"
-        ctx.current_task = "Extraction tooling failed. Try a different decomposition approach — fewer helpers, or prove more inline before extracting."
+        ctx.current_task = (
+            f"Extraction failed: {extract_error}\n"
+            f"Guide decided: {reason}\n"
+            f"Restructure the file so helpers can be extracted, or prove inline."
+        )
         return Trans.RETRY
 
-    session.finalize()
+    finalize_result = session.finalize()
+    if finalize_result and "Error" in finalize_result:
+        await agent._emit("message", f"[PO5] finalize warning: {finalize_result}")
     new_files = sorted(new_decomp_dir.glob("lemma_helper_*.lean")) if new_decomp_dir.exists() else []
     await agent._emit("message", f"[PO5] Extraction done: {len(new_files)} files staged")
 
+    # Post-extraction compilation check — catch any issues the extractor missed
+    if new_files:
+        import subprocess
+        stub_module = stub_rel.replace("/", ".").removesuffix(".lean")
+        build_result = subprocess.run(["lake", "build", stub_module],
+                                       cwd=str(cwd), capture_output=True, text=True, timeout=300)
+        build_errors = [l for l in (build_result.stdout + "\n" + build_result.stderr).splitlines()
+                        if ": error:" in l]
+        if build_errors:
+            error_summary = "\n".join(build_errors[:5])
+            session.revert()
+            ctx.failure_context = f"Post-extraction build failed:\n{error_summary}"
+            ctx.current_task = "Extraction produced files but they don't compile together. The guide should review the errors and advise the writer how to restructure."
+            await agent._emit("message", f"[PO5] Post-extraction build FAILED — reverting")
+            return Trans.RETRY
+
     if not new_files:
-        # Extractor ran but produced nothing — either no eligible helpers, or all were in mutual blocks
+        # Extractor ran but produced nothing — diagnose why
         tools_check = get_lean_tools()
         split = tools_check.split_theorems(stub_rel)
-        helper_count = len([b for b in split.blocks if b.name != entry.name]) if split and not split.error else 0
+        blocked_reasons = []
+        if split and not split.error:
+            for b in split.blocks:
+                if b.name == entry.name:
+                    continue
+                if not b.has_sorry:
+                    continue
+                if b.mutual_group is not None:
+                    group_names = split.mutual_groups.get(b.mutual_group, [])
+                    if entry.name in group_names:
+                        blocked_reasons.append(f"'{b.name}' — in mutual block with main theorem")
+                    else:
+                        blocked_reasons.append(f"'{b.name}' — in mutual group {group_names}")
+                elif "private " in b.text[:50]:
+                    blocked_reasons.append(f"'{b.name}' — private (cannot be imported)")
+
+        # Include extractor's last output if available (may explain why commit failed)
+        extractor_msg = ""
+        if outcome and outcome.output:
+            extractor_msg = f"\nExtractor reported: {str(outcome.output)[:300]}"
+
+        blocked_str = "\n".join(f"  - {r}" for r in blocked_reasons) if blocked_reasons else f"no structural blockers detected{extractor_msg}"
         ctx.failure_context = (
-            f"Extraction produced 0 files despite {helper_count} helpers in file. "
-            f"Possible causes: all helpers are in mutual blocks (can't be extracted), "
-            f"or the extractor couldn't move them cleanly."
+            f"Extraction produced 0 files. Blocked helpers:\n{blocked_str}"
         )
         ctx.current_task = (
-            "Extraction failed to produce separate files. Either prove remaining sorry inline, "
-            "or restructure: move helpers OUT of mutual blocks (above them) so they become extractable."
+            f"Extraction produced 0 files despite the extractor reporting success.\n"
+            f"Diagnosis: {blocked_str}\n"
+            f"If helpers are in a mutual block with main, move them out as standalone theorems above.\n"
+            f"If private, remove 'private'. Otherwise prove inline."
         )
-        await agent._emit("message", f"[PO5] 0 files extracted ({helper_count} helpers in file) — returning to PROVE")
+        await agent._emit("message", f"[PO5] 0 files extracted — blocked: {blocked_str[:100]}")
         return Trans.RETRY
 
     # Guide reviews decomposition
@@ -1212,12 +1316,31 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
 # Helpers — agent management
 # ═══════════════════════════════════════════════════════════════════════════════
 
+CONTEXT_ROTATION_THRESHOLD = 75.0  # percent
+
 async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger) -> SwarmAgent:
-    """Get or create persistent guide for this lemma. Reads .md on creation."""
+    """Get or create persistent guide. Rotates automatically at 75% context or when needs_fresh_guide is set."""
     from .._ledger_mcp import create_ledger_mcp_server
     attr = f"_guide_{entry.id}"
+    cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+    ctx = state.lemma_ctx.get(entry.id)
+
+    # Check if existing guide needs rotation (context exhausted or fresh_start requested)
+    existing = getattr(agent, attr, None)
+    if existing is not None:
+        force_rotate = ctx and ctx.needs_fresh_guide
+        try:
+            pct = await existing.get_context_percentage()
+        except Exception:
+            pct = None
+        # Rotate if: fresh_start requested, context exhausted, or process died
+        if force_rotate or pct is None or pct >= CONTEXT_ROTATION_THRESHOLD:
+            await _rotate_agent(agent, entry, cwd, role="guide", instance=existing)
+            if ctx:
+                ctx.needs_fresh_guide = False
+            # Fall through to create fresh
+
     if getattr(agent, attr, None) is None:
-        cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
         cheat_rel = f"{entry.workspace}/StrataProofCheatSheet.md"
         ledger_mcp = create_ledger_mcp_server(ledger)
         ctx = swarm_agent(
@@ -1234,20 +1357,41 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLed
         state.agent_registry[entry.id] = state.agent_registry.get(entry.id, {})
         state.agent_registry[entry.id]["guide"] = internal.spec.name
 
-        # Inject prior state
-        guide_state_path = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
-        if guide_state_path.exists():
-            prior = guide_state_path.read_text()
-            await internal.run_ai(
-                inp=f"PRIOR SESSION STATE:\n\n{prior}\n\nAcknowledge briefly — do NOT start proving yet.")
+        # Inject prior state if exists — enough turns to read cheat sheet + file
+        state_path = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
+        init_prompt = (
+            "You are starting a new session. Before receiving any task:\n"
+            "1. Read the cheat sheet (StrataProofCheatSheet.md in your workspace)\n"
+            "2. Read the current Stub.lean to see the proof state\n"
+            "3. Use any tools you need to understand the current situation\n"
+        )
+        if state_path.exists():
+            prior = state_path.read_text()
+            init_prompt += f"\nPRIOR SESSION STATE:\n\n{prior}\n"
+        init_prompt += "\nOnce you have full context, acknowledge. Do NOT start proving yet."
+        await internal.run_ai(inp=init_prompt, max_turns=15)
 
     return getattr(agent, attr)
 
 
 async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger):
-    """Get or create persistent writer (proof_writer_v2) for this lemma."""
+    """Get or create persistent writer. Rotates automatically at 75% context."""
     from .._lean_tools_mcp import create_writer_import_server
     attr = f"_writer_{entry.id}"
+    cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+
+    # Check if existing writer needs rotation
+    existing = getattr(agent, attr, None)
+    if existing is not None:
+        try:
+            pct = await existing.get_context_percentage()
+        except Exception:
+            pct = None
+        # Rotate if context exhausted OR process died (pct=None)
+        if pct is None or pct >= CONTEXT_ROTATION_THRESHOLD:
+            await _rotate_agent(agent, entry, cwd, role="writer", instance=existing)
+            # Fall through to create fresh
+
     if getattr(agent, attr, None) is None:
         ancestor_modules = []
         for anc_id in ledger.get_ancestry(entry.id):
@@ -1268,6 +1412,21 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLe
         state.agent_registry[entry.id] = state.agent_registry.get(entry.id, {})
         state.agent_registry[entry.id]["writer"] = internal.spec.name
         _remove_guide_from_visibility(agent, entry, internal)
+
+        # Inject prior state if exists — enough turns to read file + orient
+        state_path = cwd / entry.workspace / "guide_state" / f"writer_{entry.name}.md"
+        init_prompt = (
+            "You are starting a new session. Before receiving any task:\n"
+            "1. Read your assigned Stub.lean file to see the current proof state\n"
+            "2. Check sorry positions and goal state at those positions\n"
+            "3. Use any tools you need to understand the context\n"
+        )
+        if state_path.exists():
+            prior = state_path.read_text()
+            init_prompt += f"\nPRIOR SESSION STATE:\n\n{prior}\n"
+        init_prompt += "\nOnce oriented, acknowledge. Then wait for strategy advice."
+        await internal.run_ai(inp=init_prompt, max_turns=15)
+
     return getattr(agent, attr)
 
 
@@ -1310,8 +1469,44 @@ def _remove_guide_from_visibility(agent, entry: LemmaEntry, writer_agent):
         visible.discard(g)
 
 
+async def _rotate_agent(agent, entry: LemmaEntry, cwd: Path, role: str, instance):
+    """Dump agent state to disk and destroy the instance so a fresh one is created."""
+    # Ask agent to dump its state
+    try:
+        result = await instance.run_ai(
+            inp=(
+                "DUMP YOUR STATE: Summarize everything you know about this proof.\n"
+                "Include: strategies tried + outcomes, key insights, what to try next.\n"
+                "Be concise but complete. This will be your memory for next session."
+            ),
+            max_turns=3,
+        )
+        state_text = result.raw_result or ""
+    except Exception:
+        state_text = ""
+
+    # Write state to disk
+    if state_text.strip():
+        guide_dir = cwd / entry.workspace / "guide_state"
+        guide_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{entry.name}.md" if role == "guide" else f"writer_{entry.name}.md"
+        (guide_dir / filename).write_text(state_text)
+
+    # Destroy the instance
+    attr = f"_{role}_{entry.id}"
+    ctx_attr = f"{attr}_ctx"
+    ctx = getattr(agent, ctx_attr, None)
+    if ctx:
+        try:
+            await ctx.__aexit__(None, None, None)
+        except Exception:
+            pass
+    setattr(agent, ctx_attr, None)
+    setattr(agent, attr, None)
+
+
 async def _cleanup_agents(agent, entry: LemmaEntry):
-    """Destroy guide + writer + closer for this lemma."""
+    """Destroy guide + writer + closer for this lemma (no state dump)."""
     for role in ("guide", "writer", "closer"):
         attr = f"_{role}_{entry.id}"
         ctx_attr = f"{attr}_ctx"
@@ -1602,11 +1797,13 @@ def _format_progress(prev: int | None, current: int) -> str:
     return f"Sorry count: {current} (was {prev})."
 
 
-def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry) -> str | None:
-    cr = tools.check_compiles(stub_rel)
-    if not cr.success:
-        return "Stub.lean doesn't compile after extraction"
+def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry, output_dir: Path) -> str | None:
+    # Check that files were actually created — if the extractor reverted, this catches it
+    if not output_dir.exists() or not list(output_dir.glob("lemma_helper_*.lean")):
+        return "No helper files created (extractor may have reverted)"
     split = tools.split_theorems(stub_rel)
+    if not split or split.error:
+        return f"Cannot parse Stub.lean: {split.error if split else 'unknown'}"
     protected = {entry.name}
     for block in split.blocks:
         if block.name == entry.name and block.mutual_group is not None:
@@ -1617,6 +1814,87 @@ def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry) -> str | None:
     if bad:
         return f"Protected block has sorry: {bad}"
     return None
+
+
+def _repair_orphaned_decomposed(entry: LemmaEntry, cwd: Path, stub_rel: str):
+    """Detect and fix: decomposed/ dir exists but Stub.lean doesn't import from it.
+
+    This happens after a process crash between extraction and state persistence,
+    or when a child failure brings the parent back to PROVE without proper restoration.
+    Fix: re-add the missing imports so Stub.lean uses the precompiled helpers.
+    """
+    decomposed_dir = cwd / entry.workspace / "decomposed"
+    if not decomposed_dir.exists():
+        return
+    helper_files = sorted(decomposed_dir.glob("lemma_helper_*.lean"))
+    if not helper_files:
+        return
+
+    stub_path = cwd / stub_rel
+    content = stub_path.read_text()
+
+    # Check if Stub.lean already imports from decomposed/
+    ws_module = entry.workspace.replace("/", ".")
+    decomposed_import_prefix = f"import {ws_module}.decomposed."
+    if decomposed_import_prefix in content:
+        return
+
+    # Stub.lean doesn't import the helpers — add them
+    lines = content.splitlines()
+    import_end = 0
+    for i, l in enumerate(lines):
+        if l.strip().startswith("import "):
+            import_end = i + 1
+
+    new_imports = []
+    for hf in helper_files:
+        module = f"{ws_module}.decomposed.{hf.stem}"
+        imp_line = f"import {module}"
+        if imp_line not in content:
+            new_imports.append(imp_line)
+
+    if not new_imports:
+        return
+
+    # Insert imports and remove inlined helper blocks (they're now in separate files)
+    # Strategy: keep only the main theorem + any block not in decomposed/
+    # Simple approach: just add imports — the duplicate definitions will cause errors
+    # Better: use split_theorems to identify and remove inlined blocks that exist in decomposed/
+    tools = get_lean_tools()
+    helper_names = {hf.stem.removeprefix("lemma_helper_") for hf in helper_files}
+
+    split = tools.split_theorems(stub_rel)
+    if not split or split.error:
+        # Can't parse — just add imports and hope for the best
+        lines = lines[:import_end] + new_imports + lines[import_end:]
+        stub_path.write_text("\n".join(lines))
+        return
+
+    # Remove blocks whose names match extracted helpers
+    lines_to_remove: set[int] = set()
+    for block in split.blocks:
+        if block.name in helper_names and block.name != entry.name:
+            for i in range(block.start - 1, block.end):
+                lines_to_remove.add(i)
+
+    new_lines = lines[:import_end] + new_imports
+    for i in range(import_end, len(lines)):
+        if i not in lines_to_remove:
+            new_lines.append(lines[i])
+
+    # Clean up multiple blank lines
+    cleaned = []
+    prev_blank = False
+    for l in new_lines:
+        if l.strip() == "":
+            if not prev_blank:
+                cleaned.append(l)
+            prev_blank = True
+        else:
+            cleaned.append(l)
+            prev_blank = False
+
+    stub_path.write_text("\n".join(cleaned))
 
 
 def _revert_extraction(entry: LemmaEntry, cwd: Path):

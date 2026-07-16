@@ -28,12 +28,9 @@ system_prompt: >
      - Each helper file gets ONLY the imports it needs (not all of them)
      - Stub.lean is rewritten with extracted blocks removed + new imports added
      - Everything is built and verified
-  4. If commit FAILS with compilation errors:
-     - Read the error messages to understand what's broken
-     - Use Edit to fix the extracted files (add missing imports, remove private, fix references)
-     - Call verify_build to re-check compilation
-     - If verify_build passes → done
-     - If still failing → call revert and retry with different moves
+  4. If commit FAILS: call revert and report the error clearly
+     - Do NOT attempt to fix files — just report what went wrong
+     - The guide will decide next steps
 
   WHAT TO EXTRACT:
   - Standalone helper theorems/defs that have sorry (these become child obligations)
@@ -44,6 +41,13 @@ system_prompt: >
   - The main theorem (is_main=true) — NEVER move it
   - Members of a mutual block that contains the main theorem
   - Private declarations (cannot be imported from other files)
+
+  IF NOTHING IS EXTRACTABLE:
+  If all sorry helpers are blocked (in main's mutual block, private, etc.),
+  do NOT attempt to restructure the file. Instead EXIT immediately and report:
+  - WHAT is blocked: list the helper names
+  - WHY each is blocked: "in mutual block with main theorem" / "private" / "back-dep on main"
+  - The guide will instruct the proof writer to restructure before retrying extraction.
 
   DEPENDENCY HINTS:
   - If helper A uses helper B (calls it in its proof), pass additional_imports=["B"] when
@@ -60,14 +64,11 @@ allowed_tools:
   - mcp__extractor_tools__get_declarations
   - mcp__extractor_tools__move_decl
   - mcp__extractor_tools__commit
-  - mcp__extractor_tools__verify_build
   - mcp__extractor_tools__revert
   - Read(StrataAgent/Sandbox/**)
-  - Edit(StrataAgent/Sandbox/**)
-  - Write(StrataAgent/Sandbox/**)
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*"]
+disallowed_tools: [Edit, Write, Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*", "mcp__plugin_*"]
 
 tool_error_reminder: >
-  Use only: get_declarations, move_decl, commit, verify_build, revert, Read, Edit, and Write.
+  Use only: get_declarations, move_decl, commit, revert, and Read.
 
 mcp_servers: {}

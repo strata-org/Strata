@@ -308,109 +308,23 @@ class MoveSession:
         if not blocks_to_extract:
             return ExtractResult(error="No valid declarations found to extract")
 
-        # Pre-check: find private helpers that stay in Stub but are used by extracted blocks.
-        # Make them public (remove 'private' keyword) so extracted files can access them.
-        names_staying = set(block_by_name.keys()) - names_being_extracted
-        private_staying = {n for n in names_staying
-                          if n in block_by_name and "private " in block_by_name[n].text[:50]}
-        extracted_text_all = "\n".join(
-            b.text for _, blocks in blocks_to_extract for b in blocks)
-        made_public = []
-        for priv_name in private_staying:
-            if priv_name in extracted_text_all:
-                # This private helper is used by an extracted file — make it public
-                block = block_by_name[priv_name]
-                old_text = block.text
-                new_text = old_text.replace("private theorem", "theorem", 1).replace("private def", "def", 1)
-                if new_text != old_text:
-                    # Update the block text and rewrite the original lines
-                    start_idx = block.start - 1
-                    end_idx = block.end
-                    block_original_lines = original_lines[start_idx:end_idx]
-                    for i, l in enumerate(block_original_lines):
-                        if "private " in l:
-                            block_original_lines[i] = l.replace("private ", "", 1)
-                            break
-                    original_lines[start_idx:end_idx] = block_original_lines
-                    made_public.append(priv_name)
-
-        # If we made anything public, rewrite the backup and source
-        if made_public:
-            self._backup = "\n".join(original_lines)
-            source.write_text(self._backup)
-            # Re-parse since line numbers may have shifted (shouldn't, but be safe)
-            split = self._tools.split_theorems(self._file_path)
-            if not split or split.error:
-                return ExtractResult(error=f"Re-parse after making public failed: {split.error if split else 'unknown'}")
-            block_by_name = {b.name: b for b in split.blocks}
-
         # Create output directory
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Auto-extract shared dependencies transitively: if a non-extracted, non-main
-        # helper is referenced by any extracted block, extract it too. Repeat until
-        # no new deps are found (transitive closure). Mutual groups are extracted as a unit.
-        auto_extracted = []
-        already_handled_groups: set[int] = set()
-        changed = True
-        while changed:
-            changed = False
-            extracted_text_all_fresh = "\n".join(
-                b.text for _, blocks in blocks_to_extract for b in blocks)
-            for staying_name in list(names_staying):
-                if staying_name == self._main_theorem:
-                    continue
-                if staying_name in extracted_text_all_fresh:
-                    block = block_by_name.get(staying_name)
-                    if not block:
-                        continue
-                    if block.mutual_group is not None:
-                        if block.mutual_group in already_handled_groups:
-                            continue
-                        already_handled_groups.add(block.mutual_group)
-                        group_names = split.mutual_groups.get(block.mutual_group, [])
-                        if self._main_theorem in group_names:
-                            continue
-                        group_blocks = [block_by_name[n] for n in group_names if n in block_by_name]
-                        blocks_to_extract.append((group_names[0], group_blocks))
-                        names_being_extracted.update(group_names)
-                        for gn in group_names:
-                            names_staying.discard(gn)
-                        auto_extracted.extend(group_names)
-                        changed = True
-                    else:
-                        blocks_to_extract.append((staying_name, [block]))
-                        names_being_extracted.add(staying_name)
-                        names_staying.discard(staying_name)
-                        auto_extracted.append(staying_name)
-                        changed = True
+        # Write each helper file with imports from the agent's explicit additional_imports.
+        # The agent decides dependencies via move_decl(additional_imports=[...]).
+        # No heuristic auto-extraction or string-match dependency inference.
+        source_imports = [l for l in header_lines if l.strip().startswith("import ")]
 
-        # Build dependency graph: which extracted decl uses which other extracted decl
-        deps: dict[str, list[str]] = {}  # safe_name → [dep_safe_names]
-        for safe_name, blocks in blocks_to_extract:
-            block_text = "\n".join(b.text for b in blocks)
-            my_deps = []
-            for other_name, _ in blocks_to_extract:
-                if other_name == safe_name:
-                    continue
-                if other_name in block_text:
-                    my_deps.append(other_name)
-            deps[safe_name] = my_deps
-
-        # Write each helper file with only the imports it needs
         created_files: list[str] = []
         for safe_name, blocks in blocks_to_extract:
             fs_name = safe_name.replace(" ", "_").replace("/", "_")
             target_file = out_path / f"lemma_helper_{fs_name}.lean"
 
-            # Build imports for this file: base Stub.Def + only the helpers it depends on
-            file_imports = [f"import {self._workspace}.Stub.Def".replace("/", ".")]
-            for dep in deps.get(safe_name, []):
-                dep_fs = dep.replace(" ", "_").replace("/", "_")
-                module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{dep_fs}".replace("/", ".")
-                file_imports.append(f"import {module}")
+            # Start with the source file's imports (correct Def, external libs, etc.)
+            file_imports = list(source_imports)
 
-            # Also add additional_imports from the move intent
+            # Add sibling imports from agent's explicit additional_imports
             move_intent = next((m for m in self._moves if m.decl_name == safe_name), None)
             if move_intent and move_intent.additional_imports:
                 for ai in move_intent.additional_imports:
@@ -485,7 +399,8 @@ class MoveSession:
         result = subprocess.run(["lake", "build", stub_module],
                                 cwd=str(root), capture_output=True, text=True, timeout=300)
         output = result.stdout + "\n" + result.stderr
-        errors = [l for l in output.splitlines() if ": error:" in l]
+        errors = [l for l in output.splitlines()
+                  if ": error:" in l or l.strip().startswith("error:")]
 
         if errors:
             # Categorize errors by file
