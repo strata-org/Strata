@@ -22,6 +22,10 @@ public inductive OutputMode where
   | verbose
   deriving BEq, DecidableEq, Repr
 
+/-- Whether this mode emits profiling output. -/
+public def OutputMode.showsProfiling (m : OutputMode) : Bool :=
+  m == .profile || m == .verbose
+
 /-- Aggregated data for a single repeated phase (recursive for arbitrary nesting). -/
 structure RepeatedPhaseData where
   count : Nat
@@ -176,7 +180,7 @@ partial def flushRepeatedEntries (ctx : PipelineContext)
   let childIndent := String.replicate (parentPhase.depth * 2) ' '
   for (name, data) in entries do
     let subphase := parentPhase.subphase name
-    if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+    if ctx.outputMode.showsProfiling then
       let avg := if data.count > 0 then nsToMs (data.totalNs / data.count) else 0
       let timeSuffix :=
         if ctx.profilePipeline then
@@ -194,7 +198,7 @@ partial def flushRepeatedEntries (ctx : PipelineContext)
 def enterPhaseNormal (ctx : PipelineContext) : BaseIO Nat := do
   let phase ← ctx.currentPhaseRef.get
   let startNs ← ctx.elapsedNs
-  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+  if ctx.outputMode.showsProfiling then
     let indent := String.replicate ((phase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs startNs}ms)" else ""
     printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
@@ -213,7 +217,7 @@ def exitPhaseNormal (ctx : PipelineContext)
     ("phase", .str currentPhase.display),
     ("start_ms", .num (nsToMs startNs)),
     ("end_ms", .num (nsToMs now))])
-  if ctx.outputMode == .profile || ctx.outputMode == .verbose then
+  if ctx.outputMode.showsProfiling then
     let indent := String.replicate ((currentPhase.depth - 1) * 2) ' '
     let timeSuffix := if ctx.profilePipeline then s!" (time: {nsToMs now}ms)" else ""
     printlnFlush s!"{indent}[end] {currentPhase.leaf}{timeSuffix}"

@@ -1927,7 +1927,12 @@ All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
 When `keepAllFilesPrefix` is provided, the program state after each pipeline
-phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1). -/
+phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1).
+
+When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
+drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
+`showsProfiling`; `options.profile` only decides the `outputMode` of the
+context created internally when `pipelineCtx` is `none`. -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
@@ -1940,12 +1945,12 @@ def verify (program : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
     : EIO DiagnosticModel VCResults := do
-  let profile := options.profile
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
     | none =>
-      let mode := if profile then Strata.Pipeline.OutputMode.profile else .quiet
+      let mode := if options.profile then Strata.Pipeline.OutputMode.profile else .quiet
       (PipelineContext.create (outputMode := mode) : BaseIO _)
+  let profile := pctx.outputMode.showsProfiling
 
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)

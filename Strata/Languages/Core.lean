@@ -251,15 +251,21 @@ def Core.verify
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
-  let program ← match strataProgramToCore env ictx with
+  let translateToCore : IO Core.Program := do
+    match strataProgramToCore env ictx with
     | .ok p => pure p
     | .error msg => throw (IO.userError msg)
+  let program ← match pipelineCtx with
+    | some pctx => pctx.withPhase "ddmToCore" translateToCore
+    | none => translateToCore
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
     (keepAllFilesPrefix := keepAllFilesPrefix)
     (mkDischarge := mkDischarge)
+    (pipelineCtx := pipelineCtx)
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 
