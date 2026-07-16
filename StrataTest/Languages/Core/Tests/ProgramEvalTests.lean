@@ -696,6 +696,19 @@ private def moreFnsFolds (moreFns : Lambda.Factory CoreLParams) : IO Unit := do
 #guard_msgs in
 #eval moreFnsFolds Lambda.Factory.default
 
+-- Collision: a `moreFns` entry that redefines a base-factory name makes
+-- `Program.run` error instead of silently keeping one of the two entries.
+-- `Int.Add` is a Core base-factory function, so this pins the checked
+-- `addFactory` fold-in on the `Program.run` path: weakening it back to a
+-- silent-skip append would turn this diagnostic into a successful run.
+/--
+info: error: A function of name Int.Add already exists! Redefinitions are not allowed.
+Existing Function: func Int.Add :  ((x : int) (y : int)) → int;
+New Function:func Int.Add :  ((x : int)) → int;
+-/
+#guard_msgs in
+#eval moreFnsFolds (.ofArray #[{ dummyDouble with name := "Int.Add" }])
+
 end ConcreteInterpretation
 
 ---------------------------------------------------------------------
