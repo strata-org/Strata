@@ -43,6 +43,7 @@ import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.VerifierProofs
 import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
+import Strata.Languages.GOTO
 import Strata.Languages.Laurel.FilterPrelude
 
 /- DDM -/
@@ -52,8 +53,6 @@ import StrataDDM
 import Strata.Backends.CBMC
 
 /- Dialect Library — additional (can't go in aggregates due to cycles) -/
-import Strata.DL.Imperative.CFGToCProverGOTO
-import Strata.DL.Imperative.ToCProverGOTO
 import Strata.DL.SMT.Denote
 import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
