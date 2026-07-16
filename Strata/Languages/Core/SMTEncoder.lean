@@ -20,7 +20,7 @@ import Strata.Util.Tactics
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
-open Strata.Util (OrderedSet)
+open Strata.Util (OrderedSet OrderedKeyedSet)
 
 public section
 /--
@@ -45,6 +45,10 @@ structure SMT.PendingFnDef where
 deriving Repr, Inhabited
 
 /--
+An insertion-ordered, `uf`-deduplicated queue of `PendingFnDef`s. -/
+abbrev SMT.PendingFnQueue : Type := OrderedKeyedSet ((·.uf) : SMT.PendingFnDef → UF)
+
+/--
 A factory function whose body and axioms have been encoded to SMT `Term`s,
 ready to be committed to the `SMT.Context`.
 -/
@@ -66,12 +70,11 @@ explicitly marked as invariant in their comments.
 -/
 structure SMT.Context where
   /-- Declared SMT sorts, plus uninterpreted functions, defined functions, and
-  axioms. Each is an `OrderedSet`, which keeps insertion order for emit while
-  deduplicating in O(1) via a built-in membership index (the array and index
-  cannot drift apart). -/
+  axioms. Each keeps insertion order for emit while deduplicating in O(1) via a
+  built-in membership index (the array and index cannot drift apart). -/
   sorts : OrderedSet Strata.DL.SMT.Sort := .empty
   ufs : OrderedSet UF := .empty
-  ifs : OrderedSet IF := .empty
+  ifs : OrderedKeyedSet IF.toUF := .empty
   axms : OrderedSet Term := .empty
   tySubst: Map String TermType := []
   /-- Stores the TypeFactory purely for ordering datatype declarations
@@ -123,12 +126,7 @@ def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) :
 /-- True if the function `uf`'s declaration has already been committed: it is
     in `ufs` (uninterpreted) or `ifs` (interpreted). -/
 def SMT.Context.committedFn (ctx : SMT.Context) (uf : UF) : Bool :=
-  ctx.ufs.contains uf || ctx.ifs.toArray.any (·.toUF == uf)
-
-/-- True if the function `uf` is already committed in `ctx` or scheduled in the
-    pending queue `pending`. Used to dedup function scheduling. -/
-def SMT.Context.knowsFn (ctx : SMT.Context) (pending : List SMT.PendingFnDef) (uf : UF) : Bool :=
-  ctx.committedFn uf || pending.any (·.uf == uf)
+  ctx.ufs.contains uf || ctx.ifs.containsKey uf
 
 def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
   { ctx with tySubst := ctx.tySubst ++ newSubst }
@@ -540,11 +538,11 @@ def corePredefinedOpToSMTOp (op : CoreOp) (ctx : SMT.Context) :
 
     Returns the updated `SMT.Context` and pending-definition queue `pending`:
     for a user-defined factory function this only registers the `UF` and
-    *appends* a `PendingFnDef` (deferring body/axiom encoding); the queue is
-    threaded through term encoding and drained later by `drainPendingFnDefs`. -/
+    *schedules* a `PendingFnDef` (deferring body/axiom encoding); the queue is
+    threaded through term encoding and drained later by `processPendingFnDefs`. -/
 def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
-  (pending : List SMT.PendingFnDef) :
-  Except Format ((List Term → TermType → Term) × TermType × SMT.Context × List SMT.PendingFnDef) :=
+  (pending : SMT.PendingFnQueue) :
+  Except Format ((List Term → TermType → Term) × TermType × SMT.Context × SMT.PendingFnQueue) :=
   open LTy.Syntax in do
   -- Encode the type to ensure any datatypes are registered in the context
   let tys := LMonoTy.destructArrow fnty
@@ -612,17 +610,18 @@ def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMo
         else
           -- Defer encoding the function's definition (interpreted body and/or
           -- axioms). Those would require calling `toSMTTerm` on expressions
-          -- drawn from the factory; append a `PendingFnDef` to the queue instead.
-          let pending := if ctx.knowsFn pending uf then pending
-            else pending ++ [{ fn := fn, uf := uf, fnty := fnty, tySubst := ctx.tySubst }]
+          -- drawn from the factory; schedule a `PendingFnDef` instead. Skip
+          -- functions already committed.
+          let pending := if ctx.committedFn uf then pending
+            else pending.insert { fn := fn, uf := uf, fnty := fnty, tySubst := ctx.tySubst }
           .ok (.app (Op.uf uf), smt_outty, ctx, pending)
 
 mutual
 
 @[expose]
 def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
-  (pending : List SMT.PendingFnDef)
-  : Except Format (Term × SMT.Context × List SMT.PendingFnDef) := do
+  (pending : SMT.PendingFnQueue)
+  : Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
   match e with
   | .boolConst _ b => .ok (Term.bool b, ctx, pending)
   | .intConst _ i => .ok (Term.int i, ctx, pending)
@@ -723,8 +722,8 @@ decreasing_by
     right to left as the spine is peeled. -/
 def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn arg : LExpr CoreLParams.mono)
   (acc : List Term) (ctx : SMT.Context)
-  (pending : List SMT.PendingFnDef) :
-  Except Format (Term × SMT.Context × List SMT.PendingFnDef) := do
+  (pending : SMT.PendingFnQueue) :
+  Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
   match fn, arg with
   -- Special case for indexed SMT operations. The loop bounds must be natural
   -- number literals. Partial evaluation reduces the index expressions to
@@ -810,16 +809,16 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
   -- Encode the body (interpreted functions) or leave it uninterpreted.
   let (body?, ctx, pending) ←
     if func.isRecursive then
-      .ok (none, ctx, ([] : List SMT.PendingFnDef))
+      .ok (none, ctx, ({} : SMT.PendingFnQueue))
     else match func.body with
-    | none => .ok (none, ctx, ([] : List SMT.PendingFnDef))
+    | none => .ok (none, ctx, ({} : SMT.PendingFnQueue))
     | some body =>
       -- Substitute the formals in the function body with appropriate `.bvar`s.
       -- Use substFvarsLifting to properly lift indices under binders.
       let bvs := args.map fun v => (v.id, v.ty)
       let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
       let body := LExpr.substFvarsLifting body (formals.zip bvars)
-      let (term, ctx, pending) ← toSMTTerm factory bvs body ctx []
+      let (term, ctx, pending) ← toSMTTerm factory bvs body ctx {}
       .ok (some term, ctx, pending)
 
   -- Encode the function's axioms (recursive-function axioms are pre-computed by
@@ -839,7 +838,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
       .ok (axiom_term :: axs, ctx.restoreSubst seededSubst, pending))
   -- Restore the substitution that was active before this function.
   .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse },
-       ctx.restoreSubst savedSubst, pending)
+       ctx.restoreSubst savedSubst, pending.toList)
 
 /--
 Resolve and commit the transitive closure of deferred function definitions
@@ -848,7 +847,7 @@ The fuel is set to factory.toArray.size + pending.length, which is enough to
 visit all bodies and axioms. It is used to make the termination proof easier.
 -/
 def processPendingFnDefsAux (factory : @Lambda.Factory CoreLParams) (fuel : Nat)
-    (ctx : SMT.Context) (seen : List UF)
+    (ctx : SMT.Context) (seen : Std.HashSet UF)
     (pending : List SMT.PendingFnDef) :
     Except Format SMT.Context := do
   match pending with
@@ -864,7 +863,7 @@ def processPendingFnDefsAux (factory : @Lambda.Factory CoreLParams) (fuel : Nat)
       | fuel + 1 =>
         -- Mark `p` in progress *before* encoding so a self/mutual reference in
         -- its body or axioms does not re-schedule it.
-        let seen := p.uf :: seen
+        let seen := seen.insert p.uf
         let (rdef, ctx, deps) ← resolveOnePendingFnDef factory ctx p
         -- Commit the dependencies discovered while encoding `p` first, so they
         -- are committed before `p` (callee-before-caller), then commit `p`.
@@ -880,17 +879,17 @@ decreasing_by
     The initial fuel covers the factory size (each function is committed at most
     once). -/
 def processPendingFnDefs (factory : @Lambda.Factory CoreLParams)
-    (ctx : SMT.Context) (pending : List SMT.PendingFnDef) : Except Format SMT.Context :=
-  processPendingFnDefsAux factory (factory.toArray.size + pending.length) ctx [] pending
+    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) : Except Format SMT.Context :=
+  processPendingFnDefsAux factory (factory.toArray.size + pending.size) ctx {} pending.toList
 
 def toSMTTerms (factory : @Lambda.Factory CoreLParams) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
-  (pending : List SMT.PendingFnDef) :
-  Except Format ((List Term) × SMT.Context × List SMT.PendingFnDef) :=
+  (pending : SMT.PendingFnQueue) :
+  Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) :=
   go es ctx pending #[]
 where
-  go (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : List SMT.PendingFnDef)
+  go (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue)
      (acc : Array Term) :
-     Except Format ((List Term) × SMT.Context × List SMT.PendingFnDef) := do
+     Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) := do
     match es with
     | [] => return (acc.toList, ctx, pending)
     | e :: erest =>
@@ -948,7 +947,7 @@ def ProofObligation.toSMTTerms (factory : @Lambda.Factory CoreLParams)
 
   -- `pending` accumulates factory functions whose definitions `toSMTOp` defers;
   -- it is threaded through all term encoding below and drained once at the end.
-  let pending : List SMT.PendingFnDef := []
+  let pending : SMT.PendingFnQueue := {}
 
   -- 2. Encode distinctness facts, one `distinct` assertion per group.
   let (ctx, pending, distinct_terms) ← distinctGroups.foldlM (λ (ctx, pending, tss) es =>
@@ -1004,7 +1003,7 @@ def ProofObligation.toSMTTerms (factory : @Lambda.Factory CoreLParams)
 def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono)
   (factory : @Lambda.Factory CoreLParams := Core.Factory) (ctx : SMT.Context := SMT.Context.default)
   : IO String := do
-  let smtctx := toSMTTerm factory [] e ctx []
+  let smtctx := toSMTTerm factory [] e ctx {}
   match smtctx with
   | .error e => return e.pretty
   | .ok (smt, _, _) =>

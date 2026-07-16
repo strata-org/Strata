@@ -18,11 +18,13 @@ import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
+import Strata.Util.OrderedSetProps
 import Strata.Util.Sarif
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
+import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 

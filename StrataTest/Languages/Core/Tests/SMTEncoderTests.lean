@@ -196,7 +196,7 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
     -- Term 2: ∀ y:Bool. y
     (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
      (.bvar () 0))
-  ] SMT.Context.default [] with
+  ] SMT.Context.default {} with
   | .ok ([t1, t2], _, _) =>
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
     | .ok s1, .ok s2 =>

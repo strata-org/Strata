@@ -80,7 +80,7 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
   | .ok env =>
     -- Set the TypeFactory for correct datatype emission ordering, and the flag.
     let ctx := { SMT.Context.default.withTypeFactory env.datatypes with useArrayTheory }
-    match toSMTTerm env.factory [] e ctx [] with
+    match toSMTTerm env.factory [] e ctx {} with
     | .error err => return err.pretty
     | .ok (smt, ctx, _) =>
       -- Emit the full SMT output including datatype declarations
@@ -490,7 +490,7 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
       let ctx := SMT.Context.default.withTypeFactory env.datatypes
       let factory := env.factory
       match (do
-          let (smt, ctx, pending) ← toSMTTerm factory [] e ctx []
+          let (smt, ctx, pending) ← toSMTTerm factory [] e ctx {}
           -- Resolve and commit deferred function definitions/axioms (`toSMTOp`
           -- schedules them rather than encoding inline).
           let ctx ← Core.processPendingFnDefs factory ctx pending
