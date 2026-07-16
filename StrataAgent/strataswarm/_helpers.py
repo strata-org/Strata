@@ -116,25 +116,44 @@ class swarm_agent:
             from ._tools import ToolSet
 
             scope = f"{self._workspace}/**"
-            spec.workspace = Workspace(read=[scope], write=[scope], edit=[scope])
 
             # Tools that must be scoped (generic versions stripped, scoped versions added)
             _MUST_SCOPE = ("Read", "Write", "Edit", "Bash", "Grep", "Glob")
+            _FILE_SCOPE = ("Read", "Write", "Edit")
+
+            # Which filesystem tools did the ORIGINAL spec grant? Only re-scope THOSE.
+            # Scoping must never WIDEN a spec's permissions: a writer that has had
+            # Write removed (so it cannot create files — decomposition goes only
+            # through the extraction pipeline) must NOT get Write back just because
+            # it is spawned into a workspace subdirectory like decomposed/lemma_X.
+            granted_file_tools = {
+                t.name for t in (spec.tools.allowed if spec.tools else [])
+                if t.name in _FILE_SCOPE
+            }
+
+            spec.workspace = Workspace(
+                read=[scope] if "Read" in granted_file_tools else [],
+                write=[scope] if "Write" in granted_file_tools else [],
+                edit=[scope] if "Edit" in granted_file_tools else [],
+            )
 
             # Rebuild tools: only scoped access + non-filesystem tools from spec
             tools = ToolSet()
-            tools.allow(f"Read({scope})")
-            tools.allow(f"Write({scope})")
-            tools.allow(f"Edit({scope})")
+            for name in _FILE_SCOPE:
+                if name in granted_file_tools:
+                    tools.allow(f"{name}({scope})")
             if spec.tools:
                 for t in spec.tools.allowed:
                     if t.name in _MUST_SCOPE:
-                        # Drop generic and unscoped — only keep if already scoped to our workspace
-                        if t.pattern and t.pattern.startswith(self._workspace):
+                        # File tools handled above. For Bash/Grep/Glob, keep only
+                        # versions already scoped to our workspace; drop the rest.
+                        if (t.name not in _FILE_SCOPE and t.pattern
+                                and t.pattern.startswith(self._workspace)):
                             tools.allow(t.to_claude_format())
                         # Otherwise skip (replaced by our scoped versions above)
                     else:
                         tools.allow(t.to_claude_format())
+                # Carry over the spec's disallowed list (e.g. explicit Write deny)
                 for t in spec.tools.disallowed:
                     tools.disallow(t.to_claude_format())
             spec.tools = tools

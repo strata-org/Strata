@@ -206,6 +206,11 @@ def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> 
     # Do NOT copy Def.lean — all files import the root's Stub.Def directly
     # This avoids duplicate declaration conflicts in Lean
 
+    # Copy cheat sheet from the canonical source
+    cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
+    if cheat_src.exists():
+        shutil.copy2(cheat_src, child_ws_path / "StrataProofCheatSheet.md")
+
     # Rewrite imports: point to root Stub.Def, remove sibling imports
     child_stub = child_ws_path / "Stub.lean"
     root_workspace = parent_workspace.split("/decomposed/")[0]
