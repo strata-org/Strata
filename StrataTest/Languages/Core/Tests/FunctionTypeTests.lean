@@ -182,6 +182,55 @@ info: error: Function 'bad': type variables [$__ty0] appear in the signature but
   let (func', _) ← Function.typeCheck C Env issue1287_func
   return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}"
 
+-- Undeclared free variable in the body. `resolve` opens the lambda binder with a
+-- generated name (`$__var0`, matching `genExprVar`'s first fresh name), which would
+-- accidentally bind the undeclared body variable of the same name and let this
+-- ill-scoped function typecheck. The body freeVarCheck guard rejects it.
+-- f() : int -> int { \(x:int). $__var0 }   -- `$__var0` is neither a formal nor ambient
+private def undeclaredBodyVarFunc : Core.Function :=
+  { name := ⟨"f", ()⟩,
+    typeArgs := [],
+    inputs := [],
+    output := .arrow .int .int,
+    body := some (.abs () "x" (some .int) (.fvar () ⟨"$__var0", ()⟩ none)) }
+
+/--
+info: error: [(λ (bvar:int) $__var0)] No free variables are allowed here!
+Free Variables: [$__var0]
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C Env undeclaredBodyVarFunc
+  return format f!"typeArgs: {func'.typeArgs}\noutput: {func'.output}"
+
+-- Guard companion (Should PASS): the body freeVarCheck must accept variables that
+-- ARE declared — both formal parameters and ambient context bindings. Here the body
+-- `(\(z:int). x) y` references the formal `x` and the ambient `y : int`; neither is
+-- undeclared, so the function must typecheck. Checked in an ambient context binding
+-- `y : int` (built by hand, as `Function.typeCheck` is invoked directly).
+private def ambientEnvWithY : Core.Expression.TyEnv :=
+  let binding : Map CoreLParams.Identifier LTy := [(⟨"y", ()⟩, .forAll [] .int)]
+  @Lambda.TEnv.addInNewestContext CoreLParams (Lambda.TEnv.default : Lambda.TEnv Unit).pushEmptyContext binding
+
+-- useBoth(x:int):int { (\(z:int). x) y }   -- free vars: x (formal), y (ambient)
+private def useFormalAndAmbientFunc : Core.Function :=
+  { name := ⟨"useBoth", ()⟩,
+    typeArgs := [],
+    inputs := [(⟨"x", ()⟩, .int)],
+    output := .int,
+    body := some (.app () (.abs () "z" (some .int) (.fvar () ⟨"x", ()⟩ none)) (.fvar () ⟨"y", ()⟩ none)) }
+
+/--
+info: ok: typeArgs: []
+inputs: (x, int)
+output: int
+body: some (fun z : int => x)(y)
+-/
+#guard_msgs in
+#eval do
+  let (func', _) ← Function.typeCheck C ambientEnvWithY useFormalAndAmbientFunc
+  return format f!"typeArgs: {func'.typeArgs}\ninputs: {func'.inputs}\noutput: {func'.output}\nbody: {func'.body}"
+
 -- Issue #1399: a nested funcDecl may not generalize over a type variable free
 -- in the ambient context. These cannot be written in concrete syntax (the DDM
 -- front-end rejects them at elaboration, and the `var x : ∀a. a` route is closed
