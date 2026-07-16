@@ -1,1 +1,0 @@
-# StrataSwarm v2
