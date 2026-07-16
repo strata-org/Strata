@@ -264,6 +264,13 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
   "fun " d " => " body:3;
 
+// "have" binding: `have x : T = v in body`. Syntactic sugar for a lambda
+// application `(fun x : T => body) v`; `x` is in scope only in `body`. The
+// binder is a single-element `DeclList`, reusing the same scoping machinery as
+// `lambda`/`forall`.
+fn have_expr (tp : Type, resTp : Type, d : DeclList, val : tp, @[scope(d)] body : resTp) : resTp =>
+  @[prec(2)] "have " d " = " val:0 " in " body:3;
+
 // Application of an expression to an argument
 fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>
   "(" f ")" "(" x ")";

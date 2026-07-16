@@ -253,6 +253,17 @@ abbrev LExpr.allUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant
 abbrev LExpr.existUntypedTr {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none
 abbrev LExpr.existUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none (LExpr.noTrigger m)
 
+/--
+A "have" binding `have x = value in body` is syntactic sugar for applying the
+abstraction `λ x. body` to `value`. It introduces no new AST node: it desugars
+to the corresponding `abs`/`app`, with `name` kept as the abstraction's pretty
+name and `ty` the (optional) annotation on the bound variable. As with the other
+binders, `body` refers to the bound value positionally (i.e., via `bvar 0`).
+-/
+def LExpr.mkHave {T : LExprParamsT} (m : T.base.Metadata) (name : String)
+    (ty : Option T.TypeType) (value body : LExpr T) : LExpr T :=
+  .app m (.abs m name ty body) value
+
 @[simp, expose]
 def LExpr.sizeOf: LExpr T → Nat
   | LExpr.abs _ _ _ e => 2 + sizeOf e

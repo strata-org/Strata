@@ -909,6 +909,25 @@ def translateLambda
       | _ => panic! s!"Expected monomorphic type in lambda, got: {ty}" -- nopanic:ok
     return xsArray.foldr buildLambda (init := b)
 
+/-- Translate a `have x : T = value in body` binding. `body` is translated with
+    `x` in scope (reusing `withScopedBindings`, as `lambda` does); `value` is
+    translated in the outer scope. Desugars to `(λ x : T. body) value` via
+    `LExpr.mkHave`. -/
+partial
+def translateHave
+  (p : Program)
+  (bindings : TransBindings) (xsa : Arg) (vala : Arg) (bodya : Arg) :
+  TransM Core.Expression.Expr := do
+    let (xsArray, _, body) ← withScopedBindings p bindings xsa bodya
+    let (name, ty) ← match xsArray.toList with
+      | [b] => pure b
+      | _ => TransM.error s!"have binding expects exactly one variable, got {xsArray.toList.length}"
+    let mty ← match ty with
+      | .forAll [] mty => pure mty
+      | _ => TransM.error s!"Expected monomorphic type in have binding, got: {ty}"
+    let value ← translateExpr p bindings vala
+    return LExpr.mkHave () name.name (.some mty) value body
+
 partial
 def translateQuantifier
   (qk: QuantifierKind)
@@ -1226,6 +1245,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   -- Lambda abstraction
   | .fn _ q`Core.lambda, [_, xsa, ba] =>
     translateLambda p bindings xsa ba
+  -- "have" binding: have x : T = value in body
+  | .fn _ q`Core.have_expr, [_, _, xsa, vala, ba] =>
+    translateHave p bindings xsa vala ba
   -- Expression application: (f)(x)
   | .fn _ q`Core.apply_expr, [_, _, fa, xa] => do
     let f ← translateExpr p bindings fa

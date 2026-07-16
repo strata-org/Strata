@@ -97,6 +97,20 @@ private instance : Coe String TestParams.Identifier where
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[λ(%0)]
          return (LExprT.format $ ans.fst)
 
+-- Resolving a `have` binding: `have x = #5 in (x == #5)`.
+/-- info: ok: (((λ ((%0 : int) == (#5 : int)) : bool)) : (arrow int bool)) (#5 : int)) : bool) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default
+                     (LExpr.mkHave () "x" none esM[#5] esM[%0 == #5])
+         return (LExprT.format $ ans.fst)
+
+-- Same, with the binder explicitly annotated: `have x : int = #5 in (x == #5)`.
+/-- info: ok: (((λ ((%0 : int) == (#5 : int)) : bool)) : (arrow int bool)) (#5 : int)) : bool) -/
+#guard_msgs in
+#eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default
+                     (LExpr.mkHave () "x" (some mty[int]) esM[#5] esM[%0 == #5])
+         return (LExprT.format $ ans.fst)
+
 /-- info: ok: (#5 : int) -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[#5]

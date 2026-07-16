@@ -209,6 +209,16 @@ as `abs_subst_fvars`. -/
     Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty (LExpr.substFvarsFromEnv rf tr) body)
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
+/-- Beta-reduction behavior of `have`-bindings: `mkHave m name ty value body`
+    steps to `body` with the bound variable substituted by `value`. -/
+theorem LExpr.mkHave_beta (F : @Factory Tbase) (rf : Env Tbase)
+    (m : Tbase.Metadata) (name : String) (ty : Option LMonoTy)
+    (value body : LExpr Tbase.mono) :
+    Step F rf (LExpr.mkHave m name ty value body) (LExpr.subst (fun _ => value) body) := by
+  unfold LExpr.mkHave
+  exact Step.beta body value _ rfl
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem step_const_stuck:
   ∀ (F:@Factory Tbase) r x e,
   ¬ Step F r (.const m x) e := by
