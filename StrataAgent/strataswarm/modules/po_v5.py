@@ -128,6 +128,7 @@ class LemmaContext:
     current_task: str = ""
     failure_context: str = ""
     needs_fresh_guide: bool = False
+    needs_fresh_writer: bool = False
 
 
 @dataclass
@@ -686,6 +687,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         elif decision == "fresh_start":
             await agent._emit("message", f"[PO5] Fresh start: {reason}")
             ctx.needs_fresh_guide = True
+            ctx.needs_fresh_writer = True
             ctx.failure_context = f"Previous approach exhausted: {reason}"
             ctx.current_task = ""
             return "retry"
@@ -1162,6 +1164,7 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
             return Trans.RETRY
         elif decision == "fresh_start":
             ctx.needs_fresh_guide = True
+            ctx.needs_fresh_writer = True
             ctx.failure_context = f"Cycle, fresh start: {cycle_desc}"
             return Trans.RETRY
         else:
@@ -1375,21 +1378,26 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLed
 
 
 async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger):
-    """Get or create persistent writer. Rotates automatically at 75% context."""
+    """Get or create persistent writer. Rotates automatically at 75% context
+    or when needs_fresh_writer is set (e.g. after a fresh_start)."""
     from .._lean_tools_mcp import create_writer_import_server
     attr = f"_writer_{entry.id}"
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
+    ctx = state.lemma_ctx.get(entry.id)
 
     # Check if existing writer needs rotation
     existing = getattr(agent, attr, None)
     if existing is not None:
+        force_rotate = ctx and ctx.needs_fresh_writer
         try:
             pct = await existing.get_context_percentage()
         except Exception:
             pct = None
-        # Rotate if context exhausted OR process died (pct=None)
-        if pct is None or pct >= CONTEXT_ROTATION_THRESHOLD:
+        # Rotate if: fresh_start requested, context exhausted, or process died
+        if force_rotate or pct is None or pct >= CONTEXT_ROTATION_THRESHOLD:
             await _rotate_agent(agent, entry, cwd, role="writer", instance=existing)
+            if ctx:
+                ctx.needs_fresh_writer = False
             # Fall through to create fresh
 
     if getattr(agent, attr, None) is None:
