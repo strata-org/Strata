@@ -328,6 +328,27 @@ def strPrefixOfFunc : WFLFunc CoreLParams :=
 def strSuffixOfFunc : WFLFunc CoreLParams :=
   binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
 
+-- The following string operations are left uninterpreted at the Core level
+-- (like `Str.Substr`); the SMT backend interprets them via their SMT-LIB names.
+def strContainsFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Contains" mty[string] mty[string] mty[bool]
+
+def strIndexOfFunc : WFLFunc CoreLParams :=
+  polyUneval "Str.IndexOf" []
+    [("x", mty[string]), ("y", mty[string]), ("i", mty[int])] mty[int]
+
+def strReplaceFunc : WFLFunc CoreLParams :=
+  ternaryFuncUneval "Str.Replace" mty[string] mty[string] mty[string]
+
+def strAtFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
+
+def strLtFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Lt" mty[string] mty[string] mty[bool]
+
+def strLeFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Le" mty[string] mty[string] mty[bool]
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -910,6 +931,12 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   strInRegexFunc,
   strPrefixOfFunc,
   strSuffixOfFunc,
+  strContainsFunc,
+  strIndexOfFunc,
+  strReplaceFunc,
+  strAtFunc,
+  strLtFunc,
+  strLeFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -1106,6 +1133,12 @@ def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
 def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
+def strContainsOp : Expression.Expr := strContainsFunc.opExpr
+def strIndexOfOp : Expression.Expr := strIndexOfFunc.opExpr
+def strReplaceOp : Expression.Expr := strReplaceFunc.opExpr
+def strAtOp : Expression.Expr := strAtFunc.opExpr
+def strLtOp : Expression.Expr := strLtFunc.opExpr
+def strLeOp : Expression.Expr := strLeFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr
