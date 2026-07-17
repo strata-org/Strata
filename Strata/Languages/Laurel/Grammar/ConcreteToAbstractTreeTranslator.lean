@@ -180,19 +180,31 @@ def translateNewTypeArgs (arg : Arg) : TransM (List HighTypeMd) := do
     <obj> field)`, recursively. This builds the same `.Var (.Field …)` chain a field READ
     produces, so downstream lowering is uniform. (`FieldPath` is a dedicated grammar category
     rather than `StmtExpr` — see `LaurelGrammar.st` for why.) -/
-partial def translateFieldPath (arg : Arg) : TransM StmtExprMd := do
+def translateFieldPath (arg : Arg) : TransM StmtExprMd := do
   let src ← getArgFileRange arg
   let .op op := arg
     | TransM.error s!"translateFieldPath expects operation, got {repr arg}"
-  match op.name, op.args with
-  | q`Laurel.fieldPathRoot, #[nameArg] =>
+  -- Match on `op.args.toList` (not the `#[...]` array literal) so Lean can generate
+  -- the unfold equations needed for the well-founded definition; `_hargs` names the
+  -- discriminant equation, consumed by `decreasing_by` to prove `objArg` is a strict
+  -- subterm of `arg`.
+  match op.name, _hargs : op.args.toList with
+  | q`Laurel.fieldPathRoot, [nameArg] =>
     let name ← translateIdent nameArg
     return mkStmtExprMd (.Var (.Local name)) src
-  | q`Laurel.fieldPathStep, #[objArg, fieldArg] =>
+  | q`Laurel.fieldPathStep, [objArg, fieldArg] =>
     let obj ← translateFieldPath objArg
     let field ← translateIdent fieldArg
     return mkStmtExprMd (.Var (.Field obj field)) src
   | _, _ => TransM.error s!"translateFieldPath: unexpected {repr op.name}"
+  termination_by sizeOf arg
+  decreasing_by
+    -- `objArg ∈ op.args`, so `sizeOf objArg < sizeOf op.args < sizeOf op ≤ sizeOf arg`.
+    have hmem : objArg ∈ op.args := Array.mem_def.mpr (by rw [_hargs]; exact List.mem_cons_self ..)
+    have h1 := Array.sizeOf_lt_of_mem hmem
+    have h2 : sizeOf op.args < sizeOf op := by
+      cases op; simp only [StrataDDM.OperationF.mk.sizeOf_spec]; omega
+    simp_wf; omega
 
 instance : Inhabited Procedure where
   default := {
