@@ -23,9 +23,9 @@ LAUREL="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 # deriveBaseName in StrataMain.lean strips .st from the filename
 BN=$(basename "$LAUREL" .st)
 
-# Locate project root (three levels up from this script's directory)
+# Locate project root (four levels up from this script's directory)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 # Use a temporary directory for intermediate files
 WORK_DIR=$(mktemp -d)
