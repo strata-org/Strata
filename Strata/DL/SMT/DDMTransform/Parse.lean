@@ -6,7 +6,6 @@
 module
 
 import StrataDDM.BuiltinDialects.BuiltinM
-import StrataDDM.BuiltinDialects.StrataDDL
 public import StrataDDM.Integration.Lean.OfAstM
 import StrataDDM.Integration.Lean --shake: keep
 
