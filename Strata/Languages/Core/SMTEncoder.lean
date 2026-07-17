@@ -629,7 +629,12 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
   | .realConst _ r =>
     match StrataDDM.Decimal.fromRat r with
     | some d => .ok (Term.real d, ctx, pending)
-    | none => .error f!"Non-decimal real value {e}"
+    | none =>
+      -- `r` has no terminating decimal expansion (e.g. `1/3`), so encode it as
+      -- the exact real division `(/ num den)` rather than erroring.
+      let num := Term.real (StrataDDM.Decimal.ofInt r.num)
+      let den := Term.real (StrataDDM.Decimal.ofInt (Int.ofNat r.den))
+      .ok (.app Op.rdiv [num, den] .real, ctx, pending)
   | .bitvecConst _ n b => .ok (Term.bitvec b, ctx, pending)
   | .strConst _ s => .ok (Term.string s, ctx, pending)
   | .op _ fn fnty =>

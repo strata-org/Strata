@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Env
+public import Strata.Languages.Core.DDMTransform.FracLit
 open StrataDDM
 
 
@@ -1040,7 +1041,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       -- and fall back to `realConst 0`.
       TransM.recordError "fracLit: denominator must be non-zero" (.realConst () 0)
     else
-      return .realConst () (mkRat (Int.ofNat num) den)
+      return .realConst () (Core.FracLit.fracDecode num den)
   -- Equality
   | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa

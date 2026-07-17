@@ -232,6 +232,30 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
     (.fvar () "y" (.some .real)))
   (factory := Core.Factory)
 
+-- A `realConst` whose value has no terminating decimal expansion (e.g. `1/3`,
+-- the value of the surface literal `frac{1, 3}`) cannot be emitted as a single
+-- SMT-LIB decimal literal, so it is encoded as the exact real division
+-- `(/ num den)` rather than erroring.
+/-- info: "(assert (|/| 1.0 3.0))\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (1 / 3 : Rat))
+
+-- The sign of a negative non-terminating value (e.g. `-2/3`, the value of
+-- `-frac{2, 3}`) rides on the numerator, which the serializer wraps in unary
+-- minus; the denominator stays positive.
+/-- info: "(assert (|/| (- 2.0) 3.0))\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (-2 / 3 : Rat))
+
+-- Conversely, a *terminating* value (e.g. `1/4`) keeps routing through the
+-- `Decimal.fromRat = some` branch and emits a single SMT-LIB decimal literal,
+-- not the `(/ num den)` division. Pins the branch boundary so a change to
+-- `fromRat`'s terminating-detection fails here instead of silently reshaping
+-- emitted SMT.
+/-- info: "(assert 0.25)\n" -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert (.realConst () (1 / 4 : Rat))
+
 end ArrayTheory
 
 /-! ## Test that built-in types do not produce declare-sort -/
@@ -559,6 +583,34 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval! Core.verify quotedStringProgram (options := Core.VerifyOptions.quiet)
+
+-- A `frac{n, d}` literal whose value has no terminating decimal expansion is
+-- encoded to SMT as exact real division, so it verifies precisely rather than
+-- hitting the old `Non-decimal real value` encoding error. `1/3 + 1/3 + 1/3`
+-- is exactly `1.0` (holds), while `-2/3 == 2/3` is false (fails).
+def nonDecimalFracProgram :=
+#strata
+program Core;
+
+procedure P()
+{
+  assert [three_thirds]: frac{1, 3} + frac{1, 3} + frac{1, 3} == 1.0;
+  assert [neg_neq_pos]: -frac{2, 3} == frac{2, 3};
+};
+#end
+
+/--
+info:
+Obligation: three_thirds
+Property: assert
+Result: ✅ pass
+
+Obligation: neg_neq_pos
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify nonDecimalFracProgram (options := Core.VerifyOptions.quiet)
 
 end Strata
 
