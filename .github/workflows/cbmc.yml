@@ -79,4 +79,4 @@ jobs:
       - name: Run Laurel CBMC pipeline tests
         shell: bash
         run: |
-          ./StrataTest/Languages/Laurel/run_laurel_cbmc_tests.sh
+          ./StrataTest/Languages/Laurel/CBMC/run_laurel_cbmc_tests.sh
