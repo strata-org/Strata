@@ -27,6 +27,7 @@
     list_theorems  <base64(file_path)>  → {"theorems":[{"name":"X","status":"sorry|proved"},...]}
     check_imports  <base64(file_path)>  → {"imports":["Mod.Name",...]}
     check_compiles <base64(file_path)>  → {"success":bool,"has_sorry":bool,"has_error":bool}
+    print_axioms   <base64(file_path\nname1\nname2...)> → {"results":[{"name":X,"sorry":bool,"ok":bool},...]}
 
   Build:  lake build SwarmAgentTools
   Run:    .lake/build/bin/SwarmAgentTools
@@ -49,7 +50,8 @@ def commandNames : List String := [
   "check___axioms_",
   "thm_signature__",
   "thm_depends_on_",
-  "sorry_positions"
+  "sorry_positions",
+  "print_axioms___"
 ]
 
 def commandMaxPad : Nat := 15
@@ -463,6 +465,57 @@ private def handleCheckAxioms (filePath : String) : IO String := do
   catch e =>
     return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
 
+/-- Transitive sorry check via `#print axioms`.
+    Input: "file_path\nname1\nname2\n..." (filePath on first line, theorem names after).
+    Appends `#print axioms <name>` for each name to a temp copy of the file, elaborates
+    it once with `lake env lean`, and scans each theorem's axiom set for `sorryAx`.
+    A theorem transitively depends on `sorry` iff `sorryAx` appears in its axioms — this
+    catches local sorry, tactic-generated sorry, AND sorry reached through imported helpers. -/
+private def handlePrintAxioms (input : String) : IO String := do
+  try
+    let parts := (input.splitOn "\n").map (·.trimAscii.toString)
+    let filePath := parts.headD ""
+    let names := (parts.drop 1).filter (fun s => !s.isEmpty)
+    if filePath.isEmpty || names.isEmpty then
+      return "{\"error\":\"expected file_path\\nname1\\nname2...\"}"
+    let content ← FS.readFile ⟨filePath⟩
+    -- Build temp file: original content + one `#print axioms` per name
+    let printCmds := String.intercalate "\n" (names.map (fun n => s!"#print axioms {n}"))
+    let tempContent := content ++ "\n\n" ++ printCmds ++ "\n"
+    let tempPath :=
+      if filePath.endsWith ".lean" then (filePath.dropEnd 5).toString ++ "_axcheck.lean"
+      else filePath ++ "_axcheck.lean"
+    FS.writeFile ⟨tempPath⟩ tempContent
+    let output ← try
+      let child ← Process.spawn {
+        cmd := "lake"
+        args := #["env", "lean", tempPath]
+        stdout := .piped
+        stderr := .piped
+      }
+      let out ← child.stdout.readToEnd
+      let err ← child.stderr.readToEnd
+      let _ ← child.wait
+      pure (out ++ "\n" ++ err)
+    catch e =>
+      pure s!"__spawn_error__ {toString e}"
+    -- Always clean up the temp file
+    try FS.removeFile ⟨tempPath⟩ catch _ => pure ()
+    let lines := output.splitOn "\n"
+    -- For each theorem name, find its axiom line and check for sorryAx
+    let results := names.map fun name =>
+      let matching := lines.filter fun line =>
+        (strContains line s!"'{name}'" || strContains line s!".{name}'") &&
+        (strContains line "depends on axioms" || strContains line "does not depend")
+      match matching with
+      | [] => (name, false, false)  -- no line found → can't confirm (ok=false)
+      | line :: _ => (name, strContains line "sorryAx", true)  -- found → sorry?, ok=true
+    let items := String.intercalate "," (results.map fun (n, hasSorry, ok) =>
+      s!"\{\"name\":\"{jsonEscape n}\",\"sorry\":{hasSorry},\"ok\":{ok}}")
+    return s!"\{\"results\":[{items}]}"
+  catch e =>
+    return s!"\{\"error\":\"{jsonEscape (toString e)}\"}"
+
 private def handleCheckCompiles (filePath : String) : IO String := do
   try
     let child ← Process.spawn {
@@ -514,6 +567,7 @@ unsafe def main (_args : List String) : IO Unit := do
           | "thm_signature__" => handleThmSignature req.content
           | "thm_depends_on_" => handleThmDependsOn req.content
           | "sorry_positions" => handleSorryPositions req.content
+          | "print_axioms___" => handlePrintAxioms req.content
           | cmd => pure s!"\{\"error\":\"unknown command: {jsonEscape cmd}\"}"
         stdout.putStrLn result
         stdout.flush

@@ -136,6 +136,8 @@ class PO5State:
     root_workspace: str = ""
     root_theorem_name: str = ""
     root_theorem_file: str = ""
+    # Theorems the user explicitly requested. Empty = prove ALL sorry-theorems.
+    requested_theorem_names: list[str] = field(default_factory=list)
     root_id: str = ""
     stage: str = "init"
     current_lemma_id: str = ""
@@ -274,12 +276,18 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     # Parse input
     if isinstance(inp, dict):
         workspace_rel = inp.get("workspace", "")
-        theorem_name = inp.get("theorem_name", "")
+        # theorem_names: explicit list of targets. Empty/absent → prove ALL
+        # sorry-theorems in the file. `theorem_name` (singular) is accepted for
+        # backward compatibility and folded into the list.
+        theorem_names = list(inp.get("theorem_names") or [])
+        single = inp.get("theorem_name", "")
+        if single and single not in theorem_names:
+            theorem_names.append(single)
         theorem_file = inp.get("theorem_file", "")
         skip_soundness = inp.get("skip_soundness", False)
     else:
         workspace_rel = str(inp) if inp else ""
-        theorem_name, theorem_file = "", ""
+        theorem_names, theorem_file = [], ""
         skip_soundness = False
 
     if not workspace_rel:
@@ -290,7 +298,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if not state:
         state = PO5State(
             root_workspace=workspace_rel,
-            root_theorem_name=theorem_name,
+            requested_theorem_names=theorem_names,
             root_theorem_file=theorem_file,
             skip_soundness=skip_soundness,
         )
@@ -306,7 +314,8 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             state.current_lemma_id = ""
             state.root_id = ""
 
-    await agent._emit("message", f"[PO5] Starting: {theorem_name} in {workspace_rel} (phase={state.stage})")
+    _target_desc = ", ".join(theorem_names) if theorem_names else "ALL sorry-theorems"
+    await agent._emit("message", f"[PO5] Starting: {_target_desc} in {workspace_rel} (phase={state.stage})")
 
     # ─── INIT ─────────────────────────────────────────────────────────────
     if state.stage == "init":
@@ -333,28 +342,89 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
                                output={"phase": "failed", "error": "no theorems in Stub.lean"})
 
-        root_block = split.blocks[-1]
-        if not state.root_theorem_name:
+        # Collect top-level proof obligations ("targets"): each standalone
+        # theorem/def with sorry, or a whole mutual group (collapsed to one
+        # representative) containing sorry.
+        all_targets = _collect_sorry_targets(split)
+
+        # Narrow to the user's requested theorems if any were named; an empty
+        # request means "prove ALL sorry-theorems in the file".
+        targets = _filter_requested_targets(
+            all_targets, split, state.requested_theorem_names)
+        if state.requested_theorem_names:
+            matched = {b.name for b, _ in targets}
+            unmatched = [n for n in state.requested_theorem_names
+                         if n not in matched and not any(
+                             b.mutual_group is not None
+                             and n in split.mutual_groups.get(b.mutual_group, [])
+                             for b, _ in targets)]
+            if unmatched:
+                await agent._emit("message",
+                    f"[PO5] Requested theorems with no sorry / not found (skipped): {unmatched}")
+            if not targets:
+                await agent._emit("message",
+                    "[PO5] None of the requested theorems have sorry — proving all sorry-targets instead")
+                targets = all_targets
+
+        # Decide single-root vs. synthetic-file-root.
+        # Single root (behavior unchanged) when there is at most one target.
+        # Synthetic root when ≥2 targets share the file — each becomes a child
+        # obligation under a "whole file proved" root.
+        if len(targets) <= 1:
+            if targets:
+                root_block = targets[0][0]
+            else:
+                # Nothing has sorry — register the last declaration so CHECK can
+                # immediately recognize the file as already proven.
+                root_block = split.blocks[-1]
             state.root_theorem_name = root_block.name
 
-        if state.root_theorem_name and "'" in state.root_theorem_name:
-            m = re.search(r"'([^']+)'", state.root_theorem_name)
-            if m:
-                state.root_theorem_name = m.group(1)
+            sig_hash = LemmaLedger.compute_signature_hash(root_block.text)
+            root_entry = _register_lemma(state, ledger,
+                name=state.root_theorem_name, file_path=stub_rel,
+                workspace=workspace_rel, signature_hash=sig_hash,
+                statement=root_block.text,
+            )
+            if isinstance(root_entry, str):
+                state.stage = "failed"
+                _save_state(cwd, state)
+                return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
+                                   output={"phase": "failed", "error": root_entry})
+            state.root_id = root_entry.id
+        else:
+            # Multiple sorry-targets in one file: synthetic "file" root whose
+            # completion means "every target in Stub.lean is sorry-free". It is
+            # never proven by a writer — _propagate_proved promotes it once its
+            # whole subtree (the shared file) is sorry-free.
+            file_label = f"<file:{workspace_rel}/Stub.lean>"
+            state.root_theorem_name = file_label
+            root_entry = _register_lemma(state, ledger,
+                name=file_label, file_path=stub_rel,
+                workspace=workspace_rel,
+                signature_hash=LemmaLedger.compute_signature_hash(file_label),
+                statement=f"-- all {len(targets)} top-level theorems in {stub_rel} proved",
+            )
+            if isinstance(root_entry, str):
+                state.stage = "failed"
+                _save_state(cwd, state)
+                return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
+                                   output={"phase": "failed", "error": root_entry})
+            state.root_id = root_entry.id
+            ledger.mark_contingent(root_entry.id)
 
-        sig_hash = LemmaLedger.compute_signature_hash(root_block.text)
-        root_entry = _register_lemma(state, ledger,
-            name=state.root_theorem_name, file_path=stub_rel,
-            workspace=workspace_rel, signature_hash=sig_hash,
-            statement=root_block.text,
-        )
-        if isinstance(root_entry, str):
-            state.stage = "failed"
-            _save_state(cwd, state)
-            return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
-                               output={"phase": "failed", "error": root_entry})
+            registered = 0
+            for block, is_mut in targets:
+                child = _register_lemma(state, ledger,
+                    name=block.name, file_path=stub_rel,
+                    workspace=workspace_rel,
+                    signature_hash=LemmaLedger.compute_signature_hash(block.text),
+                    statement=block.text, is_mutual=is_mut,
+                    parent_id=root_entry.id)
+                if not isinstance(child, str):
+                    registered += 1
+            await agent._emit("message",
+                f"[PO5] Multi-theorem file: registered {registered} sorry-targets under synthetic root")
 
-        state.root_id = root_entry.id
         state.stage = "select"
         ledger.save()
         _save_state(cwd, state)
@@ -533,6 +603,17 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     verify_fn = _make_verifier(entry, stub_rel, original_content, ledger, cwd)
     protected_names = _get_protected_names(tools, stub_rel, entry)
 
+    # In a shared multi-theorem file, tell the writer to touch ONLY its target and
+    # leave sibling obligations' sorry in place (they are proved in their own turn).
+    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
+    scope_note = ""
+    if siblings:
+        scope_note = (
+            f"\n\n⚠️ SHARED FILE: prove ONLY {sorted(protected_names)}. "
+            f"Other theorems here ({sorted(siblings)}) are proved separately — "
+            f"leave their `sorry` untouched and do NOT modify or delete them."
+        )
+
     # ── Step 1: Initial advice ──
     if ctx.current_task or ctx.failure_context:
         await agent._emit("message", f"[PO5] Guide: directed task for {entry.name}")
@@ -582,7 +663,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 agent_ctx=writer,
                 initial_input=(
                     f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-                    f"You have {chunk} turns. File MUST compile (sorry allowed)."
+                    f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}"
                 ),
                 verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
             )
@@ -607,19 +688,27 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         # )
         total_turns += chunk
 
-        # Check: proved?
-        if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-            cr = tools.check_compiles(stub_rel)
-            if not cr.has_sorry:
-                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-                return "proved"
-            else:
-                # Transitive sorry — only contingent if children exist to wait on
+        # Check: proved? (TARGET-SCOPED — a shared file may hold sibling theorems
+        # whose sorry is not ours to close, so we gate on the protected block only.)
+        cr = tools.check_compiles(stub_rel)
+        if cr.success:
+            # 1. Cheap local check: is the protected block free of literal sorry?
+            local_sorry = tools.get_sorries_by_theorem(stub_rel)
+            protected_local_sorry = sum(len(local_sorry.get(n, [])) for n in protected_names)
+            if protected_local_sorry == 0:
+                # 2. Authoritative transitive check via `#print axioms`: the protected
+                #    block is proven iff NONE of its members depend on sorryAx.
+                ax = tools.axioms_by_theorem(stub_rel, sorted(protected_names))
+                if all(ax.is_proven(n) for n in protected_names):
+                    ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+                    return "proved"
+                # Protected block is locally sorry-free but transitively depends on a
+                # sorry (through a child/import). Wait on children if any are registered.
                 if entry.children:
                     ledger.mark_contingent(entry.id)
                     return "contingent"
-                # No children registered: transitive sorry from untracked imports
-                # Fall through to extraction (will discover and register deps)
+                # No children yet: transitive sorry from untracked deps —
+                # fall through to extraction (will discover and register them).
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -736,8 +825,11 @@ async def _validate_decompose(agent, state, ledger, entry, cwd, tools, stub_rel,
     if not split or split.error:
         return True  # can't analyze, let extraction try
 
+    # Sibling obligations sharing this file are NOT extractable helpers.
+    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
     sorry_helpers = [b for b in split.blocks
-                     if b.has_sorry and b.name not in protected_names]
+                     if b.has_sorry and b.name not in protected_names
+                     and b.name not in siblings]
     if not sorry_helpers:
         return True  # nothing to check
 
@@ -980,12 +1072,16 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
 
     split = tools.split_theorems(stub_rel)
     protected_names = _get_protected_names(tools, stub_rel, entry)
+    # Sibling obligations sharing this file must not be extracted as helpers.
+    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
     extractable = [b for b in split.blocks
-                   if b.name not in protected_names and b.mutual_group is None]
+                   if b.name not in protected_names and b.mutual_group is None
+                   and b.name not in siblings]
 
+    do_not_move_names = sorted(protected_names | siblings)
     do_not_move = ""
-    if len(protected_names) > 1:
-        do_not_move = f"\nDo NOT move: {sorted(protected_names)} (mutual block).\n"
+    if len(do_not_move_names) > 1:
+        do_not_move = f"\nDo NOT move: {do_not_move_names} (protected/sibling obligations).\n"
 
     await agent._emit("message", f"[PO5] Extracting {len(extractable)} helpers from {stub_rel}")
 
@@ -1785,6 +1881,92 @@ def _make_verifier(entry, stub_rel, original_content, ledger, cwd):
         ancestor_modules=ancestor_modules, ledger=ledger)
 
 
+def _sibling_target_names(ledger, entry, cwd: Path | None = None,
+                          stub_rel: str | None = None) -> set[str]:
+    """Names of OTHER top-level declarations in this entry's file that must NOT be
+    extracted as helpers.
+
+    Two sources, unioned:
+    1. Other registered obligations sharing this file_path (the ledger view). Covers
+       the multi-target synthetic-root case where every target is registered.
+    2. Every OTHER top-level theorem/def present in the ORIGINAL file snapshot
+       (Stub.clean.lean). This covers the case where the user targeted only a SUBSET
+       of the file's sorry-theorems — the un-targeted ones aren't in the ledger, but
+       they are still original obligations, not helpers. Genuine writer-created helpers
+       are absent from the snapshot (created later), so they stay extractable.
+
+    The entry's own name (and mutual-group peers, handled by protected_names) are the
+    caller's concern; here we just exclude the entry itself and the synthetic root.
+    """
+    names = {
+        e.name for e in ledger.entries()
+        if e.id != entry.id and e.file_path == entry.file_path
+        and not e.name.startswith("<")  # exclude the synthetic file-root marker
+    }
+    if cwd is not None:
+        clean = cwd / entry.workspace / "Stub.clean.lean"
+        if clean.exists():
+            tools = get_lean_tools()
+            snap = tools.split_theorems(str(clean.relative_to(cwd)))
+            if snap and not snap.error:
+                for b in snap.blocks:
+                    if b.name != entry.name and b.decl_type in ("theorem", "def"):
+                        names.add(b.name)
+    names.discard(entry.name)
+    return names
+
+
+def _filter_requested_targets(targets, split, requested_names):
+    """Narrow sorry-targets to the user's requested theorem names.
+
+    Empty requested_names → return all targets (prove everything with sorry).
+    A requested name matches a target if it IS the target's representative name,
+    or (for mutual groups) if it is any member of that group. Requested names that
+    are already proven or don't exist simply don't match (reported by the caller).
+    """
+    if not requested_names:
+        return targets
+    wanted = set(requested_names)
+    selected = []
+    for block, is_mut in targets:
+        names_for_target = {block.name}
+        if block.mutual_group is not None:
+            names_for_target |= set(split.mutual_groups.get(block.mutual_group, []))
+        if wanted & names_for_target:
+            selected.append((block, is_mut))
+    return selected
+
+
+def _collect_sorry_targets(split):
+    """Top-level proof obligations in a freshly-split file.
+
+    Returns a list of (representative_block, is_mutual) tuples — one per standalone
+    theorem/def that has sorry, and one per mutual group that contains any sorry
+    (represented by its first member, matching how _get_protected_names expands a
+    mutual group). Definitions and already-proven blocks are skipped.
+    """
+    targets = []
+    seen_groups: set[int] = set()
+    for block in split.blocks:
+        if block.mutual_group is not None:
+            gid = block.mutual_group
+            if gid in seen_groups:
+                continue
+            members = [b for b in split.blocks if b.mutual_group == gid]
+            if any(b.has_sorry for b in members):
+                seen_groups.add(gid)
+                # Representative = first member (lowest start line)
+                rep = min(members, key=lambda b: b.start)
+                targets.append((rep, True))
+            continue
+        if block.decl_type not in ("theorem", "def"):
+            continue
+        if not block.has_sorry:
+            continue
+        targets.append((block, False))
+    return targets
+
+
 def _get_protected_names(tools, stub_rel, entry) -> set[str]:
     split = tools.split_theorems(stub_rel)
     protected = {entry.name}
@@ -2017,6 +2199,7 @@ def _save_state(cwd: Path, state: PO5State):
     data = {
         "root_workspace": state.root_workspace,
         "root_theorem_name": state.root_theorem_name,
+        "requested_theorem_names": list(state.requested_theorem_names),
         "root_id": state.root_id,
         "stage": state.stage,
         "current_lemma_id": state.current_lemma_id,

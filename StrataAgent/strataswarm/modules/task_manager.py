@@ -99,6 +99,9 @@ class UserIntent:
     theorem_file: str = ""
     skip_soundness: bool = False
     notes: str = ""
+    # Specific theorems the user asked to prove. Empty list = prove ALL sorry-theorems
+    # in the file (the prover's multi-target default).
+    theorem_names: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -352,7 +355,8 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
 
     prover_input = {
         "theorem_file": task.theorem_file,
-        "theorem_name": task.notes or "",
+        # Specific theorems to prove; empty → prover targets ALL sorry-theorems.
+        "theorem_names": task.theorem_names,
         "workspace": "StrataAgent/Sandbox",
         "skip_soundness": task.skip_soundness,
         "parent_agent": agent.spec.name,
@@ -529,6 +533,7 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
                 state.task = {
                     "theorem_file": out.file_path,
                     "skip_soundness": out.skip_soundness,
+                    "theorem_names": out.theorem_names or [],
                     "notes": f"Theorems: {out.theorem_names or []}",
                 }
                 response = f"File: {out.file_path}\nTheorems with sorry: {out.theorem_names}\n{out.summary}"

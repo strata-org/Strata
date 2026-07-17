@@ -51,6 +51,24 @@ class AxiomCheckResult:
     error: str | None = None
 
 
+@dataclass
+class AxiomSorryResult:
+    """Per-theorem transitive-sorry verdict from `#print axioms`.
+
+    sorry_by_name[name] is True iff the theorem transitively depends on `sorryAx`
+    (i.e. it or anything it uses — including imported helpers — still has a sorry).
+    ok_by_name[name] is True iff `#print axioms` produced a parseable verdict for it
+    (False means the name wasn't found / the file failed to elaborate — treat as
+    NOT confirmed, never as proven)."""
+    sorry_by_name: dict[str, bool] = field(default_factory=dict)
+    ok_by_name: dict[str, bool] = field(default_factory=dict)
+    error: str | None = None
+
+    def is_proven(self, name: str) -> bool:
+        """True only if we got a verdict AND it depends on no sorry."""
+        return self.ok_by_name.get(name, False) and not self.sorry_by_name.get(name, True)
+
+
 def _get_project_root() -> Path:
     """Walk up from this file to find lakefile.toml."""
     p = Path(__file__).resolve()
@@ -807,6 +825,37 @@ class SwarmLeanTools:
             has_axiom=result.get("has_axiom", False),
             axiom_names=result.get("axiom_names", []),
         )
+
+    def axioms_by_theorem(self, file_path: str, names: list[str]) -> AxiomSorryResult:
+        """Transitive sorry check via `#print axioms` for the given theorem names.
+
+        This is the AUTHORITATIVE proof oracle: a theorem is genuinely proven iff it
+        transitively depends on NO `sorryAx`. Unlike the text-based has_sorry/
+        get_sorries_by_theorem (which only see literal `sorry` tokens in the file),
+        this catches sorry reached through imported helpers or referenced lemmas.
+
+        The backend appends `#print axioms <name>` for each name to a temp copy of the
+        file, elaborates it once with `lake env lean`, and scans each verdict for
+        `sorryAx`. One lake run covers all names.
+
+        Returns an AxiomSorryResult; use `.is_proven(name)` for the safe verdict
+        (only True when a verdict was produced AND no sorry dependency).
+        """
+        if not names:
+            return AxiomSorryResult()
+        payload = "\n".join([file_path, *names])
+        result = self._send("print_axioms___", payload)
+        if "error" in result:
+            return AxiomSorryResult(error=result["error"])
+        sorry_by_name: dict[str, bool] = {}
+        ok_by_name: dict[str, bool] = {}
+        for r in result.get("results", []):
+            n = r.get("name", "")
+            if not n:
+                continue
+            sorry_by_name[n] = bool(r.get("sorry", True))
+            ok_by_name[n] = bool(r.get("ok", False))
+        return AxiomSorryResult(sorry_by_name=sorry_by_name, ok_by_name=ok_by_name)
 
     def split_theorems(self, file_path: str) -> SplitResult:
         """Get theorem/def blocks with line extents, sorry status, and text.
