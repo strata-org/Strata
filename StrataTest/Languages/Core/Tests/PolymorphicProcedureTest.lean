@@ -126,4 +126,28 @@ Result: ✅ pass
 
 end Strata.PolymorphicPostconditionTest
 
+---------------------------------------------------------------------
+-- Type-parameter well-formedness: `Procedure.typeCheck` requires distinct
+-- type parameters and rejects signature type variables not in `typeArgs`
+-- (mirroring `LFunc.type`'s checks for functions).
+
+namespace Strata.PolymorphicProcedureTypeArgsTest
+
+-- Duplicate type parameters (`<a, a>`) must be rejected.
+def dupTypeArgsPgm : Program :=
+#strata
+program Core;
+procedure DupTA<a, a>(x : a) spec { };
+#end
+
+/--
+error: ❌ Type checking error.
+[DupTA] Duplicates found in the type parameters!
+[a, a]
+-/
+#guard_msgs in
+#eval Core.verify dupTypeArgsPgm
+
+end Strata.PolymorphicProcedureTypeArgsTest
+
 end

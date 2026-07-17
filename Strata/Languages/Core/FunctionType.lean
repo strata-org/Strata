@@ -130,6 +130,15 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Save this initial context (formals pushed, before the body's unification)
     -- so the measure can be type-checked independently against the same context.
     let measureBaseEnv := Env
+    -- Reject bodies (and the measure) referencing variables that are neither formal
+    -- parameters nor in the ambient context. `resolve` opens binders with generated
+    -- names (`$__var<k>`) and only checks them against `knownVars`; without this guard a
+    -- body free variable whose name collides with a generated binder would spuriously
+    -- typecheck (a genuine soundness hole — see the `FunctionTypeTests` regression).
+    -- Checking against `Env` (formals pushed) accepts formal/ambient references and
+    -- rejects undeclared ones. `measure.toList` folds the optional measure into the same
+    -- single check (empty when absent), keeping the monadic shape a single bind.
+    let _ ← Env.freeVarChecks (body :: func.measure.toList)
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy

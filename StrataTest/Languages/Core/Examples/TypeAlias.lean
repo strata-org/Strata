@@ -23,7 +23,7 @@ def badTypeAlias : Program :=
 #strata
 program Core;
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo bool bool;
+type FooAlias (a : Type) := Foo a bool;
 
 const fooVal : FooAlias (Foo int int);
 const fooConst1 : Foo int bool;
@@ -42,10 +42,10 @@ def goodTypeAlias : Program :=
 #strata
 program Core;
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo int bool;
-type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
+type FooAlias (a : Type) := Foo a bool;
+type FooAlias2 (a : Type) := FooAlias a;
 
-const fooVal : FooAlias2 (Foo int int);
+const fooVal : FooAlias2 int;
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
@@ -66,9 +66,9 @@ info: #[]
 info: program Core;
 
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo int bool;
-type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
-function fooVal () : FooAlias2 (Foo int int);
+type FooAlias (a : Type) := Foo a bool;
+type FooAlias2 (a : Type) := FooAlias a;
+function fooVal () : FooAlias2 int;
 function fooConst1 () : Foo int bool;
 function fooConst2 () : Foo int bool;
 procedure P ()

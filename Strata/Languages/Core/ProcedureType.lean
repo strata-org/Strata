@@ -34,6 +34,24 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
   if !proc.header.outputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
 
+/-- Well-formedness of a procedure's type parameters, mirroring `LFunc.type`'s
+    checks for functions (which `Procedure.typeCheck` does not otherwise perform):
+    the `typeArgs` must be distinct, and every type variable appearing in an
+    input/output type must be declared in `typeArgs`. -/
+private def checkTypeArgsWF (proc : Procedure) (sourceLoc : FileRange) :
+    Except DiagnosticModel Unit := do
+  if !proc.header.typeArgs.Nodup then
+    .error <| DiagnosticModel.withRange sourceLoc
+      f!"[{proc.header.name}] Duplicates found in the type parameters!\n\
+         {proc.header.typeArgs}"
+  let sigVars := (Lambda.LMonoTys.freeVars proc.header.inputs.values ++
+                  Lambda.LMonoTys.freeVars proc.header.outputs.values).eraseDups
+  let undeclared := sigVars.filter (· ∉ proc.header.typeArgs)
+  if !undeclared.isEmpty then
+    .error <| DiagnosticModel.withRange sourceLoc
+      f!"[{proc.header.name}]: type variables {undeclared} appear in the \
+         signature but are not declared in typeArgs {proc.header.typeArgs}"
+
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
@@ -84,6 +102,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
 
   -- Validate well-formedness of formals and returns.
   checkNoDuplicates proc fileRange
+  checkTypeArgsWF proc fileRange
   checkModificationRights proc fileRange
 
   -- Temporarily add the formals into the context.

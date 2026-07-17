@@ -742,6 +742,336 @@ theorem resolve_properties [DecidableEq T.IDMeta] [HasGen T.IDMeta]
       | inl h_orig => exact h_props.preserves.2 v h_orig k hk
       | inr h_val => exact h_props.preserves.1 v (Or.inr h_val) k hk
 
+/-- Free vars of `LMonoTys.instantiateEnv ids mtys` output are all gen-prefixed
+    (`tyPrefix ++ toString k`), assuming the input freeVars are all in `ids`. -/
+theorem instantiateEnv_freeVars_gen [DecidableEq T.IDMeta]
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv T.IDMeta)
+    (mtys' : LMonoTys) (Env' : TEnv T.IDMeta)
+    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env'))
+    (h_closed : ∀ tv, tv ∈ LMonoTys.freeVars mtys → tv ∈ ids) :
+    ∀ tv, tv ∈ LMonoTys.freeVars mtys' → ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  intro tv h_tv
+  unfold LMonoTys.instantiateEnv at h
+  generalize h_inst : LMonoTys.instantiate ids mtys Env.genEnv = result at h
+  match result, h_inst with
+  | .error _, _ => simp at h
+  | .ok (a, gE), h_inst =>
+    simp at h; obtain ⟨h1, _⟩ := h; rw [← h1] at h_tv
+    simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h_inst
+    elim_err h_inst
+    rename_i v1 h_gen
+    obtain ⟨freshtvs, genEnv1⟩ := v1; simp at h_inst h_gen
+    obtain ⟨h_eq, _⟩ := h_inst; rw [← h_eq] at h_tv
+    have h_len : freshtvs.length = ids.length :=
+      TGenEnv.genTyVars_length _ _ _ _ h_gen
+    have h_in_fresh := LMonoTys.freeVars_subst_closed ids freshtvs h_len mtys h_closed tv h_tv
+    exact TGenEnv.genTyVars_prefixed ids.length _ freshtvs genEnv1 h_gen tv h_in_fresh
+
+/-- Precise characterization: free vars of `LMonoTy.subst [zip ids (map ftvar freshtvs)] mty`
+    are either in `freshtvs` (a renamed bound var) or a free var of `mty` not in `ids`. -/
+theorem freeVars_zip_subst_cases
+    (ids freshtvs : List TyIdentifier) (h_len : freshtvs.length = ids.length)
+    (mty : LMonoTy) (tv : TyIdentifier)
+    (h_tv : tv ∈ LMonoTy.freeVars
+        (LMonoTy.subst [List.zip ids (List.map LMonoTy.ftvar freshtvs)] mty)) :
+    tv ∈ freshtvs ∨ (tv ∈ LMonoTy.freeVars mty ∧ tv ∉ ids) := by
+  induction mty with
+  | ftvar x =>
+    rw [LMonoTy.subst_unfold] at h_tv
+    simp only [LMonoTy.substReduce] at h_tv
+    generalize h_find : Maps.find? [List.zip ids (List.map LMonoTy.ftvar freshtvs)] x = fo at h_tv
+    cases fo with
+    | none =>
+      simp only [LMonoTy.freeVars, List.mem_singleton] at h_tv
+      subst h_tv
+      refine Or.inr ⟨by simp [LMonoTy.freeVars], ?_⟩
+      intro h_mem
+      obtain ⟨ftv, _, h_find_some⟩ := Maps.find?_zip_ftvar_mem ids freshtvs h_len tv h_mem
+      rw [h_find_some] at h_find; exact absurd h_find (by simp)
+    | some t =>
+      have h_t_val : t ∈ Maps.values [List.zip ids (List.map LMonoTy.ftvar freshtvs)] :=
+        Maps.find?_mem_values _ h_find
+      simp only [Maps.values, List.append_nil, List.zip] at h_t_val
+      rw [Map.values_zipWith_eq_take] at h_t_val
+      have h_take : (List.map LMonoTy.ftvar freshtvs).take ids.length =
+          List.map LMonoTy.ftvar freshtvs := by
+        rw [List.take_of_length_le]; simp [h_len]
+      rw [h_take] at h_t_val
+      obtain ⟨ftv, h_ftv_mem, h_teq⟩ := List.mem_map.mp h_t_val
+      subst h_teq
+      simp only [LMonoTy.freeVars, List.mem_singleton] at h_tv
+      subst h_tv
+      exact Or.inl h_ftv_mem
+  | bitvec n =>
+    rw [LMonoTy.subst_unfold] at h_tv
+    simp only [LMonoTy.substReduce, LMonoTy.freeVars] at h_tv
+    exact absurd h_tv (by simp)
+  | tcons name args ih =>
+    rw [LMonoTy.subst_unfold] at h_tv
+    simp only [LMonoTy.substReduce, LMonoTy.substReduceList_eq_map, LMonoTy.freeVars] at h_tv
+    have h_exists : ∃ a ∈ args, tv ∈ LMonoTy.freeVars (LMonoTy.subst
+        [List.zip ids (List.map LMonoTy.ftvar freshtvs)] a) := by
+      clear ih
+      induction args with
+      | nil => simp [LMonoTys.freeVars] at h_tv
+      | cons a arest iha =>
+        simp only [List.map_cons, LMonoTys.freeVars_of_cons, List.mem_append] at h_tv
+        rcases h_tv with h_a | h_rest
+        · exact ⟨a, List.mem_cons_self, h_a⟩
+        · obtain ⟨a', h_mem', h_fv'⟩ := iha h_rest
+          exact ⟨a', List.mem_cons_of_mem _ h_mem', h_fv'⟩
+    obtain ⟨a, h_a_mem, h_a_fv⟩ := h_exists
+    rcases ih a h_a_mem h_a_fv with h_fresh | ⟨h_body, h_notin⟩
+    · exact Or.inl h_fresh
+    · refine Or.inr ⟨?_, h_notin⟩
+      simp only [LMonoTy.freeVars]
+      exact LMonoTys.freeVars_mem_subset h_a_mem h_body
+
+/-- Free vars of `LTy.instantiate ty` output are either free vars of the scheme
+    `ty` (`LTy.freeVars ty`) or gen-prefixed (from the fresh bound-var substitution). -/
+theorem LTy_instantiate_freeVars_cases [DecidableEq T.IDMeta]
+    (ty : LTy) (genEnv : TGenEnv T.IDMeta) (mty : LMonoTy) (genEnv' : TGenEnv T.IDMeta)
+    (h : LTy.instantiate ty genEnv = .ok (mty, genEnv')) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty →
+      tv ∈ LTy.freeVars ty ∨ ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  intro tv h_tv
+  cases ty with
+  | forAll xs body =>
+    cases xs with
+    | nil =>
+      simp only [LTy.instantiate, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_eq, _⟩ := h; subst h_eq
+      left; simp only [LTy.freeVars, List.removeAll_nil]; exact h_tv
+    | cons x rest =>
+      simp only [LTy.instantiate, Bind.bind, Except.bind] at h
+      split at h
+      · simp at h
+      · rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_mty, _⟩ := h; subst h_mty
+        have h_len : freshtvs.length = (x :: rest).length :=
+          TGenEnv.genTyVars_length _ _ _ _ h_gen
+        rcases freeVars_zip_subst_cases (x :: rest) freshtvs h_len body tv h_tv with
+          h_fresh | ⟨h_body, h_notin⟩
+        · right
+          exact TGenEnv.genTyVars_prefixed (x :: rest).length _ freshtvs genEnv1 h_gen tv h_fresh
+        · left
+          simp only [LTy.freeVars, List.removeAll, List.mem_filter,
+            Bool.not_eq_eq_eq_not, Bool.not_true, List.elem_eq_mem, decide_eq_false_iff_not]
+          exact ⟨h_body, h_notin⟩
+
+/-- Free vars of `LMonoTy.instantiateWithCheck mty` output are all gen-prefixed. -/
+theorem LMonoTy_instantiateWithCheck_freeVars_gen [DecidableEq T.IDMeta]
+    (mty : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty C Env = .ok (mty', Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty' → ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  intro tv h_tv
+  obtain ⟨mty_ie, Env_ie, Env_ra, h_ie, h_ra⟩ :=
+    LMonoTy.instantiateWithCheck_decompose mty C Env mty' Env' h
+  have h_aw_ie : TContext.AliasesWF Env_ie.context := by
+    have h_ctx_ie : Env_ie.context = Env.context :=
+      LMonoTys.instantiateEnv_context _ _ Env _ _ h_ie
+    rw [h_ctx_ie]; exact h_aw
+  have h_tv_ie : tv ∈ LMonoTy.freeVars mty_ie :=
+    LMonoTy_resolveAliases_freeVars_subset mty_ie Env_ie mty' Env_ra h_ra h_aw_ie tv h_tv
+  have h_closed : ∀ w, w ∈ LMonoTys.freeVars [mty] → w ∈ mty.freeVars := by
+    intro w hw; simp only [LMonoTys.freeVars, List.append_nil] at hw; exact hw
+  exact instantiateEnv_freeVars_gen mty.freeVars [mty] Env [mty_ie] Env_ie h_ie h_closed tv
+    (by simp only [LMonoTys.freeVars, List.append_nil]; exact h_tv_ie)
+
+/-- Free vars of `LTy.instantiateWithCheck ty` output are all gen-prefixed, for a
+    closed scheme (`LTy.freeVars ty = []`). -/
+theorem LTy_instantiateWithCheck_freeVars_gen [DecidableEq T.IDMeta]
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty', Env'))
+    (h_closed : LTy.freeVars ty = [])
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty' → ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  intro tv h_tv
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v_ra h_ra; obtain ⟨mty_ra, Env_ra⟩ := v_ra; dsimp at h h_ra
+  elim_err h
+  rename_i h_check
+  elim_err h
+  obtain ⟨h_mty, _⟩ := Prod.mk.injEq .. ▸ (Except.ok.inj h); subst h_mty
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+  elim_err h_ra
+  rename_i v_inst h_lty_inst; obtain ⟨mty_inst, genEnv'⟩ := v_inst
+  simp only at h_ra h_lty_inst
+  have h_ctx_inst := LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_lty_inst
+  have h_aw_mid : TContext.AliasesWF ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context := by
+    show TContext.AliasesWF genEnv'.context; rw [h_ctx_inst]; exact h_aw
+  have h_tv_inst : tv ∈ LMonoTy.freeVars mty_inst :=
+    LMonoTy_resolveAliases_freeVars_subset mty_inst {Env with genEnv := genEnv'} mty_ra Env_ra
+      h_ra h_aw_mid tv h_tv
+  rcases LTy_instantiate_freeVars_cases ty Env.genEnv mty_inst genEnv' h_lty_inst tv h_tv_inst with
+    h_fv | h_gen
+  · rw [h_closed] at h_fv; exact absurd h_fv (by simp)
+  · exact h_gen
+
+/-- Free vars of `LTy.instantiateWithCheck ty` output are either free vars of the
+    scheme `ty` or gen-prefixed. -/
+theorem LTy_instantiateWithCheck_freeVars_cases [DecidableEq T.IDMeta]
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty', Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ tv, tv ∈ LMonoTy.freeVars mty' →
+      tv ∈ LTy.freeVars ty ∨ ∃ (k : Nat), tv = TState.tyPrefix ++ toString k := by
+  intro tv h_tv
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i v_ra h_ra; obtain ⟨mty_ra, Env_ra⟩ := v_ra; dsimp at h h_ra
+  elim_err h
+  rename_i h_check
+  elim_err h
+  obtain ⟨h_mty, _⟩ := Prod.mk.injEq .. ▸ (Except.ok.inj h); subst h_mty
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h_ra
+  elim_err h_ra
+  rename_i v_inst h_lty_inst; obtain ⟨mty_inst, genEnv'⟩ := v_inst
+  simp only at h_ra h_lty_inst
+  have h_ctx_inst := LTy.instantiate_context ty Env.genEnv mty_inst genEnv' h_lty_inst
+  have h_aw_mid : TContext.AliasesWF ({Env with genEnv := genEnv'} : TEnv T.IDMeta).context := by
+    show TContext.AliasesWF genEnv'.context; rw [h_ctx_inst]; exact h_aw
+  have h_tv_inst : tv ∈ LMonoTy.freeVars mty_inst :=
+    LMonoTy_resolveAliases_freeVars_subset mty_inst {Env with genEnv := genEnv'} mty_ra Env_ra
+      h_ra h_aw_mid tv h_tv
+  exact LTy_instantiate_freeVars_cases ty Env.genEnv mty_inst genEnv' h_lty_inst tv h_tv_inst
+
+/-- `LMonoTy.instantiateWithCheck` preserves `stateSubstInfo`. -/
+theorem LMonoTy_instantiateWithCheck_preserves_stateSubstInfo [DecidableEq T.IDMeta]
+    (mty : LMonoTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty' : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LMonoTy.instantiateWithCheck mty C Env = .ok (mty', Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  dsimp only [LMonoTy.instantiateWithCheck, bind, Except.instMonad, Except.bind] at h
+  split at h
+  · simp at h
+  · rename_i instTypes Env_ie h_ie
+    have h_ie_subst : Env_ie.stateSubstInfo = Env.stateSubstInfo := by
+      simp only [LMonoTys.instantiateEnv] at h_ie
+      split at h_ie
+      · simp at h_ie
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h_ie
+        obtain ⟨_, h_env⟩ := h_ie; rw [← h_env]
+    split at h
+    · simp at h
+    · rename_i vra h_ra; obtain ⟨mty_ra, Env_ra⟩ := vra
+      split at h
+      · simp at h
+      · split at h
+        · simp only [Pure.pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+          obtain ⟨_, h_env'⟩ := h; rw [← h_env']
+          exact (LMonoTy_resolveAliases_subst_eq _ Env_ie mty_ra Env_ra h_ra).trans h_ie_subst
+        · simp at h
+
+/-- `typeBoundVar` preserves `stateSubstInfo`. -/
+theorem typeBoundVar_stateSubstInfo [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i genResult h_gen
+  have h_gen_subst : genResult.snd.stateSubstInfo = Env.stateSubstInfo := by
+    elim_err h_gen
+    have h_gen_eq := Except.ok.inj h_gen; rw [← h_gen_eq]
+  split at h
+  · elim_err h
+    rename_i _ bty_mty _ _ Env_inst h_inst
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+    rw [TEnv.addInNewestContext_stateSubstInfo]
+    exact (LMonoTy_instantiateWithCheck_preserves_stateSubstInfo bty_mty C genResult.snd
+      _ Env_inst h_inst).trans h_gen_subst
+  · elim_err h
+    rename_i v1 h_genTy
+    obtain ⟨xtyid, Env1⟩ := v1
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, _, h_env⟩ := h; rw [← h_env]
+    rw [TEnv.addInNewestContext_stateSubstInfo]
+    exact (TEnv.genTyVar_subst genResult.snd xtyid Env1 h_genTy).trans h_gen_subst
+
+/-- `typeBoundVar` output type `xty` has free vars that are either in the input
+    context's `knownTypeVars` or gen-prefixed. -/
+theorem typeBoundVar_xty_freeVars [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env'))
+    (h_aw : TContext.AliasesWF Env.context) :
+    ∀ v, v ∈ LMonoTy.freeVars xty →
+      v ∈ TContext.knownTypeVars Env.context ∨ ∃ (k : Nat), v = TState.tyPrefix ++ toString k := by
+  intro v hv
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i genResult h_gen
+  have h_gen_ctx : genResult.snd.context = Env.context := by
+    elim_err h_gen
+    rename_i a_id T'_env h_genVar
+    have h_eq := Except.ok.inj h_gen; rw [← h_eq]
+    simp only [TEnv.context]
+    exact HasGen.genVar_context Env.genEnv a_id T'_env h_genVar
+  split at h
+  · elim_err h
+    rename_i _ bty_mty _ _ Env_inst h_inst
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, h_xty, _⟩ := h; subst h_xty
+    have h_aw_gen : TContext.AliasesWF genResult.snd.context := h_gen_ctx ▸ h_aw
+    obtain ⟨k, hk⟩ := LMonoTy_instantiateWithCheck_freeVars_gen bty_mty C genResult.snd
+      _ Env_inst h_inst h_aw_gen v hv
+    exact Or.inr ⟨k, hk⟩
+  · rename_i h_none
+    elim_err h
+    rename_i v1 h_genTyVar
+    obtain ⟨xtyid, Env_tg⟩ := v1
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨_, h_xty, _⟩ := h; subst h_xty
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hv; subst hv
+    have h_name := genTyVar_name_eq genResult.snd v Env_tg h_genTyVar
+    exact Or.inr ⟨genResult.snd.genEnv.genState.tyGen, h_name⟩
+
+/-- `typeBoundVar` grows `knownTypeVars` only by the free vars of `xty`. -/
+theorem typeBoundVar_knownTypeVars_cases [DecidableEq T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
+    (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : typeBoundVar C Env bty = .ok (xv, xty, Env')) :
+    ∀ v, v ∈ TContext.knownTypeVars Env'.context →
+      v ∈ TContext.knownTypeVars Env.context ∨ v ∈ LMonoTy.freeVars xty := by
+  intro v hv
+  simp only [typeBoundVar, liftGenEnv, Bind.bind, Except.bind] at h
+  elim_err h
+  rename_i genResult h_gen
+  have h_gen_ctx : genResult.snd.context = Env.context := by
+    elim_err h_gen
+    rename_i a_id T'_env h_genVar
+    have h_eq := Except.ok.inj h_gen; rw [← h_eq]
+    simp only [TEnv.context]
+    exact HasGen.genVar_context Env.genEnv a_id T'_env h_genVar
+  split at h
+  · elim_err h
+    rename_i _ bty_mty _ _ Env_inst h_inst
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_xv, h_xty, h_env⟩ := h; subst h_env h_xty h_xv
+    have h_ctx_inst : Env_inst.context = Env.context := by
+      rw [LMonoTy_instantiateWithCheck_context' bty_mty C genResult.snd _ Env_inst h_inst,
+        h_gen_ctx]
+    rcases knownTypeVars_addInNewestContext_cases Env_inst _ (.forAll [] _) v hv with
+      h_old | h_new
+    · left; rw [← h_ctx_inst]; exact h_old
+    · right; simpa only [LTy.freeVars, List.removeAll_nil] using h_new
+  · elim_err h
+    rename_i v1 h_genTy
+    obtain ⟨xtyid, Env_tg⟩ := v1
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_xv, h_xty, h_env⟩ := h; subst h_env h_xty h_xv
+    have h_ctx_tg : Env_tg.context = Env.context := by
+      rw [TEnv.genTyVar_context genResult.snd xtyid Env_tg h_genTy, h_gen_ctx]
+    rcases knownTypeVars_addInNewestContext_cases Env_tg _ (.forAll [] _) v hv with
+      h_old | h_new
+    · left; rw [← h_ctx_tg]; exact h_old
+    · right; simpa only [LTy.freeVars, List.removeAll_nil] using h_new
+
 /-- **Predicate-closure of `resolve`.** For any predicate `P` on type variables that
     is closed over the input context's known type variables and the input
     substitution's range, `resolve` keeps `P` holding on (i) every free variable of
@@ -778,11 +1108,404 @@ theorem resolve_freeVars_pred [DecidableEq T.IDMeta] [HasGen T.IDMeta]
     (P : TyIdentifier → Prop)
     (h_ctx : ∀ v, v ∈ TContext.knownTypeVars Env.context → P v)
     (h_sub : ∀ v, (v ∈ Maps.keys Env.stateSubstInfo.subst ∨
-                    v ∈ Subst.freeVars Env.stateSubstInfo.subst) → P v) :
+                    v ∈ Subst.freeVars Env.stateSubstInfo.subst) → P v)
+    -- `P` holds on every generated type variable. FALSE without this (an unannotated binder's
+    -- `genTyVar` injects a fresh `$__ty<k>` into the output type, unconstrained by `h_ctx`/`h_sub`;
+    -- for `P := fun _ => False` the conclusion is refuted). At the sole call site
+    -- (`vunify_avoids_typeArgs`, `P := (·∉typeArgs)`) discharged by `genTyVars_prefixed` +
+    -- `LFuncWF.typeArgs_no_gen_prefix` (the gen-prefix guard, extracted from `h`).
+    (h_gen : ∀ v (k : Nat), v = TState.tyPrefix ++ toString k → P v) :
     (∀ v, v ∈ LMonoTy.freeVars e_typed.toLMonoTy → P v) ∧
     (∀ v, (v ∈ Maps.keys Env'.stateSubstInfo.subst ∨
             v ∈ Subst.freeVars Env'.stateSubstInfo.subst) → P v) := by
-  sorry
+  have h_aux : ∀ (e : LExpr T.mono) (et : LExprT T.mono) (C : LContext T)
+      (Env Env' : TEnv T.IDMeta),
+      resolveAux C Env e = .ok (et, Env') →
+      TEnvWF Env → Env.context.types ≠ [] → FactoryWF C.functions →
+      (∀ v, v ∈ TContext.knownTypeVars Env.context → P v) →
+      (∀ v, (v ∈ Maps.keys Env.stateSubstInfo.subst ∨
+              v ∈ Subst.freeVars Env.stateSubstInfo.subst) → P v) →
+      (∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy → P v) ∧
+      (∀ v, (v ∈ Maps.keys Env'.stateSubstInfo.subst ∨
+              v ∈ Subst.freeVars Env'.stateSubstInfo.subst) → P v) := by
+    intro e et C Env Env' h_res h_envwf h_ne h_fwf
+    apply resolveAux_ind
+      (P := fun e et _C Env Env' =>
+        (∀ v, v ∈ TContext.knownTypeVars Env.context → P v) →
+        (∀ v, (v ∈ Maps.keys Env.stateSubstInfo.subst ∨
+                v ∈ Subst.freeVars Env.stateSubstInfo.subst) → P v) →
+        (∀ v, v ∈ LMonoTy.freeVars et.toLMonoTy → P v) ∧
+        (∀ v, (v ∈ Maps.keys Env'.stateSubstInfo.subst ∨
+                v ∈ Subst.freeVars Env'.stateSubstInfo.subst) → P v))
+      (e := e) (et := et) (C := C) (Env := Env) (Env' := Env')
+      (h_res := h_res) (h_envwf := h_envwf) (h_ne := h_ne) (h_fwf := h_fwf)
+    case h_const =>
+      intro m c et C Env Env' h h_envwf h_ne h_fwf h_ctx h_sub
+      simp only [resolveAux, inferConst, Bind.bind, Except.bind] at h
+      elim_err h
+      rename_i v1 heq_inferConst
+      split at heq_inferConst
+      · simp only [Except.ok.injEq] at heq_inferConst
+        subst heq_inferConst
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_et, h_env⟩ := h
+        subst h_et h_env
+        refine ⟨fun v hv => ?_, h_sub⟩
+        simp only [toLMonoTy, LConst.ty_freeVars] at hv
+        exact absurd hv (by simp)
+      · simp at heq_inferConst
+    case h_op =>
+      intro m o oty et C Env Env' h h_envwf h_ne h_fwf h_ctx h_sub
+      have h_aw := h_envwf.aliasesWF
+      simp only [resolveAux, Bind.bind, Except.bind] at h
+      elim_err h
+      rename_i func h_find
+      elim_err h
+      rename_i type_val h_type
+      elim_err h
+      rename_i v1 h_inst; obtain ⟨ty_inst, Env1⟩ := v1; dsimp at h h_inst
+      have h_func_mem : func ∈ C.functions.toArray := Factory.getElem?_is_some_implies_mem h_find
+      have h_func_wf : LFuncWF func := h_fwf.lfuncs_wf func h_func_mem
+      have h_ty_closed : LTy.freeVars type_val = [] :=
+        LFunc.type_freeVars_eq_nil func type_val h_type h_func_wf
+      have h_ty_inst_gen : ∀ tv, tv ∈ LMonoTy.freeVars ty_inst →
+          ∃ (k : Nat), tv = TState.tyPrefix ++ toString k :=
+        LTy_instantiateWithCheck_freeVars_gen type_val C Env ty_inst Env1 h_inst h_ty_closed h_aw
+      have h_ty_inst_P : ∀ v, v ∈ LMonoTy.freeVars ty_inst → P v := by
+        intro v hv; obtain ⟨k, hk⟩ := h_ty_inst_gen v hv; exact h_gen v k hk
+      have h_sub_stateEq : Env1.stateSubstInfo = Env.stateSubstInfo :=
+        LTy_instantiateWithCheck_preserves_stateSubstInfo type_val C Env ty_inst Env1 h_inst
+      cases oty with
+      | none =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_et, h_env⟩ := h; subst h_et h_env
+        refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+        · simp only [toLMonoTy] at hv; exact h_ty_inst_P v hv
+        · rw [h_sub_stateEq] at hv; exact h_sub v hv
+      | some oty_val =>
+        simp only [Except.mapError] at h
+        elim_err h
+        rename_i v2 h_inst2; obtain ⟨oty_inst, Env2⟩ := v2; dsimp at h h_inst2
+        elim_err h
+        rename_i v3 h_mapError
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨h_et, h_env⟩ := h; subst h_et h_env
+        have h_unify := unify_of_mapError h_mapError
+        have h_aw1 : TContext.AliasesWF Env1.context := by
+          rw [LTy_instantiateWithCheck_context' type_val C Env ty_inst Env1 h_inst]; exact h_aw
+        have h_oty_inst_gen : ∀ tv, tv ∈ LMonoTy.freeVars oty_inst →
+            ∃ (k : Nat), tv = TState.tyPrefix ++ toString k :=
+          LMonoTy_instantiateWithCheck_freeVars_gen oty_val C Env1 oty_inst Env2 h_inst2 h_aw1
+        have h_oty_inst_P : ∀ v, v ∈ LMonoTy.freeVars oty_inst → P v := by
+          intro v hv; obtain ⟨k, hk⟩ := h_oty_inst_gen v hv; exact h_gen v k hk
+        have h_sub2_stateEq : Env2.stateSubstInfo = Env1.stateSubstInfo :=
+          LMonoTy_instantiateWithCheck_preserves_stateSubstInfo oty_val C Env1 oty_inst Env2 h_inst2
+        have h_sub2_P : ∀ v, v ∈ Maps.keys Env2.stateSubstInfo.subst → P v := by
+          intro v hv; rw [h_sub2_stateEq, h_sub_stateEq] at hv; exact h_sub v (Or.inl hv)
+        have h_sub2_Pv : ∀ v, v ∈ Subst.freeVars Env2.stateSubstInfo.subst → P v := by
+          intro v hv; rw [h_sub2_stateEq, h_sub_stateEq] at hv; exact h_sub v (Or.inr hv)
+        have h_cs_P : ∀ v, v ∈ Constraints.freeVars [(ty_inst, oty_inst)] → P v := by
+          intro v hv
+          simp only [Constraints.freeVars, Constraint.freeVars, List.append_nil,
+            List.mem_append] at hv
+          rcases hv with hv | hv
+          · exact h_ty_inst_P v hv
+          · exact h_oty_inst_P v hv
+        have h_unify_pred := Constraints.unify_pred h_unify P h_cs_P h_sub2_P h_sub2_Pv
+        refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+        · simp only [toLMonoTy] at hv; exact h_ty_inst_P v hv
+        · simp only [TEnv.updateSubst] at hv
+          rcases hv with hv | hv
+          · exact h_unify_pred.1 v hv
+          · exact h_unify_pred.2 v hv
+    case h_fvar =>
+      intro m x fty et C Env Env' h h_envwf h_ne h_fwf h_ctx h_sub
+      have h_aw := h_envwf.aliasesWF
+      simp only [resolveAux, Bind.bind, Except.bind] at h
+      elim_err h
+      rename_i v1 h_infer; obtain ⟨ty_res, Env_res⟩ := v1; dsimp at h h_infer
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_et, h_env⟩ := h; subst h_et h_env
+      simp only [inferFVar] at h_infer
+      split at h_infer
+      · simp at h_infer
+      · rename_i ty_found h_find_ctx
+        simp only [Bind.bind, Except.bind] at h_infer
+        elim_err h_infer
+        rename_i v2 h_inst; obtain ⟨ty_inst, Env1⟩ := v2; dsimp at h_infer h_inst
+        have h_ty_inst_P : ∀ v, v ∈ LMonoTy.freeVars ty_inst → P v := by
+          intro v hv
+          rcases LTy_instantiateWithCheck_freeVars_cases ty_found C Env ty_inst Env1
+            h_inst h_aw v hv with h_fv | ⟨k, hk⟩
+          · exact h_ctx v (TContext.mem_knownTypeVars_of_find h_find_ctx h_fv)
+          · exact h_gen v k hk
+        have h_sub1_stateEq : Env1.stateSubstInfo = Env.stateSubstInfo :=
+          LTy_instantiateWithCheck_preserves_stateSubstInfo ty_found C Env ty_inst Env1 h_inst
+        cases fty with
+        | none =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h_infer
+          obtain ⟨h_ty, h_env1⟩ := h_infer; subst h_ty h_env1
+          refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+          · simp only [toLMonoTy] at hv; exact h_ty_inst_P v hv
+          · rw [h_sub1_stateEq] at hv; exact h_sub v hv
+        | some fty_val =>
+          simp only [Except.mapError] at h_infer
+          elim_err h_infer
+          rename_i v3 h_inst2; obtain ⟨fty_inst, Env2⟩ := v3; dsimp at h_infer h_inst2
+          elim_err h_infer
+          rename_i v4 h_mapError
+          simp only [Except.ok.injEq, Prod.mk.injEq] at h_infer
+          obtain ⟨h_ty, h_env2⟩ := h_infer; subst h_ty h_env2
+          have h_unify := unify_of_mapError h_mapError
+          have h_aw1 : TContext.AliasesWF Env1.context := by
+            rw [LTy_instantiateWithCheck_context' ty_found C Env ty_inst Env1 h_inst]; exact h_aw
+          have h_fty_inst_P : ∀ v, v ∈ LMonoTy.freeVars fty_inst → P v := by
+            intro v hv
+            obtain ⟨k, hk⟩ := LMonoTy_instantiateWithCheck_freeVars_gen fty_val C Env1
+              fty_inst Env2 h_inst2 h_aw1 v hv
+            exact h_gen v k hk
+          have h_sub2_stateEq : Env2.stateSubstInfo = Env1.stateSubstInfo :=
+            LMonoTy_instantiateWithCheck_preserves_stateSubstInfo fty_val C Env1 fty_inst Env2 h_inst2
+          have h_sub2_P : ∀ v, v ∈ Maps.keys Env2.stateSubstInfo.subst → P v := by
+            intro v hv; rw [h_sub2_stateEq, h_sub1_stateEq] at hv; exact h_sub v (Or.inl hv)
+          have h_sub2_Pv : ∀ v, v ∈ Subst.freeVars Env2.stateSubstInfo.subst → P v := by
+            intro v hv; rw [h_sub2_stateEq, h_sub1_stateEq] at hv; exact h_sub v (Or.inr hv)
+          have h_cs_P : ∀ v, v ∈ Constraints.freeVars [(fty_inst, ty_inst)] → P v := by
+            intro v hv
+            simp only [Constraints.freeVars, Constraint.freeVars, List.append_nil,
+              List.mem_append] at hv
+            rcases hv with hv | hv
+            · exact h_fty_inst_P v hv
+            · exact h_ty_inst_P v hv
+          have h_unify_pred := Constraints.unify_pred h_unify P h_cs_P h_sub2_P h_sub2_Pv
+          refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+          · simp only [toLMonoTy] at hv; exact h_ty_inst_P v hv
+          · simp only [TEnv.updateSubst] at hv
+            rcases hv with hv | hv
+            · exact h_unify_pred.1 v hv
+            · exact h_unify_pred.2 v hv
+    case h_app =>
+      intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 fresh_name Env_gen substInfo
+        h_res h1 h2 h_genv h_unify h_et h_subeq h_abs_rem1 h_abs_rem2
+        h_e1t_no_fresh h_e2t_no_fresh h_unify_eq
+        h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2 h_ih1 h_ih2 h_ctx h_sub
+      subst h_et
+      have h_ih1' := h_ih1 h_ctx h_sub
+      have h_ctx1' : ∀ v, v ∈ TContext.knownTypeVars Env1.context → P v := by
+        rw [h_ctx1]; exact h_ctx
+      have h_ih2' := h_ih2 h_ctx1' h_ih1'.2
+      have h_fresh_P : P fresh_name := by
+        have h_name := genTyVar_name_eq Env2 fresh_name Env_gen h_genv
+        exact h_gen fresh_name Env2.genEnv.genState.tyGen h_name
+      have h_gen_subst : Env_gen.stateSubstInfo = Env2.stateSubstInfo :=
+        TEnv.genTyVar_subst Env2 fresh_name Env_gen h_genv
+      have h_cs_P : ∀ w, w ∈ Constraints.freeVars
+          [(e1t.toLMonoTy, LMonoTy.tcons "arrow" [e2t.toLMonoTy, .ftvar fresh_name])] → P w := by
+        intro w hw
+        simp only [Constraints.freeVars, Constraint.freeVars, List.append_nil,
+          LMonoTy.freeVars, LMonoTys.freeVars, List.append_nil, List.mem_append,
+          List.mem_singleton] at hw
+        rcases hw with hw | hw | hw
+        · exact h_ih1'.1 w hw
+        · exact h_ih2'.1 w hw
+        · subst hw; exact h_fresh_P
+      have h_gensub_k : ∀ w, w ∈ Maps.keys Env_gen.stateSubstInfo.subst → P w := by
+        intro w hw; rw [h_gen_subst] at hw; exact h_ih2'.2 w (Or.inl hw)
+      have h_gensub_v : ∀ w, w ∈ Subst.freeVars Env_gen.stateSubstInfo.subst → P w := by
+        intro w hw; rw [h_gen_subst] at hw; exact h_ih2'.2 w (Or.inr hw)
+      have h_unify_pred := Constraints.unify_pred h_unify P h_cs_P h_gensub_k h_gensub_v
+      refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+      · simp only [toLMonoTy] at hv
+        rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset substInfo.subst
+          (.ftvar fresh_name) hv) with h | h
+        · simp only [LMonoTy.freeVars, List.mem_singleton] at h; subst h; exact h_fresh_P
+        · exact h_unify_pred.2 v h
+      · rw [h_subeq] at hv
+        rcases hv with hv | hv
+        · exact h_unify_pred.1 v (Maps.keys_remove_subset substInfo.subst fresh_name v hv)
+        · exact h_unify_pred.2 v (Subst.freeVars_remove_subset substInfo.subst fresh_name v hv)
+    case h_abs =>
+      intro m name bty body et C Env Env' xv xty Env1 et_body Env2
+        h_res h_tbv h_res_body h_et h_env' h_envwf h_ne h_fwf h_envwf1 h_ne1 h_aliases_eq
+        h_ih h_ctx h_sub
+      subst h_et h_env'
+      have h_aw := h_envwf.aliasesWF
+      have h_xty_P : ∀ v, v ∈ LMonoTy.freeVars xty → P v := by
+        intro v hv
+        rcases typeBoundVar_xty_freeVars C Env bty xv xty Env1 h_tbv h_aw v hv with
+          h_kv | ⟨k, hk⟩
+        · exact h_ctx v h_kv
+        · exact h_gen v k hk
+      have h_sub1_stateEq : Env1.stateSubstInfo = Env.stateSubstInfo :=
+        typeBoundVar_stateSubstInfo C Env bty xv xty Env1 h_tbv
+      have h_sub1 : ∀ v, (v ∈ Maps.keys Env1.stateSubstInfo.subst ∨
+          v ∈ Subst.freeVars Env1.stateSubstInfo.subst) → P v := by
+        intro v hv; rw [h_sub1_stateEq] at hv; exact h_sub v hv
+      have h_ctx1 : ∀ v, v ∈ TContext.knownTypeVars Env1.context → P v := by
+        intro v hv
+        rcases typeBoundVar_knownTypeVars_cases C Env bty xv xty Env1 h_tbv v hv with
+          h_old | h_new
+        · exact h_ctx v h_old
+        · exact h_xty_P v h_new
+      have h_ih' := h_ih h_ctx1 h_sub1
+      have h_erase_subst : (Env2.eraseFromContext xv).stateSubstInfo = Env2.stateSubstInfo := by
+        simp only [TEnv.eraseFromContext, TEnv.updateContext]
+      refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+      · have h_eq : (LExpr.varCloseT 0 xv et_body).toLMonoTy = et_body.toLMonoTy :=
+          varCloseT_toLMonoTy 0 xv et_body
+        have hv' : v ∈ LMonoTy.freeVars (LMonoTy.subst Env2.stateSubstInfo.subst
+            (LMonoTy.tcons "arrow" [xty, et_body.toLMonoTy])) := by
+          rw [← h_eq]; exact hv
+        rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset Env2.stateSubstInfo.subst
+          _ hv') with h_arrow | h_sub2
+        · simp only [LMonoTy.freeVars, LMonoTys.freeVars, List.append_nil, List.mem_append] at h_arrow
+          rcases h_arrow with h_x | h_b
+          · exact h_xty_P v h_x
+          · exact h_ih'.1 v h_b
+        · exact h_ih'.2 v (Or.inr h_sub2)
+      · rw [h_erase_subst] at hv; exact h_ih'.2 v hv
+    case h_quant =>
+      intro m qk name bty triggers body et C Env Env' xv xty Env1 et_body Env2 et_tr Env3
+        h_res h_tbv h_res_body h_res_tr h_et h_env' h_body_ty_bool h_envwf h_ne h_fwf
+        h_envwf1 h_ne1 h_aliases_eq h_envwf2 h_ctx2 h_ih_body h_ih_tr h_ctx h_sub
+      subst h_et h_env'
+      have h_aw := h_envwf.aliasesWF
+      have h_xty_P : ∀ v, v ∈ LMonoTy.freeVars xty → P v := by
+        intro v hv
+        rcases typeBoundVar_xty_freeVars C Env bty xv xty Env1 h_tbv h_aw v hv with
+          h_kv | ⟨k, hk⟩
+        · exact h_ctx v h_kv
+        · exact h_gen v k hk
+      have h_sub1_stateEq : Env1.stateSubstInfo = Env.stateSubstInfo :=
+        typeBoundVar_stateSubstInfo C Env bty xv xty Env1 h_tbv
+      have h_sub1 : ∀ v, (v ∈ Maps.keys Env1.stateSubstInfo.subst ∨
+          v ∈ Subst.freeVars Env1.stateSubstInfo.subst) → P v := by
+        intro v hv; rw [h_sub1_stateEq] at hv; exact h_sub v hv
+      have h_ctx1 : ∀ v, v ∈ TContext.knownTypeVars Env1.context → P v := by
+        intro v hv
+        rcases typeBoundVar_knownTypeVars_cases C Env bty xv xty Env1 h_tbv v hv with
+          h_old | h_new
+        · exact h_ctx v h_old
+        · exact h_xty_P v h_new
+      have h_ih_body' := h_ih_body h_ctx1 h_sub1
+      have h_ctx2' : ∀ v, v ∈ TContext.knownTypeVars Env2.context → P v := by
+        rw [h_ctx2]; exact h_ctx1
+      have h_ih_tr' := h_ih_tr h_ctx2' h_ih_body'.2
+      have h_erase_subst : (Env3.eraseFromContext xv).stateSubstInfo = Env3.stateSubstInfo := by
+        simp only [TEnv.eraseFromContext, TEnv.updateContext]
+      refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+      · simp only [toLMonoTy, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        exact absurd hv (by simp)
+      · rw [h_erase_subst] at hv; exact h_ih_tr'.2 v hv
+    case h_eq =>
+      intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo
+        h_res h1 h2 h_unify h_et h_subeq h_abs1 h_abs2
+        h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2 h_ih1 h_ih2 h_ctx h_sub
+      subst h_et
+      have h_ih1' := h_ih1 h_ctx h_sub
+      have h_ctx1' : ∀ v, v ∈ TContext.knownTypeVars Env1.context → P v := by
+        rw [h_ctx1]; exact h_ctx
+      have h_ih2' := h_ih2 h_ctx1' h_ih1'.2
+      refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+      · simp only [toLMonoTy, LMonoTy.freeVars, LMonoTys.freeVars] at hv
+        exact absurd hv (by simp)
+      · rw [h_subeq] at hv
+        have h_cs_P : ∀ w, w ∈ Constraints.freeVars [(e1t.toLMonoTy, e2t.toLMonoTy)] → P w := by
+          intro w hw
+          simp only [Constraints.freeVars, Constraint.freeVars, List.append_nil,
+            List.mem_append] at hw
+          rcases hw with hw | hw
+          · exact h_ih1'.1 w hw
+          · exact h_ih2'.1 w hw
+        have h_unify_pred := Constraints.unify_pred h_unify P h_cs_P
+          (fun w hw => h_ih2'.2 w (Or.inl hw)) (fun w hw => h_ih2'.2 w (Or.inr hw))
+        rcases hv with hv | hv
+        · exact h_unify_pred.1 v hv
+        · exact h_unify_pred.2 v hv
+    case h_ite =>
+      intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
+        h_res hc ht he h_unify h_et h_subeq h_abs2 h_abs3
+        h_envwf h_ne h_fwf h_envwf1 h_ctx1 h_envwf2 h_ctx2 h_envwf3 h_ctx3
+        h_ihc h_iht h_ihe h_ctx h_sub
+      subst h_et
+      have h_ihc' := h_ihc h_ctx h_sub
+      have h_ctx1' : ∀ v, v ∈ TContext.knownTypeVars Env1.context → P v := by
+        rw [h_ctx1]; exact h_ctx
+      have h_iht' := h_iht h_ctx1' h_ihc'.2
+      have h_ctx2' : ∀ v, v ∈ TContext.knownTypeVars Env2.context → P v := by
+        rw [h_ctx2]; exact h_ctx
+      have h_ihe' := h_ihe h_ctx2' h_iht'.2
+      refine ⟨fun v hv => ?_, fun v hv => ?_⟩
+      · simp only [toLMonoTy] at hv; exact h_iht'.1 v hv
+      · rw [h_subeq] at hv
+        have h_cs_P : ∀ w, w ∈ Constraints.freeVars
+            [(ct.toLMonoTy, LMonoTy.bool), (tht.toLMonoTy, elt.toLMonoTy)] → P w := by
+          intro w hw
+          simp only [Constraints.freeVars, Constraint.freeVars, List.append_nil,
+            LMonoTy.freeVars, LMonoTys.freeVars, List.mem_append] at hw
+          rcases hw with hw | hw | hw
+          · exact h_ihc'.1 w hw
+          · exact h_iht'.1 w hw
+          · exact h_ihe'.1 w hw
+        have h_unify_pred := Constraints.unify_pred h_unify P h_cs_P
+          (fun w hw => h_ihe'.2 w (Or.inl hw)) (fun w hw => h_ihe'.2 w (Or.inr hw))
+        rcases hv with hv | hv
+        · exact h_unify_pred.1 v hv
+        · exact h_unify_pred.2 v hv
+  unfold LExpr.resolve at h
+  simp only [Bind.bind, Except.bind] at h
+  obtain ⟨Env0, h_env0⟩ : ∃ Env0, Env0 = (if Env.context.types.isEmpty then
+      Env.updateContext { Env.context with types := [[]] } else Env) := ⟨_, rfl⟩
+  rw [← h_env0] at h
+  generalize h_ra : resolveAux C Env0 e = res at h
+  cases res with
+  | error => simp at h
+  | ok val =>
+    obtain ⟨et0, EnvR⟩ := val
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_et, h_env⟩ := h
+    have h_ne0 : Env0.context.types ≠ [] := by
+      rw [h_env0]; split
+      · simp only [TEnv.updateContext, TEnv.context]; exact List.cons_ne_nil _ _
+      · rename_i h_not; intro h_abs; rw [h_abs] at h_not
+        exact h_not rfl
+    have h_ctx0 : ∀ v, v ∈ TContext.knownTypeVars Env0.context → P v := by
+      intro v hv; rw [h_env0] at hv; revert hv; split
+      · intro hv
+        change v ∈ TContext.types.knownTypeVars [[]] at hv
+        simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+      · intro hv; exact h_ctx v hv
+    have h_sub0 : ∀ v, (v ∈ Maps.keys Env0.stateSubstInfo.subst ∨
+        v ∈ Subst.freeVars Env0.stateSubstInfo.subst) → P v := by
+      intro v hv
+      have h_s0 : Env0.stateSubstInfo = Env.stateSubstInfo := by
+        rw [h_env0]; split
+        · simp only [TEnv.updateContext]
+        · rfl
+      rw [h_s0] at hv; exact h_sub v hv
+    have h_envwf0 : TEnvWF Env0 := by
+      rw [h_env0]; split
+      · rename_i h_emp
+        simp only [TEnv.updateContext]
+        refine ⟨h_envwf.aliasesWF, h_envwf.substFreshForGen, ?_, ?_, ?_⟩
+        · intro v hv n hn
+          change v ∈ TContext.types.knownTypeVars [[]] at hv
+          simp [TContext.types.knownTypeVars, TContext.types.knownTypeVars.go] at hv
+        · intro y ty hf
+          change Maps.find? [[]] y = some ty at hf
+          simp [Maps.find?, Map.find?] at hf
+        · intro y ty hf
+          change Maps.find? [[]] y = some ty at hf
+          simp [Maps.find?, Map.find?] at hf
+      · exact h_envwf
+    have h_aux_res := h_aux e et0 C Env0 EnvR h_ra h_envwf0 h_ne0 h_fwf h_ctx0 h_sub0
+    subst h_et h_env
+    refine ⟨fun v hv => ?_, h_aux_res.2⟩
+    rw [applySubstT_toLMonoTy] at hv
+    rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset EnvR.stateSubstInfo.subst
+      et0.toLMonoTy hv) with h_t | h_s
+    · exact h_aux_res.1 v h_t
+    · exact h_aux_res.2 v (Or.inr h_s)
 
 /-! ### Layer 3: Main induction -/
 
