@@ -75,16 +75,16 @@
         },
         {
           "name": "keyword.operator.word.core-st",
-          "match": "\\b(div|mod|sdiv|smod|safesdiv|safesmod)\\b"
+          "match": "\\b(div|mod|ashr|sdiv|smod|slt|sle|sgt|sge)\\b"
         },
         {
           "name": "keyword.operator.symbol.core-st",
-          "match": "(safe_neg|as_bv128|as_bv32|as_bv64|as_sint|as_bv16|as_uint|as_bv1|as_bv8|safe-|safe\\+|safe\\*|<==>|>=s|==>|>>s|<=s|!=|/t|%t|<<|>>|&&|\\|\\||==|<s|<=|>=|>s|!|\\^|-|\\+|\\*|/|%|<|>|~|&|\\|)"
+          "match": "(as_bv128|as_bv32|as_sint|as_bv16|as_bv64|as_uint|as_bv8|as_bv1|<==>|==>|>>|!=|&&|\\|\\||>=|==|<=|<<|!|>|-|\\+|\\*|/|%|~|&|\\||\\^|<)"
         }
       ]
     },
     "function-call": {
-      "match": "\\b(Sequence\\.empty|Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|str\\.prefixof|str\\.suffixof|str\\.contains|str\\.indexof|str\\.replace|str\\.at|str\\.lt|str\\.le|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|Bv\\.SNegOverflow|Bv\\.UNegOverflow|Bv\\.SAddOverflow|Bv\\.SSubOverflow|Bv\\.SMulOverflow|Bv\\.SDivOverflow|Bv\\.UAddOverflow|Bv\\.USubOverflow|Bv\\.UMulOverflow|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
+      "match": "\\b(Sequence\\.empty|Sequence\\.length|Sequence\\.select|Sequence\\.append|Sequence\\.build|Sequence\\.update|Sequence\\.contains|Sequence\\.take|Sequence\\.drop|str\\.len|str\\.concat|str\\.substr|str\\.to\\.re|str\\.in\\.re|str\\.prefixof|str\\.suffixof|str\\.contains|str\\.indexof|str\\.replace|str\\.at|str\\.lt|str\\.le|re\\.allchar|re\\.all|re\\.range|re\\.concat|re\\.\\*|re\\.\\+|re\\.loop|re\\.union|re\\.inter|re\\.comp|re\\.none|Int\\.DivT|Int\\.ModT|Int\\.SafeDivT|Int\\.SafeModT|Bv\\.SafeAdd|Bv\\.SafeSub|Bv\\.SafeMul|Bv\\.SafeNeg|Bv\\.SafeSDiv|Bv\\.SafeSMod|Bv\\.SNegOverflow|Bv\\.UNegOverflow|Bv\\.SAddOverflow|Bv\\.SSubOverflow|Bv\\.SMulOverflow|Bv\\.SDivOverflow|Bv\\.UAddOverflow|Bv\\.USubOverflow|Bv\\.UMulOverflow|bvconcat\\{[0-9]+\\}\\{[0-9]+\\}|bvextract\\{[0-9]+\\}\\{[0-9]+\\}\\{[0-9]+\\})\\b",
       "captures": {
         "1": { "name": "support.function.builtin.core-st" }
       }

@@ -269,6 +269,87 @@ procedure TestDifferentInstantiations ()
 
 -------------------------------------------------------------------------------
 
+/-- A type parameter whose name begins with `s` parses correctly: the signed
+comparison operators are the word-like tokens `slt`/`sle`/`sgt`/`sge`, so no
+operator token shadows the `<` that opens a type-parameter list, and `f<s>`
+tokenizes as a type-parameter list containing `s`. -/
+private def typeParamStartingWithS :=
+#strata
+program Core;
+
+function f<s>(x : s) : s;
+function g<s, t>(x : s, y : t) : Map s t;
+#end
+
+/--
+info: program Core;
+
+function f<s> (x : s) : s;
+function g<s, t> (x : s, y : t) : Map s t;
+-/
+#guard_msgs in
+#eval ASTtoCST typeParamStartingWithS
+
+-------------------------------------------------------------------------------
+
+/-- Regression test: the word-like operators `slt`/`sle`/`sgt`/`sge`/`ashr`
+respect identifier boundaries. Identifiers that merely *begin with* those
+spellings (but are not exactly the keyword) are ordinary identifiers, not the
+operator. Exact spellings `slt`/`sle`/`sgt`/`sge`/`ashr` are reserved
+keywords and are not usable as identifiers, same as `div`/`mod`/etc. -/
+private def operatorNamePrefixIdentifiers :=
+#strata
+program Core;
+
+function h<slte>(x : slte) : slte;
+function k<sltx, sgey>(x : sltx, y : sgey) : Map sltx sgey;
+function m<ashrx>(x : ashrx) : ashrx;
+#end
+
+/--
+info: program Core;
+
+function h<slte> (x : slte) : slte;
+function k<sltx, sgey> (x : sltx, y : sgey) : Map sltx sgey;
+function m<ashrx> (x : ashrx) : ashrx;
+-/
+#guard_msgs in
+#eval ASTtoCST operatorNamePrefixIdentifiers
+
+-------------------------------------------------------------------------------
+
+/-- An operator written tight against a following identifier tokenizes as two
+separate tokens, so the identifier keeps its leading letter: `>>step` parses as
+`>>` then `step`, and `/table`/`%total` parse as `/`/`%` then the identifier.
+The printer reinserts the surrounding spaces. -/
+private def operatorAdjacentIdentifiers :=
+#strata
+program Core;
+
+procedure P(x: bv8, step: bv8, a: int, table: int, total: int, safe: int) {
+  var r1 : bv8 := x>>step;
+  var r2 : int := a/table;
+  var r3 : int := a%total;
+  var r4 : int := safe+1;
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (x : bv8, step : bv8, a : int, table : int, total : int, safe : int)
+{
+  var r1 : bv8 := x >> step;
+  var r2 : int := a / table;
+  var r3 : int := a % total;
+  var r4 : int := safe + 1;
+};
+-/
+#guard_msgs in
+#eval ASTtoCST operatorAdjacentIdentifiers
+
+-------------------------------------------------------------------------------
+
 private def bitvecPgm :=
 #strata
 program Core;
@@ -281,6 +362,9 @@ procedure P(x: bv8, y: bv8, z: bv8) {
   assert [demorgan]: ~(x & y) == ~x | ~y;
   assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
   assert [bad_shift]: x >> y == x << y;
+  assert [arith_shift]: x ashr y == x >> y;
+  assert [signed_lt]: x slt y;
+  assert [signed_le]: x sle y;
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
   var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
@@ -299,6 +383,9 @@ procedure P (x : bv8, y : bv8, z : bv8)
   assert [demorgan]: ~(x & y) == ~x | ~y;
   assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
   assert [bad_shift]: x >> y == x << y;
+  assert [arith_shift]: x ashr y == x >> y;
+  assert [signed_lt]: x slt y;
+  assert [signed_le]: x sle y;
   var xy : bv16 := bvconcat{8}{8}(x, y);
   var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
   var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
@@ -306,6 +393,80 @@ procedure P (x : bv8, y : bv8, z : bv8)
 -/
 #guard_msgs in
 #eval ASTtoCST bitvecPgm
+
+-------------------------------------------------------------------------------
+
+/-- Round-trip coverage for the integer division/modulo family. The truncating
+safe operators use call syntax `Int.SafeDivT(a, b)`/`Int.SafeModT(a, b)`,
+mirroring their non-safe siblings `Int.DivT`/`Int.ModT`. -/
+private def intDivModPgm :=
+#strata
+program Core;
+
+procedure Q(a: int, b: int) {
+  assert [euclid_div]: a div b == a div b;
+  assert [euclid_mod]: a mod b == a mod b;
+  assert [safe_div]: a / b == a / b;
+  assert [safe_mod]: a % b == a % b;
+  assert [trunc_div]: Int.DivT(a, b) == Int.DivT(a, b);
+  assert [trunc_mod]: Int.ModT(a, b) == Int.ModT(a, b);
+  assert [safe_trunc_div]: Int.SafeDivT(a, b) == Int.SafeDivT(a, b);
+  assert [safe_trunc_mod]: Int.SafeModT(a, b) == Int.SafeModT(a, b);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Q (a : int, b : int)
+{
+  assert [euclid_div]: a div b == a div b;
+  assert [euclid_mod]: a mod b == a mod b;
+  assert [safe_div]: a / b == a / b;
+  assert [safe_mod]: a % b == a % b;
+  assert [trunc_div]: Int.DivT(a, b) == Int.DivT(a, b);
+  assert [trunc_mod]: Int.ModT(a, b) == Int.ModT(a, b);
+  assert [safe_trunc_div]: Int.SafeDivT(a, b) == Int.SafeDivT(a, b);
+  assert [safe_trunc_mod]: Int.SafeModT(a, b) == Int.SafeModT(a, b);
+};
+-/
+#guard_msgs in
+#eval ASTtoCST intDivModPgm
+
+-------------------------------------------------------------------------------
+
+/-- Round-trip coverage for the overflow-checked ("safe") bitvector family.
+Every safe operator uses `Bv.`-namespaced call syntax, matching the sibling
+overflow predicates (`Bv.SAddOverflow(a, b)` etc.) that guard them. -/
+private def safeBvPgm :=
+#strata
+program Core;
+
+procedure R(x: bv8, y: bv8) {
+  assert [s_add]: Bv.SafeAdd(x, y) == Bv.SafeAdd(x, y);
+  assert [s_sub]: Bv.SafeSub(x, y) == Bv.SafeSub(x, y);
+  assert [s_mul]: Bv.SafeMul(x, y) == Bv.SafeMul(x, y);
+  assert [s_neg]: Bv.SafeNeg(x) == Bv.SafeNeg(x);
+  assert [s_sdiv]: Bv.SafeSDiv(x, y) == Bv.SafeSDiv(x, y);
+  assert [s_smod]: Bv.SafeSMod(x, y) == Bv.SafeSMod(x, y);
+};
+#end
+
+/--
+info: program Core;
+
+procedure R (x : bv8, y : bv8)
+{
+  assert [s_add]: Bv.SafeAdd(x, y) == Bv.SafeAdd(x, y);
+  assert [s_sub]: Bv.SafeSub(x, y) == Bv.SafeSub(x, y);
+  assert [s_mul]: Bv.SafeMul(x, y) == Bv.SafeMul(x, y);
+  assert [s_neg]: Bv.SafeNeg(x) == Bv.SafeNeg(x);
+  assert [s_sdiv]: Bv.SafeSDiv(x, y) == Bv.SafeSDiv(x, y);
+  assert [s_smod]: Bv.SafeSMod(x, y) == Bv.SafeSMod(x, y);
+};
+-/
+#guard_msgs in
+#eval ASTtoCST safeBvPgm
 
 -------------------------------------------------------------------------------
 
@@ -399,7 +560,7 @@ program Core;
 procedure find_max(nums: Map bv64 bv32, nums_len: bv64, out ret: bv32)
 spec {
   requires ((nums_len > bv{64}(0)));
-  ensures (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) ==> (ret >=s (nums[x0]))));
+  ensures (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) ==> (ret sge (nums[x0]))));
   ensures (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) && (ret == (nums[x0]))));
 }
 {
@@ -411,10 +572,10 @@ spec {
     invariant (nums_len > bv{64}(0))
     invariant (bv{64}(0) <= i)
     invariant (i <= nums_len)
-    invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max >=s (nums[x0]))))
+    invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max sge (nums[x0]))))
     invariant (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0]))))
   {
-    if (((nums[i]) >s max)) {
+    if (((nums[i]) sgt max)) {
       max := (nums[i]);
     } else {
     }
@@ -430,7 +591,7 @@ info: program Core;
 procedure find_max (nums : Map bv64 bv32, nums_len : bv64, out ret : bv32)
 spec {
   requires [find_max_requires_0]: nums_len > bv{64}(0);
-  ensures [find_max_ensures_1]: forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len ==> ret >=s nums[x0];
+  ensures [find_max_ensures_1]: forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len ==> ret sge nums[x0];
   ensures [find_max_ensures_2]: exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len && ret == nums[x0];
   } {
   var max : bv32;
@@ -441,10 +602,10 @@ spec {
   invariant nums_len > bv{64}(0)
   invariant bv{64}(0) <= i
   invariant i <= nums_len
-  invariant forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < i ==> max >=s nums[x0]
+  invariant forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < i ==> max sge nums[x0]
   invariant exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < i && max == nums[x0]
   {
-    if (nums[i] >s max) {
+    if (nums[i] sgt max) {
       max := nums[i];
     }
     i := i + bv{64}(1);
