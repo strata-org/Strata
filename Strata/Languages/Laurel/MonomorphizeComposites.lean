@@ -900,6 +900,21 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- Monomorphs` is a general stable DFS post-order: it passes non-composites through and
   -- places every composite after its named parents at every hop. Witnesses are
   -- zero-field/no-extends → position-independent, appended after.
+  -- Flag a USER identifier that collides with a generated monomorph name (`Box$a1$int`):
+  -- `$` and the `$aN$` tag shape are legal in source, and `instTagCommon` is non-injective,
+  -- so a user type can share a monomorph's name. Point the diagnostic at the user's own
+  -- declaration (`td.name.source`) BEFORE re-resolution reports it against the source-less
+  -- synthetic name. Compares against the names emission actually produced (no tag re-derivation);
+  -- the re-resolution net still backstops collisions from other passes (`$heap`, dispatch `$impl`).
+  let monoNames := monoComposites.map (·.name.text)
+  diags := diags ++ program.types.filterMap fun td =>
+    if monoNames.contains td.name.text then
+      some (diagnosticFromSource td.name.source
+        s!"'{td.name.text}' collides with a name generated for a generic-composite instantiation; \
+           rename it (identifiers with the '$aN$' instantiation-tag shape can clash)"
+        DiagnosticType.UserError)
+    else none
+
   let program := { program with
                      types := topoSortMonomorphs (types' ++ monoComposites) ++ witnessComposites,
                      staticProcedures := staticProcs',

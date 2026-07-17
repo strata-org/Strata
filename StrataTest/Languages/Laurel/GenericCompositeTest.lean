@@ -497,7 +497,7 @@ composite Pair<A,B> { var a: A var b: B }
 procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new Z; var ww: W := new W; ww#aw := 9; zz#z2 := ww; p#b := zz; assert p#b#z2#aw == 9 };"},
 
   { name := "user_name_collides_with_monomorph", outcome := .rejected (some .UserError),
-    why := "a user `composite Box$a1$int` collides with the `Box<int>` monomorph name and must be rejected as a duplicate definition (the index-keyed topo-sort preserves both entries so the collision is seen)"
+    why := "a user `composite Box$a1$int` collides with the `Box<int>` monomorph name and must be rejected — `MonomorphizeComposites` detects the clash against the names it emitted and reports a `UserError` at the user declaration's own source (the re-resolution net is the backstop for other-pass collisions)"
     src := r"
 composite Box<T> { var val: T }
 composite Box$a1$int { var val: bool }
@@ -508,5 +508,29 @@ def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus
 
 #guard_msgs (drop info, error) in
 #eval runGenericCompositeTest
+
+/-- The corpus DSL pins a diagnostic's KIND but not its source location. This pins the
+    specific improvement of the `MonomorphizeComposites` collision check: the user/monomorph
+    name clash is reported AT the user's declaration (a real `FileRange`), not the
+    source-less synthetic name. Prints the located flag so a regression to `<unknown>` fails. -/
+def monomorphCollisionIsLocated : IO Unit := do
+  let src := "
+composite Box<T> { var val: T }
+composite Box$a1$int { var val: bool }
+procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; assert bi#val == 7 };"
+  let input := StrataDDM.Parser.stringInputContext "collision" src
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let sp ← parseStrataProgramFromDialect dialects Laurel.name input
+  match Laurel.TransM.run (Strata.Uri.file "collision") (Laurel.parseProgram sp) with
+  | .error e => IO.println s!"parse error: {e}"
+  | .ok prog =>
+    let (_, diags) ← Laurel.verifyToMergedResults prog default
+    let located := diags.any fun d =>
+      d.type == .UserError && d.fileRange.file != Uri.file "<unknown>"
+    IO.println s!"collision diagnostic located at user source: {located}"
+
+/-- info: collision diagnostic located at user source: true -/
+#guard_msgs in
+#eval monomorphCollisionIsLocated
 
 end Strata.Laurel

@@ -189,8 +189,10 @@ private def runLaurelPasses
         -- clash (two user names would have clashed in the first resolve; two generated names are
         -- worklist-deduped), so a genuine internal failure is always a "not defined" dangling ref,
         -- never a duplicate. Report the duplicate as a plain `UserError` with a rename hint.
-        -- TODO: the user's source location is lost (the synthetic name carries `source := none`);
-        -- a pre-monomorphization check in `MonomorphizeComposites` is where it is still available.
+        -- The MONOMORPH case is now caught upstream WITH source by `MonomorphizeComposites`
+        -- (which still has the user declaration's `source`), so this net only backstops
+        -- collisions from OTHER passes (`$heap`, dispatch `$impl`), whose synthetic names carry
+        -- `source := none` — hence the location loss remains for those, unavoidably.
         let isUserCollision (d : DiagnosticModel) : Bool :=
           (d.message.splitOn "Duplicate definition").length > 1
         let newDiags := newErrors.toList.map fun d =>
