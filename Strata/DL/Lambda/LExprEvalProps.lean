@@ -301,9 +301,13 @@ theorem eval_value_isCanonicalValue
                 rename_i h_eval_cond
                 rw [if_pos h_eval_cond]
                 split at hv
-                · -- concreteEval = none → (new_e, .nonvalue)
+                · -- concreteEval = none: the rebuilt call is certified exactly
+                  -- when it is canonical
                   rename_i h_ceval
-                  exact absurd hv LExpr.EvalResult.noConfusion
+                  split at hv
+                  · rename_i h_can_new
+                    simpa using h_can_new
+                  · simp [LExpr.EvalResult.combineValueFlag] at hv
                 · -- concreteEval = some ceval: match ceval ...
                   rename_i ceval h_ceval
                   split at hv
@@ -1428,7 +1432,45 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
           split
           · rename_i h_eval_cond
             split
-            · intro h; exfalso; have := congrArg Prod.snd h; simp at this
+            · -- concreteEval = none: certified when the rebuilt call is
+              -- canonical on fully evaluated arguments
+              rename_i h_ceval_none
+              intro h
+              simp only [LExpr.combineEvalResValueFlag_eq_pair, Prod.mk.injEq] at h
+              obtain ⟨h_fst, h_snd⟩ := h
+              split at h_snd
+              case isFalse =>
+                exact absurd h_snd (by simp [LExpr.EvalResult.combineValueFlag])
+              rename_i h_can
+              have h_argsAllFull :
+                  (args.map (fun a => LExpr.eval n' F env a)).all
+                    (fun r => r.snd.isValueTrue) = true := by
+                simpa [LExpr.EvalResult.combineValueFlag] using h_snd
+              obtain ⟨h_map_eq, h_argsAllFull_lift⟩ :=
+                list_lifts args (fun a ha =>
+                  List.all_eq_true.mp h_argsAllFull _ (List.mem_map_of_mem ha))
+              have h_map_eq_prod : List.map Prod.fst
+                  (args.map (fun a => LExpr.eval (n'+1) F env a)) =
+                  List.map Prod.fst (args.map (fun a => LExpr.eval n' F env a)) := by
+                rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]
+                exact h_map_eq
+              show LExpr.eval (n'+1+1) F env e = (v, .value true)
+              conv => lhs; rw [LExpr.eval]
+              rw [if_neg h_not_can, h_call]
+              dsimp only
+              split
+              · rename_i h_cond_lift
+                exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
+              · rw [h_map_eq_prod, if_pos h_eval_cond]
+                simp only [LExpr.List_map_fst_map_eval]
+                rw [h_ceval_none]
+                dsimp only
+                simp only [LExpr.List_all_snd_isValueTrue_map_eval]
+                rw [h_argsAllFull_lift]
+                simp only [LExpr.List_map_fst_map_eval] at h_can h_fst
+                have h_can_v : LExpr.isCanonicalValue F v = true :=
+                  h_fst ▸ h_can
+                simp [h_fst, h_can_v, LExpr.EvalResult.combineValueFlag]
             · rename_i ceval h_ceval
               split
               · rename_i e' h_ceval_res
@@ -1912,7 +1954,45 @@ theorem eval_frame
           split
           · rename_i h_eval_cond
             split
-            · intro h; exfalso; have := congrArg Prod.snd h; simp at this
+            · -- concreteEval = none: certified when the rebuilt call is
+              -- canonical on fully evaluated arguments
+              rename_i h_ceval_none
+              intro h
+              simp only [LExpr.combineEvalResValueFlag_eq_pair, Prod.mk.injEq] at h
+              obtain ⟨h_fst, h_snd⟩ := h
+              split at h_snd
+              case isFalse =>
+                exact absurd h_snd (by simp [LExpr.EvalResult.combineValueFlag])
+              rename_i h_can
+              have h_argsAllFull :
+                  (args.map (fun a => LExpr.eval n' F env a)).all
+                    (fun r => r.snd.isValueTrue) = true := by
+                simpa [LExpr.EvalResult.combineValueFlag] using h_snd
+              obtain ⟨h_map_eq, h_argsAllFull_lift⟩ :=
+                list_lifts args (fun a ha =>
+                  List.all_eq_true.mp h_argsAllFull _ (List.mem_map_of_mem ha))
+              have h_map_eq_prod : List.map Prod.fst
+                  (args.map (fun a => LExpr.eval n' F env' a)) =
+                  List.map Prod.fst (args.map (fun a => LExpr.eval n' F env a)) := by
+                rw [LExpr.List_map_fst_map_eval, LExpr.List_map_fst_map_eval]
+                exact h_map_eq
+              show LExpr.eval (n'+1) F env' e = (v, .value true)
+              conv => lhs; rw [LExpr.eval]
+              rw [if_neg h_not_can, h_call]
+              dsimp only
+              split
+              · rename_i h_cond_lift
+                exfalso; apply h_cond; rw [← h_map_eq_prod]; exact h_cond_lift
+              · rw [h_map_eq_prod, if_pos h_eval_cond]
+                simp only [LExpr.List_map_fst_map_eval]
+                rw [h_ceval_none]
+                dsimp only
+                simp only [LExpr.List_all_snd_isValueTrue_map_eval]
+                rw [h_argsAllFull_lift]
+                simp only [LExpr.List_map_fst_map_eval] at h_can h_fst
+                have h_can_v : LExpr.isCanonicalValue F v = true :=
+                  h_fst ▸ h_can
+                simp [h_fst, h_can_v, LExpr.EvalResult.combineValueFlag]
             · rename_i ceval h_ceval
               split
               · rename_i e' h_ceval_res
@@ -2921,6 +3001,7 @@ theorem eval_call_not_full_snd
       | (intro hbad
          simp only [LExpr.EvalResult.combineValueFlag] at hbad
          split at hbad <;> simp_all [LExpr.EvalResult.isValueTrue])
+      | simp [LExpr.EvalResult.combineValueFlag]
       | simp
 
 /-- When a factory call's arguments ARE all fully reduced, evaluating the renamed
@@ -3054,8 +3135,9 @@ theorem call_node_eval_eq
           simp only []
           split
           · split
-            · -- concreteEval none: both `.nonvalue`.
-              right; exact ⟨by simp, by simp⟩
+            · -- concreteEval none: the (now possibly certifying) results
+              -- coincide on both sides after the residual rewrites.
+              left; rfl
             · rename_i ceval h_ce
               split
               · -- ceval succeeds: shared closed reduct, store-independent.
