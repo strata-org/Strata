@@ -460,7 +460,7 @@ def StmtExpr.constrName : StmtExpr → String
     Base) args` both peel to `Base`. `none` for a type with no nameable base (a bare
     `.TVar`, a primitive, etc.) — callers treat that as "no inheritable parent". Used by
     the `extending`-list consumers after `extending` became `List HighTypeMd`:
-    field-scope inheritance, the subtype `extendingMap`/`ancestors`, and diamond checks
+    field-scope inheritance, the subtype `parentExprMap`/`ancestors`, and diamond checks
     all key on the parent NAME (field names are instantiation-independent), so peeling to
     the base is correct for them; only prelude dependency-collection needs the full type
     (it recurses the args separately). -/
@@ -652,15 +652,18 @@ deriving instance BEq for HighType
     - `unfoldMap` maps an alias or constrained type's name to the type it
       unwraps to (alias target / constrained base). Followed transitively to
       reach a non-alias, non-constrained type.
-    - `extendingMap` maps a composite type's name to the *direct* parents in
-      its `extending` list. Walked transitively for the subtype check.
+    - `parentExprMap` maps a composite type's name to its type-param names + its
+      *direct* parent type EXPRESSIONS (`extending` list, verbatim). The name-walk
+      subtype check (`ancestors`) projects these to parent names via
+      `directParentNames`; `substitutedAncestors` uses the full expressions to
+      compute the true supertypes of an instantiation (applying the `extends` remap).
 
     Keyed by type-name *text* (`String`), not `Identifier`: this is consistent
     with how `highEq` decides `UserDefined` equality (by `.text`), and is forced
     because the lattice is built from the *unresolved* program in
     `TypeLattice.ofTypes`, before the resolution pass assigns `uniqueId`s.
     Consequence: nominal type identity is by name text, so subtyping
-    (`ancestors` walking `extendingMap`) assumes type names are globally unique.
+    (`ancestors` walking parent names) assumes type names are globally unique.
     Safe today (no module system); revisit when modules / namespacing / imports
     land, since two distinct same-named types would otherwise share an
     inheritance chain. -/
@@ -669,11 +672,10 @@ structure TypeLattice where
   -- (`Foo<int>` ⇒ target[T↦int]) so the consistency relation agrees with what
   -- `TypeAliasElim` produces (empty param list for a monomorphic alias).
   unfoldMap : Std.HashMap String (List Identifier × HighTypeMd) := {}
-  extendingMap : Std.HashMap String (List String) := {}
-  -- Per composite NAME: its type-param names + its parent type
-  -- EXPRESSIONS (verbatim, e.g. `Pair<B,A>`). Carries the remap that `extendingMap`
-  -- (name-only) discards, so `substitutedAncestors` can compute the TRUE supertypes of
-  -- an instantiation. `extendingMap` is kept unchanged for its name-only consumers.
+  -- Per composite NAME: its type-param names + its parent type EXPRESSIONS
+  -- (verbatim, e.g. `Pair<B,A>`). `substitutedAncestors` uses the full expressions
+  -- (applying the `extends` remap) to compute the TRUE supertypes of an instantiation;
+  -- the name-only subtype walk (`ancestors`) projects them via `directParentNames`.
   parentExprMap : Std.HashMap String (List Identifier × List HighTypeMd) := {}
   deriving Inhabited
 
@@ -708,6 +710,14 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     | _ => ty
   | _ => ty
 
+/-- The direct parent NAMES of a composite, projected from `parentExprMap`'s parent
+    EXPRESSIONS (peeling each to its base name). This is the name-only view the subtype
+    walk needs; the full expressions stay in `parentExprMap` for `substitutedAncestors`. -/
+def TypeLattice.directParentNames (ctx : TypeLattice) (name : String) : List String :=
+  match ctx.parentExprMap.get? name with
+  | some (_, exprs) => exprs.filterMap (fun e => (highBaseName? e.val).map (·.text))
+  | none => []
+
 /-- All ancestors of a composite type (including itself), reachable via
     repeated `extending` lookups. Implemented as a visited-set BFS over the
     `extending` graph: the accumulator `acc` doubles as the visited set, and
@@ -722,7 +732,7 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
       if acc.contains n then go acc rest
       else
         let acc' := acc.insert n
-        let parents := (ctx.extendingMap.get? n).getD []
+        let parents := ctx.directParentNames n
         go acc' (parents ++ rest)
   go {} [name]
 
@@ -864,10 +874,11 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   -- (`substitutedAncestors subName []` — the child has no args to substitute, so it
   -- yields the `extends`-expression verbatim, e.g. `Box<int>`), compared with exact
   -- `highEq` (args INVARIANT). So `IntBox <: Box<int>` succeeds while `IntBox <: Box<bool>`
-  -- (wrong instantiation) and a remap mismatch both FAIL — no wrong-accept.
+  -- (wrong instantiation) and a remap mismatch both FAIL — no wrong-accept. No reflexive
+  -- `highEq sub' sup'` fallback here (unlike the `.Applied` arm): a `.UserDefined` can never
+  -- `highEq` an `.Applied`, so that disjunct would be dead.
   | .UserDefined subName, .Applied _ _ =>
     (ctx.substitutedAncestors subName.text []).any (fun anc => highEq anc sup')
-    || highEq sub' sup'
   | _, _ => highEq sub' sup'
 
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
@@ -1209,23 +1220,19 @@ def TypeDefinition.name : TypeDefinition → Identifier
 
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
-    it with their base; composites populate `extendingMap` with their direct
-    parents. Datatypes contribute nothing — they're nominal and irreducible. -/
+    it with their base; composites populate `parentExprMap` with their direct
+    parent expressions. Datatypes contribute nothing — they're nominal and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text (ta.typeArgs, ta.target) }
     | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ([], ct.base) }
     | .Composite c =>
-      -- `extending` is now `List HighTypeMd`; the subtype lattice keys on parent NAME
-      -- (an instantiation `Base<T>` and `Base` share the same ancestor chain), so peel
-      -- the base name. A parent with no nameable base (shouldn't occur for `extends`)
-      -- is dropped from the chain rather than crashing.
-      -- ALSO record the child's params + verbatim parent EXPRESSIONS so the remap survives
-      -- for `substitutedAncestors`. `extendingMap` (name-only) is kept for
-      -- the name-walk consumers.
+      -- Record the child's type-param names + verbatim parent EXPRESSIONS (`extending`).
+      -- `substitutedAncestors` reads the full expressions to apply the `extends` remap; the
+      -- name-only subtype walk (`ancestors`) projects them via `directParentNames`. Keeping
+      -- ONE map (not a parallel name-only copy) means the two views cannot drift.
       { ctx with
-        extendingMap := ctx.extendingMap.insert c.name.text (c.extending.filterMap (fun e => (highBaseName? e.val).map (·.text))),
         parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
     | .Datatype _ => ctx
 
