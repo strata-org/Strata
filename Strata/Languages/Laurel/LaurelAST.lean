@@ -779,20 +779,6 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
     some s!"Set$a1${et}"
   | _ => none
 
-/-- A canonical, source-free string key for a `HighType`, for deduping the
-    `substitutedAncestors` worklist (structurally-equal `.Applied` types must share a key,
-    and metadata must not split them). -/
-partial def highTypeKey : HighType → String
-  | .TVoid => "void" | .TBool => "bool" | .TInt => "int" | .TReal => "real"
-  | .TString => "string" | .TFloat64 => "f64" | .Unknown => "?"
-  | .TBv n => s!"bv{n}" | .TCore s => s!"core·{s}"
-  | .UserDefined n => n.text | .TVar n => s!"'{n.text}"
-  | .TSet v => s!"set<{highTypeKey v.val}>"
-  | .Pure v => s!"pure<{highTypeKey v.val}>"
-  | .TMap k v => s!"map<{highTypeKey k.val},{highTypeKey v.val}>"
-  | .Applied b args => s!"{highTypeKey b.val}<{String.intercalate "," (args.map (fun a => highTypeKey a.val))}>"
-  | .Intersection ts => s!"&<{String.intercalate "," (ts.map (fun t => highTypeKey t.val))}>"
-  | .MultiValuedExpr ts => s!"mv<{String.intercalate "," (ts.map (fun t => highTypeKey t.val))}>"
 
 /-- The fully-SUBSTITUTED ancestor TYPES of `C<args>`. Starting from the
     given composite `name` instantiated at `args`, look up `(params, parentExprs)` in
@@ -802,12 +788,11 @@ partial def highTypeKey : HighType → String
     `Base<int>` regardless of the child's own args (concretization). This is the remap the
     reverted upcast arm ignored. Returns the parent types (NOT including `C<args>` itself);
     `isSubtype` checks the target against this set with INVARIANT args.
-    Termination: `visited` keyed on `highTypeKey` (dedupes structural repeats; a malformed
-    cyclic `extends` terminates) + `fuel` backstop. -/
+    Termination: `highEq` dedup drops structural repeats (a malformed cyclic `extends`
+    stops re-enqueuing) + `fuel` backstop. -/
 partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
     (name : String) (args : List HighTypeMd) : List HighTypeMd := Id.run do
   let mut out : List HighTypeMd := []
-  let mut visited : Std.HashSet String := {}
   -- worklist of (composite name, its concrete args) to expand
   let mut work : List (String × List HighTypeMd) := [(name, args)]
   let mut fuel : Nat := 1024
@@ -824,9 +809,12 @@ partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
           (params.zip curArgs).foldl (fun m (p, a) => m.insert p.text a) {}
         for pe in parentExprs do
           let pe' := substTypeVars subst pe
-          let key := highTypeKey pe'.val
-          unless visited.contains key do
-            visited := visited.insert key
+          -- Dedup by `highEq` — the SAME equality `isSubtype` uses to match these
+          -- ancestors against its target. Deduping by a separate key (`highTypeKey`)
+          -- would introduce an implicit "key agrees with highEq" invariant whose breakage
+          -- would silently drop a real ancestor → wrong-reject. The ancestor set is tiny
+          -- (one parent per `extends` in practice), so the linear membership is free.
+          unless out.any (fun a => highEq a pe') do
             out := out ++ [pe']
             -- enqueue the substituted parent for transitive ancestors
             match pe'.val with
