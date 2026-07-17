@@ -528,6 +528,35 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
 
+/-- Build a `void main()` verification harness for a parameter-carrying entry
+    procedure `entry`: havoc its parameters, `assume` its preconditions, then
+    call it. The procedure inliner then inlines `entry` into this harness,
+    yielding a parameterless `main` that `goto-cc`/CBMC/cprover accept, with the
+    precondition assumed — matching Core's "preconditions are assumed for the
+    body" semantics (otherwise the back-end's synthesized harness leaves inputs
+    unconstrained and reports spurious failures). -/
+private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
+  let md : Imperative.MetaData Core.Expression := #[]
+  let inKeys := entry.header.inputs.keys
+  let outKeys := entry.header.outputs.keys
+  let inDecls : List Core.Statement := entry.header.inputs.toList.map (fun (id, ty) =>
+    .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let outOnlyDecls : List Core.Statement :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, ty) =>
+      .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let assumes : List Core.Statement := entry.spec.preconditions.toList.mapIdx (fun i (_, chk) =>
+    .cmd (.cmd (.assume s!"harness_pre_{i}" chk.expr md)))
+  let inArgs : List (Core.CallArg Core.Expression) := entry.header.inputs.toList.map (fun (id, _) =>
+    if id ∈ outKeys then .inoutArg id else .inArg (.fvar default id none))
+  let outArgs : List (Core.CallArg Core.Expression) :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
+      .outArg id)
+  let callStmt : Core.Statement :=
+    .call (Core.CoreIdent.toPretty entry.header.name) (inArgs ++ outArgs) md
+  { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }
+
 /--
 Inline procedures, type-check, and emit CProver GOTO JSON files.
 -/
@@ -537,6 +566,17 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
+  -- If the chosen entry carries parameters, wrap it in a parameterless `main`
+  -- verification harness (havoc params + assume preconditions + call); the
+  -- inliner then folds the entry in. Keeps existing void `main` entries as-is.
+  let findEntry (name : String) := program.decls.find? fun d =>
+    match d with | .proc p _ => Core.CoreIdent.toPretty p.header.name == name | _ => false
+  let program := match entryPoints.findSome? findEntry with
+    | some (.proc p _) =>
+      if !p.header.inputs.isEmpty && Core.CoreIdent.toPretty p.header.name != "main" then
+        { program with decls := program.decls ++ [.proc (mkVerificationHarness p) #[]] }
+      else program
+    | _ => program
   let phase := Core.procedureInliningPipelinePhase
     { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
   let inlined ← match Core.Transform.run program (fun prog => do
