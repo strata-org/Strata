@@ -280,10 +280,10 @@ private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : Abst
 private def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context) : m Unit := do
   -- Validate that no datatype has arrow-typed fields (same check as batch path)
-  match Core.validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  match Core.validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
-  for block in ctx.typeFactory.toList do
+  for block in ctx.datatypes.factory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
@@ -1781,6 +1781,7 @@ def verifySingleEnv (oblProgram : Program)
   let mut solverJobs : List SolverJob := []
   let mut solverJobIndices : List Nat := []
   let useParallel := options.parallelWorkers > 1
+  let datatypes := SMT.Datatypes.ofFactory E.datatypes
   -- Term→SMT-LIB string cache shared across this procedure's obligations, which
   -- often share many assumption terms. Sequential path only; parallel passes `none`.
   let termCache ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
@@ -1825,10 +1826,10 @@ def verifySingleEnv (oblProgram : Program)
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
     let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
-      -- Seed the encoding context: `typeFactory` with the env's datatypes (the
+      -- Seed the encoding context: `datatypes` with the env's datatypes (the
       -- encoder reads datatype declarations from there) and the encoder flags.
       let smtCtx := { SMT.Context.default with
-        uniqueBoundNames := options.uniqueBoundNames, typeFactory := E.datatypes,
+        uniqueBoundNames := options.uniqueBoundNames, datatypes,
         useArrayTheory := options.useArrayTheory }
       pure (ProofObligation.toSMTTerms E.factory obligation smtCtx)
     match maybeTerms with
