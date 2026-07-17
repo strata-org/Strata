@@ -98,5 +98,7 @@ import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
 
+import Strata.Examples.Embedded
+import Strata.Examples.EmbeddedData
 
 -- noimport: Strata.Util.IOTests (used for tests)
