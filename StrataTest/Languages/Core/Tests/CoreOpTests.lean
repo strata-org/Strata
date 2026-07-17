@@ -20,67 +20,40 @@ section RoundTrip
 private def checkRoundTrip (name : String) : Bool :=
   CoreOp.toString (CoreOp.ofString name) == name
 
--- BV ops (representative sizes)
-#guard checkRoundTrip "Bv8.Add"
-#guard checkRoundTrip "Bv16.Sub"
-#guard checkRoundTrip "Bv32.SDiv"
-#guard checkRoundTrip "Bv64.ULt"
+-- BV ops: fold over all kinds at a fixed size, plus representative sizes
+-- to exercise the size parse path (Bv{size} prefix).
+#guard BvOpKind.names.all (fun (_, n) => checkRoundTrip s!"Bv32.{n}")
 #guard checkRoundTrip "Bv1.Neg"
-#guard checkRoundTrip "Bv32.Concat"
-#guard checkRoundTrip "Bv32.Shl"
-#guard checkRoundTrip "Bv8.SShr"
 #guard checkRoundTrip "Bv2.Add"
+#guard checkRoundTrip "Bv8.SShr"
 #guard checkRoundTrip "Bv128.Mul"
 
--- BV Extract
+-- BV Extract (parametric over Nat, no `names` list)
 #guard checkRoundTrip "Bv32.Extract_7_0"
 #guard checkRoundTrip "Bv16.Extract_15_15"
 #guard checkRoundTrip "Bv64.Extract_31_0"
 
--- Numeric ops
-#guard checkRoundTrip "Int.Add"
-#guard checkRoundTrip "Int.SafeDiv"
-#guard checkRoundTrip "Int.ModT"
-#guard checkRoundTrip "Int.Neg"
-#guard checkRoundTrip "Int.Lt"
-#guard checkRoundTrip "Real.Add"
-#guard checkRoundTrip "Real.Div"
-#guard checkRoundTrip "Real.Ge"
+-- Numeric ops (every kind, for both Int and Real)
+#guard NumericType.names.all (fun (_, t) =>
+  NumericOpKind.names.all (fun (_, n) => checkRoundTrip s!"{t}.{n}"))
 
 -- Bool ops
-#guard checkRoundTrip "Bool.And"
-#guard checkRoundTrip "Bool.Or"
-#guard checkRoundTrip "Bool.Not"
-#guard checkRoundTrip "Bool.Implies"
-#guard checkRoundTrip "Bool.Equiv"
+#guard BoolOpKind.names.all (fun (_, n) => checkRoundTrip s!"Bool.{n}")
 
 -- String ops
-#guard checkRoundTrip "Str.Length"
-#guard checkRoundTrip "Str.Concat"
-#guard checkRoundTrip "Str.Substr"
-#guard checkRoundTrip "Str.PrefixOf"
-#guard checkRoundTrip "Str.SuffixOf"
+#guard StrOpKind.names.all (fun (_, n) => checkRoundTrip s!"Str.{n}")
 
 -- Regex ops
-#guard checkRoundTrip "Re.All"
-#guard checkRoundTrip "Re.Star"
-#guard checkRoundTrip "Re.None"
+#guard ReOpKind.names.all (fun (_, n) => checkRoundTrip s!"Re.{n}")
 
--- Map ops
-#guard checkRoundTrip "mapConst"
-#guard checkRoundTrip "select"
-#guard checkRoundTrip "update"
+-- Map ops (names are the full canonical string, no prefix)
+#guard MapOpKind.names.all (fun (_, n) => checkRoundTrip n)
 
 -- Sequence ops
-#guard checkRoundTrip "Sequence.length"
-#guard checkRoundTrip "Sequence.empty"
-#guard checkRoundTrip "Sequence.append"
+#guard SeqOpKind.names.all (fun (_, n) => checkRoundTrip s!"Sequence.{n}")
 
--- Trigger ops
-#guard checkRoundTrip "Triggers.empty"
-#guard checkRoundTrip "Triggers.addGroup"
-#guard checkRoundTrip "TriggerGroup.empty"
-#guard checkRoundTrip "TriggerGroup.addTrigger"
+-- Trigger ops (names are the full canonical string, no prefix)
+#guard TriggerOpKind.names.all (fun (_, n) => checkRoundTrip n)
 
 end RoundTrip
 

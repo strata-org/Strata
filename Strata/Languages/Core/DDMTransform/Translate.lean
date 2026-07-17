@@ -866,6 +866,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.str_inregex  => return Core.strInRegexOp
   | _, q`Core.str_prefixof => return Core.strPrefixOfOp
   | _, q`Core.str_suffixof => return Core.strSuffixOfOp
+  | _, q`Core.str_contains => return Core.strContainsOp
+  | _, q`Core.str_indexof  => return Core.strIndexOfOp
+  | _, q`Core.str_replace  => return Core.strReplaceOp
+  | _, q`Core.str_at       => return Core.strAtOp
+  | _, q`Core.str_lt       => return Core.strLtOp
+  | _, q`Core.str_le       => return Core.strLeOp
   | _, q`Core.re_all       => return Core.reAllOp
   | _, q`Core.re_allchar   => return Core.reAllCharOp
   | _, q`Core.re_range     => return Core.reRangeOp
@@ -1145,6 +1151,16 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let i ← translateExpr p bindings ia
      let n ← translateExpr p bindings na
      return .mkApp () Core.strSubstrOp [x, i, n]
+  | .fn _ q`Core.str_indexof, [xa, ya, ia] =>
+     let x ← translateExpr p bindings xa
+     let y ← translateExpr p bindings ya
+     let i ← translateExpr p bindings ia
+     return .mkApp () Core.strIndexOfOp [x, y, i]
+  | .fn _ q`Core.str_replace, [xa, ya, za] =>
+     let x ← translateExpr p bindings xa
+     let y ← translateExpr p bindings ya
+     let z ← translateExpr p bindings za
+     return .mkApp () Core.strReplaceOp [x, y, z]
   | .fn _ q`Core.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      match x with

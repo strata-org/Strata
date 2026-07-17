@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.Lambda.LExprEval
 public import Strata.Languages.Core.Factory
+public import Strata.Util.OrderedSet
 
 public section
 
@@ -16,6 +17,7 @@ namespace Core
 open Std (ToFormat Format format)
 open Imperative
 open Strata
+open Strata.Util (OrderedSet)
 
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
@@ -78,17 +80,17 @@ private def entryExprs : PathConditionEntry Expression → List Expression.Expr
 
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> .eraseDups
+  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> OrderedSet.eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
+  let exprs := ps.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.getVars (d : ProofObligation Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  let o_vars := Lambda.LExpr.freeVars d.obligation
-  let pc_vars := PathConditions.getVars d.assumptions
-  (o_vars ++ pc_vars).eraseDups
+  let exprs := d.obligation :: d.assumptions.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
