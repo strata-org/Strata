@@ -155,7 +155,7 @@ procedure foo() opaque {
 
 ### 4. Custom pipeline stage — bring your own helper
 
-For tests that exercise a specific transform (e.g. `eliminateHoles`,
+For tests that exercise a specific transform (e.g. `eliminateDeterministicHoles`,
 `liftExpressionAssignments`, `constrainedTypeElim`), build a small per-file
 helper that takes a parsed `Strata.Program` and runs the stages you care about.
 `translateLaurel` does the parse → translate step so you don't have to repeat
@@ -164,7 +164,7 @@ it.
 ```lean
 import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 open Strata
 open StrataTest.Util
@@ -175,7 +175,7 @@ private def parseElimAndPrint (program : Strata.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   let (laurelProgram, _, _) := inferHoleTypes result.model result.program
-  let (laurelProgram, _) := eliminateHoles laurelProgram
+  let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
   for proc in laurelProgram.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
