@@ -2176,8 +2176,7 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option F
     | some (_, node) => node.kind == .unresolved ||
         (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
     | none => true
-  -- Explicit type args → applied `C<τ…>` (so mono sees the instantiation); bare `new C`
-  -- stays `UserDefined`. Mirrors `computeExprType`'s `.New` arm.
+  -- Applied type so mono sees the instantiation; mirrors `computeExprType`'s `.New` arm.
   let ty :=
     if !kindOk then { val := HighType.Unknown, source := source }
     else if typeArgs'.isEmpty then { val := HighType.UserDefined ref', source := source }
@@ -2831,8 +2830,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    -- Scope the type params (so `T` in fields and `extends Base<T>` become `.TVar`); the
-    -- monomorphizer later concretizes.
+    -- Scope the type params; the monomorphizer later concretizes `Box<τ>`/`extends Base<T>`.
     let (extending', fields', instProcs') ← withScope do
       let _ ← scopeTypeParams ct.typeArgs
       let extending' ← ct.extending.mapM resolveHighType
@@ -3159,8 +3157,7 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     else []
   | _ => []
 
-/-- Check `e` itself for a diamond-inherited field access, over the four field-bearing
-    forms below; the caller's traversal supplies recursion. -/
+/-- Check `e` itself for a diamond-inherited field access; the caller's traversal supplies recursion. -/
 private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
     StateM (List DiagnosticModel) StmtExprMd := do
   match e.val with
