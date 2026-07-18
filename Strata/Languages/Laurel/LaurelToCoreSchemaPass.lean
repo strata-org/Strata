@@ -102,37 +102,24 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
       emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
   -- A type variable lowers to a Core free type variable, which Core's HM instantiates
-  -- at each call site. This is kind-agnostic: a value-kinded `T` unifies with `int`
-  -- etc., and a reference-kinded `T` unifies with the single `Composite` sort every
-  -- composite lowers to — so reference-`T` reaches here as `.TVar` and needs no
-  -- prior erase-to-composite pass (see `PolymorphicFunctionTest`). The one `.TVar`
-  -- that does NOT reach here is a generic composite materialized at a type var: the
-  -- monomorphizer clones that procedure away before translation.
+  -- per call site. Kind-agnostic: a value-kinded `T` unifies with `int`, a reference-kinded
+  -- `T` with the single `Composite` sort every composite lowers to — so reference-`T`
+  -- reaches here as `.TVar` needing no prior erase-to-composite pass (see
+  -- `PolymorphicFunctionTest`).
   | .TVar name => return .ftvar name.text
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
-  -- (TFloat64 has no Core type today; it fell through the old catch-all to this
-  -- same error. Kept explicit so the exhaustiveness checker stays armed.)
+  -- These constructors have no Core lowering yet. Explicit arms (not a catch-all) so adding
+  -- a new `HighType` becomes a compile error here, never a silent "not supported" fall-through.
   | .TFloat64 => invalidCoreType ty.source "Float64 type not yet supported in Core translation"
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
-  -- Explicit (rather than a catch-all) so adding a new `HighType` constructor is a
-  -- compile error here, not a silent fall-through to "not supported yet".
-  -- A generic type application reaching Core translation means the
-  -- `MonomorphizeComposites` pass did not rewrite this position (it monomorphizes
-  -- generic *composites* in every type position it visits). If you hit this for a
-  -- generic composite, a type position is missing from that pass's traversal;
-  -- non-composite applications (e.g. an as-yet-unsupported generic) are genuinely
-  -- not translatable. Either way this is a loud failure, never a silent miscompile.
-  -- A generic *datatype* application `List<int>` lowers to a native Core parametric
-  -- datatype instance `(.tcons "List" [int])` — datatypes do NOT monomorphize,
-  -- so this position is REACHED, not an error. A generic *composite* application, by
-  -- contrast, is rewritten away by `MonomorphizeComposites` before translation; if one
-  -- reaches here it is the loud failure described below.
+  -- Generic application. A DATATYPE (`List<int>`) lowers to a native parametric Core sort
+  -- (`.tcons "List" [int]`) — datatypes are not monomorphized, so they legitimately reach
+  -- here. Anything else fails loud: a generic COMPOSITE should have been rewritten away by
+  -- `MonomorphizeComposites` (if one reaches here, a type position is missing from that
+  -- pass's traversal), and any other application is an unsupported generic. Never silent.
   | .Applied base args =>
-    -- ONLY a generic DATATYPE application reaches here legitimately (→ native parametric
-    -- Core sort); anything else (a generic composite that should have been monomorphized
-    -- away, or an unsupported application) is the single loud failure below.
     match base.val with
     | .UserDefined name =>
       match model.get? name with
