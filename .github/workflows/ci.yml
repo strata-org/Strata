@@ -102,10 +102,6 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6
-      - name: Build API documentation package
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: 'docs/api'
       - name: Restore lake cache
         uses: actions/cache/restore@v5
         with:
@@ -115,6 +111,10 @@ jobs:
           key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
           restore-keys: |
             docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      - name: Build API documentation package
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: 'docs/api'
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:

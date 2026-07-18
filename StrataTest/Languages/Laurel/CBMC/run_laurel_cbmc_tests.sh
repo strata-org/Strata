@@ -16,7 +16,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TESTS_DIR="$SCRIPT_DIR/tests"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 EXPECTED="$TESTS_DIR/cbmc_expected.txt"
 
 passed=0
