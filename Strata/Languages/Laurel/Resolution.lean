@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
@@ -3203,61 +3204,33 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
 
 /--
 Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
--/
+Uses `mapStmtExprM` (a TOTAL traversal — it visits every sub-expression, including quantifier
+bodies, `old(...)`, `as`/`is` operands, and reference-equality operands) as a `StateM` collector,
+so a diamond access anywhere is caught. (The prior hand-rolled recursion enumerated constructors
+and silently skipped those positions via a `_ => []` catch-all, missing e.g. a diamond read inside
+a `forall`.) `mapStmtExprM` returns the tree unchanged; only the accumulated diagnostics matter.
+The receiver of a `.Field` access is the `target`, which `mapStmtExprM` visits in its own right, so
+each node only checks the field access AT that node — the traversal supplies the recursion. -/
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
     (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
-  | .Var (.Field target fieldName) =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
-    targetErrors ++ fieldError
-  | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
-  | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
-      match _hv : t.val with
-      | .Field target fieldName =>
-        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
-        let fieldError := checkDiamondFieldAccess model target fieldName t.source
-        acc ++ innerErrors ++ fieldError
-      | .Local _ | .Declare _ => acc) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
-  | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model t
-    match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
-    | none => errs
-  | .While c invs _ b _ =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args _ =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
-  | .IncrDecr _ _ target =>
-    match _htgt : target.val with
-    | .Field tgt fieldName =>
-      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
-      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
-      innerErrors ++ fieldError
-    | .Local _ | .Declare _ => []
-  | _ => []
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt expr)
-    all_goals (try have := AstNode.sizeOf_val_lt t)
-    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
-    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
+  let collect (e : StmtExprMd) : StateM (List DiagnosticModel) StmtExprMd := do
+    match e.val with
+    | .Var (.Field target fieldName) =>
+      modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+    | .Assign targets _ =>
+      for t in targets do
+        match t.val with
+        | .Field target fieldName =>
+          modify (· ++ checkDiamondFieldAccess model target fieldName t.source)
+        | _ => pure ()
+    | .IncrDecr _ _ target =>
+      match target.val with
+      | .Field tgt fieldName =>
+        modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
+      | _ => pure ()
+    | _ => pure ()
+    pure e
+  ((mapStmtExprM collect expr).run []).2
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
