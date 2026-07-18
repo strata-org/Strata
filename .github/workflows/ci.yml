@@ -103,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Restore lake cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             .lake
@@ -125,7 +125,7 @@ jobs:
         run: ./generate.sh
         working-directory: docs/verso
       - name: Save lake cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: |
             .lake
