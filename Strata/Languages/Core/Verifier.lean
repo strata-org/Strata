@@ -9,11 +9,12 @@ public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
+import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
+import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
-import Strata.Transform.LoopElim
-import Strata.Transform.CommonSubexprElim
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
@@ -1493,7 +1494,8 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
     | none => []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+    ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim.

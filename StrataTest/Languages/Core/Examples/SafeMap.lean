@@ -82,11 +82,11 @@ Obligation: value_for_id
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_id_not_in_registry_12
+Obligation: callElimAssert_id_not_in_registry_7
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_id_ge_zero_3
+Obligation: callElimAssert_id_ge_zero_13
 Property: assert
 Result: ✅ pass
 

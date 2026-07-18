@@ -182,12 +182,12 @@ private theorem stmtToKleene_some_exitsCovered
 where
   blockHelper (labels : List String) (bss : List (Stmt P (Cmd P))) (ns : KleeneStmt P (Cmd P))
       (ht : BlockToKleeneStmt bss = some ns) :
-      Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) labels bss := by
+      Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) labels bss := by
     match bss with
-    | [] => simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
+    | [] => simp [Block.exitsCoveredByBlocks]
     | s :: rest =>
       have ⟨s', r', hs, hr, _⟩ := block_transform_some s rest ns ht
-      simp [Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks]
+      simp [Block.exitsCoveredByBlocks]
       exact ⟨stmtToKleene_some_exitsCovered labels s s' hs, blockHelper labels rest r' hr⟩
 
 /-! ## noFuncDecl from successful transform -/
@@ -241,20 +241,6 @@ where
       exact ⟨stmtToKleene_some_noFuncDecl s s' hs, blockHelper rest r' hr⟩
 
 /-! ## Loop simulation -/
-
-/-- With an empty invariant list, the `hasInvFailure` flag returned by any
-    `step_loop_*` rule is vacuously `false`: the boolean iff cannot witness
-    an invariant in an empty list. -/
-private theorem empty_inv_no_failure
-    {α : Type} {Q : α → Prop} {hasInvFailure : Bool}
-    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ ([] : List α) ∧ Q le) :
-    hasInvFailure = false := by
-  cases hb : hasInvFailure with
-  | false => rfl
-  | true =>
-    rw [hb] at hff_iff
-    have ⟨_, hmem, _⟩ := hff_iff.mp rfl
-    exact ((List.mem_nil_iff _).mp hmem).elim
 
 omit [HasFvars P] [HasOps P] [HasSubstFvar P] in
 private theorem block_noFuncDecl_preserves_factory
@@ -353,7 +339,7 @@ private def loop_sim
       WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ ρ' : Env P) (n : Nat)
     (hwfv : WellFormedSemanticEvalVal (P := P) ρ₀.factory)
@@ -369,20 +355,13 @@ private def loop_sim
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure _ _ hff_iff _) hrest, hlen =>
-      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-      subst h_no
-      rw [assume_env_eq] at hrest
+    | .step _ _ _ (StepStmt.step_loop_exit _ _) hrest, hlen =>
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure hg _ hff_iff hwfb) hrest, hlen =>
-      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-      subst h_no
-      let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
-      have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
+    | .step _ _ _ (StepStmt.step_loop_enter hg hwfb) hrest, hlen =>
+      let ρ₀' : Env P := ρ₀
+      have hρ₀_eq : ρ₀' = ρ₀ := rfl
       -- New shape: hrest : .seq (.block .none ρ₀'.store (.stmts body ρ₀')) [loop] →*T .terminal ρ'.
       -- Step 1: Split via seqT_reaches_terminal:
       have ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
@@ -460,7 +439,7 @@ private def loop_sim_kleene
       WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ ρ' : Env P) (n : Nat)
     (hwfb : WellFormedSemanticEvalBool (P := P) ρ₀.factory)
@@ -477,20 +456,13 @@ private def loop_sim_kleene
     | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
   | succ n ih =>
     match hstarT, hlen with
-    | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure _ hff_iff) hrest, hlen =>
-      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-      subst h_no
-      rw [assume_env_eq] at hrest
+    | .step _ _ _ (StepStmt.step_loop_nondet_exit) hrest, hlen =>
       match hrest with
       | .refl _ => exact .step _ _ _ .step_loop_zero (.refl _)
       | .step _ _ _ h _ => exact nomatch h
-    | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
-        hasInvFailure _ hff_iff) hrest, hlen =>
-      have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-      subst h_no
-      let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || false}
-      have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', Bool.or_false]
+    | .step _ _ _ (StepStmt.step_loop_nondet_enter) hrest, hlen =>
+      let ρ₀' : Env P := ρ₀
+      have hρ₀_eq : ρ₀' = ρ₀ := rfl
       have ⟨ρ_block, h_block_term, h_loop_stmts, hlen_seq⟩ :=
         seqT_reaches_terminal hrest
       have h_noescape_body : ∀ lbl ρ_x,
@@ -826,7 +798,7 @@ private noncomputable def loop_canfail_sim
       WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks
+    (hcov : Block.exitsCoveredByBlocks
       (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ : Env P) {cfg : Config P (Cmd P)}
@@ -839,20 +811,14 @@ private noncomputable def loop_canfail_sim
         (.stmt (.loop (.seq (.cmd (.assume "guard" g md)) b)) ρ₀) cfg' := by
   match hstarT with
   | .refl _ => exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (@StepStmt.step_loop_exit _ _ _ _ _ _ _ _ _ _ _ _
-      hasInvFailure _ _ hff_iff _) hrest =>
-    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-    subst h_no
+  | .step _ _ _ (StepStmt.step_loop_exit _ _) hrest =>
     have hcfg_eq : cfg = .terminal ρ₀ := by
-      rw [assume_env_eq] at hrest
       match hrest with | .refl _ => rfl | .step _ _ _ h _ => exact nomatch h
     subst hcfg_eq
     exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (@StepStmt.step_loop_enter _ _ _ _ _ _ _ _ _ _ _ _
-      hasInvFailure hg _ hff_iff hwfb) hrest_seq =>
-    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-    let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || hasInvFailure}
-    have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', h_no, Bool.or_false]
+  | .step _ _ _ (StepStmt.step_loop_enter hg hwfb) hrest_seq =>
+    let ρ₀' : Env P := ρ₀
+    have hρ₀_eq : ρ₀' = ρ₀ := rfl
     have h_assume : StepKleeneStar P (EvalCmd P)
         (.stmt (.cmd (.assume "guard" g md)) ρ₀) (.terminal ρ₀) :=
       kleene_assume_terminal hg hwfb
@@ -943,7 +909,7 @@ private noncomputable def loop_canfail_sim_kleene
       WellFormedSemanticEvalBool (P := P) ρ₀.factory → WellFormedSemanticEvalVal (P := P) ρ₀.factory →
       StepStmtStar P (EvalCmd P) extendFactory (.stmts body ρ₀) (.terminal ρ') →
       StepKleeneStar P (EvalCmd P) (.stmt b ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks
+    (hcov : Block.exitsCoveredByBlocks
       (P := P) (CmdT := Cmd P) [] body)
     (hnofd_body : Block.noFuncDecl body = true)
     (ρ₀ : Env P) {cfg : Config P (Cmd P)}
@@ -956,19 +922,13 @@ private noncomputable def loop_canfail_sim_kleene
       StepKleeneStar P (EvalCmd P) (.stmt (.loop b) ρ₀) cfg' := by
   match hstarT with
   | .refl _ => exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (@StepStmt.step_loop_nondet_exit _ _ _ _ _ _ _ _ _ _ _
-      hasInvFailure _ hff_iff) hrest =>
-    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-    subst h_no
+  | .step _ _ _ (StepStmt.step_loop_nondet_exit) hrest =>
     have hcfg_eq : cfg = .terminal ρ₀ := by
-      rw [assume_env_eq] at hrest
       match hrest with | .refl _ => rfl | .step _ _ _ h _ => exact nomatch h
     subst hcfg_eq; exact ⟨.stmt _ ρ₀, hf, .refl _⟩
-  | .step _ _ _ (@StepStmt.step_loop_nondet_enter _ _ _ _ _ _ _ _ _ _ _
-      hasInvFailure _ hff_iff) hrest_seq =>
-    have h_no : hasInvFailure = false := empty_inv_no_failure hff_iff
-    let ρ₀' : Env P := {ρ₀ with hasFailure := ρ₀.hasFailure || hasInvFailure}
-    have hρ₀_eq : ρ₀' = ρ₀ := by simp [ρ₀', h_no, Bool.or_false]
+  | .step _ _ _ (StepStmt.step_loop_nondet_enter) hrest_seq =>
+    let ρ₀' : Env P := ρ₀
+    have hρ₀_eq : ρ₀' = ρ₀ := rfl
     match seqT_canfail hrest_seq hf with
     | .inl ⟨cfg_block, h_block, hf_block, _⟩ =>
       have ⟨inner_body, h_inner, hf_inner, _⟩ :=

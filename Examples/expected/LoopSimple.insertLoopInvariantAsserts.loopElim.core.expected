@@ -1,0 +1,10 @@
+Successfully parsed.
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(11, 2) [insertLoopInvAssert_entry_invariant_loop_0_0]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(12, 2) [insertLoopInvAssert_entry_invariant_loop_0_1]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(26, 6) [insertLoopInvAssert_measure_lb_loop_0]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(29, 6) [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(30, 6) [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(31, 6) [insertLoopInvAssert_measure_decrease_loop_0]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(42, 2) [sum_assert]: ✅ pass
+LoopSimple.insertLoopInvariantAsserts.loopElim.core.st(43, 2) [neg_cond]: ✅ pass
+All 8 goals passed.

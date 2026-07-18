@@ -86,35 +86,35 @@ a_positive: a@1 > 0
 Obligation:
 counter@1 + a@1 - a@1 == counter@1
 
-Label: callElimAssert_counter_ge_zero_14
+Label: callElimAssert_counter_ge_zero_5
 Property: assert
 Assumptions:
 counter_ge_zero: counter@3 >= 0
 Obligation:
 counter@3 >= 0
 
-Label: callElimAssert_a_positive_15
+Label: callElimAssert_a_positive_6
 Property: assert
 Assumptions:
 counter_ge_zero: counter@3 >= 0
 Obligation:
 true
 
-Label: callElimAssert_counter_ge_zero_5
+Label: callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
 counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_16: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_17: b@2 - 8 == counter@3
+callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
+callElimAssume_old_g_property_8: b@2 - 8 == counter@3
 Obligation:
 counter@5 >= 0
 
-Label: callElimAssert_a_positive_6
+Label: callElimAssert_a_positive_15
 Property: assert
 Assumptions:
 counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_16: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_17: b@2 - 8 == counter@3
+callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
+callElimAssume_old_g_property_8: b@2 - 8 == counter@3
 Obligation:
 true
 
@@ -122,10 +122,10 @@ Label: return_value_lemma
 Property: assert
 Assumptions:
 counter_ge_zero: counter@3 >= 0
-callElimAssume_new_g_value_16: counter@5 == counter@3 + 8
-callElimAssume_old_g_property_17: b@2 - 8 == counter@3
-callElimAssume_new_g_value_7: counter@6 == counter@5 + 8
-callElimAssume_old_g_property_8: b@3 - 8 == counter@5
+callElimAssume_new_g_value_7: counter@5 == counter@3 + 8
+callElimAssume_old_g_property_8: b@2 - 8 == counter@3
+callElimAssume_new_g_value_16: counter@6 == counter@5 + 8
+callElimAssume_old_g_property_17: b@3 - 8 == counter@5
 Obligation:
 b@3 == counter@3 + 16
 
@@ -144,19 +144,19 @@ Obligation: old_g_property
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_counter_ge_zero_14
-Property: assert
-Result: ✅ pass
-
-Obligation: callElimAssert_a_positive_15
-Property: assert
-Result: ✅ pass
-
 Obligation: callElimAssert_counter_ge_zero_5
 Property: assert
 Result: ✅ pass
 
 Obligation: callElimAssert_a_positive_6
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_counter_ge_zero_14
+Property: assert
+Result: ✅ pass
+
+Obligation: callElimAssert_a_positive_15
 Property: assert
 Result: ✅ pass
 
