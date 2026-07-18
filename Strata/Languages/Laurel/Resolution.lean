@@ -238,7 +238,8 @@ private def containerScopedName (containerName memberName : Identifier) : Identi
 
 /-- Declared type of `fieldName` in the scope of composite type `typeName`; `none` if
     unknown. Shared by `targetTypeName` and `incrDecrTargetType`. (`resolveFieldInTypeScope`
-    below is the same walk returning the field's *id* instead of its type.) -/
+    below returns the field's *id* instead of its type, and additionally unfolds a type
+    alias to its target before the lookup — this function does a direct scope lookup.) -/
 private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
   let s ← get
   match s.typeScopes.get? typeName with
@@ -260,11 +261,10 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some (_, node) =>
       match node.getType.val with
       | .UserDefined typRef => pure (some typRef.text)
-      -- A generic instantiation `Box<int>` resolves field access against the
-      -- *generic* composite `Box`'s type-scope (its field names don't depend on
-      -- the type args). Peel the base. After monomorphization this becomes a
-      -- plain `.UserDefined Box$int`, but field resolution happens in the initial
-      -- resolve, before monomorphization, so we must handle `.Applied` here.
+      -- Peel `Box<int>` to its base: field names don't depend on type args, so a
+      -- generic instantiation resolves fields against the generic composite `Box`'s
+      -- scope. Needed here because field resolution runs at the initial resolve, before
+      -- monomorphization turns this into a plain `.UserDefined Box$int`.
       | .Applied base _ =>
         match base.val with
         | .UserDefined typRef => pure (some typRef.text)
@@ -382,8 +382,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   let val' ← match val with
   | .UserDefined ref =>
     -- A bare name in type position may be (a) an in-scope type VARIABLE, (b) a
-    -- concrete type, or (c) undefined / the wrong kind. Check the scope ONCE and
-    -- branch:
+    -- concrete type, or (c) undefined / the wrong kind. Read its scope kind and branch:
     --   (a) `.typeVar`  → reclassify to `HighType.TVar` (polymorphism substrate).
     --   (b) composite/datatype/alias/constrained, or still-`.unresolved` → keep
     --       `UserDefined` (real subtype checking applies downstream — #1121).
@@ -415,22 +414,14 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
     -- Type-argument arity check for an applied type (`MyPair<int>`, `Box<int, bool>`).
-    -- The declared param count lives in `unfoldMap` for a generic ALIAS and in
-    -- `parentExprMap` for a generic COMPOSITE. A mismatch is a plain user error, reported
-    -- cleanly here; the ALIAS case is the one that needs it — without this an arity-wrong
-    -- alias reaches Core unfolded and fails as an "internal error" ('X is not defined') at
-    -- re-resolution. (Generic DATATYPES are not in either map; a wrong-arity datatype use
-    -- is already caught fail-loud downstream by the Core type checker, so it is left to that
-    -- path rather than duplicated here — only the message is less specific.)
-    -- NOTE: the check lives HERE (`.Applied`), not in the `.UserDefined` arm, because that
-    -- arm is also where the BASE of an applied type is resolved — the `.Applied` case above
-    -- recurses `resolveHighType base`, so `Box` (the base of `Box<int>`) arrives at
-    -- `.UserDefined` as a bare name with zero type args, indistinguishable from a genuinely
-    -- bare `Box`. A zero-args arity check in `.UserDefined` therefore fires on every applied
-    -- type's base and rejects `Box<int>` itself (verified). Consequence: a bare generic name
-    -- used AS A COMPLETE TYPE (`var m: MyPair` for `type MyPair<A,B>`) is NOT caught here and
-    -- reaches Core as a dangling ref → a StrataBug. That residual gap is accepted: it is
-    -- fail-loud (a rejection, never a wrong-accept), just with a less precise message.
+    -- Declared param count: `unfoldMap` for a generic ALIAS, `parentExprMap` for a generic
+    -- COMPOSITE. Generic DATATYPES are in neither map — a wrong-arity datatype use is caught
+    -- fail-loud downstream by Core (left to that path, only the message is less specific).
+    -- The check lives HERE (`.Applied`), not `.UserDefined`, because the `.Applied` case
+    -- recurses `resolveHighType base`, so a base like `Box` reaches `.UserDefined` as a bare
+    -- zero-arg name — a zero-args check there would reject `Box<int>` itself. Consequence: a
+    -- bare generic used as a COMPLETE type (`var m: MyPair` for `MyPair<A,B>`) is not caught
+    -- here and reaches Core as a dangling ref → StrataBug — fail-loud, never a wrong-accept.
     (do
       let ctx := (← get).typeLattice
       if let some name := highBaseName? base'.val then
@@ -543,30 +534,20 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
 
 /-- Concretize a field's declared type at an access site.
 
-    `getVarType fieldName'` returns the field's type *verbatim* — for a generic
-    composite that is the raw `.TVar T` (e.g. field `h : T` on `GHolder<T>`).
-    Checking an access against that raw `.TVar` hits the `.TVar`-is-consistent-with-
-    everything wildcard in `isConsistent`, so `g#h := someUnrelated` (with
-    `g : GHolder<Pair<int,bool>>`) is wrongly accepted. The wrong-accept is not
-    soundness — the Core translation havocs any cross-type read back — but it is
-    imprecise: a clear type error slips past resolution.
-
-    This recovers the *concrete* field type by substituting the field's DECLARING
-    composite's params with the concrete args the holder supplies for it:
-    - OWN field (`holder` base name = declaring name): substitute `{D.params := holderArgs}`.
+    `getVarType` returns the field type verbatim — for a generic composite the raw
+    `.TVar T` — which hits the `.TVar`-is-consistent-with-everything wildcard, so a
+    cross-type write like `g#h := someUnrelated` (`g : GHolder<Pair<int,bool>>`) is
+    wrongly accepted (imprecise, not unsound — Core havocs the read back — but a clear
+    type error slips past resolution). This recovers the concrete type by substituting
+    the field's DECLARING composite's params with the args the holder supplies for it:
+    - OWN field (holder base = declaring name): `{D.params := holderArgs}`.
     - INHERITED field: find `D<dArgs>` among `substitutedAncestors holder holderArgs`
-      (which already applies the `extends` remap — `GHolder<A,B> extends Base<B,A>`
-      yields `Base<bool,int>`, NOT `Base<int,bool>`), and substitute `{D.params := dArgs}`.
+      (remap-aware — `GHolder<A,B> extends Base<B,A>` yields `Base<bool,int>`), substitute
+      `{D.params := dArgs}`.
 
-    SAFE BY CONSTRUCTION — it can only make the type MORE concrete, i.e. add
-    rejections, never create a false accept. And it is the IDENTITY on genuinely
-    polymorphic accesses: inside `GHolder<T>`'s own method `self : GHolder<T>`, so
-    `holderArgs = [.TVar T]`, the substitution maps `T → T`, and the field stays
-    `.TVar T` — polymorphic code keeps translating. Real substitution happens ONLY
-    when the holder is at concrete args. On any shape it can't analyze (holder not a
-    known composite instantiation, declaring composite not found, arity mismatch,
-    legacy bare `new C` form with no args) it falls back to the raw field type =
-    today's behavior. -/
+    SAFE BY CONSTRUCTION: only makes the type MORE concrete (adds rejections, never a false
+    accept), and is the IDENTITY on genuinely polymorphic accesses (a `T`-argd holder maps
+    `T → T`). Falls back to the raw field type on any unanalyzable shape (see the match arms). -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -1405,8 +1386,8 @@ def Check.block (exprMd : StmtExprMd)
     Pushes the surrounding `T` into both branches (rather than going
     through If-Synth + Sub at the boundary): errors fire at the
     offending branch instead of at the `if`, and the expectation
-    propagates through nested `Block` / `IfThenElse` / `Hole` /
-    `Quantifier` constructs that have their own check rules.
+    propagates through nested `Block` / `IfThenElse` / `Hole`
+    constructs that have their own check rules.
 
     Without an `else`, the implicit branch is an empty block of type
     `TVoid`, so the rule degenerates to require `TVoid <: T` — the
@@ -1786,12 +1767,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
-  -- These map primitives (`select`/`update`/`const`) are internal stand-ins for
-  -- Core-native polymorphic map ops; they carry concrete `int` placeholder
-  -- signatures (see `CoreDefinitionsForLaurel`) rather than type parameters, so
-  -- they cannot be type-checked against those signatures. Instead we resolve the
-  -- arguments and infer the result type structurally from them, keeping a concrete
-  -- `HighType` flowing into Core translation:
+  -- The map primitives `select`/`update`/`const` carry concrete `int` placeholder
+  -- signatures (see `CoreDefinitionsForLaurel`), not type parameters, so they can't be
+  -- checked against those signatures. Instead, infer the result type structurally from
+  -- the resolved arguments, keeping a concrete `HighType` flowing into Core:
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
   --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
@@ -2206,10 +2185,13 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option F
   -- bare `new C` (the common, pre-existing case).
   let typeArgs' ← typeArgs.mapM resolveHighType
   let s ← get
-  -- Explicit `new C<τ…>` must supply exactly the composite's declared type-arg count.
-  -- (A bare `new C` carries no args and is unchecked here — the var's declared type
-  -- drives its instantiation.) Without this, surplus args are silently dropped by the
-  -- monomorphizer's `zip`, so `new Box<int,bool>` for `Box<T>` would be over-accepted.
+  -- Arity-check explicit `new C<τ…>` against C's declared type params. `parentExprMap`
+  -- holds only COMPOSITES, so this covers a composite `new`; a generic DATATYPE `new`
+  -- (`new Bx<int,bool>`) hits the `none` branch and is instead caught downstream fail-loud
+  -- (a re-resolution `.StrataBug` after monomorphization), never a wrong-accept. Bare `new C`
+  -- carries no args (unchecked — the var's declared type drives it). Without this, surplus
+  -- args are silently dropped by the
+  -- monomorphizer's `zip`, so `new Box<int,bool>` for `Box<T>` would be over-accepted here.
   unless typeArgs'.isEmpty do
     match s.typeLattice.parentExprMap.get? ref.text with
     | some (declParams, _) =>
@@ -2217,7 +2199,7 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option F
         let diag := diagnosticFromSource source
           s!"'{ref.text}' expects {declParams.length} type argument(s) but {typeArgs'.length} were provided"
         modify fun st => { st with errors := st.errors.push diag }
-    | none => pure ()
+    | none => pure ()  -- datatype/unresolved: arity deferred to Core
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
         (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
@@ -2306,12 +2288,11 @@ def Synth.isType (exprMd : StmtExprMd)
     Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
     ```
     Both operands must be reference types (`UserDefined` or `Unknown`) —
-    reference equality is meaningless on primitives. The operands must
-    also be mutually consistent (the symmetric `isConsistent`), so
-    `Cat === Dog` is rejected when `Cat` and `Dog` are unrelated
-    user-defined types, while `Cat === Animal` is accepted when `Cat`
-    extends `Animal` (the gradual `Unknown` wildcard makes either side
-    flow freely against the other). -/
+    reference equality is meaningless on primitives. They must also be
+    mutually CONSISTENT (`isConsistent`, symmetric), which for two
+    `UserDefined` types is NAME equality (not subtyping): `Cat` and `Dog`
+    are rejected, and even `Cat`/`Animal` (subtype) is rejected — only an
+    `Unknown` operand flows freely against the other via the gradual wildcard. -/
 def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
     (lhs rhs : StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .ReferenceEquals lhs rhs)
@@ -2856,11 +2837,9 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
   withScope do
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
-    -- Scope the method's OWN type parameters (`id2<U>(...)`) so `U` in its
-    -- inputs/outputs/body resolves to `.TVar`, not a phantom `UserDefined`. The
-    -- composite's own `T` is already in scope: `resolveTypeDefinition` opens a
-    -- `withScope` and `defineNameCheckDup`s each `ct.typeArgs` before resolving the
-    -- methods, and that scope is preserved into this call.
+    -- Scope the method's OWN type params (`id2<U>`) so `U` resolves to `.TVar`, not a
+    -- phantom `UserDefined`. The composite's `T` is already in scope (from
+    -- `resolveTypeDefinition`'s `withScope`, preserved into this call).
     let typeArgs' ← proc.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
@@ -2892,28 +2871,21 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    -- Generic-composite INHERITANCE — fully supported:
-    --  • CONCRETE parent (`Box<T> extends Base`) monomorphizes to `Box$int extends Base`.
-    --  • GENERIC parent (`Box<T> extends Base<T>`,) monomorphizes to
-    --    `Box$int extends Base$int` — the monomorphizer collects the parent instantiation
-    --    and rewrites the child's `extending` accordingly. The `extends` grammar now takes
-    --    `CommaSepBy LaurelType`, so `extends Base<T>` parses and `extending : List HighTypeMd`
-    --    carries it; resolved here via `resolveHighType` (in the type-arg scope, so `T`
-    --    resolves to `.TVar`). METHODS are handled by `liftInstanceProceduresPass`.
-    -- Generic composites: scope type params so `T`-typed fields AND the generic-parent
-    -- `extends Base<T>` resolve `T` to `.TVar`. Monomorphization (pipeline pos 1) replaces
-    -- each `Box<τ>` / `Base<τ>` with a concrete composite before translation.
+    -- Generic-composite inheritance: scope the type params (so `T`-typed fields and a
+    -- generic parent `extends Base<T>` resolve `T` to `.TVar`), then resolve the parents as
+    -- types. `extends` takes `CommaSepBy LaurelType` (so `extending : List HighTypeMd` carries
+    -- `Base<T>`); the monomorphizer (pipeline pos 1) rewrites each `Box<τ>`/`Base<τ>` to a
+    -- concrete composite before translation. Methods are handled by `liftInstanceProceduresPass`.
     let (extending', fields', instProcs') ← withScope do
       let _ ← ct.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
-      -- Resolve each parent as a TYPE (handles `Base` and generic `Base<T>` uniformly,
-      -- scoping the child's type vars).
       let extending' ← ct.extending.mapM resolveHighType
-      -- KIND-CHECK the parents: a composite may only extend another COMPOSITE (or a type
-      -- var, for a generic parent `extends Base<T>`). `resolveHighType` happily resolves
-      -- `extends nat` / `extends int` to a valid TYPE — since the parent grammar accepts any
-      -- `LaurelType` — so without this re-check the "expected composite type" diagnostic
-      -- would be lost. Reuse `resolveRef`'s "resolves to X, but expected Y" diagnostic;
-      -- primitive parents peel to `none` and are rejected explicitly.
+      -- KIND-CHECK the parents: each parent's BASE (peeled via `highBaseName?`) must be a
+      -- COMPOSITE. A generic parent `extends Base<T>` passes because the base `Base` is a
+      -- composite (`T` is only an argument); `extends T` is REJECTED (a type-var base is not
+      -- in the expected kind set). `resolveHighType` happily resolves `extends nat`/`extends int`
+      -- to a valid TYPE (the parent grammar accepts any `LaurelType`), so without this re-check
+      -- the "expected composite type" diagnostic would be lost. Reuse `resolveRef`'s
+      -- "resolves to X, but expected Y" diagnostic; primitive parents peel to `none` (rejected).
       for parent in extending' do
         match highBaseName? parent.val with
         | some pbase =>
@@ -3230,12 +3202,10 @@ and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
     (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
-  -- Peel the receiver to its base name via `highBaseName?` (like `isDiamondInheritedField`)
-  -- so a GENERIC receiver `D<int>` (a `.Applied` type) is checked here, not only a plain
-  -- `.UserDefined D`. Without the peel, a diamond access on a generic receiver is skipped
-  -- pre-monomorphization, then caught after monomorphization re-resolves `D$int` as
-  -- `.UserDefined` — tripping the pipeline's "resolution introduced a diagnostic" invariant
-  -- with an internal error instead of this clean diagnostic.
+  -- Peel the receiver to its base name so a GENERIC receiver `D<int>` (an `.Applied`) is
+  -- checked here too. Without the peel it's skipped pre-monomorphization and only caught
+  -- once mono re-resolves `D$int` as `.UserDefined` — surfacing as a `.StrataBug` from the
+  -- re-resolution net instead of this clean diagnostic.
   match highBaseName? (computeExprType model target).val with
   | some typeName =>
     if isDiamondInheritedField model typeName fieldName then
@@ -3310,19 +3280,27 @@ Validate a Laurel program for diamond-inherited field accesses.
 Returns an array of DiagnosticModel errors.
 -/
 def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
-  let errors := program.staticProcedures.foldl (fun acc proc =>
-    let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
-      | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
-        let implErrors := match impl with
-          | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
-          | none => []
-        postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
-      | .External => []
-    acc ++ bodyErrors) []
-  errors
+  let procErrors (proc : Procedure) : List DiagnosticModel :=
+    match proc.body with
+    | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
+    | .Opaque postconds impl _ =>
+      let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
+      let implErrors := match impl with
+        | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
+        | none => []
+      postErrors ++ implErrors
+    | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
+    | .External => []
+  -- Walk BOTH static procedures AND composites' still-attached instance methods. Instance
+  -- methods aren't lifted to `staticProcedures` until `LiftInstanceProcedures` (a later pass),
+  -- so at this initial resolve a diamond field access inside a method would otherwise be missed
+  -- here and only surface post-lift as a `.StrataBug` from the re-resolution net (blame-the-
+  -- compiler) instead of this clean `.UserError`.
+  let instanceErrors := program.types.foldl (fun acc td =>
+    match td with
+    | .Composite ct => ct.instanceProcedures.foldl (fun acc2 p => acc2 ++ procErrors p) acc
+    | _ => acc) []
+  program.staticProcedures.foldl (fun acc proc => acc ++ procErrors proc) instanceErrors
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
@@ -3374,12 +3352,11 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
         let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
         let scopedKey := (containerScopedName ct.name proc.name).text
-        -- Tvarize the method's signature over the composite's type parameters AND the
-        -- method's OWN (`id2<U>` adds `U`), so the scope-stored `.instanceProcedure`
-        -- carries `.TVar` for both — consumed by `getCallInfo` when type-checking a
-        -- `bx#id2(...)` call site. Without this a method-own `U` reaches the checker as
-        -- `.UserDefined "U"` and the `.TVar` consistency arm never fires (spurious
-        -- "expected 'U', got 'bool'"). A method with no own params adds `[]` — unchanged.
+        -- Tvarize the method signature over the composite's type params AND the method's
+        -- own (`id2<U>` adds `U`), so the scope-stored `.instanceProcedure` carries `.TVar`
+        -- for both — read by `getCallInfo` at a `bx#id2(...)` call site. Without this a
+        -- method-own `U` reaches the checker as `.UserDefined "U"` (spurious "expected 'U',
+        -- got 'bool'"). No own params ⇒ appends `[]`, unchanged.
         let methodParams := ctParams ++ proc.typeArgs.map (·.text)
         let proc := { proc with
           inputs := proc.inputs.map (tvarizeParam methodParams),
@@ -3447,14 +3424,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- `var b: Box<int> := new Box<bool>` all yield `translated=false`. Generic-composite
   -- instantiations are distinct types under the gradual checker (`Box<int>` ≁ `Box<bool>`),
   -- so the cross-instantiation case is caught too, not only on field use.
-  --
-  -- ONE residual permissive case, BY DESIGN: the legacy bare `new C` form (no type args)
-  -- correlates with any instantiation by base name only (`.UserDefined C ~ .Applied C<…>`,
-  -- see `isConsistent` in LaurelAST), so `var b: Box<int> := new Box` is accepted — the
-  -- monomorphizer recovers the instantiation from the declared `Box<int>` type. This is the
-  -- intended `new C` ergonomics, not a hole: it is sound (the value IS a `Box<int>`), it just
-  -- doesn't arity-check the bare allocation. Whether bare `new C` should additionally be
-  -- arity-checked is an open Laurel policy question, not a missing check.
+  -- ONE residual permissive case BY DESIGN: legacy bare `new C` correlates with any
+  -- instantiation by base name (the `.UserDefined C ~ .Applied C<…>` arm in `isConsistent`),
+  -- so `var b: Box<int> := new Box` is accepted and the monomorphizer recovers the
+  -- instantiation from the declared type — sound `new C` ergonomics, not a hole.
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ diamondErrors
