@@ -3202,62 +3202,59 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     else []
   | _ => []
 
-/--
-Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
-Uses `mapStmtExprM` (a TOTAL traversal — it visits every sub-expression, including quantifier
-bodies, `old(...)`, `as`/`is` operands, and reference-equality operands) as a `StateM` collector,
-so a diamond access anywhere is caught. (The prior hand-rolled recursion enumerated constructors
-and silently skipped those positions via a `_ => []` catch-all, missing e.g. a diamond read inside
-a `forall`.) `mapStmtExprM` returns the tree unchanged; only the accumulated diagnostics matter.
-The receiver of a `.Field` access is the `target`, which `mapStmtExprM` visits in its own right, so
-each node only checks the field access AT that node — the traversal supplies the recursion. -/
-def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
-    (expr : StmtExprMd) : List DiagnosticModel :=
-  let collect (e : StmtExprMd) : StateM (List DiagnosticModel) StmtExprMd := do
-    match e.val with
-    | .Var (.Field target fieldName) =>
-      modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
-    | .Assign targets _ =>
-      for t in targets do
-        match t.val with
-        | .Field target fieldName =>
-          modify (· ++ checkDiamondFieldAccess model target fieldName t.source)
-        | _ => pure ()
-    | .IncrDecr _ _ target =>
-      match target.val with
-      | .Field tgt fieldName =>
-        modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
+/-- Inspect ONE node for a diamond-inherited field access and accumulate a diagnostic
+    for it. This is NOT the recursion — the surrounding traversal (`mapProcedureM`, which
+    is total over every StmtExpr position) supplies that; this only checks the field access
+    AT `e`. The four field-access-bearing constructors: a `.Var (.Field …)` read, a `.Field`
+    ASSIGN target, an `.IncrDecr` on a field, and a functional `.PureFieldUpdate`. -/
+private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
+    StateM (List DiagnosticModel) StmtExprMd := do
+  match e.val with
+  | .Var (.Field target fieldName) =>
+    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+  | .Assign targets _ =>
+    for t in targets do
+      match t.val with
+      | .Field target fieldName =>
+        modify (· ++ checkDiamondFieldAccess model target fieldName t.source)
       | _ => pure ()
+  | .IncrDecr _ _ target =>
+    match target.val with
+    | .Field tgt fieldName =>
+      modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
     | _ => pure ()
-    pure e
-  ((mapStmtExprM collect expr).run []).2
+  | .PureFieldUpdate target fieldName _ =>
+    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+  | _ => pure ()
+  pure e
 
 /--
-Validate a Laurel program for diamond-inherited field accesses.
-Returns an array of DiagnosticModel errors.
--/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
-  let procErrors (proc : Procedure) : List DiagnosticModel :=
-    match proc.body with
-    | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
-    | .Opaque postconds impl _ =>
-      let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
-      let implErrors := match impl with
-        | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
-        | none => []
-      postErrors ++ implErrors
-    | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
-    | .External => []
-  -- Walk BOTH static procedures AND composites' still-attached instance methods. Instance
-  -- methods aren't lifted to `staticProcedures` until `LiftInstanceProcedures` (a later pass),
-  -- so at this initial resolve a diamond field access inside a method would otherwise be missed
-  -- here and only surface post-lift as a `.StrataBug` from the re-resolution net (blame-the-
-  -- compiler) instead of this clean `.UserError`.
-  let instanceErrors := program.types.foldl (fun acc td =>
-    match td with
-    | .Composite ct => ct.instanceProcedures.foldl (fun acc2 p => acc2 ++ procErrors p) acc
-    | _ => acc) []
-  program.staticProcedures.foldl (fun acc proc => acc ++ procErrors proc) instanceErrors
+Validate a Laurel program for diamond-inherited field accesses, returning a
+`DiagnosticModel` per ambiguous access (a field reached through more than one
+direct-parent path — see `isDiamondInheritedField`).
+
+Driven by the TOTAL combinators `mapProgramProceduresM ∘ mapProcedureM` (which supply
+the procedure-position recursion) wrapped around `mapStmtExprM` (which supplies the
+sub-expression recursion), run in a `StateM` collector, so coverage is exhaustive along
+two independent axes and cannot silently regress when the AST grows:
+- Every procedure position — body, PRECONDITIONS, decreases, invokeOn, and axioms —
+  not just the body (a diamond read in a `requires` clause used to slip through here
+  and only surface later, after monomorphization, as a `.StrataBug` from the
+  re-resolution net instead of this clean `.UserError`);
+- Every StmtExpr sub-expression — quantifier bodies, `old(…)`, `as`/`is` operands,
+  reference-equality operands — via `mapStmtExprM` inside `mapProcedureM`.
+
+`mapProgramProceduresM` visits both static procedures AND composites' still-attached
+instance methods (instance methods aren't lifted to `staticProcedures` until the later
+`LiftInstanceProcedures` pass). The traversal returns the tree unchanged; only the
+accumulated diagnostics matter.
+
+Not covered: diamond accesses in a `constrained` type's constraint/witness or a
+constant initializer — those are non-procedure positions that today fail loud as a
+`.StrataBug`, so no silent accept escapes; promoting them to a clean `.UserError`
+needs the bound-variable scoping there verified first and is left as a follow-up. -/
+def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List DiagnosticModel :=
+  ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
