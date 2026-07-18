@@ -376,8 +376,8 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
 
 /-! ## AST traversal (Phase 1) -/
 
-/-- Emit a type-argument arity error if `numDeclared ≠ numProvided`. Shared by
-    `resolveHighType`'s `.Applied` arm and `Synth.new` so the wording stays identical. -/
+/-- Type-argument arity error when `numDeclared ≠ numProvided`; shared by `resolveHighType`'s
+    `.Applied` arm and `Synth.new` for identical wording. -/
 def checkTypeArgArity (source : Option FileRange) (name : String)
     (numDeclared numProvided : Nat) : ResolveM Unit := do
   unless numDeclared == numProvided do
@@ -538,14 +538,13 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
     | some (_, node) => pure node.getType
     | none => pure { val := .Unknown, source := ref.source }
 
-/-- Concretize a field's declared type at an access site by substituting the field's
-    DECLARING composite's params with the holder's args. Without this the raw `.TVar T`
-    hits the wildcard and a cross-type write `g#h := someUnrelated` is wrongly accepted
-    (imprecise, not unsound — Core havocs the read back).
-    - OWN field: `{D.params := holderArgs}`.
-    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware —
+/-- Concretize a field's declared type at an access site: substitute the field's DECLARING
+    composite's params with the holder's args. Else raw `.TVar T` hits the wildcard and a
+    cross-type write is wrongly accepted (imprecise, not unsound — Core havocs the read back).
+    - OWN: `{D.params := holderArgs}`.
+    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware:
       `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
-    Only ever more concrete, identity on polymorphic accesses, raw-type fallback otherwise. -/
+    Only ever more concrete; identity on polymorphic accesses; raw-type fallback otherwise. -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -2177,8 +2176,8 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option F
     | some (_, node) => node.kind == .unresolved ||
         (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
     | none => true
-  -- Explicit type args → the applied type `C<τ…>` (so mono sees the instantiation);
-  -- bare `new C` keeps the plain `UserDefined`. Mirrors `computeExprType`'s `.New` arm.
+  -- Explicit type args → applied `C<τ…>` (so mono sees the instantiation); bare `new C`
+  -- stays `UserDefined`. Mirrors `computeExprType`'s `.New` arm.
   let ty :=
     if !kindOk then { val := HighType.Unknown, source := source }
     else if typeArgs'.isEmpty then { val := HighType.UserDefined ref', source := source }
@@ -2696,10 +2695,10 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
-/-- Resolve a procedure's output parameters (inputs already in scope). The FIRST output
-    sharing an input's name is an inout param (e.g. `$heap`): resolve it as a reference to
-    the input. A SECOND is a real duplicate — route through `resolveParameter` so
-    `defineNameCheckDup` flags it (else two Core outputs share a name and mis-verify). -/
+/-- Resolve a procedure's output params (inputs already in scope). FIRST output sharing an
+    input's name = inout (e.g. `$heap`), resolved as a ref to that input; a SECOND is a real
+    duplicate routed through `resolveParameter` so `defineNameCheckDup` flags it, else two
+    Core outputs share a name and mis-verify. -/
 def resolveOutputParameters (inputNames : List String) (outputs : List Parameter)
     : ResolveM (List Parameter) := do
   let (outputsRev, _) ← outputs.foldlM
@@ -2715,8 +2714,8 @@ def resolveOutputParameters (inputNames : List String) (outputs : List Parameter
     ([], [])
   return outputsRev.reverse
 
-/-- Bring a generic entity's type params into scope as `.typeVar`s, so `T` in its
-    signature/fields/body resolves to `.TVar`. Run BEFORE resolving the signature. -/
+/-- Scope a generic entity's type params as `.typeVar`s so `T`→`.TVar` in its
+    signature/fields/body. Run BEFORE resolving the signature. -/
 def scopeTypeParams (typeArgs : List Identifier) : ResolveM (List Identifier) :=
   typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
 
@@ -2832,14 +2831,13 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    -- Scope the type params so `T` in fields and `extends Base<T>` resolves to `.TVar`;
-    -- the monomorphizer later rewrites `Box<τ>`/`Base<τ>` to concrete composites.
+    -- Scope the type params (so `T` in fields and `extends Base<T>` become `.TVar`); the
+    -- monomorphizer later concretizes.
     let (extending', fields', instProcs') ← withScope do
       let _ ← scopeTypeParams ct.typeArgs
       let extending' ← ct.extending.mapM resolveHighType
-      -- Kind-check the parents: each peeled base must be a composite (`extends Base<T>` ok,
-      -- `extends T`/`extends int` rejected). `resolveHighType` accepts any type, so this
-      -- re-check emits the "expected composite type" diagnostic.
+      -- Kind-check parents: each peeled base must be composite (`extends T`/`extends int` rejected).
+      -- `resolveHighType` accepts any type, so this re-check emits the "expected composite type" diagnostic.
       for parent in extending' do
         match highBaseName? parent.val with
         | some pbase =>
@@ -2886,9 +2884,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
-    -- Scope the type params so `T`-typed constructor args resolve to `.TVar`. Unlike
-    -- composites, generic datatypes do NOT monomorphize — they map to native Core parametric
-    -- datatypes, so the `.TVar`s survive `translateType` as Core sort args.
+    -- Scope the type params. Unlike composites, generic datatypes do NOT monomorphize — they
+    -- map to native Core parametric datatypes, so the `.TVar`s survive `translateType` as sort args.
     let ctors' ← withScope do
       let _ ← scopeTypeParams dt.typeArgs
       dt.constructors.mapM fun ctor => do
@@ -2908,8 +2905,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
         return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
-    -- Scope the alias's type params (`type Pair<A,B> = …`) so `A`/`B` resolve to `.TVar`;
-    -- `TypeAliasElim`/`unfold` later binds them to the instantiation args.
+    -- Scope the alias's type params; `TypeAliasElim`/`unfold` later binds them to the instantiation args.
     let target' ← withScope do
       let _ ← scopeTypeParams ta.typeArgs
       resolveHighType ta.target
@@ -3163,9 +3159,8 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     else []
   | _ => []
 
-/-- Check `e` itself for a diamond-inherited field access (the caller supplies recursion).
-    Covers the four field-bearing forms: `.Var (.Field …)`, a `.Field` assign target,
-    `.IncrDecr` on a field, `.PureFieldUpdate`. -/
+/-- Check `e` itself for a diamond-inherited field access, over the four field-bearing
+    forms below; the caller's traversal supplies recursion. -/
 private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
     StateM (List DiagnosticModel) StmtExprMd := do
   match e.val with
@@ -3187,17 +3182,15 @@ private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
   | _ => pure ()
   pure e
 
-/-- One `DiagnosticModel` per diamond-inherited field access (a field reached through more
-    than one direct-parent path — see `isDiamondInheritedField`).
-
+/-- One `DiagnosticModel` per diamond-inherited field access — a field reached via >1
+    direct-parent path (see `isDiamondInheritedField`).
     The total `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
     collector, so coverage can't silently regress: every procedure position (body,
     preconditions, decreases, invokeOn, axioms) across static AND instance procedures, and
     every sub-expression (quantifiers, `old`, `as`/`is`, ref-equality).
-
-    Not covered: `constrained`-type constraint/witness and constant initializers — non-procedure
-    positions that fail loud as a `.StrataBug` (no silent accept); promoting them to a clean
-    `.UserError` needs the bound-variable scoping verified first. -/
+    Not covered: `constrained`-type constraint/witness and constant initializers —
+    non-procedure positions that fail loud as `.StrataBug` (no silent accept). Promoting to
+    `.UserError` needs bound-variable scoping verified first. -/
 def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List DiagnosticModel :=
   ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
@@ -3209,11 +3202,10 @@ def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : L
     It will be overwritten with the real node when the definition is fully resolved. -/
 private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
 
-/-- Rewrite every `.UserDefined n` with `n ∈ params` to `.TVar n`, so a generic entity's
-    STORED signature/fields match the `.TVar` form `resolveHighType` produces in scope.
-    NEEDED because the #1121 checker reads types from the maps `preRegisterTopLevel` writes
-    off RAW nodes, where a param is still `.UserDefined "T"` — else the `.TVar` wildcard
-    never fires (spurious "expected 'T', got 'int'"). No-op when `params` is empty. -/
+/-- Rewrite each `.UserDefined n` with `n ∈ params` to `.TVar n`, so a generic entity's STORED
+    signature/fields match the `.TVar` form `resolveHighType` produces in scope. NEEDED: the #1121
+    checker reads types from `preRegisterTopLevel`'s maps off RAW nodes, where a param is still
+    `.UserDefined "T"` — else the `.TVar` wildcard never fires (spurious mismatch). No-op if empty. -/
 def tvarizeType (params : List String) (ty : HighTypeMd) : HighTypeMd :=
   mapHighTypeNames (fun ctor n => if params.contains n.text then .TVar n else ctor n) ty
 
@@ -3302,10 +3294,9 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
-  -- Assignability is checked here (not deferred to Core) since #1121: `var x: int := true`
-  -- and `var b: Box<int> := new Box<bool>` reject (distinct instantiations are inconsistent).
-  -- BY DESIGN, bare `new C` correlates with any instantiation by base name, so
-  -- `var b: Box<int> := new Box` is accepted and mono recovers the instantiation — not a hole.
+  -- Assignability is checked here (not Core) since #1121: `var b: Box<int> := new Box<bool>`
+  -- rejects (distinct instantiations are inconsistent). BY DESIGN bare `new C` correlates by
+  -- base name, so `var b: Box<int> := new Box` is accepted and mono recovers it — not a hole.
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ diamondErrors
