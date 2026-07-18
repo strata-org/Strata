@@ -538,19 +538,14 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
     | some (_, node) => pure node.getType
     | none => pure { val := .Unknown, source := ref.source }
 
-/-- Concretize a field's declared type at an access site.
-
-    `getVarType` returns the raw field type — for a generic composite the bare `.TVar T`,
-    which the `.TVar` wildcard makes consistent with everything, so a cross-type write
-    `g#h := someUnrelated` (`g : GHolder<Pair<int,bool>>`) is wrongly accepted (imprecise,
-    not unsound — Core havocs the read back). This substitutes the field's DECLARING
-    composite's params with the holder's args:
-    - OWN field (holder base = declaring name): `{D.params := holderArgs}`.
-    - INHERITED field: find `D<dArgs>` among `substitutedAncestors holder holderArgs`
-      (remap-aware — `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
-
-    Only ever more concrete (adds rejections, never a false accept), identity on genuinely
-    polymorphic accesses, and falls back to the raw type on any unanalyzable shape. -/
+/-- Concretize a field's declared type at an access site by substituting the field's
+    DECLARING composite's params with the holder's args. Without this the raw `.TVar T`
+    hits the wildcard and a cross-type write `g#h := someUnrelated` is wrongly accepted
+    (imprecise, not unsound — Core havocs the read back).
+    - OWN field: `{D.params := holderArgs}`.
+    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware —
+      `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
+    Only ever more concrete, identity on polymorphic accesses, raw-type fallback otherwise. -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -2702,11 +2697,9 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   return ⟨name', ty'⟩
 
 /-- Resolve a procedure's output parameters (inputs already in scope). The FIRST output
-    sharing an input's name is an inout parameter (e.g. the `$heap` heap parameterization
-    prepends to both lists): resolve it as a reference to the input, not a redefinition. A
-    SECOND output of that name is a real duplicate — route it through `resolveParameter` so
-    `defineNameCheckDup` flags it (else two Core outputs share a name and mis-verify).
-    `seenOutputs` is threaded internally, so callers get a plain `List Parameter`. -/
+    sharing an input's name is an inout param (e.g. `$heap`): resolve it as a reference to
+    the input. A SECOND is a real duplicate — route through `resolveParameter` so
+    `defineNameCheckDup` flags it (else two Core outputs share a name and mis-verify). -/
 def resolveOutputParameters (inputNames : List String) (outputs : List Parameter)
     : ResolveM (List Parameter) := do
   let (outputsRev, _) ← outputs.foldlM
@@ -2844,9 +2837,9 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     let (extending', fields', instProcs') ← withScope do
       let _ ← scopeTypeParams ct.typeArgs
       let extending' ← ct.extending.mapM resolveHighType
-      -- Kind-check the parents: each parent's peeled base must be a composite. `extends Base<T>`
-      -- passes (base `Base` is composite); `extends T`/`extends int` is rejected. `resolveHighType`
-      -- accepts any type, so this re-check is what emits the "expected composite type" diagnostic.
+      -- Kind-check the parents: each peeled base must be a composite (`extends Base<T>` ok,
+      -- `extends T`/`extends int` rejected). `resolveHighType` accepts any type, so this
+      -- re-check emits the "expected composite type" diagnostic.
       for parent in extending' do
         match highBaseName? parent.val with
         | some pbase =>
@@ -3170,9 +3163,9 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     else []
   | _ => []
 
-/-- Check `e` itself for a diamond-inherited field access; recursion is the caller's
-    traversal, not this. Covers the four field-bearing constructors: a `.Var (.Field …)`
-    read, a `.Field` assign target, an `.IncrDecr` on a field, and a `.PureFieldUpdate`. -/
+/-- Check `e` itself for a diamond-inherited field access (the caller supplies recursion).
+    Covers the four field-bearing forms: `.Var (.Field …)`, a `.Field` assign target,
+    `.IncrDecr` on a field, `.PureFieldUpdate`. -/
 private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
     StateM (List DiagnosticModel) StmtExprMd := do
   match e.val with
@@ -3194,20 +3187,17 @@ private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
   | _ => pure ()
   pure e
 
-/--
-One `DiagnosticModel` per diamond-inherited field access (a field reached through more
-than one direct-parent path — see `isDiamondInheritedField`).
+/-- One `DiagnosticModel` per diamond-inherited field access (a field reached through more
+    than one direct-parent path — see `isDiamondInheritedField`).
 
-The TOTAL combinators `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drive a
-`StateM` collector, so coverage cannot silently regress as the AST grows. It spans two
-axes: every procedure position (body, preconditions, decreases, invokeOn, axioms — a
-diamond in a `requires` clause once slipped past a body-only walk) across static AND
-instance procedures (methods aren't lifted until the later `LiftInstanceProcedures`), and
-every sub-expression (quantifier bodies, `old`, `as`/`is`, ref-equality).
+    The total `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
+    collector, so coverage can't silently regress: every procedure position (body,
+    preconditions, decreases, invokeOn, axioms) across static AND instance procedures, and
+    every sub-expression (quantifiers, `old`, `as`/`is`, ref-equality).
 
-Not covered: `constrained`-type constraint/witness and constant initializers — non-procedure
-positions that fail loud as a `.StrataBug` (no silent accept). Promoting them to a clean
-`.UserError` needs the bound-variable scoping there verified first; left as follow-up. -/
+    Not covered: `constrained`-type constraint/witness and constant initializers — non-procedure
+    positions that fail loud as a `.StrataBug` (no silent accept); promoting them to a clean
+    `.UserError` needs the bound-variable scoping verified first. -/
 def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List DiagnosticModel :=
   ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
@@ -3221,10 +3211,9 @@ private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoi
 
 /-- Rewrite every `.UserDefined n` with `n ∈ params` to `.TVar n`, so a generic entity's
     STORED signature/fields match the `.TVar` form `resolveHighType` produces in scope.
-    WHY (not just in `resolveHighType`): the #1121 checker reads callee/field types from the
-    maps `preRegisterTopLevel` writes off RAW parsed nodes, where a type param is still
-    `.UserDefined "T"` — without this the `.TVar` wildcard in `isConsistent` never fires
-    (spurious "expected 'T', got 'int'"). No-op when `params` is empty. -/
+    NEEDED because the #1121 checker reads types from the maps `preRegisterTopLevel` writes
+    off RAW nodes, where a param is still `.UserDefined "T"` — else the `.TVar` wildcard
+    never fires (spurious "expected 'T', got 'int'"). No-op when `params` is empty. -/
 def tvarizeType (params : List String) (ty : HighTypeMd) : HighTypeMd :=
   mapHighTypeNames (fun ctor n => if params.contains n.text then .TVar n else ctor n) ty
 
@@ -3313,12 +3302,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
-  -- Assignability is checked here (not deferred to Core) since #1121's gradual checker:
-  -- `var x: int := true`, `var a: A := new B`, `var b: Box<int> := new Box<bool>` all reject,
-  -- as distinct generic instantiations are inconsistent (`Box<int>` ≁ `Box<bool>`).
-  -- BY DESIGN: bare `new C` correlates with any instantiation by base name (`.UserDefined C ~
-  -- .Applied C<…>`), so `var b: Box<int> := new Box` is accepted and mono recovers the
-  -- instantiation from the declared type — sound ergonomics, not a hole.
+  -- Assignability is checked here (not deferred to Core) since #1121: `var x: int := true`
+  -- and `var b: Box<int> := new Box<bool>` reject (distinct instantiations are inconsistent).
+  -- BY DESIGN, bare `new C` correlates with any instantiation by base name, so
+  -- `var b: Box<int> := new Box` is accepted and mono recovers the instantiation — not a hole.
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ diamondErrors
