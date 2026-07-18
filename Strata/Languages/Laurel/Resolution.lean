@@ -375,6 +375,15 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
 
 /-! ## AST traversal (Phase 1) -/
 
+/-- Emit a type-argument arity error if `numDeclared ≠ numProvided`. Shared by the two
+    sites that arity-check an instantiation (`resolveHighType`'s `.Applied` arm and
+    `Synth.new`), so the diagnostic wording stays identical. The caller supplies the
+    declared count (from `unfoldMap`/`parentExprMap`, whichever applies). -/
+def checkTypeArgArity (source : Option FileRange) (name : String)
+    (numDeclared numProvided : Nat) : ResolveM Unit := do
+  unless numDeclared == numProvided do
+    modify fun st => { st with errors := st.errors.push (diagnosticFromSource source
+      s!"'{name}' expects {numDeclared} type argument(s) but {numProvided} were provided") }
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
@@ -428,9 +437,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
         let declParams? := (ctx.unfoldMap.get? name.text).map (·.1)
           |>.orElse (fun _ => (ctx.parentExprMap.get? name.text).map (·.1))
         if let some declParams := declParams? then
-          unless declParams.length == args'.length do
-            modify fun st => { st with errors := st.errors.push (diagnosticFromSource ty.source
-              s!"'{name.text}' expects {declParams.length} type argument(s) but {args'.length} were provided") })
+          checkTypeArgArity ty.source name.text declParams.length args'.length)
     pure (.Applied base' args')
   | .Pure base =>
     let base' ← resolveHighType base
@@ -1640,38 +1647,16 @@ def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
-  -- See `Synth.assign`: resolve each target and its (concretized) type together,
-  -- so a `.Field` target's holder type comes from the authoritative synthesizer.
-  let targetsWithTy ← targets.attach.mapM fun ⟨v, _⟩ => do
-    let ⟨vv, vs⟩ := v
-    match vv with
-    | .Local ref =>
-      let ref' ← resolveRef ref source
-      pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
-    | .Field target fieldName =>
-      let (target', holderTy) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
-      pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
-    | .Declare param =>
-      let ty' ← resolveHighType param.type
-      let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure ((⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd), ty')
-  let targets' := targetsWithTy.map (·.1)
-  let targetTys := targetsWithTy.map (·.2)
-  let expectedTy : HighTypeMd := match targetTys with
-    | [single] => single
-    | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let value' ← Check.resolveStmtExpr value expectedTy
+  -- Reuse `Synth.assign` for the target/value/expectedTy work (identical), then add the
+  -- [⇐] Sub boundary check. The call is on the SAME `exprMd`, so termination is by the
+  -- lexicographic tag (2 > 1 = Synth.assign's), not a subterm decrease.
+  let (synthExpr, expectedTy) ← Synth.assign exprMd targets value source h
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
-  pure { val := .Assign targets' value', source := source }
-  termination_by (exprMd, 0)
+  pure { val := synthExpr, source := source }
+  termination_by (exprMd, 2)
   decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      rw [h] at hsz
-      term_by_mem
+    all_goals (apply Prod.Lex.right; omega)
 
 -- ### Increment / decrement
 
@@ -2195,10 +2180,7 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option F
   unless typeArgs'.isEmpty do
     match s.typeLattice.parentExprMap.get? ref.text with
     | some (declParams, _) =>
-      unless declParams.length == typeArgs'.length do
-        let diag := diagnosticFromSource source
-          s!"'{ref.text}' expects {declParams.length} type argument(s) but {typeArgs'.length} were provided"
-        modify fun st => { st with errors := st.errors.push diag }
+      checkTypeArgArity source ref.text declParams.length typeArgs'.length
     | none => pure ()  -- datatype/unresolved: arity deferred to Core
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
@@ -2724,8 +2706,8 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
-/-- Resolve a procedure output parameter, given the names of the inputs already
-    in scope and the output names already resolved (`seenOutputs`). The FIRST
+/-- Resolve a procedure's output parameters, given the names of the inputs already
+    in scope. The FIRST
     output whose name also appears in the inputs is a true inout parameter (e.g.
     the single `$heap` synthesized by heap parameterization, which is prepended to
     both inputs and outputs): it denotes the *same* variable as the input, so we
@@ -2734,16 +2716,28 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
     a user output literally named `$heap` colliding with the synth inout): it must
     NOT silently merge — route it through `resolveParameter` so `defineNameCheckDup`
     flags it (otherwise two Core outputs share a name and the program mis-verifies).
-    Returns the resolved param and the name added to the seen set. -/
-def resolveOutputParameter (inputNames : List String) (seenOutputs : List String)
-    (param : Parameter) : ResolveM (Parameter × List String) := do
-  if inputNames.contains param.name.text && !seenOutputs.contains param.name.text then
-    let ty' ← resolveHighType param.type
-    let name' ← resolveRef param.name
-    return (⟨name', ty'⟩, param.name.text :: seenOutputs)
-  else
-    let p ← resolveParameter param
-    return (p, param.name.text :: seenOutputs)
+    `seenOutputs` is threaded internally as a live guard (not just an accumulator), so
+    callers get a plain `List Parameter` with no threading to duplicate. -/
+def resolveOutputParameters (inputNames : List String) (outputs : List Parameter)
+    : ResolveM (List Parameter) := do
+  let (outputsRev, _) ← outputs.foldlM
+    (fun (acc : List Parameter × List String) param => do
+      let seenOutputs := acc.2
+      let p' ←
+        if inputNames.contains param.name.text && !seenOutputs.contains param.name.text then do
+          let ty' ← resolveHighType param.type
+          let name' ← resolveRef param.name
+          pure (⟨name', ty'⟩ : Parameter)
+        else resolveParameter param
+      pure (p' :: acc.1, param.name.text :: seenOutputs))
+    ([], [])
+  return outputsRev.reverse
+
+/-- Bring a generic entity's type parameters into scope as `.typeVar`s, so occurrences
+    of `T` in its signature/fields/body resolve to `HighType.TVar` rather than a phantom
+    `.UserDefined`. Must run BEFORE the signature is resolved. Returns the resolved binders. -/
+def scopeTypeParams (typeArgs : List Identifier) : ResolveM (List Identifier) :=
+  typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
 
 /-- Resolve a procedure body by synthesizing its body (if any).
     Bodies without an body (`Abstract`, `External`) resolve
@@ -2781,19 +2775,14 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   withScope do
     -- Bring type parameters into scope FIRST, so `T` in inputs/outputs/body
     -- resolves to `.TVar` rather than failing as an unknown `UserDefined`.
-    let typeArgs' ← proc.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+    let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     -- The generic-composite-parameter shape `f<T>(b: Box<T>)` is supported via procedure
     -- monomorphization in `MonomorphizeComposites`, so it is NOT pre-rejected here; an
     -- instantiation the monomorphizer still can't handle fails loud later (its depth bound /
     -- translation).
-    let (outputsRev, _) ← proc.outputs.foldlM
-      (fun (acc : List Parameter × List String) p => do
-        let (p', seen') ← resolveOutputParameter inputNames acc.2 p
-        return (p' :: acc.1, seen'))
-      ([], [])
-    let outputs' := outputsRev.reverse
+    let outputs' ← resolveOutputParameters inputNames proc.outputs
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2840,15 +2829,10 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     -- Scope the method's OWN type params (`id2<U>`) so `U` resolves to `.TVar`, not a
     -- phantom `UserDefined`. The composite's `T` is already in scope (from
     -- `resolveTypeDefinition`'s `withScope`, preserved into this call).
-    let typeArgs' ← proc.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+    let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
-    let (outputsRev, _) ← proc.outputs.foldlM
-      (fun (acc : List Parameter × List String) p => do
-        let (p', seen') ← resolveOutputParameter inputNames acc.2 p
-        return (p' :: acc.1, seen'))
-      ([], [])
-    let outputs' := outputsRev.reverse
+    let outputs' ← resolveOutputParameters inputNames proc.outputs
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2877,7 +2861,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- `Base<T>`); the monomorphizer (pipeline pos 1) rewrites each `Box<τ>`/`Base<τ>` to a
     -- concrete composite before translation. Methods are handled by `liftInstanceProceduresPass`.
     let (extending', fields', instProcs') ← withScope do
-      let _ ← ct.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+      let _ ← scopeTypeParams ct.typeArgs
       let extending' ← ct.extending.mapM resolveHighType
       -- KIND-CHECK the parents: each parent's BASE (peeled via `highBaseName?`) must be a
       -- COMPOSITE. A generic parent `extends Base<T>` passes because the base `Base` is a
@@ -2940,7 +2924,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- they map to native Core parametric datatypes (`declare-datatypes` with sort
     -- params), so the `.TVar`s survive to `translateType` and become Core sort args.
     let ctors' ← withScope do
-      let _ ← dt.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+      let _ ← scopeTypeParams dt.typeArgs
       dt.constructors.mapM fun ctor => do
         let ctorName' ← resolveRef ctor.name
         let args' ← ctor.args.mapM fun (p: Parameter) => do
@@ -2963,7 +2947,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- target resolve to `.TVar` (mirrors `.Datatype`/`.Composite`); `TypeAliasElim`/`unfold` then
     -- bind them to the instantiation args. Monomorphic aliases have an empty list (no-op scope).
     let target' ← withScope do
-      let _ ← ta.typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
+      let _ ← scopeTypeParams ta.typeArgs
       resolveHighType ta.target
     let taName' ← resolveRef ta.name
     return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
