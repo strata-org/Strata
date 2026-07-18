@@ -24,7 +24,7 @@ namespace Laurel
 public section
 
 /-- A name-introduction site (variable declaration, procedure, field, type, etc.).
-    Carries a mandatory unique ID assigned by the resolution pass. -/
+    Carries an optional unique ID, filled in by the resolution pass (`none` before it runs). -/
 structure Identifier where
   /-- The declared name. -/
   text : String
@@ -53,8 +53,9 @@ def mkId (name: String): Identifier := { text := name }
 Primitive operations available in Laurel expressions.
 
 Operations are grouped into boolean operations (`Eq`, `Neq`, `And`, `Or`,
-`Not`, `Implies`), arithmetic operations (`Neg`, `Add`, `Sub`, `Mul`, `Div`,
-`Mod`, `DivT`, `ModT`), and comparison operations (`Lt`, `Leq`, `Gt`, `Geq`).
+`Not`, `Implies`, and the short-circuit `AndThen`/`OrElse`), arithmetic operations
+(`Neg`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `DivT`, `ModT`), comparison operations
+(`Lt`, `Leq`, `Gt`, `Geq`), and string concatenation (`StrConcat`).
 
 Equality on composite types uses reference equality for impure types and
 structural equality for pure ones.
@@ -135,9 +136,11 @@ structure AstNode (t : Type) : Type where
 The type system for Laurel programs.
 
 `HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
-`TString`), collection types (`TSet`), user-defined types (`UserDefined`),
-generic applications (`Applied`), value types (`Pure`), and intersection types
-(`Intersection`).
+`TString`, `TBv`), collection types (`TSet`, `TMap`), user-defined types
+(`UserDefined`), bound type variables (`TVar`), generic applications (`Applied`),
+value types (`Pure`), and intersection types (`Intersection`). Plus internal/migration
+constructors: `TCore` (Core passthrough), `Unknown` (resolution-error recovery), and
+`MultiValuedExpr` (multi-output-call results).
 -/
 inductive HighType : Type where
   /-- The void type, used for statements that produce no value. -/
@@ -457,8 +460,9 @@ def StmtExpr.constrName : StmtExpr → String
 
 /-- The base composite NAME of a type reference, for consumers that need the parent
     name rather than its instantiation: `.UserDefined Base` and `.Applied (UserDefined
-    Base) args` both peel to `Base`. `none` for a type with no nameable base (a bare
-    `.TVar`, a primitive, etc.) — callers treat that as "no inheritable parent". Used by
+    Base) args` both peel to `Base`, and a bare `.TVar T` yields its own name `T` (an
+    inherited type-var parent, pre-monomorphization). `none` for a type with no nameable
+    base (a primitive, collection, etc.) — callers treat that as "no inheritable parent". Used by
     the `extending`-list consumers after `extending` became `List HighTypeMd`:
     field-scope inheritance, the subtype `parentExprMap`/`ancestors`, and diamond checks
     all key on the parent NAME (field names are instantiation-independent), so peeling to
@@ -521,7 +525,7 @@ def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target :
 
 /-- The label of the implicit block that wraps every procedure body.
 
-    `LaurelToCoreTranslator` lowers each procedure body to a single
+    `LaurelToCoreSchemaPass` lowers each procedure body to a single
     `Core.Statement.block bodyLabel …`, and lowers an early `return`
     (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
     so that jumping to the end of the body falls through past the block.
@@ -672,10 +676,7 @@ structure TypeLattice where
   -- (`Foo<int>` ⇒ target[T↦int]) so the consistency relation agrees with what
   -- `TypeAliasElim` produces (empty param list for a monomorphic alias).
   unfoldMap : Std.HashMap String (List Identifier × HighTypeMd) := {}
-  -- Per composite NAME: its type-param names + its parent type EXPRESSIONS
-  -- (verbatim, e.g. `Pair<B,A>`). `substitutedAncestors` uses the full expressions
-  -- (applying the `extends` remap) to compute the TRUE supertypes of an instantiation;
-  -- the name-only subtype walk (`ancestors`) projects them via `directParentNames`.
+  -- Per composite name: type-param names + verbatim parent expressions (see docstring above).
   parentExprMap : Std.HashMap String (List Identifier × List HighTypeMd) := {}
   deriving Inhabited
 
@@ -793,7 +794,7 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
 /-- The fully-SUBSTITUTED ancestor TYPES of `C<args>`. Starting from the
     given composite `name` instantiated at `args`, look up `(params, parentExprs)` in
     `parentExprMap`, substitute `{params := args}` into each parent EXPRESSION, and recurse
-    on each substituted parent — so `extends Pair<B,A>` at `P2<int,bool>` yields the TRUE
+    on each substituted parent — so `P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the TRUE
     supertype `Pair<bool,int>` (NOT `Pair<int,bool>`), and `extends Base<int>` yields
     `Base<int>` regardless of the child's own args (concretization). This is the remap the
     reverted upcast arm ignored. Returns the parent types (NOT including `C<args>` itself);
@@ -819,11 +820,8 @@ partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
           (params.zip curArgs).foldl (fun m (p, a) => m.insert p.text a) {}
         for pe in parentExprs do
           let pe' := substTypeVars subst pe
-          -- Dedup by `highEq` — the SAME equality `isSubtype` uses to match these
-          -- ancestors against its target. Deduping by a separate key (`highTypeKey`)
-          -- would introduce an implicit "key agrees with highEq" invariant whose breakage
-          -- would silently drop a real ancestor → wrong-reject. The ancestor set is tiny
-          -- (one parent per `extends` in practice), so the linear membership is free.
+          -- Dedup by `highEq` — the same equality `isSubtype` uses on these ancestors, so no
+          -- separate key with its own "agrees with highEq" invariant to keep. Set is tiny.
           unless out.any (fun a => highEq a pe') do
             out := out ++ [pe']
             -- enqueue the substituted parent for transitive ancestors
@@ -852,46 +850,36 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     -- After unfolding, both sides are composites (or unresolved). A composite
     -- is a subtype of any type in its extending chain.
     (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
-  -- GENERIC UPCAST, REMAP-AWARE and SOUND. `C<args> <: P<pargs>` iff some
-  -- fully-SUBSTITUTED ancestor type of `C<args>` equals the target `sup`. Critically, the
-  -- comparison is against an ALREADY-SUBSTITUTED ancestor (`substitutedAncestors` applies
-  -- the `extends` remap/concretization), so:
-  --   • `P2<int,bool> extends Pair<B,A>` ⇒ ancestor `Pair<bool,int>`; `<: Pair<bool,int>`
-  --     succeeds, `<: Pair<int,bool>` (the reverted bug) FAILS.
-  --   • `Box<bool> extends Base<int>` ⇒ ancestor `Base<int>`; `<: Base<bool>` FAILS.
-  -- Args are INVARIANT — `highEq` against the substituted ancestor is exact, so a wrong
-  -- instantiation (`Box<int> <: Base<bool>`) and an unrelated type both fail. This is the
-  -- arm whose earlier non-substituting version was unsound; the substitution closes it.
+  -- GENERIC UPCAST (remap-aware, sound): `C<args> <: sup` iff some SUBSTITUTED ancestor of
+  -- `C<args>` `highEq`s `sup`. `substitutedAncestors` applies the `extends` remap, so
+  -- `P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the ancestor `Pair<bool,int>` (not `Pair<int,bool>` — the
+  -- reverted bug), and `Box<bool> extends Base<int>` has ancestor `Base<int>`. Args INVARIANT
+  -- (exact `highEq`), so wrong instantiations (`Box<int> <: Base<bool>`) fail. The earlier
+  -- non-substituting version was the unsound one.
   | .Applied subBase subArgs, _ =>
     (match highBaseName? subBase.val with
      | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => highEq anc sup')
      | none => false)
     || highEq sub' sup'
-  -- CONCRETE child of a GENERIC-INSTANTIATION parent: `IntBox extends Box<int>` ⊢
-  -- `IntBox <: Box<int>`. `IntBox` is a bare `.UserDefined` (no type params), the
-  -- supertype is an `.Applied`. Same remap-aware discipline as the `.Applied`-sub arm
-  -- above: check whether the target equals a fully-SUBSTITUTED ancestor of the child
-  -- (`substitutedAncestors subName []` — the child has no args to substitute, so it
-  -- yields the `extends`-expression verbatim, e.g. `Box<int>`), compared with exact
-  -- `highEq` (args INVARIANT). So `IntBox <: Box<int>` succeeds while `IntBox <: Box<bool>`
-  -- (wrong instantiation) and a remap mismatch both FAIL — no wrong-accept. No reflexive
-  -- `highEq sub' sup'` fallback here (unlike the `.Applied` arm): a `.UserDefined` can never
-  -- `highEq` an `.Applied`, so that disjunct would be dead.
+  -- CONCRETE child of a GENERIC-INSTANTIATION parent (`IntBox extends Box<int>` ⊢
+  -- `IntBox <: Box<int>`): same remap-aware check as the `.Applied` arm, with no args to
+  -- substitute — `substitutedAncestors subName []` yields the `extends` expression verbatim
+  -- (`Box<int>`), matched by exact `highEq`. So `IntBox <: Box<bool>` (wrong inst) fails. No
+  -- reflexive `highEq` fallback: a `.UserDefined` never `highEq`s an `.Applied`, so it'd be dead.
   | .UserDefined subName, .Applied _ _ =>
     (ctx.substitutedAncestors subName.text []).any (fun anc => highEq anc sup')
   | _, _ => highEq sub' sup'
 
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
-   The MUTABLE-collection constructors are INVARIANT by design: `isConsistent`
-   bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
-   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
-   TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
-   never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
-   collections, where covariance would be unsound; if you don't know the
-   element type, write a bare `Unknown`, not `TSet Unknown`.
+   `isConsistent` RECURSES element-wise (with `isConsistent`, not `highEq`) through
+   `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/`.TVar` wildcard
+   DOES penetrate under these constructors: `TSet Unknown ~ TSet TInt` is TRUE (the inner
+   `Unknown ~ TInt` hits the wildcard). The recursion keeps two CONCRETE instantiations
+   INVARIANT, though — `TSet TInt ~ TSet TBool` is FALSE (`int`/`bool` on the element leaf) —
+   so this is gradual-wildcard penetration, not covariance; `TSet`/`TMap` stay sound as
+   mutable collections. (`Pure`/`Intersection` still bottom out in `highEq`.)
 
-   `MultiValuedExpr` and `Applied` RECURSE element-wise (consistency, not
-   equality) rather than bottoming out in `highEq`:
+   `MultiValuedExpr` and `Applied` recurse element-wise as above:
    - `MultiValuedExpr` is a transient tuple of independent procedure-output
      values matched against multi-assignment targets, so per-element consistency
      (letting an `Unknown` output flow into one slot) is correct, not unsound.
@@ -1228,10 +1216,6 @@ def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text (ta.typeArgs, ta.target) }
     | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ([], ct.base) }
     | .Composite c =>
-      -- Record the child's type-param names + verbatim parent EXPRESSIONS (`extending`).
-      -- `substitutedAncestors` reads the full expressions to apply the `extends` remap; the
-      -- name-only subtype walk (`ancestors`) projects them via `directParentNames`. Keeping
-      -- ONE map (not a parallel name-only copy) means the two views cannot drift.
       { ctx with
         parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
     | .Datatype _ => ctx
@@ -1250,7 +1234,7 @@ structure Program where
   staticProcedures : List Procedure
   /-- Top-level fields (global variables). -/
   staticFields : List Field
-  /-- User-defined type definitions (composite and constrained). -/
+  /-- User-defined type definitions (composite, constrained, datatype, alias). -/
   types : List TypeDefinition
   /-- Named constants. -/
   constants : List Constant := []
