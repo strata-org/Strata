@@ -9,10 +9,11 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure countDown()
+  entry
   opaque
 {
     var i: int := 3;
@@ -25,6 +26,7 @@ procedure countDown()
 };
 
 procedure countUp()
+  entry
   opaque
 {
     var n: int := 5;

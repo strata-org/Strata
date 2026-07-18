@@ -131,6 +131,47 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
   let E := { E with exprEnv }
   Statement.Command.runCall lhs proc.header.name.name [] fuel E
 
+/-- Build a map from assert labels to their source `FileRange` and *property
+    summary*. The summary (e.g. "precondition", "postcondition") is what the
+    verifier prefixes onto its "… does not hold" diagnostic, so a caller mapping
+    an interpreter `AssertFail` back to source can reproduce the verifier's exact
+    wording. Absent a summary the label maps to the default "assertion". -/
+def collectAssertInfo (prog : Program) : Std.HashMap String (Strata.FileRange × String) := Id.run do
+  let mut m : Std.HashMap String (Strata.FileRange × String) := {}
+  for decl in prog.decls do
+    if let some proc := decl.getProc? then
+      if let .ok ss := proc.body.getStructured then
+        for (label, md) in Core.Statement.Statements.collectAsserts ss do
+          if let some fr := Imperative.getFileRange md then
+            m := m.insert label (fr, md.getPropertySummary.getD "assertion")
+  return m
+
+/-- Build a map from assert labels to their source `FileRange`. Projection of
+    `collectAssertInfo` that discards the property summary. -/
+def collectAssertRanges (prog : Program) : Std.HashMap String Strata.FileRange :=
+  (collectAssertInfo prog).fold (init := {}) fun m k (fr, _) => m.insert k fr
+
+/-- Mark every bodied, non-recursive function in the program with
+    `inlineIfAllCanonical`, so the concrete interpreter unfolds it once all of
+    its arguments are concrete values. Verification keeps these functions
+    uninterpreted and discharges them via SMT, but concrete execution needs the
+    body inlined to reduce e.g. `int32$constraint(5)` to a boolean. (Recursive
+    functions are left alone to avoid non-termination; the fuel bound also
+    protects against runaway unfolding.)
+
+    Shared by the `laurelInterpret` CLI command and the Laurel E2E execute tests. -/
+def inlineBodiedFunctions (prog : Program) : Program :=
+  let addInline (f : Core.Function) : Core.Function :=
+    if f.body.isSome && !f.isRecursive
+        && !f.attr.contains .inlineIfAllCanonical && !f.attr.contains .inline
+    then { f with attr := f.attr.push .inlineIfAllCanonical }
+    else f
+  { prog with decls := prog.decls.map fun d =>
+      match d with
+      | .func f md => .func (addInline f) md
+      | .recFuncBlock fs md => .recFuncBlock (fs.map addInline) md
+      | other => other }
+
 /--
 All procedures the producer marked as concrete-interpretation entry points,
 via the `interpretEntry` metadata on their declaration (see

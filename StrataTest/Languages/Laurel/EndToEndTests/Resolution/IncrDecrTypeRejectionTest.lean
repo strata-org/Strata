@@ -55,11 +55,11 @@ composite IncrCounter {
 
 /-! ## Accepted: `++`/`--` on an int-based constrained type (e.g. `nat`) -/
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 constrained nat = v: int where v >= 0 witness 0
-procedure incrNat() opaque {
+procedure incrNat() entry opaque {
   var n: nat := 0;
   n++;
   assert n == 1

@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure mustNotCallFunc(x: int): int
@@ -25,6 +25,7 @@ procedure mustNotCallProc(): int
 
 // Pure path: function with requires false
 procedure testAndThenFunc()
+  entry
   opaque
 {
   var b: bool := false && mustNotCallFunc(0) > 0;
@@ -32,6 +33,7 @@ procedure testAndThenFunc()
 };
 
 procedure testOrElseFunc()
+  entry
   opaque
 {
   var b: bool := true || mustNotCallFunc(0) > 0;
@@ -39,6 +41,7 @@ procedure testOrElseFunc()
 };
 
 procedure testImpliesFunc()
+  entry
   opaque
 {
   var b: bool := false ==> mustNotCallFunc(0) > 0;
@@ -48,18 +51,21 @@ procedure testImpliesFunc()
 // Pure path: division by zero
 
 procedure testAndThenDivByZero()
+  entry
   opaque
 {
   assert !(false && 1 / 0 > 0)
 };
 
 procedure testOrElseDivByZero()
+  entry
   opaque
 {
   assert true || 1 / 0 > 0
 };
 
 procedure testImpliesDivByZero()
+  entry
   opaque
 {
   assert false ==> 1 / 0 > 0
@@ -68,6 +74,7 @@ procedure testImpliesDivByZero()
 // Imperative path: procedure with requires false
 
 procedure testAndThenProc()
+  entry
   opaque
 {
   var b: bool := false && mustNotCallProc() > 0;
@@ -75,6 +82,7 @@ procedure testAndThenProc()
 };
 
 procedure testOrElseProc()
+  entry
   opaque
 {
   var b: bool := true || mustNotCallProc() > 0;
@@ -82,6 +90,7 @@ procedure testOrElseProc()
 };
 
 procedure testImpliesProc()
+  entry
   opaque
 {
   var b: bool := false ==> mustNotCallProc() > 0;

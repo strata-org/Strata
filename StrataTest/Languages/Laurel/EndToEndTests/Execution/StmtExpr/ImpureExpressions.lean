@@ -14,6 +14,7 @@ open Strata
 #strata
 program Laurel;
 procedure nestedImpureStatements()
+  entry
   opaque
 {
   var y: int := 0;
@@ -25,6 +26,7 @@ procedure nestedImpureStatements()
 };
 
 procedure multipleAssignments()
+  entry
   opaque
 {
   var x: int := 1;
@@ -56,6 +58,7 @@ procedure anotherConditionAssignmentInExpression(c: bool)
 };
 
 procedure blockWithTwoAssignmentsInExpression()
+  entry
   opaque
 {
   var x: int := 0;
@@ -67,6 +70,7 @@ procedure blockWithTwoAssignmentsInExpression()
 };
 
 procedure nestedImpureStatementsAndOpaque()
+  entry
   opaque
 {
   var y: int := 0;
@@ -88,6 +92,7 @@ procedure imperativeProc(x: int) returns (r: int)
 };
 
 procedure imperativeCallInExpressionPosition()
+  entry
   opaque
 {
   var x: int := 0;
@@ -118,6 +123,7 @@ procedure add(x: int, y: int): int
 };
 
 procedure repeatedBlockExpressions()
+  entry
   opaque
 {
   var x: int := 2;
@@ -158,6 +164,7 @@ procedure assertInsideConditionalExpression(a: int): int
     };
 
 procedure assertInBlockExpr()
+entry
 opaque {
   var x: int := 0;
   var y: int := { assert x == 0; x := 1; x };
@@ -170,6 +177,7 @@ procedure transparentProc(x: int) returns (r: int)
 };
 
 procedure assignmentInExpressionAfterProcCall()
+entry
 opaque {
   var x: int := 0;
   var y: int := transparentProc(x) + (x := 2);
@@ -177,6 +185,7 @@ opaque {
 };
 
 procedure liftInsideAssignmentInExpression()
+entry
 opaque {
   var x: int := 0;
   var y: int := ((x := 1) + transparentProc(x));
@@ -188,7 +197,7 @@ procedure hasMultipleOutputs() returns (x: int, y: int) opaque {
   y := 2
 };
 
-procedure liftWithMultipleOutputs() opaque {
+procedure liftWithMultipleOutputs() entry opaque {
   var x: int := { assign var y: int, var z: int := hasMultipleOutputs() ; y + z }
 };
 

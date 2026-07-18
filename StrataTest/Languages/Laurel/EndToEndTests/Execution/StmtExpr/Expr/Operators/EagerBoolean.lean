@@ -25,10 +25,11 @@ This file covers:
 
 /-! ### Truth tables and logical laws -/
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure eagerAndTruthTable()
+  entry
   opaque
 {
   assert true & true;
@@ -38,6 +39,7 @@ procedure eagerAndTruthTable()
 };
 
 procedure eagerOrTruthTable()
+  entry
   opaque
 {
   assert true | true;
@@ -71,7 +73,7 @@ the call would be guarded and never reached (see `ShortCircuit.lean`), but `&`
 evaluates it regardless of the left operand, so its precondition must be
 discharged here and fails. -/
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 procedure mustNotBeCalled(): int
@@ -82,6 +84,7 @@ procedure mustNotBeCalled(): int
 };
 
 procedure eagerAndEvaluatesRightOperand()
+  entry
   opaque
 {
   var b: bool := false & mustNotBeCalled() > 0

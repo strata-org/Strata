@@ -111,6 +111,15 @@ def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
 def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
   { E with deferred := E.deferred.push ob }
 
+def continuePastAssert (E : Env) : Bool :=
+  E.collectAllAssertFailures
+
+def recordAssertFailure (E : Env) (label : String) (e : Expression.Expr) : Env :=
+  { E with assertFailures := (label, e) :: E.assertFailures }
+
+def ignoreAssume (E : Env) : Bool :=
+  E.ignoreAssumes
+
 /-
 theorem lookupEval (E1 E2 : Env) (h : ∀x, lookup E1 x = lookup E2 x) :
   ∀ e, eval E1 e = eval E2 e := by
@@ -139,6 +148,9 @@ instance : EvalContext Expression Env where
   getPathConditions := CmdEval.getPathConditions
   addPathCondition  := CmdEval.addPathCondition
   deferObligation   := CmdEval.deferObligation
+  continuePastAssert  := CmdEval.continuePastAssert
+  recordAssertFailure := CmdEval.recordAssertFailure
+  ignoreAssume        := CmdEval.ignoreAssume
 
 instance : ToFormat (Cmds Expression × Env) where
   format arg :=

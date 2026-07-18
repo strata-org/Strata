@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure fooReassign(): int
@@ -31,6 +31,7 @@ procedure fooSingleAssign(): int
 };
 
 procedure fooProof()
+  entry
   opaque
 {
   var x: int := fooReassign();
@@ -46,6 +47,7 @@ procedure aFunction(x: int): int
 };
 
 procedure aFunctionCaller()
+  entry
   opaque
 {
   var x: int := aFunction(3);

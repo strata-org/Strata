@@ -9,10 +9,11 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 procedure stringConcatWithAssignment()
+  entry
   opaque
 {
   var x: string := "Hello";
@@ -22,6 +23,7 @@ procedure stringConcatWithAssignment()
 };
 
 procedure stringConcatOK()
+  entry
   opaque
 {
   var a: string := "Hello";
@@ -31,6 +33,7 @@ procedure stringConcatOK()
 };
 
 procedure stringConcatKO()
+  entry
   opaque
 {
   var a: string := "Hello";
