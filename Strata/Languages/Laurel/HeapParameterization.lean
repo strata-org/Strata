@@ -189,9 +189,10 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
     to avoid a pass↔pass cycle), so it inherits that kernel's non-injectivity caveat: a `$`-clash
     is caught downstream by the Core type checker, not here. Returns `none` on an un-renderable
     shape (`.Applied` over a non-datatype, a `.TVar` arg), keeping the caller on its loud fallback. -/
-private partial def appliedBoxTag : HighType → Option String
-  | .TCore n => some n                       -- heap-box naming accepts `Core` types; `.TVoid` it does NOT
-  | ty => instTagCommon appliedBoxTag ty     -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TVoid/… (unsupported)
+private def appliedBoxTag (ty : HighType) : Option String :=
+  -- The extra leaf `instTagCommon` doesn't handle: heap-box naming accepts `.TCore` (`.TVoid` it
+  -- does NOT). All shared arms (incl. TMap/TSet) come from `instTagCommon`; `none` on TVar/Pure/TVoid.
+  instTagCommon (fun | .TCore n => some n | _ => none) ty
 
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";

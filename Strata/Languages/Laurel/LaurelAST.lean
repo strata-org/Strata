@@ -738,17 +738,12 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
   go {} [name]
 
 /-- The instantiation-tag arms COMMON to both monomorphization (`tyTag`) and heap-box
-    naming (`appliedBoxTag`): identifier-legal, `$`-delimited, `none` on any type the
-    caller doesn't explicitly handle. `recurse` is the caller's own tagger, threaded so
-    nested `.Applied` args use the CALLER's accepted-type-set (the two callers differ only
-    in one extra leaf arm — `tyTag` allows `.TVoid`, `appliedBoxTag` allows `.TCore` — and
-    each keeps that arm local, so neither caller's accepted set changes). Returning `none`
-    (not a catch-all) on an untaggable arg is important: such an arg has no stable name, so
-    tagging it would be meaningless. E.g. `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`,
-    and `Box<Map int int>` → `Box$a1$Map$a2$int$int` (the `.TMap`/`.TSet` arms below tag
-    collections too). A type this renderer can't name yields `none` (e.g. an arg of
-    `.TVar`/`.Pure` has no arm here), so a `Box<T>` (unbound `T`) argument is untaggable →
-    the whole tag is `none` (fail loud).
+    naming (`appliedBoxTag`): identifier-legal, `$`-delimited, `none` on any type the caller
+    doesn't handle. The two callers differ only in one extra leaf arm (`tyTag` allows `.TVoid`,
+    `appliedBoxTag` allows `.TCore`), supplied via `leaf` (see below). Returning `none` (not a
+    catch-all) on an untaggable arg is important: such an arg has no stable name, so a
+    `Box<T>` (unbound `T`) argument makes the whole tag `none` (fail loud). E.g.
+    `Box<Pair<int,bool>>` → `Box$a1$Pair$a2$int$bool`, `Box<Map int int>` → `Box$a1$Map$a2$int$int`.
 
     INJECTIVITY CAVEAT: this encoding is NOT injective in general. The `$`-delimited join is
     only injective under the assumption that no rendered leaf name itself contains `$` — but
@@ -760,7 +755,14 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
     (see `LaurelCompilationPipeline.runLaurelPasses`), and divergent value sorts fail the Core
     type checker. Making this encoding injective (escaping/length-prefixing `$`) would be a
     defense-in-depth hardening; today the downstream nets are what guarantee soundness. -/
-partial def instTagCommon (recurse : HighType → Option String) : HighType → Option String
+-- `leaf` (the caller's extra arm) is consulted first, then the shared arms recurse on
+-- `instTagCommon leaf` STRUCTURALLY — that direct recursion is what lets this be a total `def`
+-- (an opaque `recurse` callback would hide the subterm decrease from the termination checker).
+def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option String :=
+  match leaf ty with
+  | some t => some t
+  | none =>
+  match ty with
   | .TInt => some "int" | .TBool => some "bool" | .TReal => some "real"
   | .TString => some "string" | .TFloat64 => some "float64"
   | .TBv n => some s!"bv{n}"
@@ -768,7 +770,7 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
   | .Applied b as =>
     match b.val with
     | .UserDefined n => do
-      let argTags ← as.mapM (fun a => recurse a.val)
+      let argTags ← as.attach.mapM (fun ⟨a, _⟩ => instTagCommon leaf a.val)
       some s!"{n.text}$a{argTags.length}${String.intercalate "$" argTags}"
     | _ => none
   -- Built-in collection formers `Map`/`Set` tag like a 2-/1-ary applied type, so a
@@ -780,15 +782,23 @@ partial def instTagCommon (recurse : HighType → Option String) : HighType → 
   -- short-circuits to `none` on an untaggable element (e.g. a nested `.TVar`), fail-loud
   -- exactly like the `.Applied` arm above.
   | .TMap k v => do
-    let kt ← recurse k.val
-    let vt ← recurse v.val
+    let kt ← instTagCommon leaf k.val
+    let vt ← instTagCommon leaf v.val
     some s!"Map$a2${kt}${vt}"
   -- `.TSet` is unreachable today (no Set surface production — LaurelGrammar.st has only `mapType`);
   -- kept for symmetry with `.TMap` / the `.TSet` arm in `isConsistent`.
   | .TSet e => do
-    let et ← recurse e.val
+    let et ← instTagCommon leaf e.val
     some s!"Set$a1${et}"
   | _ => none
+  termination_by ty
+  decreasing_by
+    all_goals
+      (try have := AstNode.sizeOf_val_lt k)
+      (try have := AstNode.sizeOf_val_lt v)
+      (try have := AstNode.sizeOf_val_lt e)
+      (try have := AstNode.sizeOf_val_lt ‹HighTypeMd›)
+      add_mem_size_lemmas; simp_all; omega
 
 
 /-- The fully-SUBSTITUTED ancestor TYPES of `C<args>`. Starting from the
