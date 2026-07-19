@@ -9,6 +9,7 @@ public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.LaurelTypes
+import Strata.Util.Tactics
 
 /-!
 # Monomorphize generic composites
@@ -52,21 +53,30 @@ public section
     rather than mis-verifying. Soundness here is therefore enforced downstream, not by
     this tag's injectivity; making the tag injective ($-escaping) is a possible
     hardening. See the injectivity caveat on `instTagCommon`. -/
-partial def tyTag : HighType → Option String
-  | .TVoid => some "void"           -- monomorphization accepts `void`; `.TCore` it does NOT
-  | ty => instTagCommon tyTag ty    -- shared arms (incl. TMap/TSet); `none` on TVar/Pure/TCore/… (unsupported)
+def tyTag (ty : HighType) : Option String :=
+  -- The extra leaf `instTagCommon` doesn't handle: monomorphization accepts `void` (`.TCore` it
+  -- does NOT). All shared arms (incl. TMap/TSet) come from `instTagCommon`; `none` on TVar/Pure/TCore.
+  instTagCommon (fun | .TVoid => some "void" | _ => none) ty
 
 /-- Max nesting depth of a `HighType` (a flat type is depth 1; `Box<int>` is 2;
     `Box<Box<int>>` is 3). Used to detect a DIVERGENT recursive generic
     (`L<T>{ next: L<L<T>> }`), whose instantiations grow in depth without bound —
     so we cut them off with a real diagnostic at a shallow depth rather than
     grinding to a name-length limit while emitting dozens of dead monomorphs. -/
-partial def tyDepth : HighType → Nat
-  | .Applied b as => 1 + max (tyDepth b.val) ((as.map (fun a => tyDepth a.val)).foldl Nat.max 0)
+def tyDepth : HighType → Nat
+  | .Applied b as => 1 + max (tyDepth b.val) ((as.attach.map (fun ⟨a, _⟩ => tyDepth a.val)).foldl Nat.max 0)
   | .TSet vt | .Pure vt => 1 + tyDepth vt.val
   | .TMap kt vt => 1 + max (tyDepth kt.val) (tyDepth vt.val)
-  | .Intersection ts => 1 + (ts.map (fun t => tyDepth t.val)).foldl Nat.max 0
+  | .Intersection ts => 1 + (ts.attach.map (fun ⟨t, _⟩ => tyDepth t.val)).foldl Nat.max 0
   | _ => 1
+  termination_by ty => ty
+  decreasing_by
+    all_goals (first
+      | (cases b; term_by_mem)
+      | (cases vt; term_by_mem)
+      | (cases kt; term_by_mem)
+      | (have := AstNode.sizeOf_val_lt ‹HighTypeMd›
+         add_mem_size_lemmas; simp_all; omega))
 
 /-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
     against an ACTUAL type, accumulating bindings `tv ↦ actual`. This is the
@@ -86,9 +96,9 @@ partial def tyDepth : HighType → Nat
     head constructors / arities) or an INCONSISTENT binding (a `tv` matched to two
     different types — a genuine type error the caller surfaces loudly).
     `acc` threads bindings across multiple parameters. -/
-partial def matchTypeArg (declared actual : HighType)
+def matchTypeArg (declared actual : HighType)
     (acc : Std.HashMap String HighType) : Option (Std.HashMap String HighType) :=
-  match declared with
+  match _h : declared with
   | .TVar tv =>
     match acc.get? tv.text with
     | some prev => if highEq ⟨prev, none⟩ ⟨actual, none⟩ then some acc else none  -- inconsistent
@@ -100,7 +110,7 @@ partial def matchTypeArg (declared actual : HighType)
       -- SELF-GUARD: two `.UserDefined` heads with different base names must NOT match.
       -- The head recursion below binds nothing for `.UserDefined`/`.UserDefined` (it hits
       -- the catch-all), so without this `Box<T>` would structurally match `Pair<int>` on
-      -- arity alone (MatchTypeArgTest case 5). No live wrong-accept today — the earlier
+      -- arity alone (MatchTypeArgTest case 7). No live wrong-accept today — the earlier
       -- gradual-assignability gate rejects such args — but this makes monomorphization
       -- self-guarding rather than trusting an upstream pass. Only the both-named-mismatch
       -- case is constrained; every other head shape keeps the prior behavior.
@@ -112,7 +122,9 @@ partial def matchTypeArg (declared actual : HighType)
         match matchTypeArg db.val ab.val acc with
         | none => none
         | some acc1 =>
-          (dargs.zip aargs).foldl (fun acc? (d, a) =>
+          -- `.attach` on the zipped pairs exposes `⟨d,a⟩ ∈ dargs.zip aargs`, from which
+          -- `List.of_mem_zip` recovers `d ∈ dargs` for the termination measure.
+          (dargs.zip aargs).attach.foldl (fun acc? ⟨(d, a), _⟩ =>
             acc?.bind (fun m => matchTypeArg d.val a.val m)) (some acc1)
     | _ => none
   | .TSet dv => match actual with | .TSet av => matchTypeArg dv.val av.val acc | _ => none
@@ -123,9 +135,27 @@ partial def matchTypeArg (declared actual : HighType)
   -- A concrete declared type (no tyvar) need only be consistent with the actual;
   -- we don't constrain it (any mismatch is a separate type error, not our concern).
   | _ => some acc
+  termination_by declared
+  decreasing_by
+    · -- head: `db.val` in `.Applied db dargs`
+      have := AstNode.sizeOf_val_lt db; simp_all; omega
+    · -- arg: `d.val` for `⟨d,a⟩ ∈ dargs.zip aargs`
+      rename_i h
+      have hd := (List.of_mem_zip h).1
+      have := AstNode.sizeOf_val_lt d
+      have := List.sizeOf_lt_of_mem hd
+      simp_all; omega
+    · -- `.TSet dv`
+      have := AstNode.sizeOf_val_lt dv; simp_all; omega
+    · -- `.Pure dv`
+      have := AstNode.sizeOf_val_lt dv; simp_all; omega
+    · -- `.TMap dk _` (head key)
+      have := AstNode.sizeOf_val_lt dk; simp_all; omega
+    · -- `.TMap _ dv` (value)
+      have := AstNode.sizeOf_val_lt dv; simp_all; omega
 
 /-- Mangled monomorphic name for `C` instantiated at `args`, e.g. `Box$a1$int`,
-    or `none` if any arg can't be tagged injectively. Identifier-legal only
+    or `none` if any arg can't be tagged. Identifier-legal only
     (these become Core/SMT sort names — no `«»`/`,`). -/
 def monoName? (base : String) (args : List HighType) : Option String := do
   let tags ← args.mapM tyTag
@@ -144,18 +174,28 @@ def monoName (base : String) (args : List HighType) : String :=
     The generated composite's field types were resolved against the *generic*
     definition (with `.TVar` carrying ids); after substitution they must look
     unresolved to the post-pass `resolve`. -/
-partial def clearTyIds (ty : HighTypeMd) : HighTypeMd :=
+def clearTyIds (ty : HighTypeMd) : HighTypeMd :=
   let clr (i : Identifier) : Identifier := { i with uniqueId := none }
-  let v := match ty.val with
+  let v := match _h : ty.val with
     | .UserDefined n => .UserDefined (clr n)
     | .TVar n => .TVar (clr n)
     | .TSet et => .TSet (clearTyIds et)
     | .TMap kt vt => .TMap (clearTyIds kt) (clearTyIds vt)
-    | .Applied base args => .Applied (clearTyIds base) (args.map clearTyIds)
+    | .Applied base args => .Applied (clearTyIds base) (args.attach.map (fun ⟨a, _⟩ => clearTyIds a))
     | .Pure b => .Pure (clearTyIds b)
-    | .Intersection ts => .Intersection (ts.map clearTyIds)
+    | .Intersection ts => .Intersection (ts.attach.map (fun ⟨t, _⟩ => clearTyIds t))
     | other => other
   { val := v, source := ty.source }
+  termination_by ty
+  decreasing_by
+    all_goals (first
+      | (cases et; term_by_mem)
+      | (cases kt; term_by_mem)
+      | (cases vt; term_by_mem)
+      | (cases base; term_by_mem)
+      | (cases b; term_by_mem)
+      | (have := AstNode.sizeOf_val_lt ty
+         add_mem_size_lemmas; simp_all; omega))
 
 /-- The instantiation key: `(generic composite name, concrete arg types)`. -/
 abbrev Inst := String × List HighType
@@ -163,8 +203,8 @@ abbrev Inst := String × List HighType
 private def instKey (i : Inst) : String := monoName i.1 i.2
 
 /-- A procedure instantiation: `(procName, typeArgs-in-declaration-order)`. Named
-    with the same `monoName` scheme as composites (`idp$a1$int`), so a poly
-    procedure `f<T>` called at `int` becomes the monomorphic proc `f$a1$int`. -/
+    with the same `monoName` scheme as composites, so a poly procedure `f<T>`
+    called at `int` becomes the monomorphic proc `f$a1$int`. -/
 abbrev ProcInst := String × List HighType
 
 private def procInstKey (p : ProcInst) : String := monoName p.1 p.2
@@ -187,36 +227,43 @@ private def newInst? (genComposites : Std.HashMap String (List Identifier))
 
 /-- Collect all `.Applied (UserDefined C) args` instantiations appearing in a
     `HighType`, where `C` is a generic composite in `genComposites`. -/
-private partial def collectInTy (genComposites : Std.HashMap String (List Identifier))
+private def collectInTy (genComposites : Std.HashMap String (List Identifier))
     (ty : HighTypeMd) : List Inst :=
   let here : List Inst := match ty.val with
     | .Applied base args =>
       match base.val with
       | .UserDefined n =>
         let argVals := args.map (·.val)
-        -- Only record instantiations we can name injectively. An un-taggable arg
-        -- (Map/Set/TVar/…) is left as `.Applied` and fails LOUD at re-resolution
-        -- (dangling generic), never silently coalesced into a shared mono name.
+        -- Only record instantiations whose args are all `tyTag`-taggable. An un-taggable
+        -- arg (`.TVar`/`.Pure`/`.TCore`; Map/Set ARE taggable) leaves the type `.Applied`,
+        -- failing LOUD at re-resolution — never silently coalesced into a shared mono name.
         if genComposites.contains n.text && (monoName? n.text argVals).isSome
         then [(n.text, argVals)] else []
       | _ => []
     | _ => []
-  let nested : List Inst := match ty.val with
-    | .Applied base args => collectInTy genComposites base ++ args.flatMap (collectInTy genComposites)
+  let nested : List Inst := match _h : ty.val with
+    | .Applied base args =>
+      collectInTy genComposites base ++ args.attach.flatMap (fun ⟨a, _⟩ => collectInTy genComposites a)
     | .TSet vt | .Pure vt => collectInTy genComposites vt
     | .TMap kt vt => collectInTy genComposites kt ++ collectInTy genComposites vt
-    | .Intersection ts => ts.flatMap (collectInTy genComposites)
+    | .Intersection ts => ts.attach.flatMap (fun ⟨t, _⟩ => collectInTy genComposites t)
     | _ => []
   here ++ nested
+  termination_by ty
+  decreasing_by
+    all_goals (first
+      | (cases base; term_by_mem)
+      | (cases vt; term_by_mem)
+      | (cases kt; term_by_mem)
+      | (have := AstNode.sizeOf_val_lt ty
+         add_mem_size_lemmas; simp_all; omega))
 
-/-- Does `ty` materialize a generic composite at one of the type variables in
-    `tvSet`? (An `.Applied (UserDefined C) args` over a generic composite `C` where
-    some arg is a `.TVar tv` with `tv ∈ tvSet`, searched recursively.) A pure type
-    predicate; the caller (`mentionsGenericComposite`) applies it across a procedure's
-    signature types, body type slots, and `new`-site types to decide the proc must be
-    monomorphized rather than freshened (a generic composite has no uniform Core
-    representation the freshening path can use). -/
-private partial def tyHasGenCompAtTVar (genComposites : Std.HashMap String (List Identifier))
+/-- Does `ty` mention a generic composite instantiated at a type variable in `tvSet` —
+    an `.Applied (UserDefined C) args` (`C` a generic composite) some of whose args is a
+    `.TVar tv`, `tv ∈ tvSet`, searched recursively. The caller `mentionsGenericComposite`
+    uses it to decide the proc must be monomorphized rather than freshened: a generic
+    composite has no uniform Core representation the freshening path can use. -/
+private def tyHasGenCompAtTVar (genComposites : Std.HashMap String (List Identifier))
     (tvSet : Std.HashSet String) (ty : HighType) : Bool :=
   match ty with
   | .Applied base args =>
@@ -224,17 +271,25 @@ private partial def tyHasGenCompAtTVar (genComposites : Std.HashMap String (List
       (match base.val with | .UserDefined n => genComposites.contains n.text | _ => false)
         && args.any (fun a => match a.val with | .TVar tv => tvSet.contains tv.text | _ => false)
     hereHit || tyHasGenCompAtTVar genComposites tvSet base.val
-      || args.any (fun a => tyHasGenCompAtTVar genComposites tvSet a.val)
+      || args.attach.any (fun ⟨a, _⟩ => tyHasGenCompAtTVar genComposites tvSet a.val)
   | .TSet vt | .Pure vt => tyHasGenCompAtTVar genComposites tvSet vt.val
   | .TMap kt vt => tyHasGenCompAtTVar genComposites tvSet kt.val || tyHasGenCompAtTVar genComposites tvSet vt.val
-  | .Intersection ts => ts.any (fun t => tyHasGenCompAtTVar genComposites tvSet t.val)
+  | .Intersection ts => ts.attach.any (fun ⟨t, _⟩ => tyHasGenCompAtTVar genComposites tvSet t.val)
   | _ => false
+  termination_by ty
+  decreasing_by
+    all_goals
+      (try have := AstNode.sizeOf_val_lt base)
+      (try have := AstNode.sizeOf_val_lt vt)
+      (try have := AstNode.sizeOf_val_lt kt)
+      (try have := AstNode.sizeOf_val_lt ‹HighTypeMd›)
+      add_mem_size_lemmas; simp_all; omega
 
 /-- Rewrite a `HighType`: every `.Applied (UserDefined C) args` over a generic
     composite becomes `.UserDefined (monoName C args)`. -/
-private partial def rewriteTy (genComposites : Std.HashMap String (List Identifier))
+private def rewriteTy (genComposites : Std.HashMap String (List Identifier))
     (ty : HighTypeMd) : HighTypeMd :=
-  let v := match ty.val with
+  let v := match _h : ty.val with
     | .Applied base args =>
       match base.val with
       | .UserDefined n =>
@@ -243,98 +298,79 @@ private partial def rewriteTy (genComposites : Std.HashMap String (List Identifi
         -- failure, not a dangling `UNTAGGABLE` reference.
         match (if genComposites.contains n.text then monoName? n.text (args.map (·.val)) else none) with
         | some mn => .UserDefined (mkId mn)
-        | none => .Applied (rewriteTy genComposites base) (args.map (rewriteTy genComposites))
-      | _ => .Applied (rewriteTy genComposites base) (args.map (rewriteTy genComposites))
+        | none => .Applied (rewriteTy genComposites base) (args.attach.map (fun ⟨a, _⟩ => rewriteTy genComposites a))
+      | _ => .Applied (rewriteTy genComposites base) (args.attach.map (fun ⟨a, _⟩ => rewriteTy genComposites a))
     | .TSet et => .TSet (rewriteTy genComposites et)
     | .TMap kt vt => .TMap (rewriteTy genComposites kt) (rewriteTy genComposites vt)
     | .Pure b => .Pure (rewriteTy genComposites b)
-    | .Intersection ts => .Intersection (ts.map (rewriteTy genComposites))
+    | .Intersection ts => .Intersection (ts.attach.map (fun ⟨t, _⟩ => rewriteTy genComposites t))
     | other => other
   { val := v, source := ty.source }
+  termination_by ty
+  decreasing_by
+    all_goals
+      (try have := AstNode.sizeOf_val_lt base)
+      (try have := AstNode.sizeOf_val_lt et)
+      (try have := AstNode.sizeOf_val_lt kt)
+      (try have := AstNode.sizeOf_val_lt vt)
+      (try have := AstNode.sizeOf_val_lt b)
+      (try have := AstNode.sizeOf_val_lt ty)
+      add_mem_size_lemmas; simp_all; omega
 
 /-- The `HighType` annotation slots carried *directly* by a single `StmtExpr`
     node (NOT its sub-expressions — `mapStmtExpr` recurses into those and visits
-    every node, so this need only report the node's own type slots). This is the
-    one place the set of statement-level type positions is enumerated; both
-    `collectInStmt` and `rewriteStmt` are derived from it, so they cannot drift
-    apart and silently miss a position. -/
+    every node, so this need only report the node's own type slots). Both `stmtTypeSlots`
+    (collect) and `rewriteStmt` (rewrite) route through `mapNodeHighTypesM` — the ONE
+    enumeration of a node's type-annotation positions (MapStmtExpr.lean) — so they cannot
+    drift: a new type slot added there is picked up by both automatically. (`new C<τ…>` is
+    an instantiation site but NOT a type slot; its args are handled by the shared `newInst?`,
+    not here.) -/
 private def stmtTypeSlots (e : StmtExprMd) : List HighTypeMd :=
-  match e.val with
-  | .Assign targets _ =>
-    targets.filterMap fun t => match t.val with
-      | .Declare param => some param.type
-      | _ => none
-  -- A standalone declaration with no initializer (`var b: Box<int>;`) parses to
-  -- `.Var (.Declare …)`, distinct from the initialized `.Assign [.Declare …] e` above.
-  | .Var (.Declare param) => [param.type]
-  | .AsType _ ty => [ty]
-  | .IsType _ ty => [ty]
-  | .Quantifier _ param _ _ => [param.type]
-  | .Hole _ (some ty) => [ty]
-  -- `new C<τ…>` is an instantiation site too, but it is NOT a type *slot*: its
-  -- instantiation is derived by the shared `newInst?` helper (consumed by both
-  -- `collectInStmt` and `rewriteStmt`), not via a synthesized `.Applied` type.
-  | _ => []
+  -- Collect (not rewrite) every type slot `mapNodeHighTypesM` visits, by running it in a
+  -- StateM whose `f` records its argument and returns it unchanged.
+  ((mapNodeHighTypesM (m := StateM (List HighTypeMd))
+    (fun ty => do modify (· ++ [ty]); pure ty) e).run []).2
 
-/-- Rewrite types and `new` sites inside a single `StmtExpr` node (applied
-    bottom-up by `mapStmtExpr`). Rewrites every type slot reported by
-    `stmtTypeSlots` (Declare-target types, `as`/`is` type operands, quantifier
-    binder types, inferred hole types), and additionally correlates the
-    `var b: Box<int> := new Box` allocation: an `Assign` whose sole target is a
-    `Declare` with an `.Applied(C)` type and whose RHS is `new C` — rewrite the
-    RHS to `new (monoName C args)` so the allocation matches the declared type. -/
+/-- Rewrite types and `new` sites inside a single `StmtExpr` node (applied bottom-up by
+    `mapStmtExpr`). Every type-annotation slot is rewritten via `mapNodeHighTypesM` (the same
+    enumeration `stmtTypeSlots` collects from — so they cannot drift), THEN the `new` sites
+    are handled on top: an explicit `new C<τ…>` → its monomorph, and a bare
+    `var b: Box<int> := new Box` recovers `τ` from the declared `.Applied` type. -/
 private def rewriteStmt (genComposites : Std.HashMap String (List Identifier))
     (e : StmtExprMd) : StmtExprMd :=
-  let rw := rewriteTy genComposites
-  -- Rewrite a generic `new C<τ…>` to the monomorphic `new C$…` using the
-  -- allocation site's OWN explicit type arguments. Position-independent: works
-  -- wherever a `new` appears (field write, return, call arg, …) without
-  -- recovering the instantiation from surrounding context. Returns `none` if the
-  -- `new` is not a generic composite or its args can't be tagged (→ left as-is;
-  -- a bare generic `new C` with no args is caught downstream / by the legacy
-  -- Declare-correlation below). -/
+  -- The legacy bare-`new C` correlation (below) reads the DECLARED type, so compute it from
+  -- the ORIGINAL node BEFORE `mapNodeHighTypesM` rewrites that slot `.Applied Box<int>` →
+  -- `.UserDefined Box$a1$int`.
+  let newFromDecl : Option Identifier :=
+    match e.val with
+    | .Assign [⟨.Declare param, _⟩] ⟨.New c [], _⟩ =>
+      match param.type.val with
+      | .Applied ⟨.UserDefined n, _⟩ args =>
+        if genComposites.contains n.text && n.text == c.text then
+          (monoName? n.text (args.map (·.val))).map mkId
+        else none
+      | _ => none
+    | _ => none
+  let e := mapNodeHighTypesM (m := Id) (rewriteTy genComposites) e
+  -- `new C<τ…>` is NOT a type slot, so handle it here. Explicit args → monomorph, using the
+  -- site's OWN args (so it works wherever a `new` appears). The args-vs-declared mismatch
+  -- `var b: Box<bool> := new Box<int>` never reaches here — #1121's gradual checker catches it
+  -- at resolution (see the "Assignability is checked here" note in Resolution.lean).
   let rewriteNew (c : Identifier) (typeArgs : List HighTypeMd) : Option Identifier :=
     (newInst? genComposites c typeArgs).map (fun i => mkId (monoName i.1 i.2))
-  -- NOTE: this rewrites `new C<τ>` to its monomorph using the args AT THE SITE. The
-  -- args-vs-declared-type mismatch `var b: Box<bool> := new Box<int>` is caught EAGERLY
-  -- by #1121's gradual checker at resolution (before this pass runs), so it never reaches
-  -- here. See the "ASSIGNABILITY" note in Resolution.lean. (Only the bare `new C` form,
-  -- which carries no args to mismatch, stays permissive by design.)
   let val' := match e.val with
     | .New c typeArgs =>
       match rewriteNew c typeArgs with
       | some mn => .New mn []
       | none => e.val
     | .Assign targets value =>
-      let targets' := targets.map fun t =>
-        match t.val with
-        | .Declare param => { t with val := .Declare { param with type := rw param.type } }
-        | _ => t
-      -- Legacy backward-compat: a BARE `new C` (no explicit args) as the RHS of a
-      -- single `var x: C<τ> := new C` recovers `τ` from the declared type. With
-      -- explicit `new C<τ>` syntax this is handled by the `.New` case above; this
-      -- keeps pre-existing arg-less programs working.
-      let value' :=
-        match targets, value.val with
-        | [⟨.Declare param, _⟩], .New c [] =>
-          match param.type.val with
-          | .Applied base args =>
-            match base.val with
-            | .UserDefined n =>
-              match (if genComposites.contains n.text && n.text == c.text
-                     then monoName? n.text (args.map (·.val)) else none) with
-              | some mn => { value with val := .New (mkId mn) [] }
-              | none => value
-            | _ => value
-          | _ => value
-        | _, _ => value
-      .Assign targets' value'
-    | .Var (.Declare param) => .Var (.Declare { param with type := rw param.type })
-    | .AsType target ty => .AsType target (rw ty)
-    | .IsType target ty => .IsType target (rw ty)
-    | .Quantifier mode param trigger body =>
-      .Quantifier mode { param with type := rw param.type } trigger body
-    | .Hole det (some ty) => .Hole det (some (rw ty))
+      -- Legacy backward-compat: a bare `new C` RHS of `var x: C<τ> := new C` recovers `τ` from
+      -- the declared type (`newFromDecl`, computed pre-rewrite), keeping arg-less programs
+      -- working (explicit `new C<τ>` uses `.New` above).
+      let value' := match newFromDecl with
+        | some mn => { value with val := .New mn [] }
+        | none => value
+      .Assign targets value'
     | other => other
   { e with val := val' }
 
@@ -613,22 +649,20 @@ def drainWorklist (genComposites : Std.HashMap String (List Identifier))
       drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel
         (processWorklistItem genComposites genDefs polyProcDefs model maxInstDepth item { s with worklist := rest })
 
-/-- Topologically order monomorph composites by the `extends` relation so a monomorph
-    PARENT precedes its monomorph CHILD. The worklist is FIFO and a child enqueues its
-    parent AFTER itself (child-before-parent), but re-resolution builds a composite's
-    inherited field-scope by reading the parent's already-built scope in `program.types`
-    LIST ORDER — so a monomorph parent must come first. Stable DFS post-order over the
-    intra-`mono` `extending` edges; a `visiting` guard makes a malformed cycle terminate
-    rather than hang (valid programs are acyclic). Concrete parents live elsewhere
-    (emitted before all monomorphs), so only monomorph→monomorph edges matter here. -/
+/-- Topologically order composites by the `extends` relation so a PARENT precedes its
+    CHILD — required because re-resolution builds a composite's inherited field-scope by
+    reading the parent's already-built scope in `program.types` LIST ORDER. Called on the
+    WHOLE type list (concrete ++ monomorphs), since edges run BOTH ways: a monomorph child
+    extends a concrete parent, and a concrete child may extend a monomorph parent
+    (`IntBox extends Box<int>` → `Box$a1$int`). Stable DFS post-order; a `visiting` guard
+    makes a malformed cycle terminate rather than hang (valid programs are acyclic). -/
 def topoSortMonomorphs (mono : List TypeDefinition) : List TypeDefinition := Id.run do
-  -- Index every composite by name to look up a parent for ORDERING. NOTE: when the input
-  -- is the WHOLE type list (concrete `types'` ++ `monoComposites`), a USER composite can
-  -- share a name with a monomorph (`composite Box$a1$int` vs the `Box<int>` monomorph — the
-  -- `$`-tag non-injectivity). That name-collision MUST be preserved as TWO entries so the
+  -- Index every composite by name to look up a parent for ORDERING. NOTE: a USER composite
+  -- can share a name with a monomorph (`composite Box$a1$int` vs the `Box<int>` monomorph —
+  -- the `$`-tag non-injectivity). That collision MUST be preserved as TWO entries so the
   -- re-resolution net reports the duplicate-definition; so emission is tracked by LIST INDEX,
-  -- not by name. `monoByName` (last-write-wins on a dup) is used only to pick *a* parent to
-  -- order before — harmless, since both collided entries land adjacent regardless.
+  -- not by name. `firstIdxByName` (first-write-wins on a dup) is used only to pick *a* parent
+  -- to order before — harmless, since both collided entries land adjacent regardless.
   let arr := mono.toArray
   let monoNames : Std.HashSet String :=
     arr.foldl (fun s td => match td with | .Composite c => s.insert c.name.text | _ => s) {}
@@ -788,22 +822,17 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- 2. Collect the seed composite + procedure instantiations from every type position.
   let (insts, procInsts) := collectSeeds program model genComposites polyProcDefs
 
-  -- 3. UNIFIED FIXPOINT — emit monomorph composites AND clone poly
-  -- procedures from ONE fueled, depth-capped worklist over `Sum Inst ProcInst`. The two
-  -- kinds interleave and feed each other:
-  --   • a COMPOSITE item (`.inl`) emits the monomorph and enqueues instantiations in its
-  --     substituted fields (`Box<int>` reachable only through `Pair<int>{b:Box<T>}`);
-  --   • a PROCEDURE item (`.inr`) clones the poly proc and enqueues composite insts from its
-  --     signature AND body, plus proc insts from poly calls in the body (the proc→proc edge),
-  --     discovered against the PRISTINE body (the clone's cleared ids aren't in `model`).
-  -- TERMINATION: a divergent recursive generic grows type-arg DEPTH; `maxInstDepth` refuses
-  -- to enqueue past the cap, recording ONE `NotYetImplemented` per base so divergence fails
-  -- LOUD (and gates translation, suppressing downstream Core noise).
-  -- The bound (8) is a pragmatic ceiling: realistic generic nesting (e.g. `Pair<Box<int>, …>`)
-  -- is only a few levels deep, while a divergent `L<L<T>>` blows past it within a handful of
-  -- iterations — so 8 rejects divergence promptly without over-rejecting hand-written code. A
-  -- legitimate program that genuinely needs depth > 8 would be rejected (a known limitation);
-  -- raise the cap if one ever appears.
+  -- 3. UNIFIED FIXPOINT — one fueled, depth-capped worklist over `Sum Inst ProcInst` that
+  -- emits monomorph composites AND clones poly procedures; the two kinds feed each other:
+  --   • a COMPOSITE (`.inl`) emits the monomorph and enqueues insts in its substituted fields
+  --     (`Box<int>` reachable only through `Pair<int>{b:Box<T>}`);
+  --   • a PROCEDURE (`.inr`) clones the poly proc and enqueues composite insts from its
+  --     signature+body plus proc insts from poly calls (the proc→proc edge), discovered against
+  --     the PRISTINE body (the clone's cleared ids aren't in `model`).
+  -- TERMINATION: a divergent recursive generic grows type-arg DEPTH; `maxInstDepth` refuses to
+  -- enqueue past the cap, recording ONE `NotYetImplemented` per base so divergence fails LOUD.
+  -- 8 is a pragmatic ceiling: real nesting is a few levels, divergent `L<L<T>>` blows past it
+  -- fast; a program genuinely needing depth > 8 is rejected (raise the cap if one appears).
   let maxInstDepth : Nat := 8
   let mut witnessComposites : List TypeDefinition := []  -- fresh opaque sorts for uncalled procs
   -- Worklist state (emitted monomorphs/clones, dedup sets, diags, pending items). Seed:
@@ -817,17 +846,13 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   st := drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel st
 
   -- 3b. (gap: uncalled monomorphized poly procs) An indexed poly proc absent from
-  -- `clonedBases` is genuinely UNCALLED (the proc→proc edge cloned every reachable proc,
-  -- so `clonedBases` is the exact called-set). It would be dropped at emission with its
-  -- contract UNCHECKED. (A value-`T` poly proc — one touching no generic composite — is
-  -- instead KEPT verbatim and lowered to a polymorphic Core procedure; its contract is
-  -- checked when CALLED via CallElim freshening, AND even uncalled its own body VC is emitted
-  -- and discharged — a false postcondition there fails loud — so it is never silently
-  -- unchecked, by a different path than this witness.) To close the gap HERE, synthesize a
+  -- `clonedBases` is genuinely UNCALLED (the proc→proc edge cloned every reachable one), so it
+  -- would be dropped at emission with its contract UNCHECKED. To close the gap, synthesize a
   -- WITNESS: bind each type var to a FRESH OPAQUE composite (`$Witness$<proc>$<i>`) — an
-  -- uninterpreted sort of arbitrary cardinality, NOT a singleton, so a false-in-general
-  -- contract (`a#val == b#val`) still fails; distinct type vars get distinct witnesses. Then
-  -- drain the worklist again.
+  -- uninterpreted sort of arbitrary cardinality (NOT a singleton), so a false-in-general
+  -- contract still fails; distinct type vars get distinct witnesses. Then drain again.
+  -- (A value-`T` poly proc touching no generic composite is instead kept verbatim as a
+  -- polymorphic Core proc, its body VC always emitted — checked by a different path.)
   for (pname, pproc) in polyProcDefs.toList do
     unless st.clonedBases.contains pname do
       let witnessArgs : List HighType := (List.range pproc.typeArgs.length).map (fun i =>
@@ -843,19 +868,14 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   -- they monomorphize like any other concrete type.
   st := drainWorklist genComposites genDefs polyProcDefs model maxInstDepth fuel st
 
-  -- Unpack the worklist state into local accumulators for the assembly below.
   let mut monoComposites : List TypeDefinition := st.monoComposites
   let procClones : List Procedure := st.procClones
   let mut diags : List DiagnosticModel := st.diags
 
-  -- FUEL-EXHAUSTION GUARD (fail loud, never silently truncate). The `fuel` backstop
-  -- (1024 per drain) is coarser than the `maxInstDepth` depth cap, which is the real
-  -- divergence guard: divergent recursion grows DEPTH and is rejected by `tooDeep` long
-  -- before fuel matters. But a pathological program with >1024 DISTINCT bounded-depth
-  -- instantiations could drain fuel with the worklist still non-empty — leaving a
-  -- HALF-monomorphized program. Without this guard the loops would just stop and emit it
-  -- silently (relying on Core to later choke on a dangling monomorph ref). Emit a clear
-  -- diagnostic instead, so a fuel wall fails loud at the pass, like the depth cap does.
+  -- FUEL-EXHAUSTION GUARD (fail loud, never silently truncate). `maxInstDepth` is the real
+  -- divergence guard; the coarser `fuel` backstop only bites a pathological program with >1024
+  -- DISTINCT bounded-depth instantiations, which would otherwise leave a HALF-monomorphized
+  -- program emitted silently. Diagnose instead, so a fuel wall fails loud like the depth cap.
   unless st.worklist.isEmpty do
     diags := diags ++ [diagnosticFromSource none
       s!"monomorphization did not converge within {1024} instantiation steps (worklist still has {st.worklist.length} items): too many distinct generic instantiations. This is a tool limit, not a program error — report it if the program is reasonable."
@@ -888,18 +908,12 @@ def monomorphizeComposites (program : Program) (model : SemanticModel)
   let staticProcs' := (keptProcs ++ procClones).map rwProcSig
   let constants' := program.constants.map (fun c => { c with type := rewriteTy genComposites c.type })
   let staticFields' := program.staticFields.map (fun f => { f with type := rewriteTy genComposites f.type })
-  -- Ordering: re-resolution builds each composite's field-inheritance typeScope in type-LIST
-  -- order (`resolveTypeDefinition`), reading its parent's already-built scope — so every
-  -- composite must come AFTER its parents, or an inherited field resolves to nothing
-  -- ("'tag' is not defined" → un-lowered access → StrataBug). Topo-sort the WHOLE composite
-  -- list (concrete `types'` + `monoComposites`) together, not just the monomorphs: a
-  -- monomorph child extends a concrete parent (`Box$a1$int extends Base`), AND — since a
-  -- non-generic composite may extend a generic INSTANTIATION (`IntBox extends Box<int>`,
-  -- rewritten to `Box$a1$int`) — a CONCRETE child may extend a MONOMORPH parent. Sorting
-  -- only the monomorphs (the old approach) handled the first but not the second. `topoSort­
-  -- Monomorphs` is a general stable DFS post-order: it passes non-composites through and
-  -- places every composite after its named parents at every hop. Witnesses are
-  -- zero-field/no-extends → position-independent, appended after.
+  -- Ordering: re-resolution builds each composite's field-inheritance scope in type-LIST order,
+  -- reading its parent's already-built scope — so every composite must come AFTER its parents
+  -- (else an inherited field resolves to nothing → un-lowered access → StrataBug). Topo-sort the
+  -- WHOLE list (concrete ++ monomorphs), since edges run BOTH ways: a monomorph child extends a
+  -- concrete parent, and a concrete child may extend a monomorph parent (`IntBox extends Box<int>`
+  -- → `Box$a1$int`). Witnesses are zero-field/no-extends → position-independent, appended after.
   -- Flag a USER identifier that collides with a generated monomorph name (`Box$a1$int`):
   -- `$` and the `$aN$` tag shape are legal in source, and `instTagCommon` is non-injective,
   -- so a user type can share a monomorph's name. Point the diagnostic at the user's own
