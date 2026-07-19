@@ -378,4 +378,139 @@ procedure loop()
 };
 #end)
 
+-- Generics emit coverage: the productions added for user-level polymorphism
+-- (composite/datatype/procedure type-param binders, `Box<int>` applied types,
+-- `new Box<int>`, chained `o#i#v` field paths, generic `extends`) must survive the
+-- AST→concrete→AST round-trip. The corpus tests cover the PARSE direction; these
+-- pin the EMIT direction (the pretty-printer / `--keep-all-files` dump path).
+
+-- Generic composite: `<T>` binder, `Box<int>` applied type in a var decl, and
+-- `new Box<int>` carrying its instantiation. The `appliedType`/`newTypeArgs` ops
+-- carry `prec(80)` for parse disambiguation; the `: varType:0` / `new … typeArgs:0`
+-- annotations keep the formatter from wrapping them (`(Box<int>)`, `new Box(<int>)`),
+-- which would not re-parse — so this case also guards that emission fix.
+/--
+info: composite Box<T> { var val: T }
+
+procedure useBox(): int
+  opaque
+{
+  var b: Box<int> := new Box<int>;
+  b#val := 5;
+  b#val
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+procedure useBox(): int
+  opaque
+{ var b: Box<int> := new Box<int>; b#val := 5; b#val };
+#end)
+
+-- Generic datatype: `<T>` binder on a datatype with a type-param field.
+/--
+info: datatype Bx<T> { MkBx(v: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Bx<T> { MkBx(v: T) }
+#end)
+
+-- Generic `extends`: a generic child extending a generic parent at an instantiation.
+/--
+info: composite Base<T> { var tag: T }
+
+composite Box<T> extends Base<T> { var val: T }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Base<T> { var tag: T }
+composite Box<T> extends Base<T> { var val: T }
+#end)
+
+-- Chained field-path write `o#i#v := …` (the dedicated FieldPath production).
+/--
+info: composite Inner { var v: int }
+
+composite Outer { var i: Inner }
+
+procedure test()
+  opaque
+{
+  var o: Outer := new Outer;
+  var x: Inner := new Inner;
+  o#i := x;
+  o#i#v := 5
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Inner { var v: int }
+composite Outer { var i: Inner }
+procedure test()
+  opaque
+{ var o: Outer := new Outer; var x: Inner := new Inner; o#i := x; o#i#v := 5 };
+#end)
+
+-- Polymorphic function: a `<T>` binder on a function signature.
+/--
+info: function id<T>(x: T): T
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+function id<T>(x: T): T
+{ x };
+#end)
+
+-- Polymorphic procedure: a `<T>` binder on a procedure signature.
+/--
+info: procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{
+  x
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure idp<T>(x: T): T
+  opaque
+  ensures result == x
+{ x };
+#end)
+
+-- Generic type aliases round-trip: `<T>` binders + a Map/composite target emit without
+-- parens (grammar `target:0`) and re-parse identically.
+/--
+info: composite Box<T> { var val: T }
+
+type MyPair<A, B> = Map A B
+
+type Foo<T> = Box<T>
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+type MyPair<A, B> = Map A B
+type Foo<T> = Box<T>
+#end)
+
 end Strata.Laurel

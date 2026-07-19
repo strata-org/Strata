@@ -120,7 +120,9 @@ def lowerNew (name : Identifier) (source : Option FileRange) : THM StmtExprMd :=
 /-- Local rewrite of `IsType` and `New` nodes. Recursion is handled by `mapStmtExprM`. -/
 private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := do
   match exprMd.val with
-  | .New name => lowerNew name exprMd.source
+  -- Type args are already stripped by MonomorphizeComposites (`new C<τ>` → `new C$…`),
+  -- so lowering keys off the concrete name and the residual `_` is safely ignored.
+  | .New name _ => lowerNew name exprMd.source
   | .IsType target ty => return lowerIsType target ty exprMd.source
   | _ => return exprMd
 
@@ -131,18 +133,20 @@ hierarchy pass all composite values are represented by `Composite` references,
 so their *static* types must follow suit; otherwise re-resolution sees a
 `Pixel`-typed value flowing into a `Composite`-typed slot (`readField`,
 `Composite..ref!`, an allocation `new C`, …). Recurses through compound types. -/
-partial def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
-  match ty.val with
+def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
+  match _h : ty.val with
   | .UserDefined name =>
     if composites.contains name.text then { ty with val := .UserDefined "Composite" } else ty
   | .TSet et => { ty with val := .TSet (compositeRefToComposite composites et) }
   | .TMap kt vt =>
     { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
   | .Applied base args =>
-    { ty with val := .Applied (compositeRefToComposite composites base) (args.map (compositeRefToComposite composites ·)) }
+    { ty with val := .Applied (compositeRefToComposite composites base) (args.attach.map (fun ⟨a, _⟩ => compositeRefToComposite composites a)) }
   | .Pure base => { ty with val := .Pure (compositeRefToComposite composites base) }
-  | .Intersection tys => { ty with val := .Intersection (tys.map (compositeRefToComposite composites ·)) }
+  | .Intersection tys => { ty with val := .Intersection (tys.attach.map (fun ⟨t, _⟩ => compositeRefToComposite composites t)) }
   | _ => ty
+  termination_by ty
+  decreasing_by ast_recursion_decreasing
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).

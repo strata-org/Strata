@@ -75,6 +75,12 @@ private def invalidCoreType (source : Option FileRange) (reason : String) : Tran
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
+/-- Shared message for a generic application that reaches Core translation un-monomorphized
+    (a generic composite the monomorphizer should have rewritten, or an unsupported generic). -/
+private def genericReachedCoreMsg : String :=
+  "generic type application reached Core translation (not monomorphized): \
+   unsupported generic type, or a type position missing from MonomorphizeComposites"
+
 /-
 Translate Laurel HighType to Core Type
 -/
@@ -95,15 +101,47 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
     | _ => do -- resolution should have already emitted a diagnostic
       emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
       return .tcons "Composite" []
+  -- A type variable lowers to a Core free type variable, which Core's HM instantiates
+  -- per call site. Kind-agnostic: a value-kinded `T` unifies with `int`, a reference-kinded
+  -- `T` with the single `Composite` sort every composite lowers to — so reference-`T`
+  -- reaches here as `.TVar` needing no prior erase-to-composite pass (see
+  -- `PolymorphicFunctionTest`).
+  | .TVar name => return .ftvar name.text
   | .TCore s => return .tcons s []
   | .TReal => return LMonoTy.real
+  -- These constructors have no Core lowering yet. Explicit arms (not a catch-all) so adding
+  -- a new `HighType` becomes a compile error here, never a silent "not supported" fall-through.
+  | .TFloat64 => invalidCoreType ty.source "Float64 type not yet supported in Core translation"
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
-  | _ => do
-    invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
+  -- Generic application. A DATATYPE (`List<int>`) lowers to a native parametric Core sort
+  -- (`.tcons "List" [int]`) — datatypes are not monomorphized, so they legitimately reach
+  -- here. Anything else fails loud: a generic COMPOSITE should have been rewritten away by
+  -- `MonomorphizeComposites` (if one reaches here, a type position is missing from that
+  -- pass's traversal), and any other application is an unsupported generic. Never silent.
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined name =>
+      match model.get? name with
+      | some (.datatypeDefinition dt) => return .tcons dt.name.text (← args.mapM translateType)
+      | _ => invalidCoreType ty.source genericReachedCoreMsg
+    | _ => invalidCoreType ty.source genericReachedCoreMsg
+  | .Pure _ => invalidCoreType ty.source "Pure type not yet supported in Core translation"
+  | .Intersection _ => invalidCoreType ty.source "Intersection type not yet supported in Core translation"
 
 termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
+decreasing_by
+  all_goals (first
+    | (cases elementType; term_by_mem)
+    | (cases keyType; term_by_mem)
+    | (cases valueType; term_by_mem)
+    -- `.Applied base args`: each `arg ∈ args` is a strict subterm of `ty.val`.
+    -- `term_by_mem` gives `sizeOf arg < sizeOf args`; `AstNode.sizeOf_val_lt`
+    -- bridges `arg.val` to `arg`, and the goal `sizeOf arg.val < 1 + sizeOf base
+    -- + sizeOf args` then closes by `omega`.
+    | (cases ty
+       have := AstNode.sizeOf_val_lt ‹HighTypeMd›
+       add_mem_size_lemmas; simp_all; omega))
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
@@ -294,7 +332,7 @@ def translateExpr (expr : StmtExprMd)
   | .Return _ => disallowed expr.source "return expression should be lowered in a separate pass"
   | .IsType _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
-  | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
+  | .New .. => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
   | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
   | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
   | .Old value =>
@@ -506,8 +544,12 @@ def translateStmt (stmt : StmtExprMd)
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
         else
           translateCallTargets callee args
-      | .InstanceCall _target callee args =>
-          translateCallTargets callee args
+      | .InstanceCall .. =>
+          -- An `.InstanceCall` should have been rewritten to a `.StaticCall` by
+          -- `LiftInstanceProcedures` (which also lets `ContractPass` inject the callee's
+          -- precondition asserts). A residual one here would reach Core as a bare `call`
+          -- with its contract UNENFORCED — fail loud rather than silently mis-verify.
+          throwStmtDiagnostic $ md.toDiagnostic "InstanceCall reached Core translation; it should have been rewritten to a StaticCall by LiftInstanceProcedures" DiagnosticType.StrataBug
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -549,8 +591,10 @@ def translateStmt (stmt : StmtExprMd)
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
   | .InstanceCall .. =>
-      -- Instance method call as statement: no return value, treated as no-op
-      return ([])
+      -- A residual `.InstanceCall` (should have been lifted to a StaticCall) must NOT be
+      -- dropped as a no-op: that silently discards the call's side effects AND its
+      -- precondition checks, mis-verifying. Fail loud, like the sibling should-have-lowered arms.
+      throwStmtDiagnostic $ md.toDiagnostic "InstanceCall reached Core translation; it should have been rewritten to a StaticCall by LiftInstanceProcedures" DiagnosticType.StrataBug
   | .Return valueOpt =>
       match valueOpt with
       | none =>
@@ -629,9 +673,15 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
+  -- Propagate the procedure's type parameters to Core. `translateType` lowers
+  -- each `.TVar` to an `.ftvar`, so the procedure's signature and spec carry the
+  -- source type variables. These are instantiated per call site during call
+  -- elimination (see `CallElim.callElimCmd` / `freshenTypeArgsSubst`), which
+  -- renames them to globally-fresh names at each call so the same procedure can
+  -- be called at different concrete types in one body.
   let header : Core.Procedure.Header := {
     name := proc.name.text
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     outputs := outputs
   }
@@ -724,7 +774,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩
-    typeArgs := []
+    typeArgs := proc.typeArgs.map (·.text)
     inputs := inputs
     output := outputTy
     body := body

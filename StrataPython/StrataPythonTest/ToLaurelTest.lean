@@ -74,6 +74,7 @@ private def fmtHighType : HighType → String
   | .TCore s => s!"TCore({s})"
   | .Unknown => "Unknown"
   | .MultiValuedExpr _ => "MultiValuedExpr"
+  | .TVar name => s!"TVar({name})"
 
 private def fmtParam (p : Parameter) : String :=
   s!"{p.name}:{fmtHighType p.type.val}"

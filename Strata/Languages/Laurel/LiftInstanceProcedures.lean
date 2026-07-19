@@ -94,13 +94,20 @@ named via `liftedProcName`, rewrite call sites that resolved to an instance
 procedure, and clear `instanceProcedures` on every composite.
 -/
 def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program :=
-  -- Step 1: collect lifted clones
+  -- Step 1: collect lifted clones. The lifted proc's type params are the composite's
+  -- followed by the method's own: `get(self: Box<T>)` on `composite Box<T>` becomes
+  -- `Box$get<T>(self: Box<T>)`, and `id2<U>(self: Box<T>)` becomes `Box$id2<T,U>`. The
+  -- result is an ordinary polymorphic procedure with a generic-composite param — the
+  -- shape the procedure monomorphizer (running AFTER this pass) already handles, so no
+  -- new machinery is needed. A non-generic composite contributes `[]`, leaving a
+  -- non-generic method's `typeArgs` unchanged.
   let liftedProcs : List Procedure :=
     program.types.foldl (init := []) fun acc td =>
       match td with
       | .Composite ct =>
         acc ++ ct.instanceProcedures.map fun proc =>
-          { proc with name := liftedProcName ct.name proc.name }
+          { proc with name := liftedProcName ct.name proc.name,
+                      typeArgs := ct.typeArgs ++ proc.typeArgs }
       | _ => acc
 
   if liftedProcs.isEmpty then program else

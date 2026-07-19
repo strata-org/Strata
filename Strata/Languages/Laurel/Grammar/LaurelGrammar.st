@@ -14,6 +14,9 @@ op bvType (width: Num): LaurelType => "bv" width;
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;
+// Generic type application, e.g. `Box<int>`. Must precede `compositeType` in
+// disambiguation since both start with an Ident.
+op appliedType (name: Ident, args: CommaSepBy LaurelType): LaurelType => @[prec(80)] name "<" args ">";
 
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
@@ -26,7 +29,7 @@ op nondetHole: StmtExpr => "<??>";
 
 // Variable declarations
 category TypeAnnotation;
-op typeAnnotation(varType: LaurelType): TypeAnnotation => ": " varType;
+op typeAnnotation(varType: LaurelType): TypeAnnotation => ": " varType:0;
 
 category Initializer;
 op initializer(value: StmtExpr): Initializer => " := " value:0;
@@ -37,8 +40,13 @@ op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Init
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
   @[prec(95)] callee:89 "(" args ")";
 
-// Instantiation
-op new(name: Ident): StmtExpr => "new " name;
+// Instantiation. Optional `<...>` carries explicit type arguments for a generic
+// composite, e.g. `new Box<int>`. Mirrors `appliedType` (the `<args>` clause in
+// type position); `prec(80)` + the immediate `<` (no surrounding spaces, unlike
+// the `lt` operator `" < "`) disambiguates from a less-than comparison.
+category NewTypeArgs;
+op newTypeArgs (args: CommaSepBy LaurelType): NewTypeArgs => @[prec(80)] "<" args ">";
+op new(name: Ident, typeArgs: Option NewTypeArgs): StmtExpr => "new " name typeArgs:0;
 
 // Field access. prec coupled to `call` (also 95, via its `callee:89`): keep them
 // equal or `a#b(x)` parsing shifts. prec 95 > postfix `++`/`--` (90) is what lets
@@ -57,7 +65,15 @@ op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target " 
 category AssignTarget;
 op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
 op assignTargetVar (name: Ident): AssignTarget => name;
-op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
+// A chained field-write target `w#b#val`. `obj` is a dedicated `FieldPath`
+// category — a left-recursive identifier/field chain — NOT the full `StmtExpr`
+// category. Using `StmtExpr` for `obj` made it compete with `multiAssign`'s VALUE
+// (also a StmtExpr), so `assign t := f()` mis-parsed (`f()` was tried as a field
+// object → "expected '#'"). A separate category cannot collide with the value.
+category FieldPath;
+op fieldPathRoot (name: Ident): FieldPath => name;
+op fieldPathStep (obj: FieldPath, field: Ident): FieldPath => @[leftassoc] obj "#" field;
+op assignTargetField (obj: FieldPath, field: Ident): AssignTarget => obj "#" field;
 
 op multiAssign (targets: CommaSepBy AssignTarget, value: StmtExpr): StmtExpr
   => @[prec(0)] "assign " targets " := " value:0;
@@ -149,14 +165,22 @@ op mutableField (name: Ident, fieldType: LaurelType): Field => " var " name ": "
 op immutableField (name: Ident, fieldType: LaurelType): Field => " " name ": " fieldType;
 
 // Type checking and casting
-op isType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " is " typeName;
-op asType (target: StmtExpr, typeName: Ident): StmtExpr => @[prec(40)] target " as " typeName;
+op isType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] target " is " targetType;
+op asType (target: StmtExpr, targetType: LaurelType): StmtExpr => @[prec(40)] target " as " targetType;
 
-// Composite types with optional extends
+// Composite types with optional extends. Parents are LaurelTypes (not bare Idents) so a
+// generic composite can extend a generic parent instantiation (`extends Base<T>`). The
+// parent list terminates cleanly at the following `{` (no trailing LaurelType operator),
+// so there is no parse ambiguity with the fields block.
 category Extends;
-op extends(parents: CommaSepBy Ident): Extends => " extends " parents;
+op extends(parents: CommaSepBy LaurelType): Extends => " extends " parents;
 
 category Composite;
+
+// Type parameters (`<T, U>`) — declared here so both datatype (below) and
+// procedure/function/composite (further below) can reference it.
+category TypeParams;
+op typeParams (params: CommaSepBy Ident): TypeParams => "<" params ">";
 
 // Datatype definitions
 category DatatypeConstructorArg;
@@ -170,7 +194,7 @@ category DatatypeConstructorList;
 op datatypeConstructorList (constructors: CommaSepBy DatatypeConstructor): DatatypeConstructorList => constructors;
 
 category Datatype;
-op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name " { " constructors " }";
+op datatype (name: Ident, typeParams: Option TypeParams, constructors: DatatypeConstructorList): Datatype => "datatype " name typeParams " { " constructors " }";
 
 // Procedures
 category ReturnType;
@@ -201,33 +225,40 @@ op body(body: StmtExpr): Body => "\n" body:0;
 op externalBody: Body => "external";
 
 category Procedure;
-op procedure (name : Ident, parameters: CommaSepBy Parameter,
+op procedure (name : Ident, typeParams: Option TypeParams, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "procedure " name typeParams "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
-op function (name : Ident, parameters: CommaSepBy Parameter,
+op function (name : Ident, typeParams: Option TypeParams, parameters: CommaSepBy Parameter,
   returnType: Option ReturnType,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "function " name typeParams "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
 
-op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
+op composite (name: Ident, typeParams: Option TypeParams, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name typeParams extending " {" fields procedures " }";
 
 category ConstrainedType;
 op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
+// Type alias `type Name = Target`. No trailing `;` — top-level decls don't share a
+// separator (each renders its own terminator; the next leading keyword delimits, like
+// composite/datatype/constrained).
+category TypeAliasDecl;
+op typeAlias (name: Ident, typeParams: Option TypeParams, target: LaurelType): TypeAliasDecl => "type " name typeParams " = " target:0;
+
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
+op typeAliasCommand(alias: TypeAliasDecl): Command => alias;
 

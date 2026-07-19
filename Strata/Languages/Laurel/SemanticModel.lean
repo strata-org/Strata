@@ -29,6 +29,7 @@ inductive ResolvedNodeKind where
   | typeAlias
   | constant
   | quantifierVar
+  | typeVar
   | unresolved
   deriving Repr, BEq
 
@@ -46,6 +47,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .typeAlias         => "type alias"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
+  | .typeVar           => "type variable"
   | .unresolved        => "unresolved"
 
 /-- A definition-site AST node that a reference can resolve to. -/
@@ -78,6 +80,10 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
+  /-- A type parameter (e.g. `T` in `procedure f<T>`), in scope within the
+      declaring procedure/composite/datatype. A name in type position that
+      resolves to this becomes `HighType.TVar`. -/
+  | typeVar (name : Identifier)
   | unresolved (referenceSource: Option FileRange)
   deriving Repr
 
@@ -99,6 +105,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
+  | .typeVar ..           => .typeVar
   | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
@@ -109,6 +116,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
+ | .typeVar name => ⟨ .TVar name, none ⟩
  | .unresolved source => ⟨ .Unknown, source ⟩
  | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
  | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
@@ -155,7 +163,10 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
     | fuel' + 1 =>
       match model.get current with
         | .compositeType (ty : CompositeType) =>
-          [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
+          -- `extending` is `List HighTypeMd`; ancestry keys on the parent NAME (an
+          -- instantiation `Base<T>` shares `Base`'s ancestor chain), so peel the base.
+          [ty] ++ ty.extending.flatMap (fun parent =>
+            match highBaseName? parent.val with | some n => go fuel' n | none => [])
         | _ => []
   let seen : List Identifier := []
   (go model.compositeCount name).foldl (fun (acc, seen) ct =>

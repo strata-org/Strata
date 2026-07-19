@@ -19,33 +19,51 @@ Chained aliases are resolved transitively. Runs after the first resolution.
 
 namespace Strata.Laurel
 
-private abbrev AliasMap := Std.HashMap String HighTypeMd
+-- An alias entry: its type parameters (empty for a monomorphic alias) and target type.
+private abbrev AliasMap := Std.HashMap String (List Identifier × HighTypeMd)
 
-/-- Build a map from alias name to target type. -/
+/-- Build a map from alias name to `(typeArgs, target)`. -/
 def buildAliasMap (types : List TypeDefinition) : AliasMap :=
   types.foldl (init := {}) fun m td =>
-    match td with | .Alias ta => m.insert ta.name.text ta.target | _ => m
+    match td with | .Alias ta => m.insert ta.name.text (ta.typeArgs, ta.target) | _ => m
 
 /-- Transitively resolve a HighType through the alias map.
     A visited set guards against infinite loops on cyclic aliases.
 
-    Key invariant: for a non-cyclic alias map, the result contains no
-    `UserDefined` references whose name is a key in `amap`. -/
+    For a GENERIC alias (`type Pair<A,B> = …`), a reference is `.Applied (UserDefined Pair) [τ…]`:
+    bind the alias's `typeArgs ↦ τ…` and substitute into the target (via `substTypeVars`) — so
+    `Pair<int,bool>` expands with `A↦int, B↦bool`. Substitution fires only when args are present
+    and the arity matches; an arity-wrong reference is left unfolded and rejected downstream
+    (fail-loud, never a wrong-accept): `Pair<int>` cleanly by `resolveHighType`'s `.Applied`
+    arity check, a bare `Pair` (zero args, which that check can't see — see the `Resolution.lean`
+    NOTE) as a `'Pair' is not defined` StrataBug at re-resolution.
+
+    Key invariant: for a non-cyclic alias map, the result contains no `UserDefined` reference
+    whose name is a key in `amap`, except an arity-wrong one (left unfolded, per above). -/
 partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
     (visited : Std.HashSet String := {}) : HighTypeMd :=
   match ty.val with
   | .UserDefined name =>
     if visited.contains name.text then ty
     else match amap.get? name.text with
-      | some target => resolveAliasType amap target (visited.insert name.text)
-      | none => ty
+      | some ([], target) => resolveAliasType amap target (visited.insert name.text)
+      | _ => ty   -- not an alias, or a bare generic alias (0 args) left unfolded (see docstring)
   | .TSet et => { val := .TSet (resolveAliasType amap et visited), source := ty.source }
   | .TMap kt vt =>
     { val := .TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), source := ty.source }
   | .Applied base args =>
-    let base' := resolveAliasType amap base visited
     let args' := args.map (resolveAliasType amap · visited)
-    { val := .Applied base' args', source := ty.source }
+    match base.val with
+    | .UserDefined name =>
+      match (if visited.contains name.text then none else amap.get? name.text) with
+      | some (params, target) =>
+        -- Shared `applyAliasArgs` (LaurelAST) binds params↦args + substitutes — the SAME kernel
+        -- `TypeLattice.unfold` uses, so the consistency relation agrees with elimination.
+        match applyAliasArgs params args' target with
+        | some t => resolveAliasType amap t (visited.insert name.text)
+        | none => { val := .Applied base args', source := ty.source }   -- wrong arity (see docstring)
+      | none => { val := .Applied base args', source := ty.source }
+    | _ => { val := .Applied (resolveAliasType amap base visited) args', source := ty.source }
   | .Pure base => { val := .Pure (resolveAliasType amap base visited), source := ty.source }
   | .Intersection tys =>
     { val := .Intersection (tys.map (resolveAliasType amap · visited)), source := ty.source }

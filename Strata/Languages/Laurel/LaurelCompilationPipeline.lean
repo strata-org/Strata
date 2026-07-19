@@ -26,6 +26,7 @@ import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.MonomorphizeComposites
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -98,13 +99,24 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List DiagnosticMod
 
 /-- The ordered sequence of Laurel-to-Laurel lowering passes. -/
 def laurelPipeline : Array LoweringPass := #[
+  -- Polymorphism: lift instance procedures, then monomorphize, BEFORE everything else
+  -- (the lift must precede monomorphization, and both must precede heap parameterization).
+  liftInstanceProceduresPass,
+  -- TypeAliasElim runs BEFORE monomorphization: an alias of a generic-composite instantiation
+  -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
+  -- to `Box<int>` so the monomorphizer sees the real `.Applied` and rewrites it to `Box$a1$int`.
+  -- Mono is alias-agnostic (no `.Alias` refs); alias-elim only needs the first resolve, which
+  -- precedes the whole pipeline. No `comesBefore` pins their relative order.
+  typeAliasElimPass,
+  { monomorphizeCompositesPass with comesBefore := [⟨heapParameterizationPass.meta, "monomorphization must run before heap parameterization: HeapParam boxes composite fields into the non-parametric Box datatype, so any generic composite still un-monomorphized at that point would be boxed with no concrete instantiation and reach Core un-lowered."⟩] },
   eliminateDoWhilePass,
   eliminateIncrDecrPass,
-  typeAliasElimPass,
   constrainedTypeElimPass,
   filterNonCompositeModifiesPass,
   mergeAndLiftReturnsPass,
-  liftInstanceProceduresPass,
+  -- `liftInstanceProceduresPass` runs at position 0 (it must precede monomorphization);
+  -- that also places it before `eliminateValueInReturnsPass`, as value-returning
+  -- instance methods require, so no entry is needed here.
   eliminateValueInReturnsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
@@ -156,14 +168,73 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      -- If the program ALREADY has a non-warning error, it is already rejected, so a "new"
+      -- re-resolution error is a downstream CASCADE of it (e.g. the same surface error
+      -- restated over monomorphized type names, escaping the `resolutionErrors` dedup only
+      -- because `Box<bool>` became `Box$a1$bool`). Folding that as an internal `.StrataBug`
+      -- would wrongly blame the compiler; suppress it and keep the clean surface diagnostic.
+      -- A genuine post-transform failure still fails loud below once the program is otherwise
+      -- valid.
+      if !newErrors.isEmpty && allDiags.any (·.type != .Warning) then
+        return (program, model, allDiags, allStats)
       if !newErrors.isEmpty then
-        let newDiags := newErrors.toList.map fun d =>
+        -- On an otherwise-valid program, a new re-resolution error is a genuine post-transform
+        -- COMPILER failure (dangling monomorph ref, unresolved inherited field) — fold it as a
+        -- StrataBug so it fails loud (translated=false).
+        --
+        -- EXCEPTION — a user identifier colliding with a pass-generated name is NOT a compiler
+        -- bug: `$`, the `$aN$` tag shape, and the reserved internal type names (`Box`, `Heap`,
+        -- `Field`, `TypeTag`, `Composite`) are all legal in source, so a user can declare one.
+        -- Such a collision surfaces as a NEW `Duplicate definition` — and a duplicate can ONLY be
+        -- a user/generated clash (two user names would have clashed in the first resolve; two
+        -- generated names are worklist-deduped), so a genuine internal failure is always a "not
+        -- defined" dangling ref, never a duplicate. Report the duplicate as a plain `UserError`
+        -- with a rename hint. Location is usually good but incidental: the generated type is
+        -- prepended to `program.types`, so the user declaration is the second registrant that
+        -- `defineNameCheckDup` blames, carrying its real `FileRange`; a purely-synthetic colliding
+        -- name (`$heap`/`$impl`, `source := none`) can still lose location.
+        let isUserCollision (d : DiagnosticModel) : Bool :=
+          (d.message.splitOn "Duplicate definition").length > 1
+        let asStrataBug (d : DiagnosticModel) : DiagnosticModel :=
           { d with
               message :=
-                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d}. Existing diagnostics were: {resolutionErrors.toList}"
+                s!"Internal error: resolution after '{pass.name}' introduced this diagnostic: {d.message}"
               type := .StrataBug }
-        emit pass.name "laurel.st" program
-        return (program, model, allDiags ++ newDiags, allStats)
+        let collisions := newErrors.toList.filter isUserCollision
+        if collisions.isEmpty then
+          -- No collision ⇒ every new error is a genuine post-transform compiler failure.
+          let newDiags := newErrors.toList.map asStrataBug
+          emit pass.name "laurel.st" program
+          return (program, model, allDiags ++ newDiags, allStats)
+        else
+          -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
+          -- mismatches restated over the doubly-defined name (a composite named `Box`/`Field`/
+          -- `TypeTag` clashing with a lowering-generated datatype yields `expected 'Composite',
+          -- got 'Field'` follow-ons) — is not an independent compiler bug and must not be blamed
+          -- on the compiler. Report each collision as a clean `.UserError` with a rename hint.
+          -- The doubly-defined name is quoted in the collision message (`Duplicate definition
+          -- 'X'`); a cascade follow-on always MENTIONS that name, so we drop only the new errors
+          -- that reference a colliding name and still fail loud (`.StrataBug`) on any OTHER new
+          -- error — a genuinely independent post-transform failure that merely co-occurred is
+          -- NOT masked. (Renaming the identifier removes the collision and routes every new error
+          -- through the fail-loud branch above, so nothing is ever permanently hidden.)
+          let collidingNames : List String :=
+            collisions.filterMap (fun d => (d.message.splitOn "'")[1]?)
+          let mentionsColliding (d : DiagnosticModel) : Bool :=
+            collidingNames.any (fun n => (d.message.splitOn n).length > 1)
+          let hinted := collisions.map fun d =>
+            { d with
+                message :=
+                  s!"{d.message} (this name collides with one introduced by an internal lowering \
+                     pass; rename the identifier — a reserved internal type name (e.g. `Box`, \
+                     `Heap`, `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
+                     `$aN$` instantiation-tag shape can clash with a synthetic name)"
+                type := .UserError }
+          let independent := newErrors.toList.filter fun d =>
+            !isUserCollision d && !mentionsColliding d
+          let newDiags := hinted ++ independent.map asStrataBug
+          emit pass.name "laurel.st" program
+          return (program, model, allDiags ++ newDiags, allStats)
       program := result.program
       model := result.model
     emit pass.name "laurel.st" program
@@ -245,26 +316,37 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
   let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
+/-- The canonical Core `VerifyOptions` used by *every* Laurel verify path.
+    Single source of truth so the diagnostics paths (`verifyToDiagnostics`) and
+    the production path (`verifyToVcResults`) cannot silently diverge — they must
+    measure the same verification. -/
+def coreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+  { options.verifyOptions with removeIrrelevantAxioms := .Precise }
+
+/-- Run `act` with the VC directory dictated by `verifyOpts`: a fresh temp dir
+    (auto-cleaned) when none is configured, else the caller's directory. Shared
+    by all verify entry points. -/
+def withVcDir {α} (verifyOpts : Core.VerifyOptions) (act : System.FilePath → IO α) : IO α :=
+  match verifyOpts.vcDirectory with
+  | .none => IO.FS.withTempDir act
+  | .some p => do IO.FS.createDirAll ⟨p.toString⟩; act ⟨p.toString⟩
+
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase
     failure as a **structured** `DiagnosticModel` value (via `.toBaseIO`) rather
-    than throwing it.
+    than throwing it (file-relative reporting, #1367).
 
     `Core.verify : EIO DiagnosticModel VCResults` carries its error as a
     `DiagnosticModel` (with byte-offset `fileRange`). Capturing it as an
     `Except` here is the single point where that structure is preserved, so the
     throwing (`verifyToVcResults`) and capturing
     (`verifyToDiagnosticModelsCapturing`) entry points can't drift apart: both
-    share this verify setup (the `removeIrrelevantAxioms := .Precise` option and
-    the `vcDirectory` temp-dir handling) and only differ in how they treat the
-    `.error` case. -/
+    share this verify setup (`coreVerifyOptions` + `withVcDir`) and only differ in
+    how they treat the `.error` case. -/
 private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
     : IO (Except DiagnosticModel VCResults) := do
-  let verifyOptions := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
-  let runner tempDir : IO (Except DiagnosticModel VCResults) :=
+  let verifyOptions := coreVerifyOptions options
+  withVcDir verifyOptions fun tempDir =>
     (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
-  match verifyOptions.vcDirectory with
-  | .none => IO.FS.withTempDir runner
-  | .some p => IO.FS.createDirAll ⟨p.toString⟩; runner ⟨p.toString⟩
 
 /--
 Verify a Laurel program using an SMT solver.
@@ -285,20 +367,40 @@ def verifyToVcResults (program : Program)
   | some coreProgram =>
     match ← runVerify coreProgram options with
     | .ok ioResult => return (some ioResult, translateDiags)
-    -- Reconstruct the throwing path: stringify the structured error exactly as
-    -- the previous `EIO.toIO (fun f => .userError (toString f))` did.
+    -- Throwing path: stringify the structured error (as #1367 did). A poly fn whose
+    -- body mismatches its signature must surface as a Core error FOLDED into the
+    -- result (`translated=false`), not a Lean exception — that fold lives in the
+    -- CAPTURING entry point consumers use, `verifyToDiagnosticModelsCapturing`, which
+    -- routes through this same `runVerify` boundary and returns `.error` as a value.
+    -- `verifyToVcResults` keeps #1367's throwing behavior for the production CLI path
+    -- (its only external caller, `Languages/Laurel.lean`).
     | .error dm => throw (IO.userError (toString dm))
   | none => return (none, translateDiags)
 
 /--
 Verify a Laurel program using an SMT solver, returning results with
 duplicated assertions merged at the VCOutcome level.
+
+Unlike `verifyToVcResults` (which THROWS a verify-phase error to preserve the
+CLI's exit-code behavior, #1367), this CAPTURES a Core-side `DiagnosticModel`
+failure and folds it into the returned diagnostics: a polymorphic
+function whose body is incompatible with its signature is a Core type error that
+must surface as a diagnostic (`translated=false`), not a thrown exception. This
+is the path the non-throwing consumers (`verifyToDiagnostics`,
+`verifyToDiagnosticModels`) build on. Both
+fold-capturing paths share the `runVerify` boundary, so they can't drift from the
+throwing path on verify options or temp-dir handling.
 -/
 def verifyToMergedResults (program : Program)
     (options : LaurelVerifyOptions := default)
     : IO (Option VCResults × List DiagnosticModel) := do
-  let (vcOpt, diags) ← verifyToVcResults program options
-  return (vcOpt.map (·.mergeByAssertion), diags)
+  let (coreProgramOption, translateDiags) ← translate options.translateOptions program
+  match coreProgramOption with
+  | none => return (none, translateDiags)
+  | some coreProgram =>
+    match ← runVerify coreProgram options with
+    | .ok results => return (some results.mergeByAssertion, translateDiags)
+    | .error coreDiag => return (none, translateDiags ++ [coreDiag])
 
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
     (options : LaurelVerifyOptions := default) : IO (Array Diagnostic) := do

@@ -14,6 +14,7 @@ import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.MapStmtExpr
 
 /-
 Heap Parameterization Pass
@@ -80,11 +81,19 @@ def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
       collectExprMd v
   | .PureFieldUpdate t _ v => collectExprMd t; collectExprMd v
   | .PrimitiveOp _ args _ => for a in args do collectExprMd a
-  | .New _ => modify fun s => { s with writesHeapDirectly := true }
+  | .New .. => modify fun s => { s with writesHeapDirectly := true }
   | .ReferenceEquals l r => collectExprMd l; collectExprMd r
   | .AsType t _ => collectExprMd t
   | .IsType t _ => collectExprMd t
-  | .Quantifier _ _ trigger b => if let some t := trigger then collectExprMd t; collectExprMd b
+  | .Quantifier _ _ trigger b => do
+    -- Always collect the body `b`; collect the trigger too if present. (The body
+    -- collect must NOT be nested under the `if`: a triggerless quantifier whose
+    -- body reads a composite field would otherwise skip heap-read analysis, and
+    -- the surviving field-select fails loud at translation.)
+    match trigger with
+    | some t => collectExprMd t
+    | none => pure ()
+    collectExprMd b
   | .Assigned n => collectExprMd n
   | .Old v => collectExprMd v
   | .Fresh v => collectExprMd v
@@ -173,6 +182,18 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
+/-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation,
+    so `Bx<int>` and `Bx<bool>` get distinct box constructors/destructors (`Bx$a1$int` vs
+    `Bx$a1$bool`) — preserving the instantiation-distinctness the native parametric datatype
+    gives us. Shares `instTagCommon` with `MonomorphizeComposites.tyTag` (inlined, not imported,
+    to avoid a pass↔pass cycle), so it inherits that kernel's non-injectivity caveat: a `$`-clash
+    is caught downstream by the Core type checker, not here. Returns `none` on an un-renderable
+    shape (`.Applied` over a non-datatype, a `.TVar` arg), keeping the caller on its loud fallback. -/
+private def appliedBoxTag (ty : HighType) : Option String :=
+  -- The extra leaf `instTagCommon` doesn't handle: heap-box naming accepts `.TCore` (`.TVoid` it
+  -- does NOT). All shared arms (incl. TMap/TSet) come from `instTagCommon`; `none` on TVar/Pure/TVoid.
+  instTagCommon (fun | .TCore n => some n | _ => none) ty
+
 /-- Get the Box destructor name for a given Laurel HighType.
     For UserDefined datatypes, uses "Box..<datatypeName>Val!";
     for Composite types, uses "Box..compositeVal!".
@@ -193,6 +214,13 @@ def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "Box..compositeVal!"
   | .TBv n => s!"Box..bv{n}Val!"
   | .TCore name => s!"Box..{name}Val!"
+  -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
+  -- instantiation, named via `appliedBoxTag`. (`.TSet` is unreachable — LaurelGrammar.st has
+  -- only `mapType`, no Set production — kept for symmetry with `.TMap`.)
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}Val!"
+    | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -210,6 +238,11 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
   | .TCore name => s!"Box..{name}"
+  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`.
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}"
+    | none => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
@@ -229,6 +262,13 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
   | .TCore name =>
         some { name := s!"Box..{name}", args := [{ name := s!"{name}Val", type := ⟨.TCore name, none⟩ }] }
+  -- `.Applied` generic datatypes + built-in `.TMap`/`.TSet`: the box variant carries the
+  -- FULL type, so `translateType` lowers it to the right Core sort (`.tcons "Bx" [int]` for a
+  -- datatype, `Core.mapTy k v` for Map) — keeping distinct instantiations in distinct boxes.
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => some { name := s!"Box..{tag}", args := [{ name := s!"{tag}Val", type := ⟨ty, none⟩ }] }
+    | none => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -366,9 +406,8 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      -- Process calls to heap mutating procedures
+      -- Process an RHS call to a heap-mutating/reading procedure: thread the heap argument.
       let (newAssign, suffixes) ← do
-        -- Detect calls and add a heap argument if needed
         let (v', addedHeap) <- match _hv : v.val with
           | .StaticCall callee args => do
             let args' <- args.mapM recurseOne
@@ -407,8 +446,6 @@ where
             updateStatements ++ [⟨ StmtExpr.Var targetVar, source⟩]
           else updateStatements
         pure (newAssign, suffixes)
-
-      -- Return the list of statements directly (flattened into enclosing block)
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
@@ -437,7 +474,7 @@ where
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
-    | .New _ => return [exprMd]
+    | .New .. => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
     | .AsType t ty =>
         let t' ← recurseOne t valueUsed
@@ -474,6 +511,23 @@ where
       cases exprMd with | mk val src =>
       simp_all
       omega)
+
+/-- Lower ONLY `AsType` nodes (`x as T` → `{ assert (x is T); x }`), recursing
+    structurally and leaving every other node untouched. This is the
+    heap-INDEPENDENT half of the `.AsType` rewrite in `heapTransformExpr`
+    (line ~482), factored out for the heap-neutral procedure branch: such a
+    procedure must NOT receive the heap-dependent rewrites (field access,
+    Composite `==` → reference compare — the latter mis-fires on a
+    constrained/`.UserDefined` non-composite operand), but it MUST still have its
+    `as` casts lowered or the Core translator hard-fails (`NotYetImplemented`).
+    Bottom-up, so nested casts (`(x as A) as B`) lower correctly. -/
+def lowerAsTypeOnly (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExpr (fun e => match e.val with
+    | .AsType t ty =>
+      let isCheck : StmtExprMd := ⟨ .IsType t ty, e.source ⟩
+      let assertStmt : StmtExprMd := ⟨ .Assert { condition := isCheck }, e.source ⟩
+      ⟨ .Block [assertStmt, t] none, e.source ⟩
+    | _ => e) expr
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
@@ -545,8 +599,28 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else
-    -- This procedure doesn't read or write the heap - no changes needed
-    return proc
+    -- This procedure neither reads nor writes the heap, so it gets NO `$heap`
+    -- parameter and needs none of the heap-dependent rewrites (field
+    -- read/write → readField/updateField, Composite `==` → reference compare).
+    -- It CAN still contain `AsType` (`x as T`), which is heap-INDEPENDENT — it
+    -- lowers to `{ assert (x is T); x }` with no heap reference. Leaving it
+    -- un-lowered makes the Core translator hard-fail with `NotYetImplemented`
+    -- (LaurelToCoreTranslator, the `.AsType` arm). So we lower ONLY `AsType`
+    -- here, deliberately NOT running the full `heapTransformExpr` (whose
+    -- Composite-`==` rewrite would mis-fire on a constrained/`.UserDefined`
+    -- non-composite operand, wrapping an `int` in `Composite..ref!`).
+    let body' := match proc.body with
+      | .Transparent bodyExpr =>
+          .Transparent (lowerAsTypeOnly bodyExpr)
+      | .Opaque postconds impl modif =>
+          .Opaque (postconds.map (·.mapCondition lowerAsTypeOnly)) (impl.map lowerAsTypeOnly)
+            (modif.map lowerAsTypeOnly)
+      | .Abstract postconds =>
+          .Abstract (postconds.map (·.mapCondition lowerAsTypeOnly))
+      | .External => .External
+    return { proc with
+      body := body'
+      preconditions := proc.preconditions.map (·.mapCondition lowerAsTypeOnly) }
 
 def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   -- Instance procedures are already lifted to `staticProcedures` by an earlier
@@ -571,11 +645,18 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
 
+  -- Drop only a DATATYPE named `Box`, so we don't emit a duplicate of the
+  -- `boxDatatype` synthesized just above (a stray `Box` datatype could arrive from
+  -- the prelude or a prior lowering). Crucially this must NOT match a user
+  -- `.Composite` named `Box`: composites are still needed here (TypeHierarchy reads
+  -- them to build the `TypeTag` constructors and flatten them to `Composite`), and
+  -- deleting one erases its `Box_TypeTag`, collapsing re-resolution. A user datatype
+  -- literally named `Box` collides with the boxing datatype irreducibly and is caught
+  -- elsewhere as a duplicate; here we only guard the composite case.
   let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
-    -- The filter is a hack to deal with another hack,
-    -- the box that was added in CoreDefinitionsForLaurel.lean
-    -- because Laurel does not support polymorphism yet
-    types'.filter (fun td => td.name.text != "Box")
+    types'.filter (fun td => match td with
+      | .Datatype dt => dt.name.text != "Box"
+      | _ => true)
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }

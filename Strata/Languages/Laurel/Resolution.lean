@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.UnorderedCore
 public import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Util.Tactics
@@ -238,7 +239,8 @@ private def containerScopedName (containerName memberName : Identifier) : Identi
 
 /-- Declared type of `fieldName` in the scope of composite type `typeName`; `none` if
     unknown. Shared by `targetTypeName` and `incrDecrTargetType`. (`resolveFieldInTypeScope`
-    below is the same walk returning the field's *id* instead of its type.) -/
+    below returns the field's *id* instead of its type, and additionally unfolds a type
+    alias to its target before the lookup — this function does a direct scope lookup.) -/
 private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
   let s ← get
   match s.typeScopes.get? typeName with
@@ -260,6 +262,14 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | some (_, node) =>
       match node.getType.val with
       | .UserDefined typRef => pure (some typRef.text)
+      -- Peel `Box<int>` to its base: field names don't depend on type args, so a
+      -- generic instantiation resolves fields against the generic composite `Box`'s
+      -- scope. Needed here because field resolution runs at the initial resolve, before
+      -- monomorphization turns this into a plain `.UserDefined Box$int`.
+      | .Applied base _ =>
+        match base.val with
+        | .UserDefined typRef => pure (some typRef.text)
+        | _ => pure none
       | _ => pure none
     | none => pure none
   | .Var (.Field inner fieldName) => do
@@ -280,6 +290,24 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
 /-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
 private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
   let s ← get
+  -- A type alias (`type P = Pt`) has no type-scope of its own — its fields live under the
+  -- target composite's name. The first resolution runs BEFORE `TypeAliasElim`, so `p : P`'s
+  -- field access reaches here with the alias name; unfold it to the target's base name
+  -- (transitively, fuel-guarded against cycles) before the lookup.
+  let rec unfoldAlias (name : String) (fuel : Nat) : String :=
+    match fuel with
+    | 0 => name
+    | fuel + 1 =>
+      match s.scope.get? name with
+      | some (_, (.typeAlias ta : ResolvedNode)) =>
+        match ta.target.val with
+        | .UserDefined tgt => unfoldAlias tgt.text fuel
+        | .Applied base _ => match base.val with
+          | .UserDefined tgt => unfoldAlias tgt.text fuel
+          | _ => name
+        | _ => name
+      | _ => name
+  let typeName := unfoldAlias typeName 16
   match s.typeScopes.get? typeName with
   | some typeScope =>
     match typeScope.get? fieldName.text with
@@ -288,10 +316,33 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
   | none => return none
 
 /-- Resolve a field reference using the target's type to build a qualified lookup key.
-    Falls back to the instance type name (for `self.field` in instance methods),
-    then to unqualified lookup if the target type cannot be determined. -/
+
+    `holderTy?` is the *authoritative* concrete type of the receiver, as synthesized
+    by `Synth.resolveStmtExpr` at the call site. When supplied it is tried FIRST: its
+    base composite name (peeled via `unfold`+`highBaseName?`) keys the field-scope
+    lookup. This is what makes a CHAINED access through a generic composite field
+    resolve — e.g. `p#b#az` where `p : Pair<int,Z>` and field `b : B` (a type
+    variable): the receiver `p#b` synthesizes to the concrete `Z` (via
+    `concretizeFieldType`), so `#az` finds `Z`'s field. The string-based
+    `targetTypeName` fallback below cannot recover this because a `.TVar`/`.Applied`
+    field type carries no composite name on its own — it dropped to `none`, falling
+    through to `resolveRef` and the spurious "'az' is not defined".
+
+    Falls back (when `holderTy?` is absent or names no known composite) to
+    `targetTypeName target`, then to the instance type name (for `self.field` in
+    instance methods), then to unqualified `resolveRef`. Threading the already-
+    computed holder type only ever ADDS a successful resolution (it never overrides
+    a name the old path resolved differently — the type-scope field map is the same
+    one both paths consult), so it is a pure completeness improvement, never a
+    wrong-accept: a field absent from the concrete holder still falls through. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (source : Option FileRange) : ResolveM Identifier := do
+    (source : Option FileRange) (holderTy? : Option HighTypeMd := none) : ResolveM Identifier := do
+  -- Authoritative path: use the synthesized concrete holder type when available.
+  if let some holderTy := holderTy? then
+    let s ← get
+    if let some baseName := highBaseName? (s.typeLattice.unfold holderTy).val then
+      if let some resolved ← resolveFieldInTypeScope baseName.text fieldName then
+        return resolved
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -325,28 +376,41 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
 
 /-! ## AST traversal (Phase 1) -/
 
+/-- Type-argument arity error when `numDeclared ≠ numProvided`; shared by `resolveHighType`'s
+    `.Applied` arm and `Synth.new` for identical wording. -/
+def checkTypeArgArity (source : Option FileRange) (name : String)
+    (numDeclared numProvided : Nat) : ResolveM Unit := do
+  unless numDeclared == numProvided do
+    modify fun st => { st with errors := st.errors.push (diagnosticFromSource source
+      s!"'{name}' expects {numDeclared} type argument(s) but {numProvided} were provided") }
 
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
   | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref ty.source
-      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
-    -- If the reference failed to resolve (name not defined) or resolved to the
-    -- wrong kind, treat the type as Unknown to avoid cascading errors. The single
-    -- "is not defined" / "wrong kind" diagnostic was already emitted by `resolveRef`;
-    -- collapsing the dangling `UserDefined` to `Unknown` keeps the variable's later
-    -- uses from being type-checked against a phantom type. A name that genuinely
-    -- resolves to a composite/datatype/alias/constrained type stays `UserDefined`
-    -- so real subtype checking still works.
-    let s ← get
-    let kindOk : Bool := match s.scope.get? ref.text with
-      | some (_, node) => node.kind == .unresolved ||
-          (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains node.kind)
-      | none => false  -- name not defined: resolveRef already reported it
-    if kindOk then pure (HighType.UserDefined ref')
-    else pure HighType.Unknown
+    -- A bare name in type position may be (a) an in-scope type VARIABLE, (b) a
+    -- concrete type, or (c) undefined / the wrong kind. Read its scope kind and branch:
+    --   (a) `.typeVar`  → reclassify to `HighType.TVar` (polymorphism substrate).
+    --   (b) composite/datatype/alias/constrained, or still-`.unresolved` → keep
+    --       `UserDefined` (real subtype checking applies downstream — #1121).
+    --   (c) anything else (a value name used as a type, etc.) → collapse to
+    --       `Unknown` so later uses aren't type-checked against a phantom type;
+    --       the "is not defined"/"wrong kind" diagnostic was already emitted by
+    --       `resolveRef` (#1121's cascade-prevention).
+    let nodeKind? := ((← get).scope.get? ref.text).map (·.2.kind)
+    if nodeKind? == some ResolvedNodeKind.typeVar then
+      let ref' ← resolveRef ref ty.source (expected := #[ResolvedNodeKind.typeVar])
+      pure (HighType.TVar ref')
+    else
+      let ref' ← resolveRef ref ty.source
+        (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
+      let kindOk : Bool := match nodeKind? with
+        | some k => k == .unresolved ||
+            (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains k)
+        | none => false  -- name not defined: resolveRef already reported it
+      if kindOk then pure (HighType.UserDefined ref')
+      else pure HighType.Unknown
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
@@ -357,6 +421,22 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   | .Applied base args =>
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
+    -- Type-argument arity check for an applied type (`MyPair<int>`, `Box<int, bool>`).
+    -- Declared param count: `unfoldMap` for a generic ALIAS, `parentExprMap` for a generic
+    -- COMPOSITE. Generic DATATYPES are in neither map — a wrong-arity datatype use is caught
+    -- fail-loud downstream by Core (left to that path, only the message is less specific).
+    -- The check lives HERE (`.Applied`), not `.UserDefined`, because the `.Applied` case
+    -- recurses `resolveHighType base`, so a base like `Box` reaches `.UserDefined` as a bare
+    -- zero-arg name — a zero-args check there would reject `Box<int>` itself. Consequence: a
+    -- bare generic used as a COMPLETE type (`var m: MyPair` for `MyPair<A,B>`) is not caught
+    -- here and reaches Core as a dangling ref → StrataBug — fail-loud, never a wrong-accept.
+    (do
+      let ctx := (← get).typeLattice
+      if let some name := highBaseName? base'.val then
+        let declParams? := (ctx.unfoldMap.get? name.text).map (·.1)
+          |>.orElse (fun _ => (ctx.parentExprMap.get? name.text).map (·.1))
+        if let some declParams := declParams? then
+          checkTypeArgArity ty.source name.text declParams.length args'.length)
     pure (.Applied base' args')
   | .Pure base =>
     let base' ← resolveHighType base
@@ -457,6 +537,53 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
     match s.scope.get? ref.text with
     | some (_, node) => pure node.getType
     | none => pure { val := .Unknown, source := ref.source }
+
+/-- Concretize a field's declared type at an access site: substitute the field's DECLARING
+    composite's params with the holder's args. Else raw `.TVar T` hits the wildcard and a
+    cross-type write is wrongly accepted (imprecise, not unsound — Core havocs the read back).
+    - OWN: `{D.params := holderArgs}`.
+    - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware:
+      `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
+    Only ever more concrete; identity on polymorphic accesses; raw-type fallback otherwise. -/
+private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
+    : ResolveM HighTypeMd := do
+  let s ← get
+  let raw ← getVarType fieldName'
+  -- Need the field's declaring composite + raw type.
+  match fieldName'.uniqueId.bind s.idToNode.get? with
+  | some (.field declType fld) =>
+    let ctx := s.typeLattice
+    -- Peel the holder to (base name, concrete args).
+    let holderTy' := ctx.unfold holderTy
+    let holder? : Option (String × List HighTypeMd) := match holderTy'.val with
+      | .UserDefined n => some (n.text, [])
+      | .Applied base args => (highBaseName? base.val).map (fun n => (n.text, args))
+      | _ => none
+    match holder? with
+    | none => pure raw
+    | some (holderName, holderArgs) =>
+      -- The concrete args the holder supplies *for the declaring composite* D.
+      let declArgs? : Option (List HighTypeMd) :=
+        if holderName == declType.text then some holderArgs
+        else (ctx.substitutedAncestors holderName holderArgs).findSome? fun anc =>
+          match anc.val with
+          | .UserDefined n => if n.text == declType.text then some [] else none
+          | .Applied base args =>
+            match highBaseName? base.val with
+            | some n => if n.text == declType.text then some args else none
+            | none => none
+          | _ => none
+      match declArgs?, ctx.parentExprMap.get? declType.text with
+      | some declArgs, some (declParams, _) =>
+        -- Arity must match for the substitution to be meaningful; the legacy bare
+        -- `new C` form (no args) lands here as a mismatch → safe raw fallback.
+        if declParams.length == declArgs.length && !declParams.isEmpty then
+          let subst : Std.HashMap String HighTypeMd :=
+            (declParams.zip declArgs).foldl (fun m (p, a) => m.insert p.text a) {}
+          pure (substTypeVars subst fld.type)
+        else pure raw
+      | _, _ => pure raw
+  | _ => pure raw
 
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
@@ -678,7 +805,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.staticCall exprMd callee args source (by rw [h_node])
   | .PrimitiveOp op args skipProof =>
     Synth.primitiveOp exprMd expr op args skipProof source h_expr (by rw [h_node])
-  | .New ref => Synth.new ref source
+  | .New ref typeArgs => Synth.new ref typeArgs source
   | .This => Synth.this source
   | .ReferenceEquals lhs rhs =>
     Synth.refEq exprMd expr lhs rhs source h_expr (by rw [h_node])
@@ -890,9 +1017,12 @@ def Synth.varField (exprMd : StmtExprMd)
     (target : StmtExprMd) (fieldName : Identifier) (source : Option FileRange)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', _) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName source
-  let ty ← getVarType fieldName'
+  let (target', holderTy) ← Synth.resolveStmtExpr target
+  let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
+  -- Concretize the field's `.TVar` against the holder's instantiation. `holderTy` is
+  -- the synthesized holder type — already concretized for a nested `g#inner` because
+  -- that read came through this same rule — so chains concretize transitively.
+  let ty ← concretizeFieldType holderTy fieldName'
   pure (.Var (.Field target' fieldName'), ty)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1253,8 +1383,8 @@ def Check.block (exprMd : StmtExprMd)
     Pushes the surrounding `T` into both branches (rather than going
     through If-Synth + Sub at the boundary): errors fire at the
     offending branch instead of at the `if`, and the expectation
-    propagates through nested `Block` / `IfThenElse` / `Hole` /
-    `Quantifier` constructs that have their own check rules.
+    propagates through nested `Block` / `IfThenElse` / `Hole`
+    constructs that have their own check rules.
 
     Without an `else`, the implicit branch is an empty block of type
     `TVoid`, so the rule degenerates to require `TVoid <: T` — the
@@ -1459,26 +1589,26 @@ def Synth.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+  -- Resolve each target AND its type in one pass: a `.Field` target's holder type
+  -- is the synth result of resolving its receiver (`Synth.resolveStmtExpr`, the
+  -- authoritative synthesizer), so the field type is concretized against it directly
+  -- rather than re-derived by a separate, weaker pass.
+  let targetsWithTy ← targets.attach.mapM fun ⟨v, _⟩ => do
     let ⟨vv, vs⟩ := v
     match vv with
     | .Local ref =>
       let ref' ← resolveRef ref source
-      pure (⟨.Local ref', vs⟩ : VariableMd)
+      pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
     | .Field target fieldName =>
-      let (target', _) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source
-      pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
+      let (target', holderTy) ← Synth.resolveStmtExpr target
+      let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
+      pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       let ty' ← resolveHighType param.type
       let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-  let targetType (t : VariableMd) : ResolveM HighTypeMd := do
-    match t.val with
-    | .Local ref => getVarType ref
-    | .Declare param => pure param.type
-    | .Field _ fieldName => getVarType fieldName
-  let targetTys ← targets'.mapM targetType
+      pure ((⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd), ty')
+  let targets' := targetsWithTy.map (·.1)
+  let targetTys := targetsWithTy.map (·.2)
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
@@ -1507,40 +1637,16 @@ def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : Option FileRange)
     (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
-  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-    let ⟨vv, vs⟩ := v
-    match vv with
-    | .Local ref =>
-      let ref' ← resolveRef ref source
-      pure (⟨.Local ref', vs⟩ : VariableMd)
-    | .Field target fieldName =>
-      let (target', _) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source
-      pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
-    | .Declare param =>
-      let ty' ← resolveHighType param.type
-      let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
-  let targetType (t : VariableMd) : ResolveM HighTypeMd := do
-    match t.val with
-    | .Local ref => getVarType ref
-    | .Declare param => pure param.type
-    | .Field _ fieldName => getVarType fieldName
-  let targetTys ← targets'.mapM targetType
-  let expectedTy : HighTypeMd := match targetTys with
-    | [single] => single
-    | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let value' ← Check.resolveStmtExpr value expectedTy
+  -- Reuse `Synth.assign` for the target/value/expectedTy work (identical), then add the
+  -- [⇐] Sub boundary check. The call is on the SAME `exprMd`, so termination is by the
+  -- lexicographic tag (2 > 1 = Synth.assign's), not a subterm decrease.
+  let (synthExpr, expectedTy) ← Synth.assign exprMd targets value source h
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
-  pure { val := .Assign targets' value', source := source }
-  termination_by (exprMd, 0)
+  pure { val := synthExpr, source := source }
+  termination_by (exprMd, 2)
   decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      rw [h] at hsz
-      term_by_mem
+    all_goals (apply Prod.Lex.right; omega)
 
 -- ### Increment / decrement
 
@@ -1566,24 +1672,22 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     (source : Option FileRange)
     (h : exprMd.val = .IncrDecr mode op target) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let target' ← match h_tgt : target.val with
+  -- Resolve the target and compute its (concretized) type together, so a `.Field`
+  -- target's holder type comes from the authoritative synthesizer.
+  let (target', resultTy) ← match h_tgt : target.val with
     | .Local ref =>
       let ref' ← resolveRef ref source
-      pure (⟨.Local ref', target.source⟩ : VariableMd)
+      pure ((⟨.Local ref', target.source⟩ : VariableMd), ← getVarType ref)
     | .Field tgt fieldName =>
-      let (tgt', _) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source
-      pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
+      let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
+      let fieldName' ← resolveFieldRef tgt' fieldName source (holderTy? := holderTy)
+      pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
       let ty' ← resolveHighType param.type
-      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+      pure ((⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd), ty')
   checkIncrDecrTargetType op target' source
-  let resultTy ← match target'.val with
-    | .Local ref => getVarType ref
-    | .Declare param => pure param.type
-    | .Field _ fieldName => getVarType fieldName
   pure (.IncrDecr mode op target', resultTy)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1638,11 +1742,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
-  -- Hack because we use these polymorphic map primitives but Laurel does not
-  -- support polymorphism yet, so they cannot be type-checked against their
-  -- placeholder `int` signatures. Instead we resolve the arguments and infer the
-  -- result type structurally from them, keeping a concrete `HighType` flowing into
-  -- Core translation:
+  -- The map primitives `select`/`update`/`const` carry concrete `int` placeholder
+  -- signatures (see `CoreDefinitionsForLaurel`), not type parameters, so they can't be
+  -- checked against those signatures. Instead, infer the result type structurally from
+  -- the resolved arguments, keeping a concrete `HighType` flowing into Core:
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
   --   * `const(val)`           ⇒ `Map _ (typeof val)` (key type is not recoverable)
@@ -1727,16 +1830,29 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (source : Option FileRange)
     (h : exprMd.val = .InstanceCall target callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', _) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← Synth.resolveStmtExpr target
   -- An instance procedure is registered under the container-scoped key
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
   -- produces. Look the method up under that key, derived from the receiver's
   -- type; fall back to the bare callee name when the target's type can't be
   -- determined (an unresolved name, which already reported its own error).
+  -- A legitimate `obj#method(…)` has a COMPOSITE receiver, so `targetTypeName` yields
+  -- `some TypeName` and we look the method up under the container-scoped key `TypeName$method`
+  -- (the lifted static proc). When it yields `none` the receiver is NOT a composite — either an
+  -- already-errored target (type `.Unknown`, stay quiet — it reported its own error) or a
+  -- resolved NON-composite (`z : int`), which has no methods. REJECT the latter: without this,
+  -- the bare-`callee` fallback below would silently bind `z#sideEffect(…)` to an unrelated
+  -- top-level static procedure `sideEffect`, and since `LiftInstanceProcedures`/`ContractPass`
+  -- only handle `.InstanceCall` whose callee is an instance proc, the call's precondition is
+  -- dropped and it mis-verifies (a silent unsound accept).
   let lookupKey ← match (← targetTypeName target') with
     | some tyName => pure (containerScopedName (mkId tyName) callee)
-    | none => pure callee
+    | none =>
+      unless targetTy.val matches .Unknown | .TVoid do
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          s!"'{callee.text}' is called with '#' on a non-composite receiver; instance-method calls require a composite receiver") }
+      pure callee
   let resolved ← resolveRef lookupKey source
     (expected := #[.instanceProcedure, .staticProcedure])
   -- Preserve the user-facing callee text for diagnostics; only stamp the
@@ -2034,25 +2150,51 @@ def Check.primitiveOp (exprMd : StmtExprMd)
     Γ ⊢ New ref ⇒ Unknown
     ```
     When `ref` resolves to a composite or datatype, the type is
-    `UserDefined ref`. The `Unknown` fallback fires *only* when `ref`
-    resolves to a present definition whose kind is neither composite nor
-    datatype (e.g. a variable or procedure name); this suppresses
-    cascading errors after the kind diagnostic has already fired. An
-    *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
+    `UserDefined ref` — or, for an explicit instantiation `new C<τ…>`, the
+    applied type `Applied (UserDefined ref) [τ…]`, so the type checker and
+    `MonomorphizeComposites` see the concrete instantiation (mirroring
+    `computeExprType`'s `.New` arm). A bare `new C` carries no type args and
+    keeps the plain `UserDefined` type. The `Unknown` fallback fires *only*
+    when `ref` resolves to a present definition whose kind is neither
+    composite nor datatype (e.g. a variable or procedure name); this
+    suppresses cascading errors after the kind diagnostic has already fired.
+    An *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
     branch instead — `resolveRef` has already reported the name, so
-    re-flagging it here would only duplicate that diagnostic. -/
-def Synth.new (ref : Identifier) (source : Option FileRange) :
+    re-flagging it here would only duplicate that diagnostic. The explicit
+    type args are resolved (so a `.TVar` inside is reclassified and a bad
+    arg reported) and their count is checked against the composite's
+    declared type-arg arity. -/
+def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : Option FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
     (expected := #[.compositeType, .datatypeDefinition])
+  -- Resolve explicit instantiation arguments (`new Box<int>`) so their type names
+  -- get uniqueIds, exactly as `appliedType` does in type position. Empty for a
+  -- bare `new C` (the common, pre-existing case).
+  let typeArgs' ← typeArgs.mapM resolveHighType
   let s ← get
+  -- Arity-check explicit `new C<τ…>` against C's declared type params. `parentExprMap`
+  -- holds only COMPOSITES, so this covers a composite `new`; a generic DATATYPE `new`
+  -- (`new Bx<int,bool>`) hits the `none` branch and is instead caught downstream fail-loud
+  -- (a re-resolution `.StrataBug` after monomorphization), never a wrong-accept. Bare `new C`
+  -- carries no args (unchecked — the var's declared type drives it). Without this, surplus
+  -- args are silently dropped by the
+  -- monomorphizer's `zip`, so `new Box<int,bool>` for `Box<T>` would be over-accepted here.
+  unless typeArgs'.isEmpty do
+    match s.typeLattice.parentExprMap.get? ref.text with
+    | some (declParams, _) =>
+      checkTypeArgArity source ref.text declParams.length typeArgs'.length
+    | none => pure ()  -- datatype/unresolved: arity deferred to Core
   let kindOk : Bool := match s.scope.get? ref.text with
     | some (_, node) => node.kind == .unresolved ||
         (#[ResolvedNodeKind.compositeType, .datatypeDefinition].contains node.kind)
     | none => true
-  let ty := if kindOk then { val := HighType.UserDefined ref', source := source }
-            else { val := HighType.Unknown, source := source }
-  pure (.New ref', ty)
+  -- Applied type so mono sees the instantiation; mirrors `computeExprType`'s `.New` arm.
+  let ty :=
+    if !kindOk then { val := HighType.Unknown, source := source }
+    else if typeArgs'.isEmpty then { val := HighType.UserDefined ref', source := source }
+    else { val := HighType.Applied { val := .UserDefined ref', source := source } typeArgs', source := source }
+  pure (.New ref' typeArgs', ty)
 
 /-- (AsType)
     ```
@@ -2129,12 +2271,11 @@ def Synth.isType (exprMd : StmtExprMd)
     Γ ⊢ ReferenceEquals lhs rhs ⇒ TBool
     ```
     Both operands must be reference types (`UserDefined` or `Unknown`) —
-    reference equality is meaningless on primitives. The operands must
-    also be mutually consistent (the symmetric `isConsistent`), so
-    `Cat === Dog` is rejected when `Cat` and `Dog` are unrelated
-    user-defined types, while `Cat === Animal` is accepted when `Cat`
-    extends `Animal` (the gradual `Unknown` wildcard makes either side
-    flow freely against the other). -/
+    reference equality is meaningless on primitives. They must also be
+    mutually CONSISTENT (`isConsistent`, symmetric), which for two
+    `UserDefined` types is NAME equality (not subtyping): `Cat` and `Dog`
+    are rejected, and even `Cat`/`Animal` (subtype) is rejected — only an
+    `Unknown` operand flows freely against the other via the gradual wildcard. -/
 def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
     (lhs rhs : StmtExprMd) (source : Option FileRange)
     (h_expr : expr = .ReferenceEquals lhs rhs)
@@ -2178,8 +2319,9 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     (h : exprMd.val = .PureFieldUpdate target fieldName newVal) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName target.source
-  let fieldTy ← getVarType fieldName'
+  let fieldName' ← resolveFieldRef target' fieldName target.source (holderTy? := targetTy)
+  -- Concretize against the holder's instantiation.
+  let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
   pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
   termination_by (exprMd, 1)
@@ -2565,19 +2707,29 @@ def resolveParameter (param : Parameter) : ResolveM Parameter := do
   let name' ← defineNameCheckDup param.name (.parameter ⟨param.name, ty'⟩)
   return ⟨name', ty'⟩
 
-/-- Resolve a procedure output parameter, given the names of the inputs already
-    in scope. A parameter whose name also appears in the inputs is a true inout
-    parameter (e.g. the `$heap` synthesized by heap parameterization): it denotes
-    the *same* variable as the input, so we resolve its name as a reference to the
-    existing input definition rather than re-defining it (which
-    `defineNameCheckDup` would otherwise flag as a duplicate). -/
-def resolveOutputParameter (inputNames : List String) (param : Parameter) : ResolveM Parameter := do
-  if inputNames.contains param.name.text then
-    let ty' ← resolveHighType param.type
-    let name' ← resolveRef param.name
-    return ⟨name', ty'⟩
-  else
-    resolveParameter param
+/-- Resolve a procedure's output params (inputs already in scope). FIRST output sharing an
+    input's name = inout (e.g. `$heap`), resolved as a ref to that input; a SECOND is a real
+    duplicate routed through `resolveParameter` so `defineNameCheckDup` flags it, else two
+    Core outputs share a name and mis-verify. -/
+def resolveOutputParameters (inputNames : List String) (outputs : List Parameter)
+    : ResolveM (List Parameter) := do
+  let (outputsRev, _) ← outputs.foldlM
+    (fun (acc : List Parameter × List String) param => do
+      let seenOutputs := acc.2
+      let p' ←
+        if inputNames.contains param.name.text && !seenOutputs.contains param.name.text then do
+          let ty' ← resolveHighType param.type
+          let name' ← resolveRef param.name
+          pure (⟨name', ty'⟩ : Parameter)
+        else resolveParameter param
+      pure (p' :: acc.1, param.name.text :: seenOutputs))
+    ([], [])
+  return outputsRev.reverse
+
+/-- Scope a generic entity's type params as `.typeVar`s so `T`→`.TVar` in its
+    signature/fields/body. Run BEFORE resolving the signature. -/
+def scopeTypeParams (typeArgs : List Identifier) : ResolveM (List Identifier) :=
+  typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeVar tv))
 
 /-- Resolve a procedure body by synthesizing its body (if any).
     Bodies without an body (`Abstract`, `External`) resolve
@@ -2613,9 +2765,13 @@ def resolveBody (body : Body) : ResolveM Body := do
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← resolveRef proc.name
   withScope do
+    -- Scope type params first, so `T` in inputs/outputs/body resolves to `.TVar`.
+    let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
-    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
+    -- `f<T>(b: Box<T>)` is NOT pre-rejected — procedure monomorphization handles it, and an
+    -- instantiation it still can't handle fails loud later.
+    let outputs' ← resolveOutputParameters inputNames proc.outputs
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2633,7 +2789,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     -- no transparent-body rejection here, unlike `resolveInstanceProcedure`.
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     let axioms' ← proc.axioms.mapM resolveStmtExpr
-    return { name := procName', inputs := inputs', outputs := outputs',
+    return { name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
@@ -2659,9 +2815,12 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
   withScope do
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
+    -- Scope the method's OWN type params (`id2<U>`); the composite's `T` is already in
+    -- scope from `resolveTypeDefinition`'s `withScope`.
+    let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
-    let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
+    let outputs' ← resolveOutputParameters inputNames proc.outputs
     let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
@@ -2672,7 +2831,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let invokeOn' ← proc.invokeOn.mapM resolveStmtExpr
     modify fun s => { s with instanceTypeName := savedInstType }
     let axioms' ← proc.axioms.mapM resolveStmtExpr
-    return { name := procName', inputs := inputs', outputs := outputs',
+    return { name := procName', typeArgs := typeArgs', inputs := inputs', outputs := outputs',
              isFunctional := proc.isFunctional,
              preconditions := pres', decreases := dec',
              invokeOn := invokeOn',
@@ -2684,27 +2843,43 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
-    let fields' ← ct.fields.mapM (resolveField ctName')
-    -- Build per-type scope BEFORE resolving instance procedures, so that
-    -- field references (e.g. self.field) inside methods can be resolved.
-    let s ← get
-    let mut typeScope : Scope := {}
-    for parent in extending' do
-      match s.typeScopes.get? parent.text with
-      | some parentScope =>
-        for (k, v) in parentScope do
-          typeScope := typeScope.insert k v
-      | none => pure ()
-    -- Add own fields (these override inherited ones with the same name)
-    for field in fields' do
-      let qualifiedKey := ctName'.text ++ "." ++ field.name.text
-      match s.scope.get? qualifiedKey with
-      | some entry => typeScope := typeScope.insert field.name.text entry
-      | none => pure ()
-    modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
-    let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
-    return .Composite { name := ctName', extending := extending',
+    -- Scope the type params; the monomorphizer later concretizes `Box<τ>`/`extends Base<T>`.
+    let (extending', fields', instProcs') ← withScope do
+      let _ ← scopeTypeParams ct.typeArgs
+      let extending' ← ct.extending.mapM resolveHighType
+      -- Kind-check parents: each peeled base must be composite (`extends T`/`extends int` rejected).
+      -- `resolveHighType` accepts any type, so this re-check emits the "expected composite type" diagnostic.
+      for parent in extending' do
+        match highBaseName? parent.val with
+        | some pbase =>
+          let _ ← resolveRef pbase parent.source (expected := #[.compositeType])
+        | none =>
+          modify fun s => { s with errors := s.errors.push (diagnosticFromSource parent.source
+            "a composite type can only extend another composite type") }
+      let fields' ← ct.fields.mapM (resolveField ctName')
+      -- Build the per-type scope BEFORE instance procedures, so `self.field` resolves in methods.
+      let s ← get
+      let mut typeScope : Scope := {}
+      for parent in extending' do
+        -- Inherit the parent's field scope by base name (`Base<T>` shares `Base`'s fields).
+        match highBaseName? parent.val with
+        | some pname =>
+          match s.typeScopes.get? pname.text with
+          | some parentScope =>
+            for (k, v) in parentScope do
+              typeScope := typeScope.insert k v
+          | none => pure ()
+        | none => pure ()
+      -- Add own fields (these override inherited ones with the same name)
+      for field in fields' do
+        let qualifiedKey := ctName'.text ++ "." ++ field.name.text
+        match s.scope.get? qualifiedKey with
+        | some entry => typeScope := typeScope.insert field.name.text entry
+        | none => pure ()
+      modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
+      let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
+      pure (extending', fields', instProcs')
+    return .Composite { name := ctName', typeArgs := ct.typeArgs, extending := extending',
                         fields := fields', instanceProcedures := instProcs' }
   | .Constrained ct =>
     let ctName' ← resolveRef ct.name
@@ -2720,27 +2895,33 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
-    let ctors' ← dt.constructors.mapM fun ctor => do
-      let ctorName' ← resolveRef ctor.name
-      let args' ← ctor.args.mapM fun (p: Parameter) => do
-        let ty' ← resolveHighType p.type
-        let resolved ← resolveRef (dt.destructorName p)
-        -- Keep the original parameter name; only take the uniqueId from resolution.
-        -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
-        -- parameter's own name should stay unqualified.
-        let destructorId := { p.name with uniqueId := resolved.uniqueId }
-        return ⟨ destructorId, ty' ⟩
-      -- Resolve the tester name so its uniqueId is set.
-      let testerResolved ← resolveRef (dt.testerName ctor)
-      let testerName' := { ctor.testerName with
-        text := testerResolved.text
-        uniqueId := testerResolved.uniqueId }
-      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
+    -- Scope the type params. Unlike composites, generic datatypes do NOT monomorphize — they
+    -- map to native Core parametric datatypes, so the `.TVar`s survive `translateType` as sort args.
+    let ctors' ← withScope do
+      let _ ← scopeTypeParams dt.typeArgs
+      dt.constructors.mapM fun ctor => do
+        let ctorName' ← resolveRef ctor.name
+        let args' ← ctor.args.mapM fun (p: Parameter) => do
+          let ty' ← resolveHighType p.type
+          let resolved ← resolveRef (dt.destructorName p)
+          -- Keep the param's unqualified name; take only the uniqueId (resolveRef's text
+          -- is the qualified "DtName..field" lookup key).
+          let destructorId := { p.name with uniqueId := resolved.uniqueId }
+          return ⟨ destructorId, ty' ⟩
+        -- Resolve the tester name so its uniqueId is set.
+        let testerResolved ← resolveRef (dt.testerName ctor)
+        let testerName' := { ctor.testerName with
+          text := testerResolved.text
+          uniqueId := testerResolved.uniqueId }
+        return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
-    let target' ← resolveHighType ta.target
+    -- Scope the alias's type params; `TypeAliasElim`/`unfold` later binds them to the instantiation args.
+    let target' ← withScope do
+      let _ ← scopeTypeParams ta.typeArgs
+      resolveHighType ta.target
     let taName' ← resolveRef ta.name
-    return .Alias { name := taName', target := target' }
+    return .Alias { name := taName', typeArgs := ta.typeArgs, target := target' }
 
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
@@ -2861,7 +3042,7 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
     let map := collectStmtExpr map val
     collectStmtExpr map proof
   | .ContractOf _ fn => collectStmtExpr map fn
-  | .New _ | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .New .. | .This | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Abstract | .All | .Hole _ _ => map
 
 private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
@@ -2963,8 +3144,10 @@ def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fie
     -- If the field is directly declared on this type, it's not a diamond
     if ct.fields.any (·.name == fieldName) then false
     else
-      -- Count how many direct parents can reach this field
-      let parentsWithField := ct.extending.filter (canReachField model · fieldName)
+      -- Count how many direct parents can reach this field (peel each parent type to
+      -- its base name; `extending` is `List HighTypeMd`).
+      let parentNames := ct.extending.filterMap (fun e => highBaseName? e.val)
+      let parentsWithField := parentNames.filter (canReachField model · fieldName)
       parentsWithField.length > 1
   | _ => false
 
@@ -2974,8 +3157,10 @@ and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
     (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
-  match (computeExprType model target).val with
-  | .UserDefined typeName =>
+  -- Peel the receiver to its base name so a generic receiver `D<int>` (`.Applied`) is
+  -- checked too; otherwise it slips to mono and surfaces as a `.StrataBug`, not this diagnostic.
+  match highBaseName? (computeExprType model target).val with
+  | some typeName =>
     if isDiamondInheritedField model typeName fieldName then
       match source with
       | some fileRange =>
@@ -2985,82 +3170,39 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     else []
   | _ => []
 
-/--
-Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
--/
-def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
-    (expr : StmtExprMd) : List DiagnosticModel :=
-  match _h : expr.val with
+/-- Check `e` itself for a diamond-inherited field access; the caller's traversal supplies recursion. -/
+private def collectDiamondFieldAt (model : SemanticModel) (e : StmtExprMd) :
+    StateM (List DiagnosticModel) StmtExprMd := do
+  match e.val with
   | .Var (.Field target fieldName) =>
-    let targetErrors := validateDiamondFieldAccessesForStmtExpr model target
-    let fieldError := checkDiamondFieldAccess model target fieldName expr.source
-    targetErrors ++ fieldError
-  | .Block stmts _ =>
-    stmts.flatMap (fun s => validateDiamondFieldAccessesForStmtExpr model s)
-  | .Assign targets value =>
-    let targetErrors := targets.attach.foldl (fun acc ⟨t, _⟩ =>
-      match _hv : t.val with
+    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+  | .Assign targets _ =>
+    for t in targets do
+      match t.val with
       | .Field target fieldName =>
-        let innerErrors := validateDiamondFieldAccessesForStmtExpr model target
-        let fieldError := checkDiamondFieldAccess model target fieldName t.source
-        acc ++ innerErrors ++ fieldError
-      | .Local _ | .Declare _ => acc) []
-    targetErrors ++ validateDiamondFieldAccessesForStmtExpr model value
-  | .IfThenElse c t e =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model t
-    match e with
-    | some eb => errs ++ validateDiamondFieldAccessesForStmtExpr model eb
-    | none => errs
-  | .While c invs _ b _ =>
-    let errs := validateDiamondFieldAccessesForStmtExpr model c ++
-                validateDiamondFieldAccessesForStmtExpr model b
-    invs.attach.foldl (fun acc ⟨inv, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model inv) errs
-  | .Assert cond => validateDiamondFieldAccessesForStmtExpr model cond.condition
-  | .Assume cond => validateDiamondFieldAccessesForStmtExpr model cond
-  | .PrimitiveOp _ args _ =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .StaticCall _ args =>
-    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ validateDiamondFieldAccessesForStmtExpr model a) []
-  | .Return (some v) => validateDiamondFieldAccessesForStmtExpr model v
+        modify (· ++ checkDiamondFieldAccess model target fieldName t.source)
+      | _ => pure ()
   | .IncrDecr _ _ target =>
-    match _htgt : target.val with
+    match target.val with
     | .Field tgt fieldName =>
-      let innerErrors := validateDiamondFieldAccessesForStmtExpr model tgt
-      let fieldError := checkDiamondFieldAccess model tgt fieldName target.source
-      innerErrors ++ fieldError
-    | .Local _ | .Declare _ => []
-  | _ => []
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (try have := AstNode.sizeOf_val_lt expr)
-    all_goals (try have := AstNode.sizeOf_val_lt t)
-    all_goals (try have := Variable.sizeOf_field_target_lt_of_eq _htgt)
-    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
-    all_goals (try term_by_mem)
-    all_goals (try omega)
-    -- For nested Variable.Field in Var (.Field ..) or IncrDecr (.Field ..) cases
-    all_goals (cases expr; rename_i val _ _ _h; subst _h; simp_all; omega)
+      modify (· ++ checkDiamondFieldAccess model tgt fieldName target.source)
+    | _ => pure ()
+  | .PureFieldUpdate target fieldName _ =>
+    modify (· ++ checkDiamondFieldAccess model target fieldName e.source)
+  | _ => pure ()
+  pure e
 
-/--
-Validate a Laurel program for diamond-inherited field accesses.
-Returns an array of DiagnosticModel errors.
--/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
-  let errors := program.staticProcedures.foldl (fun acc proc =>
-    let bodyErrors := match proc.body with
-      | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
-      | .Opaque postconds impl _ =>
-        let postErrors := postconds.foldl (fun acc2 pc => acc2 ++ validateDiamondFieldAccessesForStmtExpr model pc.condition) []
-        let implErrors := match impl with
-          | some implExpr => validateDiamondFieldAccessesForStmtExpr model implExpr
-          | none => []
-        postErrors ++ implErrors
-      | .Abstract postconds => postconds.foldl (fun acc p => acc ++ validateDiamondFieldAccessesForStmtExpr model p.condition) []
-      | .External => []
-    acc ++ bodyErrors) []
-  errors
+/-- One `DiagnosticModel` per diamond-inherited field access — a field reached via >1
+    direct-parent path (see `isDiamondInheritedField`).
+    The total `mapProgramProceduresM ∘ mapProcedureM ∘ mapStmtExprM` drives a `StateM`
+    collector, so coverage can't silently regress: every procedure position (body,
+    preconditions, decreases, invokeOn, axioms) across static AND instance procedures, and
+    every sub-expression (quantifiers, `old`, `as`/`is`, ref-equality).
+    Not covered: `constrained`-type constraint/witness and constant initializers —
+    non-procedure positions that fail loud as `.StrataBug` (no silent accept). Promoting to
+    `.UserError` needs bound-variable scoping verified first. -/
+def validateDiamondFieldAccesses (model : SemanticModel) (program : Program) : List DiagnosticModel :=
+  ((mapProgramProceduresM (mapProcedureM (mapStmtExprM (collectDiamondFieldAt model))) program).run []).2
 
 /-! ## Pre-registration: populate scope with all top-level names before resolving bodies -/
 
@@ -3069,6 +3211,17 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
 /-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
 private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
+
+/-- Rewrite each `.UserDefined n` with `n ∈ params` to `.TVar n`, so a generic entity's STORED
+    signature/fields match the `.TVar` form `resolveHighType` produces in scope. NEEDED: the #1121
+    checker reads types from `preRegisterTopLevel`'s maps off RAW nodes, where a param is still
+    `.UserDefined "T"` — else the `.TVar` wildcard never fires (spurious mismatch). No-op if empty. -/
+def tvarizeType (params : List String) (ty : HighTypeMd) : HighTypeMd :=
+  mapHighTypeNames (fun ctor n => if params.contains n.text then .TVar n else ctor n) ty
+
+/-- Tvarize a `Parameter`'s type over `params`. -/
+def tvarizeParam (params : List String) (p : Parameter) : Parameter :=
+  { p with type := tvarizeType params p.type }
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
@@ -3080,12 +3233,21 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
   for td in program.types do
     match td with
     | .Composite ct =>
+      -- Tvarize field types over the composite's type params (see `tvarizeType`).
+      let ctParams := ct.typeArgs.map (·.text)
       let _ ← defineNameCheckDup ct.name (.compositeType ct)
       for field in ct.fields do
         let qualifiedName := ct.name.text ++ "." ++ field.name.text
+        let field := { field with type := tvarizeType ctParams field.type }
         let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
       for proc in ct.instanceProcedures do
         let scopedKey := (containerScopedName ct.name proc.name).text
+        -- Tvarize over the composite's type params AND the method's own (`id2<U>` adds `U`),
+        -- so the stored `.instanceProcedure` carries `.TVar` for both (see `tvarizeType`).
+        let methodParams := ctParams ++ proc.typeArgs.map (·.text)
+        let proc := { proc with
+          inputs := proc.inputs.map (tvarizeParam methodParams),
+          outputs := proc.outputs.map (tvarizeParam methodParams) }
         let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
                                    (some scopedKey)
     | .Constrained ct =>
@@ -3109,8 +3271,13 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
   -- Pre-register constants
   for c in program.constants do
     let _ ← defineNameCheckDup c.name (.constant c)
-  -- Pre-register static procedures
+  -- Pre-register static procedures, tvarizing input/output types over the proc's own
+  -- type params (see `tvarizeType`).
   for proc in program.staticProcedures do
+    let procParams := proc.typeArgs.map (·.text)
+    let proc := { proc with
+      inputs := proc.inputs.map (tvarizeParam procParams),
+      outputs := proc.outputs.map (tvarizeParam procParams) }
     let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
 
 /-! ## Entry point -/
@@ -3137,6 +3304,9 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId
   }
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
+  -- Assignability is checked here (not Core) since #1121: `var b: Box<int> := new Box<bool>`
+  -- rejects (distinct instantiations are inconsistent). BY DESIGN bare `new C` correlates by
+  -- base name, so `var b: Box<int> := new Box` is accepted and mono recovers it — not a hole.
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ diamondErrors

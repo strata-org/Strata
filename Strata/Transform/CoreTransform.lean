@@ -77,6 +77,45 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
+/-- Prefix for fresh call-site type variables introduced during call elimination.
+    In the `$__`-reserved internal namespace (documented "cannot appear in user
+    identifiers", see `SMTEncoder.lean`), so a freshened call-site type variable
+    is far from any user-written type-variable name. Distinct from the type
+    checker's own fresh prefix `$__ty` (`LExprTypeEnv.lean` `TState.tyPrefix`) —
+    `$__cety` differs at the 5th char, so the two generators never alias — and
+    distinct from the term-temp prefixes (`tmp_`/`old_`).
+    NB: `$` is a legal identifier char (`Parser.strataIsIdFirst`) and the gen
+    counter does NOT ingest existing program names, so collision-resistance here
+    rests on the `$__` reservation convention, not a parser-enforced rejection. -/
+def freshTyVarPrefix : String := "$__cety"
+
+/-- Generate one fresh type-variable name (`TyIdentifier = String`) from the
+    shared `CoreGenState` counter — the same monotonic counter that backs the
+    term-temp generators — so names are deterministic, resume-safe, and unique
+    across call sites without adding any new state. Mirrors `genIdent`. -/
+def genTyVarName : CoreGenM Lambda.TyIdentifier := do
+  let id ← CoreGenState.gen freshTyVarPrefix
+  return id.name
+
+def genTyVarNames (n : Nat) : CoreGenM (List Lambda.TyIdentifier) :=
+  List.mapM (fun _ => genTyVarName) (List.replicate n ())
+
+/-- Build a one-scope type substitution mapping each declared type variable of a
+    polymorphic callee to a globally-fresh type variable, for per-call-site
+    contract freshening in call elimination. Returns the empty substitution
+    (a verified identity for `LMonoTy.subst`/`LExpr.applySubst`, which
+    short-circuit on `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the
+    transform is an exact no-op for monomorphic procedures. -/
+def freshenTypeArgsSubst (typeArgs : List Lambda.TyIdentifier)
+  : CoreGenM Lambda.Subst := do
+  if typeArgs.isEmpty then
+    return Lambda.Subst.empty
+  else
+    let fresh ← genTyVarNames typeArgs.length
+    let scope : Lambda.SubstOne :=
+      (typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f))
+    return [scope]
+
 
 /-- Cached results of program analyses that are helpful for program
     transformation.

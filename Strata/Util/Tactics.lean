@@ -99,6 +99,36 @@ elab_rules : tactic
 macro "term_by_mem" : tactic =>
   `(tactic| solve | (add_mem_size_lemmas; (try simp_all); (try omega)))
 
+/-- Add `AstNode.sizeOf_val_lt` for every `AstNode _` hypothesis in context, bridging a
+  `sizeOf child.val < …` goal (recursing into an `AstNode` child) to `sizeOf child`.
+  Matches hypotheses by TYPE (head constant named `AstNode`), so it is binder-name-agnostic
+  and serves any structural AST recursion. `AstNode`/its lemma live downstream, so both are
+  referenced by name and resolve at the use site. -/
+elab "add_astnode_size_lemmas" : tactic =>
+  withMainContext do
+    for decl in (← getLCtx) do
+      if decl.isImplementationDetail then continue
+      let ty ← whnf (← instantiateMVars decl.type)
+      if let some hd := ty.getAppFn.constName? then
+        if hd.componentsRev.head? == some `AstNode then
+          try
+            let hypStx ← Term.exprToSyntax (mkFVar decl.fvarId)
+            -- Reference the lemma by NAME (it lives downstream of this utilities file);
+            -- resolves at the use site where `AstNode` is in scope.
+            evalTactic (← `(tactic| have := $(mkIdent (hd ++ `sizeOf_val_lt)) $hypStx))
+          catch _ => pure ()
+
+/-- Termination tactic for a structural recursion over `HighType`/`AstNode`: a recursion
+  into `child.val` of each `AstNode` child, plus list/array members. Adds the AstNode-child
+  and membership size lemmas, then closes with `simp_all; omega`. One uniform block replacing
+  the per-function ad-hoc `first | cases … | (try have := AstNode.sizeOf_val_lt …)` proofs. -/
+macro "ast_recursion_decreasing" : tactic =>
+  `(tactic| (
+    all_goals add_astnode_size_lemmas
+    all_goals add_mem_size_lemmas
+    all_goals (try simp_all)
+    all_goals omega))
+
 /-- Termination tactic with custom (ElemType, Lemma) mappings - adds size
   lemmas for `List`, `Array`, and according to the custom mapping, then
   closes with `simp_all` and `omega`
