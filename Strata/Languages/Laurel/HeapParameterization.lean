@@ -645,11 +645,18 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
   let boxDatatype : TypeDefinition :=
     .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
 
+  -- Drop only a DATATYPE named `Box`, so we don't emit a duplicate of the
+  -- `boxDatatype` synthesized just above (a stray `Box` datatype could arrive from
+  -- the prelude or a prior lowering). Crucially this must NOT match a user
+  -- `.Composite` named `Box`: composites are still needed here (TypeHierarchy reads
+  -- them to build the `TypeTag` constructors and flatten them to `Composite`), and
+  -- deleting one erases its `Box_TypeTag`, collapsing re-resolution. A user datatype
+  -- literally named `Box` collides with the boxing datatype irreducibly and is caught
+  -- elsewhere as a duplicate; here we only guard the composite case.
   let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
-    -- The filter is a hack to deal with another hack,
-    -- the box that was added in CoreDefinitionsForLaurel.lean
-    -- because Laurel does not support polymorphism yet
-    types'.filter (fun td => td.name.text != "Box")
+    types'.filter (fun td => match td with
+      | .Datatype dt => dt.name.text != "Box"
+      | _ => true)
   { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }

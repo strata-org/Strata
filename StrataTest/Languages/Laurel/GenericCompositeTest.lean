@@ -502,6 +502,38 @@ procedure u() opaque { var p: Pair<int, Z> := new Pair<int, Z>; var zz: Z := new
 composite Box<T> { var val: T }
 composite Box$a1$int { var val: bool }
 procedure u() opaque { var bi: Box<int> := new Box<int>; bi#val := 7; assert bi#val == 7 };"},
+
+  -- A NON-generic composite named after a reserved internal type (`Box`, the heap
+  -- boxing datatype; also `Composite`/`Heap`/`Field`/`TypeTag`) collides with a
+  -- lowering-generated type. It is soundly REJECTED, and now with a SINGLE clean
+  -- `UserError` rename hint — no `.StrataBug` cascade. `rejectedExactly` pins the
+  -- cascade-suppression: before the fix, `HeapParameterization`'s `!= "Box"` filter
+  -- DELETED the user composite (leaving a pure StrataBug), and the re-resolution net
+  -- folded the follow-on type mismatches as extra StrataBugs. Generic `Box<T>` dodges
+  -- this (it monomorphizes to `Box$a1$int`), which is why only a non-generic reserved
+  -- name reaches the collision — the exact corpus blind spot this pins shut.
+  { name := "composite_named_reserved_box_rejected_cleanly", outcome := .rejectedExactly .UserError,
+    why := "a non-generic `composite Box` collides with the synthetic boxing datatype; rejected with one UserError, no StrataBug cascade"
+    src := r"
+composite Box { var val: int }
+procedure u() opaque { var b: Box := new Box; b#val := 7; assert b#val == 7 };"},
+
+  { name := "composite_named_reserved_field_rejected_cleanly", outcome := .rejectedExactly .UserError,
+    why := "a `composite Field` collides with the synthetic Field datatype; the follow-on `expected 'Composite', got 'Field'` mismatches are its cascade and are suppressed — only the UserError remains"
+    src := r"
+composite Field { var val: int }
+procedure u() opaque { var b: Field := new Field; b#val := 7; assert b#val == 7 };"},
+
+  -- TWO distinct reserved-name collisions in one program: the cascade-suppression drops each
+  -- collision's OWN type-mismatch follow-ons but must KEEP both collision `UserError`s (it filters
+  -- the cascade by whether an error mentions a colliding name, not by count). `rejectedExactly`
+  -- confirms no `.StrataBug` survives and both distinct collisions are still surfaced as UserErrors.
+  { name := "two_reserved_name_collisions_both_reported", outcome := .rejectedExactly .UserError,
+    why := "`composite Box` and `composite Field` both collide with generated datatypes; each reported as a clean UserError, no StrataBug cascade for either"
+    src := r"
+composite Box { var val: int }
+composite Field { var val: int }
+procedure u() opaque { var b: Box := new Box; var f: Field := new Field; assert b#val == f#val };"},
 ]
 
 def runGenericCompositeTest : IO Unit := checkCases genericCompositeCorpus
