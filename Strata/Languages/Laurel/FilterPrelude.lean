@@ -83,14 +83,7 @@ private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
   termination_by ty
-  decreasing_by
-    all_goals
-      (try have := AstNode.sizeOf_val_lt et)
-      (try have := AstNode.sizeOf_val_lt kt)
-      (try have := AstNode.sizeOf_val_lt vt)
-      (try have := AstNode.sizeOf_val_lt base)
-      (try have := AstNode.sizeOf_val_lt ty)
-      add_mem_size_lemmas; simp_all; omega
+  decreasing_by ast_recursion_decreasing
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
 private def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
@@ -220,9 +213,7 @@ private def collectInvokeOnTargets (expr : StmtExprMd)
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
   termination_by expr
-  decreasing_by
-    all_goals (have := AstNode.sizeOf_val_lt expr
-               term_by_mem)
+  decreasing_by ast_recursion_decreasing
 
 /-- Monad for building the dependency map with duplicate-name detection. -/
 private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except String)

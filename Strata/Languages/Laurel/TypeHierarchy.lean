@@ -146,14 +146,7 @@ def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) 
   | .Intersection tys => { ty with val := .Intersection (tys.attach.map (fun ⟨t, _⟩ => compositeRefToComposite composites t)) }
   | _ => ty
   termination_by ty
-  decreasing_by
-    all_goals
-      (try have := AstNode.sizeOf_val_lt et)
-      (try have := AstNode.sizeOf_val_lt kt)
-      (try have := AstNode.sizeOf_val_lt vt)
-      (try have := AstNode.sizeOf_val_lt base)
-      (try have := AstNode.sizeOf_val_lt ty)
-      add_mem_size_lemmas; simp_all; omega
+  decreasing_by ast_recursion_decreasing
 
 /--
 Type hierarchy transformation pass (Laurel → Laurel).

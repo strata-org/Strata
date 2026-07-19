@@ -70,13 +70,7 @@ def tyDepth : HighType → Nat
   | .Intersection ts => 1 + (ts.attach.map (fun ⟨t, _⟩ => tyDepth t.val)).foldl Nat.max 0
   | _ => 1
   termination_by ty => ty
-  decreasing_by
-    all_goals (first
-      | (cases b; term_by_mem)
-      | (cases vt; term_by_mem)
-      | (cases kt; term_by_mem)
-      | (have := AstNode.sizeOf_val_lt ‹HighTypeMd›
-         add_mem_size_lemmas; simp_all; omega))
+  decreasing_by ast_recursion_decreasing
 
 /-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
     against an ACTUAL type, accumulating bindings `tv ↦ actual`. This is the
@@ -137,22 +131,11 @@ def matchTypeArg (declared actual : HighType)
   | _ => some acc
   termination_by declared
   decreasing_by
-    · -- head: `db.val` in `.Applied db dargs`
-      have := AstNode.sizeOf_val_lt db; simp_all; omega
-    · -- arg: `d.val` for `⟨d,a⟩ ∈ dargs.zip aargs`
-      rename_i h
-      have hd := (List.of_mem_zip h).1
-      have := AstNode.sizeOf_val_lt d
-      have := List.sizeOf_lt_of_mem hd
-      simp_all; omega
-    · -- `.TSet dv`
-      have := AstNode.sizeOf_val_lt dv; simp_all; omega
-    · -- `.Pure dv`
-      have := AstNode.sizeOf_val_lt dv; simp_all; omega
-    · -- `.TMap dk _` (head key)
-      have := AstNode.sizeOf_val_lt dk; simp_all; omega
-    · -- `.TMap _ dv` (value)
-      have := AstNode.sizeOf_val_lt dv; simp_all; omega
+    -- Most goals recurse into a `.val` child (`db`/`dv`/`dk`), closed by the shared tactic.
+    -- The `.Applied` args case recurses on `d.val` for `⟨d,a⟩ ∈ dargs.zip aargs`; recover
+    -- `d ∈ dargs` via `List.of_mem_zip` first, then it too closes by the shared tactic.
+    all_goals (try (rename_i h; have := (List.of_mem_zip h).1))
+    all_goals ast_recursion_decreasing
 
 /-- Mangled monomorphic name for `C` instantiated at `args`, e.g. `Box$a1$int`,
     or `none` if any arg can't be tagged. Identifier-legal only
@@ -187,15 +170,7 @@ def clearTyIds (ty : HighTypeMd) : HighTypeMd :=
     | other => other
   { val := v, source := ty.source }
   termination_by ty
-  decreasing_by
-    all_goals (first
-      | (cases et; term_by_mem)
-      | (cases kt; term_by_mem)
-      | (cases vt; term_by_mem)
-      | (cases base; term_by_mem)
-      | (cases b; term_by_mem)
-      | (have := AstNode.sizeOf_val_lt ty
-         add_mem_size_lemmas; simp_all; omega))
+  decreasing_by ast_recursion_decreasing
 
 /-- The instantiation key: `(generic composite name, concrete arg types)`. -/
 abbrev Inst := String × List HighType
@@ -250,13 +225,7 @@ private def collectInTy (genComposites : Std.HashMap String (List Identifier))
     | _ => []
   here ++ nested
   termination_by ty
-  decreasing_by
-    all_goals (first
-      | (cases base; term_by_mem)
-      | (cases vt; term_by_mem)
-      | (cases kt; term_by_mem)
-      | (have := AstNode.sizeOf_val_lt ty
-         add_mem_size_lemmas; simp_all; omega))
+  decreasing_by ast_recursion_decreasing
 
 /-- Does `ty` mention a generic composite instantiated at a type variable in `tvSet` —
     an `.Applied (UserDefined C) args` (`C` a generic composite) some of whose args is a
@@ -277,13 +246,7 @@ private def tyHasGenCompAtTVar (genComposites : Std.HashMap String (List Identif
   | .Intersection ts => ts.attach.any (fun ⟨t, _⟩ => tyHasGenCompAtTVar genComposites tvSet t.val)
   | _ => false
   termination_by ty
-  decreasing_by
-    all_goals
-      (try have := AstNode.sizeOf_val_lt base)
-      (try have := AstNode.sizeOf_val_lt vt)
-      (try have := AstNode.sizeOf_val_lt kt)
-      (try have := AstNode.sizeOf_val_lt ‹HighTypeMd›)
-      add_mem_size_lemmas; simp_all; omega
+  decreasing_by ast_recursion_decreasing
 
 /-- Rewrite a `HighType`: every `.Applied (UserDefined C) args` over a generic
     composite becomes `.UserDefined (monoName C args)`. -/
@@ -307,15 +270,7 @@ private def rewriteTy (genComposites : Std.HashMap String (List Identifier))
     | other => other
   { val := v, source := ty.source }
   termination_by ty
-  decreasing_by
-    all_goals
-      (try have := AstNode.sizeOf_val_lt base)
-      (try have := AstNode.sizeOf_val_lt et)
-      (try have := AstNode.sizeOf_val_lt kt)
-      (try have := AstNode.sizeOf_val_lt vt)
-      (try have := AstNode.sizeOf_val_lt b)
-      (try have := AstNode.sizeOf_val_lt ty)
-      add_mem_size_lemmas; simp_all; omega
+  decreasing_by ast_recursion_decreasing
 
 /-- The `HighType` annotation slots carried *directly* by a single `StmtExpr`
     node (NOT its sub-expressions — `mapStmtExpr` recurses into those and visits

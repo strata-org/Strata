@@ -790,13 +790,7 @@ def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option S
     some s!"Set$a1${et}"
   | _ => none
   termination_by ty
-  decreasing_by
-    all_goals
-      (try have := AstNode.sizeOf_val_lt k)
-      (try have := AstNode.sizeOf_val_lt v)
-      (try have := AstNode.sizeOf_val_lt e)
-      (try have := AstNode.sizeOf_val_lt ‹HighTypeMd›)
-      add_mem_size_lemmas; simp_all; omega
+  decreasing_by ast_recursion_decreasing
 
 
 /-- The fully-SUBSTITUTED ancestor TYPES of `C<args>`. Starting from the
