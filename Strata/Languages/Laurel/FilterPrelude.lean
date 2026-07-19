@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Core.Factory
+import Strata.Util.Tactics
 
 /-! ### Prelude Filtering
 
@@ -67,8 +68,8 @@ private def addTypeName (name : String) : CollectM Unit :=
   modify fun s => { s with typeNames := s.typeNames.insert name }
 
 /-- Collect type names referenced in a HighType. -/
-private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
-  match ty.val with
+private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
+  match _h : ty.val with
   | .UserDefined name => addTypeName name.text
   -- A type variable references no prelude type name.
   | .TVar _ => pure ()
@@ -76,37 +77,46 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
-    collectHighTypeNames base; args.forM collectHighTypeNames
+    collectHighTypeNames base; args.attach.forM (fun ⟨a, _⟩ => collectHighTypeNames a)
   | .Pure base => collectHighTypeNames base
-  | .Intersection types => types.forM collectHighTypeNames
+  | .Intersection types => types.attach.forM (fun ⟨t, _⟩ => collectHighTypeNames t)
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
+  termination_by ty
+  decreasing_by
+    all_goals
+      (try have := AstNode.sizeOf_val_lt et)
+      (try have := AstNode.sizeOf_val_lt kt)
+      (try have := AstNode.sizeOf_val_lt vt)
+      (try have := AstNode.sizeOf_val_lt base)
+      (try have := AstNode.sizeOf_val_lt ty)
+      add_mem_size_lemmas; simp_all; omega
 
 /-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
-private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
-  match expr.val with
+private def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
+  match _h : expr.val with
   | .StaticCall callee args =>
-    addProcName callee.text; args.forM collectExprNames
+    addProcName callee.text; args.attach.forM (fun ⟨a, _⟩ => collectExprNames a)
   | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames
   | .InstanceCall target callee args =>
-    addProcName callee.text; collectExprNames target; args.forM collectExprNames
+    addProcName callee.text; collectExprNames target; args.attach.forM (fun ⟨a, _⟩ => collectExprNames a)
   | .IfThenElse cond thenB elseB =>
     collectExprNames cond; collectExprNames thenB
-    elseB.forM collectExprNames
-  | .Block stmts _ => stmts.forM collectExprNames
+    elseB.attach.forM (fun ⟨e, _⟩ => collectExprNames e)
+  | .Block stmts _ => stmts.attach.forM (fun ⟨s, _⟩ => collectExprNames s)
   | .While cond invs dec body _ =>
-    collectExprNames cond; invs.forM collectExprNames
-    dec.forM collectExprNames
+    collectExprNames cond; invs.attach.forM (fun ⟨i, _⟩ => collectExprNames i)
+    dec.attach.forM (fun ⟨d, _⟩ => collectExprNames d)
     collectExprNames body
   | .Assign targets value =>
     collectExprNames value
     for ⟨t, _⟩ in targets.attach do
-      match t.val with
+      match _htv : t.val with
       | .Field target _ => collectExprNames target
       | .Local _ => pure ()
       | .Declare param => collectHighTypeNames param.type
   | .IncrDecr _ _ target =>
-    match target.val with
+    match _hit : target.val with
     | .Field tgt _ => collectExprNames tgt
     | .Local _ => pure ()
     | .Declare param => collectHighTypeNames param.type
@@ -114,16 +124,16 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .Var (.Declare param) => collectHighTypeNames param.type
   | .PureFieldUpdate target _ newVal =>
     collectExprNames target; collectExprNames newVal
-  | .PrimitiveOp _ args _ => args.forM collectExprNames
+  | .PrimitiveOp _ args _ => args.attach.forM (fun ⟨a, _⟩ => collectExprNames a)
   | .AsType target ty => collectExprNames target; collectHighTypeNames ty
   | .IsType target ty => collectExprNames target; collectHighTypeNames ty
   | .Quantifier _ param trigger body =>
     collectHighTypeNames param.type
-    trigger.forM collectExprNames
+    trigger.attach.forM (fun ⟨t, _⟩ => collectExprNames t)
     collectExprNames body
   | .Assert cond => collectExprNames cond.condition
   | .Assume cond => collectExprNames cond
-  | .Return val => val.forM collectExprNames
+  | .Return val => val.attach.forM (fun ⟨v, _⟩ => collectExprNames v)
   | .Old val | .Fresh val | .Assigned val => collectExprNames val
   | .ProveBy val proof => collectExprNames val; collectExprNames proof
   | .ContractOf _ func => collectExprNames func
@@ -131,6 +141,21 @@ private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
   | .Hole _ ty => ty.forM collectHighTypeNames
   | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .This | .Abstract | .All => pure ()
+  termination_by expr
+  decreasing_by
+    all_goals simp_wf
+    all_goals (try have := AstNode.sizeOf_val_lt expr)
+    all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+    all_goals (try term_by_mem)
+    -- `.IncrDecr` field-target: sizeOf tgt < sizeOf target (Field lemma) < sizeOf expr.
+    all_goals (try (have := Variable.sizeOf_field_target_lt_of_eq _hit
+                    cases expr; simp_all; omega))
+    -- `.Assign` field-target (attach loop): sizeOf target < sizeOf t (Field lemma) <
+    -- sizeOf targets (list mem) < sizeOf expr.
+    all_goals (try (have := Variable.sizeOf_field_target_lt_of_eq _htv
+                    have := List.sizeOf_lt_of_mem ‹_ ∈ _›
+                    cases expr; simp_all; omega))
+    all_goals (cases expr; simp_all; omega)
 
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
@@ -184,16 +209,20 @@ private def CollectState.allNames (s : CollectState) : Std.HashSet String :=
     invokeOn expressions are expected to be simple `StaticCall` trees
     like `f(g(x))` with `Identifier` or literal leaves.  Returns an
     error if an unexpected node is encountered. -/
-private partial def collectInvokeOnTargets (expr : StmtExprMd)
+private def collectInvokeOnTargets (expr : StmtExprMd)
     : Except String (List String) := do
-  match expr.val with
+  match _h : expr.val with
   | .StaticCall callee args =>
-    let rest ← args.flatMapM collectInvokeOnTargets
+    let rest ← args.attach.flatMapM (fun ⟨a, _⟩ => collectInvokeOnTargets a)
     return callee.text :: rest
   | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
+  termination_by expr
+  decreasing_by
+    all_goals (have := AstNode.sizeOf_val_lt expr
+               term_by_mem)
 
 /-- Monad for building the dependency map with duplicate-name detection. -/
 private abbrev DepM := StateT (Std.HashMap String (Std.HashSet String)) (Except String)
