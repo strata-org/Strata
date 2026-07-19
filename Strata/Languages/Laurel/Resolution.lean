@@ -1830,16 +1830,29 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     (source : Option FileRange)
     (h : exprMd.val = .InstanceCall target callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let (target', _) ← Synth.resolveStmtExpr target
+  let (target', targetTy) ← Synth.resolveStmtExpr target
   -- An instance procedure is registered under the container-scoped key
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
   -- produces. Look the method up under that key, derived from the receiver's
   -- type; fall back to the bare callee name when the target's type can't be
   -- determined (an unresolved name, which already reported its own error).
+  -- A legitimate `obj#method(…)` has a COMPOSITE receiver, so `targetTypeName` yields
+  -- `some TypeName` and we look the method up under the container-scoped key `TypeName$method`
+  -- (the lifted static proc). When it yields `none` the receiver is NOT a composite — either an
+  -- already-errored target (type `.Unknown`, stay quiet — it reported its own error) or a
+  -- resolved NON-composite (`z : int`), which has no methods. REJECT the latter: without this,
+  -- the bare-`callee` fallback below would silently bind `z#sideEffect(…)` to an unrelated
+  -- top-level static procedure `sideEffect`, and since `LiftInstanceProcedures`/`ContractPass`
+  -- only handle `.InstanceCall` whose callee is an instance proc, the call's precondition is
+  -- dropped and it mis-verifies (a silent unsound accept).
   let lookupKey ← match (← targetTypeName target') with
     | some tyName => pure (containerScopedName (mkId tyName) callee)
-    | none => pure callee
+    | none =>
+      unless targetTy.val matches .Unknown | .TVoid do
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+          s!"'{callee.text}' is called with '#' on a non-composite receiver; instance-method calls require a composite receiver") }
+      pure callee
   let resolved ← resolveRef lookupKey source
     (expected := #[.instanceProcedure, .staticProcedure])
   -- Preserve the user-facing callee text for diagnostics; only stamp the

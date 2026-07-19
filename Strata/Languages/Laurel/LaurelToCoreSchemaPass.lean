@@ -544,8 +544,12 @@ def translateStmt (stmt : StmtExprMd)
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
         else
           translateCallTargets callee args
-      | .InstanceCall _target callee args =>
-          translateCallTargets callee args
+      | .InstanceCall .. =>
+          -- An `.InstanceCall` should have been rewritten to a `.StaticCall` by
+          -- `LiftInstanceProcedures` (which also lets `ContractPass` inject the callee's
+          -- precondition asserts). A residual one here would reach Core as a bare `call`
+          -- with its contract UNENFORCED — fail loud rather than silently mis-verify.
+          throwStmtDiagnostic $ md.toDiagnostic "InstanceCall reached Core translation; it should have been rewritten to a StaticCall by LiftInstanceProcedures" DiagnosticType.StrataBug
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -587,8 +591,10 @@ def translateStmt (stmt : StmtExprMd)
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
   | .InstanceCall .. =>
-      -- Instance method call as statement: no return value, treated as no-op
-      return ([])
+      -- A residual `.InstanceCall` (should have been lifted to a StaticCall) must NOT be
+      -- dropped as a no-op: that silently discards the call's side effects AND its
+      -- precondition checks, mis-verifying. Fail loud, like the sibling should-have-lowered arms.
+      throwStmtDiagnostic $ md.toDiagnostic "InstanceCall reached Core translation; it should have been rewritten to a StaticCall by LiftInstanceProcedures" DiagnosticType.StrataBug
   | .Return valueOpt =>
       match valueOpt with
       | none =>
