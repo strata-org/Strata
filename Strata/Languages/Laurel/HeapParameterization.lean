@@ -406,9 +406,8 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      -- Process calls to heap mutating procedures
+      -- Process an RHS call to a heap-mutating/reading procedure: thread the heap argument.
       let (newAssign, suffixes) ← do
-        -- Detect calls and add a heap argument if needed
         let (v', addedHeap) <- match _hv : v.val with
           | .StaticCall callee args => do
             let args' <- args.mapM recurseOne
@@ -447,8 +446,6 @@ where
             updateStatements ++ [⟨ StmtExpr.Var targetVar, source⟩]
           else updateStatements
         pure (newAssign, suffixes)
-
-      -- Return the list of statements directly (flattened into enclosing block)
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]

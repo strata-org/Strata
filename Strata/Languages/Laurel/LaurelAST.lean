@@ -471,7 +471,7 @@ def StmtExpr.constrName : StmtExpr → String
 def highBaseName? : HighType → Option Identifier
   | .UserDefined n => some n
   | .Applied base _ => highBaseName? base.val
-  | .TVar n => some n   -- an inherited type-var parent (pre-monomorphization); name-keyed lookups still want it
+  | .TVar n => some n   -- name-keyed lookups still want the tvar's own name
   | _ => none
 
 /-- Recurse a `HighType`'s structural constructors (`TSet`/`TMap`/`Applied`/`Pure`/
@@ -719,12 +719,11 @@ def TypeLattice.directParentNames (ctx : TypeLattice) (name : String) : List Str
   | some (_, exprs) => exprs.filterMap (fun e => (highBaseName? e.val).map (·.text))
   | none => []
 
-/-- All ancestors of a composite type (including itself), reachable via
-    repeated `extending` lookups. Implemented as a visited-set BFS over the
-    `extending` graph: the accumulator `acc` doubles as the visited set, and
-    every node is `insert`ed before its parents are enqueued, so each name is
-    processed at most once. The accumulator only grows, hence cycles in the
-    (possibly malformed) graph terminate — no `fuel` parameter is needed. -/
+/-- All ancestors of a composite type (including itself), reachable via repeated
+    `extending` lookups. Visited-set graph traversal (`parents ++ rest`, so DFS —
+    but order is irrelevant since the result is a set): `acc` doubles as the visited
+    set, each name inserted before its parents are enqueued, so each is processed at
+    most once. `acc` only grows, so cycles in a malformed graph terminate — no `fuel`. -/
 partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.HashSet String :=
   let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
     match frontier with
@@ -776,9 +775,8 @@ def instTagCommon (leaf : HighType → Option String) (ty : HighType) : Option S
   -- Built-in collection formers `Map`/`Set` tag like a 2-/1-ary applied type, so a
   -- `Map`-/`Set`-typed composite FIELD can be heap-boxed (the box-name fns route through
   -- this tagger). `Map`/`Set` are reserved keywords, so there is no user `.Applied Map`/`Set`
-  -- HEAD. (This does NOT make `Map$a2$…` collision-free: a user composite named literally
-  -- `Map$a2$int$int` still renders the same string — see the injectivity caveat above; that
-  -- clash is caught by the downstream duplicate-definition net, not here.) The `do`-block
+  -- HEAD. (A user composite literally named `Map$a2$int$int` still collides — see the
+  -- injectivity caveat above.) The `do`-block
   -- short-circuits to `none` on an untaggable element (e.g. a nested `.TVar`), fail-loud
   -- exactly like the `.Applied` arm above.
   | .TMap k v => do
@@ -906,7 +904,7 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    `Pure b` is invariant today, but it is the one constructor where covariance
    would be SOUND and desirable — it is the immutable value-view of a composite,
    and immutability is exactly the condition that makes covariance safe.
-   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
+   TODO: Pure could be covariant once it matters
 
    `Intersection` is NOT a variance question: `A & B` has lattice structure
    (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
