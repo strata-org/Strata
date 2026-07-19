@@ -162,6 +162,17 @@ procedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 7; var got: i
 composite Box<T> { var val: T }
 procedure unbox<T>(b: Box<T>) returns (r: T) opaque ensures r == b#val { r := b#val };
 procedure u() opaque { var bx: Box<int> := new Box<int>; bx#val := 7; var got: int := unbox(bx); assert got == 8 };"},
+
+  -- A BARE uninitialized generic-composite local `var t: Box<T>;` in a cloned poly proc body:
+  -- parses to `.Var (.Declare)`, NOT `.Assign [.Declare]`. `substTypeVarsInStmtNode` must
+  -- substitute + id-clear it just like the initialized form — else `Box<T>` survives the clone
+  -- un-lowered and crashes at Core (a `.StrataBug`). Regression pin for that missing arm.
+  { name := "poly_proc_bare_generic_declare", outcome := .verifies,
+    why := "a bare `var t: Box<T>;` inside a cloned poly proc translates (type-var substituted in the .Var(.Declare) slot); was a StrataBug when only the initialized .Assign form was handled"
+    src := r"
+composite Box<T> { var val: T }
+procedure mk<T>(x: T) returns (r: int) opaque ensures r == 0 { var t: Box<T>; r := 0 };
+procedure u() opaque { var z: int := mk(7); assert 1 == 1 };"},
   -- multi-inst reading fields: `unbox` at int AND bool, each reading ITS monomorph's field
   -- (clone id-clearing is load-bearing; without it the bodies cross-link).
   { name := "poly_proc_generic_composite_param_multi", outcome := .verifies,

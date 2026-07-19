@@ -407,6 +407,10 @@ private def substTypeVarsInStmtNode (subst : Std.HashMap String HighTypeMd)
     | .New c typeArgs => .New (clr c) (typeArgs.map s)
     | .Var (.Local n) => .Var (.Local (clr n))
     | .Var (.Field tgt fn) => .Var (.Field tgt (clr fn))
+    -- A bare uninitialized declaration `var t: Box<T>;` (`.Var (.Declare)`, distinct from the
+    -- initialized `.Assign [.Declare …]` form below) also carries a type slot + binder id — must
+    -- substitute + id-clear it, else a cloned poly proc leaves `Box<T>` un-lowered (StrataBug).
+    | .Var (.Declare param) => .Var (.Declare (clrParam { param with type := s param.type }))
     | .StaticCall callee args => .StaticCall (clr callee) args
     | .Assign targets value =>
       let targets' := targets.map fun t =>
