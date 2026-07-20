@@ -66,5 +66,11 @@ class HasVarsTrans
 
 @[expose] abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
 
+---------------------------------------------------------------------
+
+-- The `Lawful*` classes for the `PureExpr`-level `Has*` operations
+-- (`LawfulHasFvar`, `LawfulHasFvars`, `LawfulHasIdent`) live in
+-- `Strata.DL.Imperative.PureExpr`, next to the operations they constrain.
+
 end -- public section
 end Imperative
