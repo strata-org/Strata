@@ -59,7 +59,7 @@ lake exe strata <command> --help
 
 | Command | Description |
 |---------|-------------|
-| `javaGen <dialect> <package> <output-dir>` | Generate Java source files to represent the language defined by a DDM dialect |
+| `lake exe laurelJavaGen <package> <output-dir>` | Generate Java source files for Laurel AST types (standalone Lake executable) |
 
 ## Common Flags
 

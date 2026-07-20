@@ -326,10 +326,9 @@ private meta partial def serializeExprForInfo (ti : FieldTypeInfo) (accessor : S
   | .leaf name => (leafSerializeExpr name accessor).getD "ion.newNull()"
   | .compound _ _ => s!"{accessor}.toIon(ion)"
   | .typeParam _ => s!"{accessor}.toIon(ion)"
-  | .list _ =>
-    -- List serialization requires multiple statements; handled by toIon body generators.
-    -- This branch is used for inner elements of containers (e.g., Option (List T)).
-    s!"{accessor}.toIon(ion)"
+  | .list elem =>
+    let inner := serializeExprForInfo elem "e"
+    s!"({accessor}.stream().reduce(ion.newEmptyList(), (l, e) -> \{ l.add({inner}); return l; }, (a, b) -> \{ a.addAll(b); return a; }))"
   | .option elem =>
     let inner := serializeExprForInfo elem accessor
     s!"({accessor} != null ? {inner} : ion.newNull())"

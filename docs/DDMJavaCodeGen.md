@@ -7,74 +7,48 @@ consumption by Strata.
 
 ## Usage from the CLI
 
-The `strata` CLI provides the `javaGen` command for generating Java source
-files directly from a dialect definition.
+The `laurelJavaGen` Lake executable generates Java source files for the
+Laurel AST types.
 
 ```
-strata javaGen <dialect> <package> <output-dir> [--include <path>]
+lake exe laurelJavaGen <package> <output-dir>
 ```
 
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `dialect` | A dialect name (e.g. `Laurel`) or a path to a `.dialect.st` file |
-| `package` | Java package name (e.g. `com.example.mydialect`) |
+| `package` | Java package name (e.g. `org.strata.jverify.laurel`) |
 | `output-dir` | Directory where generated Java files will be written |
 
-### Flags
-
-| Flag | Description |
-|------|-------------|
-| `--include <path>` | Add a dialect search path (may be repeated) |
-
-### Examples
-
-Generate Java files from a built-in dialect by name:
+### Example
 
 ```bash
-strata javaGen Laurel com.example.laurel ./generated
-```
-
-Generate from a dialect file on disk:
-
-```bash
-strata javaGen StrataTest/DDM/Integration/Java/testdata/Simple.dialect.st com.example.simple ./generated
-```
-
-Use `--include` to add search paths when the dialect references other
-dialect files:
-
-```bash
-strata javaGen MyDialect com.example.mydialect ./generated \
-  --include ./dialects --include ./deps
+lake exe laurelJavaGen org.strata.jverify.laurel ../jverify/verifier/src/main/java
 ```
 
 The command creates the Java package directory structure under `output-dir`
-and writes all generated files. On success it prints the output path, e.g.:
-
-```
-Generated Java files for Laurel in ./generated/com/example/laurel
-```
+and writes all generated files. On success it prints the number of files
+generated.
 
 ## Usage from Lean
 
 ```lean
-import Strata.DDM.Integration.Java.Gen
+import StrataDDM.Integration.Java.Gen
 
 open Strata.Java
 
--- Obtain a Dialect value. The CLI builds one via DialectFileMap;
--- see the javaGenCommand in StrataMain.lean for the full pattern.
--- Here we assume `myDialect : Strata.Dialect` is already loaded.
+-- getIonSerializer% inspects a Lean type and generates Java source files
+-- at compile time. The second argument is the Java package name.
+def myFiles : GeneratedFiles := getIonSerializer% MyType "com.example.mypackage"
 
-let files ← IO.ofExcept (generateDialect myDialect "com.example.mypackage")
-writeJavaFiles "./generated" "com.example.mypackage" files
+-- Write the generated files to disk:
+#eval writeJavaFiles "./generated" "com.example.mypackage" myFiles
 ```
 
-`generateDialect` returns `Except String GeneratedFiles`, failing if the
-dialect contains unsupported declarations. `writeJavaFiles` creates the
-package directory structure and writes all files.
+`getIonSerializer%` is a term-level elaborator that generates Java records
+with Ion serialization. `writeJavaFiles` creates the package directory
+structure and writes all files.
 
 ## Generated Files
 
@@ -374,4 +348,5 @@ collision.
 
 ## Implementation
 
-The generator lives in `Strata/DDM/Integration/Java/Gen.lean`.
+The generator lives in `StrataDDM/StrataDDM/Integration/Java/Gen.lean`.
+The Laurel-specific CLI wrapper is `Scripts/LaurelJavaGen.lean`.
