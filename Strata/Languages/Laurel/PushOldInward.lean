@@ -74,7 +74,7 @@ def pushOldInward (program : Program) : Program :=
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def pushOldInwardPass : LoweringPass where
-  name := "pushOldInward"
+  name := "PushOldInward"
   documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. No-op `old(...)` usage is diagnosed by Resolution."
   run := fun _ p _ =>
     (pushOldInward p, [], {})

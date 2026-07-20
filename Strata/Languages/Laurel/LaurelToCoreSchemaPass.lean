@@ -343,7 +343,7 @@ def translateExpr (expr : StmtExprMd)
       throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
-  | .Return _ => disallowed expr.source "return expression should be lowered in a separate pass"
+  | .Return _ => throwExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" DiagnosticType.StrataBug
   | .IsType _ _ =>
       throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
   | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
@@ -881,7 +881,7 @@ def translateLaurelToCore (options: LaurelTranslateOptions) (ordered : CoreWithL
   pure { decls := coreDecls }
 
 public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program where
-  name := "LaurelToCoreSchemaPass"
+  name := "LaurelToCoreSchema"
   comesBefore := []
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.

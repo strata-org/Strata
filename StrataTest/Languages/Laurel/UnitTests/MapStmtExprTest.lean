@@ -82,7 +82,7 @@ procedure test(x: int, b: bool) returns (r: int)
 -- surface syntax for a generic/`.Applied`-typed datatype field, so it is
 -- exercised here at the `HighType` level via the shared combinator; the
 -- callback lowers `int32` to `int` (`.TInt`), mirroring `resolveBaseType`'s
--- lookup. The `.TSet`/`.TMap`/`.Pure`/`.Intersection`/`.MultiValuedExpr`
+-- lookup. The `.TSet`/`.TMap`/`.Intersection`/`.MultiValuedExpr`
 -- recursive branches are pinned below (`.TMap` is additionally covered
 -- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`).
 section MapTypeCoverage
@@ -114,10 +114,6 @@ private def lowerInt32 : HighType → HighType
 #guard HighType.mapType lowerInt32
     (.TMap ⟨.UserDefined (mkId "int32"), none⟩ ⟨.TString, none⟩)
   == HighType.TMap ⟨.TInt, none⟩ ⟨.TString, none⟩
-
--- `Pure int32` -> `Pure int`: recursion through `.Pure`'s base type.
-#guard HighType.mapType lowerInt32 (.Pure ⟨.UserDefined (mkId "int32"), none⟩)
-  == HighType.Pure ⟨.TInt, none⟩
 
 -- `int32 & T` -> `int & T`: recursion through `.Intersection`'s components;
 -- the non-constrained component is untouched.

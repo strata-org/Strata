@@ -360,9 +360,6 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
     pure (.Applied base' args')
-  | .Pure base =>
-    let base' ← resolveHighType base
-    pure (.Pure base')
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
@@ -659,7 +656,7 @@ statements are in effect position (synthesized and discarded via
 
 Each typing rule is implemented as its own helper inside the mutual
 block below. Helpers are grouped by section to mirror the *Typing
-rules* index in `LaurelDoc.lean`:
+rules* index in `LaurelUserGuide.lean`:
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Check.varDeclare`
@@ -2941,7 +2938,6 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | .Applied base args =>
     let map := collectHighType map base
     args.foldl collectHighType map
-  | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
   | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map

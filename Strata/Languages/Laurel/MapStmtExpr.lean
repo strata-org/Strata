@@ -48,7 +48,6 @@ partial def HighType.mapType (f : HighType → HighType) : HighType → HighType
   | .Applied base args =>
     f (.Applied ⟨HighType.mapType f base.val, base.source⟩
        (args.map fun a => ⟨HighType.mapType f a.val, a.source⟩))
-  | .Pure base => f (.Pure ⟨HighType.mapType f base.val, base.source⟩)
   | .Intersection tys =>
     f (.Intersection (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
   | .MultiValuedExpr tys =>

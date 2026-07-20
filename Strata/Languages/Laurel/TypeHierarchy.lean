@@ -140,7 +140,6 @@ partial def compositeRefToComposite (composites : Std.HashSet String) (ty : High
     { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
   | .Applied base args =>
     { ty with val := .Applied (compositeRefToComposite composites base) (args.map (compositeRefToComposite composites ·)) }
-  | .Pure base => { ty with val := .Pure (compositeRefToComposite composites base) }
   | .Intersection tys => { ty with val := .Intersection (tys.map (compositeRefToComposite composites ·)) }
   | _ => ty
 

@@ -75,7 +75,6 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
-  | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()

@@ -54,7 +54,6 @@ partial def highTypeValToArg : HighType → Arg
     -- Applied types are not directly representable in the grammar;
     -- emit the base type as a best-effort approximation
     highTypeToArg base
-  | .Pure base => highTypeToArg base
   | .Intersection types =>
     match types with
     | [] => laurelOp "compositeType" #[ident "Unknown"]

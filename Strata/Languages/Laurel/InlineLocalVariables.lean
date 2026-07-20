@@ -160,8 +160,10 @@ def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
   ({ uc with functions := functions' }, diags)
 
 public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
-  name := "InlineLocalVariablesPass"
-  documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core."
+  name := "InlineLocalVariables"
+  documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core.
+
+  Currently, Core does not support encoding let expression, even using lambda applications, which is why this pass exists. When Core does support encoding let expression, this pass should be removed."
   comesAfter := [
     ⟨ transparencyPass.meta, "Inlining of local variables in functions only makes sense after the transparency pass has created the functions"⟩,
     ⟨ eliminateIncrDecrAndCompoundAssignPass.meta, "IncrDecr is a mutation of a local; once it is eliminated, inlining only needs to reject plain assignments to inlined locals, not increments/decrements"⟩

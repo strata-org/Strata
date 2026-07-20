@@ -475,9 +475,9 @@ def lowerContracts (program : Program) : Program :=
   { program with staticProcedures := helperProcs ++ transformedProcs }
 
 public def contractPass : LoweringPass where
-  name := "ContractPass"
+  name := "Contracts"
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
-  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute."⟩ ]
+  comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute even if we return in the body."⟩ ]
   needsResolves := true
   run := fun _ p _m =>
     (lowerContracts p, [], {})

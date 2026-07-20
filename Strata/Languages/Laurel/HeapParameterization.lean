@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.EliminateReturnStatements
 
 /-
 Heap Parameterization Pass
@@ -490,7 +491,9 @@ public def heapParameterizationPass : LoweringPass where
   run := fun _ p m =>
     (heapParameterization m p, [], {})
   comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
-  comesBefore := [⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩]
+  comesBefore := [
+    ⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩,
+    ⟨ eliminateReturnStatementsPass.meta, "the heap parameterization pass introduces helper procedures that use return statements. This dependency could be eliminated if those helpers would assign to the output parameter directly."⟩]
 
 end Strata.Laurel
 

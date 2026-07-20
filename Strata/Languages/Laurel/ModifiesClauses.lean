@@ -10,6 +10,8 @@ public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.PushOldInward
+import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -223,6 +225,9 @@ public def modifiesClausesTransformPass : LoweringPass where
   name := "ModifiesClausesTransform"
   documentation := "Translate modifies clauses into frame conditions on the contract."
   needsResolves := true
+  comesBefore := [
+    ⟨ contractPass.meta, "The modifies pass creates new postconditions"⟩,
+    ⟨ pushOldInwardPass.meta, "The modifies clauses pass uses old already in 'inward' positions, so right now it does not actually need the push inward pass to come after. However, if the implementation of old changes then it's safer if the pass that handles old comes after the modifies pass since it does introduce old."⟩]
   comesAfter := [⟨ heapParameterizationPass.meta, "the modifies pass refers to several types and variables introduced by heap parameterization: Composite, Field, $heap_in, $heap."⟩]
   run := fun options p m =>
     let (p', diags) := modifiesClausesTransform m p (useEnumeratedFrame := options.enumeratedModifiesClauses)

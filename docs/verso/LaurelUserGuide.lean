@@ -12,96 +12,19 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.ModifiesClauses
-
-open Strata.Laurel
+-- Provides `Strata.parseLaurelText`, used by the `laurel` code block below to
+-- parse-check every example at doc-elaboration time.
+import Strata.Languages.Laurel
 
 -- This gets access to most of the manual genre
 open Verso.Genre Manual
 
--- This gets access to Lean code that's in code blocks, elaborated in the same process and
--- environment as Verso
+-- This gets access to Lean code that's in code blocks, elaborated in
+-- the same process and environment as Verso
 open Verso.Genre.Manual.InlineLean
 
 set_option pp.rawOnError true
 
-/-- Markdown documentation for all Laurel passes, including their
-    `comesBefore`/`comesAfter` ordering rationales. Note: pass
-    `documentation`/`reason` strings are rendered as Markdown, so avoid raw
-    `<angle-bracket>` text (it is treated as inline HTML and crashes Verso's
-    converter); use backticks for inline code instead. -/
-def laurelPipelineDocsMarkdown : String :=
-  let entries := allPasses.map fun pass =>
-    let base := s!"- **{pass.name}**: {pass.documentation}"
-    let beforeDeps := pass.comesBefore.map fun cb =>
-      s!"  - Comes before **{cb.pass.name}** because: {cb.reason}"
-    let afterDeps := pass.comesAfter.map fun ca =>
-      s!"  - Comes after **{ca.pass.name}** because: {ca.reason}"
-    let deps := beforeDeps ++ afterDeps
-    if deps.isEmpty then base
-    else base ++ "\n" ++ "\n".intercalate deps
-  "\n".intercalate entries.toList
-
-/-- Markdown dependency graph for the Laurel passes, derived from the
-    `comesBefore`/`comesAfter` properties. -/
-def laurelPipelineDependencyGraphMarkdown : String := Id.run do
-  -- Collect all edges: (source, target, reason) where source comesBefore target
-  let mut edges : List (String × String × String) := []
-  for pass in allPasses do
-    -- `pass.comesBefore` declares: pass must run before cb.pass, i.e. pass → cb.pass
-    for cb in pass.comesBefore do
-      edges := edges ++ [(pass.name, cb.pass.name, cb.reason)]
-    -- `pass.comesAfter` declares: pass must run after ca.pass, i.e. ca.pass → pass
-    for ca in pass.comesAfter do
-      edges := edges ++ [(ca.pass.name, pass.name, ca.reason)]
-
-  -- Deduplicate edges with the same (source, target), keeping the first reason.
-  edges := edges.foldl (init := []) fun acc e =>
-    if acc.any (fun a => a.1 == e.1 && a.2.1 == e.2.1) then acc else acc ++ [e]
-
-  -- Build the graph as a markdown list showing dependencies
-  let mut md := "**Dependency edges** (A → B means A must run before B):\n\n"
-  if edges.isEmpty then
-    md := md ++ "*No ordering constraints declared.*\n"
-  else
-    for (src, tgt, reason) in edges do
-      md := md ++ s!"- **{src}** → **{tgt}**\n  - *{reason}*\n"
-
-  -- Add a textual rendering of the pipeline order with dependency annotations
-  md := md ++ "\n**Pipeline execution order** (→ X: must run before X; ← X: must run after X):\n\n"
-  md := md ++ "```\n"
-  let mut idx := 1
-  for pass in allPasses do
-    let beforeDeps := pass.comesBefore.map (s!" → {·.pass.name}")
-    let afterDeps := pass.comesAfter.map (s!" ← {·.pass.name}")
-    let deps := beforeDeps ++ afterDeps
-    let depStr := if deps.isEmpty then "" else String.join deps
-    md := md ++ s!"{idx}. {pass.name}{depStr}\n"
-    idx := idx + 1
-  md := md ++ "```\n"
-  return md
-
-/-- Block command that generates documentation for all Laurel pipeline passes.
-    Usage inside a `#doc` block: `{laurelPipelineDocs}` -/
-@[block_command]
-def laurelPipelineDocs : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDocsMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDocumentation as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
-/-- Block command that generates a dependency graph for the Laurel pipeline passes
-    based on the `comesBefore` and `comesAfter` properties.
-    Usage inside a `#doc` block: `{laurelPipelineDependencyGraph}` -/
-@[block_command]
-def laurelPipelineDependencyGraph : Verso.Doc.Elab.BlockCommandOf Unit := fun () => do
-  let md := laurelPipelineDependencyGraphMarkdown
-  let some ast := MD4Lean.parse md
-    | Lean.throwError "Failed to parse laurelPipelineDependencyGraph as Markdown"
-  let blocks ← ast.blocks.mapM (Markdown.blockFromMarkdown · (handleHeaders := Markdown.strongEmphHeaders))
-  `(Verso.Doc.Block.concat #[$blocks,*])
-
--- A set-apart *example* box. Renders its contents inside a tinted, bordered
 -- panel with an "Example" header, so concrete examples stand out from the
 -- surrounding explanatory prose. Authored via the `:::example` directive below.
 block_extension Block.«example» (title : Option String) where
@@ -166,161 +89,133 @@ def «example» : Verso.Doc.Elab.DirectiveExpanderOf LaurelExampleConfig
     let args ← stxs.mapM Verso.Doc.Elab.elabBlock
     ``(Verso.Doc.Block.other (Block.«example» $(Lean.quote title)) #[ $[ $args ],* ])
 
-#doc (Manual) "The Laurel Language" =>
+/-- Configuration for the `laurel` code block. The `+unchecked` flag opts a
+    block out of parse checking — use it for illustrative or partial snippets
+    that are not intended to parse as a complete Laurel program. -/
+structure LaurelCodeConfig where
+  unchecked : Bool := false
+
+instance : Verso.ArgParse.FromArgs LaurelCodeConfig Verso.Doc.Elab.DocElabM where
+  fromArgs := LaurelCodeConfig.mk <$> .flag `unchecked false
+
+/-- A ````laurel```` code block. Renders like an ordinary code block, but also
+    *parse-checks* its contents at doc-elaboration time so a syntax error in an
+    example fails the documentation build.
+
+    Only parsing and AST translation are run — not resolution or verification —
+    so examples that deliberately illustrate a verification *failure* (a failing
+    `assert`, a violated precondition, …) still pass, since they are
+    syntactically valid. A snippet that is not a complete program (it omits the
+    `program Laurel;` header) is wrapped before checking. Pass `+unchecked` to
+    skip checking entirely. -/
+@[code_block]
+def laurel : Verso.Doc.Elab.CodeBlockExpanderOf LaurelCodeConfig
+  | config, str => do
+    -- `parseLaurelText` parses a bare sequence of declarations (the `.laurel.st`
+    -- file form), and the `program Laurel;` header is an artifact of the embedded
+    -- style that readers shouldn't see. Strip an optional leading `program …;`
+    -- header line so it is neither checked against nor rendered.
+    let content := str.getString
+    let source :=
+      if content.startsWith "program" then
+        match content.splitOn "\n" with
+        | _header :: rest => "\n".intercalate rest
+        | [] => content
+      else content
+    unless config.unchecked do
+      try
+        let _ ← (Strata.parseLaurelText "<LaurelUserGuide>" source : IO Strata.Laurel.Program)
+      catch e =>
+        throwErrorAt str m!"Laurel example failed to parse:\n{e.toMessageData}"
+    ``(Verso.Doc.Block.code $(Lean.quote source))
+
+#doc (Manual) "The Laurel User Guide" =>
 %%%
-shortTitle := "Laurel"
+shortTitle := "Laurel User Guide"
 %%%
 
-# Introduction
+# Summary
 
-Laurel is an intermediate verification language designed to serve as a target for popular
-garbage-collected languages that include imperative features, such as Java, Python, and
-JavaScript, where those languages have been extended to include verification specific constructs.
-Laurel tries to include any features that are common to those three languages.
+Laurel is an intermediate analysis language. Its purpose is to reduce the cost of analysing code for
+popular languages. Currently Laurel is focused on enabling analysis of Java, Python, and JavaScript,
+but this list will grow and you can already use it for other languages as well. We recommend
+targeting Laurel when trying to analyse any programming language using Strata.
 
-This manual follows the language from the ground up: it first describes Laurel's
-types, then its unified expression/statement model, then procedures and whole
-programs. It then turns to type checking, done in a bidirectional way, and finally to the translation
-pipeline that lowers a checked Laurel program to Strata Core.
+Laurel is a good target when your source language has a procedure-like construct and its features
+map onto Laurel's. Some source-language features must be compiled away before or during translation,
+because Laurel does not model them directly:
+- metaprogramming (macros, reflection, runtime code generation);
+- type-system features that do not fit Laurel's type system, which is close to C#'s (for example
+  higher-kinded types or advanced generics);
+- pointers and pointer arithmetic (Laurel does not yet model these).
 
-## Features
+Laurel is *not* a good target for languages that use none of its features — typically languages with
+no procedure-like construct, such as assembly, or inputs that are not programming languages at all.
+For those, target Strata Core directly. A stack-based language like JVM bytecode still benefits from
+targeting Laurel.
 
-In the feature lists below, items marked *(WIP)* are designed or planned but not
-yet fully implemented; everything else is available today.
+You use Laurel by building a compiler from your source language to Laurel. This guide will help you
+understand Laurel and thus help build such compilers.
 
-Laurel enables doing various forms of analyses :
-- Type checking
-- Testing
-- (WIP) Property-based testing
-- (WIP) Bounded symbolic execution
-- Unbounded symbolic execution
-- (WIP) Data-flow analysis
+Laurel supports several types of analysis and some of these require additional information besides
+the implementation code. You can enable your users to provide this information through annotations
+in the source program, and those annotations should then be used in the compilation to Laurel, where
+the analysis specific information lives in first class language constructs.
 
-## Shared language features
+Using just the Strata CLI — without writing any Strata extensions — a Laurel program can be put
+through these kinds of analysis. Laurel does not implement them itself; it lowers to Strata Core,
+which performs the analysis:
+- Property-based testing (planned)
+- Bounded verification
+- Unbounded verification
 
-Here are some Laurel language features that are shared between the source languages:
-- Statements such as loops and return statements
-- Mutation of variables, including in expressions
-- Reading and writing of fields of references
-- Object oriented concepts such as inheritance, type checking, up and down casting and
-  dynamic dispatch
-- (WIP) Error handling via exceptions
-- (WIP) Procedures types and procedures as values
-- (WIP) Parametric polymorphism
+## A first program
 
-Laurel does not distinguish between statements and expressions.
-Expression-like or statement-like constructs can occur in the same positions.
-Each statement-expression has a type, which for statement-like constructs might be void.
+A Laurel program is a sequence of declarations. The most important one is the
+*procedure*. A procedure has input parameters, optional output parameters
+introduced with `returns`, an optional contract, and a body enclosed in braces.
+Statements inside the body are separated by semicolons.
 
-## Verification features
-On top of the above features, Laurel adds features that are useful specifically for verification:
-- Assert and assume statements
-- Loop invariants
-- Pre and postconditions for procedures
-- Modifies and reads clauses for procedures
-- (WIP) Decreases clauses for procedures and loops
-- (WIP) Immutable fields and constructors that support assigning to them
-- (WIP) Constrained types
-- (WIP) Type invariants
-- Forall and exists expressions
-- (WIP) Old and fresh expressions
-- Unbounded integer and real types
-- To be designed constructs for supporting proof writing
+The procedure below computes integer division the hard way: it repeatedly
+subtracts the divisor from the dividend, counting how many times it can do so.
+The `ensures` clause then confirms the hand-rolled result against Laurel's
+built-in `/` operator, so the two must agree for the procedure to verify. The
+loop carries an *invariant* that ties the running quotient and remainder back to
+the original dividend — this is the fact the verifier needs to discharge the
+postcondition.
 
-## Verification design choices
-A peculiar choice of Laurel is that it does not require imperative code to be encapsulated
-using a functional specification. A reason for this is that sometimes the imperative code is
-as readable as the functional specification. For example:
-```
-procedure increment(counter: Counter)
-  // In Laurel, this ensures clause can be left out
-  ensures counter.value == old(counter.value) + 1
+```laurel
+program Laurel;
+procedure divide(dividend: int, divisor: int) returns (quotient: int)
+  requires dividend >= 0
+  requires divisor > 0
+  opaque
+  ensures quotient == dividend / divisor
 {
-  counter.value := counter.value + 1;
+  var remainder: int := dividend;
+  quotient := 0;
+  while (remainder >= divisor)
+    invariant remainder >= 0
+    invariant dividend == quotient * divisor + remainder
+  {
+    remainder := remainder - divisor;
+    quotient := quotient + 1
+  };
+  assert 0 <= remainder && remainder < divisor
 };
 ```
 
 ## Internal constructors and properties
-Some constructors and properties in the Laurel AST are marked for internal usage and should not be needed by Laurel users.
-Having these internal properties and constructors allows us to define an incremental translation to Core which improves maintainability.
+Some constructors and properties in the Laurel AST are marked for internal usage and should not be
+needed by Laurel users. Having these internal properties and constructors allows us to define an
+incremental translation to Core which improves maintainability.
 
-# Types
+# Resolution
 
-Laurel's types come in two groups: those a user can write — primitives,
-collections, and user-defined types — and a few internal constructors the
-implementation introduces that have no surface syntax.
+Right now, Laurel reserves identifier names that start with `$` for use in its compilation passes.
+In the future we may improve the passes so that this restriction can be dropped.
 
-The {name Strata.Laurel.HighType}`HighType` type enumerates every type Laurel
-tracks. Alongside the user-writable types it also includes internal constructors
-(such as `Unknown` and `MultiValuedExpr`) that the compiler introduces
-during resolution and later passes; these have no surface syntax.
-
-{docstring Strata.Laurel.HighType}
-
-## User-Defined Types
-
-User-defined types come in two categories: composite types and constrained types.
-
-Composite types have fields and procedures, and may extend other composite types. Fields
-declare whether they are mutable and specify their type.
-
-{docstring Strata.Laurel.CompositeType}
-
-{docstring Strata.Laurel.Field}
-
-Constrained types are defined by a base type and a constraint over the values of the base
-type. Algebraic datatypes can be encoded using composite and constrained types.
-
-{docstring Strata.Laurel.ConstrainedType}
-
-{docstring Strata.Laurel.TypeDefinition}
-
-# Expressions and Statements
-
-Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like
-constructs. This avoids duplication of shared concepts such as conditionals and variable
-declarations.
-
-## Operations
-
-{docstring Strata.Laurel.Operation}
-
-## The StmtExpr Type
-
-{docstring Strata.Laurel.StmtExpr}
-
-## Metadata
-
-All AST nodes can carry metadata via the `AstNode` wrapper.
-
-{docstring Strata.Laurel.AstNode}
-
-# Procedures
-
-Procedures are the main unit of specification and verification in Laurel.
-
-{docstring Strata.Laurel.Procedure}
-
-{docstring Strata.Laurel.Parameter}
-
-{docstring Strata.Laurel.Body}
-
-# Programs
-
-A Laurel program consists of procedures, global variables, type definitions, and constants.
-
-{docstring Strata.Laurel.Program}
-
-# Type checking
-
-Type checking is woven into the resolution pass: every
-{name Strata.Laurel.StmtExpr}`StmtExpr` gets a {name Strata.Laurel.HighType}`HighType`, and
-mismatches against the surrounding context become diagnostics. The implementation is in
-`Resolution.lean`.
-
-## Design
-
-### Bidirectional type checking
+## Bidirectional type checking
 
 There are two operations on expressions, written here in standard
 bidirectional notation:
@@ -346,7 +241,7 @@ The two judgments are implemented as
 
 {docstring Strata.Laurel.Resolution.Check.resolveStmtExpr}
 
-### Gradual typing
+## Gradual typing
 
 The relation `<:` (used in \[⇐\] Sub) is built from three Lean functions —
 {name Strata.Laurel.isSubtype}`isSubtype`, {name Strata.Laurel.isConsistent}`isConsistent`,
@@ -434,8 +329,8 @@ tag := "rules-subsumption"
 
 $$`\frac{\Gamma \vdash e \Rightarrow A \quad A <: B}{\Gamma \vdash e \Leftarrow B} \quad \text{([⇐] Sub)}`
 
-Fallback in {name Strata.Laurel.Resolution.Check.resolveStmtExpr}`Check.resolveStmtExpr` whenever no bespoke check
-rule applies.
+Fallback in {name Strata.Laurel.Resolution.Check.resolveStmtExpr}`Check.resolveStmtExpr` whenever no
+bespoke check rule applies.
 
 ### Literals
 %%%
@@ -957,65 +852,677 @@ named-output assignment.
 
 {docstring Strata.Laurel.resolveInstanceProcedure}
 
-# Implementation
+# Execution
 
-The static semantics of Laurel are defined by `Resolution.lean`. This is where Laurel references are resolved and where type checking is done. Calling `resolve` will produce diagnostics and a `SemanticModel` that can be used to navigate between definitions and references.
-If new references or definitions are created during compilation, `resolve` must be called again to get a complete model.
 
-## Translation Pipeline
+## Types
 
-The Laurel to Core translation pipeline uses these IRs:
-- Laurel
-- UnorderedCoreWithLaurelTypes
-- CoreWithLaurelTypes
-- Core
+Laurel's types come in two groups: those a user can write — primitives,
+collections, and user-defined types — and a few internal constructors the
+implementation introduces that have no surface syntax.
 
-Most of the passes are in the Laurel IR.
-The transparency pass goes from `Laurel` to `UnorderedCoreWithLaurelTypes`.
-The CoreGroupingAndOrdering goes from `UnorderedCoreWithLaurelTypes` to `CoreWithLaurelTypes`
-And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
+The {name Strata.Laurel.HighType}`HighType` type enumerates every type Laurel
+tracks. Alongside the user-writable types it also includes internal constructors
+(such as `Unknown` and `MultiValuedExpr`) that the compiler introduces
+during resolution and later passes; these have no surface syntax.
 
-## Passes
+{docstring Strata.Laurel.HighType}
 
-The following passes making up the compilation of Laurel to Core:
+### User-Defined Types
 
-{laurelPipelineDocs}
+User-defined types come in two categories: composite types and constrained types.
 
-## Pass Dependency Graph
+Composite types have fields and procedures, and may extend other composite types. Fields
+declare whether they are mutable and specify their type.
 
-The following graph shows the ordering constraints between passes.
+{docstring Strata.Laurel.CompositeType}
 
-{laurelPipelineDependencyGraph}
+{docstring Strata.Laurel.Field}
 
-# Differences between Laurel and Core
+Constrained types are defined by a base type and a constraint over the values of the base
+type. Algebraic datatypes can be encoded using composite and constrained types.
 
-## Language design
+{docstring Strata.Laurel.ConstrainedType}
 
-### Parameter lists
-Parameter lists. In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined by repeating the parameter name in both lists. In Core, there is a single parameter list where each parameter defines its kind (in/out/inout).
+{docstring Strata.Laurel.TypeDefinition}
 
-At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment, like this:
-`assign x, y := multiOutCall(a, b)`
-Core uses the argument list to assign the output parameters, like this:
-`multiOutCall(a, b, out x, out y)`
+## Expressions and Statements
 
-In Laurel, an inout parameter only influences the callee's code, since it means there is a single variable that is used as input and output. On the calling side however, there is no concept of inout parameters. This is different from Core, where inout variables affect the calling side. Example of an inout being called in Core, `hasInout(inout x)`.
+Laurel uses a unified `StmtExpr` type that contains both expression-like and statement-like
+constructs. This avoids duplication of shared concepts such as conditionals and variable
+declarations.
 
-### Assignments to fresh and existing declarations
-In Laurel, assignments can have multiple targets. Each target can be either an existing variable or a local declaration. Example:
+### Operations
+
+{docstring Strata.Laurel.Operation}
+
+### The StmtExpr Type
+
+{docstring Strata.Laurel.StmtExpr}
+
+## Sources
+
+All AST nodes can carry a source location via the `AstNode` wrapper.
+
+{docstring Strata.Laurel.AstNode}
+
+## Procedures
+
+Procedures are the main unit of specification and verification in Laurel.
+
+{docstring Strata.Laurel.Procedure}
+
+{docstring Strata.Laurel.Parameter}
+
+{docstring Strata.Laurel.Body}
+
+## Programs
+
+A Laurel program consists of procedures, global variables, type definitions, and constants.
+
+{docstring Strata.Laurel.Program}
+
+### Primitive types
+
+Laurel provides unbounded mathematical `int` and `real` types, a `bool` type,
+`string`, and fixed-width bitvectors. Because `int` is unbounded, arithmetic in
+specifications behaves like ordinary mathematics: there is no overflow to reason
+around when you are stating what a procedure computes.
+
+### Composites
+
+Laurel models objects with *composite* types. A composite declares mutable
+fields and may declare *instance procedures* (methods). Fields are read and
+written with the `#` selector, instances are created with `new`, and a method is
+invoked with the same `#` syntax.
+
+```laurel
+program Laurel;
+composite Counter {
+  var count: int
+  procedure reset(self: Counter)
+    opaque
+    ensures self#count == 0
+    modifies self
+  {
+    self#count := 0
+  };
+}
+
+procedure useCounter()
+  opaque
+{
+  var c: Counter := new Counter;
+  c#reset();
+  assert c#count == 0
+};
 ```
-var x: int;
-var z: int;
-assign x, var y: int, z := hasThreeOutputs()
-```
-In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to an existing local variable. Example:
-```
-var x: int;
-var y: int;
-var z: int;
-hasThreeOutputs(out x, out y, out z);
+
+An instance procedure takes its receiver as an explicit `self` parameter and
+refers to fields through it. The contract of a method uses the same `requires` /
+`ensures` / `modifies` clauses as any other procedure; here `ensures self#count
+== 0` is what lets the caller conclude `c#count == 0` after `c#reset()`.
+
+Field selection and method calls chain, so you can reach through one object to
+another: `o#inner#x` reads field `x` of the object stored in `o`'s `inner` field,
+and `o#inner#isOne()` calls a method on it.
+
+```laurel
+composite Inner { var x: int }
+composite Outer { var inner: Inner }
+
+procedure useOuter()
+  opaque
+{
+  var o: Outer := new Outer;
+  var v: int := o#inner#x
+};
 ```
 
-## Implementation
+# Verification - Fundamentals
 
-In Laurel, all verification concepts, such as assume statements, pre and postconditions, and transparency of procedures, are part of the language. In Core however, there is the concept of metadata. Concepts that relate to only one or a few analyses might not be considered concepts of the Core language, and will then be represented using metadata instead of being given a typed representation in the AST.
+## Assertions
+
+An `assert` states a fact that Laurel must prove holds at that point in the
+program. If the solver cannot prove it, verification fails and the failing
+`assert` is reported.
+
+```laurel
+procedure checkPositive(x: int)
+  requires x > 0
+  opaque
+{
+  assert x > 0;
+  assert x >= 1
+};
+```
+
+The dual of `assert` is `assume`. An `assume` introduces a fact without proof:
+from that point on, Laurel reasons as if the assumed expression is true. Assuming
+something false makes everything afterwards trivially provable, which is
+occasionally useful but should be used with care.
+
+```laurel
+procedure assumeThenProve()
+  opaque
+{
+  assume false;
+  assert false  // provable: we assumed a contradiction
+};
+```
+
+Assertions are the building block behind every other verification feature in
+this guide. Preconditions, postconditions, and loop invariants are all
+ultimately checked by turning them into assertions at the right program points.
+
+## Erased code
+
+To be designed..
+
+## Loop invariants
+
+Laurel cannot know in advance how many times a loop runs, so it reasons about
+loops through a *loop invariant*: a condition that holds every time the loop
+guard is evaluated — on first entry and after each execution of the body.
+
+A loop invariant serves two purposes. Inside the loop it tells Laurel what is
+true, which is what lets it prove that operations in the body are safe. After the
+loop it combines with the negated guard to describe the state on exit.
+
+```laurel
+procedure countUp()
+  opaque
+{
+  var n: int := 5;
+  var i: int := 0;
+  while (i < n)
+    invariant i >= 0
+    invariant i <= n
+  {
+    i := i + 1
+  };
+  assert i == n
+};
+```
+
+The two invariants together establish `i == n` after the loop: the loop exits
+when `i < n` is false, so `i >= n`, and the second invariant gives `i <= n`.
+
+A loop invariant must hold *on entry* and be *preserved* by the body. If it fails
+on entry, Laurel reports the error at the offending invariant. For example,
+initializing `i` to `-1` above would break `invariant i >= 0` before the loop
+even starts, and that specific invariant is flagged.
+
+## Preconditions
+
+A *precondition*, written with `requires`, states what must be true when a
+procedure is called. It has two effects. It restricts callers: every call site
+must prove the precondition holds for the arguments it passes. And it gives the
+body an assumption to work from when proving its own obligations.
+
+```laurel
+procedure halve(x: int) returns (r: int)
+  requires x > 0
+  opaque
+  ensures r >= 0
+{
+  r := x / 2
+};
+
+procedure caller()
+  opaque
+{
+  var a: int := halve(10);   // ok: 10 > 0
+  var b: int := halve(0)     // error: precondition does not hold
+};
+```
+
+A procedure may have several `requires` clauses; they are conjoined. A call must
+satisfy all of them.
+
+```laurel
+procedure addBoth(x: int, y: int) returns (r: int)
+  requires x > 0
+  requires y > 0
+  opaque
+  ensures r > 0
+{
+  r := x + y
+};
+```
+
+## Postconditions
+
+A postcondition for a procedure is a condition that is guaranteed to hold after the procedure
+executes. Sometimes, we can capture the entire desired behavior of a procedure with a postcondition
+that is simpler than the procedure's implementation. A typical example of sorting a list of numbers:
+the end result, that the list is sorted, is simpler to describe than the algorithm to do the
+sorting.
+
+When a postcondition can capture the entire desired behavior of a procedure, and is simpler than the
+body, then adding it allows improving the correctness guarantee of your program, since only the
+simpler postcondition needs to be reviewed for correctness. Also, when postconditions are added to a
+procedure, callers will only be able to use the postconditions to reason about the call, and not the
+body. This simplifies reasoning at the call-site, improving verification results.
+
+In Laurel, to be explicit, a procedure with postconditions must be marked as `opaque`, indicating
+that its body is not visible to callers. A procedure without postconditions can also be marked
+`opaque`, although then callers will know nothing about the result of the call. By default Laurel
+procedures have a transparent body, meaning that callers can use the callee's body for reasoning
+about the call's result.
+
+```laurel
+procedure max(x: int, y: int) returns (r: int)
+  opaque
+  ensures r >= x
+  ensures r >= y
+  ensures r == x || r == y
+{
+  if x > y then { r := x }
+  else { r := y }
+};
+```
+
+At a call site, the postcondition is all the caller knows about the result:
+
+```laurel
+procedure useMax()
+  opaque
+{
+  var m: int := max(3, 7);
+  assert m >= 3;
+  assert m >= 7
+  // we cannot assert m == 7 here: the contract only promises r >= x, r >= y,
+  // and r == x || r == y, which does not pin m to 7.
+};
+```
+
+Postconditions and preconditions work together. It is common to need a
+precondition in order to be able to prove a postcondition, and adding that
+precondition simultaneously rules out the calls for which the procedure would not
+behave as specified.
+
+## Quantifier
+
+For specifications that range over many values, Laurel provides *quantifiers*.
+A `forall` states that its body holds for every value of the bound variables; an
+`exists` states that there is at least one value for which the body holds. Both
+take one or more typed binders and a body introduced with `=>`.
+
+```laurel
+procedure quantifiers()
+  opaque
+{
+  assert forall(x: int) => x + 0 == x;
+  assert exists(x: int) => x == 42
+};
+```
+
+The implication operator `==>` is frequently used inside quantifiers to restrict
+the range of interest — for instance, to say something about every index of an
+array within bounds:
+
+```laurel
+procedure inContract(n: int)
+  requires n > 0
+  opaque
+  ensures forall(i: int) => i >= 0 ==> i < n ==> i < n + 1
+{
+};
+```
+
+Because a `forall` over an infinite domain (such as all integers) cannot be
+checked by enumeration, the solver reasons about it logically. To control how it
+instantiates a quantifier, you can attach a *trigger* — a pattern in braces that
+tells the solver which terms should cause the quantified fact to fire:
+
+```laurel
+procedure P(x: int): int;
+procedure withTrigger()
+  opaque
+{
+  assume forall(i: int) { P(i) } => P(i) == i + 1;
+  assert P(1) == 2   // the term P(1) matches the trigger, so the fact fires
+};
+```
+
+## Termination checking
+
+To be designed..
+
+## Constrained types
+
+A *constrained type* (a refinement type) is a base type narrowed by a
+predicate. It is introduced with the `constrained` keyword and has four parts: a
+name, a value binder together with its base type, a `where` predicate that
+values of the type must satisfy, and a `witness` value that proves the type is
+inhabited.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+```
+
+This declares `nat` as the integers that are at least zero. The binder `x`
+ranges over the base type `int`, `x >= 0` is the constraint, and `0` is the
+witness — a concrete value Laurel checks against the predicate to be sure the
+type is not empty. A witness that fails its own predicate is rejected:
+
+```laurel
+constrained bad = x: int where x > 0 witness -1
+// error: the witness -1 does not satisfy x > 0
+```
+
+A constrained type is checked at every point where a value *acquires* the type,
+and it is available as an assumption at every point where a value is *known* to
+have the type. The rest of this section walks through those points.
+
+### Inputs
+
+A parameter of constrained type contributes a precondition. Callers must prove
+the argument satisfies the constraint, and in exchange the body may assume it.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure inputAssumed(n: nat)
+  opaque
+{
+  assert n >= 0   // holds: the nat constraint is assumed for inputs
+};
+```
+
+Passing an argument that cannot be shown to satisfy the constraint fails at the
+call site, exactly like any other {ref "rules-verification-statements"}[precondition].
+
+### Outputs
+
+An output of constrained type contributes a postcondition. The procedure must
+establish the constraint on its result, and callers may then assume it.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure outputValid() returns (r: nat)
+  opaque
+{
+  r := 3          // ok: 3 satisfies x >= 0
+};
+```
+
+Returning a value that violates the constraint fails as a postcondition:
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure outputInvalid() returns (r: nat)
+  opaque
+{
+  r := -1         // error: postcondition does not hold (-1 is not a nat)
+};
+```
+
+Because the constraint travels with the output, a caller of an `opaque`
+procedure learns it from the contract alone, without seeing the body:
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure opaqueNat() returns (r: nat)
+  opaque;
+
+procedure callerAssumes()
+  opaque
+{
+  var v: int := opaqueNat();
+  assert v >= 0   // holds: opaqueNat's result is a nat
+};
+```
+
+### Local variables
+
+Initializing or assigning to a constrained-typed local asserts the constraint
+on the assigned value. Both the initial value and every later reassignment are
+checked.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure assignLocal()
+  opaque
+{
+  var y: nat := 5;   // ok
+  y := -1            // error: assignment violates the nat constraint
+};
+```
+
+A constrained-typed local that is *declared without an initializer* is treated
+as an arbitrary value that satisfies the constraint: the constraint is assumed,
+but nothing more. In particular you cannot assume it holds the witness value.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure uninitialized()
+  opaque
+{
+  var y: nat;
+  assert y >= 0   // holds: the constraint is assumed
+};
+```
+
+### Quantifiers
+
+When a quantifier binds a variable of constrained type, the constraint is
+injected into the body so the bound variable ranges only over values of the
+type. For `forall` the constraint becomes an antecedent; for `exists` it becomes
+a conjunct.
+
+```laurel
+constrained nat = x: int where x >= 0 witness 0
+
+procedure quantifiedNat()
+  opaque
+{
+  // provable only because n >= 0 is injected: false over all integers
+  assert forall(n: nat) => n + 1 > 0;
+  // 42 witnesses the existential and satisfies n >= 0
+  assert exists(n: nat) => n == 42
+};
+```
+
+### Nested constrained types
+
+A constrained type may refine another constrained type. The constraints then
+compose: a value of the inner type must satisfy its own predicate *and* every
+predicate up the chain.
+
+```laurel
+constrained even = x: int where x % 2 == 0 witness 0
+constrained evenpos = x: even where x > 0 witness 2
+
+procedure nested(x: evenpos)
+  opaque
+{
+  assert x > 0;      // evenpos's own constraint
+  assert x % 2 == 0  // inherited from even
+};
+```
+
+Because algebraic datatypes can be encoded as constrained types over a base
+type, this composition is what lets a value carry several layers of invariant at
+once.
+
+# Verification - Objects
+
+## Modifies clauses
+
+As previously mentioned, Laurel procedures have a transparent body by default, so callers can reason
+about the callee's body. This works also when the callee mutates the heap in its body. However, when
+we make a heap-mutating procedure `opaque`, and the body is no longer available for reasoning, then
+the caller must accept the possibility that the entire heap was mutated, meaning that nothing can be
+proven about the heap any more. This is sound but imprecise, and it makes reasoning about callers of
+such procedures difficult. To enable heap reasoning after calling opaque heap-mutating procedures,
+Laurel has modifies clauses.
+
+A modifies clause specifies the heap references that may have been modified by the procedure.
+Example:
+
+```laurel
+composite Container {
+  var value: int
+}
+
+procedure bump(c: Container)
+  opaque
+  modifies c
+{
+  c#value := c#value + 1
+};
+
+procedure caller()
+  opaque
+{
+  var a: Container := new Container;
+  var b: Container := new Container;
+  var x: int := a#value;
+  var y: int := b#value;
+  bump(b);
+  assert x == a#value;  // holds: only b is in bump's modifies clause
+  assert y == b#value   // fails: b is in bump's modifies clause
+};
+```
+
+An opaque procedure that writes to an object it has not listed in the modifies clause is rejected,
+also when this write is done through another procedure call. You can list several references by
+repeating the clause (`modifies c; modifies d`), and the wildcard `modifies *` permits modifying any
+object — at the cost of telling callers that nothing on the heap is preserved.
+
+Objects allocated with `new` *inside* the procedure body are exempt: a freshly
+allocated object may be modified freely without appearing in the `modifies`
+clause, because no caller could hold any prior knowledge about it.
+
+```laurel
+composite Container { var value: int }
+
+procedure makeOne()
+  opaque
+{
+  var c: Container := new Container;
+  c#value := 1   // allowed: c is freshly allocated here
+};
+```
+
+## Reads clauses
+
+To be designed..
+
+Reads clauses can only be specified for deterministic procedures
+
+## Old
+
+In a postcondition you often want to relate the state when the procedure returns
+to the state when it was entered. Wrapping an expression in `old(...)` evaluates
+that expression in the *pre-state* — the heap as it was on entry. This is the
+standard way to specify a procedure that mutates its arguments.
+
+```laurel
+composite Cell {
+  var value: int
+}
+
+procedure bumpCell(c: Cell)
+  opaque
+  ensures c#value == old(c#value) + 1
+  modifies c
+{
+  c#value := c#value + 1
+};
+```
+
+Here `c#value` denotes the value on return and `old(c#value)` the value on entry,
+so the postcondition says the field grew by exactly one. Without `old`, the
+clause would read `c#value == c#value + 1`, which no implementation can satisfy.
+
+`old` distributes through the structure of an expression, so you can wrap a whole
+sub-expression: `old(2 * c#value + 3)` means the same as `2 * old(c#value) + 3`.
+It may also appear inside quantifiers and conditionals in a postcondition:
+
+```laurel
+composite Cell { var value: int }
+
+procedure strictBump(c: Cell)
+  opaque
+  ensures forall(other: Cell) => other == c ==> other#value > old(other#value)
+  modifies c
+{
+  c#value := c#value + 1
+};
+```
+
+A caller can reproduce the two-state reasoning by snapshotting the pre-state into
+a local variable before the call and asserting against it afterwards:
+
+```laurel
+program Laurel;
+composite Cell { var value: int }
+
+procedure bumpCell(c: Cell)
+  opaque
+  ensures c#value == old(c#value) + 1
+  modifies c
+{
+  c#value := c#value + 1
+};
+
+procedure bumpCellCaller()
+  opaque
+{
+  var c: Cell := new Cell;
+  var pre: int := c#value;
+  bumpCell(c);
+  assert c#value == pre + 1
+};
+```
+
+An `old(...)` that mentions nothing from the heap has no effect and Laurel warns
+about it, since it cannot relate two states. The same warning is issued for a
+redundant `old(old(...))`, whose inner `old` is dropped.
+
+## Allocated and fresh
+
+`fresh(e)` is a predicate that holds when the reference `e` was newly allocated by the current
+procedure — it did not exist in the heap on entry. It is the standard way to tell a caller that a
+returned reference cannot alias any object that already existed, which is what rules out aliasing
+between the result and the caller's pre-existing objects.
+
+```laurel
+composite Node { var next: Node }
+
+procedure allocate() returns (r: Node)
+  opaque
+  ensures fresh(r)
+{
+  r := new Node
+};
+```
+
+`fresh(e)` may only target reference (composite) types. Its planned dual, `allocated(e)` — asserting
+that a reference already existed in the current state — has not been implemented yet. See the
+Aliasing helpers section of the Laurel Design Guide for the underlying model of allocation and how
+these two notions relate.
+
+## Immutable fields
+
+To be designed..
+
+## Type invariants
+
+To be designed..
+
+## Concurrency
+
+To be designed..
+
+# Verification - Proof hints
+
+To be designed..
