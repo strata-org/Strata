@@ -36,14 +36,23 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
 
 /-- Well-formedness of a procedure's type parameters, mirroring `LFunc.type`'s
     checks for functions (which `Procedure.typeCheck` does not otherwise perform):
-    the `typeArgs` must be distinct, and every type variable appearing in an
-    input/output type must be declared in `typeArgs`. -/
+    the `typeArgs` must be distinct, every type variable appearing in an
+    input/output type must be declared in `typeArgs`, and no `typeArgs` name may
+    use the reserved generator-variable prefix `$__ty` (instantiation renames each
+    type parameter to a fresh `$__ty<n>`; a user parameter literally named `$__ty0`
+    would alias one of these and the fresh→user back-renaming could capture). -/
 private def checkTypeArgsWF (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.typeArgs.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc
       f!"[{proc.header.name}] Duplicates found in the type parameters!\n\
          {proc.header.typeArgs}"
+  let genPrefixArgs := proc.header.typeArgs.filter
+    (fun ta => Lambda.TState.tyPrefix.toList.isPrefixOf ta.toList)
+  if !genPrefixArgs.isEmpty then
+    .error <| DiagnosticModel.withRange sourceLoc
+      f!"[{proc.header.name}]: type parameters {genPrefixArgs} use the reserved \
+         generator-variable prefix '{Lambda.TState.tyPrefix}'; rename them"
   let sigVars := (Lambda.LMonoTys.freeVars proc.header.inputs.values ++
                   Lambda.LMonoTys.freeVars proc.header.outputs.values).eraseDups
   let undeclared := sigVars.filter (· ∉ proc.header.typeArgs)
@@ -80,21 +89,30 @@ def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
 -- Type checking procedure pre/post conditions.
+-- Structured as an explicit tail recursion (`go`) over the condition list rather
+-- than a `for`/`forIn` loop, so soundness proofs can reason via the generated
+-- `go.induct` instead of unfolding a `forIn` desugaring. Behavior is unchanged:
+-- each condition is resolved in the threaded env, its type checked to be `bool`,
+-- and the annotated expression accumulated in order.
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
-    Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) := do
-  let mut results := #[]
-  let mut currentEnv := Env
-  for (name, condition) in (conditions.keys, conditions.values) do
-    let errorPrefix := conditionErrorMsgPrefix procName name condition.md
-    let (annotatedExpr, newEnv) ← Lambda.LExpr.resolve C currentEnv condition.expr
-                                    |>.mapError (fun e => { errorPrefix with message := errorPrefix.message ++ " " ++ toString e })
-    if annotatedExpr.toLMonoTy != mty[bool] then
-      .error { errorPrefix with message := errorPrefix.message ++ s!": Expected condition to be of type Bool, but got {annotatedExpr.toLMonoTy}!" }
-    results := results.push annotatedExpr.unresolved
-    currentEnv := newEnv
-  return (results, currentEnv)
+    Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) :=
+  go C procName conditions #[] Env
+where
+  go (C : Core.Expression.TyContext) (procName : CoreIdent)
+      (conditions : List (CoreLabel × Check)) (results : Array Expression.Expr)
+      (currentEnv : Core.Expression.TyEnv) :
+      Except DiagnosticModel (Array Expression.Expr × Core.Expression.TyEnv) :=
+    match conditions with
+    | [] => .ok (results, currentEnv)
+    | (name, condition) :: rest => do
+      let errorPrefix := conditionErrorMsgPrefix procName name condition.md
+      let (annotatedExpr, newEnv) ← Lambda.LExpr.resolve C currentEnv condition.expr
+                                      |>.mapError (fun e => { errorPrefix with message := errorPrefix.message ++ " " ++ toString e })
+      if annotatedExpr.toLMonoTy != mty[bool] then
+        .error { errorPrefix with message := errorPrefix.message ++ s!": Expected condition to be of type Bool, but got {annotatedExpr.toLMonoTy}!" }
+      go C procName rest (results.push annotatedExpr.unresolved) newEnv
 
 def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
     (proc : Procedure) (md : MetaData Expression) : Except DiagnosticModel (Procedure × Core.Expression.TyEnv) := do
@@ -154,6 +172,23 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let rigidVars := tyArgSubst.flatten.filterMap fun (_, v) =>
     match v with | .ftvar id => some id | _ => none
   let C := { C with rigidTypeVars := rigidVars }
+  -- The fresh instantiation vars must remain abstract in the body env: a
+  -- pre/postcondition (or the tyArg unification) may not have refined them to a
+  -- concrete type. This mirrors `Function.typeCheck`'s rigid-refinement guard
+  -- (`FunctionType.lean`): reaching `.ok` forces `rigid_inv` — every rigid type
+  -- variable is fixed by `envForBody`'s substitution — which the body
+  -- typechecker (`Statement.typeCheck`) requires. Without it, e.g.
+  -- `procedure P<a>(x:a) requires 0 < x` would silently pin `a := int` (a
+  -- soundness gap at call sites: a caller could instantiate `a := bool`).
+  match rigidVars.find? (fun v =>
+      Lambda.LMonoTy.subst envForBody.stateSubstInfo.subst (Lambda.LMonoTy.ftvar v)
+        != Lambda.LMonoTy.ftvar v) with
+  | some v =>
+    let inferred := Lambda.LMonoTy.subst envForBody.stateSubstInfo.subst (Lambda.LMonoTy.ftvar v)
+    .error <| DiagnosticModel.withRange fileRange
+      f!"[{proc.header.name}]: rigid type variable '{v}' was refined to '{inferred}'; \
+         a pre/postcondition or the signature over-constrains a declared type parameter"
+  | none => pure ()
   -- Substitution to rename fresh type variables back to user-supplied names.
   let userSubst : Lambda.Subst :=
     [tyArgSubst.flatten.filterMap fun (orig, v) =>
@@ -168,7 +203,13 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Construct final result.
   let finalPreconditions := Procedure.Spec.updateCheckExprs preconditions.toList proc.spec.preconditions
   let finalPostconditions := Procedure.Spec.updateCheckExprs postconditions.toList proc.spec.postconditions
-  let new_hdr := { proc.header with typeArgs := [],
+  -- Keep the declared type parameters: the signature below is renamed back to the
+  -- original type-variable names by `userSubst`, so it still references `proc.header.typeArgs`.
+  -- Clearing them to `[]` would leave a polymorphic signature with undeclared type
+  -- variables — an internally inconsistent procedure the checker itself would reject on a
+  -- second pass (non-idempotent), and one whose `∀`-binder is dropped in formatting.
+  -- (This mirrors `Function.typeCheck`, which likewise retains its type parameters.)
+  let new_hdr := { proc.header with typeArgs := proc.header.typeArgs,
                                     inputs := inp_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)),
                                     outputs := out_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)) }
   let new_spec := { proc.spec with preconditions := finalPreconditions,
