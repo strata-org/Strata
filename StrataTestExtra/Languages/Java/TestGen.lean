@@ -273,4 +273,157 @@ public class RoundtripTest {
 
 #testRoundtrip
 
+
+-- Test 11: Roundtrip multi-constructor type (Shape.circle)
+elab "#testRoundtripShapeCircle" : command => do
+  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
+  if javacCheck.exitCode != 0 then
+    Lean.logWarning "Roundtrip test skipped: javac not found"
+    return
+
+  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
+  if !(← System.FilePath.pathExists jarPath) then
+    Lean.logWarning s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
+    return
+
+  let dir : System.FilePath := "/tmp/strata-java-roundtrip-shape-circle"
+  if ← dir.pathExists then IO.FS.removeDirAll dir
+
+  let shapeFiles := getIonSerializer% Shape "com.test"
+  let pkgDir := dir / "com" / "test"
+  IO.FS.createDirAll pkgDir
+  for (name, content) in shapeFiles.files do
+    IO.FS.writeFile (pkgDir / name) content
+
+  let driverContent := "
+import com.test.*;
+import com.amazon.ion.*;
+import com.amazon.ion.system.*;
+import java.io.*;
+
+public class RoundtripShapeCircleTest {
+    public static void main(String[] args) throws Exception {
+        var ionSystem = IonSystemBuilder.standard().build();
+        var shape = new Shape.Circle(5);
+        var ionValue = shape.toIon(ionSystem);
+        try (var out = new FileOutputStream(args[0])) {
+            var writer = IonBinaryWriterBuilder.standard().build(out);
+            ionValue.writeTo(writer);
+            writer.close();
+        }
+    }
+}
+"
+  IO.FS.writeFile (dir / "RoundtripShapeCircleTest.java") driverContent
+
+  let mut javaPaths : Array String := #[(dir / "RoundtripShapeCircleTest.java").toString]
+  for (name, _) in shapeFiles.files do
+    javaPaths := javaPaths.push (pkgDir / name).toString
+
+  let compileResult ← IO.Process.output {
+    cmd := "javac"
+    args := #["-cp", s!"{jarPath}:{dir}"] ++ javaPaths
+  }
+  if compileResult.exitCode != 0 then
+    Lean.logError s!"Roundtrip Shape.circle compile failed:\n{compileResult.stderr}"
+    IO.FS.removeDirAll dir
+    return
+
+  let ionFile := dir / "shape.ion"
+  let runResult ← IO.Process.output {
+    cmd := "java"
+    args := #["-cp", s!"{jarPath}:{dir}", "RoundtripShapeCircleTest", ionFile.toString]
+  }
+  if runResult.exitCode != 0 then
+    Lean.logError s!"Roundtrip Shape.circle run failed:\n{runResult.stderr}"
+    IO.FS.removeDirAll dir
+    return
+
+  let ionBytes ← IO.FS.readBinFile ionFile
+  let deserializeShape : ByteArray → Except Std.Format Shape := getIonDeserializer% Shape
+  match deserializeShape ionBytes with
+  | .ok (.circle 5) => pure ()
+  | .ok other => Lean.logError s!"Shape roundtrip mismatch: expected circle 5, got {repr other}"
+  | .error e => Lean.logError s!"Shape roundtrip deser failed: {e}"
+
+  IO.FS.removeDirAll dir
+
+#testRoundtripShapeCircle
+
+-- Test 12: Roundtrip recursive type (Tree)
+elab "#testRoundtripTree" : command => do
+  let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
+  if javacCheck.exitCode != 0 then
+    Lean.logWarning "Roundtrip test skipped: javac not found"
+    return
+
+  let jarPath := "StrataTestExtra/Languages/Java/testdata/ion-java-1.11.11.jar"
+  if !(← System.FilePath.pathExists jarPath) then
+    Lean.logWarning s!"Roundtrip test skipped: ion-java jar not found at {jarPath}"
+    return
+
+  let dir : System.FilePath := "/tmp/strata-java-roundtrip-tree"
+  if ← dir.pathExists then IO.FS.removeDirAll dir
+
+  let treeFiles := getIonSerializer% Tree "com.test"
+  let pkgDir := dir / "com" / "test"
+  IO.FS.createDirAll pkgDir
+  for (name, content) in treeFiles.files do
+    IO.FS.writeFile (pkgDir / name) content
+
+  let driverContent := "
+import com.test.*;
+import com.amazon.ion.*;
+import com.amazon.ion.system.*;
+import java.io.*;
+
+public class RoundtripTreeTest {
+    public static void main(String[] args) throws Exception {
+        var ionSystem = IonSystemBuilder.standard().build();
+        var tree = new Tree.Node(new Tree.Leaf(1), new Tree.Leaf(2));
+        var ionValue = tree.toIon(ionSystem);
+        try (var out = new FileOutputStream(args[0])) {
+            var writer = IonBinaryWriterBuilder.standard().build(out);
+            ionValue.writeTo(writer);
+            writer.close();
+        }
+    }
+}
+"
+  IO.FS.writeFile (dir / "RoundtripTreeTest.java") driverContent
+
+  let mut javaPaths : Array String := #[(dir / "RoundtripTreeTest.java").toString]
+  for (name, _) in treeFiles.files do
+    javaPaths := javaPaths.push (pkgDir / name).toString
+
+  let compileResult ← IO.Process.output {
+    cmd := "javac"
+    args := #["-cp", s!"{jarPath}:{dir}"] ++ javaPaths
+  }
+  if compileResult.exitCode != 0 then
+    Lean.logError s!"Roundtrip Tree compile failed:\n{compileResult.stderr}"
+    IO.FS.removeDirAll dir
+    return
+
+  let ionFile := dir / "tree.ion"
+  let runResult ← IO.Process.output {
+    cmd := "java"
+    args := #["-cp", s!"{jarPath}:{dir}", "RoundtripTreeTest", ionFile.toString]
+  }
+  if runResult.exitCode != 0 then
+    Lean.logError s!"Roundtrip Tree run failed:\n{runResult.stderr}"
+    IO.FS.removeDirAll dir
+    return
+
+  let ionBytes ← IO.FS.readBinFile ionFile
+  let deserializeTree : ByteArray → Except Std.Format Tree := getIonDeserializer% Tree
+  match deserializeTree ionBytes with
+  | .ok (.node (.leaf 1) (.leaf 2)) => pure ()
+  | .ok other => Lean.logError s!"Tree roundtrip mismatch: expected node(leaf 1, leaf 2), got {repr other}"
+  | .error e => Lean.logError s!"Tree roundtrip deser failed: {e}"
+
+  IO.FS.removeDirAll dir
+
+#testRoundtripTree
+
 end Strata.Java.Test

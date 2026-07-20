@@ -142,3 +142,36 @@ partial def deserializeMaybeLine : ByteArray → Except Std.Format MaybeLine :=
   getIonDeserializer% MaybeLine
 
 #check (deserializeMaybeLine : ByteArray → Except Std.Format MaybeLine)
+
+-- Value-level roundtrip tests: construct Ion bytes and verify deserialization
+section ValueTests
+
+private def pointIon : ByteArray :=
+  Ion.internAndSerialize [.struct #[("x", .int 3), ("y", .int 7)]]
+
+#guard match deserializePoint pointIon with
+  | .ok p => p == { x := 3, y := 7 }
+  | .error _ => false
+
+private def colorIon : ByteArray :=
+  Ion.internAndSerialize [.sexp #[.symbol "red"]]
+
+#guard match deserializeColor colorIon with
+  | .ok c => c == .red
+  | .error _ => false
+
+private def shapeIon : ByteArray :=
+  Ion.internAndSerialize [.sexp #[.symbol "circle", .int 5]]
+
+#guard match deserializeShape shapeIon with
+  | .ok s => s == .circle 5
+  | .error _ => false
+
+private def personIon : ByteArray :=
+  Ion.internAndSerialize [.struct #[("name", .string "Alice"), ("age", .int 30), ("active", .bool true)]]
+
+#guard match deserializePerson personIon with
+  | .ok p => p == { name := "Alice", age := 30, active := true }
+  | .error _ => false
+
+end ValueTests
