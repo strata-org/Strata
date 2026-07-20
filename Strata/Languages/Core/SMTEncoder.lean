@@ -885,13 +885,17 @@ def processPendingFnDefs (factory : @Lambda.Factory CoreLParams)
 
 def toSMTTerms (factory : @Lambda.Factory CoreLParams) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
   (pending : List SMT.PendingFnDef) :
-  Except Format ((List Term) × SMT.Context × List SMT.PendingFnDef) := do
-  match es with
-  | [] => .ok ([], ctx, pending)
-  | e :: erest =>
-    let (et, ctx, pending) ← toSMTTerm factory [] e ctx pending
-    let (erestt, ctx, pending) ← toSMTTerms factory erest ctx pending
-    .ok ((et :: erestt), ctx, pending)
+  Except Format ((List Term) × SMT.Context × List SMT.PendingFnDef) :=
+  go es ctx pending #[]
+where
+  go (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : List SMT.PendingFnDef)
+     (acc : Array Term) :
+     Except Format ((List Term) × SMT.Context × List SMT.PendingFnDef) := do
+    match es with
+    | [] => return (acc.toList, ctx, pending)
+    | e :: erest =>
+      let (et, ctx, pending) ← toSMTTerm factory [] e ctx pending
+      go erest ctx pending (acc.push et)
 
 /--
 A variable definition to be emitted as `define-fun` in SMT-LIB.
