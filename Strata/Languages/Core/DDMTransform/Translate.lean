@@ -288,6 +288,7 @@ structure GenNum where
   cover_def : Nat
   deriving Repr
 
+/-- A scoped frame of the translator. :) -/
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
   boundVars : Array (LExpr Core.CoreLParams.mono) := #[]
@@ -1795,22 +1796,6 @@ def translateBindingsWithCases (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindingsWithCases expects a comma separated list: {repr op}"
 
-/-- Translate bindings and partition into inputs/outputs based on `out`/`inout` modifiers.
-    Returns (inputs, outputs) where `inout` params appear in both lists. -/
-def translateBindingsPartitioned (bindings : TransBindings) (op : Arg) :
-  TransM (ListMap Core.CoreIdent LMonoTy × ListMap Core.CoreIdent LMonoTy) := do
-  let bargs ← checkOpArg op q`Core.mkBindings 1
-  match bargs[0]! with
-  | .seq _ .comma args =>
-    let arr ← translateInitMkBindings bindings args
-    let inputs := arr.toList.filterMap fun (id, ty, kind) =>
-      if kind == .input || kind == .inout || kind == .cases then some (id, ty) else none
-    let outputs := arr.toList.filterMap fun (id, ty, kind) =>
-      if kind == .out || kind == .inout then some (id, ty) else none
-    return (inputs, outputs)
-  | _ =>
-    TransM.error s!"translateBindingsPartitioned expects a comma separated list: {repr op}"
-
 def translateOptionFree (arg : Arg) : TransM Core.Procedure.CheckAttr := do
   let .option _ free := arg
     | TransM.error s!"translateOptionFree unexpected {repr arg}"
@@ -1867,20 +1852,40 @@ partial def translateSpec (p : Program) (name : Core.CoreIdent) (bindings : Tran
     let (restreqs, restens) ← go (count + 1) max args
     return (reqs ++ restreqs, ens ++ restens)
 
+/-- Translate a procedure's parameter bindings (the `mkBindings` arg `bop`) and
+    push the body's variable scope.
+
+    Returns the partitioned input/output signatures for the header, together with
+    `bindings` extended by the parameter scope. The declaration-order invariant
+    lives here: the body's de Bruijn indices are assigned against the *original
+    textual order*, not the input/output partition, so the scope binds every
+    parameter in declaration order. -/
+def translateProcBindings (bindings : TransBindings) (bop : Arg) :
+  TransM (ListMap Core.CoreIdent LMonoTy × ListMap Core.CoreIdent LMonoTy × TransBindings) := do
+  let bargs ← checkOpArg bop q`Core.mkBindings 1
+  let params ← match bargs[0]! with
+    | .seq _ .comma args => translateInitMkBindings bindings args
+    | _ => TransM.error s!"translateProcBindings expects a comma separated list: {repr bop}"
+  -- Header signatures: partition by `out`/`inout` modifiers (`inout` is both an
+  -- input and an output).
+  let inputs := params.toList.filterMap fun (id, ty, kind) =>
+    if kind == .input || kind == .inout || kind == .cases then some (id, ty) else none
+  let outputs := params.toList.filterMap fun (id, ty, kind) =>
+    if kind == .out || kind == .inout then some (id, ty) else none
+  -- Body scope: bind every parameter once in original declaration order — the
+  -- body's de Bruijn indices are assigned against that order, not the
+  -- input/output partition.
+  let param_bindings := params.map (fun (id, ty, _) => LExpr.fvar () id ty)
+  return (inputs, outputs, { bindings with boundVars := bindings.boundVars ++ param_bindings })
+
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
   let annotsArg := op.args[0]!
   let pname ← translateIdent Core.CoreIdent op.args[1]!
   let typeArgs ← translateTypeArgs op.args[2]!
-  let (sig, ret) ← translateBindingsPartitioned bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
-    (fun (v, ty) => (LExpr.fvar () v ty))
-  let out_bindings := out_bindings_only.toArray
   let origBindings := bindings
-  let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
-  let bindings := { bindings with boundVars := bbindings }
+  let (sig, ret, bindings) ← translateProcBindings bindings op.args[3]!
   let .option _ speca := op.args[4]!
     | TransM.error s!"translateProcedure spec. expected here: {repr op.args[4]!}"
   let (requires, ensures) ←
@@ -2019,14 +2024,8 @@ def translateCFGProcedure (p : Program) (bindings : TransBindings) (op : Operati
   let annotsArg := op.args[0]!
   let pname ← translateIdent Core.CoreIdent op.args[1]!
   let typeArgs ← translateTypeArgs op.args[2]!
-  let (sig, ret) ← translateBindingsPartitioned bindings op.args[3]!
-  let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
-  let out_bindings_only := (ret.filter (fun (v, _) => !sig.any (fun (iv, _) => iv == v))).map
-    (fun (v, ty) => (LExpr.fvar () v ty))
-  let out_bindings := out_bindings_only.toArray
   let origBindings := bindings
-  let bbindings := bindings.boundVars ++ in_bindings ++ out_bindings
-  let bindings := { bindings with boundVars := bbindings }
+  let (sig, ret, bindings) ← translateProcBindings bindings op.args[3]!
   let .option _ speca := op.args[4]!
     | TransM.error s!"translateCFGProcedure spec expected: {repr op.args[4]!}"
   let (requires, ensures) ←
