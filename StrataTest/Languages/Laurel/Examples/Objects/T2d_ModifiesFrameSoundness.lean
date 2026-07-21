@@ -183,7 +183,7 @@ procedure callerModifiedNotPreserved()
   var x: int := c#value;
   var b: bool := bodyModifier(c);
   assert x == c#value
-//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 
 procedure callerExactValuePreserved()
@@ -293,6 +293,6 @@ procedure callerCannotPinFreshField()
   var c: Container := new Container;
   stashFresh(c);
   assert c#child#value == 42
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end

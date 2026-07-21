@@ -103,7 +103,7 @@ procedure modifyContainerWithoutPermission2(c: Container, d: Container)
 };
 
 procedure modifyContainerWithoutPermission3(c: Container, d: Container)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause does not hold
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: modifies clause could not be proved
   opaque
   modifies d
 {
