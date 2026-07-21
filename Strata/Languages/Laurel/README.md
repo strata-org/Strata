@@ -12,14 +12,16 @@ Laurel is documented by three guides. Each is a
 
 - **[User Guide](../../../docs/verso/LaurelUserGuide.lean)**
   ([published](https://strata-org.github.io/Strata/laurelguide/html-multi/)) — a
-  task-oriented guide to writing Laurel specifications: assertions, loop
+  task-oriented guide to writing Laurel specifications (assertions, loop
   invariants, pre- and postconditions, quantifiers, objects, modifies clauses,
-  and `old`.
+  and `old`), together with the language reference: types, the unified
+  expression/statement model, procedures, programs, and the resolution and
+  typing rules.
 
 - **[Designer Guide](../../../docs/verso/LaurelDesignGuide.lean)**
   ([published](https://strata-org.github.io/Strata/laureldesign/html-multi/)) —
-  how the Laurel language is defined: its types, unified expression/statement
-  model, procedures, programs, and type checking.
+  why the Laurel language is the way it is: its design goals and the rationale
+  behind its features.
 
 - **[Implementor Guide](../../../docs/verso/LaurelImplementationGuide.lean)**
   ([published](https://strata-org.github.io/Strata/laurelimpl/html-multi/)) —

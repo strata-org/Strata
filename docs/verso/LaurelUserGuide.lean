@@ -169,6 +169,15 @@ which performs the analysis:
 - Bounded verification
 - Unbounded verification
 
+Front-end compilers targeting Laurel can recover from some errors in user code rather than abort:
+when a side-effect-free sub-expression cannot be translated, emit a diagnostic and put a *hole*
+(`<?>`) in its place. The program still compiles and the analyses still run, so users see your
+diagnostic plus any further genuine errors instead of a cascade caused by the first one. Holes
+stand for an unknown value only — they do not model mutation — so replacing code that may have side
+effects with a hole silently drops those effects and can make an analysis prove properties the
+original program does not have. For untranslatable constructs that may have effects, and for
+unrecoverable errors (for example resolution failures), abort with a diagnostic instead.
+
 ## A first program
 
 A Laurel program is a sequence of declarations. The most important one is the

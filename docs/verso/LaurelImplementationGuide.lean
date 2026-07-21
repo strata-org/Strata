@@ -119,7 +119,7 @@ shortTitle := "Laurel Implementor Guide"
 %%%
 
 # Language definition
-The Laurel language definitions consists of its type, its grammar and its semantics. Currently the
+The Laurel language definition consists of its types, its grammar and its semantics. Currently the
 semantics is split into a static part, called the resolver, and a yet to be built dynamic part.
 
 The parts of the language definition map onto the implementation files as follows:
@@ -150,8 +150,11 @@ flexibility that it needs.
 In the Laurel type, constructors are combined when this does not reduce precision. For example,
 instead of having a separate constructor for `StmtExpr.Forall` and for `StmtExpr.Exists`, there is a
 single `StmtExpr.Quantifier` with a boolean field to determine its type. A more complicated example:
-calls to primitive operators and to statically defined user defined functions, and to user defined
-instance functions, all go through the same StmtExpr.Call constructor.
+calls to statically defined user procedures, to datatype constructors, and to datatype destructors
+all go through the same `StmtExpr.StaticCall` constructor; resolution distinguishes them by the
+resolved kind of the callee rather than by AST constructor. A further consolidation is in progress
+(WIP): calls to primitive operators and to user-defined instance procedures are planned to go
+through this same call constructor as well.
 
 All information in the Laurel AST is strongly typed. There are no fields that can hold unstructured
 data, which could be used by extensions to Strata. Instead, Strata extensions should attach data to
@@ -162,7 +165,7 @@ The static semantics of Laurel are defined by `Resolution.lean`. This is where L
 resolved and where type checking is done. Calling `resolve` will produce diagnostics and a
 `SemanticModel` that can be used to navigate between definitions and references.
 
-Identifier that occur in a Laurel program carry an optional `uniqueId: int`. During resolution,
+Identifiers that occur in a Laurel program carry an optional `uniqueId: int`. During resolution,
 every identifier that defines a new symbol is given a unique identifier, and every identifier that
 refers to a definition is given the unique identifier of the definition it references. The
 `SemanticModel` uses these unique identifiers to provide navigation features.
@@ -179,13 +182,17 @@ names.
 
 Right now the only proofs in the Laurel implementation are termination proofs. We do not yet require
 any Laurel code to have more proofs than that. We are planning to define a semantics for Laurel in
-terms of Lean, and we will prove that proof that the Laurel compilation passes preserve those
+terms of Lean, and we will prove that the Laurel compilation passes preserve those
 semantics.
 
 # Compilation to Core
 To enable its verification analyses, Laurel compiles to Core. Compilation happens over many passes.
-A compilation pass may not change the semantics of the program, so it may not emit any diagnostics,
-errors or warnings. A compilation pass may only refer to AST nodes that relates to its business
+A compilation pass may not change the semantics of the program. User errors may only be reported
+during resolution (`resolve`, which the pipeline re-runs after passes that set `needsResolves`),
+never by a pass — there are no exceptions to this rule. Every diagnostic emitted by a pass is a bug
+report (`DiagnosticType.StrataBug`), where a "bug" includes features that are planned but not yet
+supported: for example, `InlineLocalVariables` reporting an assignment to a variable it has inlined.
+A compilation pass may only refer to AST nodes that relates to its business
 logic: it may not define AST traversals without using helper methods, to allow adding new AST nodes
 without breaking existing compilation passes. The generic traversal helpers live in
 `MapStmtExpr.lean`: `mapStmtExprM` (bottom-up monadic rewrite of a `StmtExpr` tree),
@@ -200,9 +207,21 @@ If new references or definitions are created during compilation, the program mus
 get a complete model. A pass does not call `Resolution.resolve` itself; instead it sets
 `needsResolves := true` in its definition, and the pipeline driver
 (`LaurelCompilationPipeline.lean`) runs `resolve` after the pass and threads the refreshed
-`SemanticModel` into the next pass. Passes that are logically one step (`HeapParameterization`,
-`ModifiesClauses`, and `TypeHierarchy`) suppress the intermediate re-resolutions by setting
-`needsResolves := false`, so the group is re-resolved only once at its end.
+`SemanticModel` into the next pass. The passes `HeapParameterization`, `TypeHierarchy`, and
+`ModifiesClauses` (in pipeline order) are logically one step: the first two set
+`needsResolves := false` to suppress the intermediate re-resolutions, and the last member
+(`ModifiesClauses`) sets `needsResolves := true`, so the group is re-resolved once at its end.
+
+*Eliminated constructs stay eliminated*
+Several passes exist to eliminate a construct: after `EliminateReturnStatements` no `Return`
+occurs, after `EliminateIncrDecrAndCompoundAssign` no `IncrDecr` or `CompoundAssign`, and after the
+hole passes (`InferHoleTypes` types every hole, `EliminateDeterministicHoles` replaces deterministic
+holes with fresh opaque `$hole_N` procedures, `LiftImperativeExpressions` havocs the
+non-deterministic ones) no `.Hole`. Later passes rely on these facts, so a pass must not reintroduce
+a construct past its elimination point. Breaking this rarely fails at the offending pass; it
+surfaces where the reliance is, which can be as late as the Core translation — a leaked hole is
+reported there as `holes should have been eliminated before translation`, far from the pass that
+leaked it. The same distance applies to the other eliminated constructs.
 
 ## Translation Pipeline
 
@@ -219,7 +238,7 @@ And the LaurelToCoreSchemaPass goes from `CoreWithLaurelTypes` to `Core`.
 
 ## Passes
 
-The following passes making up the compilation of Laurel to Core:
+The following passes make up the compilation of Laurel to Core:
 
 {laurelPipelineDocs}
 

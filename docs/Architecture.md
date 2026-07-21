@@ -58,8 +58,8 @@ The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/)) i
 
 ### Laurel
 
-The Laurel dialect is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript. It is translated to Strata Core during its deductive verification.
-Please refer to the description in the [`Strata.Languages.Laurel.Laurel`](../Strata/Languages/Laurel/Laurel.lean).
+The Laurel language is an intermediate analysis language for imperative source languages (currently Java, Python, and JavaScript). It is translated to Strata Core for its analyses, for example deductive verification.
+Please refer to [`Strata/Languages/Laurel/README.md`](../Strata/Languages/Laurel/README.md), which indexes the Laurel user, designer, and implementor guides.
 
 ### SMTLib
 

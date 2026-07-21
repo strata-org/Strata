@@ -36,6 +36,9 @@ were not added to the language and why. When evolving the language, this documen
 advocate for the changes. In particular, every language feature must be placed under a particular
 sub-goal.
 
+Everything in this design guide is agnostic to how Laurel is implemented: we have tried to define
+Laurel without being influenced by its implementation, such as how it compiles to other languages.
+
 Sub-goals:
 1. Enable proving both correctness and incorrectness properties of Laurel programs, through a
    combination of:
@@ -43,6 +46,8 @@ Sub-goals:
   2. Symbolic execution (aka verification), both bounded and unbounded
   3. Hybrid PBT and verification
   4. Data-flow analysis
+
+   Laurel programs may contain constructs that are used by only some of these analyses.
 2. Make it cheap to target Laurel by adding to Laurel, the features that are shared between the
    languages that Laurel is compiled from. We expect source languages to reuse their existing
    compilers when possible, so language features that can be compiled away don't need to be
@@ -64,6 +69,14 @@ Sub-goals:
 8. Have a great user experience
 
 # Correctness checking features
+
+Constructs in this section may serve only some of the analyses listed under sub-goal 1; an analysis
+that does not use a construct treats it as absent. `assume` statements are the simplest example:
+during execution an `assume` is a no-op, so `assume false; assert false; assert false` reports the
+two assertions as failing and does nothing with the assume, while deductive verification uses the
+assume as a hypothesis and discharges both assertions. This complements goal 7: erasability
+protects execution behavior, and ignorability protects each analysis from the constructs it does
+not need.
 
 ## Property-based testing
 To be designed..
