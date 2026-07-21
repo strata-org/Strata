@@ -8,9 +8,12 @@ All mutation is done mechanically by the orchestrator — agents cannot modify t
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
+
+if TYPE_CHECKING:
+    from .modules.lemma_ledger import LemmaLedger
 
 
 def create_ledger_mcp_server(ledger: "LemmaLedger"):
@@ -24,7 +27,7 @@ def create_ledger_mcp_server(ledger: "LemmaLedger"):
       - ledger_ancestry: get ancestry chain of a node
       - ledger_stats: summary statistics
     """
-    from .modules.lemma_ledger import LemmaLedger, LemmaStatus
+    from .modules.lemma_ledger import LemmaStatus
 
     @tool(
         name="ledger_search",
