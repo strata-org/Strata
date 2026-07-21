@@ -30,7 +30,7 @@ variable {T : LExprParams} [DecidableEq T.IDMeta]
 Compute the free variables in an `LExpr`, which are simply all the `LExpr.fvar`s
 in it.
 -/
-def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
+@[expose] def freeVars (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
   match e with
   | .const _ _ => []
   | .op _ _ _ => []
@@ -49,7 +49,7 @@ def fresh (x : IdentT GenericTy T.IDMeta) (e : LExpr ⟨T, GenericTy⟩) : Prop 
   x ∉ (freeVars e)
 
 /-- An expression `e` is closed if has no free variables. -/
-def closed (e : LExpr ⟨T, GenericTy⟩) : Bool :=
+@[expose] def closed (e : LExpr ⟨T, GenericTy⟩) : Bool :=
   freeVars e |>.isEmpty
 
 omit [DecidableEq T.IDMeta] in
@@ -855,5 +855,26 @@ Replace all user-provided type annotations in an `LExpr` using `f`.
   | .eq m e1 e2 => .eq m (replaceUserProvidedType e1 f) (replaceUserProvidedType e2 f)
 
 end LExpr
+
+theorem getVars_eq_freeVars_idents {T : LExprParams} (e : LExpr T.mono) :
+    LExpr.LExpr.getVars e = (LExpr.freeVars e).map Prod.fst := by
+  induction e with
+  | const => rfl
+  | bvar => rfl
+  | op => rfl
+  | fvar => rfl
+  | abs _ _ _ _ ih => simp [LExpr.LExpr.getVars, LExpr.freeVars, ih]
+  | quant _ _ _ _ _ _ trih eih => simp [LExpr.LExpr.getVars, LExpr.freeVars, trih, eih, List.map_append]
+  | app _ _ _ ih1 ih2 => simp [LExpr.LExpr.getVars, LExpr.freeVars, ih1, ih2, List.map_append]
+  | ite _ _ _ _ cih tih eih => simp [LExpr.LExpr.getVars, LExpr.freeVars, cih, tih, eih, List.map_append]
+  | eq _ _ _ ih1 ih2 => simp [LExpr.LExpr.getVars, LExpr.freeVars, ih1, ih2, List.map_append]
+
+theorem closed_implies_getVars_nil {T : LExprParams} (e : LExpr T.mono)
+    (hc : LExpr.closed e = true) :
+    LExpr.LExpr.getVars e = [] := by
+  rw [getVars_eq_freeVars_idents]
+  simp [LExpr.closed, List.isEmpty_iff] at hc
+  simp [hc]
+
 end -- public section
 end Lambda

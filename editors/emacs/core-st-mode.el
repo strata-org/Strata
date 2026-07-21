@@ -19,19 +19,21 @@
   '(    "true" "false" "null"))
 
 (defvar core-st-operators
-  '(    "div" "mod" "sdiv" "smod" "safesdiv" "safesmod"))
+  '(    "div" "mod" "ashr" "sdiv" "smod" "slt" "sle" "sgt" "sge"))
 
 (defvar core-st-builtins
   '(    "Sequence.empty" "Sequence.length" "Sequence.select"
     "Sequence.append" "Sequence.build" "Sequence.update"
     "Sequence.contains" "Sequence.take" "Sequence.drop" "str.len"
     "str.concat" "str.substr" "str.to.re" "str.in.re" "str.prefixof"
-    "str.suffixof" "re.allchar" "re.all" "re.range" "re.concat" "re.*"
-    "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
-    "Int.DivT" "Int.ModT" "Bv.SNegOverflow" "Bv.UNegOverflow"
-    "Bv.SAddOverflow" "Bv.SSubOverflow" "Bv.SMulOverflow"
-    "Bv.SDivOverflow" "Bv.UAddOverflow" "Bv.USubOverflow"
-    "Bv.UMulOverflow"))
+    "str.suffixof" "str.contains" "str.indexof" "str.replace" "str.at"
+    "str.lt" "str.le" "re.allchar" "re.all" "re.range" "re.concat"
+    "re.*" "re.+" "re.loop" "re.union" "re.inter" "re.comp" "re.none"
+    "Int.DivT" "Int.ModT" "Int.SafeDivT" "Int.SafeModT" "Bv.SafeAdd"
+    "Bv.SafeSub" "Bv.SafeMul" "Bv.SafeNeg" "Bv.SafeSDiv" "Bv.SafeSMod"
+    "Bv.SNegOverflow" "Bv.UNegOverflow" "Bv.SAddOverflow"
+    "Bv.SSubOverflow" "Bv.SMulOverflow" "Bv.SDivOverflow"
+    "Bv.UAddOverflow" "Bv.USubOverflow" "Bv.UMulOverflow"))
 
 ;; Font-lock rules
 (defvar core-st-font-lock-keywords

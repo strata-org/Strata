@@ -44,27 +44,33 @@ assert [test]: (x == 0);
 The DDM also offers a capability to generate Lean types automatically
 from these definitions using the following command:
 ```bash
-#strataGenAST ArithPrograms
+#strata_gen ArithPrograms
 ```
 
 For instance, we can see the generated type for expressions in
 `ArithPrograms` as follows:
 ```bash
 /--
-inductive ArithPrograms.Expr : Type
-number of parameters: 0
+inductive ArithPrograms.Expr : Type → Type
+number of parameters: 1
 constructors:
-ArithPrograms.Expr.fvar : Nat → Expr
-ArithPrograms.Expr.numLit : Nat → Expr
-ArithPrograms.Expr.btrue : Expr
-ArithPrograms.Expr.bfalse : Expr
-ArithPrograms.Expr.add_expr : Expr → Expr → Expr
-ArithPrograms.Expr.mul_expr : Expr → Expr → Expr
-ArithPrograms.Expr.eq_expr : ArithProgramsType → Expr → Expr → Expr
+ArithPrograms.Expr.fvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.bvar : {α : Type} → α → Nat → Expr α
+ArithPrograms.Expr.app : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.numLit : {α : Type} → α → StrataDDM.Ann Nat α → Expr α
+ArithPrograms.Expr.btrue : {α : Type} → α → Expr α
+ArithPrograms.Expr.bfalse : {α : Type} → α → Expr α
+ArithPrograms.Expr.add_expr : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.mul_expr : {α : Type} → α → Expr α → Expr α → Expr α
+ArithPrograms.Expr.eq_expr : {α : Type} → α → ArithProgramsType α → Expr α → Expr α → Expr α
 -/
 #guard_msgs in
 #print Expr
 ```
+
+The generated type is parameterized by a *metadata* (annotation) type `α`.
+This allows additional information to be attached to every node of the AST,
+such as its provenance (e.g., the source location that gave rise to it).
 
 ### 2. Design the abstract syntax and implement a concrete-to-abstract syntax translator
 
@@ -149,19 +155,21 @@ def eval (s : State) (e : Expr) : Expr :=
 
 At this point, we can type-check `ArithPrograms` and generate
 verification conditions for well-typed `ArithPrograms`. Here's an
-example of a small program that is verified by the symbolic evaluator
-itself:
+example of running a small program through our type checker and partial
+evaluator (defined in
+[`Arith.lean`](../StrataTest/DL/Imperative/Arith.lean)). This reduces
+our assertion expression to `true` and generates a verification
+condition (VC) `x_value_eq`. All VCs are deferred in that they are
+stored in an evaluation environment so that they can be discharged
+later; see `deferObligation` in the
+[`EvalContext`](../Strata/DL/Imperative/EvalContext.lean) class.
 ```bash
 private def testProgram1 : Commands :=
-  [.init "x" .Num (.Num 0),
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)),
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init "x" .Num (.det (.Num 0)) .empty,
+   .set "x" (.det (.Plus (.Var "x" .none) (.Num 100))) .empty,
+   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100)) .empty]
 
 /--
-info:
-Obligation x_value_eq proved via evaluation!
-
----
 info: ok: Commands:
 init (x : Num) := 0
 x := 100
@@ -169,7 +177,13 @@ assert [x_value_eq] true
 
 State:
 error: none
-deferred: #[]
+warnings: []
+deferred: #[Label: x_value_eq
+ Property : assert
+ Assumptions: ⏎
+ Obligation: true
+ Metadata: ⏎
+ ]
 pathConditions: ⏎
 env: (x, (Num, 100))
 genNum: 0
@@ -179,33 +193,31 @@ genNum: 0
          return format (cmds, S)
 ```
 
-Here's an example of a small program for which the VC `x_value_eq` is
-generated (that will not pass verification once we plug in a reasoning
-backend). All such VCs are deferred -- they are stored in the
-evaluation environment so that they can be discharged later; see
-`deferObligation` in the
-[`EvalContext`](../Strata/DL/Imperative/EvalContext.lean) class.
+Here's an example of a small program for which the VC generated will
+not pass verification when we plug it into a reasoning backend.
 
 ```bash
 private def testProgram2 : Commands :=
-  [.init "x" .Num (.Var "y" (.some .Num)),
-   .havoc "x",
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Var "y" none))]
+  [.init "x" .Num (.det (.Var "y" (.some .Num))) .empty,
+   .set "x" .nondet .empty,
+   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Var "y" none)) .empty]
 
 /--
 info: ok: Commands:
 init (x : Num) := (y : Num)
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
- Assumptions:
+ Property : assert
+ Assumptions: ⏎
  Obligation: ($__x0 : Num) = (y : Num)
- Metadata:
+ Metadata: ⏎
  ]
-pathConditions:
+pathConditions: ⏎
 env: (y, (Num, (y : Num))) (x, (Num, ($__x0 : Num)))
 genNum: 1
 -/
@@ -264,7 +276,7 @@ Some example programs can be found
 [here](../StrataTest/DL/Imperative/Examples.lean).
 
 ```bash
-def testProgram : Program :=
+def testProgram : SourcedProgram :=
 #strata
 program ArithPrograms;
 var x : num;
@@ -272,12 +284,19 @@ assert [double_x_lemma]: (2 * x == x + x);
 #end
 
 /--
+info: Label: double_x_lemma
+Property : assert
+Assumptions:
+Obligation: 2 * (init_x_0 : Num) = (init_x_0 : Num) + (init_x_0 : Num)
+Metadata:
+
+---
 info:
 Obligation: double_x_lemma
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.ArithPrograms.verify "cvc5" testProgram
+#eval Strata.ArithPrograms.verify testProgram.program
 ```
 
 To invoke the verifier from the command-line, you can also add support

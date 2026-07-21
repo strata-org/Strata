@@ -34,7 +34,7 @@ structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   /-- Execute a command, producing a new state. -/
   evalCmd : S → CmdT → S
   /-- Extend the evaluator with a function declaration. -/
-  extendEval : S → PureFunc P → S
+  extendFactory : S → PureFunc P → S
   /-- Push a new variable scope (for blocks). -/
   pushScope : S → S := id
   /-- Pop a variable scope (for blocks). -/
@@ -77,7 +77,7 @@ def runStep [BEq P.Expr] [HasBool P]
 
   | .stmt (.exit label _) ρ => .exiting label ρ
 
-  | .stmt (.funcDecl decl _) ρ => .terminal (ops.extendEval ρ decl)
+  | .stmt (.funcDecl decl _) ρ => .terminal (ops.extendFactory ρ decl)
 
   | .stmt (.typeDecl _ _) ρ => .terminal ρ
 

@@ -173,6 +173,41 @@ Result: ✅ pass
 
 ---------------------------------------------------------------------
 
+/-- Regression: an `inoutArg` before an `inArg` must not misalign arguments —
+    the literal `7` for `q` must survive typechecking. -/
+def argAlignmentPgm : Program :=
+#strata
+program Core;
+
+procedure Bar(inout p : int, q : int, out r : int) { };
+
+procedure Caller(out b : int) {
+  var p : int := 0;
+  call Bar(inout p, 7, out b);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: procedure Bar (inout p : int, q : int, out r : int)
+{
+  ⏎
+};
+
+procedure Caller (out b : int)
+{
+  var p : int := 0;
+  call Bar(inout p, 7, out b);
+};
+-/
+#guard_msgs in
+#eval do let prog ← Strata.typeCheck Inhabited.default argAlignmentPgm
+         return prog.stripMetaData.formatWithMetaData
+
+---------------------------------------------------------------------
+
 /-
 -- DDM AST
 #eval globalCounterEnv.commands

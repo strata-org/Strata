@@ -328,6 +328,27 @@ def strPrefixOfFunc : WFLFunc CoreLParams :=
 def strSuffixOfFunc : WFLFunc CoreLParams :=
   binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
 
+-- The following string operations are left uninterpreted at the Core level
+-- (like `Str.Substr`); the SMT backend interprets them via their SMT-LIB names.
+def strContainsFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Contains" mty[string] mty[string] mty[bool]
+
+def strIndexOfFunc : WFLFunc CoreLParams :=
+  polyUneval "Str.IndexOf" []
+    [("x", mty[string]), ("y", mty[string]), ("i", mty[int])] mty[int]
+
+def strReplaceFunc : WFLFunc CoreLParams :=
+  ternaryFuncUneval "Str.Replace" mty[string] mty[string] mty[string]
+
+def strAtFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
+
+def strLtFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Lt" mty[string] mty[string] mty[bool]
+
+def strLeFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Le" mty[string] mty[string] mty[bool]
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -363,18 +384,21 @@ def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `const(d)` returns a map where every key maps to the value `d`. -/
+   `mapConst(d)` returns a map where every key maps to the value `d`.
+   Named `mapConst` (not `const`) to avoid colliding with the `const`
+   declaration keyword in the Core grammar, which would otherwise make
+   pretty-printed programs fail to re-parse. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "const" ["k", "v"]
+  polyUneval "mapConst" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
       esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0)}
+                ((~mapConst : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~mapConst : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
@@ -907,6 +931,12 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   strInRegexFunc,
   strPrefixOfFunc,
   strSuffixOfFunc,
+  strContainsFunc,
+  strIndexOfFunc,
+  strReplaceFunc,
+  strAtFunc,
+  strLtFunc,
+  strLeFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -982,8 +1012,24 @@ def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
 def FactoryFuncNames : List String :=
   (WFFactoryArray.map (·.func.name.name)).toList
 
+/-- The function names in the mapped factory array are pairwise distinct. -/
+theorem WFFactoryArray_func_name_nodup :
+    List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) := by
+  native_decide
+
 /-- Decidable predicate: is `s` the name of a built-in factory function? -/
 def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
+
+/-! ### Membership lemmas for specific built-in ops
+
+Used by transforms (e.g. `LoopElim`) that synthesize references to standard
+ops to discharge downstream `factoryDeclared`-style preconditions. -/
+
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+
+theorem intLt_isNameInFactory :
+    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
 
 end -- public section
 
@@ -1087,6 +1133,12 @@ def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
 def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
+def strContainsOp : Expression.Expr := strContainsFunc.opExpr
+def strIndexOfOp : Expression.Expr := strIndexOfFunc.opExpr
+def strReplaceOp : Expression.Expr := strReplaceFunc.opExpr
+def strAtOp : Expression.Expr := strAtFunc.opExpr
+def strLtOp : Expression.Expr := strLtFunc.opExpr
+def strLeOp : Expression.Expr := strLeFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr

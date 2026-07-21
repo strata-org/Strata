@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.Lambda.LExprEval
 public import Strata.Languages.Core.Factory
+public import Strata.Util.OrderedSet
 
 public section
 
@@ -16,6 +17,7 @@ namespace Core
 open Std (ToFormat Format format)
 open Imperative
 open Strata
+open Strata.Util (OrderedSet)
 
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
@@ -55,6 +57,7 @@ private def formatCoreEntry : PathConditionEntry Expression → Format
   | .assumption label expr => f!"({label}, {expr.eraseTypes})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e.eraseTypes})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs.map (·.eraseTypes)})"
 
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
@@ -73,20 +76,21 @@ private def entryExprs : PathConditionEntry Expression → List Expression.Expr
   | .assumption _ e => [e]
   | .varDecl _ _ (.det e) => [e]
   | .varDecl _ _ .nondet => []
+  | .distinct _ exprs => exprs
 
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> .eraseDups
+  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> OrderedSet.eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
+  let exprs := ps.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.getVars (d : ProofObligation Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  let o_vars := Lambda.LExpr.freeVars d.obligation
-  let pc_vars := PathConditions.getVars d.assumptions
-  (o_vars ++ pc_vars).eraseDups
+  let exprs := d.obligation :: d.assumptions.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
@@ -94,7 +98,8 @@ def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligatio
     assumptions := d.assumptions.map (fun m => m.map (fun
       | .assumption label expr => .assumption label expr.eraseTypes
       | .varDecl name ty (.det e) => .varDecl name ty (.det e.eraseTypes)
-      | .varDecl name ty .nondet => .varDecl name ty .nondet)),
+      | .varDecl name ty .nondet => .varDecl name ty .nondet
+      | .distinct label exprs => .distinct label (exprs.map (·.eraseTypes)))),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
     }
@@ -148,10 +153,10 @@ structure Env where
   error : Option (Imperative.EvalError Expression)
   program : Program
   substMap : SubstMap
-  exprEnv : Expression.EvalEnv
+  exprEnv : Lambda.LState ⟨ExpressionMetadata, Unit⟩
   datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
-  pathConditions : Imperative.PathConditions Expression
+  pathConditions : Imperative.RevPathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
   pathCap : Option Nat := .none
@@ -165,7 +170,7 @@ def Env.init (empty_factory:=false): Env :=
     exprEnv := σ,
     datatypes := #[],
     distinct := [],
-    pathConditions := [],
+    pathConditions := ⟨[]⟩,
     warnings := []
     deferred := ∅
     pathCap := .none }
@@ -183,7 +188,7 @@ instance : ToFormat Env where
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\
-              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
+              Path Conditions:{Format.line}{PathConditions.format pathConditions.consume}{Format.line}{Format.line}\
               Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
@@ -201,7 +206,7 @@ def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
 
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  e.eval E.exprEnv.config.fuel E.exprEnv
+  (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
 
 def Env.pushScope (E : Env) (scope : (Lambda.Scope CoreLParams)) : Env :=
   { E with exprEnv.state := E.exprEnv.state.push scope }

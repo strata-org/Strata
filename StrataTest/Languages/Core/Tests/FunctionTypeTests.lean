@@ -16,7 +16,7 @@ the function's instantiated typeArgs.
 namespace Core.FunctionTypeTests
 
 open Std (ToFormat Format format)
-open Lambda Imperative
+open _root_.Lambda Imperative
 open LTy.Syntax LExpr.SyntaxMono
 
 private def C : Core.Expression.TyContext := LContext.default

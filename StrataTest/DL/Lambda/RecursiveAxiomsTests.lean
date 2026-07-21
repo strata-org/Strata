@@ -62,7 +62,7 @@ private def peState : LState TP :=
     match LState.addFactory LState.init C.functions with
     | .error _ => panic "failed to add factory"
     | .ok s => s
-private def pe (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState
+private def pe (e : LExpr TP.mono) : LExpr TP.mono := (LExpr.evalWithLState 100 peState e).fst
 
 private def listLenAxioms := genRecursiveAxioms listLenFunc tf pe ()
 
@@ -134,7 +134,7 @@ private def peState2 : LState TP :=
     match LState.addFactory LState.init C.functions with
     | .error _ => panic "failed to add factory"
     | .ok s => s
-private def pe2 (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState2
+private def pe2 (e : LExpr TP.mono) : LExpr TP.mono := (LExpr.evalWithLState 100 peState2 e).fst
 
 -- Check that IntList..tl(Cons(%1,%0)) reduces
 private def testDestrReduce : LExpr TP.mono :=
@@ -222,7 +222,7 @@ private def peState3 : LState TP :=
     match LState.addFactory LState.init C.functions with
     | .error _ => panic "failed to add factory"
     | .ok s => s
-private def pe3 (e : LExpr TP.mono) : LExpr TP.mono := e.eval 100 peState3
+private def pe3 (e : LExpr TP.mono) : LExpr TP.mono := (LExpr.evalWithLState 100 peState3 e).fst
 
 private def replaceAxioms := genRecursiveAxioms replaceFunc tf pe3 ()
 

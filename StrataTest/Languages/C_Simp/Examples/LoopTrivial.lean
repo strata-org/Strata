@@ -189,7 +189,7 @@ not_guard: if 0 < n@1 then !(i@2 < n@1) else true
 invariant_0: if 0 < n@1 then i@2 <= n@1 else true
 <label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
-if 0 < n@1 then i@2 else 0 == n@1
+(if 0 < n@1 then i@2 else 0) == n@1
 
 Label: post
 Property: assert

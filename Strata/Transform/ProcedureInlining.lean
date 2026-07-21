@@ -250,7 +250,10 @@ def inlineCallCmd
         -- Declare each renamed output parameter with a nondet init.
         -- No havoc is needed since nondet already gives an
         -- unconstrained value.
-        let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
+        -- Skip inout parameters (those already in inputs) to avoid double-init.
+        let inputNames := sigInputs.unzip.fst.map (·.name)
+        let sigOutputOnly := sigOutputs.filter fun (id, _) => !inputNames.contains id.name
+        let outputTrips ← genOutExprIdentsTrip sigOutputOnly sigOutputOnly.unzip.fst
         let outputInits := outputTrips.map (fun ((_, ty), orgvar) =>
           Statement.init orgvar ty .nondet md)
         -- Create a var statement for each procedure input arguments.

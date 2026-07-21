@@ -237,6 +237,43 @@ axiom [f_ax]: f(Sequence.empty<int>()) == true;
 #guard_msgs in
 #eval roundtrip testSeqEmptyRoundtrip
 
+-------------------------------------------------------------------------------
+-- Test: Arrow type as a type-constructor argument (the dropped-parens bug)
+--
+-- `Map int (int -> int)` must reprint *with* the parentheses. Without them the
+-- string parses back as `(Map int int) -> int` because type application binds
+-- tighter than `->`, breaking the round-trip.
+-------------------------------------------------------------------------------
+
+private def testArrowTypeArgRoundtrip : Program :=
+#strata
+program Core;
+
+function f() : Map int (int -> int);
+function g() : Sequence (Map int int -> bool);
+function h() : Map (int -> int) int;
+function i() : Sequence (Map int (int -> int));
+function j() : Map (Sequence (int -> int)) int;
+#end
+
+/--
+info: program Core;
+
+function f () : Map int (int -> int);
+function g () : Sequence (Map int int -> bool);
+function h () : Map (int -> int) int;
+function i () : Sequence (Map int (int -> int));
+function j () : Map (Sequence (int -> int)) int;
+-/
+#guard_msgs in
+#eval do
+  let (ast, _) := TransM.run Inhabited.default (translateProgram testArrowTypeArgRoundtrip)
+  IO.println f!"{Core.formatProgram ast}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testArrowTypeArgRoundtrip
+
 end Strata.Test.Roundtrip
 
 end

@@ -1134,7 +1134,7 @@ match t with
 | _ => false
 
 def reduces (t : LExpr TrivialParams.mono) : Bool :=
-  let t' := t.eval 1000 example_lstate
+  let t' := (LExpr.evalWithLState 1000 example_lstate t).fst
   isIntConst t'
 
 end

@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.SMTEncoder
+public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
 import Strata.Transform.FilterProcedures
@@ -93,19 +94,21 @@ decreasing_by
 /-- Allocate a globally unique SMT-LIB identifier within the abstract encoder.
     Mirrors `Encoder.uniquify` but operates on `AbstractEncoderState`. -/
 private def uniquify (baseName : String) : AbstractEncoderM τ m String := do
-  let id := Strata.Name.findUnique baseName 1 ((← get).base.usedNames.union smtReservedKeywordsSet)
+  let id := Strata.Name.findUnique baseName 1 (← get).base.usedNames
   modify fun st => { st with base.usedNames := st.base.usedNames.insert id }
   return id
 
 def encodeUF (solver : AbstractSolver τ σ m) (uf : UF) : AbstractEncoderM τ m String := do
-  if let .some enc := (← get).base.ufs.get? uf then return enc
+  if let .some enc := (← get).base.functions.get? uf then return enc
   let id ← uniquify (sanitizeSmtName uf.id)
   liftM (solver.comment uf.id)
-  let argSorts ← uf.args.mapM (fun vt => liftM (termTypeToSort solver vt.ty))
+  let argSorts ← uf.args.mapM (fun ty => liftM (termTypeToSort solver ty))
   let outSort ← liftM (termTypeToSort solver uf.out)
   let handle ← liftM (solver.declareFun id argSorts outSort)
   modify fun st => { st with varHandles := st.varHandles.insert id handle }
-  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
+  modifyGet fun state => (id, { state with
+    base.functions := state.base.functions.insert uf id
+    base.isFunUninterp := state.base.isFunUninterp.insert uf true })
 
 private def defineApp (solver : AbstractSolver τ σ m) (retSort : σ) (op : Op) (tEncs : List τ) : AbstractEncoderM τ m τ := do
   -- Pattern: `liftM` lifts solver calls from `m` into `StateT`.
@@ -231,17 +234,30 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunction (solver : AbstractSolver τ σ m) (uf : UF) (body : Term) : AbstractEncoderM τ m String := do
-  if let .some enc := (← get).base.ufs.get? uf then return enc
-  let id ← uniquify (ufId (← get).base.ufs.size)
+def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncoderM τ m String := do
+  let uf := f.toUF
+  if let .some enc := (← get).base.functions.get? uf then
+    -- See `Strata.SMT.Encoder.encodeFunctionDef`: a function already emitted as an
+    -- uninterpreted `declare-fun` (because it was referenced before its
+    -- definition was reached) would silently lose its `define-fun`. Fail loudly
+    -- rather than emit an unsound query.
+    if ((← get).base.isFunUninterp.get? uf).getD false then
+      throw (IO.userError s!"encodeFunctionDef: function '{uf.id}' was already \
+                declared as uninterpreted before its definition was encoded; \
+                function definitions must be ordered callee-before-caller.")
+    else
+      return enc
+  let id ← uniquify (ufId (← get).base.functions.size)
   liftM (solver.comment uf.id)
-  let argPairs ← uf.args.mapM fun vt => do
-    let s ← liftM (termTypeToSort solver vt.ty)
-    return (vt.id, s)
+  let argPairs ← f.args.mapM fun v => do
+    let s ← liftM (termTypeToSort solver v.ty)
+    return (v.id, s)
   let outSort ← liftM (termTypeToSort solver uf.out)
-  let bodyEnc ← encodeTerm solver body
+  let bodyEnc ← encodeTerm solver f.body
   liftM (solver.defineFun id argPairs outSort bodyEnc)
-  modifyGet fun state => (id, { state with base.ufs := state.base.ufs.insert uf id })
+  modifyGet fun state => (id, { state with
+    base.functions := state.base.functions.insert uf id
+    base.isFunUninterp := state.base.isFunUninterp.insert uf false })
 
 end AbstractEncoder
 
@@ -301,7 +317,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     : m (τ × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
-  for s in ctx.sorts do
+  for s in ctx.sorts.toArray do
     -- Skip sorts that will be defined as datatypes by emitDatatypesAbstract,
     -- since strict solver APIs (e.g. cvc5 FFI) reject redefinition.
     if !ctx.seenDatatypes.contains s.name then
@@ -314,20 +330,21 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
   -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-    else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+  let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
+    else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
   let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
   -- Pre-populate encoder state with managed variable names so encodeTerm
   -- recognizes them without emitting declareFun
   let estate := if managedNames.isEmpty then estate
     else
-      let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+      let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
       managedUfs.foldl (init := estate) fun estate uf =>
         { estate with base := { estate.base with
-          ufs := estate.base.ufs.insert uf uf.id
+          functions := estate.base.functions.insert uf uf.id
+          isFunUninterp := estate.base.isFunUninterp.insert uf false
           usedNames := estate.base.usedNames.insert uf.id } }
-  let (_ifs, estate) ← ctx.ifs.mapM (fun fn => AbstractEncoder.encodeFunction solver fn.uf fn.body) |>.run estate
-  let (_axms, estate) ← ctx.axms.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
+  let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
+  let (_axms, estate) ← ctx.axms.toArray.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
   for id in _axms do
     solver.assert id
   -- Emit variable declarations as declareFun
@@ -344,7 +361,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for id in assumptionIds do
     solver.assert id
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
-  let ids := estate.base.ufs.toList.filterMap fun (uf, id) =>
+  let ids := estate.base.functions.toList.filterMap fun (uf, id) =>
     if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
   return (obligationId, ids, estate.base)
 
@@ -353,7 +370,6 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
 def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (assumptionTerms : List Term) (obligationTerm : Term)
     (md : Imperative.MetaData Core.Expression)
-    (useArrayTheory : Bool := false)
     (satisfiabilityCheck validityCheck : Bool)
     (label : String)
     (varDefinitions : List Core.VarDefinition := [])
@@ -366,8 +382,8 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   phase "prelude" do
     prelude
 
-  let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes useArrayTheory
+  let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
+  ctx.emitDatatypes
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -376,24 +392,25 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   let preDeclaredNames := ctx.preDeclaredNames
 
   let estate ← phase "encodeUFs" do
-    let ufsToDecl := if managedNames.isEmpty then ctx.ufs
-      else ctx.ufs.filter fun uf => !managedNames.contains uf.id
+    let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
+      else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
     let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
   let estate ← phase "encodeFunctions" do
     let estate := if managedNames.isEmpty then estate
       else
-        let managedUfs := ctx.ufs.filter fun uf => managedNames.contains uf.id
+        let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
         managedUfs.foldl (init := estate) fun estate uf =>
           { estate with
-            ufs := estate.ufs.insert uf uf.id
+            functions := estate.functions.insert uf uf.id
+            isFunUninterp := estate.isFunUninterp.insert uf false
             usedNames := estate.usedNames.insert uf.id }
-    let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
+    let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => encodeFunctionDef fn) |>.run estate
     pure estate
 
   let (_axms, estate) ← phase "encodeAxioms" do
-    ctx.axms.mapM (fun ax => encodeTerm ax) |>.run estate
+    ctx.axms.toArray.mapM (fun ax => encodeTerm ax) |>.run estate
 
   for id in _axms do
     Solver.assert id
@@ -418,7 +435,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (encodeTerm obligationTerm) |>.run estate
 
   let ids ← phase "epilog" do
-    let ids := estate.ufs.toList.filterMap fun (uf, id) =>
+    let ids := estate.functions.toList.filterMap fun (uf, id) =>
       if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
     let bothChecks := satisfiabilityCheck && validityCheck
@@ -477,24 +494,41 @@ def sanitizeFilename (s : String) : String :=
          || c == '<' || c == '>' || c == ':' || c == '|' || c == '?' || c == '*' then some '_'
     else some c
 
+/-- Filesystem-safe filename component derived from an obligation label.
+    First sanitizes illegal characters, then caps length: labels within
+    `maxLen` pass through unchanged; longer ones are truncated to `maxLen`
+    characters with a hex hash of the *full* label appended, so generated
+    filenames stay within `NAME_MAX` while remaining unique and stable per
+    label. Used only for filename derivation, never for report text. -/
+def sanitizeFilenameCapped (s : String) (maxLen : Nat := 128) : String :=
+  let sanitized := sanitizeFilename s
+  if sanitized.length ≤ maxLen then sanitized
+  else
+    let hexHash := String.ofList (Nat.toDigits 16 (hash s).toNat)
+    String.ofList (sanitized.toList.take maxLen) ++ "_" ++ hexHash
+
 private def typedVarToSMTFn (ctx : SMT.Context) (id : Core.Expression.Ident)
   (ty : Core.Expression.Ty) := do
     -- Type of identifier has to be monotye
     let some mty := LTy.toMonoType? ty | .error s!"not monotype: {id}"
-    let (ty', _) ← LMonoTy.toSMTType Env.init mty ctx
+    let (ty', _) ← LMonoTy.toSMTType mty ctx
     return (id.name, ty')
 
 @[expose] abbrev Result := Imperative.SMT.Result (Core.Expression.Ident)
 
-def getSolverPrelude : String → SolverM Unit
-| "z3" => do
-  -- These options are set by the standard Boogie implementation and are
-  -- generally good for the Boogie dialect, too, though we may want to
-  -- have more fine-grained criteria for when to use them.
-  Solver.setOption "smt.mbqi" "false"
-  Solver.setOption "auto_config" "false"
-| "cvc5" => return ()
-| _ => return ()
+def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) : SolverM Unit := do
+  match solver with
+  | "z3" => do
+    -- These options are set by the standard Boogie implementation and are
+    -- generally good for the Boogie dialect, too, though we may want to
+    -- have more fine-grained criteria for when to use them.
+    Solver.setOption "smt.mbqi" "false"
+    Solver.setOption "auto_config" "false"
+  | "cvc5" => pure ()
+  | _ => pure ()
+  -- Apply caller-supplied `--set-option NAME=VALUE`s last, so they override the
+  -- built-in prelude (e.g. `--set-option smt.mbqi=true` for quantified lemmas).
+  solverOptions.forM fun (name, value) => Solver.setOption name value
 
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
@@ -522,6 +556,7 @@ def dischargeObligation
   (label : String)
   (varDefinitions : List VarDefinition := [])
   (varDeclarations : List VarDeclaration := [])
+  (termCache : Option (IO.Ref (Std.HashMap Term String)) := none)
   (pctx : PipelineContext)
   : IO (Except Imperative.SMT.SolverError (SMT.Result × SMT.Result × EncoderState)) := do
   -- CVC5 requires --incremental for multiple (check-sat) commands
@@ -534,8 +569,8 @@ def dischargeObligation
       baseFlags
   Imperative.SMT.dischargeObligation
     (P := Core.Expression)
-    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver)
-      assumptionTerms obligationTerm md options.useArrayTheory satisfiabilityCheck validityCheck
+    (Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
+      assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
       (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
       (pctx := pctx))
     (typedVarToSMTFn ctx)
@@ -545,6 +580,7 @@ def dischargeObligation
     solverFlags (options.verbose > .normal)
     satisfiabilityCheck validityCheck
     (skipSolver := options.skipSolver)
+    (termCache := termCache)
     (pctx := pctx)
 
 /-- Discharge a proof obligation using the incremental solver backend.
@@ -577,11 +613,14 @@ def dischargeObligationIncremental
   let encodeDecl (solver : Strata.SMT.AbstractSolver Term TermType
                             Strata.SMT.IncrementalSolverM) :
       Strata.SMT.IncrementalSolverM Imperative.SMT.EncodedObligation := do
-    let prelude : Strata.SMT.IncrementalSolverM Unit := match options.solver with
+    let prelude : Strata.SMT.IncrementalSolverM Unit := do
+      match options.solver with
       | "z3" => do
         solver.setOption "smt.mbqi" "false"
         solver.setOption "auto_config" "false"
       | _ => pure ()
+      -- Apply caller-supplied `--set-option`s last so they override the prelude.
+      options.solverOptions.forM fun (name, value) => solver.setOption name value
     let (obligationId, ids, estate) ←
       _root_.Strata.SMT.Encoder.encodeDeclarationsAbstract solver ctx prelude
         assumptionTerms obligationTerm
@@ -697,6 +736,29 @@ where
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
     | _ => []
 
+/-- Pre-compute the per-constructor axioms for a recursive function with a
+    `@[cases]` parameter and store them in the function's `axioms` field.
+
+    Previously these axioms were generated on the fly inside the SMT encoder
+    (`toSMTOp` → `Lambda.genRecursiveAxioms`), which forced the encoder to carry
+    an expression evaluator alongside the factory and datatypes. Generating them
+    here — as part of building the obligation program — lets the encoder consume
+    `func.axioms` directly and keeps it independent of transient evaluation
+    state.
+
+    Non-recursive functions, recursive functions without `@[cases]`
+    (e.g. int-recursive functions encoded as pure UFs), and functions that
+    already carry these axioms are returned unchanged. -/
+def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
+    (exprEval : Expression.Expr → Expression.Expr) (func : Lambda.LFunc CoreLParams) :
+    Except DiagnosticModel (Lambda.LFunc CoreLParams) := do
+  if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
+    match Lambda.genRecursiveAxioms func tf exprEval () with
+    | .ok recAxioms => .ok { func with axioms := func.axioms ++ recAxioms }
+    | .error msg => throw (DiagnosticModel.fromFormat msg)
+  else
+    .ok func
+
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
     suitable for downstream phases (ANF encoding, SMT encoding). -/
@@ -755,6 +817,11 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size
   let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
+  -- Pre-compute per-constructor axioms for recursive `@[cases]` functions so
+  -- the SMT encoder can consume them directly (via `func.axioms`) instead of
+  -- regenerating them on the fly with an expression evaluator.
+  let evalFuncs ← evalFuncs.mapM
+    (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
   let funcDecls := evalFuncs.map fun func => Decl.func func .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
@@ -1383,7 +1450,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
                     if axiomNames.contains label then []
                     else (Lambda.LExpr.getOps e).map CoreIdent.toPretty
                   | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map CoreIdent.toPretty
-                  | .varDecl _ _ .nondet => [])
+                  | .varDecl _ _ .nondet => []
+                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map CoreIdent.toPretty))
             (consequentFns ++ antecedentFns).dedup
           | .Off => consequentFns  -- unreachable; handled above
         let irrelevantAxioms :=
@@ -1489,7 +1557,7 @@ abbrev DischargeFn :=
     solver that shares path-condition state across assertions.
 
     The solver receives the factory extensions (custom functions from external
-    phases, e.g. `ReFactory`) and the obligation program (in CoreSMT format
+    phases, e.g. `RuntimeFactory`) and the obligation program (in CoreSMT format
     after all pipeline transformations), and returns verification results
     together with statistics. The factory parameter ensures custom solvers
     can build the environment with the same function definitions as the
@@ -1503,6 +1571,8 @@ abbrev CoreSMTSolver :=
 abbrev MkDischargeFn :=
   VerifyOptions → IO.Ref Nat → System.FilePath →
   List Expression.TypedIdent → Imperative.MetaData Expression → String →
+  -- Term→SMT-LIB string cache; `none` on the parallel path.
+  Option (IO.Ref (Std.HashMap Term String)) →
   PipelineContext → DischargeFn
 
 /-- Construct a `DischargeFn` from verification options. Selects the incremental
@@ -1513,6 +1583,7 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     (vars : List Expression.TypedIdent)
     (md : Imperative.MetaData Expression)
     (label : String)
+    (termCache : Option (IO.Ref (Std.HashMap Term String)))
     (pctx : PipelineContext) =>
   fun assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
       varDefinitions varDeclarations => do
@@ -1523,10 +1594,11 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
     else
       let counterVal ← counter.get
       counter.set (counterVal + 1)
-      let filename := tempDir / s!"{SMT.sanitizeFilename label}_{counterVal}.smt2"
+      let filename := tempDir / s!"{SMT.sanitizeFilenameCapped label}_{counterVal}.smt2"
       SMT.dischargeObligation options vars md filename.toString
         assumptionTerms obligationTerm ctx satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
+        (termCache := termCache)
         (pctx := pctx)
 
 /--
@@ -1613,8 +1685,9 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext)
     : IO (Except DiagnosticModel VCResult) := do
+  -- Parallel path: no shared term cache (workers must not share a mutable ref).
   let discharge := mkDischarge options counter tempDir
-    job.typedVarsInObligation job.obligation.metadata job.obligation.label pctx
+    job.typedVarsInObligation job.obligation.metadata job.obligation.label none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
     (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
@@ -1705,6 +1778,10 @@ def verifySingleEnv (oblProgram : Program)
   let mut solverJobs : List SolverJob := []
   let mut solverJobIndices : List Nat := []
   let useParallel := options.parallelWorkers > 1
+  -- Term→SMT-LIB string cache shared across this procedure's obligations, which
+  -- often share many assumption terms. Sequential path only; parallel passes `none`.
+  let termCache ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}")
+    (IO.mkRef (∅ : Std.HashMap Term String))
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1745,8 +1822,12 @@ def verifySingleEnv (oblProgram : Program)
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
     let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
-      let smtCtx := { SMT.Context.default with uniqueBoundNames := options.uniqueBoundNames }
-      pure (ProofObligation.toSMTTerms E obligation smtCtx options.useArrayTheory)
+      -- Seed the encoding context: `typeFactory` with the env's datatypes (the
+      -- encoder reads datatype declarations from there) and the encoder flags.
+      let smtCtx := { SMT.Context.default with
+        uniqueBoundNames := options.uniqueBoundNames, typeFactory := E.datatypes,
+        useArrayTheory := options.useArrayTheory }
+      pure (ProofObligation.toSMTTerms E.factory obligation smtCtx)
     match maybeTerms with
     | .error err =>
       let result := { obligation,
@@ -1784,7 +1865,7 @@ def verifySingleEnv (oblProgram : Program)
                                   checkMode := options.checkMode, lexprModel := [] }
       else
         let discharge := mkDischarge options counter tempDir
-          typedVarsInObligation obligation.metadata obligation.label pctx
+          typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
         let result ← pctx.withRepeatedPhase "solver" do
           getObligationResult assumptionTerms obligationTerm ctx obligation p options
                       discharge needSatCheck needValCheck (externalPhases ++ corePhases)

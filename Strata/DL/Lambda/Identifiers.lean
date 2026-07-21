@@ -25,7 +25,7 @@ structure Identifier (IDMeta : Type) : Type where
   /-- Any additional metadata that it would be useful to attach to an
   identifier. -/
   metadata : IDMeta
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 instance : ToFormat (Identifier IDMeta) where
   format i := i.name

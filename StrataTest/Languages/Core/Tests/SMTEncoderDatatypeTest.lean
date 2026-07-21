@@ -78,17 +78,17 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
-    -- Set the TypeFactory for correct datatype emission ordering
-    let ctx := SMT.Context.default.withTypeFactory env.datatypes
-    match toSMTTerm env [] e ctx useArrayTheory with
+    -- Set the TypeFactory for correct datatype emission ordering, and the flag.
+    let ctx := { SMT.Context.default.withTypeFactory env.datatypes with useArrayTheory }
+    match toSMTTerm env.factory [] e ctx [] with
     | .error err => return err.pretty
-    | .ok (smt, ctx) =>
+    | .ok (smt, ctx, _) =>
       -- Emit the full SMT output including datatype declarations
       let b ← IO.mkRef { : IO.FS.Stream.Buffer }
       let solver ← Strata.SMT.Solver.bufferWriter b
       match (← ((do
         -- First emit datatypes
-        ctx.emitDatatypes useArrayTheory
+        ctx.emitDatatypes
         -- Then encode the term
         let _ ← (Strata.SMT.Encoder.encodeTerm smt).run Strata.SMT.EncoderState.init
         pure ()
@@ -471,20 +471,38 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
     (func : Lambda.LFunc CoreLParams) : IO String := do
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
-  | .ok env =>
-    match env.addFactoryFunc func with
+  | .ok baseEnv =>
+    match baseEnv.addFactoryFunc func with
     | .error msg => return s!"Error adding function: {msg}"
-    | .ok env =>
+    | .ok envWithFunc =>
+      -- Recursive `@[cases]` axioms are pre-computed by `Core.generateRecursiveAxioms`
+      -- (a step of obligation-program construction) rather than on the fly inside
+      -- the encoder. Axiom generation needs the function registered so the partial
+      -- evaluator can inline it; the resulting axioms travel in `func.axioms`. We
+      -- then register the axiom-carrying function in a fresh env, mirroring how the
+      -- pipeline rebuilds the env from the obligation program's function decls.
+      match Core.generateRecursiveAxioms envWithFunc.datatypes envWithFunc.exprEval func with
+      | .error msg => return s!"Error generating recursive axioms: {msg}"
+      | .ok funcWithAxioms =>
+      match baseEnv.addFactoryFunc funcWithAxioms with
+      | .error msg => return s!"Error adding function: {msg}"
+      | .ok env =>
       let ctx := SMT.Context.default.withTypeFactory env.datatypes
-      match toSMTTerm env [] e ctx with
+      let factory := env.factory
+      match (do
+          let (smt, ctx, pending) ← toSMTTerm factory [] e ctx []
+          -- Resolve and commit deferred function definitions/axioms (`toSMTOp`
+          -- schedules them rather than encoding inline).
+          let ctx ← Core.processPendingFnDefs factory ctx pending
+          .ok (smt, ctx)) with
       | .error err => return err.pretty
       | .ok (smt, ctx) =>
         let b ← IO.mkRef { : IO.FS.Stream.Buffer }
         let solver ← Strata.SMT.Solver.bufferWriter b
         match (← ((do
           ctx.emitDatatypes
-          let (_, estate) ← ctx.ufs.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
-          let (axmIds, estate) ← ctx.axms.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
+          let (_, estate) ← ctx.ufs.toArray.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
+          let (axmIds, estate) ← ctx.axms.toArray.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
           for id in axmIds do
             Strata.SMT.Solver.assert id
           let _ ← (Strata.SMT.Encoder.encodeTerm smt).run estate

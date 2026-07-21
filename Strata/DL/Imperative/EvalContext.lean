@@ -22,17 +22,22 @@ inductive PathConditionEntry (P : PureExpr) where
   | assumption (label : String) (expr : P.Expr)
   /-- A variable declaration with a name, type, and optional initializer. -/
   | varDecl (name : P.Ident) (ty : P.Ty) (value : ExprOrNondet P)
+  /-- A distinctness fact: the given expressions are pairwise distinct.
+      Carries a label for parity with `assumption`. -/
+  | distinct (label : String) (exprs : List P.Expr)
 
 /-- The label or name identifying a path condition entry. -/
 def PathConditionEntry.name {P : PureExpr} [ToFormat P.Ident] : PathConditionEntry P → String
   | .assumption label _ => label
   | .varDecl name _ _ => toString (f!"{name}")
+  | .distinct label _ => label
 
 instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] : BEq (PathConditionEntry P) where
   beq
     | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
     | .varDecl n1 t1 (.det e1), .varDecl n2 t2 (.det e2) => n1 == n2 && t1 == t2 && e1 == e2
     | .varDecl n1 t1 .nondet, .varDecl n2 t2 .nondet => n1 == n2 && t1 == t2
+    | .distinct l1 es1, .distinct l2 es2 => l1 == l2 && es1 == es2
     | _, _ => false
 
 @[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
@@ -42,6 +47,7 @@ def PathConditionEntry.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat 
   | .assumption label expr => f!"({label}, {expr})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs})"
 
 instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathConditionEntry P) where
   format := PathConditionEntry.format'
@@ -93,6 +99,48 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
 /-- Remove path condition entries with specified names -/
 def PathConditions.removeByNames [ToFormat P.Ident] (ps : PathConditions P) (names : List String) : PathConditions P :=
   ps.map (fun pc => pc.filter (fun e => !names.contains e.name))
+
+/-- A path-condition accumulator whose scopes are each stored reversed
+    (most-recent-first), so that growing the newest scope is O(1).
+
+    Invariant: every scope in `scopes` is stored most-recent-first.
+    The methods (`push`, `prepend`, `addInNewest`) maintain this.
+    Constructing this struct directly, bypasses these operations, so
+    the caller is responsible for supplying scopes already in
+    most-recent-first order. -/
+structure RevPathConditions (P : PureExpr) where
+  scopes : PathConditions P
+
+def RevPathConditions.newest (r : RevPathConditions P) : PathCondition P :=
+  match r.scopes with
+  | [] => []
+  /- Since we're emitting a PathCondition, we need to output the insertion order. -/
+  | p :: _ => p.reverse
+
+def RevPathConditions.pop (r : RevPathConditions P) : RevPathConditions P :=
+  match r.scopes with
+  | [] => ⟨[]⟩
+  | _ :: rest => ⟨rest⟩
+
+def RevPathConditions.push (r : RevPathConditions P) (p : PathCondition P) : RevPathConditions P :=
+  /- RevPathConditions store an individual PathCondition in reversed order. -/
+  ⟨p.reverse :: r.scopes⟩
+
+def RevPathConditions.prepend (r : RevPathConditions P) (e : PathConditionEntry P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[[e]]⟩
+  | p :: rest => ⟨(e :: p) :: rest⟩
+
+def RevPathConditions.addInNewest (r : RevPathConditions P) (m : PathCondition P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[m.reverse]⟩
+  | _  => m.foldl (·.prepend ·) r
+
+def RevPathConditions.consume (r : RevPathConditions P) : PathConditions P :=
+  /- Since we're emitting PathConditions, we need to reverse each scope to be in insertion order. -/
+  r.scopes.map (·.reverse)
 
 inductive PropertyType where
   | cover

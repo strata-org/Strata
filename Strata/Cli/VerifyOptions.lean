@@ -81,7 +81,10 @@ def verifyOptionsFlags : List Flag := [
     takesArg := .arg "N|none" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
-    takesArg := .arg "N" }
+    takesArg := .arg "N" },
+  { name := "set-option",
+    help := "Set an SMT solver option verbatim as NAME=VALUE (repeatable), applied after the built-in prelude so it overrides it. Option names are solver-specific (e.g. for z3, `--set-option smt.mbqi=true`). For local experimentation on the local solver invocation.",
+    takesArg := .repeat "NAME=VALUE" }
 ]
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
@@ -127,6 +130,18 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--parallel must be at least 1."
                    else pure n
       | .none => exitFailure s!"Invalid parallel workers: '{s}'. Must be a positive number."
+  let mut solverOptions := base.solverOptions
+  for s in pflags.getRepeated "set-option" do
+    match s.splitOn "=" with
+    | name :: v :: rest =>
+      let value := "=".intercalate (v :: rest)
+      if name.isEmpty then
+        exitFailure s!"Invalid --set-option '{s}': option name is empty. Expected NAME=VALUE."
+      else if value.isEmpty then
+        exitFailure s!"Invalid --set-option '{s}': option value is empty. Expected NAME=VALUE."
+      else
+        solverOptions := solverOptions.push (name, value)
+    | _ => exitFailure s!"Invalid --set-option '{s}'. Expected NAME=VALUE (e.g. --set-option smt.mbqi=true)."
   let vcDirectory := (pflags.getString "vc-directory" |>.map (⟨·⟩ : String → System.FilePath)).orElse (fun _ => base.vcDirectory)
   let skipSolver := noSolve || base.skipSolver
   if skipSolver && vcDirectory.isNone then
@@ -145,6 +160,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
+    solverOptions,
     skipSolver,
     alwaysGenerateSMT := noSolve || base.alwaysGenerateSMT,
     overflowChecks,
@@ -173,7 +189,8 @@ def parseLaurelVerifyOptions (pflags : ParsedFlags)
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with
       keepAllFilesPrefix
-      overflowChecks := verifyOptions.overflowChecks }
+      overflowChecks := verifyOptions.overflowChecks
+      enumeratedModifiesClauses := verifyOptions.useArrayTheory }
   return { translateOptions, verifyOptions }
 
 end -- public section

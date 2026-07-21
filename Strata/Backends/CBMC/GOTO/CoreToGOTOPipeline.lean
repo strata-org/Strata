@@ -158,7 +158,15 @@ private partial def coreStmtsToGoto
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
-        let argExprs ← renamedArgs.mapM toExpr
+        -- Inout args arrive as typeless fvars; `toGotoExprCtx` only accepts
+        -- `(some ty)`, so recover the type from the typing env.
+        let typedArgs := renamedArgs.map fun e => match e with
+          | .fvar m id none =>
+            match trans.T.context.types.find? id with
+            | some lty => Lambda.LExpr.fvar m id (some lty.toMonoTypeUnsafe)
+            | none => e
+          | _ => e
+        let argExprs ← typedArgs.mapM toExpr
         let lhsExpr := match renamedLhs with
           | id :: _ =>
             let name := Core.CoreIdent.toPretty id
@@ -228,9 +236,14 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for (_, inv) in invariants do
-            let inv_expr ← toExpr (renameExpr rn inv)
-            backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
+          if !invariants.isEmpty then
+            -- CBMC stores the individual loop-invariant clauses as the operands
+            -- of the `#spec_loop_invariant` annotation (cf. the C front end).
+            let invExprs ← invariants.mapM (fun (_, inv) => toExpr (renameExpr rn inv))
+            let invAnnotation : CProverGOTO.Expr :=
+              { id := .multiary .And, type := CProverGOTO.Ty.Boolean,
+                operands := invExprs }
+            backGuard := backGuard.setNamedField "#spec_loop_invariant" invAnnotation
           match measure with
             | some meas =>
               let meas_expr ← toExpr (renameExpr rn meas)
@@ -283,19 +296,34 @@ def procedureToGotoCtx
   let formals_tys ← p.header.inputs.values.mapM Lambda.LMonoTy.toGotoType
   let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
-  let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
+  -- Inout params are in both `inputs` and `outputs`; drop them from `outputs`
+  -- so their local-symbol entry can't shadow the formal binding in `rn`.
+  let formalsSet : Std.HashSet String := formals.foldl (·.insert ·) ∅
+  let pureOutputPairs := (p.header.outputs.keys.map Core.CoreIdent.toPretty).zip
+    p.header.outputs.values |>.filter fun (n, _) => !formalsSet.contains n
+  let outputs := pureOutputPairs.map (·.1)
+  let outputTys := pureOutputPairs.map (·.2)
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
+  -- Base-name substitutions (`x → test::1::x`, etc.).
+  let basePairs := formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals
+  -- Core encodes `old(x)` as a single fvar named `"old x"` (`CoreIdent.mkOld`).
+  -- Mirror every base entry with its `old`-prefixed counterpart so `renameExpr`
+  -- rewrites `"old x" → "old test::1::x"` before `oldAwareSymbol` strips the
+  -- `"old "` prefix; otherwise the pre-state operand is emitted as the bare,
+  -- unnamespaced `symbol("x")`, which is unbound in cprover's namespace.
+  let oldPairs := basePairs.map fun (k, v) =>
+    (Core.CoreIdent.oldStr ++ k, Core.CoreIdent.oldStr ++ v)
   let rn : Std.HashMap String String :=
-    (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
+    (basePairs ++ oldPairs).foldl
       (init := {}) fun m (k, v) => m.insert k v
   -- Seed the type environment with renamed input and output parameter types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
-    (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
+    (new_outputs.zip outputTys).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let Env' : Core.Expression.TyEnv :=
     Lambda.TEnv.addInNewestContext (T := ⟨Core.ExpressionMetadata, Unit⟩)
@@ -364,7 +392,7 @@ def procedureToGotoCtx
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
-  let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  let output_tys ← outputTys.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
     (outputs.zip output_tys).foldl (init := {}) fun m (k, v) => m.insert k v
   let ctx : CoreToGOTO.CProverGOTO.Context :=
@@ -500,6 +528,35 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
 
+/-- Build a `void main()` verification harness for a parameter-carrying entry
+    procedure `entry`: havoc its parameters, `assume` its preconditions, then
+    call it. The procedure inliner then inlines `entry` into this harness,
+    yielding a parameterless `main` that `goto-cc`/CBMC/cprover accept, with the
+    precondition assumed — matching Core's "preconditions are assumed for the
+    body" semantics (otherwise the back-end's synthesized harness leaves inputs
+    unconstrained and reports spurious failures). -/
+private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
+  let md : Imperative.MetaData Core.Expression := #[]
+  let inKeys := entry.header.inputs.keys
+  let outKeys := entry.header.outputs.keys
+  let inDecls : List Core.Statement := entry.header.inputs.toList.map (fun (id, ty) =>
+    .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let outOnlyDecls : List Core.Statement :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, ty) =>
+      .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let assumes : List Core.Statement := entry.spec.preconditions.toList.mapIdx (fun i (_, chk) =>
+    .cmd (.cmd (.assume s!"harness_pre_{i}" chk.expr md)))
+  let inArgs : List (Core.CallArg Core.Expression) := entry.header.inputs.toList.map (fun (id, _) =>
+    if id ∈ outKeys then .inoutArg id else .inArg (.fvar default id none))
+  let outArgs : List (Core.CallArg Core.Expression) :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
+      .outArg id)
+  let callStmt : Core.Statement :=
+    .call (Core.CoreIdent.toPretty entry.header.name) (inArgs ++ outArgs) md
+  { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }
+
 /--
 Inline procedures, type-check, and emit CProver GOTO JSON files.
 -/
@@ -509,6 +566,17 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : EIO String Unit := do
+  -- If the chosen entry carries parameters, wrap it in a parameterless `main`
+  -- verification harness (havoc params + assume preconditions + call); the
+  -- inliner then folds the entry in. Keeps existing void `main` entries as-is.
+  let findEntry (name : String) := program.decls.find? fun d =>
+    match d with | .proc p _ => Core.CoreIdent.toPretty p.header.name == name | _ => false
+  let program := match entryPoints.findSome? findEntry with
+    | some (.proc p _) =>
+      if !p.header.inputs.isEmpty && Core.CoreIdent.toPretty p.header.name != "main" then
+        { program with decls := program.decls ++ [.proc (mkVerificationHarness p) #[]] }
+      else program
+    | _ => program
   let phase := Core.procedureInliningPipelinePhase
     { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
   let inlined ← match Core.Transform.run program (fun prog => do

@@ -7,7 +7,7 @@ module
 
 public import Strata.Backends.CBMC.GOTO.InstToJson
 public import Strata.Languages.Core.Program
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+import Strata.Languages.GOTO.LambdaToCProverGOTO
 
 namespace Strata
 

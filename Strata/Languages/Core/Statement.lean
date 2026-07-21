@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Expressions
 public import Strata.DL.Imperative.Stmt
+import all Strata.DL.Imperative.Stmt
 import Std.Tactic.BVDecide.Normalize.Prop
 
 namespace Core
@@ -80,6 +81,9 @@ where
   | [], _ => []
   | .inArg _ :: rest, e :: es => .inArg e :: go rest es
   | .inArg e :: rest, [] => .inArg e :: go rest []
+  -- `getInputExprs` emits a slot for each `inoutArg` too; consume it (keeping
+  -- the id) so the cursor stays aligned with the `inArg` positions.
+  | .inoutArg id :: rest, _ :: es => .inoutArg id :: go rest es
   | a :: rest, es => a :: go rest es
 
 theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
@@ -93,7 +97,8 @@ theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) 
     match a, es with
     | .inArg _, e :: es => simp [replaceInArgs.go, ih]
     | .inArg _, [] => simp [replaceInArgs.go, ih]
-    | .inoutArg _, es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, [] => simp [replaceInArgs.go, ih]
     | .outArg _, es => simp [replaceInArgs.go, ih]
 
 def getInputExprs (args : List (CallArg Expression)) : List Expression.Expr :=
@@ -187,6 +192,37 @@ def Statements.eraseTypes (ss : Statements) : Statements :=
   match ss with
   | [] => []
   | s :: srest => Statement.eraseTypes s :: Statements.eraseTypes srest
+end
+
+---------------------------------------------------------------------
+
+mutual
+/--
+Collect the `AssertId Expression` of every reachable assertion in `s`:
+`.assert` commands and each entry of a `.loop`'s invariant list. Mirrors
+the shape of `coreIsAtAssert`.
+
+NOTE: Once loop invariant is dropped from coreIsAtAssert, this will be a simple
+filtering of .assert commands.
+-/
+def Statement.collectAssertIds (s : Statement) : List (Imperative.AssertId Expression) :=
+  match s with
+  | .cmd (.cmd (.assert label expr _)) => [⟨label, expr⟩]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectAssertIds inner_ss
+  | .ite _ then_ss else_ss _ =>
+    Statements.collectAssertIds then_ss ++ Statements.collectAssertIds else_ss
+  | .loop _ _ inv body_ss _ =>
+    inv.map (fun lp => ⟨lp.1, lp.2⟩) ++ Statements.collectAssertIds body_ss
+  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []
+  termination_by Imperative.Stmt.sizeOf s
+
+/-- Collect all `AssertId Expression`s in a list of statements. -/
+def Statements.collectAssertIds (ss : Statements) : List (Imperative.AssertId Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss => Statement.collectAssertIds s ++ Statements.collectAssertIds ss
+  termination_by Imperative.Block.sizeOf ss
 end
 
 ---------------------------------------------------------------------

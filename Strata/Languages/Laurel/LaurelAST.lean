@@ -38,6 +38,11 @@ structure Identifier where
 instance : BEq Identifier where
   beq a b := a.text == b.text
 
+-- Hash by `text` only, keeping this lawful with the `BEq` above (which compares
+-- by `text`): equal identifiers must hash equally.
+instance : Hashable Identifier where
+  hash id := hash id.text
+
 instance : Inhabited Identifier where
  default := { text := "defaultIdentifier" }
 
@@ -104,6 +109,20 @@ inductive Operation : Type where
   | StrConcat
   deriving Repr
 
+instance : ToString Operation where
+  toString
+    | .Eq => "=="          | .Neq => "!="
+    | .And => "&&"         | .Or => "||"
+    | .Not => "!"          | .Implies => "==>"
+    | .AndThen => "&&!"    | .OrElse => "||!"
+    | .Neg => "-"          | .Add => "+"
+    | .Sub => "-"          | .Mul => "*"
+    | .Div => "/"          | .Mod => "%"
+    | .DivT => "/t"        | .ModT => "%t"
+    | .Lt => "<"           | .Leq => "<="
+    | .Gt => ">"           | .Geq => ">="
+    | .StrConcat => "++"
+
 /--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
@@ -121,8 +140,7 @@ structure AstNode (t : Type) : Type where
 The type system for Laurel programs.
 
 `HighType` covers primitive types (`TVoid`, `TBool`, `TInt`, `TReal`, `TFloat64`,
-`TString`), internal types used by the heap parameterization pass (`THeap`,
-`TTypedField`), collection types (`TSet`), user-defined types (`UserDefined`),
+`TString`), collection types (`TSet`), user-defined types (`UserDefined`),
 generic applications (`Applied`), value types (`Pure`), and intersection types
 (`Intersection`).
 -/
@@ -139,10 +157,6 @@ inductive HighType : Type where
   | TReal
   /-- String type for text data. -/
   | TString
-  /-- Internal type representing the heap. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | THeap
-  /-- Internal type for a field constant with a known value type. Introduced by the heap parameterization pass; not accessible via grammar. -/
-  | TTypedField (valueType : AstNode HighType)
   /-- Set type, e.g. `Set int`. -/
   | TSet (elementType : AstNode HighType)
   /-- Map type. -/
@@ -157,9 +171,6 @@ inductive HighType : Type where
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
   | TBv (size : Nat)
-  /-- Temporary construct meant to aid the migration of Python->Core to Python->Laurel.
-  Type "passed through" from Core. Intended to allow translations to Laurel to refer directly to Core. -/
-  | TCore (s: String)
   /-- Type used internally by the Laurel compilation pipeline.
   This type is used when a resolution error occurs,
   to continue compilation without producing superfluous errors
@@ -176,6 +187,48 @@ inductive QuantifierMode where
   | Forall
   | Exists
   deriving Repr, BEq, Inhabited
+
+/-- Whether an increment/decrement operator is in prefix or postfix form.
+    Prefix form yields the new value; postfix form yields the old value. -/
+inductive IncrDecrMode where
+  /-- Prefix form: `++x` or `--x`. Yields the new value. -/
+  | Pre
+  /-- Postfix form: `x++` or `x--`. Yields the old value. -/
+  | Post
+  deriving Repr, BEq, Inhabited
+
+/-- Whether an increment/decrement operator increments by 1 or decrements by 1. -/
+inductive IncrDecrOp where
+  /-- `++` — adds 1 to the target. -/
+  | Incr
+  /-- `--` — subtracts 1 from the target. -/
+  | Decr
+  deriving Repr, BEq, Inhabited
+
+/-- How a pre/postcondition should be lowered.
+
+    A condition has a "natural assert" site and a "natural assume" site that
+    differ between pre- and postconditions:
+    - precondition: asserted at call sites, assumed in the implementation body.
+    - postcondition: asserted at the end of the body, assumed after calls.
+
+    The mode selects which of those lowerings are emitted.
+
+    Laurel authors only need to use `ConditionMode.Both`. The other options
+    (`Assert` and `Assume`) are used by Laurel compilation steps. -/
+inductive ConditionMode where
+  | Assert | Assume | Both
+  deriving BEq
+
+/-- Whether the condition's "assert" lowering should be emitted. -/
+def ConditionMode.doesAssert : ConditionMode → Bool
+  | .Assert | .Both => true
+  | .Assume => false
+
+/-- Whether the condition's "assume" lowering should be emitted. -/
+def ConditionMode.doesAssume : ConditionMode → Bool
+  | .Assume | .Both => true
+  | .Assert => false
 
 mutual
 
@@ -195,14 +248,22 @@ structure Procedure : Type where
   preconditions : List Condition
   /-- Optional termination measure for recursive procedures. -/
   decreases : Option (AstNode StmtExpr) -- optionally prove termination
-  /-- If true, the body may only have functional constructs, so no destructive assignments or loops. -/
-  isFunctional : Bool
   /-- The procedure body: transparent, opaque, or abstract. -/
   body : Body
   /-- Optional trigger for auto-invocation. When present, the translator also emits an axiom
       whose body is the ensures clause universally quantified over the procedure's inputs,
       with this expression as the SMT trigger. -/
   invokeOn : Option (AstNode StmtExpr) := none
+  /-- When `true`, the producer marked this procedure as an entry point for
+      concrete interpretation (`laurelInterpret`). It has no effect on
+      verification.
+
+      Distinct from `Core.EntryPoint` (the verifier's `.main | .roots | .all`
+      target selector) — this marker drives the concrete interpreter only. -/
+  isInterpretEntry : Bool := false
+  /-- Axioms to emit alongside this procedure. Populated by the contract pass from
+      `invokeOn` and ensures clauses. -/
+  axioms : List (AstNode StmtExpr) := []
 
 /--
 A typed parameter for a procedure.
@@ -222,11 +283,12 @@ structure Condition where
   condition : AstNode StmtExpr
   /-- Optional human-readable summary describing the property being checked. -/
   summary : Option String := none
-  /-- When `true`, this condition is *free*: assumed but not checked.
-      A free precondition is assumed by the implementation but not asserted at
-      call sites. A free postcondition is assumed upon return from calls but
-      not checked on exit from implementations. -/
-  free : Bool := false
+  /-- How this condition is lowered (checked, assumed, or both). The default
+      `Both` is the ordinary contract behavior. `Assume` corresponds to a *free*
+      condition: a free precondition is assumed by the implementation but not
+      asserted at call sites, and a free postcondition is assumed upon return
+      from calls but not checked on exit from implementations. -/
+  mode : ConditionMode := ConditionMode.Both
 
 /--
 The body of a procedure. A body can be transparent (with a visible
@@ -236,10 +298,23 @@ or abstract (requiring overriding in extending types).
 inductive Body where
   /-- A transparent body whose implementation is visible to callers. -/
   | Transparent (body : AstNode StmtExpr)
-  /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed. -/
+  /-- An opaque body with a postcondition, optional implementation, and modifies clause. Without an implementation the postcondition is assumed.
+
+      Each `modifies` entry lists state the procedure may change; everything else
+      on the heap is preserved. The legal forms, recognized by the downstream
+      `ModifiesClauses` pass, are:
+      - `modifies o` — a single object reference; any field of `o` may change.
+      - `modifies s` — an object set; any field of any member of `s` may change.
+      - `modifies o#f` — a single field of a single object; only field `f` of `o`
+        may change (field-granular).
+      - `modifies *` — the wildcard (`StmtExpr.All`); the procedure may change anything.
+
+      A 'field of an object set' (e.g. `s#f`) is intentionally not yet supported:
+      Laurel cannot yet construct set values, so there is no way to test it. -/
   | Opaque
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
+      -- See the constructor doc above for the allowed `modifies` forms.
       (modifies : List (AstNode StmtExpr))
       -- TODO: add back non-determinism together with an implementation
       -- deterministic : Bool
@@ -272,10 +347,21 @@ inductive StmtExpr : Type where
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label for `Exit`. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
-  /-- A while loop with a condition, invariants, optional termination measure, and body. Only allowed in impure contexts. -/
+  /-- A while loop with a condition, invariants, optional termination measure, and body.
+      Only allowed in impure contexts.
+
+      `postTest` selects when the condition is tested relative to the body:
+      - `false` (default) — a *pre-test* loop (`while`): the condition is checked
+        before the body, so the body may run zero times.
+      - `true` — a *post-test* loop (`do … while`): the body runs once before the
+        condition is first checked, so it always runs at least once.
+
+      Invariants are checked at the loop head (before each body) in both cases.
+      A post-test loop is lowered to the pre-test form by the `EliminateDoWhile` pass. -/
   | While (cond : AstNode StmtExpr) (invariants : List (AstNode StmtExpr))
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
+    (postTest : Bool)
   /-- Exit a labelled block. Models `break` and `continue` statements. -/
   | Exit (target : String)
   /-- Return from the enclosing procedure with an optional value. -/
@@ -288,12 +374,20 @@ inductive StmtExpr : Type where
   | LiteralString (value : String)
   /-- A decimal literal. -/
   | LiteralDecimal (value : Decimal)
+  /-- A bitvector literal with value and width. -/
+  | LiteralBv (value : Nat) (width : Nat)
   /-- A variable reference or declaration. When `var` is `Variable.Local`, this is a reference
       that evaluates to the variable's value. When `var` is `Variable.Declare`, this is a
       declaration without an initializer (used as a standalone statement in a block). -/
   | Var (var : Variable)
   /-- Assignment to one or more targets. Multiple targets are only supported with identifier targets and a call as the RHS. -/
   | Assign (targets : List (AstNode Variable)) (value : AstNode StmtExpr)
+  /-- Java-style increment/decrement operator. The target must be a `Local` or `Field`
+      `Variable`. As an expression, prefix form yields the new value (after the update)
+      and postfix form yields the old value (before the update). As a statement the
+      yielded value is discarded.
+      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+  | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
@@ -323,8 +417,9 @@ inductive StmtExpr : Type where
   | Old (value : AstNode StmtExpr)
   /-- Check whether a reference is freshly allocated. May only target impure composite types. -/
   | Fresh (value : AstNode StmtExpr)
-  /-- Assert a condition, generating a proof obligation. -/
-  | Assert (condition : Condition)
+  /-- Assert a condition, generating a proof obligation. The optional summary is
+      a human-readable description of the property being checked. -/
+  | Assert (condition : AstNode StmtExpr) (summary : Option String)
   /-- Assume a condition, restricting the state space. -/
   | Assume (condition : AstNode StmtExpr)
   /-- Attach a proof hint to a value. The semantics are those of `value`, but `proof` helps discharge assertions in `value`. -/
@@ -351,6 +446,43 @@ inductive StmtExpr : Type where
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
+
+/-- A short user-facing name for the construct, used in diagnostic messages. -/
+def StmtExpr.constrName : StmtExpr → String
+  | .IfThenElse ..       => "if"
+  | .Block ..            => "block"
+  | .While ..            => "while"
+  | .Exit ..             => "exit"
+  | .Return ..           => "return"
+  | .LiteralInt ..       => "integer literal"
+  | .LiteralBool ..      => "boolean literal"
+  | .LiteralString ..    => "string literal"
+  | .LiteralDecimal ..   => "decimal literal"
+  | .LiteralBv ..        => "bitvector literal"
+  | .Var ..              => "variable"
+  | .Assign ..           => ":="
+  | .IncrDecr _ .Incr .. => "++"
+  | .IncrDecr _ .Decr .. => "--"
+  | .PureFieldUpdate ..  => "field update"
+  | .StaticCall ..       => "call"
+  | .PrimitiveOp op ..   => toString op
+  | .New ..              => "new"
+  | .This                => "this"
+  | .ReferenceEquals ..  => "reference equality"
+  | .AsType ..           => "as"
+  | .IsType ..           => "is"
+  | .InstanceCall ..     => "method call"
+  | .Quantifier ..       => "quantifier"
+  | .Assigned ..         => "assigned"
+  | .Old ..              => "old"
+  | .Fresh ..            => "fresh"
+  | .Assert ..           => "assert"
+  | .Assume ..           => "assume"
+  | .ProveBy ..          => "by"
+  | .ContractOf ..       => "contractOf"
+  | .Abstract            => "abstract"
+  | .All                 => "all"
+  | .Hole ..             => "hole"
 
 @[expose] abbrev HighTypeMd := AstNode HighType
 @[expose] abbrev StmtExprMd := AstNode StmtExpr
@@ -386,6 +518,7 @@ theorem Variable.sizeOf_field_target_lt_of_eq {v : AstNode Variable}
   omega
 
 /-- Apply a monadic transformation to the condition expression, preserving the summary. -/
+@[expose]
 def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c : Condition) : m Condition :=
   return { c with condition := ← f c.condition }
 
@@ -393,11 +526,15 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
+/-- Build a provenance from an optional source location. -/
+def fileRangeToProvenance (source : Option FileRange) : Provenance :=
+  match source with
+  | some fr => Provenance.ofSourceRange fr.file fr.range
+  | none => .synthesized .laurel
+
 /-- Build Core metadata from an optional source location. -/
 def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
-  match source with
-  | some fr => Imperative.MetaData.ofSourceRange fr.file fr.range
-  | none => Imperative.MetaData.ofProvenance (.synthesized .laurel)
+  Imperative.MetaData.ofProvenance (fileRangeToProvenance source)
 
 /-- Build Core metadata from an AstNode's source location. -/
 def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
@@ -432,9 +569,7 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.TReal, HighType.TReal => true
   | HighType.TString, HighType.TString => true
-  | HighType.THeap, HighType.THeap => true
   | HighType.TBv n1, HighType.TBv n2 => n1 == n2
-  | HighType.TTypedField t1, HighType.TTypedField t2 => highEq t1 t2
   | HighType.TSet t1, HighType.TSet t2 => highEq t1 t2
   | HighType.TMap k1 v1, HighType.TMap k2 v2 => highEq k1 k2 && highEq v1 v2
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
@@ -459,6 +594,155 @@ instance : BEq HighTypeMd where
 
 deriving instance BEq for HighType
 
+/-- Lookup tables threaded through subtyping/consistency checks. Built from
+    the program's `TypeDefinition`s by the resolution pass:
+    - `unfoldMap` maps an alias or constrained type's name to the type it
+      unwraps to (alias target / constrained base). Followed transitively to
+      reach a non-alias, non-constrained type.
+    - `extendingMap` maps a composite type's name to the *direct* parents in
+      its `extending` list. Walked transitively for the subtype check.
+
+    Keyed by type-name *text* (`String`), not `Identifier`: this is consistent
+    with how `highEq` decides `UserDefined` equality (by `.text`), and is forced
+    because the lattice is built from the *unresolved* program in
+    `TypeLattice.ofTypes`, before the resolution pass assigns `uniqueId`s.
+    Consequence: nominal type identity is by name text, so subtyping
+    (`ancestors` walking `extendingMap`) assumes type names are globally unique.
+    Safe today (no module system); revisit when modules / namespacing / imports
+    land, since two distinct same-named types would otherwise share an
+    inheritance chain. -/
+structure TypeLattice where
+  unfoldMap : Std.HashMap String HighTypeMd := {}
+  extendingMap : Std.HashMap String (List String) := {}
+  deriving Inhabited
+
+/-- Unfold aliases and constrained types to their underlying type.
+    Composites and primitives are returned unchanged. A `visited` set guards
+    against cycles in the alias/constrained graph (already cycle-checked
+    elsewhere, but keeps `unfold` safe to call independently). -/
+partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if visited.contains name.text then ty
+    else match ctx.unfoldMap.get? name.text with
+      | some target => ctx.unfold target (visited.insert name.text)
+      | none => ty
+  | _ => ty
+
+/-- All ancestors of a composite type (including itself), reachable via
+    repeated `extending` lookups. Implemented as a visited-set BFS over the
+    `extending` graph: the accumulator `acc` doubles as the visited set, and
+    every node is `insert`ed before its parents are enqueued, so each name is
+    processed at most once. The accumulator only grows, hence cycles in the
+    (possibly malformed) graph terminate — no `fuel` parameter is needed. -/
+partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.HashSet String :=
+  let rec go (acc : Std.HashSet String) (frontier : List String) : Std.HashSet String :=
+    match frontier with
+    | [] => acc
+    | n :: rest =>
+      if acc.contains n then go acc rest
+      else
+        let acc' := acc.insert n
+        let parents := (ctx.extendingMap.get? n).getD []
+        go acc' (parents ++ rest)
+  go {} [name]
+
+/-- Pure subtyping `<:`. Walks the `extending` chain for `CompositeType`
+    (via `TypeLattice.ancestors`), unfolds `TypeAlias` to its target, and
+    unwraps `ConstrainedType` to its base (both via `TypeLattice.unfold`),
+    then falls back to structural equality via `highEq`.
+
+    Used together with `isConsistent` to form `isConsistentSubtype`, which
+    is what the bidirectional checker invokes at every check-mode boundary
+    (rule `[⇐] Sub`). -/
+def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  let sub' := ctx.unfold sub
+  let sup' := ctx.unfold sup
+  match sub'.val, sup'.val with
+  | .UserDefined subName, .UserDefined supName =>
+    -- After unfolding, both sides are composites (or unresolved). A composite
+    -- is a subtype of any type in its extending chain.
+    (ctx.ancestors subName.text).contains supName.text || highEq sub' sup'
+  | _, _ => highEq sub' sup'
+
+/- ### Variance policy (covers `isSubtype` and `isConsistent`)
+   All child-carrying constructors are INVARIANT by design: `isConsistent`
+   bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
+   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
+   never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
+   collections, where covariance would be unsound; if you don't know the
+   element type, write a bare `Unknown`, not `TSet Unknown`.
+
+   `MultiValuedExpr` is the SOLE exception that recurses (element-wise
+   consistency, not equality). It is not a mutable container: it is a transient
+   tuple of independent procedure-output values matched against multi-assignment
+   targets, so per-element consistency (letting an `Unknown` output flow into
+   one slot) is correct rather than unsound.
+
+   `Pure b` is invariant today, but it is the one constructor where covariance
+   would be SOUND and desirable — it is the immutable value-view of a composite,
+   and immutability is exactly the condition that makes covariance safe.
+   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
+
+   `Applied` (generics) is invariant as the safe default for not-yet-designed
+   parametric types; real variance is per-constructor and deliberately deferred.
+
+   `Intersection` is NOT a variance question: `A & B` has lattice structure
+   (`A & B <: A`, `A & B <: B`, etc.) that is not modeled, and the current
+   `highEq` arm zips element-wise IN DECLARATION ORDER, so `A & B ≠ B & A` even
+   though intersection is conceptually unordered. Known limitation, to fix with
+   bespoke subtyping rules when intersections become live. -/
+/-- Consistency `~` (Siek–Taha): the symmetric gradual relation. `Unknown`
+    is the dynamic type and is consistent with everything; otherwise
+    structural equality after unfolding aliases / constrained types.
+
+    `MultiValuedExpr` is checked element-wise so the same equivalence
+    propagates through procedure-output tuples.
+
+    Used directly by `[⇒] Op-Eq`, where the operand types must be mutually
+    consistent (no subtype direction is privileged), and as one half of
+    `isConsistentSubtype`. -/
+def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  -- `MultiValuedExpr` is checked element-wise *before* unfolding so elements
+  -- remain demonstrable subterms of `a`/`b`. `unfold` is `partial`, and is in
+  -- any case the identity on `MultiValuedExpr`, so this loses no precision.
+  match _a: a.val, _b: b.val with
+  | .MultiValuedExpr ts1, .MultiValuedExpr ts2 =>
+    ts1.length == ts2.length &&
+      (ts1.attach.zip ts2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
+  | _, _ =>
+    let a' := ctx.unfold a
+    let b' := ctx.unfold b
+    match a'.val, b'.val with
+    | .Unknown, _ | _, .Unknown => true
+    | _, _ => highEq a' b'
+  termination_by (SizeOf.sizeOf a)
+  decreasing_by
+    all_goals (cases a; cases b; try term_by_mem)
+    cases t1; term_by_mem
+
+/-- Consistent subtyping: `∃ R. sub ~ R ∧ R <: sup`. For our flat lattice
+    this collapses to `sub ~ sup ∨ sub <: sup` — the standard collapse.
+
+    Used by rule `[⇐] Sub` (and every bespoke check rule). That single
+    choice is what makes the system *gradual*: an expression of type
+    `Unknown` (a hole, an unresolved name, a `Hole _ none`) flows freely
+    into any typed slot, and any expression flows freely into a slot of
+    type `Unknown`. Strict checking is applied between fully-known types
+    only.
+
+    A previous iteration was synth-only with two *bivariantly-compatible*
+    wildcards: `Unknown` and `UserDefined`. The `UserDefined` carve-out was
+    load-bearing: no assignment, call argument, or comparison involving a
+    user type was ever rejected. The bidirectional design retires that
+    carve-out — user-defined types are now a regular participant in `<:`,
+    with `isSubtype` walking inheritance chains and unwrapping aliases
+    and constrained types to deliver real checking on user-defined code. -/
+def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
+  isConsistent ctx sub sup || isSubtype ctx sub sup
+
 def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
@@ -475,6 +759,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .LiteralBool .. => "LiteralBool"
   | .LiteralString .. => "LiteralString"
   | .LiteralDecimal .. => "LiteralDecimal"
+  | .LiteralBv .. => "LiteralBv"
   | .Var .. => "Var"
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
@@ -497,6 +782,22 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Abstract => "Abstract"
   | .All => "All"
   | .Hole .. => "Hole"
+  | .IncrDecr .. => "IncrDecr"
+
+/-- Build an expression that reads back the value of a variable reference.
+
+    The result is always a `Var` expression that evaluates to the variable's
+    value. A `Declare` is read back as a `Local` reference to the declared name
+    (so a declaration target reads back the variable it introduces). -/
+def Variable.toReadbackExpr : Variable → StmtExpr
+  | .Local name => .Var (.Local name)
+  | .Declare param => .Var (.Local param.name)
+  | .Field target fieldName => .Var (.Field target fieldName)
+
+/-- Source-preserving read-back expression for a `VariableMd`
+    (see `Variable.toReadbackExpr`). -/
+def VariableMd.toReadbackExpr (v : VariableMd) : StmtExprMd :=
+  ⟨ v.val.toReadbackExpr, v.source ⟩
 
 /-- Check whether a single modifies entry is the wildcard (`*`). -/
 def StmtExprMd.isWildcard (m : StmtExprMd) : Bool := match m.val with | .All => true | _ => false
@@ -567,6 +868,9 @@ structure ConstrainedType where
 structure DatatypeConstructor where
   name : Identifier
   args : List Parameter
+  /-- Identifier for the auto-generated tester function (e.g. `IntList..isNil`).
+      Populated with a `uniqueId` during resolution. -/
+  testerName : Identifier := mkId ""
 
 /-- A Laurel datatype definition with optional type parameters.
     Zero constructors produces an opaque (abstract) type in Core.
@@ -631,6 +935,19 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Datatype ty => ty.name
   | .Alias ty => ty.name
 
+/-- Build a `TypeLattice` from a list of `TypeDefinition`s.
+    Aliases populate `unfoldMap` with their target; constrained types populate
+    it with their base; composites populate `extendingMap` with their direct
+    parents. Datatypes contribute nothing — they're nominal and irreducible. -/
+def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
+  types.foldl (init := {}) fun ctx td =>
+    match td with
+    | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text ta.target }
+    | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ct.base }
+    | .Composite c =>
+      { ctx with extendingMap := ctx.extendingMap.insert c.name.text (c.extending.map (·.text)) }
+    | .Datatype _ => ctx
+
 structure Constant where
   name : Identifier
   type : HighTypeMd
@@ -650,6 +967,13 @@ structure Program where
   /-- Named constants. -/
   constants : List Constant := []
   deriving Inhabited
+
+/-- Reserved internal name of a function's anonymous (short `: T`) return
+    output. The leading `$` follows Strata's reserved-name convention and
+    cannot be written as a surface identifier, so user parameters/locals named
+    `result` never collide with the return value. To refer to the return value
+    explicitly, use the named-return form `returns (r: T)`. -/
+def resultOutputName : String := "$result"
 
 end -- public section
 

@@ -212,7 +212,7 @@ the valid type of each expression form.
 # Imperative
 
 The `Imperative` language is a standard core imperative calculus, parameterized
-by a type of expressions and divided into two pieces: commands and statements.
+by a type of expressions (`PureExpr`) and divided into two pieces: commands and statements.
 Commands represent atomic operations that do not induce control flow.
 Statements are parameterized by a command type and describe the control flow
 surrounding those commands. This parameterization allows clients of `Imperative`
@@ -291,6 +291,57 @@ And, finally, the metadata attached to an AST node consists of an array of
 metadata elements.
 
 {docstring Imperative.MetaData}
+
+## Instantiating Imperative
+
+Using the `Imperative` dialect for a concrete language requires filling in three
+pieces:
+
+1. *The expression parameter `PureExpr`*, defined in
+   `Strata/DL/Imperative/PureExpr.lean`.
+   A `PureExpr` bundles the types the dialect will use for identifiers,
+   expressions, types, metadata, typing environments, factories, and the
+   expression evaluator (`eval`). Instantiating `Imperative` starts by
+   constructing a `PureExpr` for the target language (Strata Core does this
+   with {name Core.Expression}`Core.Expression`).
+
+   {docstring Imperative.PureExpr}
+
+2. *Structural typeclasses on `PureExpr`.* `Imperative`'s commands and
+   statements need to inspect and manipulate expressions in generic ways —
+   extracting free variables, constructing Boolean/integer literals, negating
+   conditions, and so on. These operations are provided via typeclasses whose
+   names start with `Has` (e.g., {name Imperative.HasVarsPure}`HasVarsPure`),
+   defined in `Strata/DL/Imperative/PureExpr.lean` and
+   `Strata/DL/Imperative/HasVars.lean`. See
+   `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
+   instantiations of these typeclasses.
+
+3. *Well-formedness of the evaluator*, defined in
+   `Strata/DL/Imperative/CmdSemantics.lean`.
+   The rules assume the evaluator supplied via
+   `PureExpr.eval` respects a few sanity conditions on values, variable
+   lookups, and Boolean negation. A concrete instantiation must supply
+   witnesses for each of these predicates (or the bundle
+   {name Imperative.WellFormedSemanticEval}`WellFormedSemanticEval`) against its
+   factory of choice. See
+   `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
+   discharge of these predicates.
+
+   {docstring Imperative.WellFormedSemanticEvalBool}
+
+   {docstring Imperative.WellFormedSemanticEvalVal}
+
+   {docstring Imperative.WellFormedSemanticEvalVar}
+
+   {docstring Imperative.WellFormedSemanticEvalExprCongr}
+
+   {docstring Imperative.WellFormedSemanticEval}
+
+The Strata Core language, described next, is a worked example of an
+`Imperative` instantiation: it picks `Lambda` expressions for `PureExpr`,
+supplies the required `Has`-typeclass instances, and discharges the
+well-formedness conditions against `LExpr.evalFully`.
 
 # Strata Core
 
@@ -799,7 +850,7 @@ The semantics of the {name Stmt}`Stmt` type is defined in terms of
 
 The {name StepStmt}`StepStmt` relation describes how each type of statement
 transforms configurations. It is parameterized by a command evaluator and an
-`extendEval` function (used by `funcDecl` to add new function definitions to
+`extendFactory` function (used by `funcDecl` to add new function definitions to
 the expression evaluator within a scope).
 
 {docstring Imperative.StepStmt}

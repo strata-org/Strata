@@ -81,6 +81,65 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
   | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
   | _ => True
 
+/-- Declarative form of `OpsConsistent` as an inductive relation. The `.op` case
+requires that *some* type substitution turns the function's generic type into the
+node's annotation; operators not in the factory are unconstrained. -/
+inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
+  | const {m c} : OpsConsistentR F (.const m c)
+  | bvar {m i} : OpsConsistentR F (.bvar m i)
+  | fvar {m name ty} : OpsConsistentR F (.fvar m name ty)
+  | op_notin {m name ty} (h : F[name.name]? = none) : OpsConsistentR F (.op m name ty)
+  | op_in {m name ty_op fn tySubst}
+      (hfn : F[name.name]? = some fn)
+      (hty : ty_op = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst tySubst) :
+      OpsConsistentR F (.op m name (some ty_op))
+  | app {m fn arg} :
+      OpsConsistentR F fn → OpsConsistentR F arg → OpsConsistentR F (.app m fn arg)
+  | abs {m name ty body} : OpsConsistentR F body → OpsConsistentR F (.abs m name ty body)
+  | ite {m c t f} :
+      OpsConsistentR F c → OpsConsistentR F t → OpsConsistentR F f →
+      OpsConsistentR F (.ite m c t f)
+  | eq {m e1 e2} :
+      OpsConsistentR F e1 → OpsConsistentR F e2 → OpsConsistentR F (.eq m e1 e2)
+  | quant {m k name ty tr body} :
+      OpsConsistentR F tr → OpsConsistentR F body →
+      OpsConsistentR F (.quant m k name ty tr body)
+
+omit [DecidableEq T.IDMeta] in
+/-- Soundness: `OpsConsistent` implies `OpsConsistentR`, using the substitution
+from `opTypeSubst` as the `.op` witness. -/
+theorem OpsConsistent_OpsConsistentR {F : @Factory T} :
+    ∀ {e : LExpr T.mono}, OpsConsistent F e → OpsConsistentR F e := by
+  intro e
+  induction e with
+  | const m c => intro _; exact .const
+  | bvar m i => intro _; exact .bvar
+  | fvar m name ty => intro _; exact .fvar
+  | op m name ty =>
+    intro h
+    unfold OpsConsistent at h
+    cases hfn : F[name.name]? with
+    | none => exact .op_notin hfn
+    | some fn =>
+      simp only [hfn] at h
+      cases hts : LFunc.opTypeSubst fn (.op m name ty) with
+      | none => simp only [hts] at h
+      | some tySubst =>
+        simp only [hts] at h
+        cases ty with
+        | none => exact absurd h id
+        | some ty_op => exact .op_in hfn h
+  | app m fn arg ihfn iharg =>
+    intro h; exact .app (ihfn h.1) (iharg h.2)
+  | abs m name ty body ih =>
+    intro h; exact .abs (ih h)
+  | ite m c t f ihc iht ihf =>
+    intro h; exact .ite (ihc h.1) (iht h.2.1) (ihf h.2.2)
+  | eq m e1 e2 ih1 ih2 =>
+    intro h; exact .eq (ih1 h.1) (ih2 h.2)
+  | quant m k name ty tr body ihtr ihbody =>
+    intro h; exact .quant (ihtr h.1) (ihbody h.2)
+
 /-! ### Factory assumptions -/
 
 /-- A factory is well-typed when every function body type-checks at the

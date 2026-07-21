@@ -130,6 +130,9 @@ structure MetaDataElem (P : PureExpr) where
   /-- The value of the metadata. -/
   value : MetaDataElem.Value P
 
+instance : Inhabited (MetaDataElem P) :=
+  ⟨{ fld := .label "", value := .switch false }⟩
+
 /-- Metadata is an array of tagged elements. -/
 @[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
@@ -180,6 +183,16 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 @[match_pattern]
 abbrev MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
 
+/-- Marks a procedure as a producer-chosen entry point for concrete
+    interpretation (see `laurelInterpret`). Carried as a `.switch true`
+    value; has no effect on verification.
+
+    Not to be confused with `Core.EntryPoint`, which is the verifier's
+    target-selector (`.main | .roots | .all`) and is unrelated to the
+    concrete interpreter. -/
+@[match_pattern]
+abbrev MetaData.interpretEntry : MetaDataElem.Field P := .label "interpretEntry"
+
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 @[match_pattern]
@@ -188,6 +201,10 @@ abbrev MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
 abbrev MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
 @[match_pattern]
 abbrev MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+
+/-- Key names for check-related metadata fields. -/
+def MetaData.checkKeys : Std.HashSet String :=
+  Std.HashSet.ofList ["reachCheck", "fullCheck", "validityCheck", "satisfiabilityCheck"]
 
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
@@ -293,6 +310,27 @@ def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.filter (fun e => !(e.fld == fld))
 
+/-- Label for a per-loop-invariant source provenance. Loop lowering stores one
+    such element per invariant, in invariant order, so that loop elimination can
+    attribute each invariant's verification condition to the specific invariant's
+    source location rather than to the whole loop. -/
+def MetaData.invariantProvenanceLabel : String := "invariantProvenance"
+
+/-- Append a loop invariant's provenance to metadata. These are appended in
+    invariant order. Note this matches on the `.label` constructor directly, so
+    it needs no `BEq P.Ident` instance. -/
+def MetaData.pushInvariantProvenance {P : PureExpr} (md : MetaData P) (p : Provenance) : MetaData P :=
+  md.push { fld := .label MetaData.invariantProvenanceLabel, value := .provenance p }
+
+/-- Get all per-invariant provenances from metadata, in the order they were
+    pushed (matching the loop's invariant order). -/
+def MetaData.getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Provenance :=
+  md.filterMap fun elem =>
+    match elem.fld, elem.value with
+    | .label l, .provenance p =>
+      if l == MetaData.invariantProvenanceLabel then some p else none
+    | _, _ => none
+
 /-- Replace the primary provenance with a new one, shifting existing related
     provenances and prepending the old primary provenance. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
@@ -344,6 +382,10 @@ def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) :
 /-- Push a property summary into metadata. -/
 def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
   md.pushElem MetaData.propertySummary (.msg msg)
+
+/-- Key names for property-related metadata fields (checks + propertyType/propertySummary). -/
+def MetaData.propertyKeys : Std.HashSet String :=
+  MetaData.checkKeys.insertMany ["propertyType", "propertySummary"]
 
 ---------------------------------------------------------------------
 

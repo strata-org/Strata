@@ -205,10 +205,9 @@ private partial def parseArgs (cmdName : String)
       let raw := (arg.drop 2).toString
       -- Support --flag=value syntax by splitting on first '='
       let (flagName, inlineValue) ← match raw.splitOn "=" with
-        | name :: value :: rest =>
-          if !rest.isEmpty then
-            exitCmdFailure cmdName s!"Invalid option format: {arg}. Values must not contain '='."
-          pure (name, some value)
+        -- Split on the FIRST '=' only, so a flag's value may itself contain '='
+        -- (e.g. `--set-option=smt.mbqi=true`, whose value is `smt.mbqi=true`).
+        | name :: rest@(_ :: _) => pure (name, some ("=".intercalate rest))
         | _ => pure (raw, none)
       match flagMap[flagName]? with
       | some flag =>

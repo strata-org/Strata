@@ -10,7 +10,7 @@ op realType : LaurelType => "real";
 op float64Type : LaurelType => "float64";
 op stringType : LaurelType => "string";
 op bvType (width: Num): LaurelType => "bv" width;
-// Core type passthrough: parsed as Ident, translated to HighType.TCore
+// Core type passthrough: parsed as Ident, translated to HighType.UserDefined
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
 op compositeType (name: Ident): LaurelType => name;
@@ -20,6 +20,7 @@ op literalBool (b: Bool): StmtExpr => b;
 op int(n : Num) : StmtExpr => n;
 op real(d : Decimal) : StmtExpr => d;
 op string (s: Str): StmtExpr => s;
+op bvLiteral(value: Num, width: Num): StmtExpr => value "bv" width;
 op hole: StmtExpr => "<?>";
 op nondetHole: StmtExpr => "<??>";
 
@@ -33,13 +34,16 @@ op initializer(value: StmtExpr): Initializer => " := " value:0;
 op varDecl (name: Ident, varType: Option TypeAnnotation, assignment: Option Initializer): StmtExpr
   => @[prec(0)] "var " name varType assignment;
 
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
+  @[prec(95)] callee:89 "(" args ")";
 
 // Instantiation
 op new(name: Ident): StmtExpr => "new " name;
 
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+// Field access. prec coupled to `call` (also 95, via its `callee:89`): keep them
+// equal or `a#b(x)` parsing shifts. prec 95 > postfix `++`/`--` (90) is what lets
+// `c#n++` parse paren-free as `(c#n)++`.
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(95), leftassoc] obj "#" field;
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
@@ -77,11 +81,24 @@ op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " |
 op andThen (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
 op orElse (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 op implies (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(15), rightassoc] lhs " ==> " rhs;
-op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ++ " rhs;
+// String concatenation. Uses `^` (OCaml-style) so that `++` is reserved for the
+// Java-style increment operator below.
+op strConcat (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs " ^ " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
 op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
+
+// Refer to the pre-state value of an expression (for use in postconditions, modifies clauses).
+op old (inner: StmtExpr): StmtExpr => "old(" inner ")";
+
+// Java-style increment / decrement.
+// Prefix forms (leading parsers): yield the new value.
+op preIncr (target: StmtExpr): StmtExpr => @[prec(80)] "++" target;
+op preDecr (target: StmtExpr): StmtExpr => @[prec(80)] "--" target;
+// Postfix forms (trailing parsers): yield the old value.
+op postIncr (target: StmtExpr): StmtExpr => @[prec(90)] target "++";
+op postDecr (target: StmtExpr): StmtExpr => @[prec(90)] target "--";
 
 // Quantifiers
 category Trigger;
@@ -98,10 +115,10 @@ op errorSummary(msg: Str): ErrorSummary => " summary " msg;
 
 // If-else
 category ElseBranch;
-op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] " else " stmts;
+op elseBranch(stmts : StmtExpr) : ElseBranch => @[prec(0)] "\nelse " stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBranch): StmtExpr =>
-  @[prec(20)] "if " cond " then " thenBranch:0 elseBranch:0;
+  @[prec(20)] "if " cond indent(2, "\nthen " thenBranch:0 elseBranch:0);
 
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
@@ -119,6 +136,9 @@ op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): Stmt
 
 op forLoop (init: StmtExpr, cond: StmtExpr, step: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "for" "(" init ";" cond ";" step ")" invariants " " body:0;
+
+op doWhile (body: StmtExpr, cond: StmtExpr, invariants: Seq InvariantClause): StmtExpr
+  => "do " body:0 " while" "(" cond ")" invariants;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ": " paramType;
@@ -159,14 +179,24 @@ op returnType(returnType: LaurelType): ReturnType => ": " returnType;
 category InvokeOnClause;
 op invokeOnClause(trigger: StmtExpr): InvokeOnClause => "\n  invokeOn " trigger:0;
 
+category EntryClause;
+op entryClause: EntryClause => "\n  entry";
+
+// `requires`/`ensures` lower to both an assertion and an assumption by default.
+// `free` keeps only the assumption (assumed but never checked); `checked` keeps
+// only the assertion (checked but never exposed as an assumption).
 category RequiresClause;
 op requiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  requires " cond:0 errorMessage;
+op freeRequiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  free requires " cond:0 errorMessage;
+op checkedRequiresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): RequiresClause => "\n  checked requires " cond:0 errorMessage;
 
 category EnsuresClause;
 op ensuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  ensures " cond:0 errorMessage;
+op freeEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  free ensures " cond:0 errorMessage;
+op checkedEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): EnsuresClause => "\n  checked ensures " cond:0 errorMessage;
 
 category ModifiesClause;
-op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs;
+op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;
 op modifiesWildcard: ModifiesClause => "\n  modifies *";
 
 category ReturnParameters;
@@ -186,18 +216,10 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnParameters: Option ReturnParameters,
   requires: Seq RequiresClause,
   invokeOn: Option InvokeOnClause,
+  entry: Option EntryClause,
   opaqueSpec: Option OpaqueSpec,
   body : Option Body) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
-
-op function (name : Ident, parameters: CommaSepBy Parameter,
-  returnType: Option ReturnType,
-  returnParameters: Option ReturnParameters,
-  requires: Seq RequiresClause,
-  invokeOn: Option InvokeOnClause,
-  opaqueSpec: Option OpaqueSpec,
-  body : Option Body) : Procedure =>
-  "function " name "(" parameters ")" returnType returnParameters requires invokeOn opaqueSpec body ";";
+  "procedure " name "(" parameters ")" returnType returnParameters requires invokeOn entry opaqueSpec body ";";
 
 op composite (name: Ident, extending: Option Extends, fields: Seq Field, procedures: Seq Procedure): Composite => "composite " name extending " {" fields procedures " }";
 

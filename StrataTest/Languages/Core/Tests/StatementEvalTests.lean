@@ -130,7 +130,7 @@ Subst Map:
 Expression Env:
 State:
 [(minit : (arrow int int)) → _minit
-(m : (arrow int int)) → fun __q0 : ($__unknown_type) => if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)
+(m : (arrow int int)) → fun __q0 : ($__unknown_type) => (if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => (if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))
 (m0 : int) → _minit(0)]
 
 Evaluation Config:
@@ -188,7 +188,7 @@ Subst Map:
 Expression Env:
 State:
 [minit → _minit
-(m : (arrow int int)) → fun __q0 : ($__unknown_type) => if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => if __q2 == 1 then 10 else _minit(__q2))(__q1))(__q0)]
+(m : (arrow int int)) → fun __q0 : ($__unknown_type) => (if __q0 == 3 then 30 else (fun __q1 : ($__unknown_type) => (if __q1 == 2 then 20 else (fun __q2 : ($__unknown_type) => (if __q2 == 1 then 10 else _minit(__q2)))(__q1)))(__q0))]
 
 Evaluation Config:
 Eval Depth: 200
@@ -283,7 +283,8 @@ Datatypes:
 
 Path Conditions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true)
+(<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 
 
 Warnings:
@@ -301,17 +302,19 @@ Label: x_eq_y_label_0
 Property: assert
 Assumptions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true)
+(<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
-if zinit == false then 6 else 0 == 6
+(if zinit == false then 6 else 0) == 6
 
 Label: x_eq_y
 Property: assert
 Assumptions:
 (z_false, zinit == false)
-(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true) (<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
+(<label_ite_cond_true: z == false>, if zinit == false then zinit == false else true)
+(<label_ite_cond_false: !(z == false)>, if if zinit == false then false else true then if zinit == false then false else true else true)
 Proof Obligation:
-if zinit == false then 6 else 0 == 6
+(if zinit == false then 6 else 0) == 6
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog1) |> format
@@ -578,7 +581,7 @@ Assumptions:
 (<label_ite_cond_true: $__nondet_cond_0>, if $__nondet_cond_0 then $__nondet_cond_0 else true)
 (<label_ite_cond_false: !($__nondet_cond_0)>, if if $__nondet_cond_0 then false else true then if $__nondet_cond_0 then false else true else true)
 Proof Obligation:
-if $__nondet_cond_0 then 1 else 2 == 1
+(if $__nondet_cond_0 then 1 else 2) == 1
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] (.det eb[#0]) .empty,

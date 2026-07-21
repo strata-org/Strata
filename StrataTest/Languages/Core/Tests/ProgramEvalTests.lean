@@ -73,6 +73,12 @@ func Str.ToRegEx :  ((x : string)) → regex;
 func Str.InRegEx :  ((x : string) (y : regex)) → bool;
 func Str.PrefixOf :  ((x : string) (y : string)) → bool;
 func Str.SuffixOf :  ((x : string) (y : string)) → bool;
+func Str.Contains :  ((x : string) (y : string)) → bool;
+func Str.IndexOf :  ((x : string) (y : string) (i : int)) → int;
+func Str.Replace :  ((x : string) (y : string) (z : string)) → string;
+func Str.At :  ((x : string) (y : int)) → string;
+func Str.Lt :  ((x : string) (y : string)) → bool;
+func Str.Le :  ((x : string) (y : string)) → bool;
 func Re.All :  () → regex;
 func Re.AllChar :  () → regex;
 func Re.Range :  ((x : string) (y : string)) → regex;
@@ -84,7 +90,7 @@ func Re.Union :  ((x : regex) (y : regex)) → regex;
 func Re.Inter :  ((x : regex) (y : regex)) → regex;
 func Re.Comp :  ((x : regex)) → regex;
 func Re.None :  () → regex;
-func const : ∀[k, v]. ((d : v)) → (Map k v);
+func mapConst : ∀[k, v]. ((d : v)) → (Map k v);
 func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
 func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
@@ -447,7 +453,7 @@ section ConcreteInterpretation
 /-! ## Concrete Interpretation Tests
 -/
 
-open Lambda Strata
+open Lambda Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
 private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
@@ -635,6 +641,60 @@ procedure Test(out y : int)
 /-- info: y = (some 10) -/
 #guard_msgs in
 #eval runProc blockPgm "Test"
+
+-- ### `moreFns` threading
+--
+-- Regression coverage for the `moreFns` parameter on `Program.run`. A
+-- downstream language (e.g. StrataPython's `int_pow`, `int_rshift`) registers
+-- factory functions carrying a `concreteEval`. Those functions must reach the
+-- runtime evaluator, or every downstream assert referencing them stays
+-- symbolic — the exact failure mode this CR was written to fix. A revert here
+-- would surface as ~67 Python differential-test failures two packages away;
+-- this test fails next to the code instead.
+
+-- Minimal factory function with a `concreteEval` that doubles its Int arg.
+private def dummyDouble : Lambda.LFunc CoreLParams :=
+  { name := "dummy_double",
+    typeArgs := [],
+    inputs := [("x", mty[int])],
+    output := mty[int],
+    concreteEval := some (fun md args => match args with
+      | [x] => (Lambda.LExpr.denoteInt x).map (fun v => Lambda.LExpr.intConst md (2 * v))
+      | _ => none) }
+
+-- Empty Core program — no decls, no procedures. All we're testing is that
+-- `Program.run` threads `moreFns` into the runtime factory. Bypasses DDM
+-- parsing (which requires every referenced name to be declared) and
+-- procedure-call plumbing (which is exercised by every other test above).
+private def emptyProg : Core.Program := { decls := [] }
+
+-- Check that after `Program.run`, the runtime evaluator's factory contains
+-- `dummy_double` and its `concreteEval` folds `x → 2 * x` on a concrete
+-- argument. Without the `moreFns` plumbing on `Program.run` (i.e. before
+-- this CR), the factory would not receive the entry and the same call
+-- would stay as an unresolved `.op "dummy_double" …`.
+private def moreFnsFolds (moreFns : Lambda.Factory CoreLParams) : IO Unit := do
+  match emptyProg.run (moreFns := moreFns) with
+  | .error diag => IO.println s!"error: {diag}"
+  | .ok E =>
+    let call : Lambda.LExpr CoreLParams.mono :=
+      Lambda.LExpr.mkApp () (.op () "dummy_double" (some mty[int]))
+        [Lambda.LExpr.intConst () 21]
+    let result := (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv call).fst
+    IO.println s!"result = {format result}"
+
+-- With `moreFns` supplying a `concreteEval` for `dummy_double`, the call
+-- folds to `2 * 21 = 42`.
+/-- info: result = 42 -/
+#guard_msgs in
+#eval moreFnsFolds (.ofArray #[dummyDouble])
+
+-- Sanity: without `moreFns`, the same call stays symbolic (no `concreteEval`
+-- reachable). This pins that the fold in the previous test comes from the
+-- `moreFns` plumbing, not a base-factory fallback.
+/-- info: result = dummy_double(21) -/
+#guard_msgs in
+#eval moreFnsFolds Lambda.Factory.default
 
 end ConcreteInterpretation
 

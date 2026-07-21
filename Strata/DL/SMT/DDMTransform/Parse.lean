@@ -175,7 +175,7 @@ op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s:0;
 // Special constants.
 category SpecConstant;
 op sc_numeral (@[unwrap] n:Num) : SpecConstant => n;
-op sc_decimal (@[unwrap] d:Decimal) : SpecConstant => d;
+op sc_decimal (@[noExponent, unwrap] d:Decimal) : SpecConstant => d;
 op sc_str (@[unwrap] s:Str) : SpecConstant => s;
 
 // sign is not a part of the standard, but it seems CVC5 and Z3
@@ -188,7 +188,7 @@ op sc_str (@[unwrap] s:Str) : SpecConstant => s;
 // representation cannot be recognized by Z3, make a workaround which is to have
 // separate `*_neg` categories for sc_numeral.
 op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
-op sc_decimal_neg (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
+op sc_decimal_neg (@[noExponent, unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
 op se_spec_const (s:SpecConstant) : SExpr => s:0;

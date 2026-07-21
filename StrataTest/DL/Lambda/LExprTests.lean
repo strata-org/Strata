@@ -205,4 +205,22 @@ info: all () "" (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LM
                   (((~select : Map %k %v → %k → %v)
                      ((((~update : Map %k %v → %k → %v → Map %k %v) %2) %1) %0)) %1) == %0))]
 
+-- `mkHave` desugars `have x = value in body` to `app (abs x. body) value`,
+-- introducing no new AST node. The body refers to the bound value positionally
+-- via `%0`. Untyped binder: `have x = #5 in (x == #1)`.
+#guard LExpr.mkHave () "x" none esM[#5] esM[%0 == #1] ==
+       LExpr.app () (LExpr.abs () "x" none esM[%0 == #1]) esM[#5]
+
+-- Typed binder: `have x : int = #5 in (x == #5)` desugars to a typed `abs`.
+#guard LExpr.mkHave () "x" (some mty[int]) esM[#5] esM[%0 == #5] ==
+       LExpr.app () (LExpr.abs () "x" (some mty[int]) esM[%0 == #5]) esM[#5]
+
+-- Nested bindings: `have x = #1 in have y = #2 in (x == y)`. The inner body
+-- references the inner binding as `%0` and the outer binding as `%1`, so the
+-- desugaring must nest the abstractions with the de Bruijn indices preserved.
+#guard LExpr.mkHave () "x" none esM[#1]
+         (LExpr.mkHave () "y" none esM[#2] esM[%1 == %0]) ==
+       LExpr.app () (LExpr.abs () "x" none
+         (LExpr.app () (LExpr.abs () "y" none esM[%1 == %0]) esM[#2])) esM[#1]
+
 end Lambda.LExpr.SyntaxTests

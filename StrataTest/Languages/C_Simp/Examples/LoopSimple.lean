@@ -199,7 +199,7 @@ not_guard: if 0 < n@1 then !(i@2 < n@1) else true
 invariant_0: if 0 < n@1 then i@2 <= n@1 && i@2 * (i@2 - 1) div 2 == sum@2 else true
 <label_ite_cond_false: !(i < n)>: if if 0 < n@1 then false else true then if 0 < n@1 then false else true else true
 Obligation:
-n@1 * (n@1 - 1) div 2 == if 0 < n@1 then sum@2 else 0
+n@1 * (n@1 - 1) div 2 == (if 0 < n@1 then sum@2 else 0)
 
 Label: post
 Property: assert

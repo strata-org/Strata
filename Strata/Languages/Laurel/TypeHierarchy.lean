@@ -10,6 +10,7 @@ import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.Resolution
 import Std.Tactic.BVDecide.Normalize.Prop
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.MapStmtExpr
 
@@ -42,11 +43,11 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, none⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, none⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
-  -- Start with const(false), then update each composite type's entry
+  -- Start with mapConst(false), then update each composite type's entry
   let mkInnerMap (ct : CompositeType) : StmtExprMd :=
     let ancestors := computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
-    let emptyInner := mkMd (.StaticCall "const" [falseConst])
+    let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
     composites.foldl (fun acc otherCt =>
       let isAncestor := ancestors.any (·.name == otherCt.name)
       if isAncestor then
@@ -62,8 +63,8 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
       initializer := some (mkInnerMap ct) : Constant }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := mkMd (.LiteralBool false)
-  let emptyInner := mkMd (.StaticCall "const" [falseConst])
-  let emptyOuter := mkMd (.StaticCall "const" [emptyInner])
+  let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
+  let emptyOuter := mkMd (.StaticCall "mapConst" [emptyInner])
   let outerMapExpr := composites.foldl (fun acc ct =>
     let typeConst := mkMd (.StaticCall (mkId $ ct.name.text ++ "_TypeTag") [])
     let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.text}" [])
@@ -124,6 +125,26 @@ private def rewriteTypeHierarchyNode (exprMd : StmtExprMd) : THM StmtExprMd := d
   | _ => return exprMd
 
 /--
+Rewrite a type so that every reference to a composite type (a name in
+`composites`) becomes the flattened `Composite` datatype. After the type
+hierarchy pass all composite values are represented by `Composite` references,
+so their *static* types must follow suit; otherwise re-resolution sees a
+`Pixel`-typed value flowing into a `Composite`-typed slot (`readField`,
+`Composite..ref!`, an allocation `new C`, …). Recurses through compound types. -/
+partial def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined name =>
+    if composites.contains name.text then { ty with val := .UserDefined "Composite" } else ty
+  | .TSet et => { ty with val := .TSet (compositeRefToComposite composites et) }
+  | .TMap kt vt =>
+    { ty with val := .TMap (compositeRefToComposite composites kt) (compositeRefToComposite composites vt) }
+  | .Applied base args =>
+    { ty with val := .Applied (compositeRefToComposite composites base) (args.map (compositeRefToComposite composites ·)) }
+  | .Pure base => { ty with val := .Pure (compositeRefToComposite composites base) }
+  | .Intersection tys => { ty with val := .Intersection (tys.map (compositeRefToComposite composites ·)) }
+  | _ => ty
+
+/--
 Type hierarchy transformation pass (Laurel → Laurel).
 
 1. Rewrites `IsType target ty` into `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
@@ -152,17 +173,27 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
           else c }
       else td
     | _ => td
-  { program with
-    staticProcedures := procs',
-    types := [typeTagDatatype] ++ remainingTypes,
-    constants := program.constants ++ typeHierarchyConstants }
+  let transformed : Program :=
+    { program with
+      staticProcedures := procs',
+      types := [typeTagDatatype] ++ remainingTypes,
+      constants := program.constants ++ typeHierarchyConstants }
+  -- Now that `New`/`IsType` have been lowered (they needed the original
+  -- composite names), flatten every remaining composite reference type to the
+  -- `Composite` datatype so the program re-resolves consistently. The
+  -- program-wide `HighType` traversal lives in `MapStmtExpr` so that every
+  -- type position is covered uniformly.
+  let compositeSet : Std.HashSet String :=
+    compositeNames.foldl (init := {}) (·.insert ·)
+  mapProgramHighTypes (compositeRefToComposite compositeSet) transformed
 
 /-- Pipeline pass: type hierarchy transform. -/
-public def typeHierarchyTransformPass : LaurelPass where
+public def typeHierarchyTransformPass : LoweringPass where
   name := "TypeHierarchyTransform"
   documentation := "Encodes the object-oriented type hierarchy (inheritance, dynamic dispatch, type tests, and casts) into explicit operations on a flat representation. Composite types with parents are flattened, and dynamic dispatch is resolved through type-test chains."
-  needsResolves := true
-  run := fun p m =>
+  needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
+  comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
+  run := fun _ p m =>
     (typeHierarchyTransform m p, [], {})
 
 end Strata.Laurel

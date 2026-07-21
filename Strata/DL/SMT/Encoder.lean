@@ -29,9 +29,9 @@ The encoding pipeline has two layers:
 
 2. **Encoder layer** (`EncoderM`): Sits on top of `SolverM` and translates
    `Term` values to SMT-LIB commands:
-   - **UF → abbreviated name cache** (`ufs`): Maps uninterpreted functions to
-     their abbreviated identifiers (e.g., `f.0`, `f.1`).
-   - **Unified name registry** (`usedNames`): Every emitted SMT-LIB identifier
+   - `functions`: Maps functions to their abbreviated identifiers in SMT (e.g., `f.0`, `f.1`).
+   - `isFunUninterp`: Stores whether a function has a body
+   - `usedNames`: Every emitted SMT-LIB identifier
      is routed through `Strata.Name.findUnique` against this set, guaranteeing
      global uniqueness without relying on naming conventions.
 
@@ -69,29 +69,6 @@ open Solver
 
 public section
 
-structure EncoderState where
-  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`). -/
-  ufs   : Std.HashMap UF String
-  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
-      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
-      without relying on naming conventions. -/
-  usedNames : Std.HashSet String
-
-def EncoderState.init : EncoderState where
-  ufs := {}
-  usedNames := {}
-
-/-- Create an encoder state pre-populated with names already emitted to the
-    solver (e.g. sort and datatype names declared before encoding begins). -/
-def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
-  ufs := {}
-  usedNames := names
-
-@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
-
-
-namespace Encoder
-
 /-- SMT-LIB reserved keywords that should not be used as variable names.
     Includes command names, logical connectives, sort names, and theory
     function symbols that cvc5 disallows shadowing. -/
@@ -125,6 +102,40 @@ def smtReservedKeywords : List String :=
 def smtReservedKeywordsSet : Std.HashSet String :=
   Std.HashSet.ofList smtReservedKeywords
 
+structure EncoderState where
+  /-- Maps a `UF` to its abbreviated SMT identifier (e.g., `f.0`, `f.1`).
+      Holds every function emitted so far, whether as an uninterpreted
+      `declare-fun` or an interpreted `define-fun`; use `isFunUninterp` to
+      distinguish the two. -/
+  functions : Std.HashMap UF String
+  /-- For each emitted function (same keys as `functions`), records whether it
+      was emitted as an uninterpreted `declare-fun` (`true`) or an interpreted
+      `define-fun` (`false`). Lets callers detect the unsound case where a
+      function is first referenced (declared uninterpreted) and only later
+      reached as a definition. -/
+  isFunUninterp : Std.HashMap UF Bool
+  /-- Every SMT-LIB identifier emitted so far. All emit sites route through
+      `Strata.Name.findUnique` against this set, guaranteeing global uniqueness
+      without relying on naming conventions. -/
+  usedNames : Std.HashSet String
+
+def EncoderState.init : EncoderState where
+  functions := {}
+  isFunUninterp := {}
+  usedNames := smtReservedKeywordsSet
+
+/-- Create an encoder state pre-populated with names already emitted to the
+    solver (e.g. sort and datatype names declared before encoding begins). -/
+def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
+  functions := {}
+  isFunUninterp := {}
+  usedNames := names.union smtReservedKeywordsSet
+
+@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
+
+
+namespace Encoder
+
 /-- Sanitize a name for use in SMT-LIB. Symbols starting with `@` or `.` are
     reserved in SMT-LIB and rejected by z3 even when pipe-quoted. Prefix such
     names with `$` to make them valid simple symbols. -/
@@ -139,14 +150,13 @@ def sanitizeSmtName (name : String) : String :=
     collision. -/
 def ufId (n : Nat)                      : String := s!"f.{n}"
 
-def ufNum   : EncoderM Nat := do return (← get).ufs.size
+def ufNum   : EncoderM Nat := do return (← get).functions.size
 
 /-- Allocate a globally unique SMT-LIB identifier. Checks the `usedNames`
     registry (and SMT reserved keywords) for collisions, disambiguates via
     `@N` suffixes, registers the result, and returns it. -/
 def uniquify (baseName : String) : EncoderM String := do
-  let usedNames := (← get).usedNames.union smtReservedKeywordsSet
-  let id := Strata.Name.findUnique baseName 1 usedNames
+  let id := Strata.Name.findUnique baseName 1 (← get).usedNames
   modify fun s => { s with usedNames := s.usedNames.insert id }
   return id
 
@@ -161,20 +171,20 @@ def declareType (id : String) (mks : List String) : EncoderM String := do
 def defineSet (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   -- Build: (set.insert tN ... (set.insert t2 (set.insert t1 (as set.empty ty))))
   let empty : Term := .app (.datatype_op .constructor "set.empty") [] ty
-  return tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [⟨"x", t.typeOf⟩, ⟨"s", ty⟩], ty⟩) [t, acc] ty) empty
+  return tEncs.foldl (fun acc t => Term.app (.uf ⟨"set.insert", [t.typeOf, ty], ty⟩) [t, acc] ty) empty
 
 def defineRecord (ty : TermType) (tEncs : List Term) : EncoderM Term := do
   return .app (.datatype_op .constructor ty.mkName) tEncs ty
 
 def encodeUF (uf : UF) : EncoderM String := do
-  if let (.some enc) := (← get).ufs.get? uf then return enc
+  if let (.some enc) := (← get).functions.get? uf then return enc
   let baseName := sanitizeSmtName uf.id
   let id ← uniquify baseName
   comment uf.id
-  let argTys := uf.args.map (fun vt => vt.ty)
-  Solver.declareFun id argTys uf.out
+  Solver.declareFun id uf.args uf.out
   modifyGet λ state => (id, {state with
-    ufs := state.ufs.insert uf id})
+    functions := state.functions.insert uf id
+    isFunUninterp := state.isFunUninterp.insert uf true})
 
 def defineApp (ty : TermType) (op : Op) (tEncs : List Term) : EncoderM Term := do
   match op with
@@ -289,16 +299,24 @@ decreasing_by
       · have := extractTriggers_sizeOf tr _ _ hmem ‹_ ∈ _›
         simp_all; omega
 
-def encodeFunction (uf : UF) (body : Term) : EncoderM String := do
-  if let (.some enc) := (← get).ufs.get? uf then return enc
+def encodeFunctionDef (f : IF) : EncoderM String := do
+  let uf := f.toUF
+  if let (.some enc) := (← get).functions.get? uf then
+    -- The function was already emitted.
+    if ((← get).isFunUninterp.get? uf).getD false then
+      throw (IO.userError s!"encodeFunctionDef: function '{uf.id}' was already \
+                declared as uninterpreted before its definition was encoded.")
+    else
+      return enc
   let baseName := ufId (← ufNum)
   let id ← uniquify baseName
   comment uf.id
-  let argPairs := uf.args.map (fun vt => (vt.id, vt.ty))
-  let bodyEnc ← encodeTerm body
+  let argPairs := f.args.map (fun v => (v.id, v.ty))
+  let bodyEnc ← encodeTerm f.body
   Solver.defineFunTerm id argPairs uf.out bodyEnc
   modifyGet λ state => (id, {state with
-    ufs := state.ufs.insert uf id})
+    functions := state.functions.insert uf id
+    isFunUninterp := state.isFunUninterp.insert uf false})
 
 /-- A utility for debugging. -/
 def termToString (e : Term) : IO String := do

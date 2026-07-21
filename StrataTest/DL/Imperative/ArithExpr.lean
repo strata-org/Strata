@@ -37,7 +37,7 @@ inductive Ty where
   deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat Ty where
-  format t := match t with | .Num => "Num" | .Bool => ".Bool"
+  format t := match t with | .Num => "Num" | .Bool => "Bool"
 
 /--
 A type environment maps variable names to types.
@@ -100,8 +100,9 @@ abbrev PureExpr : PureExpr :=
      ExprMetadata := Unit,
      TyEnv := TEnv,
      TyContext := Unit,
-     EvalEnv := Env,
-     EqIdent := instDecidableEqString }
+     Factory := Unit,
+     EqIdent := instDecidableEqString,
+     eval := fun _f _σ e => some e }
 
 /-- A Command of `ArithPrograms` -/
 abbrev Command := Imperative.Cmd Arith.PureExpr
@@ -127,5 +128,4 @@ abbrev PureExpr : PureExpr :=
      Expr := Expr,
      Ty := Untyped,
      TyEnv := Empty,
-     EvalEnv :=  Env }
 -/

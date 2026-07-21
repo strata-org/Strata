@@ -40,7 +40,7 @@ info: [Strata.Core] Type checking succeeded.
 info: ok: program Core;
 
 function apply (f : int -> int, x : int) : int;
-axiom [axiom_0]: forall f : int -> int :: forall x : int :: apply(f, x) == f(x);
+axiom [axiom_0]: forall f : (int -> int) :: forall x : int :: apply(f, x) == f(x);
 -/
 #guard_msgs in
 #eval (Std.format ((Core.typeCheck .default (translate axiomApplyBoundVar).stripMetaData)))
@@ -75,7 +75,7 @@ function apply (f : int -> int, x : int) : int {
 }
 procedure Check (out result : bool)
 spec {
-  ensures [Check_ensures_0]: result == forall f : int -> int :: forall x : int :: apply(f, x) == f(x);
+  ensures [Check_ensures_0]: result == forall f : (int -> int) :: forall x : int :: apply(f, x) == f(x);
   } {
   result := true;
 };
