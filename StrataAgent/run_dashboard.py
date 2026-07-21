@@ -1,83 +1,16 @@
-"""Start the StrataSwarm v2 dashboard."""
+"""Thin wrapper — delegates to strataswarm/run_dashboard.py (the canonical entry).
 
-import argparse
-import asyncio
-import os
-import signal
+Kept so `python StrataAgent/run_dashboard.py ...` keeps working. All flags
+(--port, --no-cheat-sheet, --cheat-sheet PATH) are handled by the real module.
+"""
+
+import runpy
 import sys
 from pathlib import Path
 
-# Ensure the StrataAgent directory is on the path so `strataswarm` is importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from strataswarm._claude_backend import ClaudeBackend
-from strataswarm._server import SwarmDashboard
-
-DEFAULT_PORT = 8421
-PID_FILE = Path(__file__).parent / "temp" / "dashboard.pid"
-
-
-def kill_stale_process(port: int = DEFAULT_PORT):
-    """Kill any stale dashboard process using our port or PID file."""
-    # Try PID file first
-    print(f"[CLEANUP] Checking for stale dashboard process using PID file {PID_FILE}")
-    if PID_FILE.exists():
-        try:
-            old_pid = int(PID_FILE.read_text().strip())
-            os.kill(old_pid, signal.SIGTERM)
-            print(f"[CLEANUP] Killed stale process {old_pid} from PID file")
-            import time
-            time.sleep(1)
-        except (ProcessLookupError, ValueError, PermissionError):
-            pass
-        PID_FILE.unlink(missing_ok=True)
-
-    # Also check if port is in use
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.stdout.strip():
-            for pid_str in result.stdout.strip().split('\n'):
-                try:
-                    pid = int(pid_str.strip())
-                    if pid != os.getpid():
-                        os.kill(pid, signal.SIGTERM)
-                        print(f"[CLEANUP] Killed process {pid} holding port {port}")
-                        import time
-                        time.sleep(1)
-                except (ValueError, ProcessLookupError, PermissionError):
-                    pass
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
-
-async def main(port: int = DEFAULT_PORT) -> None:
-    kill_stale_process(port)
-
-    pid = os.getpid()
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(str(pid))
-    print(f"StrataSwarm v2 Dashboard PID: {pid} (written to {PID_FILE})")
-
-    dashboard = SwarmDashboard(
-        backend_factory=ClaudeBackend,
-        host="0.0.0.0",
-        port=port,
-    )
-    await dashboard.start()
-    print(f"StrataSwarm v2 Dashboard running at http://localhost:{port} (PID: {pid})")
-    try:
-        await asyncio.Event().wait()
-    finally:
-        PID_FILE.unlink(missing_ok=True)
-
+_REAL = Path(__file__).parent / "strataswarm" / "run_dashboard.py"
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="StrataSwarm v2 Dashboard")
-    parser.add_argument("-p", "--port", type=int, default=DEFAULT_PORT,
-                        help=f"Port to run the dashboard on (default: {DEFAULT_PORT})")
-    args = parser.parse_args()
-    asyncio.run(main(args.port))
+    # Make `strataswarm` importable, then run the real script as __main__
+    sys.path.insert(0, str(Path(__file__).parent))
+    runpy.run_path(str(_REAL), run_name="__main__")
