@@ -1,199 +1,199 @@
 # StrataSwarm
 
-Lightweight multi-agent orchestration framework wrapping `claude_agent_sdk` behind a provider-agnostic interface.
+A multi-agent framework for automated Lean 4 theorem proving. Agents are
+deliberately constrained (limited tools, scoped file access, a visibility graph)
+so they coordinate through proper channels instead of one context trying to do
+everything. Built on top of `claude_agent_sdk`, but the framework layers
+(visibility, messaging, workspace scoping, telemetry/nudges) are provider-agnostic.
 
-## Quickstart
+The current proving engine is **PO v5** — a guide-centric proof orchestrator.
 
-### Install dependencies
+---
+
+## Install
+
+Drop StrataAgent into any Lean (lake) project and set it up with one command,
+run from the **root of the target Lean project**:
 
 ```bash
-cd StrataAgent
-uv sync
+curl -fsSL https://raw.githubusercontent.com/strata-org/Strata/amitayush/strata-agent/StrataAgent/clone_strata_agent.sh | bash
 ```
 
-### Multi-agent with messaging (agents talk to each other)
+This downloads the `StrataAgent/` folder from GitHub, copies it into the current
+project, wires up `lakefile.toml` (adds the `StrataAgent` lean_lib, the
+`SwarmAgentTools` lean_exe, and the `repl` dependency), adds `StrataAgent/` to
+`.gitignore`, installs `uv` + a venv, and runs `StrataAgent/setup.sh` (Python
+deps, ripgrep, lean-lsp-mcp, itp-interface, and the `SwarmAgentTools` Lean binary).
 
-```python
-import asyncio
-from strataswarm import Swarm, AgentSpec, ToolSet, ExecutionMode, ClaudeBackend, SwarmDashboard
+To copy from a local checkout instead of downloading:
 
-async def main():
-    swarm = Swarm(backend_factory=lambda: ClaudeBackend())
-
-    swarm.add(AgentSpec(
-        name="researcher",
-        system_prompt=(
-            "You are the Researcher. You work with: writer (summarizes your findings). "
-            "Find the data and send it to writer when ready."
-        ),
-        prompt="Read metrics.csv and find the highest revenue month. Send the result to writer.",
-        tools=ToolSet().allow("Bash").allow("Read"),
-        max_turns=10,
-        timeout_seconds=60.0,
-    ))
-
-    swarm.add(AgentSpec(
-        name="writer",
-        system_prompt=(
-            "You are the Writer. You work with: researcher (finds data for you). "
-            "Wait for researcher to send you data, then write a summary."
-        ),
-        prompt="Wait for a message from researcher, then write a one-line summary to report.txt.",
-        tools=ToolSet().allow("Bash"),
-        max_turns=10,
-        timeout_seconds=60.0,
-    ))
-
-    # Start dashboard (optional)
-    dashboard = SwarmDashboard(swarm, port=8420)
-    await dashboard.start()
-    swarm.set_event_callback(dashboard.on_agent_event)
-
-    results = await swarm.run(mode=ExecutionMode.AWAIT_ALL)
-    total_cost = sum(r.cost_usd or 0 for r in results.values())
-    print(f"Done. Total cost: ${total_cost:.4f}")
-
-asyncio.run(main())
+```bash
+./clone_strata_agent.sh /path/to/other-repo/StrataAgent
 ```
 
-When `enable_messaging=True` (the default), each agent automatically gets:
-- `send_message(to, message)` tool — send a message to another agent
-- `check_messages(wait_seconds)` tool — read pending messages from other agents
+The point: you can add StrataAgent to any branch without merging the whole
+`strataswarm` tree everywhere.
 
-The framework also injects notifications after each response if there are unread messages, nudging the agent to call `check_messages`.
+---
 
-### Single agent (no messaging)
+## Run
 
-```python
-swarm = Swarm(backend_factory=lambda: ClaudeBackend(), enable_messaging=False)
-swarm.add(AgentSpec(
-    name="analyzer",
-    prompt="Analyze main.py for bugs.",
-    tools=ToolSet().allow("Read").allow("Bash"),
-    max_turns=5,
-))
+Start the dashboard in the background:
+
+```bash
+nohup python StrataAgent/run_dashboard.py > StrataAgent/temp/dashboard.log 2>&1 &
 ```
 
-### Structured output
+Custom port: `python StrataAgent/run_dashboard.py --port 9000`.
+Then open **http://localhost:8421**.
 
-```python
-from pydantic import BaseModel
-from strataswarm import JsonSchemaParser
+Stop it:
 
-class Result(BaseModel):
-    score: int
-    issues: list[str]
-
-swarm.add(AgentSpec(
-    name="reviewer",
-    system_prompt="You are a code reviewer.",
-    prompt="Review {{ file_path }} and report issues.",
-    tools=ToolSet().allow("Read"),
-    result_parser=JsonSchemaParser(output_type=Result),
-    max_turns=5,
-))
+```bash
+./StrataAgent/kill_dashboard.sh          # default port 8421
+./StrataAgent/kill_dashboard.sh 9000     # custom port
 ```
 
-## Architecture
+### Starting a proof from the dashboard
 
-### Messaging channels (two channels per agent)
+1. In the UI, **start** the `LeanSwarm` swarm (brings up `TaskManager` +
+   `SearchAgent`).
+2. Send a chat message to **TaskManager** naming the Lean file (and, optionally,
+   specific theorem names). There is no structured form — you just describe the
+   target in natural language, e.g. *"Prove the sorries in
+   `Strata/Transform/LoopElimCorrect.lean`."*
+3. `tm_clarifier` resolves your request to a concrete `theorem_file` +
+   `theorem_names`, copies the file to `StrataAgent/Sandbox/Stub.lean`, and
+   dispatches the prover. Watch progress in the UI (`tm_monitor` reports status).
 
-- `{agent_name}:inbox` — user/framework messages (injected directly into conversation)
-- `{agent_name}:messages` — agent-to-agent messages (read via `check_messages` tool)
+---
 
-`send_message` writes to the recipient's `:messages` channel. After each response, the framework peeks at `:messages` — if pending, injects a notification like:
+## PO v5 — Guide-Centric Architecture
+
+The core principle: **the guide is the single decision-maker** for a lemma
+throughout its entire lifecycle. Every phase is *worker does a mechanical task →
+guide reviews → guide decides*. There is no hard-coded `if/else` for strategy in
+the orchestrator — every branch point goes through the guide.
+
+- **`proof_guide`** is persistent and ephemeral at once: its knowledge lives in a
+  `guide_state/<lemma>.md` file that survives destruction, crashes, and restarts.
+  When context fills, it dumps to the `.md` and a fresh guide reads it back.
+- **Workers are interchangeable** — the guide oversees them; they don't decide.
+
+### The state machine
+
+PO v5 (`modules/po_v5.py`, entry point `run_workflow`) drives a lemma through
+these phases:
+
 ```
-[NOTIFICATION]: You have 2 pending messages from: user_agent, noise_agent. Use check_messages to read them.
+INIT → SELECT → PROVE → EXTRACT → DETECT → UPDATE → CHECK → ASSEMBLING → DONE
+                  │                                    │
+                  └── (guide: continue/decompose/      └── HAS_PENDING → SELECT
+                       fresh_start/give_up)                 BLOCKED → FAILED
 ```
 
-The agent then calls `check_messages` to consume them.
+| Phase | What happens |
+|-------|--------------|
+| **INIT** | Split `Stub.lean` into defs/theorems, register root lemma(s) in the ledger. |
+| **SELECT** | Guide picks the next pending child lemma to work on. |
+| **PROVE** | `proof_writer` writes proof under guide's advice, looping until proved, `sorry` remains, or the guide changes strategy. |
+| **EXTRACT** | `decl_extractor` factors leftover `sorry` helpers into separate files; guide reviews the decomposition. |
+| **DETECT** | `cycle_checker` catches circular / duplicate lemmas (cheap structural compile check first, then soft matching); guide decides how to recover. |
+| **UPDATE** | Mechanical bookkeeping — register new entries, resolve imports, propagate proved status upward. |
+| **CHECK** | Root proved → assemble; pending work → select; stuck → guide decides unblock vs. give up. |
+| **ASSEMBLING** | Copy proved stub into place, `compilation_fixer` resolves build errors under guide diagnosis. |
 
-### System prompt requirement
+State is persisted (`_save_state`/`_load_state`) for crash/resume recovery; the
+lemma ledger lives at `<workspace>/lemma_ledger.json`.
 
-When `enable_messaging=True`, every `AgentSpec` must have a `system_prompt`. The system prompt should describe:
-- The agent's role
-- Which other agents it works with and what they do
+---
 
-The framework appends messaging tool documentation as a postfix to the system prompt automatically.
+## The Agents
 
-### Module structure
+Agents are declared as YAML specs in `agent_specs/agents/*.yaml`. The swarm
+(`agent_specs/swarm.yaml`, `name: LeanSwarm`) statically starts only
+`TaskManager` and `SearchAgent`; everything else is created dynamically by the
+workflow.
+
+### Orchestration
+| Agent | Role |
+|-------|------|
+| **TaskManager** | Central router / user interface. Parses the request, copies the target file to the sandbox, dispatches the prover, monitors, and reports. |
+| **tm_clarifier** | Narrows a request to a concrete file + theorem name(s). |
+| **tm_monitor** | Reads the workspace and reports proof progress to the user. |
+| **tm_chat** | General Q&A about the codebase, Lean, or the system. |
+| **prover_v5** | Runs the PO v5 workflow (`run_workflow`) over the sandbox. |
+
+### Proof workers
+| Agent | Role |
+|-------|------|
+| **proof_guide** | Sole decision-maker for a lemma. Advises writers, reviews all work, picks strategy. |
+| **proof_writer** (`proof_writer_v2`) | Persistent writer. Replaces `sorry` with real proofs; file must always compile. |
+| **proof_closer** | Leaf-node writer — must close ALL `sorry`, no decomposition allowed. |
+| **decl_extractor** | Decomposes a Lean file, moving helper declarations into separate files. |
+| **po_splitter** | Splits `Stub.lean` into definitions (`Stub/Def.lean`) and theorems. |
+| **cycle_checker** | Detects circular / equivalent lemmas against the ledger. |
+| **compilation_fixer** | Fixes Lean 4 build errors (duplicate defs, missing imports) during assembly. |
+| **file_merger** | Merges preambles of two Lean files into one compilable file. |
+
+### Services (always available)
+| Agent | Role |
+|-------|------|
+| **SearchAgent** | Codebase search — finds definitions, lemmas, types. |
+| **ProofLedger** | Tracks all proven lemmas across the swarm; writers consult it before starting. |
+| **DeepProofValidator** | Validates proofs: compiles, no `sorry`, theorem signatures preserved. |
+| **counter_example** | Checks lemma soundness by constructing counterexamples. |
+
+---
+
+## Framework internals
+
+The `strataswarm/` package provides the coordination layer independent of PO v5:
 
 ```
 strataswarm/
-  __init__.py          Public exports
-  _types.py            AgentSpec, AgentResult, AgentEvent, AgentStatus, SwarmContext
-  _tools.py            ToolSet (provider-agnostic allowed/disallowed tools)
-  _tokens.py           CancellationToken, PauseToken
-  _channels.py         Channel, ChannelBus (with peek_summary for notifications)
-  _validators.py       HaltValidator ABC (message-level + result-level halting)
-  _result_parsers.py   ResultParser strategy: JsonSchema, Regex, Pydantic, Custom, Raw
-  _templates.py        Jinja2 rendering (inline + file-based .j2)
-  _backend.py          AgentBackend ABC (provider-agnostic LLM interface)
-  _claude_backend.py   ClaudeBackend adapter (auto-resolves CLI path)
-  _messaging.py        MCP tools for inter-agent messaging (send_message, check_messages)
-  _agent.py            SwarmAgent (programs against AgentBackend, emits events before pause)
-  _swarm.py            Swarm orchestrator (DAG, messaging injection, event callbacks)
-  _server.py           FastAPI + WebSocket dashboard
-  _static/index.html   Single-page dashboard UI
+  _types.py         AgentSpec, AgentResult, AgentEvent, SwarmContext
+  _tools.py         ToolSet (provider-agnostic allow/deny tools)
+  _swarm.py         Swarm orchestrator (DAG, visibility graph, messaging)
+  _agent.py         SwarmAgent (runs against AgentBackend, emits events)
+  _backend.py       AgentBackend ABC   ·  _claude_backend.py  ClaudeBackend adapter
+  _messaging.py     send_message / check_messages MCP tools (visibility-enforced)
+  _directory.py     list_agents() MCP tool
+  _spawn.py         Sub-agent spawning with scoped workspace permissions
+  _channels.py      Channel / ChannelBus (with peek for notifications)
+  _telemetry.py     Tool/message event stream   ·  _nudge.py  contextual nudges
+  _checkpoint.py    Snapshot + resume
+  _server.py        FastAPI + WebSocket dashboard   ·  _static/  UI
+  run_dashboard.py  Dashboard entry point (--port)
+  agent_specs/      YAML agent + swarm definitions
+  modules/          PO v5 proof engine (po_v5.py, po_agents.py, task_manager.py, …)
 ```
 
-### ClaudeBackend CLI path resolution
+Key ideas:
 
-`ClaudeBackend()` auto-resolves the Claude CLI path:
-1. `STRATA_AGENT_CLAUDE_PATH` env var (if set)
-2. `~/.toolbox/bin/claude` (default)
+- **Visibility graph** — `send_message` is hard-enforced: an agent can only
+  message agents in its visibility set. Not a prompt suggestion.
+- **Scoped workspace** — when an agent spawns a child, the child gets exactly one
+  file to edit and no Bash/Grep/Glob escape hatches. Isolation forces
+  communication through SearchAgent / ProofValidator.
+- **Telemetry + nudges** — every tool call and message is captured; rule-based,
+  probabilistic reminders compensate for agents "forgetting" soft constraints as
+  context grows.
+- **Checkpoint / resume** — swarm state (sessions, files, ledger) is snapshotted
+  so long runs survive crashes and timeouts.
 
-Override: `ClaudeBackend(cli_path="/custom/path/to/claude")`
-
-## Dashboard
-
-Start with:
-```python
-dashboard = SwarmDashboard(swarm, port=8420)
-await dashboard.start()
-swarm.set_event_callback(dashboard.on_agent_event)
-```
-
-Open `http://localhost:8420`.
-
-### Features
-- Agent sidebar with colored status badges
-- Real-time message stream per agent
-- Pause / Resume / Cancel controls
-- Send user feedback to any running agent
-- Session ID display (for manual CLI resume)
-- Per-agent and total cost tracking
-
-### REST API
+### REST API (subset)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/agents` | List all agents with status |
-| GET | `/api/agents/{name}/history` | Event history for an agent |
-| POST | `/api/agents/{name}/pause` | Pause an agent |
-| POST | `/api/agents/{name}/resume` | Resume a paused agent |
-| POST | `/api/agents/{name}/cancel` | Cancel an agent |
-| POST | `/api/agents/{name}/message` | Send user feedback (`{"message": "..."}`) |
+| POST | `/api/swarm/start` | Start the LeanSwarm config |
+| POST | `/api/agents/{name}/message` | Send a chat message to an agent (`{"message": "..."}`) |
+| POST | `/api/agents/{name}/{pause,resume,cancel,interrupt}` | Agent lifecycle controls |
+| GET | `/api/agents` | List agents with status |
+| GET | `/api/ledger/dag` | Lemma dependency DAG |
+| POST | `/api/swarm/{checkpoint,resume_checkpoint,save,load,cancel}` | Swarm state |
 
-## Halting conditions
+### ClaudeBackend CLI path resolution
 
-Two evaluation points:
-- `should_halt_on_messages(messages)` — checked per-message during streaming
-- `should_halt_on_result(parsed_result, raw_result)` — checked after result parsing
-
-```python
-from strataswarm import ContainsText, ResultFieldTruthy, AnyOf
-
-halt_when=AnyOf(validators=[
-    ContainsText(text="error", case_sensitive=False),  # halt during streaming
-    ResultFieldTruthy(field_name="has_errors"),         # halt after result parse
-])
-```
-
-## Configuration
-
-| `Swarm` param | Default | Description |
-|---------------|---------|-------------|
-| `backend_factory` | (required) | `Callable[[], AgentBackend]` — creates one backend per agent |
-| `context` | `SwarmContext()` | Shared mutable state |
-| `enable_messaging` | `True` | Auto-inject messaging tools and system prompt postfix |
+`ClaudeBackend()` resolves the Claude CLI path from `STRATA_AGENT_CLAUDE_PATH`,
+else `~/.toolbox/bin/claude`. Override with `ClaudeBackend(cli_path="…")`.
