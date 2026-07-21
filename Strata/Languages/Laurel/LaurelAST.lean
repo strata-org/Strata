@@ -13,8 +13,8 @@ public import Strata.Util.FileRange
 open StrataDDM
 
 /-
-Documentation for Laurel can be found in docs/verso/LaurelDesignGuide.lean
-(language definition) and docs/verso/LaurelImplementationGuide.lean
+Documentation for Laurel can be found in docs/verso/LaurelDesignerGuide.lean
+(language definition) and docs/verso/LaurelImplementorGuide.lean
 (translation to Core).
 
 This module contains the Laurel AST. The high-level Laurel API is in

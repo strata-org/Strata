@@ -18,12 +18,12 @@ Laurel is documented by three guides. Each is a
   expression/statement model, procedures, programs, and the resolution and
   typing rules.
 
-- **[Designer Guide](../../../docs/verso/LaurelDesignGuide.lean)**
+- **[Designer Guide](../../../docs/verso/LaurelDesignerGuide.lean)**
   ([published](https://strata-org.github.io/Strata/laureldesign/html-multi/)) —
   why the Laurel language is the way it is: its design goals and the rationale
   behind its features.
 
-- **[Implementor Guide](../../../docs/verso/LaurelImplementationGuide.lean)**
+- **[Implementor Guide](../../../docs/verso/LaurelImplementorGuide.lean)**
   ([published](https://strata-org.github.io/Strata/laurelimpl/html-multi/)) —
   how a checked Laurel program is lowered to Strata Core: the translation
   pipeline, its passes and their ordering, and the differences between Laurel and
