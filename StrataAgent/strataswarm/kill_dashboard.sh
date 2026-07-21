@@ -1,7 +1,8 @@
 #!/bin/bash
 # Kill the StrataSwarm v3 dashboard process
+# Usage: ./kill_dashboard.sh [port]
 PID_FILE="$(dirname "$0")/../temp/dashboard.pid"
-PORT=8421
+PORT="${1:-8421}"
 
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")

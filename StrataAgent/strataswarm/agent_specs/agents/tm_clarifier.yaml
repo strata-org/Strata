@@ -38,6 +38,14 @@ system_prompt: >
 
   ALSO DETECT:
   - If user says "skip soundness", "sound", "pre-approved", "skip CEA" → set skip_soundness=true
+  - CHEAT SHEET (proof playbook): there is a launch-time default. Only set these
+    fields when the user EXPLICITLY mentions the cheat sheet; otherwise leave them
+    null so the launch default applies. Do NOT guess.
+    - If user says "no cheat sheet", "disable cheat sheet", "without the cheat sheet" →
+      set use_cheat_sheet=false.
+    - If user names a custom playbook file ("use cheat sheet <path>", "use playbook X") →
+      set cheat_sheet_path to that path and use_cheat_sheet=true.
+    - Otherwise leave BOTH use_cheat_sheet and cheat_sheet_path unset (null).
   - If user mentions urgency → note it in summary
 
   Produce your final response as quickly as possible. If the user already gave a

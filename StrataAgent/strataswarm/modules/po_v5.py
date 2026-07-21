@@ -32,7 +32,7 @@ from typing import Any, TypeVar
 
 from .po_agents import verified_loop, run_splitter, LoopOutcome
 from .po_lean import get_lean_tools, MoveSession
-from .po_util import setup_child_workspace
+from .po_util import setup_child_workspace, copy_cheat_sheet, cheat_sheet_name
 from .lemma_ledger import LemmaLedger, LemmaEntry, LemmaStatus
 from .cycle_detection import detect, MatchType
 from .verifiers.proof_writer_verifier import make_proof_writer_verifier
@@ -142,11 +142,21 @@ class PO5State:
     stage: str = "init"
     current_lemma_id: str = ""
     skip_soundness: bool = False
+    # Cheat sheet (project-specific proof playbook) config. use_cheat_sheet=False
+    # disables it entirely; cheat_sheet_path="" uses the bundled default.
+    use_cheat_sheet: bool = True
+    cheat_sheet_path: str = ""
     agent_registry: dict = field(default_factory=dict)
     lemma_ctx: dict = field(default_factory=dict)  # lemma_id → LemmaContext
     total_attempts: int = 0
     lemmas_proved: int = 0
     cycles_detected: int = 0
+
+
+def _read_hint(state: PO5State) -> str:
+    """'the cheat sheet and the file' / 'the file' depending on cheat-sheet config."""
+    return "the cheat sheet and the file" if cheat_sheet_name(
+        state.use_cheat_sheet, state.cheat_sheet_path) else "the file"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -285,10 +295,14 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             theorem_names.append(single)
         theorem_file = inp.get("theorem_file", "")
         skip_soundness = inp.get("skip_soundness", False)
+        use_cheat_sheet = inp.get("use_cheat_sheet", True)
+        cheat_sheet_path = inp.get("cheat_sheet_path", "") or ""
     else:
         workspace_rel = str(inp) if inp else ""
         theorem_names, theorem_file = [], ""
         skip_soundness = False
+        use_cheat_sheet = True
+        cheat_sheet_path = ""
 
     if not workspace_rel:
         return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
@@ -301,6 +315,8 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             requested_theorem_names=theorem_names,
             root_theorem_file=theorem_file,
             skip_soundness=skip_soundness,
+            use_cheat_sheet=use_cheat_sheet,
+            cheat_sheet_path=cheat_sheet_path,
         )
 
     ledger = LemmaLedger(cwd / workspace_rel / "lemma_ledger.json")
@@ -329,10 +345,8 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         if not stub_clean.exists():
             shutil.copy2(cwd / stub_rel, stub_clean)
 
-        cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
-        cheat_dst = cwd / workspace_rel / "StrataProofCheatSheet.md"
-        if cheat_src.exists() and not cheat_dst.exists():
-            shutil.copy2(cheat_src, cheat_dst)
+        copy_cheat_sheet(cwd, cwd / workspace_rel,
+                         state.use_cheat_sheet, state.cheat_sheet_path)
 
         tools = get_lean_tools()
         split = tools.split_theorems(stub_rel)
@@ -591,13 +605,9 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
 
     original_content = (cwd / stub_rel).read_text()
 
-    # Ensure cheat sheet exists in the workspace
+    # Ensure the cheat sheet (if any) exists in the workspace
     ws_path = cwd / entry.workspace
-    cheat_dst = ws_path / "StrataProofCheatSheet.md"
-    if not cheat_dst.exists() and ws_path.is_dir():
-        cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
-        if cheat_src.exists():
-            shutil.copy2(cheat_src, cheat_dst)
+    copy_cheat_sheet(cwd, ws_path, state.use_cheat_sheet, state.cheat_sheet_path)
 
     writer = await _get_writer(agent, entry, state, ledger)
     verify_fn = _make_verifier(entry, stub_rel, original_content, ledger, cwd)
@@ -625,7 +635,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             task=(
                 f"CONTEXT:\n{ledger_summary}\n\n"
                 f"We are proving '{entry.name}' in {stub_rel}.\n"
-                f"Read the cheat sheet, then advise on the best approach.\n"
+                f"Read {_read_hint(state)}, then advise on the best approach.\n"
                 f"Also specify TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> for how many turns "
                 f"the writer should get for the first attempt."
             ))
@@ -886,7 +896,7 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             f"You CAN create helper theorems within the same file.\n"
             f"Use mutual recursion, induction, structural recursion — any technique.\n\n"
             f"CONTEXT:\n{ledger_summary}\n\n"
-            f"Read the file and the cheat sheet. Advise on the best approach."
+            f"Read {_read_hint(state)}. Advise on the best approach."
         ))
 
     # Same loop pattern as _attempt_prove but only continue/fresh_start/give_up
@@ -1440,7 +1450,8 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLed
             # Fall through to create fresh
 
     if getattr(agent, attr, None) is None:
-        cheat_rel = f"{entry.workspace}/StrataProofCheatSheet.md"
+        cheat_file = cheat_sheet_name(state.use_cheat_sheet, state.cheat_sheet_path)
+        cheat_rel = f"{entry.workspace}/{cheat_file}" if cheat_file else ""
         ledger_mcp = create_ledger_mcp_server(ledger)
         ctx = swarm_agent(
             "proof_guide", swarm=agent.swarm, cwd=agent._cwd,
@@ -1458,9 +1469,11 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLed
 
         # Inject prior state if exists — enough turns to read cheat sheet + file
         state_path = cwd / entry.workspace / "guide_state" / f"{entry.name}.md"
+        _read_cheat = (f"1. Read the cheat sheet ({cheat_file} in your workspace)\n"
+                       if cheat_file else "")
         init_prompt = (
             "You are starting a new session. Before receiving any task:\n"
-            "1. Read the cheat sheet (StrataProofCheatSheet.md in your workspace)\n"
+            f"{_read_cheat}"
             "2. Read the current Stub.lean to see the proof state\n"
             "3. Use any tools you need to understand the current situation\n"
         )
@@ -1859,7 +1872,8 @@ async def _run_fixer(agent, state: PO5State, cwd: Path, error_text: str, advice:
 def _resolve_stub(entry: LemmaEntry, cwd: Path, state: PO5State) -> str:
     stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
     if not (cwd / stub_rel).exists():
-        setup_child_workspace(cwd, entry.file_path, state.root_workspace)
+        setup_child_workspace(cwd, entry.file_path, state.root_workspace,
+                              state.use_cheat_sheet, state.cheat_sheet_path)
         stub_rel = f"{entry.workspace}/Stub.lean"
         if not (cwd / stub_rel).exists():
             stub_rel = entry.file_path
@@ -2200,6 +2214,8 @@ def _save_state(cwd: Path, state: PO5State):
         "root_workspace": state.root_workspace,
         "root_theorem_name": state.root_theorem_name,
         "requested_theorem_names": list(state.requested_theorem_names),
+        "use_cheat_sheet": state.use_cheat_sheet,
+        "cheat_sheet_path": state.cheat_sheet_path,
         "root_id": state.root_id,
         "stage": state.stage,
         "current_lemma_id": state.current_lemma_id,

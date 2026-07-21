@@ -39,7 +39,7 @@ def create_ledger_mcp_server(ledger: "LemmaLedger"):
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query (e.g. 'StepKleeneStar terminal Stmt', 'CanFail sim', 'eval preserved')",
+                    "description": "Search query: key type/constant names from the lemma statement (e.g. the main definitions and relations it mentions)",
                 },
                 "page": {
                     "type": "integer",

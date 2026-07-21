@@ -19,7 +19,7 @@ system_prompt: >
      them, not just the last one.
 
      WHAT TO COMPARE (for each original sorry-theorem):
-     - The theorem name (e.g. `theorem detToKleene_overapproximates`)
+     - The theorem name (e.g. `theorem my_theorem_name`)
      - The full type signature (all parameters and return type)
      - These must be IDENTICAL between original and completed files
 

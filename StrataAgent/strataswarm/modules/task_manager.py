@@ -9,6 +9,7 @@ Design:
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 from dataclasses import dataclass, field, asdict
@@ -17,6 +18,17 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+
+
+def _cheat_sheet_defaults() -> tuple[bool, str]:
+    """Launch-time cheat-sheet default (use, path) from env vars.
+
+    Set by run_dashboard.py's --no-cheat-sheet / --cheat-sheet flags.
+    Falls back to (True, "") — the bundled cheat sheet.
+    """
+    use = os.environ.get("STRATA_USE_CHEAT_SHEET", "1") != "0"
+    path = os.environ.get("STRATA_CHEAT_SHEET_PATH", "") or ""
+    return use, path
 
 MAX_STAGE_RETRIES = 5
 PROVER_TIMEOUT = 86400
@@ -102,6 +114,10 @@ class UserIntent:
     # Specific theorems the user asked to prove. Empty list = prove ALL sorry-theorems
     # in the file (the prover's multi-target default).
     theorem_names: list[str] = field(default_factory=list)
+    # Cheat sheet (proof playbook) config. use_cheat_sheet=False disables it;
+    # cheat_sheet_path="" uses the bundled default.
+    use_cheat_sheet: bool = True
+    cheat_sheet_path: str = ""
 
 
 @dataclass
@@ -110,6 +126,9 @@ class ClarifierResponse:
     theorem_names: list[str] | None = None
     has_sorry: bool = False
     skip_soundness: bool = False
+    # None = user did not mention the cheat sheet → fall back to launch default.
+    use_cheat_sheet: bool | None = None
+    cheat_sheet_path: str | None = None
     needs_user_input: bool = False
     question_for_user: str | None = None
     summary: str = ""
@@ -359,6 +378,8 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
         "theorem_names": task.theorem_names,
         "workspace": "StrataAgent/Sandbox",
         "skip_soundness": task.skip_soundness,
+        "use_cheat_sheet": task.use_cheat_sheet,
+        "cheat_sheet_path": task.cheat_sheet_path,
         "parent_agent": agent.spec.name,
     }
 
@@ -530,10 +551,17 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
                 return question, Transition.RESPOND
 
             if out.file_path:
+                # Cheat sheet: launch flag is the default; a chat instruction
+                # (clarifier returns non-None) overrides it for this request.
+                default_use, default_path = _cheat_sheet_defaults()
+                use_cs = default_use if out.use_cheat_sheet is None else out.use_cheat_sheet
+                path_cs = default_path if out.cheat_sheet_path is None else out.cheat_sheet_path
                 state.task = {
                     "theorem_file": out.file_path,
                     "skip_soundness": out.skip_soundness,
                     "theorem_names": out.theorem_names or [],
+                    "use_cheat_sheet": use_cs,
+                    "cheat_sheet_path": path_cs or "",
                     "notes": f"Theorems: {out.theorem_names or []}",
                 }
                 response = f"File: {out.file_path}\nTheorems with sorry: {out.theorem_names}\n{out.summary}"

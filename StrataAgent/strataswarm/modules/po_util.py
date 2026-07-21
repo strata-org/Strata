@@ -13,6 +13,57 @@ from pathlib import Path
 from typing import Any
 
 
+# ─── Cheat sheet resolution ──────────────────────────────────────────────────
+# The cheat sheet is a project-specific proof playbook injected into the guide.
+# It is OPTIONAL and configurable:
+#   use_cheat_sheet=False        → no cheat sheet at all
+#   cheat_sheet_path="" (default) → the bundled StrataProofCheatSheet.md
+#   cheat_sheet_path="some/file.md" → a custom playbook (relative to cwd)
+
+DEFAULT_CHEAT_SHEET_REL = "StrataAgent/strataswarm/agent_specs/StrataProofCheatSheet.md"
+
+
+def cheat_sheet_name(use_cheat_sheet: bool = True, cheat_sheet_path: str = "") -> str | None:
+    """Workspace-local filename the cheat sheet is copied to, or None if disabled.
+
+    Purely a name derivation — does not touch the filesystem, so it is safe to
+    use when building prompts before the file has been copied.
+    """
+    if not use_cheat_sheet:
+        return None
+    rel = cheat_sheet_path or DEFAULT_CHEAT_SHEET_REL
+    return Path(rel).name
+
+
+def cheat_sheet_source(cwd: Path, use_cheat_sheet: bool = True,
+                       cheat_sheet_path: str = "") -> Path | None:
+    """Absolute path to the cheat-sheet source file, or None if disabled/missing."""
+    if not use_cheat_sheet:
+        return None
+    rel = cheat_sheet_path or DEFAULT_CHEAT_SHEET_REL
+    src = Path(cwd) / rel
+    return src if src.exists() else None
+
+
+def copy_cheat_sheet(cwd: Path, dest_dir: Path, use_cheat_sheet: bool = True,
+                     cheat_sheet_path: str = "") -> str | None:
+    """Copy the resolved cheat sheet into dest_dir (if not already there).
+
+    Returns the workspace-local filename it was copied to, or None when no cheat
+    sheet is in effect (disabled or source missing).
+    """
+    src = cheat_sheet_source(cwd, use_cheat_sheet, cheat_sheet_path)
+    if src is None:
+        return None
+    dest_dir = Path(dest_dir)
+    if not dest_dir.is_dir():
+        return None
+    dst = dest_dir / src.name
+    if not dst.exists():
+        shutil.copy2(src, dst)
+    return src.name
+
+
 # ─── Import rewriting ────────────────────────────────────────────────────────
 
 def rewrite_imports_for_child(child_stub: Path, parent_workspace: str, child_workspace: str,
@@ -182,7 +233,8 @@ def collect_progress(workspace: str, cwd: Path | None = None) -> str:
 
 # ─── Child workspace setup ───────────────────────────────────────────────────
 
-def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> str:
+def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str,
+                          use_cheat_sheet: bool = True, cheat_sheet_path: str = "") -> str:
     """Create child workspace, copy Stub.lean + Def.lean, rewrite imports.
     Returns the child workspace relative path.
 
@@ -206,10 +258,8 @@ def setup_child_workspace(cwd: Path, lemma_file: str, parent_workspace: str) -> 
     # Do NOT copy Def.lean — all files import the root's Stub.Def directly
     # This avoids duplicate declaration conflicts in Lean
 
-    # Copy cheat sheet from the canonical source
-    cheat_src = cwd / "StrataAgent" / "strataswarm" / "agent_specs" / "StrataProofCheatSheet.md"
-    if cheat_src.exists():
-        shutil.copy2(cheat_src, child_ws_path / "StrataProofCheatSheet.md")
+    # Copy the resolved cheat sheet (if one is in effect)
+    copy_cheat_sheet(cwd, child_ws_path, use_cheat_sheet, cheat_sheet_path)
 
     # Rewrite imports: point to root Stub.Def, remove sibling imports
     child_stub = child_ws_path / "Stub.lean"

@@ -29,7 +29,7 @@ system_prompt: >
 
   WORKFLOW:
   1. Read the new lemma file
-  2. Extract key type names from the statement (e.g. StepKleeneStar, CanFail, Stmt)
+  2. Extract the key type/constant names that appear in the statement
   3. Search the ledger with those terms
   4. For promising hits, compare statement structure carefully
   5. Report results
