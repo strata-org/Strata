@@ -5,11 +5,13 @@
 -/
 
 module
-public import Strata.Languages.Laurel.TransparencyPass
+public import Strata.Languages.Laurel.LaurelAST
+public import Strata.Languages.Laurel.UnorderedCore
+public import Strata.Languages.Laurel.LaurelPass
 import Strata.DL.Lambda.LExpr
-import all Strata.DL.Util.List
 import StrataDDM.Util.Graph.Tarjan
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Util.Tactics
 open StrataDDM
 
@@ -28,18 +30,17 @@ declarations before they are emitted as Strata Core declarations.
 namespace Strata.Laurel
 
 open Lambda (LMonoTy LExpr)
+open Std (Format ToFormat)
 
 /-- Collect all `UserDefined` type names referenced in a `HighType`, including nested ones. -/
 def collectTypeRefs : HighTypeMd → List String
   | ⟨.UserDefined name, _⟩ => [name.text]
   | ⟨.TSet elem, _⟩ => collectTypeRefs elem
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
-  | ⟨.TTypedField vt, _⟩ => collectTypeRefs vt
   | ⟨.Applied base args, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
   | ⟨.Pure base, _⟩ => collectTypeRefs base
   | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
-  | ⟨.TCore name, _⟩ => [name]
   | _ => []
 
 /-- Get all datatype names that a `DatatypeDefinition` references in its constructor args. -/
@@ -48,85 +49,31 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
 
 /--
 Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
-Used to build the call graph for SCC-based procedure ordering.
+Used to build the call graph for SCC-based procedure ordering. Recursion into
+child nodes is handled by `collectStmtExprList`.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
-  match expr with
-  | AstNode.mk val _ =>
-  match val with
-  | .StaticCall callee args =>
-      callee.text :: args.flatMap (fun a => collectStaticCallNames a)
-  | .PrimitiveOp _ args => args.flatMap (fun a => collectStaticCallNames a)
-  | .IfThenElse cond t e =>
-      collectStaticCallNames cond ++
-      collectStaticCallNames t ++
-      match e with
-      | some eelse => collectStaticCallNames eelse
-      | none => []
-  | .Block stmts _ => stmts.flatMap (fun s => collectStaticCallNames s)
-  | .Assign targets v =>
-      -- Field targets contain StmtExpr children; defensively recurse into them
-      -- even though field-target assigns are currently eliminated before this pass.
-      let targetCalls := targets.attach.flatMap fun ⟨t, _⟩ => match _htv : t.val with
-        | .Field inner _fieldName => collectStaticCallNames inner
-        | _ => []
-      targetCalls ++ collectStaticCallNames v
-  | .Return v =>
-      match v with
-      | some x => collectStaticCallNames x
-      | none => []
-  | .While cond invs dec body =>
-      collectStaticCallNames cond ++
-      invs.flatMap (fun i => collectStaticCallNames i) ++
-      (match dec with
-      | some d => collectStaticCallNames d
-      | none => []) ++
-      collectStaticCallNames body
-  | .Quantifier _ _ trig body =>
-      (match trig with
-      | some t => collectStaticCallNames t
-      | none => []) ++
-      collectStaticCallNames body
-  | .Var (.Field t _) => collectStaticCallNames t
-  | .PureFieldUpdate t _ v => collectStaticCallNames t ++ collectStaticCallNames v
-  | .InstanceCall t _ args =>
-      collectStaticCallNames t ++ args.flatMap (fun a => collectStaticCallNames a)
-  | .Old v | .Fresh v | .Assume v => collectStaticCallNames v
-  | .Assert ⟨cond, _summary, _⟩ => collectStaticCallNames cond
-  | .ProveBy v p => collectStaticCallNames v ++ collectStaticCallNames p
-  | .ReferenceEquals l r => collectStaticCallNames l ++ collectStaticCallNames r
-  | .AsType t _ | .IsType t _ => collectStaticCallNames t
-  | .ContractOf _ f => collectStaticCallNames f
-  | .Assigned v => collectStaticCallNames v
-  | _ => []
-termination_by sizeOf expr
-decreasing_by
-  all_goals simp_wf
-  all_goals (try have := AstNode.sizeOf_val_lt expr)
-  all_goals (try term_by_mem)
-  all_goals (try (
-    have := List.sizeOf_lt_of_mem ‹_›
-    have := Variable.sizeOf_field_target_lt_of_eq _htv
-    omega))
-  all_goals omega
+  collectStmtExprList (fun e => match e.val with
+    | .StaticCall callee _ => [callee.text]
+    | _ => []) expr
 
 /--
 Build the procedure call graph, run Tarjan's SCC algorithm, and return each SCC
 as a list of procedures paired with a flag indicating whether the SCC is recursive.
 Results are in reverse topological order: dependencies before dependents.
 
-Procedures with `invokeOn` are placed as early as possible — before
+Procedures with axioms are placed as early as possible — before
 unrelated procedures without them — by stably partitioning them first before building
 the graph. Tarjan then naturally assigns them lower indices, causing them to appear
 earlier in the output.
 -/
 public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List Procedure × Bool) :=
-  -- Stable partition: procedures with invokeOn come first, preserving relative
+  -- Stable partition: procedures with axioms come first, preserving relative
   -- order within each group. Tarjan then places them earlier in the topological output.
   let allProcs := program.functions ++ program.coreProcedures
-  let (withInvokeOn, withoutInvokeOn) :=
-    allProcs.partition (fun p => p.invokeOn.isSome)
-  let orderedProcs : List Procedure := withInvokeOn ++ withoutInvokeOn
+  let (withAxioms, withoutAxioms) :=
+    allProcs.partition (fun p => !p.axioms.isEmpty)
+  let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
 
   -- Build a call-graph over all procedures.
   -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
@@ -144,7 +91,8 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
       | _ => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions.map (·.condition) ++
-      proc.invokeOn.toList
+      proc.invokeOn.toList ++
+      proc.axioms
     (bodyExprs ++ contractExprs).flatMap collectStaticCallNames
 
   -- Build the OutGraph for Tarjan.
@@ -201,8 +149,14 @@ open Std (Format ToFormat)
 
 public section
 
+/-- Format a procedure as a function, replacing the leading "procedure" keyword with "function". -/
+private def formatAsFunction (proc : Procedure) : Format :=
+  let s := (ToFormat.format proc).pretty 100
+  let s := if s.startsWith "procedure" then "function" ++ s.drop "procedure".length else s
+  Format.text s
+
 def formatOrderedDecl : OrderedDecl → Format
-  | .funcs funcs _ => Format.joinSep (funcs.map ToFormat.format) "\n\n"
+  | .funcs funcs _ => Format.joinSep (funcs.map formatAsFunction) "\n\n"
   | .procedure proc => ToFormat.format proc
   | .datatypes dts => Format.joinSep (dts.map ToFormat.format) "\n\n"
   | .constant c => ToFormat.format c
@@ -227,7 +181,7 @@ Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
 as individual `procedure` decls. Both participate in the topological ordering
 so that axioms are available to functions that need them.
 -/
-public def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
+def orderFunctionsAndProcedures (program : UnorderedCoreWithLaurelTypes) : CoreWithLaurelTypes :=
   let datatypeDecls := (groupDatatypesByScc' program).map OrderedDecl.datatypes
   let constantDecls := program.constants.map OrderedDecl.constant
   let funcNames : Std.HashSet String :=
@@ -255,5 +209,17 @@ where
     OutGraph.tarjan g |>.toList.filterMap fun comp =>
       let members := comp.toList.filterMap fun idx => dtsArr[idx]?
       if members.isEmpty then none else some members
+
+public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
+  name := "OrderingPass"
+  comesBefore := []
+  documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
+computing a combined ordering of functions and proofs using the call graph,
+then collecting datatypes and constants.
+Functions are grouped into SCCs (for mutual recursion). Proofs are emitted
+as individual `procedure` decls. Both participate in the topological ordering
+so that axioms are available to functions that need them."
+  run := fun _ p _ =>
+    (orderFunctionsAndProcedures p, [], {})
 
 end Strata.Laurel

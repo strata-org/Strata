@@ -4,9 +4,13 @@ defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
+[leanOptions]
+warningAsError = true
+
 [[require]]
 name = "StrataDDM"
-path = "StrataDDM"
+git = "https://github.com/strata-org/Strata-DDM"
+rev = "main"
 
 [[require]]
 name = "plausible"
@@ -48,3 +52,6 @@ root = "Scripts.CheckImports"
 name = "ImportStats"
 root = "Scripts.ImportStats"
 
+[[lean_exe]]
+name = "GenerateEmbedded"
+root = "Scripts.GenerateEmbedded"

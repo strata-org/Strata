@@ -110,7 +110,6 @@ instance : TypeContext PureExpr Unit TEnv DiagnosticModel where
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
   typeErrorFmt := fun dm => f!"{dm.message}"
-  checkAnnotCompat := fun _ _ => .ok ()
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
   format arg :=
@@ -142,7 +141,7 @@ TEnv:
 private def testProgram2 : Cmds Arith.PureExpr :=
   [.init "x" .Bool (.det (.Num 0)) .empty]
 
-/-- info: error: Types .Bool and Num cannot be unified! -/
+/-- info: error: Types Bool and Num cannot be unified! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram2
           return format (cs, τ)

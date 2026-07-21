@@ -6,7 +6,6 @@
 module
 
 public import Strata.DL.Lambda.TypeFactory
-import all Strata.DL.Util.List
 
 /-!
 ## Axiom Generation for Recursive Functions

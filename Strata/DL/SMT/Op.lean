@@ -46,7 +46,7 @@ instance TermVar.decLt (x y : TermVar) : Decidable (x < y) :=
 
 structure UF where
   id : String
-  args : List TermVar
+  args : List TermType
   out : TermType
 deriving Repr, DecidableEq, Inhabited, Hashable
 

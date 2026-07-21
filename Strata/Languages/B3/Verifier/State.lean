@@ -23,7 +23,6 @@ open Strata
 open StrataDDM (SourceRange)
 open Strata.SMT
 open Strata.B3AST
-open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)
 
 ---------------------------------------------------------------------
 -- B3 Verification Results

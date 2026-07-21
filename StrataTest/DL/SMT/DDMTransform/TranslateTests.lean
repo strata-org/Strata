@@ -38,6 +38,33 @@ namespace Strata.SMTDDM
 /-- info: Except.ok "0.001" -/
 #guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 1 (-3)))))
 
+-- A decimal whose exponent leaves the pretty-print window must still render as
+-- a plain SMT-LIB literal. Without the `noExponent` render mode this emits
+-- `6283185307179586e-15`, which the solver parses as the free symbol `e-15`
+-- and rejects.
+/-- info: Except.ok "6.283185307179586" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 6283185307179586 (-15)))))
+
+/-- info: Except.ok "27182800000000.0" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 271828 8))))
+
+-- A negative decimal past the pretty-print window. SMT-LIB decimals are
+-- unsigned, so a bare `-6.28…` would lex as the free symbol `-`; the literal
+-- must be wrapped in unary minus, mirroring the negative-integer path.
+/-- info: Except.ok "(- 6.283185307179586)" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk (-6283185307179586) (-15)))))
+
+-- The unary-minus wrapping applies to every negative decimal, not just the
+-- large-exponent one above: a small in-window exponent is wrapped just the same.
+/-- info: Except.ok "(- 0.005)" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk (-5) (-3)))))
+
+-- Zero is the boundary of the `mantissa < 0` test: it is not negative, so it is
+-- not wrapped in unary minus. It renders as the plain literal `0.0`, never a
+-- degenerate `(- 0.0)` or scientific form.
+/-- info: Except.ok "0.0" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 0 (-15)))))
+
 /-- info: Except.ok "(_ bv1 32)" -/
 #guard_msgs in #eval (termToString
     (.prim (.bitvec (BitVec.ofNat 32/-width-/ 1/-value-/))))
@@ -61,6 +88,7 @@ namespace Strata.SMTDDM
 #guard_msgs in #eval (termToString (.some (.prim (.bool true))))
 
 end Strata.SMTDDM
+
 /-! ## Tests for bitvec literal decoding in translateFromDDMTermToUntyped -/
 
 namespace Strata.SMTResponseDDM

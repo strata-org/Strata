@@ -16,7 +16,7 @@ namespace Strata.Laurel
 public section
 
 /--
-Core map operations (`select`, `update`, `const`) expressed in Laurel syntax.
+Core map operations (`select`, `update`, `mapConst`) expressed in Laurel syntax.
 These are polymorphic map primitives used by the Laurel-to-Core translator.
 Since Laurel doesn't have polymorphic types, `int` is used as a placeholder type
 for all parameters — the actual types are inferred during Core translation.
@@ -27,16 +27,21 @@ program Laurel;
 
 datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
+datatype LaurelUnit { MkLaurelUnit() }
 
 // The types for these Map functions are incorrect.
 // We'll fix them when Laurel supports polymorphism
-function select(map: int, key: int) : int
+// And then we can remove the datatype Box as well
+// And remove the hacky filter in HeapParameterization
+datatype Box { MkBox() }
+
+procedure select(map: int, key: int) : Box
   external;
 
-function update(map: int, key: int, value: int) : int
+procedure update(map: int, key: int, value: int) : Box
   external;
 
-function const(value: int) : int
+procedure mapConst(value: int) : Box
   external;
 
 #end

@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Env
 public import Strata.Util.Statistics
 import Strata.Languages.Core.ProcedureEval
+import Strata.Languages.Core.StatementEval
 
 ---------------------------------------------------------------------
 
@@ -40,12 +41,12 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
     | .ax a _ =>
       -- All axioms go into the top-level path condition before anything is executed.
       -- There should be exactly one entry in the path condition stack at this point.
-      if declsE.pathConditions.length != 1 then
+      if declsE.pathConditions.scopes.length != 1 then
         .error (Strata.DiagnosticModel.fromMessage
             "Internal error: path condition stack misaligned when adding axiom")
       else
         let declsE := { declsE with pathConditions :=
-                      declsE.pathConditions.addEntry (.assumption (toString a.name) a.e) }
+                      declsE.pathConditions.prepend (.assumption (toString a.name) a.e) }
         go rest declsE stats
 
     | .distinct _ es _ =>
@@ -54,6 +55,13 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
 
     | .proc proc _md =>
       let (E, procStats) := Procedure.eval declsE proc
+      -- Reset path conditions to the pre-procedure state so a procedure's
+      -- assumptions don't leak into later ones. Likewise reset `Env.error`: it
+      -- is a within-procedure short-circuit flag, and leaking it would make the
+      -- next procedure no-op its body and silently drop its obligations (an
+      -- unsound vacuous pass). Deferred obligations and fresh names carry forward.
+      let E := { E with pathConditions := declsE.pathConditions,
+                        error := declsE.error }
       go rest E (stats.merge procStats)
 
     | .func func _ => do
@@ -86,12 +94,60 @@ def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
 /--
 Initialize an environment and evaluate all of the declarations
 from a type-checked program.
+
+`moreFns` are extra factory functions (beyond the Core built-ins)
+that are used for both the type-checker and evaluator. Callers of
+run can register language-specific functions this way and have them
+type-checked and evaluated just like Core's own built-ins.
 -/
-def run (prog : Program) : Except DiagnosticModel Env := do
+def run (prog : Program) (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    : Except DiagnosticModel Env := do
   let factory ← Core.Factory.addFactory Lambda.Factory.default
+  let factory ← factory.addFactory moreFns
   let σ ← Lambda.LState.init.addFactory factory
   let E: Env := { Env.init with exprEnv := σ, program := prog }
   prog.decls.foldlM (fun E d => Decl.run d E) E
+
+/--
+Run a single procedure as an entry point in the concrete interpreter.
+
+Generates fresh variables for the procedure's outputs, binds them, then invokes
+the procedure with no arguments under the given `fuel` bound, returning the
+resulting environment. Inspect `.error` on the result to detect a runtime
+assertion failure (`AssertFail`), fuel exhaustion (`OutOfFuel`), or another
+evaluation error (`Misc`).
+
+`E` is expected to be a freshly-initialized environment, e.g. the result of
+`Program.run` on the type-checked program containing `proc`.
+
+Note: this is the *concrete interpreter's* entry-point runner, driven by the
+producer-set `interpretEntry` marker. It is unrelated to `Core.EntryPoint`,
+which is the verifier's target selector (`.main | .roots | .all`) used to
+decide which procedures the SMT verifier targets.
+-/
+def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
+  let outputNames := proc.header.outputs.keys.map (·.name)
+  let (lhs, exprEnv) := Env.genVars outputNames E.exprEnv
+  let E := { E with exprEnv }
+  Statement.Command.runCall lhs proc.header.name.name [] fuel E
+
+/--
+All procedures the producer marked as concrete-interpretation entry points,
+via the `interpretEntry` metadata on their declaration (see
+`Imperative.MetaData.interpretEntry`). The marker is set on a Laurel procedure's
+`entry` clause and carried into Core metadata by the Laurel→Core translator.
+
+Distinct from `Core.EntryPoint` (verifier target selector); this returns the
+procedures the *concrete interpreter* should enter.
+-/
+def entryProcedures (prog : Program) : List Procedure :=
+  prog.decls.filterMap fun d =>
+    match d.getProc? with
+    | some p =>
+      match d.metadata.findElem Imperative.MetaData.interpretEntry with
+      | some { value := .switch true, .. } => some p
+      | _ => none
+    | none => none
 
 end -- public section
 

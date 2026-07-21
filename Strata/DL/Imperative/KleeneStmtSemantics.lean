@@ -40,12 +40,6 @@ inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
   | .terminal ρ => ρ.store
   | .block _ inner => inner.getStore
 
-@[expose] def KleeneConfig.getEval : KleeneConfig P CmdT → SemanticEval P
-  | .stmt _ ρ => ρ.eval
-  | .seq inner _ => inner.getEval
-  | .terminal ρ => ρ.eval
-  | .block _ inner => inner.getEval
-
 @[expose] def KleeneConfig.getEnv : KleeneConfig P CmdT → Env P
   | .stmt _ ρ => ρ
   | .seq inner _ => inner.getEnv
@@ -65,7 +59,7 @@ inductive StepKleene
 
   /-- A command steps to terminal. -/
   | step_cmd :
-    EvalCmd ρ.eval ρ.store c σ' hasAssertFailure →
+    EvalCmd ρ.factory ρ.store c σ' hasAssertFailure →
     ----
     StepKleene EvalCmd
       (.stmt (.cmd c) ρ)

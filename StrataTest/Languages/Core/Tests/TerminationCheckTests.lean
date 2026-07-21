@@ -1012,7 +1012,7 @@ rec function bad (@[cases] xs : IntList) : bool
 };
 #end
 
-/-- error: termination checking 'bad': decreasing argument contains a bound variable -/
+/-- error: termination checking 'bad': decreasing argument contains a bound variable-/
 #guard_msgs in
 #eval Core.verify boundVarDecrArgPgm (options := .quiet)
 

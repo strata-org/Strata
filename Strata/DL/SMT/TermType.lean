@@ -192,3 +192,12 @@ def TermType.isConstrType : TermType → Bool
 
 end Strata.SMT
 end
+
+public section
+-- In `Strata.DL.SMT` rather than `Strata.SMT` to avoid collision with
+-- `StrataDDM.Dialect.Sort` field projection on the `Strata.SMT` dialect instance.
+structure Strata.DL.SMT.Sort where
+  name : String
+  arity : Nat
+deriving Repr, DecidableEq, Inhabited, Hashable
+end

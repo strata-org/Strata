@@ -5,7 +5,6 @@
 -/
 module
 
-import Lean.Meta.Basic
 
 public import Strata.DL.SMT.SmtArray
 public import Strata.Languages.Core.SMTEncoder
@@ -16,13 +15,11 @@ open Lean
 open Strata
 open SMT
 
-deriving instance Hashable for Core.SMT.Sort
-
 inductive Translate.Var where
   | bv : SMT.TermVar → Translate.Var
   | uf : SMT.UF → Translate.Var
-  | us : Core.SMT.Sort → Translate.Var
-  | is : Core.SMT.Sort → Translate.Var
+  | us : DL.SMT.Sort → Translate.Var
+  | is : DL.SMT.Sort → Translate.Var
 deriving BEq, Hashable, Repr
 
 structure Translate.State where
@@ -535,11 +532,13 @@ def translateTerm (t : SMT.Term) : TranslateM (Expr × Expr) := do
     let w ← getBitVecWidth α
     return (mkBitVec (w + i), mkApp3 (.const ``BitVec.zeroExtend []) (toExpr w) (toExpr (w + i)) x)
   | .app .ubv_to_int [x] _ =>
-    let (_, x) ← translateTerm x
-    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp (.const ``BitVec.toNat []) x))
+    let (α, x) ← translateTerm x
+    let w ← getBitVecWidth α
+    return (mkInt, mkApp (.const ``Int.ofNat []) (mkApp2 (.const ``BitVec.toNat []) (toExpr w) x))
   | .app .sbv_to_int [x] _ =>
-    let (_, x) ← translateTerm x
-    return (mkInt, mkApp (.const ``BitVec.toInt []) x)
+    let (α, x) ← translateTerm x
+    let w ← getBitVecWidth α
+    return (mkInt, mkApp2 (.const ``BitVec.toInt []) (toExpr w) x)
   | .app (.int_to_bv n) [x] _ =>
     let (_, x) ← translateTerm x
     return (mkBitVec n, mkApp2 (.const ``BitVec.ofInt []) (toExpr n) x)
@@ -616,14 +615,14 @@ Introduce uninterpreted sort declarations as outer `forall` binders.
 For each declared sort we also add an implicit `Nonempty` instance binder, so
 terms that quantify over values of that sort remain type-correct.
 -/
-def withTypeDecls (uss : Array Core.SMT.Sort) (k : TranslateM Expr) : TranslateM Expr := do
+def withTypeDecls (uss : Array DL.SMT.Sort) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   let decls ← uss.mapM translateTypeDecl
   let b ← k
   set state
   return decls.flatten.foldr (fun (n, t, bi) b => .forallE n t b bi) b
 where
-  translateTypeDecl (us : Core.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
+  translateTypeDecl (us : DL.SMT.Sort) : TranslateM (Array (Name × Expr × BinderInfo)) := do
     let n := symbolToName us.name
     let t := us.arity.repeatTR (.forallE .anonymous (.sort 1) · .default) (.sort 1)
     modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.us us) (t, s.level) }
@@ -667,22 +666,20 @@ where
   translateFunDecl (uf : UF) : TranslateM (Name × Expr) := do
     let state ← get
     let n := symbolToName uf.id
-    let ps ← uf.args.mapM translateParam
+    let ps ← uf.args.mapM fun ty => do
+      let t ← translateSort ty
+      modify fun s => { s with level := s.level + 1 }
+      return (.anonymous, t)
     let s ← translateSort uf.out
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     set { level := state.level + 1, bvars := state.bvars.insert (.uf uf) (t, state.level) : Translate.State }
-    return (n, t)
-  translateParam (v : TermVar) : TranslateM (Name × Expr) := do
-    let n := symbolToName v.id
-    let t ← translateSort v.ty
-    modify fun s => { level := s.level + 1, bvars := s.bvars.insert (.bv v) (t, s.level) }
     return (n, t)
 
 /--
 Introduce interpreted function definitions (`define-fun`) as local `let`
 bindings, with lambda bodies over their parameters.
 -/
-def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Expr := do
+def withFunDefs (ifs : Array SMT.IF) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
   -- it's common for SMT-LIB queries to be "letified" using define-fun to
   -- minimize their size. We don't recurse on each definition to avoid stack
@@ -692,15 +689,15 @@ def withFunDefs (ifs : Array Core.SMT.IF) (k : TranslateM Expr) : TranslateM Exp
   set state
   return defs.foldr (fun (n, t, v) b => .letE n t v b true) b
 where
-  translateFunDef (f : Core.SMT.IF) : TranslateM (Name × Expr × Expr) := do
+  translateFunDef (f : SMT.IF) : TranslateM (Name × Expr × Expr) := do
     let state ← get
-    let ps ← f.uf.args.mapM translateParam
-    let s ← translateSort f.uf.out
+    let ps ← f.args.mapM translateParam
+    let s ← translateSort f.out
     let (_, b) ← translateTerm f.body
-    let n := symbolToName f.uf.id
+    let n := symbolToName f.id
     let t := ps.foldr (fun (n, t) b => .forallE n t b .default) s
     let v := ps.foldr (fun (n, t) b => .lam n t b .default) b
-    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.uf) (t, state.level) : Translate.State }
+    set { level := state.level + 1, bvars := state.bvars.insert (.uf f.toUF) (t, state.level) : Translate.State }
     return (n, t, v)
   translateParam (v : TermVar) : TranslateM (Name × Expr) := do
     let n := symbolToName v.id
@@ -718,13 +715,13 @@ Build the full translation scope for an SMT context:
 -/
 def withCtx (ctx : Core.SMT.Context) (k : TranslateM Expr) : TranslateM Expr := do
   let state ← get
-  let p ← withTypeDecls ctx.sorts <| withTypeDefs ctx.tySubst <|
-          withFunDecls ctx.ufs <| withFunDefs ctx.ifs do
+  let p ← withTypeDecls ctx.sorts.toArray <| withTypeDefs ctx.tySubst <|
+          withFunDecls ctx.ufs.toArray <| withFunDefs ctx.ifs.toArray do
     let f as a := do
       let (_, a) ← translateTerm a
       modify fun s => { s with level := s.level + 1 }
       return (as.push a)
-    let as ← ctx.axms.foldlM f #[]
+    let as ← ctx.axms.toArray.foldlM f #[]
     let a ← k
     return as.foldr mkArrow a
   set state

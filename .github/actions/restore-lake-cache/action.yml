@@ -6,10 +6,8 @@ description: >
   Strata cache-key pattern:
     lake-<os>-<arch>-<lean-toolchain>-<lake-manifest>-<all .st files>-<sha>
   with three fallback keys dropping each trailing component in turn.
-  Consolidates the ~15-line cache block previously duplicated across
-  ci.yml's build_and_test_lean, check_pending_python, build_python and
-  cbmc.yml; intended to also be adopted by the python-fuzz workflow once
-  that lands (see https://github.com/strata-org/Strata/pull/984).
+  Consolidates the cache block previously duplicated across ci.yml and
+  cbmc.yml.
 
 inputs:
   fail-on-cache-miss:

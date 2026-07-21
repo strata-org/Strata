@@ -9,8 +9,8 @@ module
 
 `testMain` is the concurrent file-runner used by every package's `lake test`.
 Each package provides a thin wrapper exe that calls `testMain` with its own
-`testDir` (e.g. `StrataTestExtra`, `StrataPythonTestExtra`); this module is
-the only shared implementation. -/
+`testDir` (e.g. `StrataTestExtra`); this module is the only shared
+implementation. -/
 
 open System (FilePath)
 

@@ -428,7 +428,7 @@ invariant_0_0: if !(IntList..isNil(xs@3)) then acc@2 + listLen(cur@2) == listLen
 invariant_0_1: if !(IntList..isNil(xs@3)) then acc@2 >= 0 else true
 <label_ite_cond_false: !(!(IntList..isNil(cur)))>: if if !(IntList..isNil(xs@3)) then false else true then if !(IntList..isNil(xs@3)) then false else true else true
 Obligation:
-if !(IntList..isNil(xs@3)) then acc@2 else 0 == listLen(xs@3)
+(if !(IntList..isNil(xs@3)) then acc@2 else 0) == listLen(xs@3)
 
 ---
 info:

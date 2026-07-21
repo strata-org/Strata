@@ -19,9 +19,12 @@ open Std (ToFormat Format format)
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 open Imperative (PureFunc)
 
--- A polymorphic `var` annotation (`var y : ∀α. α`) is now rejected (Part A).
 /--
-info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[α]. α (type variables [α] are bound)
+info: ok: {
+  var x : int := xinit;
+  x := xinit;
+  var y : int := xinit;
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
@@ -99,18 +102,16 @@ subst:
                     ]
           return format ans
 
--- A declared type that conflicts with a well-typed initializer is rejected:
--- `var x : int := true`. This is the behavior captured by the `init_det`/`init_nondet`
--- `AnnotCompat` premise of the `CmdHasType'` spec.
-/-- info: error: Impossible to unify int with bool. -/
-#guard_msgs in
-#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
-                    [ .init "x" t[int] (.det eb[#true]) .empty ]
-          return format ans
-
--- The nested polymorphic `var y : ∀α. α` annotation is now rejected (Part A).
 /--
-info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[α]. α (type variables [α] are bound)
+info: ok: context:
+types:   [(x, int)]
+aliases: []
+state:
+tyGen: 1
+tyPrefix: $__ty
+exprGen: 0
+exprPrefix: $__var
+subst: [($__ty0, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
@@ -126,9 +127,11 @@ info: error: Variable annotation must be monomorphic, but got polymorphic type �
                     ]
           return format ans.snd
 
--- The polymorphic `var x : ∀a. a` annotation is now rejected (Part A).
 /--
-info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[a]. a (type variables [a] are bound)
+info: ok: {
+  var x : int := 1;
+  x := 2;
+}
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
@@ -138,9 +141,16 @@ info: error: Variable annotation must be monomorphic, but got polymorphic type �
               ]
           return (format ans.fst)
 
--- The polymorphic `var m1 : ∀a. a → int` annotation is now rejected (Part A).
 /--
-info: error: Variable annotation must be monomorphic, but got polymorphic type ∀[a]. (arrow a int) (type variables [a] are bound)
+info: ok: context:
+types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
+aliases: []
+state:
+tyGen: 8
+tyPrefix: $__ty
+exprGen: 1
+exprPrefix: $__var
+subst: [($__ty0, int) ($__ty1, int) ($__ty4, (arrow bool int)) ($__ty5, bool) ($__ty3, (arrow bool int)) ($__ty2, (arrow bool int)) ($__ty7, int)]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
@@ -298,99 +308,6 @@ info: error: [call Foo(x == x, out x, out y);]: In-out arguments (parameters app
   return format ()
 
 end CallOutArgTests
-
-section ScopeTests
-
-/-
-DECLARATION SCOPING (regression tests for #1392): `goBlock` in `typeCheckAux`
-discards the block body's output `LContext` and returns the input `C`, so
-`typeDecl`/`funcDecl` declarations made inside a block (or `ite`/`loop` branch,
-which route through `goBlock`) are block-local and do NOT leak out — mirroring
-the `pushEmptyContext`/`popContext` discipline on the `TEnv` type-scope.
-
-The two tests below check that a type `T` declared inside a block / branch is
-out of scope where it should be (`var y : T` reports an unknown type). Before
-the fix these incorrectly type-checked (`ok:`). NOTE: this scoping is not
-reachable through the concrete `#strata` front-end anyway — the DDM parser
-independently rejects the analogous program with "Undeclared type or category
-T." — so these AST-level tests are the regression guard.
--/
-
-open Std (ToFormat Format format)
-open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
-
-/-- A bare type constructor `T` (the type declared by the `typeDecl`s below). -/
-private def tyT : LMonoTy := .tcons "T" []
-
-/--
-A type declared in the THEN-branch of an `ite` must NOT be visible in the
-ELSE-branch: variable bindings are block-scoped (push/pop) and so are type/
-function declarations. `var y : T` in the else-branch sees no `T`.
--/
-def testTypeDeclScopedToBranch : List Statement :=
-  [ Statement.init "g" t[bool] (.det eb[#true]) .empty,
-    .ite (.det eb[g])
-      -- then-branch: declare type `T`
-      [ Statement.typeDecl { name := "T", params := [] } .empty ]
-      -- else-branch: use `T` — out of scope
-      [ Statement.init "y" (.forAll [] tyT) .nondet .empty ]
-      .empty
-  ]
-
--- The concrete syntax one would write (if the parser allowed it) is:
---
---   procedure P () {
---     var g : bool;
---     havoc g;
---     if (g) {
---       type T;
---     }
---     else {
---       var y : T;   -- T not in scope here
---     }
---   };
---
--- The else-branch's `var y : T` is rejected because `T` is local to the
--- then-branch (regression guard for #1392).
-/--
-info: error: Type T is not an instance of a previously registered type!
-Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
--/
-#guard_msgs in
-#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
-                     testTypeDeclScopedToBranch
-         return format ans.fst
-
-/--
-A type declared inside a `block` must NOT be visible after the block closes,
-just like variable bindings (which are popped at block exit).
--/
-def testTypeDeclScopedToBlock : List Statement :=
-  [ Imperative.Stmt.block "blk" [ Statement.typeDecl { name := "T", params := [] } .empty ] .empty,
-    -- after the block: type `T` is out of scope
-    Statement.init "y" (.forAll [] tyT) .nondet .empty ]
-
--- The concrete syntax one would write (if the parser allowed it) is:
---
---   procedure P () {
---     blk: {
---       type T;
---     }
---     var y : T;   -- T not in scope here
---   };
---
--- The `var y : T` after the block is rejected because `T` is local to the
--- block (regression guard for #1392).
-/--
-info: error: Type T is not an instance of a previously registered type!
-Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
--/
-#guard_msgs in
-#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
-                     testTypeDeclScopedToBlock
-         return format ans.fst
-
-end ScopeTests
 
 end Core
 

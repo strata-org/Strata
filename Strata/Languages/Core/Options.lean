@@ -205,6 +205,13 @@ structure VerifyOptions where
       to concurrent solver processes using `IO.asTask`. Each task spawns its
       own solver instance. Default 1 (sequential). -/
   parallelWorkers : Nat
+  /-- Extra SMT solver options applied verbatim (as `(set-option :NAME VALUE)`)
+      after the built-in solver prelude, so they override it. Populated by
+      `--set-option NAME=VALUE` (repeatable). Option names are solver-specific
+      (e.g. for z3, `smt.mbqi=true` enables model-based quantifier instantiation
+      for quantified spec lemmas). Intended for local experimentation on the
+      local solver invocation only. -/
+  solverOptions : Array (String × String) := #[]
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -225,6 +232,7 @@ def VerifyOptions.default : VerifyOptions := {
   skipSolver := false
   profile := false
   incremental := false
+  solverOptions := #[]
   pathCap := .none
   parallelWorkers := 1
 }

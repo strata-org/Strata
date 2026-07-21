@@ -10,7 +10,7 @@ public import Std.Data.HashMap.Basic
 
 Exit codes, flag parsing, command dispatch, and help-printing for the
 Strata family of CLI executables. Used by the unified `strata` binary
-in `StrataCLI` and by the per-command executables in `StrataPython/Scripts`. -/
+in `Strata-CLI`, among possibly many other tools. -/
 
 public section
 
@@ -205,10 +205,9 @@ private partial def parseArgs (cmdName : String)
       let raw := (arg.drop 2).toString
       -- Support --flag=value syntax by splitting on first '='
       let (flagName, inlineValue) ← match raw.splitOn "=" with
-        | name :: value :: rest =>
-          if !rest.isEmpty then
-            exitCmdFailure cmdName s!"Invalid option format: {arg}. Values must not contain '='."
-          pure (name, some value)
+        -- Split on the FIRST '=' only, so a flag's value may itself contain '='
+        -- (e.g. `--set-option=smt.mbqi=true`, whose value is `smt.mbqi=true`).
+        | name :: rest@(_ :: _) => pure (name, some ("=".intercalate rest))
         | _ => pure (raw, none)
       match flagMap[flagName]? with
       | some flag =>

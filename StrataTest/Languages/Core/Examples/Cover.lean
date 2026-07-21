@@ -255,7 +255,7 @@ procedure Test()
 #end
 
 /--
-info: #["assertion holds vacuously (unreachable in this context)", "cover property is unreachable in this context"]
+info: #["unreach_assert_diag holds vacuously (unreachable in this context)", "cover property is unreachable in this context"]
 -/
 #guard_msgs in
 #eval do

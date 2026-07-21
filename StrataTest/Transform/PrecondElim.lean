@@ -36,7 +36,7 @@ def transformProgram (t : StrataDDM.Program) : Core.Program :=
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
-    | .ok program => program.eraseTypes.stripMetaData
+    | .ok program => program.stripMetaData
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -496,6 +496,50 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
 #eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
 
 end SeqBoundsObligations
+
+/-! ### Test: nested quantifiers with a partial-function call (regression)
+
+A hypothesis captured outside a nested quantifier (`p == Outer_A(m)`) must have
+its de Bruijn indices shifted when the accessor-call obligation for the inner
+quantifier is generated. Otherwise `m` silently rebinds to the inner bound
+variable `j` and the generated obligation fails to type-check with
+"Impossible to unify (arrow Inner Outer) with (arrow int ...)". -/
+
+def nestedExistsWFPgm :=
+#strata
+program Core;
+datatype Inner { Inner_Cons(x : int) };
+datatype Outer { Outer_A(v : Inner) };
+
+function bug(p: Outer): bool {
+  exists m: Inner ::
+    p == Outer_A(m)
+    && (exists j: int :: Inner..x(m) == j)
+}
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+datatype Inner {
+  Inner_Cons(x : int)
+};
+datatype Outer {
+  Outer_A(v : Inner)
+};
+procedure bug$$wf (p : Outer)
+{
+  assert [bug_body_calls_Inner..x_0]: forall m : Inner :: forall j : int :: p == Outer_A(m) ==> Inner..isInner_Cons(m);
+};
+function bug (p : Outer) : bool {
+  exists m : Inner :: p == Outer_A(m) && exists j : int :: Inner..x(m) == j
+}
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedExistsWFPgm))
 
 end PrecondElimTests
 end

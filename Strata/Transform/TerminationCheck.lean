@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
-import all Strata.DL.Util.List
 import Strata.Languages.Core.Factory
 import Strata.Util.Tactics
 

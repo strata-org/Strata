@@ -59,7 +59,7 @@ A few terms recur with specific meanings:
   yet.
 - *Front-end* — the Strata-side component that ingests source
   artifacts and produces a Strata IR (typically a high-level
-  dialect). Examples: `StrataPython`, [`StrataBoole`](https://github.com/strata-org/Strata-Boole).
+  dialect). Examples: [`Strata-Python`](https://github.com/strata-org/Strata-Python), [`StrataBoole`](https://github.com/strata-org/Strata-Boole).
 - *Central IR* — an IR many producers and many consumers share.
   In Strata, *Core* is the central IR.
 - *Analysis* — anything that consumes a Strata IR and produces a
@@ -105,8 +105,8 @@ back out of it.
            /     |        |           \
           /      |        |            \
          /       |        |             \
-   deductive   CBMC      Dragonstone   .....
-   verifier
+   deductive   model     abstract      .....
+   verifier    checker   interpreter
 ```
 
 Many sources translate *into* Core; many consumers translate
@@ -490,7 +490,7 @@ these interfaces _physical_ package boundaries:
 
   Dialect Definition Mechanism (already independent).
 
-: `StrataPython`
+: [`Strata-Python`](https://github.com/strata-org/Strata-Python)
 
   Python dialect + `Python → Laurel` translation.
 
@@ -513,9 +513,9 @@ these interfaces _physical_ package boundaries:
 Under this split, the philosophy becomes a build-system-enforced
 rule for the boundaries that _do_ cross packages:
 
-- `StrataPython` owns `Python.toLaurel` and depends on the main
+- [`Strata-Python`](https://github.com/strata-org/Strata-Python) owns `Python.toLaurel` and depends on the main
   `Strata` package; the main package does not depend on
-  `StrataPython`.
+  `Strata-Python`.
 - [`StrataBoole`](https://github.com/strata-org/Strata-Boole) owns `Boole.toCore` and depends on the main
   `Strata` package; the main package does not depend on
   `StrataBoole`.
@@ -595,12 +595,15 @@ expressions is the SMT analysis's job; Core only owns the
 _shape_ of the result it ingests (`VCResult`, `ProofObligation`),
 not the conversion logic.
 
-*Core → GOTO (CBMC translator).* Already correct: lives in
-`Strata/Backends/CBMC/GOTO/`, imports Core, Core does not import
-the CBMC translator. Concrete model: `procedureToGotoCtx`,
-`functionToGotoCtx`, `CProverGOTO.Context.toJson` are all in the
-translator package, and the serialized `.goto.json` schema is
-the wire format the external CBMC tool consumes.
+*Core → GOTO.* GOTO is modeled as a Strata language under
+`Strata/Languages/GOTO/`, so the `Core → GOTO` translation
+(`CoreToGOTO.transformToGoto`) lives there alongside the GOTO IR
+and the other `X → GOTO` translations, importing Core; Core does
+not import it. The CBMC backend under `Strata/Backends/CBMC/GOTO/`
+then serializes the resulting GOTO program to CBMC's JSON
+(`procedureToGotoCtx`, `functionToGotoCtx`,
+`CProverGOTO.Context.toJson`), and the serialized `.goto.json`
+schema is the wire format the external CBMC tool consumes.
 
 When referring to "CBMC" in this document: the _external CBMC
 binary_ is the analysis tool; the _Strata-side translator_ is
@@ -618,11 +621,7 @@ Core stays inert. The deviations from this rule today are:
 
 1. `Strata/Languages/Core/SMTEncoder.lean` — Core imports
    SMT-specific code. See the note below.
-2. `Strata/DL/Imperative/ToCProverGOTO.lean` — A `ToX`
-   translation lives with the source side (DL/Imperative)
-   instead of with the CBMC translator. Restructuring this into
-   the backend follows the same principle.
-3. Any future helper that materializes Laurel-shaped output from
+2. Any future helper that materializes Laurel-shaped output from
    Core would belong in Laurel, not Core.
 
 ## A note on `Strata/Languages/Core/SMTEncoder.lean`

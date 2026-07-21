@@ -1,3 +1,0 @@
-class HelperClass:
-    def help(self, x: int) -> str:
-        ...

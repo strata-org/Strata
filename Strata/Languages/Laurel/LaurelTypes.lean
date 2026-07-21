@@ -23,7 +23,8 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .datatypeDestructor _ fld => fld.type
     | .parameter p => p.type
-    | .staticProcedure proc => match proc.outputs with
+    | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
+      | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
       | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
     | .unresolved source => { val := HighType.Unknown, source := source }
@@ -45,6 +46,7 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   | .LiteralBool _ => ⟨ .TBool, source ⟩
   | .LiteralString _ => ⟨ .TString, source ⟩
   | .LiteralDecimal _ => ⟨ .TReal, source ⟩
+  | .LiteralBv _ width => ⟨ .TBv width, source ⟩
   -- Variables
   | .Var (.Local id) => (model.get id).getType
   | .Var (.Declare _) => ⟨ .TVoid, source ⟩
@@ -66,9 +68,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
             | .TFloat64  => ⟨ .TFloat64, source ⟩
             | .TReal => ⟨ .TReal, source ⟩
             | .TInt => ⟨ .TInt, source ⟩
-            | _ => ⟨ .TCore "unknown", source ⟩
+            | _ => ⟨ .Unknown, source ⟩
         | .StrConcat => ⟨ .TString, source ⟩
-      | _ => ⟨ .TCore "unknown", source ⟩
+      | _ => ⟨ .Unknown, source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
@@ -77,11 +79,17 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
         computeExprType model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
-  | .While _ _ _ _ => ⟨ .TVoid, source ⟩
+  | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
   | .Exit _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   | .Assign _ value => computeExprType model value
-  | .Assert _ => ⟨ .TVoid, source ⟩
+  | .IncrDecr _ _ target =>
+    -- The expression's type is the type of the target variable.
+    match target.val with
+    | .Local id => (model.get id).getType
+    | .Field _ fieldName => (model.get fieldName).getType
+    | .Declare _ => ⟨ .TVoid, source ⟩  -- shouldn't happen; rejected by translator
+  | .Assert .. => ⟨ .TVoid, source ⟩
   | .Assume _ => ⟨ .TVoid, source ⟩
   -- Instance related
   | .New name => ⟨ .UserDefined name, source ⟩
@@ -120,6 +128,7 @@ of composite), i.e. the kind of type that appears in modifies clauses and
 triggers heap parameterization. -/
 def isHeapRelevantType (ty : HighType) : Bool :=
   (classifyModifiesHighType ty).isSome
+
 
 end Strata.Laurel
 

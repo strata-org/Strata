@@ -3,8 +3,8 @@
 This folder contains a denotational semantics for Lambda, intepreting Lambda terms
 as objects in Lean's logic. The basic design is loosely inspired by the semantics
 of Why3's logic as presented in Jean-Christophe Filliâtre's 2013 paper
-"One Logic to Use Them All" (https://inria.hal.science/hal-00809651v1/document) 
-and more concretely by the subsequent Rocq formalization by Cohen and Johnson-Freyd 
+"One Logic to Use Them All" (https://inria.hal.science/hal-00809651v1/document)
+and more concretely by the subsequent Rocq formalization by Cohen and Johnson-Freyd
 (https://dl.acm.org/doi/10.1145/3632902). The main differences
 concern variable binding, the mechanics of `Factory` function evaluation,
 equality checking reasoning, and the presence of an operational semantics.
@@ -22,7 +22,7 @@ changes to interpretations and valuations that agree on variables/ops present
 in a term, invariance under changes to metadata)
 - `LExprDenoteSubst.lean` - proofs about semantics of substitution of bound
 variables (`substK`, `subst`) and free variables (`substFvarsLifting`)
-- `LExprDenoteTySubst.lean` - proofs about semantics of type substitution 
+- `LExprDenoteTySubst.lean` - proofs about semantics of type substitution
 (`tySubst`)
 - `CallOfLFuncDenote.lean` - proofs about semantics of Factory function calls
 and `callOfLFunc` more generally
@@ -31,7 +31,7 @@ and `callOfLFunc` more generally
 - `LExprResolveAnnotated.lean` - proof that `LExpr.resolve` produces
 well-annotated terms (satisfying `HasTypeA`), i.e. that the type annotations
 placed by resolution are internally consistent
-- `LExprSemanticsConsistent.lean` - proof that operational and denotational 
+- `LExprSemanticsConsistent.lean` - proof that operational and denotational
 semantics are consistent (single-step, multi-step, and partial evaluator)
 
 ## Trusted Code Base
@@ -40,15 +40,15 @@ The TCB of the denotational semantics consists of the following:
 1. The typing relation `HasTypeA` in `LExprAnnotated.lean`
 2. The definitions of type and term denotations in `LExprDenote.lean` (
 `SortDenote`, `TyDenote`, `LExpr.denote`, and its dependencies)
-3. The definitions of consistency in `LExprDenote.lean` (especially 
-`InterpConsistentBody`, `InterpConsistentEval`, `InterpConsistent`, 
+3. The definitions of consistency in `LExprDenote.lean` (especially
+`InterpConsistentBody`, `InterpConsistentEval`, `InterpConsistent`,
 `ConstrInterpConsistent`)
-4. The dependencies of these definitions, especially heterogenous lists in 
+4. The dependencies of these definitions, especially heterogenous lists in
 `HList.lean` and the definition of `substTyVars`.
 
 Notably, the TCB denotational semantics does not include several nontrivial
 functions present in the TCB of the operational semantics: `substFvarsLifting`,
-`substFvarsFromState`, `Factory.callOfLFunc`, `eql`, etc.
+`substFvarsFromEnv`, `Factory.callOfLFunc`, `eql`, etc.
 
 The semantics consistency theorems additionally depend on the assumptions in
 `Assumptions.lean`. See below.
@@ -56,12 +56,12 @@ The semantics consistency theorems additionally depend on the assumptions in
 ## Assumptions
 
 The denotational semantics and its theorems rely on two kinds of assumptions:
-1. The definition of validity in the semantics itself requires consistent 
-interpretations - those that agree with concrete `Factory` functions and 
+1. The definition of validity in the semantics itself requires consistent
+interpretations - those that agree with concrete `Factory` functions and
 declared datatypes.
 2. The semantic consistency theorems require various typing and well-formedness
 assumptions on the expression in question, `Factory` functions, and the
-environment. 
+environment.
 
 The second set of assumptions are given in `Assumptions.lean` and we will
 eventually prove that they are satisfied of well-typed terms.
@@ -79,8 +79,8 @@ Note that the semantics does not handle function preconditions at the moment.
 ## Using the Semantics
 
 The file `StrataTest/DL/Lambda/Denote/Tautologies.lean` shows how to use the
-semantics to prove validity of some simple bool-valued formulas 
-(e.g. modus ponens). In this file, we provide an alternate kernel-reducing 
+semantics to prove validity of some simple bool-valued formulas
+(e.g. modus ponens). In this file, we provide an alternate kernel-reducing
 version of the consistency conditions that
 sidestep the need for most of the dependent type reasoning.
 The remaining limitation is the use of HashMaps for a `Factory`; since this

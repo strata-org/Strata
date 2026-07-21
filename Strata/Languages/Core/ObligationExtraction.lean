@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.EvalContext
+import all Strata.DL.Imperative.EvalContext
 public import Strata.Languages.Core.Program
 /-! # Proof Obligation Extraction
 
@@ -48,8 +49,10 @@ end
 
 mutual
 /-- Core recursive worker for `extractFromStatements`. Walks the statement list,
-    accumulating path conditions and collecting proof obligations. -/
-def extractGo (pc : PathConditions Expression) : Statements →
+    accumulating path conditions in a `RevPathConditions` (newest scope stored
+    most-recent-first for O(1) growth) and collecting proof obligations. Each
+    captured obligation restores natural order via `RevPathConditions.consume`. -/
+def extractGo (pc : RevPathConditions Expression) : Statements →
     Array (ProofObligation Expression) →
     Except String (Array (ProofObligation Expression))
   | [], acc => .ok acc
@@ -57,13 +60,13 @@ def extractGo (pc : PathConditions Expression) : Statements →
     match s with
     | .cmd (.cmd (.assert label e md)) =>
       let propType := convertMetaDataPropertyType md
-      extractGo pc rest (acc.push (ProofObligation.mk label propType pc e md))
+      extractGo pc rest (acc.push (ProofObligation.mk label propType pc.consume e md))
 
     | .cmd (.cmd (.cover label e md)) =>
-      extractGo pc rest (acc.push (ProofObligation.mk label .cover pc e md))
+      extractGo pc rest (acc.push (ProofObligation.mk label .cover pc.consume e md))
 
     | .cmd (.cmd (.assume label e _md)) =>
-      extractGo (pc.addInNewest [.assumption label e]) rest acc
+      extractGo (pc.prepend (.assumption label e)) rest acc
 
     | .ite .nondet thenSs elseSs _md => do
       let thenObs ← extractFromStatements pc thenSs
@@ -71,7 +74,7 @@ def extractGo (pc : PathConditions Expression) : Statements →
       extractGo pc rest (acc ++ thenObs ++ elseObs)
 
     | .cmd (.cmd (.init name ty e _md)) =>
-      extractGo (pc.addEntry (.varDecl name ty e)) rest acc
+      extractGo (pc.prepend (.varDecl name ty e)) rest acc
 
     | _other =>
       .error s!"ObligationExtraction: unsupported statement"
@@ -84,35 +87,39 @@ def extractGo (pc : PathConditions Expression) : Statements →
 
     Returns the extracted obligations. -/
 def extractFromStatements
-    (pathConditions : PathConditions Expression)
+    (pathConditions : RevPathConditions Expression)
     (ss : Statements) : Except String (Array (ProofObligation Expression)) :=
   extractGo pathConditions ss #[]
 end
 
 /-- Extract proof obligations from a program. Axioms become global assumptions
-    that are prepended to the path conditions of every obligation. -/
+    and `distinct` declarations become distinctness facts. -/
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  -- Accumulate axioms and obligations as we walk declarations in order
-  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (axiomPc, allObs) decl =>
+  -- Accumulate global path-condition facts (axioms and distinct groups) and
+  -- obligations as we walk declarations in order.
+  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
     match decl with
     | .ax a _ =>
-      -- Add axiom to path conditions for subsequent procedures
-      .ok (axiomPc ++ [.assumption a.name a.e], allObs)
+      .ok (.assumption a.name a.e :: globalPc, allObs)
+    | .distinct name es _ =>
+      .ok (.distinct (toString name) es :: globalPc, allObs)
     | .proc proc _md => do
-      let globalPc : PathConditions Expression := [axiomPc]
       let obs ← match proc.body with
-        | .structured ss => extractFromStatements globalPc ss
+        | .structured ss =>
+          -- `globalPC` is accumulated newest-first (via ::) which
+          -- is what RevPathConditions expects.
+          extractFromStatements ⟨[globalPc]⟩ ss
         -- CFG bodies are not supported on procedure-body branch.
         | .cfg _ => .ok #[]
-      .ok (axiomPc, allObs ++ obs)
-    | _ => .ok (axiomPc, allObs)
+      .ok (globalPc, allObs ++ obs)
+    | _ => .ok (globalPc, allObs)
   return allObs
 
-@[simp] theorem extractFromStatements_eq (pc : PathConditions Expression) (ss : Statements) :
+@[simp] theorem extractFromStatements_eq (pc : RevPathConditions Expression) (ss : Statements) :
     extractFromStatements pc ss = extractGo pc ss #[] := by
   unfold extractFromStatements; rfl
 
-private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
+private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statements)
     (acc : Array (ProofObligation Expression))
     (h : isValidObligationInput ss = true) :
     (extractGo pc ss acc).isOk = true := by
@@ -145,7 +152,7 @@ private theorem extractGo_ok (pc : PathConditions Expression) (ss : Statements)
 
 /-- If the input satisfies `isValidObligationInput`, then `extractFromStatements`
     never returns an error. -/
-theorem extractFromStatements_ok (pc : PathConditions Expression) (ss : Statements)
+theorem extractFromStatements_ok (pc : RevPathConditions Expression) (ss : Statements)
     (h : isValidObligationInput ss = true) :
     (extractFromStatements pc ss).isOk = true := by
   unfold extractFromStatements; exact extractGo_ok pc ss #[] h

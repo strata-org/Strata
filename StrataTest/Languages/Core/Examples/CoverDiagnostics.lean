@@ -26,7 +26,7 @@ procedure Test()
 #end
 
 /--
-info: #["cover property is not satisfiable", "assertion does not hold"]
+info: #["cover property is not satisfiable", "failing_assert does not hold"]
 -/
 #guard_msgs in
 #eval do
@@ -77,7 +77,7 @@ procedure Test()
 #end
 
 /--
-info: #["assertion does not hold"]
+info: #["unprovable_assert does not hold"]
 -/
 #guard_msgs in
 #eval do

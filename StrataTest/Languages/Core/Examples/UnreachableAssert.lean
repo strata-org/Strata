@@ -58,7 +58,7 @@ z_false: z == false
 <label_ite_cond_true: z == false>: if z == false then z == false else true
 <label_ite_cond_false: !(z == false)>: if if z == false then false else true then if z == false then false else true else true
 Obligation:
-x == if z == false then x else y
+x == (if z == false then x else y)
 
 ---
 info:

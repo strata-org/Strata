@@ -5,6 +5,7 @@
 -/
 module
 
+public section
 /-! # List Utilities
 -/
 
@@ -13,18 +14,32 @@ namespace List
 /--
 Remove duplicates in a list.
 -/
-public def dedup {α : Type} [DecidableEq α] : List α → List α
+def dedup {α : Type} [DecidableEq α] : List α → List α
   | [] => []
   | a :: as =>
     let as := as.dedup
     if a ∈ as then as else a :: as
+
+/-- Values in the `snd` projection of a `zip` are members of the second list. -/
+theorem mem_map_snd_zip {α β} (l₁ : List α) (l₂ : List β) (v : β)
+    (h : v ∈ (l₁.zip l₂).map Prod.snd) : v ∈ l₂ := by
+  induction l₁ generalizing l₂ with
+  | nil => simp at h
+  | cons a l₁ ih =>
+    cases l₂ with
+    | nil => simp at h
+    | cons b l₂ =>
+      simp only [List.zip_cons_cons, List.map_cons, List.mem_cons] at h
+      rcases h with rfl | h
+      · exact List.mem_cons.mpr (Or.inl rfl)
+      · exact List.mem_cons_of_mem _ (ih l₂ h)
 
 /--
 Tail-recursive worker for `dedup`. Walks the input left-to-right,
 skipping elements that still appear later, and collects kept elements
 in reverse order.
 -/
-public def dedupTR.go {α : Type} [DecidableEq α] :
+def dedupTR.go {α : Type} [DecidableEq α] :
     List α → List α → List α
   | [], acc => acc.reverse
   | a :: as, acc =>
@@ -33,7 +48,7 @@ public def dedupTR.go {α : Type} [DecidableEq α] :
 /--
 Tail-recursive implementation of `dedup`.
 -/
-public def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
+def dedupTR {α : Type} [DecidableEq α] (l : List α) : List α :=
   dedupTR.go l []
 
 /--
@@ -135,7 +150,7 @@ theorem dedupTR.go_eq {α : Type} [DecidableEq α]
 /--
 `List.dedup` is equivalent to `dedupTR` at compile time.
 -/
-@[csimp] public theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
+@[csimp] theorem dedup_eq_dedupTR : @List.dedup = @dedupTR := by
   funext α _ l
   simp [dedupTR, dedupTR.go_eq]
 
@@ -693,3 +708,5 @@ theorem zip_find_mem_snd [BEq α] (l1 : List α) (l2 : List β)
     p.2 ∈ l2 := by
   have h_mem := List.mem_of_find?_eq_some h
   exact (List.of_mem_zip h_mem).2
+
+end

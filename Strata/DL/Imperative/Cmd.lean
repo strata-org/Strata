@@ -37,6 +37,14 @@ inductive ExprOrNondet (P : PureExpr) where
   | nondet
   deriving Inhabited
 
+/-! ## Assertion Identity -/
+
+/-- An assertion identifier: the label + expression attached to an
+    `assert` command. -/
+structure AssertId (P : PureExpr) where
+  label : String
+  expr  : P.Expr
+
 /-! ## Commands
 
 Commands form the core of the Imperative dialect. They include constructs for

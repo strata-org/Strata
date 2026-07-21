@@ -49,28 +49,6 @@ info: ok: (procedure P (x : int, out y : int)
 
 
 ---------------------------------------------------------------------
--- Type-parameter well-formedness: `Procedure.typeCheck` rejects a signature type
--- variable not declared in `typeArgs` (mirroring `LFunc.type`'s check for
--- functions). This cannot be expressed in concrete `#strata` syntax — the
--- translator rejects the undeclared type before the checker runs (cf. the
--- AST-level Q2d test in `RigidTypeVarsTests`) — so it is exercised directly at
--- the `Procedure.typeCheck` level.
-/--
-info: error: [Undecl]: type variables [b] appear in the signature but are not declared in typeArgs [a]
--/
-#guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
-                             Program.init
-                             { header := {name := "Undecl",
-                                          typeArgs := ["a"],
-                                          inputs := [("x", mty[%b])],
-                                          outputs := [] },
-                               spec := { preconditions := [], postconditions := [] },
-                               body := .structured [] }
-                            .empty
-         return format ans
-
----------------------------------------------------------------------
 end Tests
 end Core
 

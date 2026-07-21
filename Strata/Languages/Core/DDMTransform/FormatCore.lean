@@ -26,16 +26,13 @@ Functions that depend on `Program.lean` (such as `programToCST`,
 `formatProgram`, and the declaration-level converters) live in
 `ASTtoCST.lean`.
 
+Metadata is emitted as `@[key, key = value]` annotations, controlled by
+`MetadataAnnFilter` (default: `.none` — emit nothing).
+
 Known issues:
 
 - Unsupported constructs (coming soon):
   -- Sub-functions (functions defined inside procedures)
-
-- We do not copy over any metadata in the semantic AST to the CST, including
-  source locations. Also, we generate some bound variables' names during
-  translation because the semantic AST currently does not preserve them (e.g.,
-  bvars in quantifiers). We can log the identifier names during CST -> AST
-  translation in the latter's metadata field and recover them in the future.
 
 - Misc. formatting issues
   -- Remove extra indentation from the last brace of a block or the `end`
@@ -85,6 +82,37 @@ def unknownTypeVar : String := "$__unknown_type"
     are generated names. In the future, we will store existing variable names in an extra field of quantifier expressions. -/
 def mkQuantVarName (level : Nat) : String := "__q" ++ toString level
 
+---------------------------------------------------------------------
+-- MetadataAnn Filter
+---------------------------------------------------------------------
+
+/-- Controls which metadata keys are emitted as annotations in formatted output. -/
+inductive MetadataAnnFilter where
+  | none
+  | all
+  | only (keys : Std.HashSet String)
+  | allExcept (keys : Std.HashSet String)
+  deriving Inhabited
+
+namespace MetadataAnnFilter
+
+def checks : MetadataAnnFilter :=
+  .only Imperative.MetaData.checkKeys
+
+def properties : MetadataAnnFilter :=
+  .only Imperative.MetaData.propertyKeys
+
+def shouldEmit (filter : MetadataAnnFilter) (key : String) : Bool :=
+  match filter with
+  | .none => false
+  | .all => true
+  | .only keys => keys.contains key
+  | .allExcept keys => !keys.contains key
+
+end MetadataAnnFilter
+
+---------------------------------------------------------------------
+
 structure Scope where
   /-- Track bound variables in this scope -/
   boundVars : Array String := #[]
@@ -97,7 +125,9 @@ structure ToCSTContext (M : Type) where
   scopes : Array Scope := #[{}]
   /-- Collected errors during conversion -/
   errors : Array (ASTToCSTError M) := #[]
-  deriving Inhabited, Repr
+  /-- Filter controlling which metadata keys are emitted as annotations -/
+  annFilter : MetadataAnnFilter := .none
+  deriving Inhabited
 
 namespace ToCSTContext
 
@@ -179,6 +209,8 @@ def popScope {M} (ctx : ToCSTContext M) : ToCSTContext M :=
     ctx
 
 end ToCSTContext
+
+---------------------------------------------------------------------
 
 /-- Monad for AST->CST conversion with context and error collection -/
 @[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
@@ -272,9 +304,20 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
   | .realConst r =>
     match StrataDDM.Decimal.fromRat r with
     | some d => pure (.realLit default ⟨default, d⟩)
-    | none => do
-      ToCSTM.logError "lconstToExpr" "unsupported real" (toString r)
-      pure (.realLit default ⟨default, default⟩)
+    | none =>
+      -- `r` has no terminating decimal representation (e.g. `1/3`), so it
+      -- cannot be printed as a `realLit`. Emit the exact rational literal
+      -- `frac{num, den}` instead, which the transform maps back to `realConst
+      -- (mkRat num den)` and so round-trips to the same value. The `frac{...}`
+      -- operands are non-negative `Num` tokens, so a negative value is wrapped
+      -- in `neg_expr`, mirroring the `intConst` case above.
+      let ty := CoreType.tvar default unknownTypeVar
+      let fracExpr :=
+        CoreDDM.Expr.fracLit default ⟨default, r.num.natAbs⟩ ⟨default, r.den⟩
+      if r.num < 0 then
+        pure (.neg_expr default ty fracExpr)
+      else
+        pure fracExpr
   | .strConst s => pure (.strLit default ⟨default, s⟩)
   | .bitvecConst 1 n => pure (.bv1Lit default ⟨default, n.toNat⟩)
   | .bitvecConst 8 n => pure (.bv8Lit default ⟨default, n.toNat⟩)
@@ -488,6 +531,10 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
   | .str .PrefixOf => pure (.str_prefixof default arg1 arg2)
   | .str .SuffixOf => pure (.str_suffixof default arg1 arg2)
+  | .str .Contains => pure (.str_contains default arg1 arg2)
+  | .str .At => pure (.str_at default arg1 arg2)
+  | .str .Lt => pure (.str_lt default arg1 arg2)
+  | .str .Le => pure (.str_le default arg1 arg2)
   | .re .Range => pure (.re_range default arg1 arg2)
   | .re .Concat => pure (.re_concat default arg1 arg2)
   | .re .Union => pure (.re_union default arg1 arg2)
@@ -506,6 +553,8 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   | .seq .Update => pure (.seq_update default ty arg1 arg2 arg3)
   -- Strings and regexes
   | .str .Substr => pure (.str_substr default arg1 arg2 arg3)
+  | .str .IndexOf => pure (.str_indexof default arg1 arg2 arg3)
+  | .str .Replace => pure (.str_replace default arg1 arg2 arg3)
   | .re .Loop => pure (.re_loop default arg1 arg2 arg3)
   | _ => mkGenericCall "handleTernaryOps" name [arg1, arg2, arg3]
 
@@ -689,9 +738,26 @@ partial def lappToExpr {M} [Inhabited M]
     : ToCSTM M (CoreDDM.Expr M) := do
   let (head, args) := Lambda.getLFuncCall e
   match head with
-  | .op _ fn _ =>
-    let argExprs ← args.mapM (lexprToExpr · qLevel)
-    lopToExpr fn.name argExprs
+  | .op _ fn ty =>
+    -- `mapConst` (the constant-map builtin) has no inferable key type, so it is
+    -- emitted with an explicit key-type annotation `mapConst<K>(v)`. Recover `K`
+    -- from the op's function type `V → Map K V`.
+    if fn.name == "mapConst" then
+      match args with
+      | [valArg] =>
+        let valCST ← lexprToExpr valArg qLevel
+        let kCST ← match ty with
+          | some (.tcons "arrow" [_, .tcons "Map" [k, _]]) => lmonoTyToCoreType k
+          | some (.tcons "Map" [k, _]) => lmonoTyToCoreType k
+          | _ => pure (CoreType.tvar default unknownTypeVar)
+        -- The value type is inferred from `v` on re-parse, so a placeholder is fine.
+        pure (.map_const default kCST (CoreType.tvar default unknownTypeVar) valCST)
+      | _ =>
+        let argExprs ← args.mapM (lexprToExpr · qLevel)
+        lopToExpr fn.name argExprs
+    else
+      let argExprs ← args.mapM (lexprToExpr · qLevel)
+      lopToExpr fn.name argExprs
   | .app _ fn arg =>
     -- getLFuncCall couldn't decompose further (fn is not .app or .op)
     let fnCST ← lexprToExpr fn qLevel
@@ -703,6 +769,54 @@ partial def lappToExpr {M} [Inhabited M]
     let argExprs ← args.mapM (lexprToExpr · qLevel)
     pure <| argExprs.foldl (fun fnAcc arg => .app default fnAcc arg) fnCST
 end
+
+---------------------------------------------------------------------
+-- MetadataAnn CST construction
+---------------------------------------------------------------------
+
+/-- Convert a MetaData element to a MetadataAnnEntry CST node.
+    Returns `none` if the element is filtered out.
+
+    With `annFilter := .all` the goal is to show every element for debugging, so
+    we render each value the best the current grammar allows:
+    - `.switch true` → a bare flag `@[key]`.
+    - `.msg`/`.provenance` → a string value `@[key = "..."]`.
+    - `.expr` → a real expression value `@[key = (e)]`, converted via `lexprToExpr`.
+    - `.switch false` and `.var` keys have no grammar syntax of their own, so we
+      fall back to a readable string so they are still visible. These do not yet
+      round-trip on re-parse; a dedicated syntax (e.g. `!key`, `$var`) and the
+      parse-side support are follow-up work. -/
+def metadataElemToEntry {M} [Inhabited M] (filter : MetadataAnnFilter)
+    (elem : Imperative.MetaDataElem Core.Expression) : ToCSTM M (Option (MetadataAnnEntry M)) := do
+  -- Var-typed fields have no key syntax of their own, so we render them as
+  -- `$name` for visibility (does not round-trip; see follow-up).
+  let key := match elem.fld with
+    | .label l => l
+    | .var v => s!"${v.toPretty}"
+  if !filter.shouldEmit key then return none
+  let keyCst : MetadataAnnKey M := .mdAnnKeyBare default ⟨default, key⟩
+  let strVal (s : String) : MetadataAnnEntry M :=
+    .mdAnnKV default keyCst (.mdAnnValStr default ⟨default, s⟩)
+  match elem.value with
+  | .switch true => return some (.mdAnnFlag default keyCst)
+  | .switch false => return some (strVal "false")
+  | .msg s => return some (strVal s)
+  | .provenance p => return some (strVal (Std.format p).pretty)
+  | .expr e =>
+    let eCst ← lexprToExpr e 0
+    return some (.mdAnnKV default keyCst (.mdAnnValExpr default eCst))
+
+/-- Convert MetaData to an Option MetadataAnn CST annotation.
+    Returns none if no emittable metadata is present (or filter is `.none`). -/
+def metadataToAnn {M} [Inhabited M]
+    (md : Imperative.MetaData Core.Expression)
+    (filter : MetadataAnnFilter := .none) : ToCSTM M (Ann (Option (MetadataAnn M)) M) := do
+  let entries ← md.filterMapM (metadataElemToEntry (M := M) filter)
+  if entries.isEmpty then
+    return ⟨default, none⟩
+  else
+    let annEntries : Ann (Array (MetadataAnnEntry M)) M := ⟨default, entries⟩
+    return ⟨default, some (.mdAnn default annEntries)⟩
 
 /-- Convert preconditions to CST spec elements -/
 def precondsToSpecElts {M} [Inhabited M]
@@ -725,7 +839,8 @@ def mkTypeArgsAnn {M} [Inhabited M] (typeArgs : List String) : Ann (Option (Type
     ⟨default, some (TypeArgs.type_args default ⟨default, tvars.toArray⟩)⟩
 
 /-- Convert a function declaration to a statement -/
-def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression)
+def funcDeclToStatement {M} [Inhabited M] (annotsAnn : Ann (Option (MetadataAnn M)) M)
+    (decl : Imperative.PureFunc Expression)
     : ToCSTM M (CoreDDM.Statement M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, decl.name.name⟩
@@ -759,7 +874,7 @@ def funcDeclToStatement {M} [Inhabited M] (decl : Imperative.PureFunc Expression
   -- Register function name as a scoped bound variable in the parent scope,
   -- matching DDM's @[declareFn] which makes the name a bvar.
   modify (·.pushBoundVar name.val)
-  pure (.funcDecl_statement default name typeArgs b r preconds bodyExpr inline?)
+  pure (.funcDecl_statement default annotsAnn name typeArgs b r preconds bodyExpr inline?)
 
 /-- Decompose a single-level `map_update(base, idx, val)` where `base` is (or starts
     with) an fvar matching `varName`. Returns `(indices, innerVal)` with indices
@@ -784,24 +899,25 @@ mutual
 partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     : ToCSTM M (CoreDDM.Statement M) := do
   match s with
-  | .init name ty expr _md => do
+  | .init name ty expr md => do
     let nameAnn : Ann String M := ⟨default, name.toPretty⟩
     let tyCST ← lTyToCoreType ty
+    let annotsAnn ← metadataToAnn md (← get).annFilter
     let result ← match expr with
     | Imperative.ExprOrNondet.nondet => do
       let bind := Bind.bind_mk default nameAnn
                   ⟨default, none⟩ tyCST
       let dl := DeclList.declAtom default bind
-      pure (.varStatement default dl)
+      pure (.varStatement default annotsAnn dl)
     | Imperative.ExprOrNondet.det e =>
       let exprCST ← lexprToExpr e 0
-      pure (.initStatement default tyCST nameAnn exprCST)
+      pure (.initStatement default annotsAnn tyCST nameAnn exprCST)
     -- Push the newly declared variable to the *end of the bound variables
     -- context* so that the most recently declared variable has the lowest
     -- index.
     modify (·.pushBoundVar name.toPretty)
     pure result
-  | .set name expr _md => do
+  | .set name expr md => do
     -- Detect map_update(name, idx, val) pattern to produce lhsArray syntax
     let (lhs, exprCST) ← match decomposeMapUpdate name.name expr with
       | some (idxs, val) => do
@@ -817,33 +933,28 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
         let exprCST ← lexprToExpr expr 0
         pure (lhs, exprCST)
     let tyCST := CoreType.tvar default unknownTypeVar
-    pure (.assign default tyCST lhs exprCST)
-  | .havoc name _md => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.assign default annotsAnn tyCST lhs exprCST)
+  | .havoc name md => do
     let nameAnn : Ann String M := ⟨default, name.name⟩
-    pure (.havoc_statement default nameAnn)
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.havoc_statement default annotsAnn nameAnn)
   | .assert label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    let rcAnn : Ann (Option (ReachCheck M)) M :=
-      if Imperative.MetaData.hasReachCheck md then
-        ⟨default, some (.reachCheck default)⟩
-      else
-        ⟨default, none⟩
-    pure (.assert default rcAnn labelAnn exprCST)
-  | .assume label expr _md => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.assert default annotsAnn labelAnn exprCST)
+  | .assume label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    pure (.assume default labelAnn exprCST)
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.assume default annotsAnn labelAnn exprCST)
   | .cover label expr md => do
     let labelAnn := ⟨default, some (.label default ⟨default, label⟩)⟩
     let exprCST ← lexprToExpr expr 0
-    let rcAnn : Ann (Option (ReachCheck M)) M :=
-      if Imperative.MetaData.hasReachCheck md then
-        ⟨default, some (.reachCheck default)⟩
-      else
-        ⟨default, none⟩
-    pure (.cover default rcAnn labelAnn exprCST)
-  | .call pname coreCallArgs _md => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.cover default annotsAnn labelAnn exprCST)
+  | .call pname coreCallArgs md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
     let mut callArgs : Array (CoreDDM.CallArg M) := #[]
     for a in coreCallArgs do
@@ -858,38 +969,46 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
         let nameAnn : Ann String M := ⟨default, id.name⟩
         callArgs := callArgs.push (.callArgOut default nameAnn)
     let callArgsAnn : Ann (Array (CoreDDM.CallArg M)) M := ⟨default, callArgs⟩
-    pure (.call_statement default pnameAnn callArgsAnn)
-  | .block label stmts _md => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.call_statement default annotsAnn pnameAnn callArgsAnn)
+  | .block label stmts md => do
     let labelAnn : Ann String M := ⟨default, label⟩
     let blockCST ← blockToCST stmts
-    pure (.block_statement default labelAnn blockCST)
-  | .ite cond thenb elseb _md => do
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.block_statement default annotsAnn labelAnn blockCST)
+  | .ite cond thenb elseb md => do
     let thenCST ← blockToCST thenb
     let elseCST ← elseToCST elseb
+    let annotsAnn ← metadataToAnn md (← get).annFilter
     match cond with
     | .det e =>
       let condCST ← lexprToExpr e 0
-      pure (.if_statement default (.condDet default condCST) thenCST elseCST)
+      pure (.if_statement default annotsAnn (.condDet default condCST) thenCST elseCST)
     | .nondet =>
-      pure (.if_statement default (.condNondet default) thenCST elseCST)
-  | .loop guard measure invariant body _md => do
+      pure (.if_statement default annotsAnn (.condNondet default) thenCST elseCST)
+  | .loop guard measure invariant body md => do
     let measureCST ← measureToCST measure
     let invs ← invariantsToCST invariant
     let bodyCST ← blockToCST body
+    let annotsAnn ← metadataToAnn md (← get).annFilter
     match guard with
     | .det e =>
       let guardCST ← lexprToExpr e 0
-      pure (.while_statement default (.condDet default guardCST) measureCST invs bodyCST)
+      pure (.while_statement default annotsAnn (.condDet default guardCST) measureCST invs bodyCST)
     | .nondet =>
-      pure (.while_statement default (.condNondet default) measureCST invs bodyCST)
-  | .exit label _md => do
+      pure (.while_statement default annotsAnn (.condNondet default) measureCST invs bodyCST)
+  | .exit label md => do
     let labelAnn : Ann String M := ⟨default, label⟩
-    pure (.exit_statement default labelAnn)
-  | .funcDecl decl _md => funcDeclToStatement decl
-  | .typeDecl tc _md =>
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.exit_statement default annotsAnn labelAnn)
+  | .funcDecl decl md =>
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    funcDeclToStatement annotsAnn decl
+  | .typeDecl tc md =>
     let nameAnn : Ann String M := ⟨default, tc.name⟩
     let args := typeConArgsToCST (M := M) tc
-    pure (.typeDecl_statement default nameAnn args)
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.typeDecl_statement default annotsAnn nameAnn args)
 
 partial def blockToCST [Inhabited M] (stmts : List Core.Statement)
     : ToCSTM M (CoreDDM.Block M) := do
@@ -936,7 +1055,8 @@ N.B.: We don't add the procedure name to the freeVars in the context.
 private inductive FormatParamKind where
   | inParam | outParam | inoutParam
 
-def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) := do
+def procToCST {M} [Inhabited M] (proc : Core.Procedure)
+    (md : Imperative.MetaData Core.Expression := .empty) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs := mkTypeArgsAnn proc.header.typeArgs
@@ -997,7 +1117,8 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure) : ToCSTM M (Command M) :
   let bodyCST ← blockToCST bodyStmts
   let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
   modify ToCSTContext.popScope
-  pure (.command_procedure default name typeArgs arguments spec body)
+  let annotsAnn ← metadataToAnn md (← get).annFilter
+  pure (.command_procedure default annotsAnn name typeArgs arguments spec body)
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.
@@ -1083,26 +1204,36 @@ def Core.formatExprs (exprs : List Core.Expression.Expr)
 
 /-- Render a `Core.Statement` to a format object using the DDM pretty-printer. -/
 def Core.formatStatement (stmt : Core.Statement)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
   let (cst, finalCtx) := stmtToCST stmt initCtx
   formatWithDDM finalCtx fun ctx state =>
     (mformat (ArgF.op cst.toAst) ctx state).format
 
-/-- Render a `Core.Procedure` to a format object using the DDM pretty-printer. -/
+/-- Render a `Core.Procedure` to a format object using the DDM pretty-printer.
+
+Note: `annFilter` only affects annotations on statements inside the body. The
+procedure's own `@[…]` annotation lives on the enclosing `Decl.proc`, not on
+`Core.Procedure`, so it is not reachable from this single-proc view; use
+`Core.formatProgram` to see it. -/
 def Core.formatProcedure (proc : Core.Procedure)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
   let initCtx := ToCSTContext.empty (M := SourceRange)
+  let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
-  let (cst, finalCtx) := procToCST proc initCtx
+  let (cst, finalCtx) := (procToCST proc) initCtx
   formatWithDDM finalCtx fun ctx state =>
     (mformat (ArgF.op cst.toAst) ctx state).format
 
 /-- Render a `Core.Command` (`CmdExt Expression`) to a format object using the DDM pretty-printer. -/
 def Core.formatCommand (cmd : Core.Command)
-    (extraFreeVars : Array String := #[]) : Std.Format :=
-  Core.formatStatement (.cmd cmd) extraFreeVars
+    (extraFreeVars : Array String := #[])
+    (annFilter : MetadataAnnFilter := .none) : Std.Format :=
+  Core.formatStatement (.cmd cmd) extraFreeVars annFilter
 
 /-- Format a single `Core.Expression.Expr` using the DDM pretty-printer. -/
 instance instCoreExprFormat : Std.ToFormat Expression.Expr where

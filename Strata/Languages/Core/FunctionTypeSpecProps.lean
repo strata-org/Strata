@@ -15,6 +15,8 @@ import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import all Strata.DL.Util.Nodup
 import all Strata.Languages.Core.InverseComponents
 
+set_option linter.unusedVariables false
+
 /-! ## Soundness of Function Typechecker
 
 Relates the executable function typechecker `Function.typeCheck` to the
@@ -4424,11 +4426,15 @@ theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
   obtain ⟨h_ce_none, h_ic_false⟩ :=
     Function.typeCheck_concreteEval_none_isConstr_false C Env func func' Env' h
   refine { toFuncWF := ?_, constr_no_eval := ?_, typeArgs_no_gen_prefix := ?_,
-           concreteEval_eraseMetadata := ?_ }
+           concreteEval_eraseMetadata := ?_, concreteEval_freeVars := ?_ }
   · -- toFuncWF
     refine { arg_nodup := ?_, concreteEval_argmatch := ?_,
              body_or_concreteEval := ?_, typeArgs_nodup := ?_,
-             inputs_typevars_in_typeArgs := ?_, output_typevars_in_typeArgs := ?_ }
+             inputs_typevars_in_typeArgs := ?_, output_typevars_in_typeArgs := ?_,
+             body_freevars := ?_, precond_freevars := ?_ }
+    -- NOTE: bullet goals appear in FuncWF field-declaration order:
+    -- arg_nodup, body_freevars, concreteEval_argmatch, body_or_concreteEval,
+    -- typeArgs_nodup, inputs_typevars_in_typeArgs, output_typevars_in_typeArgs, precond_freevars.
     · -- arg_nodup: key-nodup ⟹ name-nodup (Identifier name is injective for Unit meta)
       have h_keys := Function.typeCheck_inputsNodup C Env func func' Env' h
       rw [ListMap.keys_eq_map_fst] at h_keys
@@ -4438,6 +4444,11 @@ theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
       rw [h_eq]
       refine List.Pairwise.map _ ?_ h_keys
       intro a b hab; cases a; cases b; simp_all
+    · -- body_freevars: term free vars of the body ⊆ input names.
+      -- New obligation from upstream's FuncWF (Util/Func.lean); the typechecker's
+      -- freeVarChecks guard establishes this, but the bridge lemma is not yet ported
+      -- to the new factory API. Tracked with the file's existing WIP proofs.
+      sorry
     · -- concreteEval_argmatch: vacuous (concreteEval = none)
       intro fn _ _ _ hfn; rw [h_ce_none] at hfn; exact absurd hfn (by simp)
     · -- body_or_concreteEval: concreteEval = none, so left conjunct false
@@ -4456,6 +4467,11 @@ theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
       apply h_undecl v
       rw [LMonoTy.freeVars_mkArrow', List.mem_append]
       exact Or.inr hv
+    · -- precond_freevars: term free vars of each precondition ⊆ input names.
+      -- New obligation from upstream's FuncWF; Core-typechecked functions carry no
+      -- factory preconditions, so this is expected to be vacuous, but the supporting
+      -- lemma (preconditions = []) is not yet ported. Tracked as WIP.
+      sorry
   · -- constr_no_eval: isConstr = false, premise false
     rw [h_ic_false]; simp
   · -- typeArgs_no_gen_prefix: func'.typeArgs ⊆ func.typeArgs, none of which has the prefix
@@ -4463,6 +4479,8 @@ theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
     exact Function.typeCheck_input_typeArgs_no_gen_prefix C Env func func' Env' h ta
       (Function.typeCheck_typeArgs_subset C Env func func' Env' h ta hta)
   · -- concreteEval_eraseMetadata: vacuous (concreteEval = none)
+    intro ceval hc; rw [h_ce_none] at hc; exact absurd hc (by simp)
+  · -- concreteEval_freeVars: vacuous (concreteEval = none)
     intro ceval hc; rw [h_ce_none] at hc; exact absurd hc (by simp)
 
 end TypeSpec

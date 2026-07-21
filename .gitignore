@@ -13,3 +13,9 @@ vcs/*.smt2
 *.py.ion.core.st
 
 Strata.code-workspace
+.merge-deferred/
+StrataBoole/
+StrataDDM/
+StrataPython/
+Tools/
+StrataCLI/

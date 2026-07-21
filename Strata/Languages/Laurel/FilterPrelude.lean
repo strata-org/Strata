@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Laurel.LaurelAST
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Core.Factory
 
 /-! ### Prelude Filtering
@@ -70,61 +71,38 @@ private def addTypeName (name : String) : CollectM Unit :=
 private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   match ty.val with
   | .UserDefined name => addTypeName name.text
-  | .TCore _ => pure ()
-  | .TTypedField vt => collectHighTypeNames vt
   | .TSet et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
   | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
-  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString | .THeap
+  | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
 
-/-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree. -/
-private partial def collectExprNames (expr : StmtExprMd) : CollectM Unit := do
-  match expr.val with
-  | .StaticCall callee args =>
-    addProcName callee.text; args.forM collectExprNames
-  | .New ref => addTypeName ref.text
-  | .InstanceCall target callee args =>
-    addProcName callee.text; collectExprNames target; args.forM collectExprNames
-  | .IfThenElse cond thenB elseB =>
-    collectExprNames cond; collectExprNames thenB
-    elseB.forM collectExprNames
-  | .Block stmts _ => stmts.forM collectExprNames
-  | .While cond invs dec body =>
-    collectExprNames cond; invs.forM collectExprNames
-    dec.forM collectExprNames
-    collectExprNames body
-  | .Assign targets value =>
-    collectExprNames value
-    for ⟨t, _⟩ in targets.attach do
-      match t.val with
-      | .Field target _ => collectExprNames target
-      | .Local _ => pure ()
+/-- Collect all referenced names (procedure calls, type references) from a StmtExpr tree.
+    Recursion into child nodes is handled by `foldStmtExprM`; the visitor only
+    handles the constructors that directly introduce a name or type reference. -/
+private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
+  foldStmtExprM (fun e => do
+    match e.val with
+    | .StaticCall callee _ => addProcName callee.text
+    | .InstanceCall _ callee _ => addProcName callee.text
+    | .New ref => addTypeName ref.text
+    | .Assign targets _ =>
+      for ⟨t, _⟩ in targets.attach do
+        match t.val with
+        | .Declare param => collectHighTypeNames param.type
+        | .Field _ _ | .Local _ => pure ()
+    | .IncrDecr _ _ target =>
+      match target.val with
       | .Declare param => collectHighTypeNames param.type
-  | .Var (.Field target _) => collectExprNames target
-  | .Var (.Declare param) => collectHighTypeNames param.type
-  | .PureFieldUpdate target _ newVal =>
-    collectExprNames target; collectExprNames newVal
-  | .PrimitiveOp _ args _ => args.forM collectExprNames
-  | .AsType target ty => collectExprNames target; collectHighTypeNames ty
-  | .IsType target ty => collectExprNames target; collectHighTypeNames ty
-  | .Quantifier _ param trigger body =>
-    collectHighTypeNames param.type
-    trigger.forM collectExprNames
-    collectExprNames body
-  | .Assert cond => collectExprNames cond.condition
-  | .Assume cond => collectExprNames cond
-  | .Return val => val.forM collectExprNames
-  | .Old val | .Fresh val | .Assigned val => collectExprNames val
-  | .ProveBy val proof => collectExprNames val; collectExprNames proof
-  | .ContractOf _ func => collectExprNames func
-  | .ReferenceEquals lhs rhs => collectExprNames lhs; collectExprNames rhs
-  | .Hole _ ty => ty.forM collectHighTypeNames
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _
-  | .Var (.Local _) | .This | .Abstract | .All => pure ()
+      | .Field _ _ | .Local _ => pure ()
+    | .Var (.Declare param) => collectHighTypeNames param.type
+    | .Quantifier _ param _ _ => collectHighTypeNames param.type
+    | .AsType _ ty | .IsType _ ty => collectHighTypeNames ty
+    | .Hole _ ty => ty.forM collectHighTypeNames
+    | _ => pure ()) expr
 
 /-- Collect names from a procedure body. -/
 private def collectBodyNames (body : Body) : CollectM Unit := do
@@ -182,7 +160,7 @@ private partial def collectInvokeOnTargets (expr : StmtExprMd)
     let rest ← args.flatMapM collectInvokeOnTargets
     return callee.text :: rest
   | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _
-  | .LiteralDecimal _ => return []
+  | .LiteralDecimal _ | .LiteralBv _ _ => return []
   | _ =>
     throw s!"FilterPrelude.collectInvokeOnTargets: unexpected node in invokeOn expression"
 
@@ -217,8 +195,6 @@ private def buildDependencyMap (prog : Laurel.Program)
         for c in dt.constructors do
           insertNew c.name.text (deps.insert name)
             s!"constructor '{c.name.text}' of datatype '{name}'"
-          insertNew (dt.testerName c) (deps.insert name)
-            s!"tester '{dt.testerName c}' of datatype '{name}'"
           for a in c.args do
             insertNew (dt.destructorName a) (deps.insert name)
               s!"destructor '{dt.destructorName a}'"

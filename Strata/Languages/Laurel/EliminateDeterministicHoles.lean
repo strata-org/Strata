@@ -34,7 +34,7 @@ structure ElimHoleState where
 
 private abbrev ElimHoleM := StateM ElimHoleState
 
-/-- Generate a fresh uninterpreted function for a typed hole and return a call to it. -/
+/-- Generate a fresh uninterpreted procedure for a typed hole and return a call to it. -/
 private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : ElimHoleM StmtExprMd := do
   let s ← get
   let n := s.counter
@@ -47,7 +47,6 @@ private def mkHoleCall (source : Option FileRange) (holeType : HighTypeMd) : Eli
     outputs := [{ name := "$result", type := holeType }]
     preconditions := []
     decreases := none
-    isFunctional := true
     body := .Opaque [] none []
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
@@ -90,10 +89,10 @@ def eliminateDeterministicHoles (program : Program) : Program × Statistics :=
 end -- public section
 
 /-- Pipeline pass: eliminate deterministic holes. -/
-public def eliminateDeterministicHolesPass : LaurelPass where
+public def eliminateDeterministicHolesPass : LoweringPass where
   name := "EliminateDeterministicHoles"
   documentation := "Replaces every deterministic hole with a call to a freshly generated uninterpreted function. After this pass the program contains only non-deterministic holes. Assumes `InferHoleTypes` has already annotated holes with types."
-  run := fun p _m =>
+  run := fun _ p _m =>
     let (p', stats) := eliminateDeterministicHoles p
     (p', [], stats)
 

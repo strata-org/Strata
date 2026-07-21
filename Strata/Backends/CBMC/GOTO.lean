@@ -8,4 +8,4 @@ module
 import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import Strata.Backends.CBMC.GOTO.DefaultSymbols
-import Strata.Backends.CBMC.GOTO.LambdaToCProverGOTO
+import Strata.Backends.CBMC.GOTO.InstToJson

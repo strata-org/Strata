@@ -10,6 +10,9 @@ import all Strata.DL.Lambda.LExprAliasFree
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
 /-! ## Properties of `LExpr.resolve`
 
 This module proves two major results about `LExpr.resolve`, both for the case

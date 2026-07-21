@@ -20,8 +20,8 @@ open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 def bad_prog : Program := { decls := [
       -- type Foo a b;
       .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
-      -- type FooAlias a = Foo a bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo %a bool]}) .empty,
+      -- type FooAlias a = Foo bool bool;
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo bool bool]}) .empty,
       -- const fooAliasVal : FooAlias bool;
       .func { name := "fooAliasVal", inputs := [], output := mty[FooAlias bool]} .empty,
       -- const fooVal : Foo int bool;
@@ -50,10 +50,10 @@ First mismatch: bool with int.
 def good_prog : Program := { decls := [
       -- type Foo a b;
       .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
-      -- type FooAlias a = Foo a bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo %a bool]}) .empty,
-      -- const fooAliasVal : FooAlias int;
-      .func { name := "fooAliasVal", inputs := [], output := mty[FooAlias int]} .empty,
+      -- type FooAlias a = Foo int bool;
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo int bool]}) .empty,
+      -- const fooAliasVal : ∀α. FooAlias α;
+      .func { name := "fooAliasVal", typeArgs := ["α"], inputs := [], output := mty[FooAlias α]} .empty,
       -- const fooVal : Foo int bool;
       .func { name := "fooVal", inputs := [], output := mty[Foo int bool]} .empty,
       .proc { header := {name := "P",
@@ -83,7 +83,7 @@ fooAliasVal == fooVal
 info: ok: program Core;
 
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo a bool;
+type FooAlias (a : Type) := Foo int bool;
 function fooAliasVal () : Foo int bool;
 function fooVal () : Foo int bool;
 procedure P ()

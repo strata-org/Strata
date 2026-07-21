@@ -7,8 +7,7 @@ module
 
 public import Strata.DL.SMT.AbstractSolver
 import Strata.DL.SMT.DDMTransform.Translate
-public import Strata.DL.SMT.Factory
-import Std.Data.HashMap
+import Strata.DL.SMT.Factory
 
 /-!
 # Incremental SMT-LIB Backend

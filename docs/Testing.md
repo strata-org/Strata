@@ -88,6 +88,23 @@ the message and the test stays robust as messages are reworded.
 
 `kind` is one of `error`, `warning`, `not-yet-implemented`, `strata-bug`.
 
+#### Reported locations
+
+Diagnostic locations are formatted as `<fileLine>:<colStart>-<colEnd>  <kind>:
+<message>`, where `fileLine` is the line in the enclosing `.lean` file (computed
+from the snippet's base line — no manual offsets). The filename is omitted: the
+Lean test runner already reports which file a diagnostic came from.
+
+A test **succeeds silently** by default — the inline `// ^^^` annotations are
+what assert correctness, so there's no per-diagnostic noise in the build log.
+This file-relative format is, however, always used in **failure** reports, so a
+mismatch points straight at the offending `.lean` line. To also *echo* the
+locations on success (e.g. to pin them with `#guard_msgs` and demonstrate the
+localization), pass `showLocations := true`; add `showSnippet := true` to append
+the snippet-relative range — `… (snippet <line>:<colStart>-<colEnd>)` — handy
+when correlating against the inline annotations (those are snippet-local, so
+their `line` differs from the file line).
+
 ### 3. Resolution-only tests — skip the verifier
 
 When the test is about resolution (kind mismatches, duplicate names, scope
@@ -138,7 +155,7 @@ procedure foo() opaque {
 
 ### 4. Custom pipeline stage — bring your own helper
 
-For tests that exercise a specific transform (e.g. `eliminateHoles`,
+For tests that exercise a specific transform (e.g. `eliminateDeterministicHoles`,
 `liftExpressionAssignments`, `constrainedTypeElim`), build a small per-file
 helper that takes a parsed `Strata.Program` and runs the stages you care about.
 `translateLaurel` does the parse → translate step so you don't have to repeat
@@ -147,7 +164,7 @@ it.
 ```lean
 import StrataTest.Util.TestLaurel
 import Strata.Languages.Laurel.InferHoleTypes
-import Strata.Languages.Laurel.EliminateHoles
+import Strata.Languages.Laurel.EliminateDeterministicHoles
 
 open Strata
 open StrataTest.Util
@@ -158,7 +175,7 @@ private def parseElimAndPrint (program : Strata.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   let (laurelProgram, _, _) := inferHoleTypes result.model result.program
-  let (laurelProgram, _) := eliminateHoles laurelProgram
+  let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
   for proc in laurelProgram.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 

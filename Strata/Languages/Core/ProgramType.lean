@@ -92,7 +92,9 @@ C are already well-typed.
             .error (e.withRangeIfUnknown fileRange)
 
       | .ax a md => try
+        let Env := Env.pushEmptySubstScope
         let (ae, Env) ← LExpr.resolve C Env a.e |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        let Env := Env.popSubstScope
         match ae.toLMonoTy with
         | .bool => .ok (Decl.ax { a with e := ae.unresolved } md, C, Env)
         | _ => .error <| DiagnosticModel.withRange fileRange f!"Axiom {a.name} has non-boolean type."
@@ -100,7 +102,9 @@ C are already well-typed.
             .error (e.withRangeIfUnknown fileRange)
 
       | .distinct l es md => try
+        let Env := Env.pushEmptySubstScope
         let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
+        let Env := Env.popSubstScope
         .ok (Decl.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
         catch e =>
           .error (e.withRangeIfUnknown fileRange)

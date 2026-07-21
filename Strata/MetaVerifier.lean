@@ -37,25 +37,26 @@ public section
 namespace Strata.SMT
 
 structure SanitizedContext where
-  sorts : Array Core.SMT.Sort := #[]
+  sorts : Array Strata.DL.SMT.Sort := #[]
   ufs : Array UF := #[]
-  ifs : Array Core.SMT.IF := #[]
+  ifs : Array IF := #[]
   axms : Array Term := #[]
   tySubst : Map String TermType := []
 deriving Repr, Inhabited, DecidableEq
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
-  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+  { sorts := ctx.sorts.toArray, ufs := ctx.ufs.toArray, ifs := ctx.ifs.toArray,
+    axms := ctx.axms.toArray, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
-  { sorts := ctx.sorts
-    ufs := ctx.ufs
-    ifs := ctx.ifs
-    axms := ctx.axms
+  { sorts := .ofArray ctx.sorts
+    ufs := .ofArray ctx.ufs
+    ifs := .ofArray ctx.ifs
+    axms := .ofArray ctx.axms
     tySubst := ctx.tySubst
     typeFactory := #[]
     seenDatatypes := {}
-    datatypeFuns := Map.empty }
+    datatypeFuns := {} }
 
 abbrev SMTVC := String × SanitizedContext × List Term × Term
 abbrev SMTVCs := List SMTVC
@@ -155,7 +156,10 @@ private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression)
   (options : MetaVerifier.Options := {}) :
   Option SMT.SMTVC := do
-    let maybeTerms := Core.ProofObligation.toSMTTerms E ob (useArrayTheory := options.useArrayTheory)
+    -- Seed the encoding context with the env's datatypes and the array-theory flag.
+    let smtCtx := { Core.SMT.Context.default with
+      typeFactory := E.datatypes, useArrayTheory := options.useArrayTheory }
+    let maybeTerms := Core.ProofObligation.toSMTTerms E.factory ob smtCtx
     match maybeTerms with
     | .error _ => none
     | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
@@ -241,8 +245,8 @@ deriving instance ToExpr for Op.Arrays
 deriving instance ToExpr for Op
 deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
-deriving instance ToExpr for Core.SMT.Sort
-deriving instance ToExpr for Core.SMT.IF
+deriving instance ToExpr for Strata.DL.SMT.Sort
+deriving instance ToExpr for IF
 deriving instance ToExpr for SanitizedContext
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy

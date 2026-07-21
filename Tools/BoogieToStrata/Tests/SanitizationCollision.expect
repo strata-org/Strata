@@ -1,5 +1,0 @@
-Successfully parsed.
-SanitizationCollision.core.st(29, 4) [assert_0]: ✅ pass
-SanitizationCollision.core.st(30, 4) [assert_1]: ✅ pass
-SanitizationCollision.core.st(21, 2) [main_ensures_0]: ✅ pass
-All 3 goals passed.

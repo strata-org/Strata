@@ -85,9 +85,15 @@ where
       -- Need to quantify over bound variable
       -- e.g. λ x => 2 / x gives precondition ∀ x, x != 0
       | .abs md name ty body =>
+        -- Entering the `abs` binder: shift the accumulated implication
+        -- hypotheses (captured at the enclosing depth) up by one so their
+        -- de Bruijn indices stay valid under the new binder.
+        let implications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all name ty (.bvar md 0) ob.obligation }
       | .quant md _ name ty trigger body =>
+        -- Same de Bruijn shift as the `.abs` case above.
+        let implications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all name ty trigger ob.obligation }
       /- If we are on the RHS of an implication, add assumption
@@ -118,7 +124,9 @@ where
          obligations from arg are collected directly -/
       | .app md (.abs amd name ty body) arg =>
         let argObs := go F arg implications
-        let bodyObs := (go F body implications).map fun ob =>
+        -- `body` is under the let/abs binder: shift implications for it.
+        let bodyImplications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
+        let bodyObs := (go F body bodyImplications).map fun ob =>
           { ob with obligation := .app md (.abs amd name ty ob.obligation) arg }
         argObs ++ bodyObs
       | .app _ fn arg => go F fn implications ++ go F arg implications

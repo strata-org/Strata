@@ -216,6 +216,36 @@ private def coreToGotoJsonByName (p : StrataDDM.Program) (name : String) :
 
 -------------------------------------------------------------------------------
 
+-- Test: an inout call site translates without hitting the typeless-fvar path.
+-- `getInputExprs` emits a bare `fvar … none` for an inout argument; the call
+-- arm must recover its type so `toExpr` succeeds. Errors fail the test (a
+-- regression re-surfaces as `.error`, not a silent pass).
+def E2E_InoutCall :=
+#strata
+program Core;
+procedure helper(inout y : int) { };
+procedure caller() {
+  var y : int := 0;
+  call helper(inout y);
+};
+#end
+
+#eval do
+  let (.ok (_, goto)) := coreToGotoJsonByName E2E_InoutCall "caller"
+    | IO.throwServerError "translation failed"
+  assert! (goto.pretty.splitOn "FUNCTION_CALL").length > 1
+
+-- Translating `helper` (which owns the inout parameter) pins the rename-map
+-- dedup: the inout binds to the formal symbol `helper::y`, and no shadow local
+-- `helper::1::y` is emitted. Reverting the outputs-filter regresses this.
+#eval do
+  let (.ok (symtab, _)) := coreToGotoJsonByName E2E_InoutCall "helper"
+    | IO.throwServerError "translation failed"
+  assert! symtab.getObjValD "helper::y" != Lean.Json.null
+  assert! symtab.getObjValD "helper::1::y" == Lean.Json.null
+
+-------------------------------------------------------------------------------
+
 -- Test: axioms are emitted as ASSUME instructions
 def E2E_Axiom :=
 #strata

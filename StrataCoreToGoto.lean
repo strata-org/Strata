@@ -65,13 +65,18 @@ def main (args : List String) : IO UInt32 := do
     | .ok pgm =>
       let symTabFile := dir / s!"{programName}.symtab.json"
       let gotoFile := dir / s!"{programName}.goto.json"
-      CoreToGOTO.writeToGotoJson
-        (programName := programName)
-        (symTabFileName := symTabFile.toString)
-        (gotoFileName := gotoFile.toString)
-        pgm
-      IO.println s!"Written {symTabFile} and {gotoFile}"
-      return 0
+      try
+        CoreToGOTO.writeToGotoJson
+          (programName := programName)
+          (symTabFileName := symTabFile.toString)
+          (gotoFileName := gotoFile.toString)
+          pgm
+        IO.println s!"Written {symTabFile} and {gotoFile}"
+        return (0 : UInt32)
+      catch e =>
+        -- Nonzero exit so callers detect translation failure.
+        IO.eprintln s!"Error: {e}"
+        return (1 : UInt32)
     | .error errors =>
       for e in errors do
         let msg ← e.toString

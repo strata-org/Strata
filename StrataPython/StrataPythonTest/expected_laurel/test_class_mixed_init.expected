@@ -1,4 +1,0 @@
-test_class_mixed_init.py(19, 0): ✔️ always true if reached - class with init
-test_class_mixed_init.py(19, 0): ❓ unknown - class with init
-DETAIL: 1 passed, 0 failed, 1 inconclusive
-RESULT: Inconclusive

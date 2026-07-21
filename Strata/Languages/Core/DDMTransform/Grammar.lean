@@ -32,6 +32,24 @@ set_option maxHeartbeats 400000
 #dialect
 dialect Core;
 
+// Metadata annotation syntax: @[key, key = value, ...]
+category MetadataAnnValue;
+op mdAnnValStr (s : Str) : MetadataAnnValue => s;
+op mdAnnValExpr (e : Expr) : MetadataAnnValue => "(" e ")";
+
+category MetadataAnnKey;
+op mdAnnKeyBare (name : Ident) : MetadataAnnKey => name;
+op mdAnnKeyPrefixed (dialect : Ident, name : Ident) : MetadataAnnKey =>
+  dialect "." name;
+
+category MetadataAnnEntry;
+op mdAnnFlag (key : MetadataAnnKey) : MetadataAnnEntry => key;
+op mdAnnKV (key : MetadataAnnKey, value : MetadataAnnValue) : MetadataAnnEntry =>
+  key " = " value;
+
+category MetadataAnn;
+op mdAnn (entries : CommaSepBy MetadataAnnEntry) : MetadataAnn => "@[" entries "] ";
+
 // Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
@@ -93,16 +111,36 @@ fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
 fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn bv128Lit (n : Num) : bv128 => "bv{128}" "(" n ")";
+
+fn as_uint  (T : Type, e : T) : int  => "as_uint"  "(" e ")";
+fn as_sint  (T : Type, e : T) : int  => "as_sint"  "(" e ")";
+fn as_bv1   (e : int) : bv1   => "as_bv1"   "(" e ")";
+fn as_bv8   (e : int) : bv8   => "as_bv8"   "(" e ")";
+fn as_bv16  (e : int) : bv16  => "as_bv16"  "(" e ")";
+fn as_bv32  (e : int) : bv32  => "as_bv32"  "(" e ")";
+fn as_bv64  (e : int) : bv64  => "as_bv64"  "(" e ")";
+fn as_bv128 (e : int) : bv128 => "as_bv128" "(" e ")";
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
+// Exact rational literal `frac{num, den}`, used to print reals whose value has
+// no terminating decimal representation (e.g. `1/3`). The leading token is
+// `frac{` (containing `{`, like the `bv{N}` literals) rather than a bare `frac`
+// keyword, so `frac` stays a valid identifier and does not collide with a
+// user-declared function named `frac`. The brace form also avoids a collision
+// with `safediv_expr`, which owns the infix `/` token.
+fn fracLit (num : Num, den : Num) : real => "frac{" num ", " den "}";
 
-fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:0 " else " f:0;
+fn if (tp : Type, c : bool, t : tp, f : tp) : tp => @[prec(2)] "if " c:0 " then " t:0 " else " f:0;
 
 fn old (tp : Type, v : tp) : tp => "old " v;
 
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
+// map_const uses explicit key-type annotation syntax: the key type cannot be
+// inferred from the single value argument, so it is written `mapConst<K>(v)`.
+// The value type V is inferred from `v`.
+fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v ")";
 
 // seq_empty uses explicit type annotation syntax since there are no value
 // arguments to infer the type parameter from.
@@ -130,6 +168,12 @@ fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
 fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s ", " a ")";
 fn str_prefixof (s : string, t : string) : bool => "str.prefixof" "(" s ", " t ")";
 fn str_suffixof (s : string, t : string) : bool => "str.suffixof" "(" s ", " t ")";
+fn str_contains (s : string, t : string) : bool => "str.contains" "(" s ", " t ")";
+fn str_indexof (s : string, t : string, i : int) : int => "str.indexof" "(" s ", " t ", " i ")";
+fn str_replace (s : string, t : string, u : string) : string => "str.replace" "(" s ", " t ", " u ")";
+fn str_at (s : string, i : int) : string => "str.at" "(" s ", " i ")";
+fn str_lt (s : string, t : string) : bool => "str.lt" "(" s ", " t ")";
+fn str_le (s : string, t : string) : bool => "str.le" "(" s ", " t ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
 fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
@@ -166,8 +210,8 @@ fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /
 fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
 fn divt_expr (tp : Type, a : tp, b : tp) : tp => "Int.DivT(" a ", " b ")";
 fn modt_expr (tp : Type, a : tp, b : tp) : tp => "Int.ModT(" a ", " b ")";
-fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " /t " b;
-fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " %t " b;
+fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => "Int.SafeDivT(" a ", " b ")";
+fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => "Int.SafeModT(" a ", " b ")";
 
 fn bvnot (tp : Type, a : tp) : tp => "~" a;
 fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
@@ -175,19 +219,19 @@ fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " | " b;
 fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ^ " b;
 fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " << " b;
 fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
-fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >>s " b;
+fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ashr " b;
 fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
 fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
-fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe+ " b;
-fn safesub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " safe- " b;
-fn safemul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " safe* " b;
-fn safeneg_expr (tp : Type, a : tp) : tp => "safe_neg " a;
-fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesdiv " b;
-fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " safesmod " b;
-fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <s " b;
-fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " <=s " b;
-fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >s " b;
-fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " >=s " b;
+fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeAdd" "(" a ", " b ")";
+fn safesub_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSub" "(" a ", " b ")";
+fn safemul_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeMul" "(" a ", " b ")";
+fn safeneg_expr (tp : Type, a : tp) : tp => "Bv.SafeNeg" "(" a ")";
+fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSDiv" "(" a ", " b ")";
+fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSMod" "(" a ", " b ")";
+fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " slt " b;
+fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sle " b;
+fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sgt " b;
+fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sge " b;
 
 fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.SNegOverflow" "(" a ")";
 fn bv_uneg_overflow (tp : Type, a : tp) : bool => "Bv.UNegOverflow" "(" a ")";
@@ -226,6 +270,13 @@ op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
 fn lambda (tp : Type, d : DeclList, @[scope(d)] body : tp) : fnOf(d, tp) =>
   "fun " d " => " body:3;
 
+// "have" binding: `have x : T = v in body`. Syntactic sugar for a lambda
+// application `(fun x : T => body) v`; `x` is in scope only in `body`. The
+// binder is a single-element `DeclList`, reusing the same scoping machinery as
+// `lambda`/`forall`.
+fn have_expr (tp : Type, resTp : Type, d : DeclList, val : tp, @[scope(d)] body : resTp) : resTp =>
+  @[prec(2)] "have " d " = " val:0 " in " body:3;
+
 // Application of an expression to an argument
 fn apply_expr (inTp : Type, outTp : Type, f : inTp -> outTp, x : inTp) : outTp =>
   "(" f ")" "(" x ")";
@@ -250,29 +301,28 @@ category Statement;
 category Block;
 category Else;
 category Label;
-category ReachCheck;
 
 op label (l : Ident) : Label => "[" l "]: ";
-op reachCheck () : ReachCheck => "@[reachCheck] ";
 
 @[scope(dl)]
-op varStatement (dl : DeclList) : Statement => "var " dl ";";
+op varStatement (annots : Option MetadataAnn, dl : DeclList) : Statement => annots:0 "var " dl ";";
 @[declare(v, tp)]
-op initStatement (tp : Type, v : Ident, e : tp) : Statement => "var " v " : " tp " := " e ";";
-op assign (tp : Type, v : Lhs, e : tp) : Statement => v:0 " := " e ";";
-op assume (label : Option Label, c : bool) : Statement => "assume " label c ";";
-op assert (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "assert " label c ";";
-op cover (reachCheck? : Option ReachCheck, label : Option Label, c : bool) : Statement =>
-  reachCheck?:0 "cover " label c ";";
+op initStatement (annots : Option MetadataAnn, tp : Type, v : Ident, e : tp) : Statement => annots:0 "var " v " : " tp " := " e ";";
+op assign (annots : Option MetadataAnn, tp : Type, v : Lhs, e : tp) : Statement => annots:0 v:0 " := " e ";";
+op assume (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "assume " label c ";";
+op assert (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "assert " label c ";";
+op cover (annots : Option MetadataAnn, label : Option Label, c : bool) : Statement =>
+  annots:0 "cover " label c ";";
 category ExprOrNondet;
 op condDet (c : bool) : ExprOrNondet => "(" c ")";
 op condNondet : ExprOrNondet => "*";
 
-op if_statement (c : ExprOrNondet, t : Block, f : Else) : Statement => "if " c:0 " " t:0 f:0;
+op if_statement (annots : Option MetadataAnn, c : ExprOrNondet, t : Block, f : Else) : Statement => annots:0 "if " c:0 " " t:0 f:0;
 op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
-op havoc_statement (v : Ident) : Statement => "havoc " v ";";
+op havoc_statement (annots : Option MetadataAnn, v : Ident) : Statement => annots:0 "havoc " v ";";
 
 category Invariant;
 op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
@@ -285,21 +335,21 @@ op consInvariants(label : Option Label, e : Expr, is : Invariants) : Invariants 
 category Measure;
 op measure_mk (e : Expr) : Measure => "decreases " e "\n";
 
-op while_statement (c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
-  "while " c:0 "\n" m:0 is body:0;
+op while_statement (annots : Option MetadataAnn, c : ExprOrNondet, m : Option Measure, is : Invariants, body : Block) : Statement =>
+  annots:0 "while " c:0 "\n" m:0 is body:0;
 
 category CallArg;
 op callArgExpr (e : Expr) : CallArg => e;
 op callArgOut (v : Ident) : CallArg => "out " v;
 op callArgInout (v : Ident) : CallArg => "inout " v;
 
-op call_statement (f : Ident, args : CommaSepBy CallArg) : Statement =>
-   "call " f "(" args ")" ";";
+op call_statement (annots : Option MetadataAnn, f : Ident, args : CommaSepBy CallArg) : Statement =>
+   annots:0 "call " f "(" args ")" ";";
 
 @[scope(c)]
 op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
-op block_statement (label : Ident, b : Block) : Statement => label ": " b:0;
-op exit_statement (label : Ident) : Statement => "exit " label ";";
+op block_statement (annots : Option MetadataAnn, label : Ident, b : Block) : Statement => annots:0 label ": " b:0;
+op exit_statement (annots : Option MetadataAnn, label : Ident) : Statement => annots:0 "exit " label ";";
 
 category SpecElt;
 category Free;
@@ -326,13 +376,14 @@ category Bindings;
 @[scope(bindings)]
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
-op command_procedure (name : Ident,
+op command_procedure (annots : Option MetadataAnn,
+                      name : Ident,
                       typeArgs : Option TypeArgs,
                       @[scope(typeArgs)] b : Bindings,
                       @[scope(b)] s: Option Spec,
                       @[scope(b)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "\n"
+  @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
               s body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -341,28 +392,31 @@ op command_procedure (name : Ident,
 // type Array (a : Type);
 // where the former is what Boogie does.
 @[declareType(name, some args)]
-op command_typedecl (name : Ident, args : Option Bindings) : Command =>
-  "type " name args ";\n";
+op command_typedecl (annots : Option MetadataAnn, name : Ident, args : Option Bindings) : Command =>
+  annots:0 "type " name args ";\n";
 
 @[aliasType(name, some args, rhs)]
-op command_typesynonym (name : Ident,
+op command_typesynonym (annots : Option MetadataAnn,
+                        name : Ident,
                         args : Option Bindings,
                         targs : Option TypeArgs,
                         @[scope(args)] rhs : Type) : Command =>
-  "type " name args " := " targs rhs ";\n";
+  annots:0 "type " name args " := " targs rhs ";\n";
 
 @[declare(name, r)]
-op command_constdecl (name : Ident,
+op command_constdecl (annots : Option MetadataAnn,
+                      name : Ident,
                       typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  "const " name ":" typeArgs r ";\n";
+  annots:0 "const " name ":" typeArgs r ";\n";
 
 @[declareFn(name, b, r)]
-op command_fndecl (name : Ident,
+op command_fndecl (annots : Option MetadataAnn,
+                   name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope(typeArgs)] r : Type) : Command =>
-  "function " name typeArgs b " : " r ";\n";
+  annots:0 "function " name typeArgs b " : " r ";\n";
 
 category Inline;
 op inline () : Inline => "inline ";
@@ -370,7 +424,8 @@ op inline () : Inline => "inline ";
 // Note: when editing command_fndef, consider whether recfn_decl needs
 // matching edits.
 @[declareFn(name, b, r)]
-op command_fndef (name : Ident,
+op command_fndef (annots : Option MetadataAnn,
+                  name : Ident,
                   typeArgs : Option TypeArgs,
                   @[scope(typeArgs)] b : Bindings,
                   @[scope(typeArgs)] r : Type,
@@ -380,7 +435,7 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
+  annots:0 inline? "function " name typeArgs b " : " r indent(2, preconds) " {\n  " indent(2, c) "\n}\n";
 
 // Recursive (and mutually recursive) function declarations.
 // A single recursive function is a 1-element block, just like datatypes.
@@ -397,30 +452,31 @@ op recfn_decl (name : Ident,
   "function " name typeArgs b " : " r indent(2, preconds) "\n" indent(2, decreases) "{\n  " indent(2, c) "\n}";
 
 @[scope(recfns), preRegisterFunctions(recfns)]
-op command_recfndefs (recfns : NewlineSepBy RecFnDecl) : Command =>
-  "rec " recfns ";\n";
+op command_recfndefs (annots : Option MetadataAnn, recfns : NewlineSepBy RecFnDecl) : Command =>
+  annots:0 "rec " recfns ";\n";
 
 // Function declaration statement
 @[declareFn(name, b, r)]
-op funcDecl_statement (name : Ident,
+op funcDecl_statement (annots : Option MetadataAnn,
+                       name : Ident,
                        typeArgs : Option TypeArgs,
                        @[scope(typeArgs)] b : Bindings,
                        @[scope(typeArgs)] r : Type,
                        @[scope(b)] preconds : SpacePrefixSepBy SpecElt,
                        @[scope(b)] body : r,
                        inline? : Option Inline) : Statement =>
-  inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }";
+  annots:0 inline? "function " name typeArgs b " : " r indent(2, preconds) " { " body " }";
 
 // Type declaration statement
 @[declareScopedType(name, some args)]
-op typeDecl_statement (name : Ident, args : Option Bindings) : Statement =>
-  "type " name args ";";
+op typeDecl_statement (annots : Option MetadataAnn, name : Ident, args : Option Bindings) : Statement =>
+  annots:0 "type " name args ";";
 
-op command_axiom (label : Option Label, e : bool) : Command =>
-  "axiom " label e ";\n";
+op command_axiom (annots : Option MetadataAnn, label : Option Label, e : bool) : Command =>
+  annots:0 "axiom " label e ";\n";
 
-op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
-  "distinct " label "[" exprs "]" ";\n";
+op command_distinct (annots : Option MetadataAnn, label : Option Label, exprs : CommaSepBy Expr) : Command =>
+  annots:0 "distinct " label "[" exprs "]" ";\n";
 
 // Top-level block command for parsing statements directly
 op command_block (b : Block) : Command =>
@@ -466,8 +522,8 @@ op datatype_decl (name : Ident,
 // `@[nonempty]` is load-bearing: see
 // https://github.com/strata-org/Strata/issues/1146.
 @[scope(datatypes), preRegisterTypes(datatypes)]
-op command_datatypes (@[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
-  datatypes ";\n";
+op command_datatypes (annots : Option MetadataAnn, @[nonempty] datatypes : NewlineSepBy DatatypeDecl) : Command =>
+  annots:0 datatypes ";\n";
 
 // =====================================================================
 // CFG (Unstructured Control Flow) Syntax
@@ -513,13 +569,14 @@ op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
   "cfg " entry " {\n" indent(2, blocks) "\n}";
 
 // Procedure with CFG body
-op command_cfg_procedure (name : Ident,
+op command_cfg_procedure (annots : Option MetadataAnn,
+                          name : Ident,
                           typeArgs : Option TypeArgs,
                           @[scope(typeArgs)] b : Bindings,
                           @[scope(b)] s : Option Spec,
                           @[scope(b)] body : CFGBody) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "\n"
+  @[prec(10)] annots:0 "procedure " name typeArgs b "\n"
               s body ";\n";
 
 #end

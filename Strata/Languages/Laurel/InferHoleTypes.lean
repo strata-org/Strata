@@ -23,6 +23,24 @@ Every node is handled by `inferExpr` with an `expectedType` parameter.
 For statement positions the expected type is `TVoid`, except for the last
 statement in a block which inherits the block's expected type, and for
 `return` expressions which use the procedure's output type.
+
+## TODO: make this pass obsolete by improving `Resolution`
+
+This pass exists only because `Resolution` does not currently assign a concrete
+type to every hole. It should: resolution already type-checks the whole program
+bidirectionally, so it is the natural place to type holes, and doing so there
+would make this pass redundant and let us delete it.
+
+The missing piece is in how `Resolution` *synthesizes* the type of a hole.
+Today a hole in synth position synthesizes to `Unknown`, and that `Unknown` is
+discarded rather than being unified with the type its context later imposes.
+Instead, synthesizing a hole should return a fresh **type variable** that is
+recorded on the hole node, so that when the surrounding expression is checked
+(e.g. via `checkSubtype`, or the `join` in `Synth.primitiveOp`) the variable is
+solved to the concrete type and that solution is written back onto the hole.
+With that, holes such as `1 + <?>`, `<?> > 0`, or a call argument would be
+typed during resolution exactly as this pass types them now, and `Resolution`
+would assign a type to every hole on its own.
 -/
 
 namespace Strata
@@ -118,7 +136,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           -- (e.g. when the first arg is a Hole).
           let computed := computeExprType model expr
           match computed.val with
-          | .TCore _ | .Unknown => expectedType
+          | .Unknown => expectedType
           | _ => computed
       return ⟨.PrimitiveOp op (← inferArgs args argType), source⟩
   | .StaticCall callee args =>
@@ -145,13 +163,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
       return ⟨.Assign targets (← inferExpr value targetType), source⟩
-  | .While cond invs dec body =>
+  | .While cond invs dec body postTest =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))
         | none => pure none
-      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩), source⟩
-  | .Assert ⟨condExpr, summary, free⟩ =>
-      return ⟨.Assert { condition := ← inferExpr condExpr ⟨ .TBool, source ⟩, summary, free }, source⟩
+      return ⟨.While (← inferExpr cond ⟨ .TBool, source ⟩) (← invs.mapM (inferExpr · ⟨ .TBool, source ⟩)) dec' (← inferExpr body ⟨ .TVoid, source⟩) postTest, source⟩
+  | .Assert condExpr summary =>
+      return ⟨.Assert (← inferExpr condExpr ⟨ .TBool, source ⟩) summary, source⟩
   | .Assume cond =>
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩), source⟩
   | .Return (some retExpr) =>
@@ -192,13 +210,13 @@ def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List
 end -- public section
 
 /-- Pipeline pass: infer hole types. -/
-public def inferHoleTypesPass : LaurelPass where
+public def inferHoleTypesPass : LoweringPass where
   name := "InferHoleTypes"
-  documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values."
-  run := fun p m =>
+  documentation := "Annotates every verification hole (`.Hole`) in the program with a type inferred from context. This type information is needed by subsequent passes that replace holes with uninterpreted functions or nondeterministic values. TODO: this pass should be removed by improving `Resolution` to assign a concrete type to every hole during type checking (see the module doc for the type-variable approach), making this pass obsolete."
+  run := fun _ p m =>
     let (p', diags, stats) := inferHoleTypes m p
     (p', diags, stats)
   comesBefore := [
-      ⟨ eliminateDeterministicHolesPass, "eliminating deterministic holes relies on knowing the type of holes"⟩]
+      ⟨ eliminateDeterministicHolesPass.meta, "eliminating deterministic holes relies on knowing the type of holes"⟩]
 
 end Laurel

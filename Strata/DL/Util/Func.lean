@@ -125,6 +125,10 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
   -- No args have same name.
   arg_nodup:
     List.Nodup (f.inputs.map (getName ·.1))
+  -- Free variables of body must be arguments.
+  body_freevars:
+    ∀ b, f.body = .some b →
+      getVarNames b ⊆ f.inputs.map (getName ·.1)
   -- concreteEval does not succeed if the length of args is incorrect.
   concreteEval_argmatch:
     ∀ fn md args res, f.concreteEval = .some fn
@@ -142,12 +146,23 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
       getTyFreeVars ty ⊆ f.typeArgs
   output_typevars_in_typeArgs:
     getTyFreeVars f.output ⊆ f.typeArgs
+  -- Free variables of preconditions must be arguments.
+  precond_freevars:
+    ∀ p, p ∈ f.preconditions →
+      getVarNames p.expr ⊆ f.inputs.map (getName ·.1)
 
 instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String)
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (List.Nodup (f.inputs.map (getName ·.1))) := by
   apply List.nodupDecidable
+
+instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (∀ b, f.body = .some b →
+      getVarNames b ⊆ f.inputs.map (getName ·.1)) :=
+  by exact f.body.decidableForallMem
 
 -- FuncWF.concreteEval_argmatch is not decidable.
 
@@ -178,6 +193,15 @@ instance FuncWF.output_typevars_in_typeArgs_decidable
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (getTyFreeVars f.output ⊆ f.typeArgs) := by
   apply List.instDecidableRelSubsetOfDecidableEq
+
+instance FuncWF.precond_freevars_decidable
+    {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT):
+    Decidable (∀ p, p ∈ f.preconditions →
+      getVarNames p.expr ⊆ f.inputs.map (getName ·.1)) := by
+  exact List.decidableBAll (fun x => getVarNames x.expr ⊆ f.inputs.map (getName ·.1))
+    f.preconditions
 
 end -- public section
 end Strata.DL.Util

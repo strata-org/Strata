@@ -14,6 +14,8 @@ import all Strata.DL.Lambda.LExprTypeSpec
 import all Strata.Languages.Core.CmdType
 import all Strata.DL.Lambda.LExprTypeEnv
 
+set_option linter.unusedVariables false
+
 /-! ## Soundness of Command (CmdExt) Typechecker
 
 This file relates the executable command typechecker `Statement.typeCheckCmd`

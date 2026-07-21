@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Backends.CBMC.GOTO.Program
+public import Strata.Languages.GOTO.Program
 
 import Strata.Util.Tactics
 public import Strata.DL.Util.Map
@@ -69,6 +69,11 @@ def tyToJson (ty : Ty) : Json :=
   | .Array elemTy => Json.mkObj [
       ("id", "array"),
       ("sub", Json.arr #[tyToJson elemTy])
+    ]
+  | .Pointer pointee => Json.mkObj [
+      ("id", "pointer"),
+      ("namedSub", Json.mkObj [("width", Json.mkObj [("id", "64")])]),
+      ("sub", Json.arr #[tyToJson pointee])
     ]
   | { id := .code, subtypes := retTy :: paramTypes, .. } =>
     let paramSubs := paramTypes.map fun pTy =>
@@ -236,9 +241,8 @@ def instructionToJson (inst : Instruction) : Except String Json := do
     ("instructionId", Json.str (toString inst.type)),
     ("locationNumber", Json.num inst.locationNum)
   ]
-  let guardField ← if inst.type == .GOTO || !Expr.beq inst.guard Expr.true then do
+  let guardField ← do
     pure [("guard", ← exprToJsonWithNamedFields inst.guard)]
-  else pure []
   let codeField ← if inst.code == Code.skip then pure [] else do
     pure [("code", ← codeToJson inst.code)]
   let targetsField := match inst.type, inst.target with
@@ -316,20 +320,6 @@ structure CBMCSymbol where
 
 instance : ToJson (Map String CBMCSymbol) where
   toJson m := Json.mkObj (m.map fun (k, v) => (k, toJson v))
-
-/--
-CBMC expects formals to be in the namespace of the program.
-So, e.g., `x` appears as `program::x`.
--/
-def mkFormalSymbol (pname base : String) : String :=
-  pname ++ "::" ++ base
-
-/--
-Local variables use `program::<depth>::<var>` notation.
-(FIXME): Does `depth` refer to the scope level?
--/
-def mkLocalSymbol (pname base : String) (depth : Nat := 1) : String :=
-  pname ++ "::" ++ toString depth ++ "::" ++ base
 
 /--
 A symbol table entry for a variable (e.g., a function argument or a local

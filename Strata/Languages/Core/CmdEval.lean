@@ -17,7 +17,7 @@ open Std (ToFormat Format format)
 namespace CmdEval
 
 def eval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  LExpr.eval E.exprEnv.config.fuel E.exprEnv e
+  (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
 
 def updateError (E : Env) (e : EvalError Expression) : Env :=
   { E with error := e }
@@ -74,7 +74,7 @@ def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
   { E with warnings := w :: E.warnings }
 
 def getPathConditions (E : Env) : PathConditions Expression :=
-  E.pathConditions
+  E.pathConditions.consume
 
 private def findUnique (xs : List String) (label : String) (counter : Nat) : String :=
   let candidate := s!"{label}_{counter}"
@@ -85,9 +85,9 @@ private def findUnique (xs : List String) (label : String) (counter : Nat) : Str
     candidate
   termination_by xs.length
 
-private def generateUniqueLabel (pathConditions : PathConditions Expression)
+private def generateUniqueLabel (pathConditions : RevPathConditions Expression)
     (baseLabel : String) : String :=
-  let labels := pathConditions.flatten.map (fun e => e.name)
+  let labels := pathConditions.scopes.flatten.map (fun e => e.name)
   if labels.contains baseLabel then
     let newLabel := findUnique labels baseLabel 1
     dbg_trace f!"⚠️ [addPathCondition] Label clash detected for \
@@ -104,7 +104,7 @@ def addPathCondition (E : Env) (p : PathCondition Expression) : Env :=
     let entry' := match entry with
       | .assumption _ e => .assumption uniqueLabel e
       | other => other
-    let new_path_conditions := E.pathConditions.addEntry entry'
+    let new_path_conditions := E.pathConditions.prepend entry'
     let E := { E with pathConditions := new_path_conditions }
     addPathCondition E prest
 

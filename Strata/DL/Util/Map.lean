@@ -343,6 +343,32 @@ def Map.disjointp [DecidableEq α] (m1 m2 : Map α β) : Prop :=
 
 ---------------------------------------------------------------------
 
+theorem Map_find?_some_mem_values {α β} [DecidableEq α] (m : Map α β) (k : α) (v : β)
+    (h : Map.find? m k = some v) : v ∈ m.map Prod.snd := by
+  induction m with
+  | nil => simp [Map.find?] at h
+  | cons p m ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.find?] at h
+    split at h
+    · simp only [Option.some.injEq] at h; subst h; simp
+    · exact List.mem_cons_of_mem _ (ih h)
+
+theorem Map_find?_ne_none_of_mem_keys {α β} [DecidableEq α] (m : Map α β) (y : α)
+    (h : y ∈ m.keys) : Map.find? m y ≠ none := by
+  induction m with
+  | nil => simp [Map.keys] at h
+  | cons p m ih =>
+    obtain ⟨a, b⟩ := p
+    simp only [Map.keys, List.mem_cons] at h
+    simp only [Map.find?]
+    split
+    · simp
+    · rename_i hne
+      rcases h with rfl | h
+      · exact absurd rfl hne
+      · exact ih h
+
 theorem Map.find?_mem_keys [DecidableEq α] (m : Map α β)
   (h : Map.find? m k = some v) :
   k ∈ Map.keys m := by
@@ -717,14 +743,6 @@ theorem Map.keys_append {α β : Type} (m1 m2 : Map α β) :
   | nil => rfl
   | cons hd tl ih => obtain ⟨a, _⟩ := hd; exact congrArg (a :: ·) ih
 
--- Helper: Map.values distributes over append
-theorem Map.values_append {α β : Type} (m1 m2 : Map α β) :
-    Map.values (m1 ++ m2) = Map.values m1 ++ Map.values m2 := by
-  show Map.values (List.append m1 m2) = Map.values m1 ++ Map.values m2
-  induction m1 with
-  | nil => rfl
-  | cons hd tl ih => obtain ⟨_, b⟩ := hd; exact congrArg (b :: ·) ih
-
 /-- Erasing key `a` removes `a` from a single Map's keys. -/
 theorem Map.keys_erase_self_not_mem [DecidableEq α]
     (m : Map α β) (a : α)
@@ -774,6 +792,14 @@ theorem Map.find?_insert_ne [DecidableEq α]
       have h_ne2 : ¬(hd.fst = x) := by rw [h_eq]; exact h_ne
       simp [h_ne2]
     · simp only [Map.find?]; split <;> simp_all
+
+-- Helper: Map.values distributes over append
+theorem Map.values_append {α β : Type} (m1 m2 : Map α β) :
+    Map.values (m1 ++ m2) = Map.values m1 ++ Map.values m2 := by
+  show Map.values (List.append m1 m2) = Map.values m1 ++ Map.values m2
+  induction m1 with
+  | nil => rfl
+  | cons hd tl ih => obtain ⟨_, b⟩ := hd; exact congrArg (b :: ·) ih
 
 -------------------------------------------------------------------------------
 end

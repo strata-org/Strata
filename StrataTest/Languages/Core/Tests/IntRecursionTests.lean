@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.Languages.Core
-import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core
+import StrataDDM.Integration.Lean.HashCommands
+
+meta section
 
 /-!
 # Int-Valued Recursion Termination Checking Tests
@@ -16,12 +19,14 @@ termination measures (`decreases <int expr>`).
 
 namespace Strata.IntRecursionTermCheckTest
 
+open StrataDDM (Program)
+
 ---------------------------------------------------------------------
 -- Test 1: int-valued recursion — decreases on int parameter
 -- Non-negativity obligation fails without a precondition on n.
 ---------------------------------------------------------------------
 
-def decreasesIntNoPrecondPgm : StrataDDM.Program :=
+def decreasesIntNoPrecondPgm : Program :=
 #strata
 program Core;
 
@@ -47,13 +52,13 @@ Obligation: bad_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify decreasesIntNoPrecondPgm (options := .quiet)
+#eval Core.verify decreasesIntNoPrecondPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 2: fib
 ---------------------------------------------------------------------
 
-def fibPgm : StrataDDM.Program :=
+def fibPgm : Program :=
 #strata
 program Core;
 
@@ -105,13 +110,13 @@ Obligation: fib_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify fibPgm (options := .default)
+#eval Core.verify fibPgm (options := .default)
 
 ---------------------------------------------------------------------
 -- Test 3: factorial — int recursion with precondition
 ---------------------------------------------------------------------
 
-def factorialPgm : StrataDDM.Program :=
+def factorialPgm : Program :=
 #strata
 program Core;
 
@@ -136,13 +141,13 @@ Obligation: factorial_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify factorialPgm (options := .quiet)
+#eval Core.verify factorialPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 4: non-terminating — f(n) calls f(n+1), termination VC fails
 ---------------------------------------------------------------------
 
-def nonTermIntPgm : StrataDDM.Program :=
+def nonTermIntPgm : Program :=
 #strata
 program Core;
 
@@ -167,13 +172,13 @@ Obligation: bad_terminates_1
 Property: assert
 Result: ❌ fail-/
 #guard_msgs in
-#eval Strata.Core.verify nonTermIntPgm (options := .quiet)
+#eval Core.verify nonTermIntPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 5: power function — two params, decreases on one
 ---------------------------------------------------------------------
 
-def powerPgm : StrataDDM.Program :=
+def powerPgm : Program :=
 #strata
 program Core;
 
@@ -193,7 +198,7 @@ Obligation: power_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify powerPgm (options := .quiet)
+#eval Core.verify powerPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 6: compound measure — decreases on expression over params
@@ -201,7 +206,7 @@ Result: ✅ pass -/
 -- NOTE: without `nat` or `ensures`, cannot prove length nonneg
 ---------------------------------------------------------------------
 
-def compoundMeasurePgm : StrataDDM.Program :=
+def compoundMeasurePgm : Program :=
 #strata
 program Core;
 
@@ -290,14 +295,14 @@ Obligation: merge_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify compoundMeasurePgm (options := .quiet)
+#eval Core.verify compoundMeasurePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 7: compound measure with provable non-negativity
 -- decreases m + n where m >= 0 and n >= 0 are preconditions
 ---------------------------------------------------------------------
 
-def compoundArithPgm : StrataDDM.Program :=
+def compoundArithPgm : Program :=
 #strata
 program Core;
 
@@ -344,13 +349,13 @@ Obligation: diagonal_terminates_3
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify compoundArithPgm (options := .quiet)
+#eval Core.verify compoundArithPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8: mutual int recursion
 ---------------------------------------------------------------------
 
-def mutualIntRecPgm : StrataDDM.Program :=
+def mutualIntRecPgm : Program :=
 #strata
 program Core;
 
@@ -393,13 +398,13 @@ Obligation: isOdd_terminates_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify mutualIntRecPgm (options := .quiet)
+#eval Core.verify mutualIntRecPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 8b: mutual int recursion — concrete evaluation via PE
 ---------------------------------------------------------------------
 
-def mutualIntRecConcretePgm : StrataDDM.Program :=
+def mutualIntRecConcretePgm : Program :=
 #strata
 program Core;
 
@@ -488,14 +493,14 @@ Obligation: TestMutualConcrete_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify mutualIntRecConcretePgm (options := .quiet)
+#eval Core.verify mutualIntRecConcretePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 9: int-recursive function is a pure UF — no definitional axioms.
 -- Cannot prove fib(n) == fib(n-1) + fib(n-2) since fib has no axioms.
 ---------------------------------------------------------------------
 
-def intRecUFPgm : StrataDDM.Program :=
+def intRecUFPgm : Program :=
 #strata
 program Core;
 
@@ -560,13 +565,13 @@ Obligation: TestFibUF_ensures_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify intRecUFPgm (options := .quiet)
+#eval Core.verify intRecUFPgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 10: concrete evaluation — factorial evaluates concretely
 ---------------------------------------------------------------------
 
-def factorialConcretePgm : StrataDDM.Program :=
+def factorialConcretePgm : Program :=
 #strata
 program Core;
 
@@ -628,14 +633,14 @@ Obligation: TestFactConcrete_ensures_0
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify factorialConcretePgm (options := .quiet)
+#eval Core.verify factorialConcretePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 11: @[cases] with int-valued decreases — int measure takes priority
 -- but @[cases] allows unfolding
 ---------------------------------------------------------------------
 
-def casesWithIntMeasurePgm : StrataDDM.Program :=
+def casesWithIntMeasurePgm : Program :=
 #strata
 program Core;
 
@@ -696,13 +701,13 @@ Obligation: TestSumFirstCons_ensures_1
 Property: assert
 Result: ✅ pass -/
 #guard_msgs in
-#eval Strata.Core.verify casesWithIntMeasurePgm (options := .quiet)
+#eval Core.verify casesWithIntMeasurePgm (options := .quiet)
 
 ---------------------------------------------------------------------
 -- Test 12: constant measure `decreases 10` should fail termination
 ---------------------------------------------------------------------
 
-def constantMeasureFailPgm : StrataDDM.Program :=
+def constantMeasureFailPgm : Program :=
 #strata
 program Core;
 
@@ -722,6 +727,8 @@ Obligation: loop_terminates_1
 Property: assert
 Result: ❌ fail -/
 #guard_msgs in
-#eval Strata.Core.verify constantMeasureFailPgm (options := .quiet)
+#eval Core.verify constantMeasureFailPgm (options := .quiet)
 
 end Strata.IntRecursionTermCheckTest
+
+end

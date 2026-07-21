@@ -5425,7 +5425,7 @@ private theorem openFull_nil_mono (mm : LMonoTy) : (LTy.forAll [] mm).openFull [
   simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
   rw [LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])]
 
-omit [ToString T.IDMeta] in
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 Generalized (`∀ Γ'`-form) core of `HasType_context_aliasEquiv`, carrying a
 PER-KEY freshness reflection hypothesis: every free tyvar occurring in a
@@ -5595,7 +5595,7 @@ theorem HasType_context_aliasEquiv_gen
     intro Γ' h_al h_ctx h_fr
     exact HasType.talias Γ' e mty mty' (by rw [h_al]; exact h_equiv) (ih_e Γ' h_al h_ctx h_fr)
 
-omit [ToString T.IDMeta] in
+omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 `HasType` transfers along an alias-equivalent context: if `e : ty` in `Γ`, and
 `Γ'` has the same aliases and bindings alias-equivalent to `Γ`'s, then `e : ty`
@@ -5885,6 +5885,7 @@ theorem tconsAliasSimple_subst_comm (σ : Subst) (name : String) (args : LMonoTy
     congr 1
     rw [LMonoTys.subst_eq_substLogic]
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Variables produced by `genTyVars` are distinct: the recursion emits
     `tyPrefix ++ toString k` for strictly increasing `k`. -/
 theorem genTyVars_nodup
@@ -6039,6 +6040,8 @@ theorem subst_rename_inverse
     renaming (maps each var to a `.ftvar`), then resolving the renamed type at `Env2`
     (same aliases) yields the renamed value. `resolveAliases` never errors and returns
     its input env unchanged, so the output env is exactly `Env2`. -/
+section
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata]
 mutual
 theorem LMonoTy_resolveAliases_subst_comm (σ : Subst)
     (h_ren : ∀ x, ∃ w, LMonoTy.subst σ (.ftvar x) = .ftvar w)
@@ -6115,6 +6118,7 @@ theorem LMonoTys_resolveAliases_subst_comm (σ : Subst)
     simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, and_true]
     rw [subst_cons_eq']
 end
+end
 
 /-- Free variables of a list of `.ftvar`s: `flatMap freeVars ∘ map ftvar = id`. -/
 theorem flatMap_freeVars_ftvar (l : List TyIdentifier) :
@@ -6161,6 +6165,7 @@ theorem subst_zip_ftvar_renaming (ids freshtvs : List TyIdentifier) (y : TyIdent
     exact ⟨w, by rw [hw]⟩
 -- === END transplanted helpers ===
 
+omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- **Instantiation inverse (structural, general).** `LTy.instantiateWithCheck`
     instantiates the scheme's ∀-bound variables with fresh type variables (in
     *declaration* order) and resolves aliases. There is a *renaming* `ρ` (the fresh
