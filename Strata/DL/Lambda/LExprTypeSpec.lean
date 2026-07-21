@@ -4803,6 +4803,24 @@ private theorem subst_go_irrel_body (S : Subst)
   have hk_not_xs := keys_go_not_mem_xs S xs k hk_key
   exact h k hk_S hk_not_xs hk_fv
 
+/-- A type-var-closed `LTy` (`freeVars = []`) is fixed by ANY substitution — no `boundVars = []`
+    (monomorphism) needed. `LTy.subst` removes the bound vars from `S` (`go`), and every free var
+    of the body lies among the bound vars (closedness), so no surviving key is relevant. -/
+theorem LTy.subst_eq_self_of_closed (S : Subst) (ty : LTy) (h : LTy.freeVars ty = []) :
+    LTy.subst S ty = ty := by
+  cases ty with
+  | forAll xs mty =>
+    simp only [LTy.subst]
+    congr 1
+    apply subst_go_irrel_body
+    intro k _ hk_notin hk_fv
+    have hmem : k ∈ LTy.freeVars (LTy.forAll xs mty) := by
+      rw [LTy.freeVars]
+      unfold List.removeAll
+      rw [List.mem_filter]
+      exact ⟨hk_fv, by simp [hk_notin]⟩
+    rw [h] at hmem; exact absurd hmem List.not_mem_nil
+
 /-- When `allKeysFresh S ctx` and `forAll xs body` is in the context,
     `subst (go xs S) body = body`: the bound-var-erased substitution
     has no effect on the body. -/
