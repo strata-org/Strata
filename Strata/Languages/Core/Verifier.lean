@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
@@ -1523,7 +1524,7 @@ def corePipelinePhases (procs : Option (List String) := none)
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, commonSubexprElimPhase]
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, betaReducePipelinePhase, commonSubexprElimPhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)

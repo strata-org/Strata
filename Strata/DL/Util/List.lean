@@ -20,6 +20,14 @@ def dedup {α : Type} [DecidableEq α] : List α → List α
     let as := as.dedup
     if a ∈ as then as else a :: as
 
+/-- Monotonicity of list `⊆` under `++`. -/
+theorem append_subset_append {α} {a a' b b' : List α}
+    (ha : a ⊆ a') (hb : b ⊆ b') : a ++ b ⊆ a' ++ b' := by
+  intro x hx
+  rcases List.mem_append.mp hx with h | h
+  · exact List.mem_append.mpr (Or.inl (ha h))
+  · exact List.mem_append.mpr (Or.inr (hb h))
+
 /-- Values in the `snd` projection of a `zip` are members of the second list. -/
 theorem mem_map_snd_zip {α β} (l₁ : List α) (l₂ : List β) (v : β)
     (h : v ∈ (l₁.zip l₂).map Prod.snd) : v ∈ l₂ := by
