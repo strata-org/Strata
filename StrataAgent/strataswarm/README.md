@@ -38,14 +38,33 @@ The point: you can add StrataAgent to any branch without merging the whole
 
 ## Run
 
-Start the dashboard in the background:
+Start the dashboard with `start_dashboard.sh`:
 
 ```bash
-nohup python StrataAgent/run_dashboard.py > StrataAgent/temp/dashboard.log 2>&1 &
+./StrataAgent/start_dashboard.sh                       # port 8421, cheat sheet OFF
+./StrataAgent/start_dashboard.sh --port 9000           # custom port
+./StrataAgent/start_dashboard.sh --cheat-sheet path/to/Playbook.md   # enable a cheat sheet
+
+# Start the dashboard AND kick off a proof — loads LeanSwarm, starts it,
+# and sends the message to the TaskManager:
+./StrataAgent/start_dashboard.sh --prompt "Prove the sorries in Strata/Transform/LoopElimCorrect.lean"
 ```
 
-Custom port: `python StrataAgent/run_dashboard.py --port 9000`.
-Then open **http://localhost:8421**.
+Runs in the foreground — press `Ctrl-C` to stop (frees the port). Then open
+**http://localhost:8421**.
+
+If the dashboard runs on a remote host, port-forward it to your laptop over SSH:
+
+```bash
+ssh -N -L 8421:localhost:8421 <this-host>
+```
+
+then open **http://localhost:8421** in your browser.
+
+If you're running this over VS Code (connected to the remote host), it detects
+the port automatically and shows a notification to forward it — just click
+**Open in Browser** when the option appears, and it handles the tunneling for
+you (no `ssh -L` needed).
 
 Stop it:
 
