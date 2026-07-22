@@ -29,6 +29,7 @@ inductive ResolvedNodeKind where
   | typeAlias
   | constant
   | quantifierVar
+  | typeParameter
   | unresolved
   deriving Repr, BEq
 
@@ -46,6 +47,7 @@ def ResolvedNodeKind.name : ResolvedNodeKind → String
   | .typeAlias         => "type alias"
   | .constant          => "constant"
   | .quantifierVar     => "quantifier variable"
+  | .typeParameter     => "type parameter"
   | .unresolved        => "unresolved"
 
 /-- A definition-site AST node that a reference can resolve to. -/
@@ -78,6 +80,11 @@ inductive ResolvedNode where
   | constant (c : Constant)
   /-- A quantifier-bound variable. -/
   | quantifierVar (name : Identifier) (type : HighTypeMd)
+  /-- A datatype's type parameter (a type variable), in scope only while resolving
+      that datatype's constructor argument types. Registering it lets a reference
+      to a type parameter resolve through the normal scope lookup — like any other
+      type name — instead of being special-cased by name via a threaded list. -/
+  | typeParameter (name : Identifier)
   | unresolved (referenceSource: Option FileRange)
   deriving Repr
 
@@ -99,6 +106,7 @@ def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
   | .typeAlias ..         => .typeAlias
   | .constant ..          => .constant
   | .quantifierVar ..     => .quantifierVar
+  | .typeParameter ..     => .typeParameter
   | .unresolved _          => .unresolved
 
 def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
@@ -111,7 +119,7 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
  | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
- | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ => ⟨ .Unknown, none ⟩
+ | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ | .typeParameter _ => ⟨ .Unknown, none ⟩
 
 /-! ## Resolution result -/
 

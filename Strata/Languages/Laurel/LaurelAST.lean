@@ -643,6 +643,15 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     else match ctx.unfoldMap.get? name.text with
       | some target => ctx.unfold target (visited.insert name.text)
       | none => ty
+  -- Generic type application is *erased* to its base in Laurel's consistency /
+  -- subtype relation: `Option<int>` relates as `Option`. (Resolution still
+  -- checks the application's arity and well-formedness; only the deep
+  -- type-argument check against instantiated parameters is left to Core, which
+  -- has real polymorphic datatypes.) The args are preserved in the AST and
+  -- dropped only here, in the type-relation layer — never in the Laurel→Core
+  -- translation of a named-base application (`translateType` forwards them to
+  -- the Core `.tcons`).
+  | .Applied base _ => ctx.unfold base visited
   | _ => ty
 
 /-- All ancestors of a composite type (including itself), reachable via

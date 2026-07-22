@@ -134,11 +134,32 @@ def translateHighType (arg : Arg) : TransM HighTypeMd := do
         let name ← translateIdent nameArg
         return mkHighTypeMd (.UserDefined name) src
       | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else if op.name == q`Laurel.appliedType then
+      match _hargsApp : op.args.toList with
+      | [baseArg, argsArg] =>
+        let base ← translateIdent baseArg
+        -- The type arguments arrive as one `CommaSepBy` arg: a `.seq` for two or
+        -- more, the bare type itself for one. Both recurse (a type argument can
+        -- be another application, `Option<Option<int>>`); `attach` carries each
+        -- element's membership proof for the termination argument.
+        let args ← match _hseqApp : argsArg with
+          | .seq _ .comma elems => elems.toList.attach.mapM (fun ⟨a, _⟩ => translateHighType a)
+          | _ => do let a ← translateHighType argsArg; pure [a]
+        return mkHighTypeMd (.Applied (mkHighTypeMd (.UserDefined base) src) args) src
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
+    else if op.name == q`Laurel.parenType then
+      -- Parenthesized type: unwrap to the inner type. Parens carry no semantics;
+      -- they exist only so the pretty-printer's parenthesization of a non-atomic
+      -- type (e.g. `(Option<int>)`) re-parses.
+      match _hargsParen : op.args.toList with
+      | [innerArg] => translateHighType innerArg
+      | _ => TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
     else TransM.error s!"translateHighType: unsupported type operator {repr op.name}"
   | _ => TransM.error s!"translateHighType expects operation"
   termination_by sizeOf arg
   decreasing_by
-    all_goals (
+    -- `mapType`: two direct args of `op`.
+    all_goals (try (
       have hmk : keyArg ∈ op.args := by
         have h1 : keyArg ∈ op.args.toList := by simp [_hargs]
         simpa using h1
@@ -150,7 +171,41 @@ def translateHighType (arg : Arg) : TransM HighTypeMd := do
       subst _harg
       cases op
       simp at h2k h2v ⊢
-      omega)
+      omega))
+    -- `appliedType`, one type argument: the argument arg itself is a direct arg.
+    all_goals (try (
+      have hm : argsArg ∈ op.args := by
+        have h1 : argsArg ∈ op.args.toList := by simp [_hargsApp, _hseqApp]
+        simpa using h1
+      have h2 := Array.sizeOf_lt_of_mem hm
+      subst _harg
+      cases op
+      simp at h2 ⊢
+      omega))
+    -- `appliedType`, two or more: element of the `.seq` that is a direct arg, so
+    -- the chain is element < seq elements < op.args < the `.op` node.
+    all_goals (try (
+      have hmem : a ∈ elems := by simpa using ‹a ∈ elems.toList›
+      have h1 := Array.sizeOf_lt_of_mem hmem
+      have hm : argsArg ∈ op.args := by
+        have h := show argsArg ∈ op.args.toList by simp [_hargsApp, _hseqApp]
+        simpa using h
+      have h2 := Array.sizeOf_lt_of_mem hm
+      subst _harg
+      cases op
+      simp [_hseqApp] at h1 h2 ⊢
+      omega))
+    -- `parenType`: the inner type is a direct arg.
+    all_goals (try (
+      have hm : innerArg ∈ op.args := by
+        have h1 : innerArg ∈ op.args.toList := by simp [_hargsParen]
+        simpa using h1
+      have h2 := Array.sizeOf_lt_of_mem hm
+      subst _harg
+      cases op
+      simp at h2 ⊢
+      omega))
+
 
 def translateString (arg : Arg) : TransM String := do
   let .strlit _ s := arg
@@ -774,9 +829,30 @@ def parseDatatypeConstructor (arg : Arg) : TransM DatatypeConstructor := do
 def parseDatatype (arg : Arg) : TransM TypeDefinition := do
   let .op op := arg
     | TransM.error s!"parseDatatype expects operation"
-  match op.name, op.args with
-  | q`Laurel.datatype, #[nameArg, constructorsArg] =>
+  -- Transitional shim: normalize the legacy pre-`typeParams` 2-argument datatype
+  -- shape (`name, constructors`) to the current 3-argument form by splicing in an
+  -- absent `typeParams` option. Mirrors the cross-version shims elsewhere so
+  -- a post-CR binary can still consume Ion artifacts produced against the
+  -- pre-generics grammar.
+  let args : Array Arg ← match op.name, op.args with
+    | q`Laurel.datatype, #[nameArg, constructorsArg] =>
+      pure #[nameArg, .option SourceRange.none none, constructorsArg]
+    | _, other => pure other
+  match op.name, args with
+  | q`Laurel.datatype, #[nameArg, typeParamsArg, constructorsArg] =>
     let name ← translateIdent nameArg
+    let typeArgs ← match typeParamsArg with
+      | .option _ (some (.op tpOp)) => match tpOp.name, tpOp.args with
+        | q`Laurel.typeParams, #[paramsArg] =>
+          match paramsArg with
+          | .seq _ .comma args => args.toList.mapM translateIdent
+          | singleArg => do let p ← translateIdent singleArg; pure [p]
+        | _, _ => TransM.error s!"Expected typeParams, got {repr tpOp.name}"
+      -- Only a genuinely-absent option means "no type parameters"; a present but
+      -- malformed slot is a corrupt/unexpected artifact and must be rejected
+      -- rather than silently coerced to zero type parameters.
+      | .option _ none => pure []
+      | other => TransM.error s!"parseDatatype: expected Option TypeParams, got {repr other}"
     let constructors ← match constructorsArg with
       | .op listOp => match listOp.name, listOp.args with
         | q`Laurel.datatypeConstructorList, #[csArg] =>
@@ -785,7 +861,7 @@ def parseDatatype (arg : Arg) : TransM TypeDefinition := do
           | singleArg => do let c ← parseDatatypeConstructor singleArg; pure [c]
         | _, _ => TransM.error s!"Expected datatypeConstructorList, got {repr listOp.name}"
       | _ => TransM.error s!"Expected datatypeConstructorList operation"
-    return .Datatype { name := name, typeArgs := [], constructors := constructors }
+    return .Datatype { name := name, typeArgs := typeArgs, constructors := constructors }
   | _, _ =>
     TransM.error s!"parseDatatype expects datatype, got {repr op.name}"
 

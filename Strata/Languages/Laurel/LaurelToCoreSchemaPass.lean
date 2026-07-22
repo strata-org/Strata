@@ -52,6 +52,11 @@ structure TranslateState where
       Used by the `.Old (Var (Local n))` arm to defensively check `n` against
       the procedure's inout list. Empty when not translating a procedure body. -/
   currentProcInouts : List String := []
+  /-- Type-parameter names in scope while translating a generic datatype's
+      constructor argument types (e.g. `Val`/`Err` of `Result<Val, Err>`). A
+      `UserDefined` name matching one of these lowers to a Core free type
+      variable rather than a nullary type constructor. -/
+  typeParams : List String := []
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -89,12 +94,27 @@ private def invalidCoreType (source : Option FileRange) (reason : String) : Tran
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
+/-- Allocate a fresh unique ID. -/
+private def freshId : TranslateM Nat := do
+  let s ← get
+  let id := s.nextId
+  set { s with nextId := id + 1 }
+  return id
+
+/-- Allocate a fresh Core type variable. Used to fill in a datatype reference's
+    (erased) type arguments so the emitted `tcons` matches the arity Core
+    registered for that datatype; Core unification binds it to the real arg. -/
+private def freshTVar : TranslateM LMonoTy := do
+  return .ftvar s!"_t{← freshId}"
+
 /-
 Translate Laurel HighType to Core Type
 -/
 def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   let model := (← get).model
-  match _h : ty.val with
+  match ty with
+  | AstNode.mk val _ =>
+  match val with
   | .TInt => return LMonoTy.int
   | .TBool => return LMonoTy.bool
   | .TString => return LMonoTy.string
@@ -103,20 +123,50 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
-    match model.get? name with
-    | some (.datatypeDefinition dt) => return .tcons dt.name.text []
-    | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
-    | _ => do -- resolution should have already emitted a diagnostic
-      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
-      return .tcons name.text []
+    -- Check type parameters FIRST (matching how resolution scopes them): a
+    -- datatype's own type parameter (e.g. `Val`/`Err` of `Result<Val, Err>`)
+    -- lowers to a Core free type variable. Checking `model.get?` first would
+    -- mis-lower a parameter whose name collides with an in-scope type.
+    if (← get).typeParams.contains name.text then
+      return .ftvar name.text
+    else match model.get? name with
+      -- A bare datatype reference (e.g. a constructor's erased result type,
+      -- `Nothing() : Option`) must still carry one Core type argument per declared
+      -- parameter, or Core's arity check rejects the `tcons`. Emit fresh type
+      -- variables; Core unification binds them to the real argument types.
+      | some (.datatypeDefinition dt) =>
+        let args ← dt.typeArgs.mapM (fun _ => freshTVar)
+        return .tcons dt.name.text args
+      | some (.datatypeConstructor typeName _) =>
+        let args ← match model.get? typeName with
+          | some (.datatypeDefinition dt) => dt.typeArgs.mapM (fun _ => freshTVar)
+          | _ => pure []
+        return .tcons typeName.text args
+      | _ => do -- resolution should have already emitted a diagnostic
+        emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
+        return .tcons name.text []
+  -- Generic type application, e.g. `Option<int>` → `.tcons "Option" [int]`.
+  -- Core has real polymorphic datatypes, so the type arguments are forwarded.
+  -- Produced by user-written generic type application (the grammar `appliedType`
+  -- op) — see StrataTest/Languages/Laurel/EndToEndTests/Verification/Objects/GenericDatatype.lean.
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined n =>
+      -- A type *parameter* cannot itself be applied to arguments (`C<int>` where
+      -- `C` is a parameter): guard it like the plain `.UserDefined` arm so the
+      -- invalid program is suppressed via a diagnostic rather than leaking a
+      -- bogus `tcons`.
+      if (← get).typeParams.contains n.text then
+        invalidCoreType ty.source s!"type parameter '{n.text}' cannot be applied to type arguments"
+      else
+        let coreArgs ← args.mapM translateType
+        return .tcons n.text coreArgs
+    | _ => invalidCoreType ty.source "generic type application with a non-named base is not supported"
   | .TReal => return LMonoTy.real
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
   | _ => do
     invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
-
-termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
@@ -136,13 +186,6 @@ private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : T
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
-
-/-- Allocate a fresh unique ID. -/
-private def freshId : TranslateM Nat := do
-  let s ← get
-  let id := s.nextId
-  set { s with nextId := id + 1 }
-  return id
 
 /-- Emit a diagnostic and continue with a default expression (does not abort). -/
 def emitExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
@@ -816,12 +859,17 @@ Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
 -/
 def translateDatatypeDefinition (dt : DatatypeDefinition)
     : TranslateM (Lambda.LDatatype Unit) := do
+  -- Bring the datatype's type parameters into scope so their occurrences in
+  -- constructor argument types lower to Core free type variables (`.ftvar`).
+  let savedTypeParams := (← get).typeParams
+  modify fun s => { s with typeParams := dt.typeArgs.map (·.text) }
   let constrs ← dt.constructors.mapM fun c => do
     let args ← c.args.mapM fun ⟨ n, ty ⟩ => do
       return (⟨n.text, ()⟩, ← translateType ty)
     return { name := ⟨c.name.text, ()⟩
              args := args
              testerName := s!"{dt.name}..is{c.name}" : Lambda.LConstr Unit }
+  modify fun s => { s with typeParams := savedTypeParams }
   -- Zero-constructor datatypes (e.g. TypeTag with no composite types) get a synthetic
   -- unit constructor so the type is valid and can be referenced by other datatypes.
   let constrs := if constrs.isEmpty then

@@ -645,3 +645,88 @@ composite B {
   };
 }
 #end
+
+/-! ## Datatype constructor argument type checks
+
+A datatype constructor call is type-checked against its declared field types at
+resolution time (rather than deferred to Core): an argument whose type is
+inconsistent with a *concrete* declared field type is rejected here. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box {
+  Wrap(value: int)
+}
+procedure foo() opaque {
+  var b: Box := Wrap(true)
+//                   ^^^^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! The success side of the same dispatch: a concrete declared field type accepts
+an argument of that type. Pinned separately from the error case because the two
+share one code path — the polymorphic-slot test — and a change that widened that
+test too far would silently stop checking concrete slots without failing the
+negative above. -/
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box {
+  Wrap(value: int)
+}
+procedure fooOk() opaque {
+  var b: Box := Wrap(5)
+};
+#end
+
+/-! A field whose declared type is one of the datatype's own type parameters is a
+polymorphic (erased) slot: it accepts an argument of any type, so a generic
+constructor call resolves cleanly regardless of the argument's concrete type —
+there is nothing to check against the type variable at the call site. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Option<T> {
+  Nothing(),
+  Some(value: T)
+}
+procedure foo() opaque {
+  var a: Option<int> := Some(42);
+  var b: Option<bool> := Some(true)
+};
+#end
+
+/-! A constructor may mix polymorphic and concrete slots, and the two are decided
+per *field*, not per datatype: `value: T` is erased (any argument is accepted)
+while `count: int` is still checked. So the same call can pass on one argument and
+be rejected on the next. -/
+
+-- The concrete slot rejects a bad argument even though the constructor also has a
+-- polymorphic one.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box2<T> {
+  Wrap(value: T, count: int)
+}
+procedure mixedSlotsBad() opaque {
+  var b: Box2<int> := Wrap(42, "oops")
+//                             ^^^^^^ error: expected 'int', got 'string'
+};
+#end
+
+-- And the polymorphic slot stays unchecked in the same constructor: an argument
+-- whose type has nothing to do with the instantiation is accepted for `value`,
+-- while `count` still takes an `int`.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box2<T> {
+  Wrap(value: T, count: int)
+}
+procedure mixedSlotsOk() opaque {
+  var b: Box2<int> := Wrap(true, 7)
+};
+#end

@@ -13,7 +13,15 @@ op bvType (width: Num): LaurelType => "bv" width;
 // Core type passthrough: parsed as Ident, translated to HighType.UserDefined
 op coreType (name: Ident): LaurelType => "Core " name;
 op mapType (keyType: LaurelType, valueType: LaurelType): LaurelType => "Map " keyType " " valueType;
+// Generic type application, e.g. `Option<int>` or `Result<int, E>`.
+op appliedType (base: Ident, args: CommaSepBy LaurelType): LaurelType => base "<" args ">";
 op compositeType (name: Ident): LaurelType => name;
+// Parenthesized type. LaurelType has no precedence tuning, so the pretty-printer
+// wraps a non-atomic type (notably `appliedType`) in parens in type-argument
+// slots (`var o: (Option<int>)`); without this production that output would not
+// re-parse and applied types would never round-trip. Mirrors `StmtExpr`'s
+// `parenthesis`; the concrete-to-abstract translator unwraps it to the inner type.
+op parenType (inner: LaurelType): LaurelType => "(" inner ")";
 
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
@@ -179,8 +187,12 @@ op datatypeConstructorNoArgs (name: Ident): DatatypeConstructor => name;
 category DatatypeConstructorList;
 op datatypeConstructorList (constructors: CommaSepBy DatatypeConstructor): DatatypeConstructorList => constructors;
 
+// Optional generic type parameters on a datatype, e.g. `Option<T>` / `Result<Val, Err>`.
+category TypeParams;
+op typeParams (params: CommaSepBy Ident): TypeParams => "<" params ">";
+
 category Datatype;
-op datatype (name: Ident, constructors: DatatypeConstructorList): Datatype => "datatype " name " { " constructors " }";
+op datatype (name: Ident, typeParams: Option TypeParams, constructors: DatatypeConstructorList): Datatype => "datatype " name typeParams " { " constructors " }";
 
 // Procedures
 category ReturnType;

@@ -198,6 +198,22 @@ private def freshId : ResolveM Nat := do
   set { s with nextId := id + 1 }
   return id
 
+/-- Insert a definition into the current scope, allocating a fresh unique ID when
+    the identifier doesn't already carry one. Does NOT check for duplicates — use
+    `defineNameCheckDup` for the checked variant. -/
+private def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+  let resolutionName := overrideResolutionName.getD iden.text
+  let (name', uniqueId) ← match iden.uniqueId with
+    | some uid => pure (iden, uid)
+    | none =>
+      let id ← freshId
+      pure ({ iden with uniqueId := some (id) }, id)
+  modify fun s => { s with
+    scope := s.scope.insert resolutionName (uniqueId, node),
+    idToNode := s.idToNode.insert uniqueId node,
+    currentScopeNames := s.currentScopeNames.insert resolutionName }
+  return name'
+
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
     Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
 def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
@@ -208,20 +224,6 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
     defineName iden (.unresolved iden.source) overrideResolutionName
   else
     defineName iden node overrideResolutionName
-  where
-  defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
-    let resolutionName := overrideResolutionName.getD iden.text
-    let (name', uniqueId) ← match iden.uniqueId with
-      | some uid => pure (iden, uid)
-      | none =>
-        let id ← freshId
-        pure ({ iden with uniqueId := some (id) }, id)
-
-    modify fun s => { s with
-      scope := s.scope.insert resolutionName (uniqueId, node),
-      idToNode := s.idToNode.insert uniqueId node,
-      currentScopeNames := s.currentScopeNames.insert resolutionName }
-    return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
@@ -339,27 +341,177 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
 /-! ## AST traversal (Phase 1) -/
 
 
+/-- Reject a constrained (subset) type used as a generic datatype *type argument*
+    (e.g. `Option<int32>`), in *any* position — a variable / parameter / return
+    type or a datatype constructor field type. Such a type is currently
+    over-approximated away: the constrained type is reduced to its base and its
+    refinement predicate is not enforced on the datatype's contents. Rather than
+    silently accept a value outside the subset, we reject it at resolution time
+    until subset types are properly supported under polymorphism.
+
+    A type parameter of the enclosing datatype resolves to a `.typeParameter` (a
+    type variable), not a `.constrainedType`, so it is naturally not flagged — no
+    name-list bookkeeping is needed, and a parameter that shadows a constrained
+    type is handled by ordinary scoping. Only the direct argument is inspected;
+    nesting (e.g. `Box<Option<int32>>`) is covered by the caller recursing into
+    each argument. -/
+private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
+  match _h : arg.val with
+  | .UserDefined name =>
+    match (← get).scope.get? name.text with
+    | some (_, node) =>
+      if node.kind == .constrainedType then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource arg.source
+          s!"constrained (subset) type '{name.text}' is not yet supported as a generic datatype type argument") }
+    | none => pure ()
+  -- Recurse through compound types: a constrained type carried *inside* a type
+  -- argument (`Option<Map int int32>`) reaches the same refinement-dropping
+  -- outcome this check exists to prevent — `resolveBaseType` over-approximates it
+  -- and `ConstrainedTypeElim` never sees an enforcement point for it — so the
+  -- whole argument has to be inspected, not just its head.
+  | .TSet et => checkTypeArgNotConstrained et
+  | .TMap kt vt => do
+    checkTypeArgNotConstrained kt
+    checkTypeArgNotConstrained vt
+  | .Applied base args => do
+    checkTypeArgNotConstrained base
+    args.attach.forM fun ⟨a, _⟩ => checkTypeArgNotConstrained a
+  | .Intersection tys => tys.attach.forM fun ⟨t, _⟩ => checkTypeArgNotConstrained t
+  | _ => pure ()
+  termination_by sizeOf arg
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt arg; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Whether `ty` mentions one of `typeParams` anywhere, not just at its head.
+
+    Used to decide whether a datatype constructor's declared field type is a
+    *polymorphic slot*. A field typed exactly `T` is the obvious case, but a
+    container over a parameter (`Map int T`, `Set T`, `Option<T>`) is equally
+    polymorphic: the parameter is erased, so checking an argument against the
+    declared type would compare a concrete instantiation (`Map int int`) with the
+    phantom parameter and fail at every construction site.
+
+    Each name is tested raw *and* unfolded: `unfold` is keyed on type-name text
+    through the global constrained/alias map, so a global `constrained T` would
+    rewrite a same-named parameter to its base and hide the slot. -/
+private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
+    (ty : HighTypeMd) : Bool :=
+  match _h : ty.val with
+  | .UserDefined name =>
+    typeParams.contains name.text ||
+      (match (ctx.unfold ty).val with
+       | .UserDefined u => typeParams.contains u.text
+       | _ => false)
+  | .TSet et => mentionsTypeParam ctx typeParams et
+  | .TMap kt vt =>
+    mentionsTypeParam ctx typeParams kt || mentionsTypeParam ctx typeParams vt
+  | .Applied base args =>
+    mentionsTypeParam ctx typeParams base ||
+      args.attach.any (fun ⟨a, _⟩ => mentionsTypeParam ctx typeParams a)
+  | .Intersection tys => tys.attach.any (fun ⟨t, _⟩ => mentionsTypeParam ctx typeParams t)
+  | _ => false
+  termination_by sizeOf ty
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt ty; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- The declared type-parameter count of `name` when it resolves to a datatype
+    definition; `none` when `name` is not a datatype (so the type-application /
+    bare-reference checks below do not apply to it). -/
+private def datatypeTypeArgArity (name : String) : ResolveM (Option Nat) := do
+  match (← get).scope.get? name with
+  | some (_, .datatypeDefinition dt) => pure (some dt.typeArgs.length)
+  | _ => pure none
+
+/-- The declared type-parameter *names* of `name` when it resolves to a datatype
+    definition; `[]` otherwise. Used to tell an erased (polymorphic) slot from a
+    concrete one. -/
+private def datatypeTypeParamNames (name : String) : ResolveM (List String) := do
+  match (← get).scope.get? name with
+  | some (_, .datatypeDefinition dt) => pure (dt.typeArgs.map (·.text))
+  | _ => pure []
+
+/-- Reject a bare (unapplied) reference to a *generic* datatype in a user type
+    position (e.g. `var w: Option` where `Option<T>` is declared). Left unapplied
+    its type arguments would be inferred by first use elsewhere in the program —
+    order-dependent and surprising — so we require the arguments to be written
+    explicitly (`Option<int>`). A non-generic datatype, composite, alias, or
+    constrained type is unaffected. (The erased constructor-result-type reference,
+    e.g. `Nothing() : Option`, is produced internally via `getCallInfo` and never
+    reaches here.) -/
+private def checkBareGenericDatatype (name : Identifier) (source : Option FileRange) : ResolveM Unit := do
+  match ← datatypeTypeArgArity name.text with
+  | some n =>
+    if n > 0 then
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+        s!"generic datatype '{name.text}' must be applied to {n} type argument(s)") }
+  | none => pure ()
+
+/-- Validate the base of a generic type application `base<args>`, keyed off what
+    `base` resolves to:
+    - a type *parameter* cannot be applied to arguments (`T<int>`);
+    - a datatype must be applied at its declared arity — a non-generic datatype
+      applied to arguments (`Plain<int>`) or an arity mismatch
+      (`Option<int, string>`) is rejected here rather than deferred to Core;
+    - a composite, constrained (subset), or alias type is not generic, so
+      applying it to arguments (`C<int>`) is rejected here too — otherwise it
+      reaches Core / `translateType` and surfaces as an internal-error
+      `strata-bug` instead of a clean *type 'X' is not generic* diagnostic.
+    An unresolved base is left alone (`resolveRef` already reported it). -/
+private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : Option FileRange) : ResolveM Unit := do
+  match (← get).scope.get? base.text with
+  | some (_, .typeParameter _) =>
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+      s!"type parameter '{base.text}' cannot be applied to type arguments") }
+  | some (_, .datatypeDefinition dt) =>
+    let n := dt.typeArgs.length
+    if n != numArgs then
+      let msg := if n == 0 then
+          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
+        else
+          s!"generic datatype '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+  | some (_, .compositeType _) | some (_, .constrainedType _) | some (_, .typeAlias _) =>
+    -- A composite, constrained, or alias type is not generic: applying it to
+    -- type arguments is rejected here so the user gets a clean diagnostic rather
+    -- than a downstream Core `strata-bug` (the `appliedType` grammar op accepts
+    -- any identifier as a base).
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+      s!"type '{base.text}' is not generic and cannot be applied to type arguments") }
+  | _ => pure ()
+
+/-- Resolve a `.UserDefined` type reference to `.UserDefined ref'` (resolved) or
+    `.Unknown` (on failure / wrong kind — the diagnostic was already emitted by
+    `resolveRef`). Collapsing a dangling reference to `Unknown` keeps later uses
+    from being type-checked against a phantom type. Shared by the bare
+    `.UserDefined` arm and an `.Applied` base; the bare-generic-reference
+    rejection is applied only by the former (an `.Applied` base is not bare). -/
+private def resolveTypeRef (ref : Identifier) (source : Option FileRange) : ResolveM HighType := do
+  let ref' ← resolveRef ref source
+    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter])
+  let s ← get
+  let kindOk : Bool := match s.scope.get? ref.text with
+    | some (_, node) => node.kind == .unresolved ||
+        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter].contains node.kind)
+    | none => false  -- name not defined: resolveRef already reported it
+  if kindOk then pure (HighType.UserDefined ref') else pure HighType.Unknown
+
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
   | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref ty.source
-      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
-    -- If the reference failed to resolve (name not defined) or resolved to the
-    -- wrong kind, treat the type as Unknown to avoid cascading errors. The single
-    -- "is not defined" / "wrong kind" diagnostic was already emitted by `resolveRef`;
-    -- collapsing the dangling `UserDefined` to `Unknown` keeps the variable's later
-    -- uses from being type-checked against a phantom type. A name that genuinely
-    -- resolves to a composite/datatype/alias/constrained type stays `UserDefined`
-    -- so real subtype checking still works.
-    let s ← get
-    let kindOk : Bool := match s.scope.get? ref.text with
-      | some (_, node) => node.kind == .unresolved ||
-          (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains node.kind)
-      | none => false  -- name not defined: resolveRef already reported it
-    if kindOk then pure (HighType.UserDefined ref')
-    else pure HighType.Unknown
+    -- Resolve the reference (collapsing a failed/wrong-kind resolution to
+    -- `Unknown`), then reject a *bare* reference to a generic datatype: its type
+    -- arguments must be written explicitly.
+    let resolved ← resolveTypeRef ref ty.source
+    checkBareGenericDatatype ref ty.source
+    pure resolved
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
@@ -368,8 +520,17 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let vt' ← resolveHighType vt
     pure (.TMap kt' vt')
   | .Applied base args =>
-    let base' ← resolveHighType base
+    -- Resolve the base as an *applied* (not bare) type reference and validate the
+    -- type-argument arity here in Laurel rather than deferring to Core. `base` is
+    -- a `.UserDefined` name by grammar; resolving it via `resolveTypeRef` skips
+    -- the bare-generic rejection (which applies only to unapplied references).
+    let base' ← match base.val with
+      | .UserDefined name =>
+        checkTypeApplication name args.length base.source
+        pure { val := (← resolveTypeRef name base.source), source := base.source }
+      | _ => resolveHighType base
     let args' ← args.mapM resolveHighType
+    args'.forM checkTypeArgNotConstrained
     pure (.Applied base' args')
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
@@ -490,8 +651,21 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
       pure ({ val := .TBool, source := callee.source }, [])
     else
       pure ({ val := .UserDefined t, source := callee.source }, [])
-  | some (_, .datatypeDestructor _ p) =>
-    pure (p.type, [{ val := .Unknown, source := callee.source }])
+  | some (_, .datatypeDestructor dtName p) =>
+    -- A destructor's result is its field's declared type — except on a *generic*
+    -- datatype, where that type may mention the datatype's erased type
+    -- parameters: `Option..value(o)` is declared `T`, and the instantiation is not
+    -- known here (the type argument is carried, not substituted). Reporting `T`
+    -- would make every use of the result fail against a concrete type, e.g.
+    -- `Option..value(o) == 42` -> "cannot compare 'T' with 'int'". Such a slot is
+    -- gradual (`Unknown`); a field type with no parameter in it is precise as-is.
+    let params ← datatypeTypeParamNames dtName.text
+    let ctx := (← get).typeLattice
+    if mentionsTypeParam ctx params p.type then
+      pure ({ val := .Unknown, source := callee.source },
+            [{ val := .Unknown, source := callee.source }])
+    else
+      pure (p.type, [{ val := .Unknown, source := callee.source }])
   | some (_, .parameter p) => pure (p.type, [])
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
@@ -1997,6 +2171,52 @@ def Synth.staticCall (exprMd : StmtExprMd)
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
   let (retTy, paramTypes) ← getCallInfo callee
+  -- A datatype constructor call is type-checked here, at resolution time, rather
+  -- than deferred to Core: each argument is checked against its declared field
+  -- type. `getCallInfo` reports no parameter types for a constructor (its result
+  -- is the datatype itself), so the field types are read off the constructor's
+  -- own node. The one slot that cannot be checked is a field whose type is one of
+  -- the datatype's type parameters: that is a genuine (erased) type variable,
+  -- satisfied by an argument of any type, so there is nothing to check against at
+  -- the call site — the argument is synthesized but left unconstrained. Argument
+  -- arity is checked in full. (A tester like `Foo..isBar` resolves to a
+  -- `.staticProcedure`, never a `.datatypeConstructor`, so it takes the ordinary
+  -- procedure path below.)
+  let ctorNode? := (← get).scope.get? callee.text
+  if let some (_, .datatypeConstructor typeName ctor) := ctorNode? then
+    -- The datatype's own type parameters (empty for a non-generic datatype).
+    let typeParams : List String := match (← get).scope.get? typeName.text with
+      | some (_, .datatypeDefinition dt) => dt.typeArgs.map (·.text)
+      | _ => []
+    if args.length != ctor.args.length then
+      let diag := diagnosticFromSource source
+        s!"constructor '{callee}' expects {ctor.args.length} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
+    let ctx := (← get).typeLattice
+    let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+    -- Pad with `Unknown` so a surplus argument (arity already reported) is still
+    -- resolved — surfacing any error inside it; a missing one is dropped by `zip`.
+    let fieldTys : List HighTypeMd :=
+      ctor.args.map (·.type) ++ List.replicate (args.length - ctor.args.length) unknownTy
+    let args' ← (args.attach.zip fieldTys).mapM (fun (⟨a, hMem⟩, fieldTy) => do
+      have := hMem
+      -- A field is a *polymorphic slot* when its declared type mentions one of the
+      -- datatype's own type parameters anywhere — `T`, but equally `Map int T` or
+      -- `Option<T>`. The parameter is erased, so checking the argument against the
+      -- declared type would compare a concrete instantiation against a phantom
+      -- parameter and fail at every construction site; instead the argument is
+      -- synthesized and the deep check is Core's. A field type with no parameter in
+      -- it (a concrete primitive, constrained, composite, or closed generic
+      -- application) is checked here as usual. See `mentionsTypeParam` for why the
+      -- datatype's own `typeParams` list is the reliable source rather than a
+      -- scope lookup at this call site.
+      let isTypeParamSlot : Bool := mentionsTypeParam ctx typeParams fieldTy
+      if isTypeParamSlot then
+        let (a', _) ← Synth.resolveStmtExpr a
+        pure a'
+      else
+        Check.resolveStmtExpr a fieldTy)
+    return (.StaticCall callee' args', retTy)
   let unknownTy : HighTypeMd := { val := .Unknown, source := none }
   let expectedTys : List HighTypeMd :=
     paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
@@ -3022,6 +3242,21 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
 def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
+  -- Heap parameterization boxes every composite field value into the generated
+  -- `Box` datatype, which has one variant per field type and no variant for a
+  -- generic datatype instantiation: a field typed `Option<int>` reaches
+  -- `boxConstructorName` and aborts with an internal error. Reject it here with a
+  -- real diagnostic instead. (Keying the box variant on the base name alone does
+  -- not work — two instantiations in one program, `Option<int>` and
+  -- `Option<bool>`, would claim the same variant with different payload types —
+  -- so supporting this needs per-instantiation box variants, deliberately left
+  -- out of scope here.)
+  match ty'.val with
+  | .Applied base _ =>
+    let baseName := match base.val with | .UserDefined n => n.text | _ => "?"
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource field.type.source
+      s!"a generic datatype instantiation ('{baseName}<…>') is not yet supported as a composite field type") }
+  | _ => pure ()
   let qualifiedName := ownerName.text ++ "." ++ field.name.text
   let resolved ← resolveRef qualifiedName
   -- Keep the original field name text; only take the uniqueId from resolution.
@@ -3098,22 +3333,40 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
-    let ctors' ← dt.constructors.mapM fun ctor => do
-      let ctorName' ← resolveRef ctor.name
-      let args' ← ctor.args.mapM fun (p: Parameter) => do
-        let ty' ← resolveHighType p.type
-        let resolved ← resolveRef (dt.destructorName p)
-        -- Keep the original parameter name; only take the uniqueId from resolution.
-        -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
-        -- parameter's own name should stay unqualified.
-        let destructorId := { p.name with uniqueId := resolved.uniqueId }
-        return ⟨ destructorId, ty' ⟩
-      -- Resolve the tester name so its uniqueId is set.
-      let testerResolved ← resolveRef (dt.testerName ctor)
-      let testerName' := { ctor.testerName with
-        text := testerResolved.text
-        uniqueId := testerResolved.uniqueId }
-      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
+    let typeParamNames := dt.typeArgs.map (·.text)
+    -- Reject duplicate type parameters (e.g. `datatype Foo<T, T>`): both would
+    -- otherwise enter the translation scope and Core would receive a repeated
+    -- type variable.
+    let dupParams := (typeParamNames.filter (fun n => typeParamNames.count n > 1)).eraseDups
+    unless dupParams.isEmpty do
+      let diag := diagnosticFromSource dt.name.source
+        s!"duplicate type parameter(s): {", ".intercalate dupParams}"
+      modify fun s => { s with errors := s.errors.push diag }
+    -- Resolve the constructors with the datatype's type parameters registered in
+    -- a fresh scope, so a reference to a parameter in a field type resolves to a
+    -- `.typeParameter` (a type variable) through the normal path — like any other
+    -- type name — instead of being reported "not defined". The scope is discarded
+    -- afterwards, so parameters don't leak to sibling declarations, and a
+    -- parameter shadows a same-named outer type while inside this datatype.
+    let ctors' ← withScope do
+      for tp in dt.typeArgs do
+        let _ ← defineName tp (.typeParameter tp)
+      dt.constructors.mapM fun ctor => do
+        let ctorName' ← resolveRef ctor.name
+        let args' ← ctor.args.mapM fun (p: Parameter) => do
+          let ty' ← resolveHighType p.type
+          let resolved ← resolveRef (dt.destructorName p)
+          -- Keep the original parameter name; only take the uniqueId from resolution.
+          -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
+          -- parameter's own name should stay unqualified.
+          let destructorId := { p.name with uniqueId := resolved.uniqueId }
+          return ⟨ destructorId, ty' ⟩
+        -- Resolve the tester name so its uniqueId is set.
+        let testerResolved ← resolveRef (dt.testerName ctor)
+        let testerName' := { ctor.testerName with
+          text := testerResolved.text
+          uniqueId := testerResolved.uniqueId }
+        return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
