@@ -712,17 +712,36 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 if all(ax.is_proven(n) for n in protected_names):
                     ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
                     return "proved"
-                # Protected block is locally sorry-free but transitively depends on a
-                # sorry (through a child/import). Wait on children if any are registered.
-                if entry.children:
+                # Protected block is locally sorry-free but transitively depends on
+                # a sorry. Identify the source so we don't re-run the writer on an
+                # already-finished target:
+                #   (a) an unproven SIBLING obligation in this same shared file
+                #       (another target, proved in its own turn) → wait for it, and
+                #   (b) a registered CHILD helper still being proved → wait for it.
+                # In both cases _propagate_proved promotes this entry once the shared
+                # file / subtree is sorry-free. `siblings` is the set of genuine
+                # sibling obligations (registered targets + original-snapshot decls),
+                # which EXCLUDES writer-created inline helpers — those still need
+                # extraction, so they must fall through, not be parked as contingent.
+                sibling_sorry = any(
+                    n in siblings and positions
+                    for n, positions in local_sorry.items())
+                if sibling_sorry or entry.children:
                     ledger.mark_contingent(entry.id)
                     return "contingent"
-                # No children yet: transitive sorry from untracked deps —
-                # fall through to extraction (will discover and register them).
+                # No sibling/child sorry explains it — transitive sorry from an
+                # untracked dep or a fresh inline helper. Fall through to extraction
+                # (discovers/registers it).
 
-        # Gather state
+        # Gather state. Progress is measured over the PROTECTED block only — a
+        # shared multi-theorem file may hold sibling sorries the writer is
+        # forbidden to touch, so counting them would falsely report "no progress"
+        # the moment the writer finishes its own target.
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
-        sorry_count = sum(len(v) for v in sorry_info.values())
+        protected_sorry_info = {n: sorry_info.get(n, []) for n in protected_names if sorry_info.get(n)}
+        sibling_sorry_info = {n: v for n, v in sorry_info.items()
+                              if n not in protected_names and v}
+        sorry_count = sum(len(sorry_info.get(n, [])) for n in protected_names)
         progress = _format_progress(prev_sorry_count, sorry_count)
         prev_sorry_count = sorry_count
         writer_pct = await writer.get_context_percentage()
@@ -731,12 +750,17 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         compile_note = ""
         if not outcome.success and outcome.last_error:
             compile_note = f"\n⚠️ COMPILATION FAILED after {outcome.rounds} fix rounds: {outcome.last_error}\n"
+        sibling_note = (
+            f"\nNOT YOUR TASK — sibling sorries owned by other branches (ignore): {sibling_sorry_info}\n"
+            if sibling_sorry_info else "")
         await agent._emit("message", f"[PO5] Guide reviews: {progress}{' (NOT COMPILING)' if compile_note else ''}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk {entry.attempts} ({total_turns} total turns).\n"
                 f"Writer context: {writer_pct or 0:.0f}%\n"
-                f"{progress}\nFile: {stub_rel}\nSorries: {sorry_info}\n"
+                f"{progress}\nFile: {stub_rel}\n"
+                f"YOUR sorries (the ones to close): {protected_sorry_info}\n"
+                f"{sibling_note}"
                 f"{compile_note}"
                 f"Diagnose and advise what to try next."
             ))
@@ -2129,9 +2153,28 @@ def _rewrite_imports(cwd: Path, workspace: str, old_name: str, new_name: str):
 
 
 def _resolve_import_dependencies(ledger: LemmaLedger, cwd: Path):
+    """Add cross-branch dependency edges inferred from Lean imports.
+
+    This is meaningful ONLY for the separate-workspace model where each lemma
+    lives in its own file (module ↔ entry is 1:1). In a SHARED multi-theorem
+    file, every target and the synthetic root have the same file_path/module, so
+    (a) a module→id map would collapse them and (b) reading the shared file's
+    imports for every entry would attribute a single helper-import to all of
+    them — corrupting the DAG. The correct parent→child edges for shared-file
+    targets are already set at registration/extraction time, so we simply skip
+    any entry whose file_path is not unique to it (both as import source and as
+    resolvable target).
+    """
     tools = get_lean_tools()
+
+    file_path_counts: dict[str, int] = {}
+    for e in ledger.entries():
+        file_path_counts[e.file_path] = file_path_counts.get(e.file_path, 0) + 1
+
     module_to_id = {}
     for e in ledger.entries():
+        if file_path_counts[e.file_path] != 1:
+            continue  # ambiguous shared-file module — not a resolvable target
         module = e.file_path.replace("/", ".").removesuffix(".lean")
         module_to_id[module] = e.id
 
@@ -2141,6 +2184,8 @@ def _resolve_import_dependencies(ledger: LemmaLedger, cwd: Path):
             existing_edges.add((e.id, cid))
 
     for e in ledger.entries():
+        if file_path_counts[e.file_path] != 1:
+            continue  # shared file — imports can't be attributed to one entry
         if not (cwd / e.file_path).exists():
             continue
         imports = tools.check_imports(e.file_path)
