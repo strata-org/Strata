@@ -37,7 +37,36 @@ echo
 # ─── 5. SwarmAgentTools ───────────────────────────────────────────────────────
 echo "5. SwarmAgentTools (Lean binary)..."
 cd "$PROJECT_ROOT"
-lake build SwarmAgentTools 2>&1 | tail -3
+BUILD_LOG="$(mktemp)"
+if lake build SwarmAgentTools > "$BUILD_LOG" 2>&1; then
+  tail -3 "$BUILD_LOG"
+  rm -f "$BUILD_LOG"
+else
+  tail -15 "$BUILD_LOG"
+  echo
+  echo "════════════════════════════════════════════════════════════════════════"
+  echo " ERROR: 'lake build SwarmAgentTools' failed."
+  echo "════════════════════════════════════════════════════════════════════════"
+  if grep -q "not in manifest" "$BUILD_LOG"; then
+    echo " This is a Lake manifest/lakefile mismatch in your project (a 'require'"
+    echo " in lakefile.toml is missing from lake-manifest.json). It is NOT caused"
+    echo " by StrataAgent — the build inherits your project's dependencies."
+    echo
+    echo " Fix it by syncing the manifest, then re-run setup:"
+    echo
+    echo "     cd $PROJECT_ROOT"
+    echo "     lake update"
+    echo "     ./StrataAgent/setup.sh"
+  else
+    echo " Fix the errors above, then re-run:"
+    echo
+    echo "     ./StrataAgent/setup.sh"
+    echo
+    echo " Full build log: $BUILD_LOG"
+  fi
+  echo "════════════════════════════════════════════════════════════════════════"
+  exit 1
+fi
 echo
 
 # ─── 6. repl (optional — enables lean_multi_attempt) ─────────────────────────
