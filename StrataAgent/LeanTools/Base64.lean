@@ -67,7 +67,9 @@ partial def loop (i : Nat) (result : ByteArray) (chars : List Char) : Except Str
 
 /-- Decode a base64 string to bytes -/
 def decodeBytes (s : String) : Except String ByteArray :=
-  let chars := s.trim.toList.filter (· ≠ '=')
+  -- Drop '=' padding and any whitespace (incl. line breaks), avoiding the
+  -- deprecated `String.trim` and tolerating wrapped base64 input.
+  let chars := s.toList.filter (fun c => c ≠ '=' && !c.isWhitespace)
   loop 0 ByteArray.empty chars
 
 /-- Decode a base64 string to UTF-8 string -/
