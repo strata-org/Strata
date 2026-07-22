@@ -30,6 +30,7 @@ import Strata.Languages.Core.SarifOutput
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
+import Strata.Languages.Laurel.MonomorphizeCompositesProps
 import Strata.Languages.Laurel.ResolutionProps
 
 /- Code Transforms -/

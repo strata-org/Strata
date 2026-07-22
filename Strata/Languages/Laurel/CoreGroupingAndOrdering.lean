@@ -85,9 +85,13 @@ public def computeSccDecls (program : UnorderedCoreWithLaurelTypes) : List (List
   let procCallees (proc : Procedure) : List String :=
     let bodyExprs : List StmtExprMd := match proc.body with
       | .Transparent b => [b]
-      | .Opaque postconds (some impl) _ => postconds.map (·.condition) ++ [impl]
-      | .Opaque postconds none _ => postconds.map (·.condition)
-      | _ => []
+      | .Opaque postconds impl modifies =>
+        -- A modifies group contributes both its targets and its guard as expressions
+        -- that may hold `StaticCall`s.
+        let modifiesExprs := modifies.flatMap (fun g => g.targets ++ g.guard.toList)
+        postconds.map (·.condition) ++ impl.toList ++ modifiesExprs
+      | .Abstract postconds => postconds.map (·.condition)
+      | .External => []
     let contractExprs : List StmtExprMd :=
       proc.preconditions.map (·.condition) ++
       proc.invokeOn.toList ++

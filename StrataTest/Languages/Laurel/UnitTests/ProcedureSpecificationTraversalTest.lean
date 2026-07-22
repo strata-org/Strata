@@ -277,7 +277,7 @@ private def specificationsHasFieldRead (proc : Procedure) : Bool :=
 private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
   match expr.val with
   | .StaticCall unbox [read] =>
-      unbox.text == "$Box..intVal!" && match read.val with
+      unbox.text == "Box..intVal!" && match read.val with
         | .StaticCall readField [heap, receiver, field] =>
             readField.text == "readField" &&
               (match heap.val with

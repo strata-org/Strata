@@ -213,20 +213,21 @@ procedure foo() opaque {
 
 -- Type arguments applied to a non-generic *composite* type. The `appliedType`
 -- grammar op accepts any identifier as a base, so `C<int>` parses; resolution
--- rejects it here with the "not generic" wording rather than letting it reach
--- Core as an internal-error strata-bug.
+-- rejects it via the applied-type arity check (`C` has 0 declared params)
+-- rather than letting it reach Core as an internal-error strata-bug.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 composite C { var v: int }
 datatype Wrap {
   W(inner: C<int>)
-//         ^^^^^^ error: type 'C' is not generic and cannot be applied to type arguments
+//         ^^^^^^ error: 'C' expects 0 type argument(s) but 1 were provided
 }
 #end
 
--- Type arguments applied to a constrained (subset) type (`int32<int>`) — the
--- base is not generic, so it is rejected here with the same wording.
+-- Type arguments applied to a constrained (subset) type (`int32<int>`) — a
+-- constrained base is never generic, so `checkTypeApplication` rejects it
+-- (before the applied-type arity check the composite case hits).
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -348,10 +349,9 @@ procedure nestedConstrainedArg() opaque {
 
 /-! ## A generic datatype instantiation as a composite field type
 
-Heap parameterization boxes composite field values into the generated `Box`
-datatype, which has no variant for a generic instantiation, so such a field would
-abort the pipeline with an internal error. It is rejected here instead. A
-monomorphic datatype field is unaffected. -/
+A generic datatype instantiation (`Option<int>`) as a composite field resolves
+cleanly: `HeapParameterization` boxes it into a per-instantiation `Box` variant
+(the `.Applied` boxing arm), so it does not abort the pipeline. -/
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -361,6 +361,5 @@ datatype Option<T> {
 }
 composite Holder {
   var o: Option<int>
-//       ^^^^^^^^^^^ error: a generic datatype instantiation ('Option<…>') is not yet supported as a composite field type
 }
 #end

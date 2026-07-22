@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.EliminateReturnStatements
+import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
 
 /-!
@@ -59,9 +60,14 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
   params.map fun p => mkMd (.Var (.Local p.name)) source
 
 /-- Build a helper function for a single condition over the given parameters.
-    Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
-private def mkConditionProc (name : String) (params : List Parameter)
-    (condition : Condition) : Procedure :=
+    Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`.
+    `typeArgs` carries the source procedure's type parameters: a contract on a
+    POLYMORPHIC procedure (`idp<T>`) mentions `T` in its parameter types, so the
+    generated helper function must bind `T` too — otherwise `T` is a free type
+    variable at Core and the program fails to type-check. Empty for a monomorphic
+    procedure ⇒ byte-identical to before. -/
+private def mkConditionProc (name : String) (typeArgs : List Identifier)
+    (params : List Parameter) (condition : Condition) : Procedure :=
   let src := condition.condition.source
   -- Give the pre/post helper procedure a shape the current lowering can turn
   -- into a Core function: assign the condition to the `$result` output and exit
@@ -75,6 +81,7 @@ private def mkConditionProc (name : String) (params : List Parameter)
   let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
   let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
   { name := mkId name
+    typeArgs := typeArgs
     inputs := params
     outputs := [⟨mkId "$result", { val := .TBool, source := src }⟩]
     preconditions := []
@@ -136,8 +143,12 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
     re-asserting them at the helper's call sites would be redundant. A
     precondition references only input parameters, which keep their names in the
     helper (only outputs are suffixed) and cannot contain `old(...)`, so they are
-    assumed without the output-renaming applied to the postcondition body. -/
-private def mkPostConditionProc (name : String) (inputs outputs : List Parameter)
+    assumed without the output-renaming applied to the postcondition body.
+
+    `typeArgs` carries the source procedure's type parameters so a postcondition
+    on a polymorphic procedure binds `T` (see `mkConditionProc`). -/
+private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
+    (inputs outputs : List Parameter)
     (preconditions : List Condition) (condition : Condition) : Procedure :=
   let outputNames := outputs.map (·.name.text)
   let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
@@ -162,6 +173,7 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
   let body : StmtExprMd :=
     ⟨.Block (preAssumes ++ [assignResult, exitReturn]) (some "$return"), postExpr.source⟩
   { name := mkId name
+    typeArgs := typeArgs
     inputs := inputs ++ renamedOutputs
     outputs := [⟨resultName, { val := .TBool, source := postExpr.source }⟩]
     preconditions := []
@@ -209,8 +221,16 @@ private def freshTemp : ContractM String := do
   return s!"$cp_{n}"
 
 /-- Generate temporary variable assignments for input arguments at a call site.
-    Returns (temp declarations+assignments, temp variable references). -/
-private def mkTempAssignments (args : List StmtExprMd)
+    Returns (temp declarations+assignments, temp variable references).
+
+    The temp normally takes the CALLEE's declared parameter type. But when that type
+    mentions a type VARIABLE (a polymorphic callee, `idp<T>(x: T)`), the declared type
+    is `T` — which resolution treats as authoritative and would NOT replace with the
+    argument's concrete type, leaving `T` unbound at Core (and forcing one `T` to be
+    `int` at one call site and `bool` at another). So for a poly callee we type the
+    temp from the ARGUMENT itself (`computeExprType`), giving each call site its own
+    concrete instantiation — the per-call-site instantiation the polymorphic path needs. -/
+private def mkTempAssignments (model : SemanticModel) (args : List StmtExprMd)
     (inputParams : List Parameter) (src : FileRange)
     : ContractM (List StmtExprMd × List StmtExprMd) := do
   let mut decls : List StmtExprMd := []
@@ -218,7 +238,7 @@ private def mkTempAssignments (args : List StmtExprMd)
   for arg in args, i in List.range args.length do
     let tempName ← freshTemp
     let paramType := match inputParams[i]? with
-      | some p => p.type
+      | some p => if mentionsTVar p.type.val then computeExprType model arg else p.type
       | none => { val := .Unknown, source := src }
     let param : Parameter? := { name := mkId tempName, type := some paramType }
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
@@ -242,7 +262,7 @@ private def mkTempAssignments (args : List StmtExprMd)
     exit state for both the entry and exit arguments, collapsing e.g. a modifies
     frame to a trivially-true `old($heap) == $heap`. This mirrors the call-site
     lowering, which snapshots arguments before the call. -/
-private def transformProcBody (proc : Procedure) (info : ContractInfo) : ContractM Body := do
+private def transformProcBody (model : SemanticModel) (proc : Procedure) (info : ContractInfo) : ContractM Body := do
   let src := proc.name.source
   let inputArgs := paramsToArgs proc.inputs src
   let outputArgs := paramsToArgs proc.outputs src
@@ -259,7 +279,7 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Contrac
   let postcondsToAssert := postconds.zip info.postNames |>.filter fun (pc, _) => pc.mode.doesAssert
   let (snapshotDecls, snapshotRefs) ←
     if postcondsToAssert.isEmpty then pure ([], [])
-    else mkTempAssignments inputArgs proc.inputs src
+    else mkTempAssignments model inputArgs proc.inputs src
   let postAsserts : List StmtExprMd :=
     postcondsToAssert.map fun (pc, name, _) =>
       ⟨.Assert (mkCall name (snapshotRefs ++ outputArgs) pc.condition.source) (some (pc.summary.getD "postcondition")),
@@ -333,10 +353,10 @@ private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprM
     | some p => if inout.contains p.name.text then origArgs[i]?.getD tempRef else tempRef
     | none => tempRef
 
-private def rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
+private def rewriteStaticCall (model : SemanticModel) (callee : Identifier) (args : List StmtExprMd)
     (info : ContractInfo) (src : FileRange)
     : ContractM (List StmtExprMd) := do
-  let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
+  let (tempDecls, tempRefs) ← mkTempAssignments model args info.inputParams src
   let preCheck := mkPreChecks info tempRefs src
   let (callStmt, postAssume, returnValue) ←
     if info.hasPostCondition && !info.outputParams.isEmpty then do
@@ -357,10 +377,10 @@ private def rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
       pure (⟨.StaticCall callee tempRefs, src⟩, [], [])
   return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
 
-private def rewriteAssignedCall (info : ContractInfo) (targets : List VariableMd)
+private def rewriteAssignedCall (model : SemanticModel) (info : ContractInfo) (targets : List VariableMd)
     (callee : Identifier) (args : List StmtExprMd) (src callSrc : FileRange)
     : ContractM (List StmtExprMd) := do
-  let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
+  let (tempDecls, tempRefs) ← mkTempAssignments model args info.inputParams src
   let callArgs := mkCallArgs info args tempRefs
   let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
   let preCheck := mkPreChecks info tempRefs src
@@ -386,19 +406,19 @@ private def contractCall? (contractInfoMap : Std.HashMap String ContractInfo)
   | .StaticCall callee args => (contractInfoMap.get? callee.text).map ((·, callee, args))
   | _ => none
 
-private def rewriteContractAssign (contractInfoMap : Std.HashMap String ContractInfo)
+private def rewriteContractAssign (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (rewriteArg : StmtExprMd → ContractM StmtExprMd) (e : StmtExprMd)
     : ContractM (Option (List StmtExprMd)) := do
   let some (info, targets, callee, args, callSrc) := contractAssign? contractInfoMap e
     | return none
   let args' ← args.mapM rewriteArg
-  return some (← rewriteAssignedCall info targets callee args' e.source callSrc)
+  return some (← rewriteAssignedCall model info targets callee args' e.source callSrc)
 
-private def rewriteBareContractCall (contractInfoMap : Std.HashMap String ContractInfo)
+private def rewriteBareContractCall (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (e : StmtExprMd) : ContractM (List StmtExprMd) := do
   let some (info, callee, args) := contractCall? contractInfoMap e
     | return [e]
-  rewriteStaticCall callee args info e.source
+  rewriteStaticCall model callee args info e.source
 
 /-- Rewrite call sites in a statement/expression tree.
 
@@ -409,7 +429,7 @@ private def rewriteBareContractCall (contractInfoMap : Std.HashMap String Contra
     seeding `fuel` with that count makes termination structural, and the fuel
     cannot run out as long as `foldStmtExpr` counts every position that
     `mapStmtExprFlattenM` visits. -/
-private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
+private def rewriteCallSites (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (expr : StmtExprMd) : ContractM StmtExprMd :=
   go (foldStmtExpr (fun _ n => n + 1) 0 expr) expr
 where
@@ -418,13 +438,13 @@ where
         nodes than mapStmtExprFlattenM visits"
     | fuel + 1, e =>
       mapStmtExprFlattenM (m := ContractM)
-        (fun _ => rewriteContractAssign contractInfoMap (go fuel))
-        (fun _ => rewriteBareContractCall contractInfoMap) true e
+        (fun _ => rewriteContractAssign model contractInfoMap (go fuel))
+        (fun _ => rewriteBareContractCall model contractInfoMap) true e
 
 /-- Rewrite call sites in all bodies of a procedure. -/
-private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)
+private def rewriteCallSitesInProc (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (proc : Procedure) : ContractM Procedure := do
-  let rw := rewriteCallSites contractInfoMap
+  let rw := rewriteCallSites model contractInfoMap
   match proc.body with
   | .Transparent body =>
     let body' ← rw body
@@ -461,16 +481,16 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/
-def lowerContracts (program : Program) : Program :=
+def lowerContracts (model : SemanticModel) (program : Program) : Program :=
   let contractInfoMap := collectContractInfo program.staticProcedures
 
   -- Generate helper procedures for all procedures with contracts
   let helperProcs := program.staticProcedures.flatMap fun proc =>
     let postconds := getPostconditions proc.body
     let preProcs := proc.preconditions.zipIdx.map fun (c, i) =>
-      mkConditionProc (preCondProcName proc.name.text i) proc.inputs c
+      mkConditionProc (preCondProcName proc.name.text i) proc.typeArgs proc.inputs c
     let postProcs := postconds.zipIdx.map fun (c, i) =>
-      mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs proc.outputs
+      mkPostConditionProc (postCondProcName proc.name.text i) proc.typeArgs proc.inputs proc.outputs
         proc.preconditions c
     preProcs ++ postProcs
 
@@ -487,11 +507,11 @@ def lowerContracts (program : Program) : Program :=
       | none => proc
     let proc : Procedure ← match contractInfoMap.get? proc.name.text with
       | some info =>
-        let body ← transformProcBody proc info
+        let body ← transformProcBody model proc info
         pure { proc with preconditions := [], body }
       | none => pure proc
     -- Rewrite call sites in the procedure body
-    rewriteCallSitesInProc contractInfoMap proc).run 0
+    rewriteCallSitesInProc model contractInfoMap proc).run 0
 
   { program with staticProcedures := helperProcs ++ transformedProcs }
 
@@ -500,8 +520,8 @@ public def contractPass : LoweringPass where
   documentation := "Lowers pre and postcondition to assertions and assumptions around call-sites and procedure bodies"
   comesAfter := [⟨ eliminateReturnStatementsPass.meta, "The contract pass wraps the body of procedures to get: `assume preconditions; body; assert postconditions`. Eliminating returns first means that the postcondition assertions are guaranteed to execute even if we return in the body."⟩ ]
   needsResolves := true
-  run := fun _ p _m =>
-    (lowerContracts p, [], {})
+  run := fun _ p m =>
+    (lowerContracts m p, [], {})
 
 end -- public section
 end Strata.Laurel

@@ -89,8 +89,12 @@ private def isExceptionDiag (d : Strata.Message) : Bool :=
 info: exception diagnostics:
   procedure 'writesThroughTarget' may let an exception of type 'MyError' escape; catch it with a `try`/`catch` or declare a `throws` clause
   a call to a procedure that `throws` is not yet supported in this expression position; bind it to a variable first (e.g. `var t := f(); … t …`)
-other diagnostics: 2
+other diagnostics: 0
 -/
+-- NOTE: `other diagnostics` is 0: `resolveFieldRef` resolves a field access through
+-- a CALL RESULT (`mk()#x`) against the call's return type (`Obj`), so field `x` resolves
+-- cleanly with no spurious "not defined" field-resolution errors. Only the exception
+-- diagnostics (the point of this test) are raised.
 #guard_msgs in
 #eval do
   let result := resolve program

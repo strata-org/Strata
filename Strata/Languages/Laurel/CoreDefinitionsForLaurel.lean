@@ -41,21 +41,19 @@ datatype LaurelResolutionErrorPlaceholder {}
 datatype Float64IsNotSupportedYet {}
 datatype LaurelUnit { MkLaurelUnit() }
 
-// The types for these Map functions are incorrect.
-// We'll fix them when Laurel supports polymorphism
-// And then we can remove the datatype $Box as well
-// And remove the hacky filter in HeapParameterization
-// The `$` prefix keeps this placeholder in Laurel's reserved namespace, so a
-// program declaring its own `Box` does not collide with it.
-datatype $Box { MkBox() }
-
-procedure select(map: int, key: int) : $Box
+// These are internal stand-ins for Core's native, already-polymorphic map primitives
+// (the real signatures live in Core.Factory). Declared `external`, they are filtered out
+// before Core translation and never reach Core; calls resolve to the Core primitives by
+// name. The `int` parameter/return types are inert placeholders. NOTE: return type is `int`
+// (not a `Box` datatype) so the name `Box` stays free for user-level generic composites
+// (`composite Box<T>`); the polymorphism comes from the Core primitives.
+procedure select(map: int, key: int) : int
   external;
 
-procedure update(map: int, key: int, value: int) : $Box
+procedure update(map: int, key: int, value: int) : int
   external;
 
-procedure mapConst(value: int) : $Box
+procedure mapConst(value: int) : int
   external;
 
 // --- Type-specific external operators (Core primitives) ---
@@ -254,7 +252,7 @@ procedure $orElse(x: bool, y: bool) : bool external;
 // Equality. Declared `external` rather than as a wrapper delegating to `eq`,
 // because equality is polymorphic and Laurel has no polymorphic types: a
 // transparent body would carry the placeholder `int → int → bool` signature into
-// Core and fail to unify against `Composite`, `$Box`, `bool`, … . `Synth.staticCall`
+// Core and fail to unify against `Composite`, `Box`, `bool`, … . `Synth.staticCall`
 // special-cases these names to require only operand consistency, and
 // `LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic equality.
 procedure $eq(x: int, y: int) : bool external;

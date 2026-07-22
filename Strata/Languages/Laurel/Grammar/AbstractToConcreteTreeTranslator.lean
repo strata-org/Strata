@@ -50,20 +50,19 @@ def highTypeValToArg : HighType → Arg
   | .TBv n => laurelOp "bvType" #[.num sr n]
   | .TMap k v => laurelOp "mapType" #[highTypeToArg k, highTypeToArg v]
   | .UserDefined name => laurelOp "compositeType" #[ident name.text]
+  -- A type variable renders as a bare identifier in type position; resolution
+  -- reclassifies it back to `.TVar` when it matches an in-scope type parameter.
+  | .TVar name => laurelOp "compositeType" #[ident name.text]
   | .TVoid => laurelOp "compositeType" #[ident "void"]
   -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
   | .Applied base args =>
-    -- Generic type application, e.g. `Option<int>`. Representable only when the
-    -- base is a named type (which is the only form the grammar produces).
-    match base.val with
-    | .UserDefined name =>
-      laurelOp "appliedType" #[ident name.text, commaSep (args.map highTypeToArg |>.toArray)]
-    -- The base is always `.UserDefined` by construction (the grammar's
-    -- `appliedType` op only ever builds a named base). Emit a non-reparsing
-    -- sentinel rather than silently dropping the args, so a round-trip test
-    -- fails loudly if that invariant is ever violated (mirrors BUG_MultiValuedExpr).
-    | _ => laurelOp "compositeType" #[ident "BUG_AppliedNonNamedBase"]
+    -- Emit `Base<arg…>` as the grammar's `appliedType` op (whose name slot is an `Ident`,
+    -- so peel the base to its name — mirrors `newTypeArgs`/`isType` emission). Emitting the
+    -- args (not just the bare base) is what round-trips a generic `extends Base<T>`.
+    match highBaseName? base.val with
+    | some n => laurelOp "appliedType" #[ident n.text, commaSep (args.map highTypeToArg).toArray]
+    | none => highTypeToArg base  -- unnameable base: best-effort (shouldn't occur)
   | .Intersection types =>
     match types with
     | [] => laurelOp "compositeType" #[ident "Unknown"]
@@ -90,6 +89,16 @@ private def operationName : Operation → String
   | .Sub => "sub" | .Mul => "mul" | .Div => "div" | .Mod => "mod"
   | .DivT => "divT" | .ModT => "modT" | .Lt => "lt" | .Leq => "le"
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
+
+/-- Emit a chained-field-write target as a `FieldPath` op-chain, inverse of
+    `translateFieldPath`. A pure identifier / field-access chain (`w#b#val`) maps to
+    `fieldPathStep (… (fieldPathRoot w) …)`; returns `none` for any other shape (the
+    caller falls back). -/
+partial def fieldPathToArg : StmtExprMd → Option Arg
+  | ⟨.Var (.Local name), _⟩ => some (laurelOp "fieldPathRoot" #[ident name.text])
+  | ⟨.Var (.Field obj field), _⟩ => (fieldPathToArg obj).map fun o =>
+      laurelOp "fieldPathStep" #[o, ident field.text]
+  | _ => none
 
 -- Internal-only: public because `partial` prevents `private` in this section
 -- Printing never consults source locations, so this is defined on the bare
@@ -138,9 +147,12 @@ where
             laurelOp "assignTargetDecl" #[ident name.text, typeOpt]
           | .Local name => laurelOp "assignTargetVar" #[ident name.text]
           | .Field target fieldName =>
-            match target.val with
-            | .Var (.Local name) => laurelOp "assignTargetField" #[ident name.text, ident fieldName.text]
-            | _ => laurelOp "assignTargetVar" #[ident "_"]
+            -- `obj` is a FieldPath: emit the path chain. A `w#b#val` target
+            -- round-trips; a non-path object (shouldn't occur for a write target) falls
+            -- back to the placeholder, as before.
+            match fieldPathToArg target with
+            | some pathArg => laurelOp "assignTargetField" #[pathArg, ident fieldName.text]
+            | none => laurelOp "assignTargetVar" #[ident "_"]
         laurelOp "multiAssign" #[commaSep targetArgs.toArray, stmtExprToArg value]
       else
         let targetArg := match targets with
@@ -210,16 +222,15 @@ where
         laurelOp "catchClause" #[ident c.binding.text, guardArg, stmtExprToArg c.body]) |>.toArray
       let finallyArg := optionArg (finally?.map fun f => laurelOp "finallyClause" #[stmtExprToArg f])
       laurelOp "tryCatch" #[stmtExprToArg body, seqArg catchArgs, finallyArg]
-    | .New name => laurelOp "new" #[ident name.text]
+    | .New name typeArgs =>
+      let typeArgsArg := optionArg (if typeArgs.isEmpty then none
+        else some (laurelOp "newTypeArgs" #[commaSep (typeArgs.map (fun t => highTypeToArg t)).toArray]))
+      laurelOp "new" #[ident name.text, typeArgsArg]
     | .This => laurelOp "identifier" #[ident "this"]
     | .IsType target ty =>
-      match ty.val with
-      | .UserDefined name => laurelOp "isType" #[stmtExprToArg target, ident name.text]
-      | _ => laurelOp "isType" #[stmtExprToArg target, ident "Unknown"]
+      laurelOp "isType" #[stmtExprToArg target, highTypeToArg ty]
     | .AsType target ty =>
-      match ty.val with
-      | .UserDefined name => laurelOp "asType" #[stmtExprToArg target, ident name.text]
-      | _ => laurelOp "asType" #[stmtExprToArg target, ident "Unknown"]
+      laurelOp "asType" #[stmtExprToArg target, highTypeToArg ty]
     | .InstanceCall target callee args =>
       -- Emit as a static call on target.callee(args)
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]
@@ -297,6 +308,13 @@ private def modifiesClausesToArgs (groups : List ModifiesGroup) : Array Arg :=
       acc.push (laurelOp "modifiesWhenClause"
         #[commaSep (g.targets.map stmtExprToArg |>.toArray), stmtExprToArg guard])
 
+/-- Emit the `Option TypeParams` slot: `none` for monomorphic, else
+    `<T, U>`. Position matches the grammar (right after the name). -/
+private def typeParamsToArg (typeArgs : List Identifier) : Arg :=
+  if typeArgs.isEmpty then optionArg none
+  else optionArg (some (laurelOp "typeParams"
+    #[commaSep (typeArgs.map (fun t => ident t.text) |>.toArray)]))
+
 private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let params := proc.inputs.map parameterToArg |>.toArray
   let returnTypeArg : Arg :=
@@ -355,6 +373,7 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
     name := { dialect := "Laurel", name := "procedure" }
     args := #[
       ident proc.name.text,
+      typeParamsToArg proc.typeArgs,
       commaSep params,
       returnTypeArg,
       returnParamsArg,
@@ -370,13 +389,15 @@ private def compositeToOp (ct : CompositeType) : StrataDDM.Operation :=
   let extendsArg := if ct.extending.isEmpty then
     optionArg none
   else
-    optionArg (some (laurelOp "extends" #[commaSep (ct.extending.map (fun e => ident e.text) |>.toArray)]))
+    -- `extending` is now `List HighTypeMd`: emit each parent as a full type (a bare
+    -- `Base` renders via `compositeType`, a generic `Base<T>` via `appliedType`).
+    optionArg (some (laurelOp "extends" #[commaSep (ct.extending.map highTypeToArg |>.toArray)]))
   let fields := ct.fields.map fieldToArg |>.toArray
   let procs := ct.instanceProcedures.map (fun p => .op (procedureToOp p)) |>.toArray
   let compositeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "composite" }
-      args := #[ident ct.name.text, extendsArg, seqArg fields, seqArg procs] }
+      args := #[ident ct.name.text, typeParamsToArg ct.typeArgs, extendsArg, seqArg fields, seqArg procs] }
   { ann := sr
     name := { dialect := "Laurel", name := "compositeCommand" }
     args := #[.op compositeOp] }
@@ -394,12 +415,10 @@ private def datatypeConstructorToArg (c : DatatypeConstructor) : Arg :=
 private def datatypeToOp (dt : DatatypeDefinition) : StrataDDM.Operation :=
   let ctors := dt.constructors.map datatypeConstructorToArg |>.toArray
   let ctorList := laurelOp "datatypeConstructorList" #[commaSep ctors]
-  let typeParamsArg := optionArg (if dt.typeArgs.isEmpty then none
-    else some (laurelOp "typeParams" #[commaSep (dt.typeArgs.map (fun p => ident p.text) |>.toArray)]))
   let datatypeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "datatype" }
-      args := #[ident dt.name.text, typeParamsArg, ctorList] }
+      args := #[ident dt.name.text, typeParamsToArg dt.typeArgs, ctorList] }
   { ann := sr
     name := { dialect := "Laurel", name := "datatypeCommand" }
     args := #[.op datatypeOp] }
@@ -423,8 +442,14 @@ private def typeDefinitionToOp : TypeDefinition → StrataDDM.Operation
   | .Composite ct => compositeToOp ct
   | .Constrained ct => constrainedTypeToOp ct
   | .Datatype dt => datatypeToOp dt
-  -- Placeholder: aliases are eliminated before CST serialization
-  | .Alias _ => { ann := sr, name := { dialect := "Laurel", name := "typeAlias" }, args := #[] }
+  | .Alias ta =>
+    let aliasOp : StrataDDM.Operation :=
+      { ann := sr
+        name := { dialect := "Laurel", name := "typeAlias" }
+        args := #[ident ta.name.text, typeParamsToArg ta.typeArgs, highTypeToArg ta.target] }
+    { ann := sr
+      name := { dialect := "Laurel", name := "typeAliasCommand" }
+      args := #[.op aliasOp] }
 
 private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
   { ann := sr
@@ -490,7 +515,9 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
   | .Datatype ty => formatDatatypeDefinition ty
-  | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
+  -- Emit via the op path (like the other type defs) so the target type uses the grammar's
+  -- `typeAlias` arg slot — re-parseable — rather than `formatHighType`'s parenthesized form.
+  | .Alias ta => formatOp (typeDefinitionToOp (.Alias ta))
 
 def formatVariable (v : Variable) : Format :=
   formatArg (stmtExprValToArg (.Var v))

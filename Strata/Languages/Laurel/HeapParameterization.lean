@@ -23,8 +23,8 @@ import Strata.Languages.Laurel.EliminateReturnStatements
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field $Box)` map
-and a `nextReference: int` for allocating new objects. `$Box` is a sum type with constructors for each
+The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
+and a `nextReference: int` for allocating new objects. `Box` is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -34,7 +34,7 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 
 2. Procedures that only read the heap get an in heap parameter
    - Input: `heap : Heap`
-   - Field reads become: `$Box..tVal(readField(heap, obj, field))`
+   - Field reads become: `Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
@@ -91,9 +91,21 @@ private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
   | .compositeType _ => true
   | _ => false
 
-/-- Get the `$Box` destructor name for a given Laurel HighType.
-    For UserDefined datatypes, uses "$Box..<datatypeName>Val!";
-    for Composite types, uses "$Box..compositeVal!".
+/-- An identifier-legal name for a heap-box variant of a GENERIC datatype instantiation,
+    so `Bx<int>` and `Bx<bool>` get distinct box constructors/destructors (`Bx$a1$int` vs
+    `Bx$a1$bool`) — preserving the instantiation-distinctness the native parametric datatype
+    gives us. Shares `instTagCommon` with `MonomorphizeComposites.tyTag` (inlined, not imported,
+    to avoid a pass↔pass cycle), so it inherits that kernel's non-injectivity caveat: a `$`-clash
+    is caught downstream by the Core type checker, not here. Returns `none` on an un-renderable
+    shape (`.Applied` over a non-datatype, a `.TVar` arg), keeping the caller on its loud fallback. -/
+private def appliedBoxTag (ty : HighType) : Option String :=
+  -- Heap-box naming needs no extra leaf beyond `instTagCommon`'s shared arms (which already
+  -- tag `.UserDefined`, `.Applied` datatypes, and `.TMap`/`.TSet`); `none` on TVar/TVoid.
+  instTagCommon (fun _ => none) ty
+
+/-- Get the Box destructor name for a given Laurel HighType.
+    For UserDefined datatypes, uses "Box..<datatypeName>Val!";
+    for Composite types, uses "Box..compositeVal!".
 
     Constrained types do not need resolving here: `ConstrainedTypeElim` runs
     before this pass and has already lowered every constrained type to its base
@@ -101,15 +113,22 @@ private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
     constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => "$Box..intVal!"
-  | .TBool => "$Box..boolVal!"
-  | .TFloat64 => "$Box..float64Val!"
-  | .TReal => "$Box..realVal!"
-  | .TString => "$Box..stringVal!"
+  | .TInt => "Box..intVal!"
+  | .TBool => "Box..boolVal!"
+  | .TFloat64 => "Box..float64Val!"
+  | .TReal => "Box..realVal!"
+  | .TString => "Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name then s!"$Box..{name.text}Val!"
-      else "$Box..compositeVal!"
-  | .TBv n => s!"$Box..bv{n}Val!"
+      if isDatatype model name then s!"Box..{name.text}Val!"
+      else "Box..compositeVal!"
+  | .TBv n => s!"Box..bv{n}Val!"
+  -- Generic datatype instantiation `Bx<int>` + built-in `Map`: one box variant per
+  -- instantiation, named via `appliedBoxTag`. (`.TSet` is unreachable — LaurelGrammar.st has
+  -- only `mapType`, no Set production — kept for symmetry with `.TMap`.)
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}Val!"
+    | none => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -126,6 +145,11 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
       if isDatatype model name then s!"Box..{name.text}"
       else "BoxComposite"
   | .TBv n => s!"BoxBv{n}"
+  -- Generic datatype instantiation `Bx<int>`, and built-in collections `Map`/`Set`.
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => s!"Box..{tag}"
+    | none => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
 /-- Synthetic source location for compiler-generated Box datatype definitions. -/
@@ -147,6 +171,13 @@ private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option D
         some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", syntheticSource⟩ }] }
   | .TBv n =>
         some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, syntheticSource⟩ }] }
+  -- `.Applied` generic datatypes + built-in `.TMap`/`.TSet`: the box variant carries the
+  -- FULL type, so `translateType` lowers it to the right Core sort (`.tcons "Bx" [int]` for a
+  -- datatype, `Core.mapTy k v` for Map) — keeping distinct instantiations in distinct boxes.
+  | .Applied .. | .TMap .. | .TSet .. =>
+    match appliedBoxTag ty with
+    | some tag => some { name := s!"Box..{tag}", args := [{ name := s!"{tag}Val", type := ⟨ty, syntheticSource⟩ }] }
+    | none => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -215,10 +246,43 @@ private def wrapList (source : FileRange) : List StmtExprMd → StmtExprMd
   | [single] => single
   | many => ⟨.Block many none, source⟩
 
-/-- Whether heap lowering may introduce imperative heap-threading assignments. -/
+/-- The position a transformed expression occupies, which decides whether lowering may
+    introduce an imperative binding here. Two lowerings need one: a heap-threading assignment
+    for a heap-writing call (the `.StaticCall` writes-heap arm), and a capture temp for an
+    effectful `as`-cast target (`lowerAsTypeNode`). `.executable` admits such bindings;
+    `.specification` is a pure position that must stay binding-free (effectful statements are
+    rejected upstream at translation, and a spec cannot host a `.Declare` — no local inference
+    in specs). -/
 inductive HeapTransformContext where
   | executable
   | specification
+
+/-- Lower an `AsType` node `t as T` to `{ assert (t is T); t }`, given the ALREADY-lowered
+    target `target'`. The single source of truth for `as`-cast lowering, shared by
+    `heapTransformExpr`'s `.AsType` arm and the heap-neutral `lowerAsTypeNodesOnly` path so the
+    two can't drift: a single lowering is what keeps an effectful target from being evaluated twice.
+    - `.specification`: double-embed `target'` (once in the check, once as the result). This is
+      not a soundness hedge but the only representable form here: a spec cannot host a `.Declare`
+      temp (no local inference in specs), so capture-once is unavailable — and it is safe because
+      an effectful target cannot reach a spec (effectful statements are rejected upstream at
+      translation), so `target'` is pure and evaluating it twice is meaning-preserving.
+    - `.executable`: capture `target'` into a fresh local ONCE — an effectful target (a
+      heap-writing call, or a compound like `{ x := x-1; e }` before imperative lifting) must
+      run exactly once. No type annotation on the declare: a generic callee's declared return
+      type names unbound type params here; the resolver infers the instantiated type. -/
+private def lowerAsTypeNode (target' : StmtExprMd) (ty : HighTypeMd) (source : FileRange)
+    (context : HeapTransformContext) : TransformM StmtExprMd := do
+  -- The positions differ only in whether the target may be named twice (a pure spec) or must
+  -- first be bound into a fresh local (an effectful executable target must run exactly once).
+  -- `prelude` holds that binding (empty for specs); `ref` is what the check and result mention.
+  let (prelude, ref) ← match context with
+    | .specification => pure ([], target')
+    | .executable =>
+      let result ← freshVarName
+      let capture : StmtExprMd := ⟨.Assign [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
+      pure ([capture], ⟨.Var (.Local result), source⟩)
+  let check : StmtExprMd := ⟨.Assert ⟨.IsType ref ty, source⟩ none, source⟩
+  return ⟨.Block (prelude ++ [check, ref]) none, source⟩
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -355,9 +419,8 @@ where
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, some valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
-      -- Process calls to heap mutating procedures
+      -- Process an RHS call to a heap-mutating/reading procedure: thread the heap argument.
       let (newAssign, suffixes) ← do
-        -- Detect calls and add a heap argument if needed
         let (v', addedHeap) <- match _hv : v.val with
           | .StaticCall callee args => do
             let args' <- args.mapM recurseOne
@@ -400,35 +463,14 @@ where
             updateStatements ++ [⟨ StmtExpr.Var targetVar, source⟩]
           else updateStatements
         pure (newAssign, suffixes)
-
-      -- Return the list of statements directly (flattened into enclosing block)
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
-    | .New _ => return [exprMd]
+    | .New .. => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
     | .AsType target ty =>
         let target' ← recurseOne target true
-        match context with
-        | .specification =>
-          -- Specifications are pure, so the target can be evaluated twice; a
-          -- declared temp is not resolvable here (no inference in specs).
-          let check : StmtExprMd := ⟨.Assert ⟨.IsType target' ty, source⟩ none, source⟩
-          return [⟨.Block [check, target'] none, source⟩]
-        | .executable =>
-          -- Capture the target once: it is used both by the type check and as
-          -- the result, and an effectful target (e.g. a heap-writing call)
-          -- must run exactly once. No type annotation: the declared return
-          -- type of a generic callee (e.g. `Result..err : Result<Val, Err> →
-          -- Err`) names type parameters that are unbound here; the resolver
-          -- infers the instantiated type.
-          let result ← freshVarName
-          let resultRef : StmtExprMd := ⟨.Var (.Local result), source⟩
-          let capture : StmtExprMd := ⟨.Assign
-            [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
-          let check : StmtExprMd :=
-            ⟨.Assert ⟨.IsType resultRef ty, source⟩ none, source⟩
-          return [⟨.Block [capture, check, resultRef] none, source⟩]
+        return [← lowerAsTypeNode target' ty source context]
     | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurseOne t
@@ -532,19 +574,75 @@ def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
       return { entry with val := .Var (.Field target' fieldName) }
   | _ => heapTransformExpr heapName model entry
 
+/-- Lower ONLY `AsType` nodes (via the shared `lowerAsTypeNode`), recursing structurally
+    and leaving every other node untouched. This is the heap-INDEPENDENT counterpart to
+    `heapTransformExpr`'s `.AsType` arm, for the heap-neutral procedure branch: such a
+    procedure must NOT receive the heap-dependent rewrites (field access, Composite `==` →
+    reference compare — the latter mis-fires on a constrained/`.UserDefined` non-composite
+    operand), but it MUST still have its `as` casts lowered or the Core translator hard-fails
+    (`NotYetImplemented`). `context` matters even here: an EXECUTABLE body's cast target can be
+    effectful (a compound `{ x := x-1; e }`, before imperative lifting), so it must be captured
+    once — routing through `lowerAsTypeNode` shares that logic with `heapTransformExpr` rather
+    than re-deriving it. `mapStmtExprM` is bottom-up, so nested casts (`(x as A) as B`) lower
+    correctly. -/
+private def lowerAsTypeNodesOnly (context : HeapTransformContext) (expr : StmtExprMd)
+    : TransformM StmtExprMd :=
+  mapStmtExprM (fun e => match e.val with
+    | .AsType t ty => lowerAsTypeNode t ty e.source context
+    | _ => pure e) expr
+
+/-- Transform a procedure body, applying `bodyFn` to the one EXECUTABLE position (the
+    transparent body or the opaque implementation) and `specFn` to the pure positions
+    (opaque/abstract postconditions and a modifies group's targets and guard). The two
+    functions differ because an executable position may host an effectful cast target
+    that must run exactly once, whereas spec positions are pure. `mapProcedureBodiesM`
+    can't express this — it applies one function everywhere — which is why every branch
+    of `heapTransformProcedure` traverses the body shape this way. -/
+private def mapBodyWithM (bodyFn specFn : StmtExprMd → TransformM StmtExprMd)
+    (body : Body) : TransformM Body := do
+  match body with
+  | .Transparent bodyExpr => .Transparent <$> bodyFn bodyExpr
+  | .Opaque postconds impl modif =>
+      let postconds' ← postconds.mapM (·.mapM specFn)
+      let impl' ← impl.mapM bodyFn
+      let modif' ← modif.mapM fun g => do
+        let targets' ← g.targets.mapM specFn
+        let guard' ← g.guard.mapM specFn
+        pure ({ g with targets := targets', guard := guard' } : ModifiesGroup)
+      pure (.Opaque postconds' impl' modif')
+  | .Abstract postconds => .Abstract <$> postconds.mapM (·.mapM specFn)
+  | .External => pure .External
+
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
   let uid ← Identifier.getUniqueId proc.name
   let readsHeap := (← get).heapReaders.contains uid
   let writesHeap := (← get).heapWriters.contains uid
-  -- Kept before the generic specification pass because a `throwsOn` case's frame
-  -- targets need a modifies-specific transform rather than the uniform one; the
-  -- writes-heap branch below rebuilds the cases from these.
+  -- Transform every out-of-body spec field (preconditions, decreases, invokeOn, axioms,
+  -- throwsOn) at ONE site for all three branches, so no branch can silently skip a field:
+  -- heap procedures thread the heap through them; a heap-neutral procedure still has `as`
+  -- casts that must be lowered (`lowerAsTypeNodesOnly`) or they hard-fail at
+  -- `LaurelToCoreSchemaPass`. The body is NOT transformed here — each branch does that
+  -- itself, because the body's implementation is executable (capture an effectful cast
+  -- target once) while these spec fields are pure.
+  --
+  -- Kept before the branches because a `throwsOn` case's frame targets need a
+  -- modifies-specific transform rather than the uniform one; the writes-heap branch
+  -- below rebuilds the cases from these. (A heap-neutral procedure has no `throwsOn` —
+  -- `EliminateExceptions` cleared it upstream — so its spec transform is a no-op there.)
+  --
+  -- GAP (pre-existing, pipeline-wide): `lowerAsTypeNode` always emits `{ assert (t is T); t }`,
+  -- so a cast in a contract-CONDITION field (a precondition, an `invokeOn`/`axioms`
+  -- proposition) then hits `LaurelToCoreSchemaPass`'s "asserts are not YET supported in
+  -- functions or contracts". Both transforms below share this limitation (the heap one's
+  -- `.AsType` arm calls the same `lowerAsTypeNode`); representing the `is`-check as a
+  -- proof-obligation predicate instead of an `assert` is a separate follow-up. The poly
+  -- feature emits no such casts today, so nothing in the suite exercises the residual gap.
   let originalThrowsOn := proc.throwsOn
-  let proc ← if readsHeap || writesHeap then
-    mapProcedureSpecificationsM (heapTransformSpecificationExpr heapName model) proc
-  else
-    pure proc
+  let specTransform :=
+    if readsHeap || writesHeap then heapTransformSpecificationExpr heapName model
+    else lowerAsTypeNodesOnly .specification
+  let proc ← mapProcedureSpecificationsM specTransform proc
 
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
@@ -660,8 +758,14 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       body := body' }
 
   else
-    -- This procedure doesn't read or write the heap - no changes needed
-    return proc
+    -- This procedure neither reads nor writes the heap, so it gets NO `$heap` parameter
+    -- and none of the heap-dependent rewrites. Its out-of-body spec fields were already
+    -- `as`-lowered at the top; only the body remains. The implementation is the one
+    -- EXECUTABLE position — an effectful cast target (e.g. a pre-lift compound
+    -- `{ x := x-1; e }`) must be captured once — while its postconditions and modifies
+    -- frames are pure and double-embed.
+    let body' ← mapBodyWithM (lowerAsTypeNodesOnly .executable) (lowerAsTypeNodesOnly .specification) proc.body
+    return { proc with body := body' }
 
 def heapParameterization (model: SemanticModel) (program : Program) : Except String Program := do
   -- Instance procedures are already lifted to `staticProcedures` by an earlier
@@ -685,21 +789,30 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
     match td with
     | .Composite ct => .Composite { ct with fields := [] }
     | other => other
-  -- Generate the `$Box` datatype from all constructors used during transformation.
-  -- It replaces the `$Box` placeholder from CoreDefinitionsForLaurel.lean, so it
-  -- must carry the same name: `select`/`update`/`mapConst` are declared to return
-  -- `$Box`, and those references are re-resolved after this pass. The reserved `$`
-  -- prefix keeps it distinct from a user-declared `Box`.
+  -- Generate the `Box` datatype from all constructors used during transformation.
+  -- It MUST be named `Box`: the box constructors/destructors emitted for field
+  -- reads and writes (`boxConstructorName`/`boxDestructorName`) reference accessors
+  -- like `Box..compositeVal!`, whose prefix is this datatype's name. The Core map
+  -- primitives (`select`/`update`/`mapConst`) do not carry a `$Box` placeholder
+  -- return type, so the name `Box` is free to be reused here.
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "$Box", typeArgs := [], constructors := state1.usedBoxConstructors }
+    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
 
+  -- Drop only a DATATYPE named `Box`, so we don't emit a duplicate of the
+  -- `boxDatatype` synthesized just above (a stray `Box` datatype could arrive from
+  -- the prelude or a prior lowering). Crucially this must NOT match a user
+  -- `.Composite` named `Box`: composites are still needed here (TypeHierarchy reads
+  -- them to build the `TypeTag` constructors and flatten them to `Composite`), and
+  -- deleting one erases its `Box_TypeTag`, collapsing re-resolution. A user datatype
+  -- literally named `Box` collides with the boxing datatype irreducibly and is caught
+  -- elsewhere as a duplicate; here we only guard the composite case.
   let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
-    -- The filter is a hack to deal with another hack,
-    -- the `$Box` placeholder that was added in CoreDefinitionsForLaurel.lean
-    -- because Laurel does not support polymorphism yet. The `$Box` generated
-    -- just above replaces it; a user-declared `Box` is a distinct type and
-    -- must not be dropped here.
-    types'.filter (fun td => td.name.text != "$Box")
+    -- Drop the generated boxing `Box` DATATYPE (regenerated just above), but keep a
+    -- user-declared `Box` composite — freeing the `Box` name for user generics is the
+    -- whole point (no `$Box` placeholder remains in CoreDefinitionsForLaurel).
+    types'.filter (fun td => match td with
+      | .Datatype dt => dt.name.text != "Box"
+      | _ => true)
   pure { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }
@@ -707,7 +820,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
-  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with
