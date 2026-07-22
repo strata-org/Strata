@@ -1753,14 +1753,15 @@ def Synth.staticCall (exprMd : StmtExprMd)
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
   --   * `mapConst(val)`        ⇒ `Map _ (typeof val)` (key type is not recoverable)
-  if callee == "select" || callee == "update" || callee == "mapConst" then
+  if callee.text == "select" || callee.text == "update" || callee.text == "mapConst" then
+    let callee' ← resolveRef callee source
     let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Synth.resolveStmtExpr a)
     let args' := resolved.map (·.1)
     let argTys := resolved.map (·.2)
     let resultTy : HighTypeMd ←
-      match callee, argTys with
+      match callee.text, argTys with
       | "select", mapTy :: _ =>
         match mapTy.val with
         | .TMap _ valueTy => pure valueTy
@@ -1768,7 +1769,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       | "update", mapTy :: _ => pure mapTy
       | "mapConst", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
       | _, _ => pure ⟨ .Unknown, source ⟩
-    return (.StaticCall callee args', resultTy)
+    return (.StaticCall callee' args', resultTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
@@ -3047,25 +3048,31 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
 Check if a field can be reached through a given type (directly declared or inherited).
 Returns true if the type or any of its ancestors declares the field.
 -/
-def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Except String Bool := do
   match model.get fieldName with
-  | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
-  | _ => false -- recover from a resolution error
+  | .field owner _ =>
+    let ancestors ← computeAncestors model typeName
+    let found ← ancestors.anyM (fun t => owner.sameId t.name)
+    pure found
+  | _ => pure false -- recover from a resolution error
 
 /--
 Check if a field is inherited through multiple parent paths (diamond inheritance).
 Returns true if more than one direct parent of the given type can reach the field.
 -/
-def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Except String Bool := do
   match model.get typeName with
   | .compositeType ct =>
     -- If the field is directly declared on this type, it's not a diamond
-    if ct.fields.any (·.name == fieldName) then false
-    else
+    let directlyDeclared ← ct.fields.anyM (fun f => fieldName.sameId f.name)
+    if directlyDeclared then pure false
+    else do
       -- Count how many direct parents can reach this field
-      let parentsWithField := ct.extending.filter (canReachField model · fieldName)
-      parentsWithField.length > 1
-  | _ => false
+      let count ← ct.extending.foldlM (init := 0) fun count parent => do
+        let reaches ← canReachField model parent fieldName
+        pure (if reaches then count + 1 else count)
+      pure (count > 1)
+  | _ => pure false
 
 /--
 Check whether accessing `fieldName` on `target` is a diamond-inherited field access,
@@ -3075,13 +3082,15 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
   match (computeExprType model target).val with
   | .UserDefined typeName =>
-    if isDiamondInheritedField model typeName fieldName then
+    match isDiamondInheritedField model typeName fieldName with
+    | .ok true =>
       match source with
       | some fileRange =>
         [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
       | none =>
         [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
-    else []
+    | .ok false => []
+    | .error e => [DiagnosticModel.fromMessage e .StrataBug]
   | _ => []
 
 /--
@@ -3203,17 +3212,21 @@ private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
     (`x#f`) directly, or calls a procedure that (transitively) reads the heap.
     The latter uses the `heapReaders` set precomputed on the `SemanticModel`, so
     e.g. `old(f(x))` is recognized as meaningful when `f` reads the heap. -/
-private def containsHeapRead (heapReaders : Std.HashSet Identifier) (e : StmtExprMd) : Bool :=
+private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
   let result := ((collectExprMd e).run {}).2
-  result.readsHeapDirectly || result.callees.any heapReaders.contains
+  result.readsHeapDirectly || result.callees.any (fun c =>
+    match c.uniqueId with
+    | some uid => heapReaders.contains uid
+    | none => dbg_trace s!"WARNING: containsHeapRead: callee '{c.text}' missing uniqueId"; false)
 
 /-- Names of a procedure's inout parameters: those appearing in both the inputs
     and the outputs. The pre- and post-state of an inout parameter differ, so
     `old(...)` over such a parameter is meaningful even when the procedure does
     not touch the heap. Mirrors `PushOldInward.procInoutNames`. -/
-private def procInoutNames (proc : Procedure) : List String :=
-  proc.inputs.filterMap fun inp =>
-    if proc.outputs.any (·.name == inp.name) then some inp.name.text else none
+private def procInoutNames (proc : Procedure) : Except String (List String) :=
+  proc.inputs.foldlM (init := []) fun result inp => do
+    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
+    pure (if isInout then result ++ [inp.name.text] else result)
 
 /-- True when `e` references one of `inoutNames` (an inout parameter), in which
     case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/
@@ -3241,9 +3254,11 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     the single source of user-program diagnostics. The two notions stay in sync
     because both classify "writes the heap" / "reads the heap" via the shared
     `HeapAnalysis` and inout membership via the same input/output name match. -/
-private def oldWarningsForProc (heapReaders : Std.HashSet Identifier) (writesHeap : Bool)
+private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Bool)
     (proc : Procedure) : List DiagnosticModel :=
-  let inoutNames := procInoutNames proc
+  match procInoutNames proc with
+  | .error e => [DiagnosticModel.fromMessage e .StrataBug]
+  | .ok inoutNames =>
   let visit (n : StmtExprMd) : StateM (List DiagnosticModel) (Option StmtExprMd) := do
     match n.val with
     | .Old inner =>
@@ -3276,7 +3291,10 @@ def validateOldUsage (model : SemanticModel) (program : Program) : List Diagnost
     | _ => []
   let allProcs := program.staticProcedures ++ instanceProcs
   allProcs.flatMap fun proc =>
-    oldWarningsForProc model.heapReaders (model.heapWriters.contains proc.name) proc
+    let writesHeap := match proc.name.uniqueId with
+      | some uid => model.heapWriters.contains uid
+      | none => dbg_trace s!"WARNING: validateOldUsage: proc '{proc.name.text}' missing uniqueId"; false
+    oldWarningsForProc model.heapReaders writesHeap proc
 
 /-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
     `ContractPass` generates is quantified over the procedure's inputs only, so an
@@ -3319,13 +3337,24 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   let allProcs := program'.staticProcedures ++ program'.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
+  let heapReadersResult := computeReadsHeap allProcs
+  let heapWritersResult := computeWritesHeap allProcs
+  let heapReaders := heapReadersResult.toOption.getD {}
+  let heapWriters := heapWritersResult.toOption.getD {}
   let semanticModel := {
     compositeCount := program.types.length,
     refToDef := refToDef,
     nextId := finalState.nextId,
-    heapReaders := computeReadsHeap allProcs,
-    heapWriters := computeWritesHeap allProcs
+    heapReaders := heapReaders
+    heapWriters := heapWriters
   }
+  let heapAnalysisErrors : Array DiagnosticModel :=
+    (match heapReadersResult with
+      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeReadsHeap: {e}" .StrataBug]
+      | .ok _ => #[]) ++
+    (match heapWritersResult with
+      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeWritesHeap: {e}" .StrataBug]
+      | .ok _ => #[])
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
   -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
   -- resolution: later passes (and their re-resolutions) deliberately rewrite
@@ -3338,7 +3367,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     if existingModel.isNone then validateInvokeOnOutputRefs program' else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
+    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/

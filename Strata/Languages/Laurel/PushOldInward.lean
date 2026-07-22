@@ -56,28 +56,33 @@ def pushOldInwardExpr (expr : StmtExprMd) : PushOldM StmtExprMd :=
   mapStmtExprPrePostM visitOld pure expr
 
 @[expose]
-def procInoutNames (proc : Procedure) : List String :=
-  proc.inputs.filterMap fun inp =>
-    if proc.outputs.any (·.name == inp.name) then some inp.name.text else none
+def procInoutNames (proc : Procedure) : Except String (List String) :=
+  proc.inputs.foldlM (init := []) fun result inp => do
+    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
+    pure (if isInout then result ++ [inp.name.text] else result)
 
 @[expose]
-def transformProcedurePushOld (proc : Procedure) : PushOldM Procedure := do
-  modify fun s => { s with inoutNames := procInoutNames proc }
+def transformProcedurePushOld (proc : Procedure) (inoutNames : List String) : PushOldM Procedure := do
+  modify fun s => { s with inoutNames := inoutNames }
   mapProcedureM pushOldInwardExpr proc
 
 /-- Push every `StmtExpr.Old` inward until it immediately wraps an inout
     variable. (No-op `old` usage is diagnosed by `Resolution`.) -/
-def pushOldInward (program : Program) : Program :=
-  let (program', _finalState) :=
-    (program.staticProcedures.mapM transformProcedurePushOld).run {}
-  { program with staticProcedures := program' }
+def pushOldInward (program : Program) : Except String Program := do
+  let procsResult ← program.staticProcedures.foldlM (init := ([], ({}  : PushOldState))) fun (procs, state) proc => do
+    let inoutNames ← procInoutNames proc
+    let (proc', state') := (transformProcedurePushOld proc inoutNames).run state
+    pure (procs ++ [proc'], state')
+  pure { program with staticProcedures := procsResult.1 }
 
 /-- Pipeline pass: translate modifies clauses into ensures clauses. -/
 public def pushOldInwardPass : LoweringPass where
   name := "PushOldInward"
   documentation := "Distributes `old(...)` over its subexpressions until each `old` immediately wraps an inout variable. No-op `old(...)` usage is diagnosed by Resolution."
   run := fun _ p _ =>
-    (pushOldInward p, [], {})
+    match pushOldInward p with
+    | .ok p' => (p', [], {})
+    | .error e => (p, [DiagnosticModel.fromMessage e .StrataBug], {})
 
 end -- public section
 end Laurel

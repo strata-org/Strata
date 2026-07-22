@@ -117,7 +117,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | AstNode.mk val source =>
   match val with
   | .Hole det _ =>
-      if expectedType.val == .Unknown then
+      if expectedType.val matches .Unknown then
         modify fun s => { s with
           statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}"
           diagnostics := s.diagnostics ++ [diagnosticFromSource source "could not infer type"]

@@ -56,13 +56,13 @@ namespace Strata.Laurel
 -- without an import cycle.
 
 structure TransformState where
-  heapReaders : Std.HashSet Identifier
-  heapWriters : Std.HashSet Identifier
+  heapReaders : Std.HashSet Nat
+  heapWriters : Std.HashSet Nat
   freshCounter : Nat := 0  -- Counter for generating fresh variable names
   /-- Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
 
-@[expose] abbrev TransformM := StateM TransformState
+@[expose] abbrev TransformM := ExceptT String (StateM TransformState)
 
 /-- Check whether a UserDefined type name refers to a Datatype (vs Composite) in the model -/
 private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
@@ -130,15 +130,17 @@ private def recordBoxConstructor (model : SemanticModel) (ty : HighType) : Trans
   match ctorOption with
   | some ctor =>
       modify fun s =>
-        if s.usedBoxConstructors.any (fun c => c.name == ctor.name) then s
+        if s.usedBoxConstructors.any (fun c => c.name.text == ctor.name.text) then s
         else { s with usedBoxConstructors := s.usedBoxConstructors ++ [ctor] }
   | _ => return
 
 def readsHeap (name : Identifier) : TransformM Bool := do
-  return (← get).heapReaders.contains name
+  let uid ← Identifier.getUniqueId name
+  return (← get).heapReaders.contains uid
 
 def writesHeap (name : Identifier) : TransformM Bool := do
-  return (← get).heapWriters.contains name
+  let uid ← Identifier.getUniqueId name
+  return (← get).heapWriters.contains uid
 
 private def freshVarName : TransformM Identifier := do
   let s ← get
@@ -380,8 +382,9 @@ def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
 
 def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : TransformM Procedure := do
   let heapName := heapVarName
-  let readsHeap := (← get).heapReaders.contains proc.name
-  let writesHeap := (← get).heapWriters.contains proc.name
+  let uid ← Identifier.getUniqueId proc.name
+  let readsHeap := (← get).heapReaders.contains uid
+  let writesHeap := (← get).heapWriters.contains uid
 
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
@@ -451,13 +454,16 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- This procedure doesn't read or write the heap - no changes needed
     return proc
 
-def heapParameterization (model: SemanticModel) (program : Program) : Program :=
+def heapParameterization (model: SemanticModel) (program : Program) : Except String Program := do
   -- Instance procedures are already lifted to `staticProcedures` by an earlier
   -- pass, so they're covered by the calls below.
-  let heapReaders := computeReadsHeap program.staticProcedures
-  let heapWriters := computeWritesHeap program.staticProcedures
+  let heapReaders ← computeReadsHeap program.staticProcedures
+  let heapWriters ← computeWritesHeap program.staticProcedures
   let initState : TransformState := { heapReaders, heapWriters }
-  let (procs', state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run initState
+  let (result, state1) := (program.staticProcedures.mapM (heapTransformProcedure model)).run.run initState
+  let procs' ← match result with
+    | .ok ps => pure ps
+    | .error e => .error s!"heapParameterization: {e}"
   -- Collect all qualified field names and generate a Field datatype
   let fieldNames := program.types.foldl (fun acc td =>
     match td with
@@ -479,7 +485,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Program :=
     -- the box that was added in CoreDefinitionsForLaurel.lean
     -- because Laurel does not support polymorphism yet
     types'.filter (fun td => td.name.text != "Box")
-  { program with
+  pure { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }
 
@@ -489,7 +495,9 @@ public def heapParameterizationPass : LoweringPass where
   documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
-    (heapParameterization m p, [], {})
+    match heapParameterization m p with
+    | .ok p' => (p', [], {})
+    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in HeapParameterization: {e}" .StrataBug], {})
   comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
   comesBefore := [
     ⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩,

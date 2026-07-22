@@ -33,34 +33,32 @@ We use this to translate `<value> is <Type>`.
 The runtime type of `<value>` is used for the outer Map lookup while `<Type>` for the inner one.
 
 -/
-def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List Constant :=
+def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : Except String (List Constant) := do
   let composites := program.types.filterMap fun td => match td with
     | .Composite ct => some ct
     | _ => none
-  if composites.isEmpty then [] else
+  if composites.isEmpty then return [] else
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none⟩
   let boolTy : HighTypeMd := ⟨.TBool, none⟩
   let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, none⟩
   let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, none⟩
   -- Helper: build an inner map (Map TypeTag bool) for a given composite type
   -- Start with mapConst(false), then update each composite type's entry
-  let mkInnerMap (ct : CompositeType) : StmtExprMd :=
-    let ancestors := computeAncestors model ct.name
+  let mkInnerMap (ct : CompositeType) : Except String StmtExprMd := do
+    let ancestors ← computeAncestors model ct.name
     let falseConst := mkMd (.LiteralBool false)
     let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
-    composites.foldl (fun acc otherCt =>
-      let isAncestor := ancestors.any (·.name == otherCt.name)
+    composites.foldlM (init := emptyInner) fun acc otherCt => do
+      let isAncestor ← ancestors.anyM (fun anc => otherCt.name.sameId anc.name)
       if isAncestor then
         let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.text ++ "_TypeTag") [])
         let boolVal := mkMd (.LiteralBool true)
-        mkMd (.StaticCall "update" [acc, otherConst, boolVal])
-      else acc
-    ) emptyInner
+        pure (mkMd (.StaticCall "update" [acc, otherConst, boolVal]))
+      else pure acc
   -- Generate a separate constant `ancestorsFor<Type>` for each composite type
-  let ancestorsForDecls := composites.map fun ct =>
-    { name := s!"ancestorsFor{ct.name.text}"
-      type := innerMapTy
-      initializer := some (mkInnerMap ct) : Constant }
+  let ancestorsForDecls : List Constant ← composites.mapM fun ct => do
+    let innerMap ← mkInnerMap ct
+    pure { name := s!"ancestorsFor{ct.name.text}", type := innerMapTy, initializer := some innerMap }
   -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
   let falseConst := mkMd (.LiteralBool false)
   let emptyInner := mkMd (.StaticCall "mapConst" [falseConst])
@@ -74,7 +72,7 @@ def generateTypeHierarchyDecls (model : SemanticModel) (program: Program) : List
     { name := "ancestorsPerType"
       type := outerMapTy
       initializer := some outerMapExpr }
-  ancestorsForDecls ++ [ancestorsDecl]
+  pure (ancestorsForDecls ++ [ancestorsDecl])
 
 /--
 Lower `IsType target ty` to Laurel-level map lookups:
@@ -151,14 +149,14 @@ Type hierarchy transformation pass (Laurel → Laurel).
 3. Generates the `TypeTag` datatype with one constructor per composite type
 4. Generates type hierarchy constants (`ancestorsFor<Type>`, `ancestorsPerType`)
 -/
-def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program :=
+def typeHierarchyTransform (model: SemanticModel) (program : Program) : Except String Program := do
   let compositeNames := program.types.filterMap fun td =>
     match td with
     | .Composite ct => some ct.name.text
     | _ => none
   let typeTagDatatype : TypeDefinition :=
     .Datatype { name := "TypeTag", typeArgs := [], constructors := compositeNames.map fun n => { name := (mkId $ n ++ "_TypeTag"), args := [] } }
-  let typeHierarchyConstants := generateTypeHierarchyDecls model program
+  let typeHierarchyConstants ← generateTypeHierarchyDecls model program
   let (procs', _) := (program.staticProcedures.mapM (mapProcedureM (mapStmtExprM rewriteTypeHierarchyNode))).run {}
   -- Update the Composite datatype to include the typeTag field (introduced in this phase)
   let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", none⟩
@@ -184,7 +182,7 @@ def typeHierarchyTransform (model: SemanticModel) (program : Program) : Program 
   -- type position is covered uniformly.
   let compositeSet : Std.HashSet String :=
     compositeNames.foldl (init := {}) (·.insert ·)
-  mapProgramHighTypes (compositeRefToComposite compositeSet) transformed
+  pure (mapProgramHighTypes (compositeRefToComposite compositeSet) transformed)
 
 /-- Pipeline pass: type hierarchy transform. -/
 public def typeHierarchyTransformPass : LoweringPass where
@@ -193,7 +191,9 @@ public def typeHierarchyTransformPass : LoweringPass where
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   comesAfter := [⟨ heapParameterizationPass.meta, "the type hierarchy pass modifies the 'Composite' datatype that is introduced by this pass."⟩]
   run := fun _ p m =>
-    (typeHierarchyTransform m p, [], {})
+    match typeHierarchyTransform m p with
+    | .ok p' => (p', [], {})
+    | .error e => (p, [DiagnosticModel.fromMessage e .StrataBug], {})
 
 end Strata.Laurel
 

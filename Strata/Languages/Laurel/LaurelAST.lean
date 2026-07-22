@@ -36,15 +36,6 @@ structure Identifier where
   source : Option FileRange := none
   deriving Repr
 
--- Temporary hack because the Python through Laurel pipeline doesn't resolve
-instance : BEq Identifier where
-  beq a b := a.text == b.text
-
--- Hash by `text` only, keeping this lawful with the `BEq` above (which compares
--- by `text`): equal identifiers must hash equally.
-instance : Hashable Identifier where
-  hash id := hash id.text
-
 instance : Inhabited Identifier where
  default := { text := "defaultIdentifier" }
 
@@ -55,6 +46,19 @@ instance : Coe String Identifier where
   coe s := { text := s }
 
 def mkId (name: String): Identifier := { text := name }
+
+/-- Extract the unique ID, or fail with a descriptive message when unresolved. -/
+def Identifier.getUniqueId (id : Identifier) : Except String Nat :=
+  match id.uniqueId with
+  | some n => .ok n
+  | none => .error s!"identifier '{id.text}' missing uniqueId (not resolved)"
+
+/-- Compare two identifiers by uniqueId. Throws if either is unresolved. -/
+def Identifier.sameId (a b : Identifier) : Except String Bool :=
+  match a.uniqueId, b.uniqueId with
+  | some x, some y => .ok (x == y)
+  | none, _ => .error s!"identifier '{a.text}' missing uniqueId (not resolved)"
+  | _, none => .error s!"identifier '{b.text}' missing uniqueId (not resolved)"
 
 /--
 Primitive operations available in Laurel expressions.
@@ -601,7 +605,9 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
 instance : BEq HighTypeMd where
   beq := highEq
 
-deriving instance BEq for HighType
+instance : BEq HighType where
+  beq a b := highEq ⟨a, none⟩ ⟨b, none⟩
+
 
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
     the program's `TypeDefinition`s by the resolution pass:

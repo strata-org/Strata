@@ -33,9 +33,6 @@ public section
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (.synthesized .laurelToCore)
 
-def isFieldName (fieldNames : List Identifier) (name : Identifier) : Bool :=
-  fieldNames.contains name
-
 /-- Set of names that are translated to Core functions (not procedures) -/
 @[expose] abbrev FunctionNames := List Identifier
 
@@ -69,8 +66,11 @@ structure TranslateState where
       resolve to the (now non-functional) base procedure and wrongly reject it. -/
   procedureNames : Std.HashSet String := {}
 
-/-- The translation monad: state over Except, allowing both accumulated diagnostics and hard failures -/
-@[expose] abbrev TranslateM := OptionT (StateM TranslateState)
+/-- The translation monad: state with string-error abort for internal failures. -/
+@[expose] abbrev TranslateM := ExceptT String (StateM TranslateState)
+
+def isFieldName (fieldNames : List Identifier) (name : Identifier) : TranslateM Bool :=
+  fieldNames.anyM (fun f => liftM (m := Except String) (name.sameId f))
 
 /-- Whether `name` refers to one of the program's procedures (as opposed to a
     pure function application). See `TranslateState.procedureNames`. -/
@@ -134,8 +134,8 @@ private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : T
   | _ => translateType (computeExprType model arg)
 
 /-- Run a `TranslateM` action, returning either a hard error or the result and final state -/
-def runTranslateM (s : TranslateState) (m : TranslateM α) : (Option α × TranslateState) :=
-  m s
+def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
+  m.run s
 
 /-- Allocate a fresh unique ID. -/
 private def freshId : TranslateM Nat := do
@@ -180,16 +180,17 @@ def translateExpr (expr : StmtExprMd)
   | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
-      match boundVars.findIdx? (· == name) with
-      | some idx =>
-          -- Bound variable: use de Bruijn index
-          return .bvar () idx
+      let mut bvarIdx : Option Nat := none
+      for bv in boundVars, idx in List.range boundVars.length do
+        if ← liftM (m := Except String) (name.sameId bv) then
+          bvarIdx := some idx
+          break
+      match bvarIdx with
+      | some idx => return .bvar () idx
       | none =>
         match model.get name with
-        | .field _ f =>
-            return .op () ⟨f.name.text, ()⟩ none
-        | astNode =>
-            return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
+        | .field _ f => return .op () ⟨f.name.text, ()⟩ none
+        | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
   | .PrimitiveOp op [e] _ =>
@@ -684,7 +685,8 @@ are emitted into the monad state.
 def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
   -- Track inout parameter names for the `.Old (Var (Local n))` defensive check.
   -- Reset to [] after the procedure so siblings start fresh.
-  modify fun s => { s with currentProcInouts := procInoutNames proc }
+  let inouts ← liftM (m := Except String) (procInoutNames proc)
+  modify fun s => { s with currentProcInouts := inouts }
   let inputPairs ← proc.inputs.mapM translateParameterToCore
   let inputs := inputPairs
   let outputs ← proc.outputs.mapM translateParameterToCore
@@ -893,13 +895,17 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
       | _ => r) {}
     let initState : TranslateState :=
       { model := fnModel, overflowChecks := options.overflowChecks, procedureNames }
-    let (coreProgramOption, translateState) :=
+    let (coreProgramResult, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
     let diagnostics : List DiagnosticModel :=
       -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
       let d := translateState.diagnostics.eraseDups
       if d.isEmpty then translateState.coreDiagnostics else d
-    (coreProgramOption.getD default, diagnostics, {})
+    match coreProgramResult with
+    | .ok coreProgram => (coreProgram, diagnostics, {})
+    | .error e =>
+      let diag := DiagnosticModel.fromMessage s!"Internal error in LaurelToCoreSchema: {e}" .StrataBug
+      (default, diagnostics ++ [diag], {})
 
 end -- public section
 end Laurel
