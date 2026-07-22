@@ -107,49 +107,10 @@ globs = ["StrataAgent.+"]'
   echo "=== Updating lakefile.toml ==="
   add_if_missing "StrataAgent" "$LEAN_LIB_ENTRY"
   add_if_missing "SwarmAgentTools" "$LEAN_EXE_ENTRY"
-
-  # ─── Optional: repl dependency (enables lean_multi_attempt) ────────────────
-  # Pick the repl tag matching this project's Lean toolchain. repl publishes a
-  # tag per Lean release (e.g. v4.29.0); toolchains without an exact tag
-  # (v4.29.1) fall back to the same major.minor .0 tag.
-  if grep -q 'name = "repl"' "$LAKEFILE"; then
-    echo "lakefile.toml already has 'repl' — skipping."
-  else
-    REPL_URL="https://github.com/leanprover-community/repl"
-    LEAN_VER=""
-    if [ -f "$TARGET_REPO/lean-toolchain" ]; then
-      LEAN_VER=$(sed 's|.*:v||' "$TARGET_REPO/lean-toolchain" | tr -d '[:space:]')
-    fi
-    REPL_REV=""
-    if [ -n "$LEAN_VER" ]; then
-      REPL_TAGS=$(git ls-remote --tags "$REPL_URL" 2>/dev/null \
-                    | grep -oP 'refs/tags/\Kv[^\^]+$')
-      if printf '%s\n' "$REPL_TAGS" | grep -qx "v$LEAN_VER"; then
-        REPL_REV="v$LEAN_VER"
-      else
-        # Fall back to same major.minor with patch .0 (e.g. 4.29.1 → v4.29.0)
-        MAJ_MIN=$(echo "$LEAN_VER" | cut -d. -f1,2)
-        if printf '%s\n' "$REPL_TAGS" | grep -qx "v$MAJ_MIN.0"; then
-          REPL_REV="v$MAJ_MIN.0"
-        fi
-      fi
-    fi
-
-    if [ -n "$REPL_REV" ]; then
-      echo "" >> "$LAKEFILE"
-      cat >> "$LAKEFILE" << EOF
-[[require]]
-name = "repl"
-git = "$REPL_URL"
-rev = "$REPL_REV"
-EOF
-      echo "Added 'repl' dependency (rev $REPL_REV, matched to Lean $LEAN_VER)."
-    else
-      echo "Skipping 'repl': no matching tag for Lean '${LEAN_VER:-unknown}'."
-      echo "  (lean_multi_attempt will be unavailable; everything else works.)"
-    fi
-  fi
   echo
+  # NOTE: the optional 'repl' dependency (for lean_multi_attempt) is handled by
+  # setup.sh AFTER SwarmAgentTools is built, so a repl failure can't block the
+  # core Lean build.
 else
   echo "Note: lakefile.lean detected (not lakefile.toml)."
   echo "      Add the StrataAgent lean_lib/lean_exe targets manually."

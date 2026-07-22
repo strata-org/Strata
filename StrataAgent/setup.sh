@@ -41,10 +41,35 @@ lake build SwarmAgentTools 2>&1 | tail -3
 echo
 
 # ─── 6. repl (optional — enables lean_multi_attempt) ─────────────────────────
-if grep -q 'name = "repl"' "$PROJECT_ROOT/lakefile.toml" 2>/dev/null; then
+# Added AFTER the core build so a repl/plausible dependency conflict can never
+# block SwarmAgentTools. The rev is matched to this project's Lean toolchain;
+# if anything fails, the lakefile is restored to its pre-repl state.
+LAKEFILE="$PROJECT_ROOT/lakefile.toml"
+if [ -f "$LAKEFILE" ] && ! grep -q 'name = "repl"' "$LAKEFILE"; then
   echo "6. repl (optional, for lean_multi_attempt)..."
-  lake update repl 2>&1 | tail -3 || echo "  [WARN] 'lake update repl' failed — lean_multi_attempt unavailable."
-  lake build repl 2>&1 | tail -3 || echo "  [WARN] 'lake build repl' failed — lean_multi_attempt unavailable."
+  REPL_URL="https://github.com/leanprover-community/repl"
+  REPL_TAGS=$(git ls-remote --tags "$REPL_URL" 2>/dev/null | grep -oP 'refs/tags/\Kv[^\^]+$')
+  REPL_REV=""
+  if printf '%s\n' "$REPL_TAGS" | grep -qx "v$LEAN_VERSION"; then
+    REPL_REV="v$LEAN_VERSION"
+  else
+    MAJ_MIN=$(echo "$LEAN_VERSION" | cut -d. -f1,2)
+    printf '%s\n' "$REPL_TAGS" | grep -qx "v$MAJ_MIN.0" && REPL_REV="v$MAJ_MIN.0"
+  fi
+
+  if [ -z "$REPL_REV" ]; then
+    echo "  [SKIP] No repl tag matches Lean '$LEAN_VERSION' — lean_multi_attempt unavailable."
+  else
+    cp "$LAKEFILE" "$LAKEFILE.strata_bak"
+    printf '\n[[require]]\nname = "repl"\ngit = "%s"\nrev = "%s"\n' "$REPL_URL" "$REPL_REV" >> "$LAKEFILE"
+    if lake update repl >/dev/null 2>&1 && lake build repl >/dev/null 2>&1; then
+      echo "  [OK] repl $REPL_REV built (matched to Lean $LEAN_VERSION)."
+      rm -f "$LAKEFILE.strata_bak"
+    else
+      echo "  [WARN] repl setup failed — reverting lakefile. lean_multi_attempt unavailable."
+      mv "$LAKEFILE.strata_bak" "$LAKEFILE"
+    fi
+  fi
   echo
 fi
 
