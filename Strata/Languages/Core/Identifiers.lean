@@ -8,6 +8,10 @@ module
 public meta import Strata.DL.Lambda.LExpr
 public meta import Std.Do.Triple.SpecLemmas
 public import Strata.DL.Lambda.LExpr
+import all Init.Data.String.TakeDrop
+import all Init.Data.String.Slice
+import all Init.Data.String.Pattern.String
+import all Init.Data.String.Lemmas.Pattern.String.ForwardPattern
 namespace Core
 
 public section
@@ -61,6 +65,18 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
 def CoreIdent.isOldIdent (ident : CoreIdent) : Bool := ident.name.startsWith CoreIdent.oldStr
+
+/-- `mkOld`-prefixed identifiers are recognized as `old`-idents: `("old " ++ n).startsWith "old "`.
+    Proved here where `isOldIdent`/`mkOld` are transparent; reduces the `String.startsWith` to the
+    slice-searcher `startsWith_iff` characterization with the append remainder `n` as witness. -/
+theorem CoreIdent.isOldIdent_mkOld (n : String) :
+    CoreIdent.isOldIdent (CoreIdent.mkOld n) = true := by
+  unfold CoreIdent.isOldIdent CoreIdent.mkOld CoreIdent.oldStr
+  show ("old " ++ n).startsWith "old " = true
+  rw [String.startsWith.eq_def, String.Slice.startsWith.eq_def]
+  show String.Slice.Pattern.ForwardSliceSearcher.startsWith "old ".toSlice ("old " ++ n).toSlice = true
+  rw [String.Slice.Pattern.ForwardSliceSearcher.startsWith_iff]
+  exact ⟨n, by rw [String.copy_toSlice, String.copy_toSlice]⟩
 
 instance : ToFormat CoreIdent where
   format i := CoreIdent.toPretty i

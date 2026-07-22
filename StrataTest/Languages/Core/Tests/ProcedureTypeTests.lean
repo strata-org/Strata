@@ -119,6 +119,32 @@ info: error: [PreRefine]: rigid type variable '$__ty0' was refined to 'int'; a p
          return format ans
 
 ---------------------------------------------------------------------
+-- Old-prefix well-formedness: `Procedure.typeCheck` rejects a procedure whose body
+-- DEFINES a variable whose name uses the reserved `old ` prefix (e.g. `var (old z) := 0`).
+-- The `old ` prefix is reserved for the pre-state ghost bindings of in-out parameters
+-- (`CoreIdent.mkOld`); a body-defined `old`-name would collide with that reserved namespace
+-- and (in the soundness proof) makes the checker/spec body contexts disagree on an old key
+-- that is not an inout ghost. The `init` freshness check does not catch it (a fresh `old z`
+-- is unbound) and `checkModificationRights` only constrains *modified* vars, so a dedicated
+-- guard is needed. Not expressible in concrete `#strata` syntax (identifiers cannot contain
+-- the space in `old `), so exercised at the `Procedure.typeCheck` level.
+/--
+info: error: [CEX]: body modifies or defines variables [old z] whose names use the reserved 'old ' prefix; that prefix is reserved for pre-state inout parameter ghosts
+-/
+#guard_msgs in
+#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
+                             Program.init
+                             { header := {name := "CEX",
+                                          typeArgs := [],
+                                          inputs := [],
+                                          outputs := [] },
+                               spec := { preconditions := [], postconditions := [] },
+                               body := .structured [
+                                 Statement.init (⟨"old z", ()⟩ : CoreIdent) t[int] (.det eb[#0]) .empty ] }
+                            .empty
+         return format ans
+
+---------------------------------------------------------------------
 -- Idempotency: type-checking preserves declared type parameters, so the output of a
 -- polymorphic procedure re-type-checks. `Procedure.typeCheck` keeps `proc'.typeArgs`
 -- while renaming the signature back to those names; clearing them to `[]` would leave

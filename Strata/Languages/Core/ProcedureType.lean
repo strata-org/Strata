@@ -65,6 +65,17 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
   let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
+  -- The `old ` prefix is reserved for the pre-state ghost bindings of in-out parameters
+  -- (`CoreIdent.mkOld`). A body may READ `old x`, but must not MODIFY (`set`/call-output) or
+  -- DEFINE (`var`/`init`) a variable whose name uses that prefix: such a write collides with the
+  -- reserved namespace, and (in the soundness proof) would make the checker's raw-typed body
+  -- context disagree with the spec's alias-resolved context on an `old`-key that is not an inout
+  -- ghost. The `init` freshness check does not catch a fresh `old z`, and the modification check
+  -- below permits writing an old-named *output*, so both mod and def vars are guarded explicitly.
+  let oldWritten := (modifiedVars ++ definedVars).filter (fun v => CoreIdent.isOldIdent v)
+  if !oldWritten.isEmpty then
+    .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: body modifies or defines variables {oldWritten} \
+              whose names use the reserved 'old ' prefix; that prefix is reserved for pre-state inout parameter ghosts"
   let allowedVars := proc.header.outputs.keys ++ definedVars
   let disallowed := modifiedVars.filter (fun v => !allowedVars.contains v)
   if !disallowed.isEmpty then
@@ -143,10 +154,16 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds out_lty_sig
 
   -- Add "old" variables for in-out parameters (those in both inputs and outputs)
-  -- so that postconditions and body can reference `old x`.
+  -- so that postconditions and body can reference `old x`. Use the *instantiated* input
+  -- signature `inp_mty_sig` (alias-resolved, type parameters replaced by the shared fresh
+  -- vars via `tyArgSubst`) rather than the raw declared types, so that `old x` has the same
+  -- type as `x` itself in the body context. Using the raw declared type would leave `old x`
+  -- with an unresolved alias (e.g. `MyAlias` vs the resolved `int` stored for `x`), an
+  -- internal inconsistency; matching the input signature keeps the pre-state snapshot's type
+  -- identical to the parameter's.
   let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
-    proc.header.getInoutParams.toList.map fun (id, ty) =>
-      (CoreIdent.mkOld id.name, .forAll [] ty)
+    (inp_mty_sig.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
+      fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)
   let envWithOldVars := envWithOutputs.addInNewestContext oldInoutBindings
 
   -- Type check postconditions.

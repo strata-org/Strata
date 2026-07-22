@@ -556,6 +556,152 @@ theorem typeCheckConditions_genState_mono
   simp only [Core.Procedure.typeCheckConditions] at h
   exact typeCheckConditions_go_genState_mono C procName conditions #[] Env res h h_wf h_ne h_fwf
 
+/-- `List.map LMonoTy.ftvar` is injective (ftvar is a constructor). -/
+private theorem map_ftvar_inj : ∀ (xs ys : List TyIdentifier),
+    List.map LMonoTy.ftvar xs = List.map LMonoTy.ftvar ys → xs = ys := by
+  intro xs
+  induction xs with
+  | nil => intro ys h; cases ys with | nil => rfl | cons b bs => simp at h
+  | cons a as ih =>
+    intro ys h
+    cases ys with
+    | nil => simp at h
+    | cons b bs =>
+      simp only [List.map_cons, List.cons.injEq, LMonoTy.ftvar.injEq] at h
+      obtain ⟨h1, h2⟩ := h
+      rw [h1, ih bs h2]
+
+/-- The `instantiateWithSubst.go` loop, applied to `forAll []`-wrapped monotypes,
+    does not grow free variables (each output is `resolveAliases` of the input mono
+    type, which is non-growing under `AliasesWF`). -/
+private theorem go_freeVars_subset (C : LContext CoreLParams) (mtys : LMonoTys) :
+    ∀ (Env : TEnv Unit) (newtys : LMonoTys) (Env_out : TEnv Unit),
+      LMonoTySignature.instantiateWithSubst.go C Env
+          (mtys.map (fun m => LTy.forAll [] m)) = .ok (newtys, Env_out) →
+      TContext.AliasesWF Env.context →
+      ∀ w, w ∈ LMonoTys.freeVars newtys → w ∈ LMonoTys.freeVars mtys := by
+  induction mtys with
+  | nil =>
+    intro Env newtys Env_out h _ w hw
+    simp only [List.map_nil, LMonoTySignature.instantiateWithSubst.go,
+      Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, _⟩ := h; subst h1
+    simp only [LMonoTys.freeVars, List.not_mem_nil] at hw
+  | cons m mrest ih =>
+    intro Env newtys Env_out h h_aw w hw
+    simp only [List.map_cons, LMonoTySignature.instantiateWithSubst.go,
+      Bind.bind, Except.bind] at h
+    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
+    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨h_nt, _⟩ := h; subst h_nt
+    rw [LMonoTys.freeVars_of_cons] at hw
+    rw [LMonoTys.freeVars_of_cons, List.mem_append]
+    rw [List.mem_append] at hw
+    cases hw with
+    | inl hw_hd =>
+      obtain ⟨Env'', h_ra⟩ :=
+        instantiateWithCheck_forAll_nil_resolveAliases m C Env Env_mid mt h_iwc
+      left
+      exact LMonoTy_resolveAliases_freeVars_subset (T := CoreLParams) m Env mt Env'' h_ra h_aw w hw_hd
+    | inr hw_tl =>
+      right
+      have h_ctx : Env_mid.context = Env.context :=
+        LTy_instantiateWithCheck_context' (LTy.forAll [] m) C Env mt Env_mid h_iwc
+      exact ih Env_mid mtrest Env_end h_rest (h_ctx ▸ h_aw) w hw_tl
+
+/-- Closedness of the instantiated input signature values under `freshtvs`:
+    `instantiateWithSubst` computes `mtys = subst [zip typeArgs (map ftvar freshtvs)]
+    sig.values` then runs the `go` loop (non-growing under AliasesWF). So if
+    `sig.values` is closed under `typeArgs`, every output value free var is in
+    `freshtvs`. Inputs analogue of the outputs branch's closedness step. -/
+private theorem instantiateWithSubst_values_freeVars_closed
+    (C : LContext CoreLParams) (Env : TEnv Unit)
+    (typeArgs freshtvs : List TyIdentifier) (sig : @LMonoTySignature Unit)
+    (inp_mty_sig : @LMonoTySignature Unit) (Env₂ : TEnv Unit) (S : Subst)
+    (h : LMonoTySignature.instantiateWithSubst C Env typeArgs sig
+        = .ok (inp_mty_sig, Env₂, S))
+    (h_aw : TContext.AliasesWF Env.context)
+    (h_len : freshtvs.length = typeArgs.length)
+    (h_S : S = [typeArgs.zip (freshtvs.map LMonoTy.ftvar)])
+    (h_closed : ∀ x, x ∈ LMonoTys.freeVars (ListMap.values sig) → x ∈ typeArgs) :
+    ∀ w, w ∈ LMonoTys.freeVars (ListMap.values inp_mty_sig) → w ∈ freshtvs := by
+  intro w hw
+  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
+  elim_err h with v_env h_env; obtain ⟨mtys, Env_e, S'⟩ := v_env
+  elim_err h with v_go h_go; obtain ⟨newtys, Env₂'⟩ := v_go
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨h_sig, h_env2, h_S'⟩ := h
+  -- `values inp_mty_sig` is a sublist of `newtys`, so `w ∈ freeVars newtys`.
+  have h_sub : ListMap.values inp_mty_sig ⊆ newtys := by
+    rw [← h_sig, ListMap.values_eq_map_snd]
+    exact (List.map_snd_zip_sublist (ListMap.keys sig) newtys).subset
+  have hw_new : w ∈ LMonoTys.freeVars newtys := by
+    obtain ⟨elt, h_elt, h_v⟩ := LMonoTys.freeVars_exists hw
+    exact LMonoTys.freeVars_mem_subset (h_sub h_elt) h_v
+  obtain ⟨freshtvs', genEnv', h_gen, h_mtys, h_S'eq, h_ctx, _⟩ :=
+    instantiateEnvWithSubst_decompose typeArgs (ListMap.values sig) Env (mtys, Env_e, S') h_env
+  simp only at h_mtys h_S'eq h_ctx
+  have h_aw_e : TContext.AliasesWF Env_e.context := h_ctx ▸ h_aw
+  have h_go' : LMonoTySignature.instantiateWithSubst.go C Env_e
+      (mtys.map (fun m => LTy.forAll [] m)) = .ok (newtys, Env₂') := h_go
+  have hw_mtys : w ∈ LMonoTys.freeVars mtys :=
+    go_freeVars_subset C mtys Env_e newtys Env₂' h_go' h_aw_e w hw_new
+  -- `freshtvs' = freshtvs`: the two substitution scopes agree, `map ftvar` is injective.
+  have h_flen' : freshtvs'.length = typeArgs.length :=
+    TGenEnv.genTyVars_length typeArgs.length Env.genEnv freshtvs' genEnv' h_gen
+  have h_zip_eq : typeArgs.zip (List.map LMonoTy.ftvar freshtvs')
+      = typeArgs.zip (List.map LMonoTy.ftvar freshtvs) := by
+    have h_cons : [typeArgs.zip (List.map LMonoTy.ftvar freshtvs')]
+        = [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)] := by
+      rw [← h_S'eq, h_S', h_S]
+    exact List.head_eq_of_cons_eq h_cons
+  have h_map_eq : List.map LMonoTy.ftvar freshtvs' = List.map LMonoTy.ftvar freshtvs := by
+    have e1 : List.map Prod.snd (typeArgs.zip (List.map LMonoTy.ftvar freshtvs'))
+        = List.map LMonoTy.ftvar freshtvs' :=
+      List.map_snd_zip (by rw [List.length_map]; exact Nat.le_of_eq h_flen')
+    have e2 : List.map Prod.snd (typeArgs.zip (List.map LMonoTy.ftvar freshtvs))
+        = List.map LMonoTy.ftvar freshtvs :=
+      List.map_snd_zip (by rw [List.length_map]; exact Nat.le_of_eq h_len)
+    rw [← e1, ← e2, h_zip_eq]
+  have h_fresh_eq : freshtvs' = freshtvs := map_ftvar_inj freshtvs' freshtvs h_map_eq
+  subst h_fresh_eq
+  rw [h_mtys] at hw_mtys
+  exact LMonoTys.freeVars_subst_closed typeArgs freshtvs' h_flen'
+    (ListMap.values sig) h_closed w hw_mtys
+
+
+/-- Setup-level closedness: from `setupInputEnv = ok v_setup` with `S`-shape
+    `[typeArgs.zip (freshtvs.map ftvar)]` and inputs closed under `typeArgs`, the
+    input signature `v_setup.fst`'s free vars all land in `freshtvs`. -/
+private theorem setupInputEnv_values_closed
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
+    (proc : Procedure) (fr : Strata.FileRange)
+    (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
+    (freshtvs : List TyIdentifier)
+    (h_setup : Core.Procedure.setupInputEnv C Env proc fr = .ok v_setup)
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_len : freshtvs.length = proc.header.typeArgs.length)
+    (h_S : v_setup.2.snd = [proc.header.typeArgs.zip (freshtvs.map LMonoTy.ftvar)])
+    (h_closed : ∀ x, x ∈ LMonoTys.freeVars (ListMap.values proc.header.inputs) →
+      x ∈ proc.header.typeArgs) :
+    ∀ w, w ∈ LMonoTys.freeVars (ListMap.values v_setup.fst) → w ∈ freshtvs := by
+  simp only [Core.Procedure.setupInputEnv, Bind.bind, Except.bind, Except.mapError, pure,
+    Except.pure] at h_setup
+  cases h_inst : Lambda.LMonoTySignature.instantiateWithSubst C Env.pushEmptyContext
+      proc.header.typeArgs proc.header.inputs with
+  | error e => rw [h_inst] at h_setup; simp only [reduceCtorEq] at h_setup
+  | ok v =>
+    obtain ⟨inp_mty_sig, Env₁, tyArgSubst⟩ := v
+    rw [h_inst] at h_setup
+    simp only [Except.ok.injEq] at h_setup
+    subst h_setup
+    have h_push_aw : TContext.AliasesWF Env.pushEmptyContext.context :=
+      (TEnvWF.of_pushEmptyContext (T := CoreLParams) Env h_wf).aliasesWF
+    exact instantiateWithSubst_values_freeVars_closed C Env.pushEmptyContext
+      proc.header.typeArgs freshtvs proc.header.inputs inp_mty_sig Env₁ tyArgSubst
+      h_inst h_push_aw h_len h_S h_closed
+
 theorem freshnessA
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
@@ -612,36 +758,47 @@ theorem freshnessA
 /-! ### Freshness B -/
 
 theorem freshnessB
+    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
+    (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
+    (v_pre : Array Expression.Expr × Core.Expression.TyEnv)
+    (v_out : Lambda.LMonoTys × Core.Expression.TyEnv)
     (envWithOutputs : Core.Expression.TyEnv)
     (h_ta : proc.checkTypeArgsWF fr = .ok ())
-    (h_typeArgs_no_prefix : ∀ ta ∈ proc.header.typeArgs, ∀ n : Nat, ta ≠ TState.tyPrefix ++ toString n) :
-    ∀ p ∈ proc.header.getInoutParams.toList.map
+    (h_setup : Core.Procedure.setupInputEnv C Env proc fr = .ok v_setup)
+    (h_pre : Core.Procedure.typeCheckConditions C v_setup.2.1 proc.spec.preconditions
+      proc.header.name = .ok v_pre)
+    (h_ra : Lambda.LMonoTys.resolveAliases
+      (proc.header.outputs.values.map (Lambda.LMonoTy.subst v_setup.2.2)) v_pre.2 = .ok v_out)
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_gen : envWithOutputs.genEnv.genState.tyGen ≥ v_setup.2.1.genEnv.genState.tyGen) :
+    ∀ p ∈ (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.1)).map
         (fun (x : CoreIdent × LMonoTy) => (CoreIdent.mkOld x.1.name, x.2)),
       ∀ v ∈ LMonoTy.freeVars p.2,
       ∀ n, n ≥ envWithOutputs.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
+  -- The old-scope values are now the instantiated input signature values `v_setup.1`, whose free
+  -- vars are the setup fresh vars (< setup gen ≤ envWithOutputs gen), so never `$__tyN` for large N.
+  obtain ⟨freshtvs, h_len, h_S, h_fresh_setup, _, _⟩ :=
+    setupInputEnv_shape_fresh C Env proc fr v_setup h_setup
   have h_ta_props := checkTypeArgsWF_props proc fr () h_ta
-  intro p hp v hv n _
-  -- p.2 is an original inout monotype = an input value; its freeVars ⊆ typeArgs.
-  have h_v_ta : v ∈ proc.header.typeArgs := by
-    -- p = (mkOld x.1.name, x.2) for some x ∈ getInoutParams.toList.
-    rw [List.mem_map] at hp
-    obtain ⟨x, hx_mem, hx_eq⟩ := hp
-    -- p.2 = x.2.
-    have hp2 : p.2 = x.2 := by rw [← hx_eq]
-    rw [hp2] at hv
-    -- getInoutParams = inputs.filter pred, so x ∈ inputs.toList.
-    simp only [Procedure.Header.getInoutParams, ListMap.toList, List.mem_filter] at hx_mem
-    have hx_in : x ∈ ListMap.toList proc.header.inputs := hx_mem.1
-    -- x.2 ∈ inputs.values.
-    have hx2_val : x.2 ∈ ListMap.values proc.header.inputs := by
-      rw [ListMap.values_eq_map_snd, List.mem_map]
-      exact ⟨x, hx_in, rfl⟩
-    -- freeVars x.2 ⊆ freeVars inputs.values ⊆ typeArgs.
-    have hv_inputs : v ∈ LMonoTys.freeVars (ListMap.values proc.header.inputs) :=
-      LMonoTys.freeVars_mem_subset hx2_val hv
-    exact h_ta_props.2.1 v (List.mem_append_left _ hv_inputs)
-  exact h_typeArgs_no_prefix v h_v_ta n
+  intro p hp v hv n hn
+  -- p = (mkOld x.1.name, x.2) for some x ∈ (v_setup.1.filter ...).
+  rw [List.mem_map] at hp
+  obtain ⟨x, hx_mem, hx_eq⟩ := hp
+  have hp2 : p.2 = x.2 := by rw [← hx_eq]
+  rw [hp2] at hv
+  have hx_setup := (List.mem_filter.mp hx_mem).1
+  -- x.2 ∈ v_setup.1.values; its free vars ⊆ freshtvs (setupInputEnv_values_closed).
+  have hx2_val : x.2 ∈ ListMap.values v_setup.1 := by
+    rw [ListMap.values_eq_map_snd, List.mem_map]
+    exact ⟨x, hx_setup, rfl⟩
+  have h_v_fresh : v ∈ freshtvs :=
+    setupInputEnv_values_closed C Env proc fr v_setup freshtvs h_setup h_wf h_len h_S
+      (fun tv htv => h_ta_props.2.1 tv (List.mem_append_left _ htv)) v
+      (LMonoTys.freeVars_mem_subset hx2_val hv)
+  -- gen chain: setup.gen ≤ envWithOutputs.gen ≤ n.
+  exact h_fresh_setup v h_v_fresh n (by omega)
 
 theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
@@ -661,8 +818,8 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
     let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) v_out.2 out_lty_sig
     let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
-      proc.header.getInoutParams.toList.map fun (id, ty) =>
-        (CoreIdent.mkOld id.name, .forAll [] ty)
+      (v_setup.1.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
+        fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)
     let E4 := Lambda.TEnv.addInNewestContext (T := CoreLParams) envWithOutputs oldInoutBindings
     TEnvWF (T := CoreLParams) E4 ∧
     E4.context.types ≠ [] ∧
@@ -705,9 +862,10 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
           pre_env_AliasesWF C Env proc fr v_setup v_pre h_setup h_pre h_wf h_fwf
         exact freshnessA C Env proc fr v_setup v_pre v_out h_ta h_setup h_pre h_ra h_wf h_fwf h_aw
     -- Layer 2: E4 = addInNewestContext envWithOutputs oldInoutBindings.
-    -- oldInoutBindings = (map (mkOld,ty) getInoutParams), already `.forAll [] ty` shape.
+    -- oldInoutBindings = (filter inout v_setup.1).map (mkOld,ty), already `.forAll [] ty` shape.
     have h_old_eq : oldInoutBindings =
-        (proc.header.getInoutParams.toList.map fun (id, ty) => (CoreIdent.mkOld id.name, ty)).map
+        ((v_setup.1.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
+          fun (id, ty) => (CoreIdent.mkOld id.name, ty)).map
           (fun p => (p.1, LTy.forAll [] p.2)) := by
       simp only [oldInoutBindings, List.map_map]
       rfl
@@ -717,14 +875,15 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     refine TEnvWF.of_addInNewestContext_mono (T := CoreLParams) envWithOutputs _
       h_envWithOutputs_wf ?_old_fresh
     case _old_fresh =>
-      -- freshness B: old-binding types are the user-declared inout monotypes; their free vars are
-      -- in `typeArgs` (checkTypeArgsWF), which — since the checker's gen-prefix guard rejects any
-      -- `$__ty`-prefixed typeArg — are never `$__tyN`.
-      have h_no_prefix : ∀ ta ∈ proc.header.typeArgs, ∀ n : Nat,
-          ta ≠ Lambda.TState.tyPrefix ++ toString n := by
-        intro ta hta n
-        exact not_prefix_ne_gen ta ((checkTypeArgsWF_props proc fr () h_ta).2.2 ta hta) n
-      exact freshnessB proc fr envWithOutputs h_ta h_no_prefix
+      -- freshness B: old-binding types are now the instantiated input signature values, whose
+      -- free vars are the setup fresh vars (< setup gen ≤ envWithOutputs gen).
+      have h_gen : envWithOutputs.genEnv.genState.tyGen ≥ v_setup.2.1.genEnv.genState.tyGen := by
+        have h_eq : envWithOutputs.genEnv.genState.tyGen = v_out.2.genEnv.genState.tyGen := rfl
+        rw [h_eq, h_vout_env]
+        exact typeCheckConditions_genState_mono C v_setup.2.1 proc.spec.preconditions proc.header.name
+          v_pre h_pre h_setup_wf h_setup_ne h_fwf
+      exact freshnessB C Env proc fr v_setup v_pre v_out envWithOutputs h_ta h_setup h_pre h_ra
+        h_wf h_fwf h_gen
   case _types_ne =>
     -- addInNewest ×2 preserves types ≠ []; v_out.2 = v_pre.2 nonempty.
     show E4.context.types ≠ []
@@ -869,7 +1028,7 @@ theorem E4_ContextMono (C : Core.Expression.TyContext) (Env : Core.Expression.Ty
           (@Lambda.LMonoTySignature.toTrivialLTy Unit
             ((ListMap.keys proc.header.outputs).zip v_out.fst)))
         (List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
-          (ListMap.toList proc.header.getInoutParams))).context := by
+          (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)))).context := by
   have h_vout_env : v_out.2 = v_pre.2 :=
     LMonoTys_resolveAliases_env_local _ v_pre.2 v_out.1 v_out.2 h_ra
   have h_setup_ne : v_setup.2.1.context.types ≠ [] :=
@@ -889,9 +1048,10 @@ theorem E4_ContextMono (C : Core.Expression.TyContext) (Env : Core.Expression.Ty
           ((ListMap.keys proc.header.outputs).zip v_out.fst))).context :=
     addInNewestContext_toTrivial_ContextMono v_out.2 _ h_vout_mono
   have h_old_eq : (List.map (fun x : CoreIdent × LMonoTy => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
-      (ListMap.toList proc.header.getInoutParams))
+      (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)))
       = (List.map (fun x : CoreIdent × LMonoTy => (CoreIdent.mkOld x.fst.name, x.snd))
-          (ListMap.toList proc.header.getInoutParams)).map (fun p => (p.1, LTy.forAll [] p.2)) := by
+          (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst))).map
+            (fun p => (p.1, LTy.forAll [] p.2)) := by
     rw [List.map_map]; rfl
   rw [h_old_eq]
   exact addInNewestContext_ContextMono _ _ h_out_mono
@@ -938,7 +1098,7 @@ theorem procBody_cs_fresh (C : Core.Expression.TyContext) (Env : Core.Expression
           (@Lambda.LMonoTySignature.toTrivialLTy Unit
             ((ListMap.keys proc.header.outputs).zip v_out.fst)))
         (List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
-          (ListMap.toList proc.header.getInoutParams)))
+          (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst))))
       proc.spec.postconditions proc.header.name = .ok v_post)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
@@ -968,7 +1128,7 @@ theorem procBody_cs_fresh (C : Core.Expression.TyContext) (Env : Core.Expression
         (@Lambda.LMonoTySignature.toTrivialLTy Unit
           ((ListMap.keys proc.header.outputs).zip v_out.fst)))
       (List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
-        (ListMap.toList proc.header.getInoutParams))).genEnv.genState.tyGen
+        (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)))).genEnv.genState.tyGen
       = v_out.2.genEnv.genState.tyGen := rfl
   have h_gen_post : v_post.2.genEnv.genState.tyGen ≥ v_out.2.genEnv.genState.tyGen := by
     have h_mono := typeCheckConditions_genState_mono C _ proc.spec.postconditions proc.header.name v_post
@@ -1227,151 +1387,6 @@ theorem setupInputEnv_shape (C : Core.Expression.TyContext) (Env : Core.Expressi
       rw [← h_S2]; exact h_S
     · show ∀ mt, mt ∈ ListMap.values inp_mty_sig → _
       exact h_fresh
-
-/-- `List.map LMonoTy.ftvar` is injective (ftvar is a constructor). -/
-private theorem map_ftvar_inj : ∀ (xs ys : List TyIdentifier),
-    List.map LMonoTy.ftvar xs = List.map LMonoTy.ftvar ys → xs = ys := by
-  intro xs
-  induction xs with
-  | nil => intro ys h; cases ys with | nil => rfl | cons b bs => simp at h
-  | cons a as ih =>
-    intro ys h
-    cases ys with
-    | nil => simp at h
-    | cons b bs =>
-      simp only [List.map_cons, List.cons.injEq, LMonoTy.ftvar.injEq] at h
-      obtain ⟨h1, h2⟩ := h
-      rw [h1, ih bs h2]
-
-/-- The `instantiateWithSubst.go` loop, applied to `forAll []`-wrapped monotypes,
-    does not grow free variables (each output is `resolveAliases` of the input mono
-    type, which is non-growing under `AliasesWF`). -/
-private theorem go_freeVars_subset (C : LContext CoreLParams) (mtys : LMonoTys) :
-    ∀ (Env : TEnv Unit) (newtys : LMonoTys) (Env_out : TEnv Unit),
-      LMonoTySignature.instantiateWithSubst.go C Env
-          (mtys.map (fun m => LTy.forAll [] m)) = .ok (newtys, Env_out) →
-      TContext.AliasesWF Env.context →
-      ∀ w, w ∈ LMonoTys.freeVars newtys → w ∈ LMonoTys.freeVars mtys := by
-  induction mtys with
-  | nil =>
-    intro Env newtys Env_out h _ w hw
-    simp only [List.map_nil, LMonoTySignature.instantiateWithSubst.go,
-      Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨h1, _⟩ := h; subst h1
-    simp only [LMonoTys.freeVars, List.not_mem_nil] at hw
-  | cons m mrest ih =>
-    intro Env newtys Env_out h h_aw w hw
-    simp only [List.map_cons, LMonoTySignature.instantiateWithSubst.go,
-      Bind.bind, Except.bind] at h
-    elim_err h with v1 h_iwc; obtain ⟨mt, Env_mid⟩ := v1
-    elim_err h with v2 h_rest; obtain ⟨mtrest, Env_end⟩ := v2
-    simp only [Except.ok.injEq, Prod.mk.injEq] at h
-    obtain ⟨h_nt, _⟩ := h; subst h_nt
-    rw [LMonoTys.freeVars_of_cons] at hw
-    rw [LMonoTys.freeVars_of_cons, List.mem_append]
-    rw [List.mem_append] at hw
-    cases hw with
-    | inl hw_hd =>
-      obtain ⟨Env'', h_ra⟩ :=
-        instantiateWithCheck_forAll_nil_resolveAliases m C Env Env_mid mt h_iwc
-      left
-      exact LMonoTy_resolveAliases_freeVars_subset (T := CoreLParams) m Env mt Env'' h_ra h_aw w hw_hd
-    | inr hw_tl =>
-      right
-      have h_ctx : Env_mid.context = Env.context :=
-        LTy_instantiateWithCheck_context' (LTy.forAll [] m) C Env mt Env_mid h_iwc
-      exact ih Env_mid mtrest Env_end h_rest (h_ctx ▸ h_aw) w hw_tl
-
-/-- Closedness of the instantiated input signature values under `freshtvs`:
-    `instantiateWithSubst` computes `mtys = subst [zip typeArgs (map ftvar freshtvs)]
-    sig.values` then runs the `go` loop (non-growing under AliasesWF). So if
-    `sig.values` is closed under `typeArgs`, every output value free var is in
-    `freshtvs`. Inputs analogue of the outputs branch's closedness step. -/
-private theorem instantiateWithSubst_values_freeVars_closed
-    (C : LContext CoreLParams) (Env : TEnv Unit)
-    (typeArgs freshtvs : List TyIdentifier) (sig : @LMonoTySignature Unit)
-    (inp_mty_sig : @LMonoTySignature Unit) (Env₂ : TEnv Unit) (S : Subst)
-    (h : LMonoTySignature.instantiateWithSubst C Env typeArgs sig
-        = .ok (inp_mty_sig, Env₂, S))
-    (h_aw : TContext.AliasesWF Env.context)
-    (h_len : freshtvs.length = typeArgs.length)
-    (h_S : S = [typeArgs.zip (freshtvs.map LMonoTy.ftvar)])
-    (h_closed : ∀ x, x ∈ LMonoTys.freeVars (ListMap.values sig) → x ∈ typeArgs) :
-    ∀ w, w ∈ LMonoTys.freeVars (ListMap.values inp_mty_sig) → w ∈ freshtvs := by
-  intro w hw
-  simp only [LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h
-  elim_err h with v_env h_env; obtain ⟨mtys, Env_e, S'⟩ := v_env
-  elim_err h with v_go h_go; obtain ⟨newtys, Env₂'⟩ := v_go
-  simp only [Except.ok.injEq, Prod.mk.injEq] at h
-  obtain ⟨h_sig, h_env2, h_S'⟩ := h
-  -- `values inp_mty_sig` is a sublist of `newtys`, so `w ∈ freeVars newtys`.
-  have h_sub : ListMap.values inp_mty_sig ⊆ newtys := by
-    rw [← h_sig, ListMap.values_eq_map_snd]
-    exact (List.map_snd_zip_sublist (ListMap.keys sig) newtys).subset
-  have hw_new : w ∈ LMonoTys.freeVars newtys := by
-    obtain ⟨elt, h_elt, h_v⟩ := LMonoTys.freeVars_exists hw
-    exact LMonoTys.freeVars_mem_subset (h_sub h_elt) h_v
-  obtain ⟨freshtvs', genEnv', h_gen, h_mtys, h_S'eq, h_ctx, _⟩ :=
-    instantiateEnvWithSubst_decompose typeArgs (ListMap.values sig) Env (mtys, Env_e, S') h_env
-  simp only at h_mtys h_S'eq h_ctx
-  have h_aw_e : TContext.AliasesWF Env_e.context := h_ctx ▸ h_aw
-  have h_go' : LMonoTySignature.instantiateWithSubst.go C Env_e
-      (mtys.map (fun m => LTy.forAll [] m)) = .ok (newtys, Env₂') := h_go
-  have hw_mtys : w ∈ LMonoTys.freeVars mtys :=
-    go_freeVars_subset C mtys Env_e newtys Env₂' h_go' h_aw_e w hw_new
-  -- `freshtvs' = freshtvs`: the two substitution scopes agree, `map ftvar` is injective.
-  have h_flen' : freshtvs'.length = typeArgs.length :=
-    TGenEnv.genTyVars_length typeArgs.length Env.genEnv freshtvs' genEnv' h_gen
-  have h_zip_eq : typeArgs.zip (List.map LMonoTy.ftvar freshtvs')
-      = typeArgs.zip (List.map LMonoTy.ftvar freshtvs) := by
-    have h_cons : [typeArgs.zip (List.map LMonoTy.ftvar freshtvs')]
-        = [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)] := by
-      rw [← h_S'eq, h_S', h_S]
-    exact List.head_eq_of_cons_eq h_cons
-  have h_map_eq : List.map LMonoTy.ftvar freshtvs' = List.map LMonoTy.ftvar freshtvs := by
-    have e1 : List.map Prod.snd (typeArgs.zip (List.map LMonoTy.ftvar freshtvs'))
-        = List.map LMonoTy.ftvar freshtvs' :=
-      List.map_snd_zip (by rw [List.length_map]; exact Nat.le_of_eq h_flen')
-    have e2 : List.map Prod.snd (typeArgs.zip (List.map LMonoTy.ftvar freshtvs))
-        = List.map LMonoTy.ftvar freshtvs :=
-      List.map_snd_zip (by rw [List.length_map]; exact Nat.le_of_eq h_len)
-    rw [← e1, ← e2, h_zip_eq]
-  have h_fresh_eq : freshtvs' = freshtvs := map_ftvar_inj freshtvs' freshtvs h_map_eq
-  subst h_fresh_eq
-  rw [h_mtys] at hw_mtys
-  exact LMonoTys.freeVars_subst_closed typeArgs freshtvs' h_flen'
-    (ListMap.values sig) h_closed w hw_mtys
-
-/-- Setup-level closedness: from `setupInputEnv = ok v_setup` with `S`-shape
-    `[typeArgs.zip (freshtvs.map ftvar)]` and inputs closed under `typeArgs`, the
-    input signature `v_setup.fst`'s free vars all land in `freshtvs`. -/
-private theorem setupInputEnv_values_closed
-    (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (proc : Procedure) (fr : Strata.FileRange)
-    (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
-    (freshtvs : List TyIdentifier)
-    (h_setup : Core.Procedure.setupInputEnv C Env proc fr = .ok v_setup)
-    (h_wf : TEnvWF (T := CoreLParams) Env)
-    (h_len : freshtvs.length = proc.header.typeArgs.length)
-    (h_S : v_setup.2.snd = [proc.header.typeArgs.zip (freshtvs.map LMonoTy.ftvar)])
-    (h_closed : ∀ x, x ∈ LMonoTys.freeVars (ListMap.values proc.header.inputs) →
-      x ∈ proc.header.typeArgs) :
-    ∀ w, w ∈ LMonoTys.freeVars (ListMap.values v_setup.fst) → w ∈ freshtvs := by
-  simp only [Core.Procedure.setupInputEnv, Bind.bind, Except.bind, Except.mapError, pure,
-    Except.pure] at h_setup
-  cases h_inst : Lambda.LMonoTySignature.instantiateWithSubst C Env.pushEmptyContext
-      proc.header.typeArgs proc.header.inputs with
-  | error e => rw [h_inst] at h_setup; simp only [reduceCtorEq] at h_setup
-  | ok v =>
-    obtain ⟨inp_mty_sig, Env₁, tyArgSubst⟩ := v
-    rw [h_inst] at h_setup
-    simp only [Except.ok.injEq] at h_setup
-    subst h_setup
-    have h_push_aw : TContext.AliasesWF Env.pushEmptyContext.context :=
-      (TEnvWF.of_pushEmptyContext (T := CoreLParams) Env h_wf).aliasesWF
-    exact instantiateWithSubst_values_freeVars_closed C Env.pushEmptyContext
-      proc.header.typeArgs freshtvs proc.header.inputs inp_mty_sig Env₁ tyArgSubst
-      h_inst h_push_aw h_len h_S h_closed
 
 theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
@@ -2600,13 +2615,16 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
   · simp only [reduceCtorEq] at h
   · -- checkTypeArgsWF (folded: peel with a named hypothesis).
     elim_err h with h_ta
-    · -- checkModificationRights: the guard we care about.
+    · -- checkModificationRights is `match (if oldDef then err else if modif then err else ok) with …`.
+      -- Peel the outer `match`; the ok-branch's guard equation `h_mr` carries both nested `if`s,
+      -- so split it twice (both error branches contradict `= ok`), leaving the modification-empty fact.
       split at h
       · simp only [reduceCtorEq] at h
       · rename_i _ _ h_mr
-        -- `h_mr : (if filter_nonempty then error else ok unit) = ok v`, forces filter empty.
         split at h_mr
-        · simp only [reduceCtorEq] at h_mr
+        · simp only [reduceCtorEq] at h_mr       -- oldDefined nonempty ⟹ error
+        split at h_mr
+        · simp only [reduceCtorEq] at h_mr       -- modifiedVars not ⊆ allowed ⟹ error
         · rename_i h_empty_neg
           -- h_empty_neg : ¬((!(filter ...).isEmpty) = true), i.e. the filter is empty.
           have h_filter_empty : (List.filter
@@ -2632,7 +2650,7 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
             rcases List.mem_append.mp h_mem with h_out | h_def
             · exact List.mem_append_left _ h_out
             · exact List.mem_append_right _ (List.mem_eraseDups.mp h_def)
-          clear h_empty_neg h_mr h_filter_empty
+          clear h_empty_neg h_filter_empty
           -- Peel the remaining pipeline to expose proc'.
           elim_err h                       -- setupInputEnv
           rename_i v_setup h_setup
@@ -3913,7 +3931,7 @@ theorem envForBody_pop_context_types
     (h_post : Core.Procedure.typeCheckConditions C
       ((v_out.snd.addInNewestContext (T := CoreLParams)
           (Lambda.LMonoTySignature.toTrivialLTy ((proc.header.outputs.keys).zip v_out.fst))).addInNewestContext
-        (proc.header.getInoutParams.toList.map
+        ((v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)).map
           (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))))
       proc.spec.postconditions proc.header.name = .ok v_post)
     (h_ta : proc.checkTypeArgsWF fr = .ok ())
@@ -3937,7 +3955,7 @@ theorem envForBody_pop_context_types
     h_resolved
   let E4 := (v_out.snd.addInNewestContext (T := CoreLParams)
       (Lambda.LMonoTySignature.toTrivialLTy ((proc.header.outputs.keys).zip v_out.fst))).addInNewestContext
-    (proc.header.getInoutParams.toList.map
+    ((v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)).map
       (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd)))
   have h_post_ctx : v_post.2.context = E4.context :=
     typeCheckConditions_context C E4 proc.spec.postconditions proc.header.name v_post
@@ -4004,7 +4022,7 @@ theorem envForBody_newest_context_types
     (h_post : Core.Procedure.typeCheckConditions C
       ((v_out.snd.addInNewestContext (T := CoreLParams)
           (Lambda.LMonoTySignature.toTrivialLTy ((proc.header.outputs.keys).zip v_out.fst))).addInNewestContext
-        (proc.header.getInoutParams.toList.map
+        ((v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)).map
           (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))))
       proc.spec.postconditions proc.header.name = .ok v_post)
     (h_ta : proc.checkTypeArgsWF fr = .ok ())
@@ -4016,7 +4034,7 @@ theorem envForBody_newest_context_types
           (List.append
             (Lambda.LMonoTySignature.toTrivialLTy v_setup.1 : List (CoreIdent × LTy))
             (Lambda.LMonoTySignature.toTrivialLTy ((proc.header.outputs.keys).zip v_out.fst)))
-          (proc.header.getInoutParams.toList.map
+          ((v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)).map
             (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))) := by
   have h_us : (v_post.2.updateSubst v_unify).context = v_post.2.context := by
     simp only [TEnv.updateSubst, TEnv.context]
@@ -4034,7 +4052,7 @@ theorem envForBody_newest_context_types
     h_resolved
   let E4 := (v_out.snd.addInNewestContext (T := CoreLParams)
       (Lambda.LMonoTySignature.toTrivialLTy ((proc.header.outputs.keys).zip v_out.fst))).addInNewestContext
-    (proc.header.getInoutParams.toList.map
+    ((v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.fst)).map
       (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd)))
   have h_post_ctx : v_post.2.context = E4.context :=
     typeCheckConditions_context C E4 proc.spec.postconditions proc.header.name v_post
@@ -4148,6 +4166,47 @@ theorem subst_go_toTrivialLTy (S : Subst) (sig : @LMonoTySignature Unit) :
       = Lambda.LMonoTySignature.toTrivialLTy (sig.map (fun p => (p.1, LMonoTy.subst S p.2))) := by
   simp only [Lambda.LMonoTySignature.toTrivialLTy, List.map_map]
   exact subst_go_trivial_map S sig
+
+/-- `subst.go` on an `mkOld`-keyed `forAll []` scope pushes the `LMonoTy.subst` into each stored
+    monotype (keys `mkOld x.1.name` are unchanged). The old-inout scope of `bridge_2b_final`'s
+    `h_newest`. -/
+theorem subst_go_old_scope (S : Subst) {β : Type} (l : List β) (key : β → CoreIdent) (val : β → LMonoTy) :
+    TContext.types.subst.go S
+        (l.map (fun x => (key x, LTy.forAll [] (val x))))
+      = l.map (fun x => (key x, LTy.forAll [] (LMonoTy.subst S (val x)))) := by
+  induction l with
+  | nil => rfl
+  | cons p rest ih =>
+    simp only [List.map_cons, TContext.types.subst.go, LTy.subst_forAll_nil, ih]
+
+/-- The old-inout scope match (Region A of BRIDGE 2b, `old` sub-scope). The spec's `old` scope is
+    built by `mkOld`-keying the *renamed* inout params (filter of `sig.map (·, subst US ·)`); the
+    checker's is `subst.go US (subst.go S' (mkOld-keyed filter of sig))`. Since the renaming `US`
+    preserves `.fst` (so the filter predicate and keys are unchanged) and `S'` fixes every free var
+    of the retained inout values, both sides collapse to the same `mkOld`-keyed renamed scope. -/
+theorem old_scope_eq
+    (sig : List (CoreIdent × LMonoTy)) (okeys : List CoreIdent) (US S' : Subst)
+    (h_fix : ∀ x ∈ sig, ∀ v ∈ LMonoTy.freeVars x.snd,
+      LMonoTy.subst S' (LMonoTy.ftvar v) = LMonoTy.ftvar v) :
+    List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
+        (List.filter (fun x => okeys.contains x.fst)
+          (sig.map (fun x => (x.fst, LMonoTy.subst US x.snd))))
+      = TContext.types.subst.go US (TContext.types.subst.go S'
+          (List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
+            (List.filter (fun x => okeys.contains x.fst) sig))) := by
+  rw [subst_go_old_scope, subst_go_old_scope]
+  rw [List.filter_map]
+  have h_pred : ((fun x : CoreIdent × LMonoTy => okeys.contains x.fst) ∘
+        fun x : CoreIdent × LMonoTy => (x.fst, LMonoTy.subst US x.snd))
+      = (fun x : CoreIdent × LMonoTy => okeys.contains x.fst) := by
+    funext x; rfl
+  rw [h_pred, List.map_map]
+  apply List.map_congr_left
+  intro p hp
+  have h_mem : p ∈ sig := (List.mem_filter.mp hp).1
+  have h_pfix : LMonoTy.subst S' p.snd = p.snd :=
+    LMonoTy.subst_eq_self_of_fixes _ _ (h_fix p h_mem)
+  simp only [Function.comp, h_pfix]
 
 /-- Per-scope collapse-then-rename for inputs/outputs (Region A of BRIDGE 2b): if every value of
     `sig` has free vars ⊆ `freshtvs` and `S'` fixes every `freshtvs` var, then
@@ -5000,9 +5059,539 @@ theorem StmtsHasTypeA_rig_drop (P : Program) (R2 : List Lambda.TyIdentifier)
     exact StmtsHasType'.cons _ _ _ Γa Γb Γc La s ss (ih_s h_sub') (ih_ss h_sub_b)
 
 
+/-! ## Weak (AliasEquiv-on-old-keys) find?-congruence for the annotated body context bridge. -/
+
+/-- `mkOld`-prefixed identifiers ARE old-idents. Re-exports `CoreIdent.isOldIdent_mkOld`, proved in
+    `Identifiers.lean` where `isOldIdent`/`mkOld` are transparent. -/
+theorem isOldIdent_mkOld (n : String) : CoreIdent.isOldIdent (CoreIdent.mkOld n) = true :=
+  CoreIdent.isOldIdent_mkOld n
+
+abbrev NotOld (x : CoreIdent) : Prop := ¬ CoreIdent.isOldIdent x = true
+
+/-- Context-agreement for the annotated bridge. `Γ₂` agrees with `Γ₁`:
+    (1) same aliases; (2) exact `find?` on non-old keys; (3) on old keys, `find?` matches up to
+    `AliasEquiv` of the stored monotype (both none, or both `some (forAll [] ·)` with the mtys
+    alias-equiv). Point (3) is what lets a `call Q(old x)` input transport. -/
+structure CtxAgreeA (Γ₂ Γ₁ : TContext Unit) : Prop where
+  al : Γ₂.aliases = Γ₁.aliases
+  nonold : ∀ x, NotOld x → Γ₂.types.find? x = Γ₁.types.find? x
+  old : ∀ x m₁, CoreIdent.isOldIdent x = true → Γ₁.types.find? x = some (.forAll [] m₁) →
+    ∃ m₂, Γ₂.types.find? x = some (.forAll [] m₂) ∧ AliasEquiv Γ₁.aliases m₂ m₁
+
+/-- `CtxAgreeA` is preserved by inserting the SAME non-old binding into both contexts (init case). -/
+theorem CtxAgreeA.insert_nonold (Γ₂ Γ₁ : TContext Unit) (x : CoreIdent) (ty : LTy)
+    (h : CtxAgreeA Γ₂ Γ₁) (h_x : NotOld x) :
+    CtxAgreeA { Γ₂ with types := Γ₂.types.insert x ty } { Γ₁ with types := Γ₁.types.insert x ty } := by
+  refine ⟨h.al, ?_, ?_⟩
+  · intro y h_y
+    by_cases h_xy : y = x
+    · rw [h_xy]
+      show (Maps.insert Γ₂.types x ty).find? x = (Maps.insert Γ₁.types x ty).find? x
+      rw [Maps.find?_insert_self, Maps.find?_insert_self]
+    · show (Maps.insert Γ₂.types x ty).find? y = (Maps.insert Γ₁.types x ty).find? y
+      rw [Maps.find?_insert_ne _ _ _ _ h_xy, Maps.find?_insert_ne _ _ _ _ h_xy]; exact h.nonold y h_y
+  · intro y m₁ h_old h_find
+    -- y is old, x is non-old, so y ≠ x; the insert doesn't affect y.
+    have h_yx : y ≠ x := by rintro rfl; exact h_x h_old
+    show ∃ m₂, (Maps.insert Γ₂.types x ty).find? y = some (.forAll [] m₂) ∧ AliasEquiv Γ₁.aliases m₂ m₁
+    rw [Maps.find?_insert_ne _ _ _ _ h_yx]
+    rw [Maps.find?_insert_ne _ _ _ _ h_yx] at h_find
+    exact h.old y m₁ h_old h_find
+
+/-- Annotated `CmdHasTypeA` transports across `CtxAgreeA`. set/init targets are `NotOld` (mod/def
+    vars, provably non-old), read via `.nonold`; expr premises ignore Γ; output `CtxAgreeA` restored
+    via `insert_nonold` for init. -/
+theorem CmdHasTypeA_find_congr_weak2
+    {C : LContext CoreLParams} {Γ₁ Γ₁' : TContext Unit} {c : Cmd Expression}
+    (h : @CmdHasType' LMonoTy C instHasTypeA Γ₁ c Γ₁')
+    (Γ₂ : TContext Unit) (h_ag : CtxAgreeA Γ₂ Γ₁)
+    (h_mod : ∀ v ∈ Cmd.modifiedVars (P := Expression) c, NotOld v)
+    (h_def : ∀ v ∈ Cmd.definedVars (P := Expression) c, NotOld v) :
+    ∃ Γ₂', CtxAgreeA Γ₂' Γ₁' ∧ @CmdHasType' LMonoTy C instHasTypeA Γ₂ c Γ₂' := by
+  have h_expr_congr : ∀ (Γa Γb : TContext Unit) (e : Expression.Expr) (t : LMonoTy),
+      instHasTypeA.exprTyped C Γa e t → instHasTypeA.exprTyped C Γb e t :=
+    fun _ _ _ _ h_e => h_e
+  cases h
+  case init_det x xty e mty tys md h_find h_notin h_len h_rigid h_e =>
+    have h_x : NotOld x := h_def x (by simp [Cmd.definedVars])
+    refine ⟨{ Γ₂ with types := Γ₂.types.insert x (.forAll [] mty) }, h_ag.insert_nonold Γ₂ Γ₁ x _ h_x, ?_⟩
+    exact CmdHasType'.init_det Γ₂ x xty e mty tys md (by rw [h_ag.nonold x h_x]; exact h_find)
+      h_notin h_len (by rw [h_ag.al]; exact h_rigid) (h_expr_congr Γ₁ Γ₂ e _ h_e)
+  case init_nondet x xty mty tys md h_find h_len h_rigid =>
+    have h_x : NotOld x := h_def x (by simp [Cmd.definedVars])
+    refine ⟨{ Γ₂ with types := Γ₂.types.insert x (.forAll [] mty) }, h_ag.insert_nonold Γ₂ Γ₁ x _ h_x, ?_⟩
+    exact CmdHasType'.init_nondet Γ₂ x xty mty tys md (by rw [h_ag.nonold x h_x]; exact h_find)
+      h_len (by rw [h_ag.al]; exact h_rigid)
+  case set_det x mty e md h_find h_e =>
+    have h_x : NotOld x := h_mod x (by simp [Cmd.modifiedVars])
+    exact ⟨Γ₂, h_ag, CmdHasType'.set_det Γ₂ x mty e md (by rw [h_ag.nonold x h_x]; exact h_find)
+      (h_expr_congr Γ₁ Γ₂ e _ h_e)⟩
+  case set_nondet x mty md h_find =>
+    have h_x : NotOld x := h_mod x (by simp [Cmd.modifiedVars])
+    exact ⟨Γ₂, h_ag, CmdHasType'.set_nondet Γ₂ x mty md (by rw [h_ag.nonold x h_x]; exact h_find)⟩
+  case assert l e md h_e => exact ⟨Γ₂, h_ag, CmdHasType'.assert Γ₂ l e md (h_expr_congr Γ₁ Γ₂ e _ h_e)⟩
+  case assume l e md h_e => exact ⟨Γ₂, h_ag, CmdHasType'.assume Γ₂ l e md (h_expr_congr Γ₁ Γ₂ e _ h_e)⟩
+  case cover l e md h_e => exact ⟨Γ₂, h_ag, CmdHasType'.cover Γ₂ l e md (h_expr_congr Γ₁ Γ₂ e _ h_e)⟩
+
+/-- Annotated `CmdExtHasTypeA` transports across `CtxAgreeA`. `cmd` delegates; `call` LHS/output read
+    non-old keys (modifiedVars); the `call` bare-fvar INPUT may read an OLD key — there we re-pick the
+    stored mty from `Γ₂` and transport `AliasEquiv` by `.trans`. -/
+theorem CmdExtHasTypeA_find_congr_weak2 {P : Program}
+    {C : LContext CoreLParams} {Γ₁ Γ₁' : TContext Unit} {c : Command}
+    (h : @CmdExtHasType' _ C P instHasTypeA Γ₁ c Γ₁')
+    (Γ₂ : TContext Unit) (h_ag : CtxAgreeA Γ₂ Γ₁)
+    (h_mod : ∀ v ∈ Command.modifiedVars c, NotOld v)
+    (h_def : ∀ v ∈ Command.definedVars c, NotOld v) :
+    ∃ Γ₂', CtxAgreeA Γ₂' Γ₁' ∧ @CmdExtHasType' _ C P instHasTypeA Γ₂ c Γ₂' := by
+  cases h
+  case cmd c0 h_cmd =>
+    have h_mod0 : ∀ v ∈ Cmd.modifiedVars (P := Expression) c0, NotOld v := by
+      intro v hv; exact h_mod v (by simp only [Command.modifiedVars]; exact hv)
+    have h_def0 : ∀ v ∈ Cmd.definedVars (P := Expression) c0, NotOld v := by
+      intro v hv; exact h_def v (by simp only [Command.definedVars]; exact hv)
+    obtain ⟨Γ₂', h_ag', h_cmd'⟩ := CmdHasTypeA_find_congr_weak2 h_cmd Γ₂ h_ag h_mod0 h_def0
+    exact ⟨Γ₂', h_ag', CmdExtHasType'.cmd Γ₂ Γ₂' c0 h_cmd'⟩
+  case call pname callArgs proc md σ h_find h_ia h_oa h_lhs h_inp h_out h_inout =>
+    have h_lhs_notold : ∀ v ∈ CallArg.getLhs callArgs, NotOld v := by
+      intro v hv; exact h_mod v (by simp only [Command.modifiedVars]; exact hv)
+    refine ⟨Γ₂, h_ag, ?_⟩
+    refine CmdExtHasType'.call Γ₂ pname callArgs proc md σ h_find h_ia h_oa ?_ ?_ ?_ h_inout
+    · -- all lhs vars exist (non-old)
+      intro v hv; rw [h_ag.nonold v (h_lhs_notold v hv)]; exact h_lhs v hv
+    · -- input positions: bare-fvar reads find? (may be old ⟹ re-pick + AliasEquiv.trans); else exprTyped
+      intro i hi hj
+      obtain ⟨mty, h_ae, h_match⟩ := h_inp i hi hj
+      revert h_match
+      split
+      · rename_i x h_arg_eq
+        intro h_match  -- h_match : Γ₁.types.find? x = some (.forAll [] mty)
+        by_cases h_xold : CoreIdent.isOldIdent x = true
+        · -- old key: re-pick m₂ from Γ₂, AliasEquiv m₂ mty; then AliasEquiv m₂ formal by trans.
+          obtain ⟨m₂, h_find₂, h_aem⟩ := h_ag.old x mty h_xold h_match
+          refine ⟨m₂, ?_, ?_⟩
+          · rw [h_ag.al]; exact AliasEquiv.trans h_aem h_ae
+          · exact h_find₂
+        · -- non-old key: exact agreement, same mty.
+          have h_xn : NotOld x := h_xold
+          refine ⟨mty, by rw [h_ag.al]; exact h_ae, ?_⟩
+          rw [h_ag.nonold x h_xn]; exact h_match
+      · rename_i e h_ne
+        intro h_match
+        exact ⟨mty, by rw [h_ag.al]; exact h_ae, h_match⟩
+    · -- lhs types (non-old)
+      intro i hi hj
+      obtain ⟨mty, h_ae, h_find_lhs⟩ := h_out i hi hj
+      refine ⟨mty, by rw [h_ag.al]; exact h_ae, ?_⟩
+      rw [h_ag.nonold _ (h_lhs_notold _ (List.getElem_mem hi))]; exact h_find_lhs
+
+/-- All modified/defined vars of a statement are `NotOld` (recursive over block/ite/loop bodies).
+    Discharged at the call site from `modRights` (mod ⊆ outputs++defined, all non-old). -/
+def StmtModDefNotOld (s : Statement) : Prop :=
+  match s with
+  | .cmd c => (∀ v ∈ Command.modifiedVars c, NotOld v) ∧ (∀ v ∈ Command.definedVars c, NotOld v)
+  | .block _ b _ => ∀ s ∈ b, StmtModDefNotOld s
+  | .ite _ t e _ => (∀ s ∈ t, StmtModDefNotOld s) ∧ (∀ s ∈ e, StmtModDefNotOld s)
+  | .loop _ _ _ b _ => ∀ s ∈ b, StmtModDefNotOld s
+  | _ => True
+
+abbrev StmtsModDefNotOld (ss : List Statement) : Prop := ∀ s ∈ ss, StmtModDefNotOld s
+
+theorem StmtModDefNotOld_block (l b md) :
+    StmtModDefNotOld (.block l b md) = ∀ s ∈ b, StmtModDefNotOld s := by simp only [StmtModDefNotOld]
+theorem StmtModDefNotOld_ite (cnd t e md) :
+    StmtModDefNotOld (.ite cnd t e md)
+      = ((∀ s ∈ t, StmtModDefNotOld s) ∧ (∀ s ∈ e, StmtModDefNotOld s)) := by
+  simp only [StmtModDefNotOld]
+theorem StmtModDefNotOld_loop (g m i b md) :
+    StmtModDefNotOld (.loop g m i b md) = ∀ s ∈ b, StmtModDefNotOld s := by simp only [StmtModDefNotOld]
+theorem StmtModDefNotOld_cmd (c) :
+    StmtModDefNotOld (.cmd c)
+      = ((∀ v ∈ Command.modifiedVars c, NotOld v) ∧ (∀ v ∈ Command.definedVars c, NotOld v)) := by
+  simp only [StmtModDefNotOld]
+
+set_option maxHeartbeats 1000000 in
+theorem StmtsHasTypeA_find_congr_weak2 {P : Program}
+    {C C' : LContext CoreLParams} {Γ₁ Γ₁' : TContext Unit} {L : List String} {ss : List Statement}
+    (h : StmtsHasTypeA P C Γ₁ L ss C' Γ₁')
+    (h_mdno : StmtsModDefNotOld ss) :
+    ∀ (Γ₂ : TContext Unit), CtxAgreeA Γ₂ Γ₁ →
+      ∃ Γ₂', CtxAgreeA Γ₂' Γ₁' ∧ StmtsHasTypeA P C Γ₂ L ss C' Γ₂' := by
+  have h_expr_congr : ∀ (Γa Γb : TContext Unit) (Cx : LContext CoreLParams)
+      (e : Expression.Expr) (t : LMonoTy),
+      instHasTypeA.exprTyped Cx Γa e t → instHasTypeA.exprTyped Cx Γb e t :=
+    fun _ _ _ _ _ h_e => h_e
+  refine StmtsHasType'.rec
+    (motive_1 := fun Ca Γa La s Ca' Γa' _ =>
+      StmtModDefNotOld s → ∀ Γ₂, CtxAgreeA Γ₂ Γa →
+        ∃ Γ₂', CtxAgreeA Γ₂' Γa' ∧ StmtHasTypeA P Ca Γ₂ La s Ca' Γ₂')
+    (motive_2 := fun Ca Γa La ss Ca' Γa' _ =>
+      StmtsModDefNotOld ss → ∀ Γ₂, CtxAgreeA Γ₂ Γa →
+        ∃ Γ₂', CtxAgreeA Γ₂' Γa' ∧ StmtsHasTypeA P Ca Γ₂ La ss Ca' Γ₂')
+    ?cmd ?block ?ite_det ?ite_nondet ?loop ?exit ?funcDecl ?typeDecl ?nil ?cons h h_mdno
+  case cmd =>
+    intro Ca Γa Γa' La c h_cmd h_md Γ₂ h_ag
+    rw [StmtModDefNotOld_cmd] at h_md
+    obtain ⟨Γ₂', h_ag', h_cmd'⟩ := CmdExtHasTypeA_find_congr_weak2 h_cmd Γ₂ h_ag h_md.1 h_md.2
+    exact ⟨Γ₂', h_ag', StmtHasType'.cmd Ca Γ₂ Γ₂' La c h_cmd'⟩
+  case block =>
+    intro Ca Γa C_body Γ_body La label body md h_notin _ ih h_md Γ₂ h_ag
+    rw [StmtModDefNotOld_block] at h_md
+    obtain ⟨Γ_body', _, h_body'⟩ := ih h_md Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.block Ca Γ₂ C_body Γ_body' La label body md h_notin h_body'⟩
+  case ite_det =>
+    intro Ca Γa C_t Γ_t C_e Γ_e La cond t e md h_c _ _ ih_t ih_e h_md Γ₂ h_ag
+    rw [StmtModDefNotOld_ite] at h_md
+    obtain ⟨Γ_t', _, h_t'⟩ := ih_t h_md.1 Γ₂ h_ag
+    obtain ⟨Γ_e', _, h_e'⟩ := ih_e h_md.2 Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.ite_det Ca Γ₂ C_t Γ_t' C_e Γ_e' La cond t e md
+      (h_expr_congr Γa Γ₂ Ca cond _ h_c) h_t' h_e'⟩
+  case ite_nondet =>
+    intro Ca Γa C_t Γ_t C_e Γ_e La t e md _ _ ih_t ih_e h_md Γ₂ h_ag
+    rw [StmtModDefNotOld_ite] at h_md
+    obtain ⟨Γ_t', _, h_t'⟩ := ih_t h_md.1 Γ₂ h_ag
+    obtain ⟨Γ_e', _, h_e'⟩ := ih_e h_md.2 Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.ite_nondet Ca Γ₂ C_t Γ_t' C_e Γ_e' La t e md h_t' h_e'⟩
+  case loop =>
+    intro Ca Γa C_body Γ_body La g m inv body md h_g h_m h_i _ ih h_md Γ₂ h_ag
+    rw [StmtModDefNotOld_loop] at h_md
+    obtain ⟨Γ_body', _, h_body'⟩ := ih h_md Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.loop Ca Γ₂ C_body Γ_body' La g m inv body md
+      (fun gg h_gd => h_expr_congr Γa Γ₂ Ca gg _ (h_g gg h_gd))
+      (fun mm h_md' => h_expr_congr Γa Γ₂ Ca mm _ (h_m mm h_md'))
+      (fun p h_pm => h_expr_congr Γa Γ₂ Ca p.2 _ (h_i p h_pm)) h_body'⟩
+  case exit =>
+    intro Ca Γa La label md h_mem _ Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.exit Ca Γ₂ La label md h_mem⟩
+  case funcDecl =>
+    intro Ca Γa La decl func md h_nrec h_func _ Γ₂ h_ag
+    have h_func₂ : FuncHasType' LMonoTy Ca Γ₂ func := {
+      inputsNodup := h_func.inputsNodup, typeArgsNodup := h_func.typeArgsNodup
+      noUndeclaredVars := h_func.noUndeclaredVars
+      bodyTyped := fun body h_b => h_expr_congr _ Γ₂ Ca body _ (h_func.bodyTyped body h_b)
+      measureTyped := fun mm h_m h_nv => h_expr_congr _ Γ₂ Ca mm _ (h_func.measureTyped mm h_m h_nv) }
+    exact ⟨Γ₂, h_ag, StmtHasType'.funcDecl Ca Γ₂ La decl func md h_nrec h_func₂⟩
+  case typeDecl =>
+    intro Ca Ca' Γa La tc md h_add _ Γ₂ h_ag
+    exact ⟨Γ₂, h_ag, StmtHasType'.typeDecl Ca Ca' Γ₂ La tc md h_add⟩
+  case nil => intro Ca Γa La _ Γ₂ h_ag; exact ⟨Γ₂, h_ag, StmtsHasType'.nil Ca Γ₂ La⟩
+  case cons =>
+    intro Ca Cb Cc Γa Γb Γc La s ss _ _ ih_s ih_ss h_md Γ₂ h_ag
+    have h_s : StmtModDefNotOld s := h_md s List.mem_cons_self
+    have h_ss : StmtsModDefNotOld ss := fun s' hs' => h_md s' (List.mem_cons_of_mem s hs')
+    obtain ⟨Γb', h_agb, h_s'⟩ := ih_s h_s Γ₂ h_ag
+    obtain ⟨Γc', h_agc, h_ss'⟩ := ih_ss h_ss Γb' h_agb
+    exact ⟨Γc', h_agc, StmtsHasType'.cons Ca Cb Cc Γ₂ Γb' Γc' La s ss h_s' h_ss'⟩
+
+/-- Structural core for the newest-scope agreement feeding `bridge_2b_final_weak2`. Two newest
+    scopes share an IO prefix `ioScope` (inputs++outputs, values all `forAll [] _`) and differ only
+    in their old tails `oldA`/`oldB` (no non-old keys); the old tails are per-key `AliasEquiv`-related.
+    Then the full scopes agree exactly on NotOld keys and up to `AliasEquiv` on old keys. An old key
+    that happens to hit the shared IO prefix agrees exactly on both sides (`AliasEquiv.refl`); no need
+    to forbid old-shaped IO keys. `Map ++` uses its own `HAppend` (List.append), so `find?`
+    distributes via `Map.find?_map_append`. -/
+theorem newest_scope_agree
+    (aliases : List TypeAlias) (ioScope oldA oldB : Map CoreIdent LTy)
+    (h_io_forall : ∀ x m, ioScope.find? x = some m → ∃ mty, m = .forAll [] mty)
+    (h_oldA_notold_none : ∀ x, NotOld x → oldA.find? x = none)
+    (h_oldB_notold_none : ∀ x, NotOld x → oldB.find? x = none)
+    (h_old_agree : ∀ x, CoreIdent.isOldIdent x = true →
+      (oldA.find? x = none ∧ oldB.find? x = none)
+      ∨ ∃ mA mB, oldA.find? x = some (.forAll [] mA) ∧ oldB.find? x = some (.forAll [] mB)
+          ∧ AliasEquiv aliases mA mB) :
+    (∀ x, NotOld x → (ioScope ++ oldA).find? x = (ioScope ++ oldB).find? x)
+    ∧ (∀ x, CoreIdent.isOldIdent x = true →
+        ((ioScope ++ oldA).find? x = none ∧ (ioScope ++ oldB).find? x = none)
+        ∨ ∃ mA mB, (ioScope ++ oldA).find? x = some (.forAll [] mA)
+            ∧ (ioScope ++ oldB).find? x = some (.forAll [] mB) ∧ AliasEquiv aliases mA mB) := by
+  refine ⟨?_, ?_⟩
+  · -- nonold: io part decides (oldA/oldB miss); the io part is shared.
+    intro x h_x
+    rw [Map.find?_map_append, Map.find?_map_append, h_oldA_notold_none x h_x, h_oldB_notold_none x h_x]
+  · -- old: io part decides if it hits (exact agreement, both sides same io value); else oldA/oldB.
+    intro x h_x
+    rw [Map.find?_map_append, Map.find?_map_append]
+    cases h_io : ioScope.find? x with
+    | some v =>
+      simp only
+      obtain ⟨mty, h_mty⟩ := h_io_forall x v h_io
+      subst h_mty
+      exact Or.inr ⟨mty, mty, rfl, rfl, AliasEquiv.refl⟩
+    | none =>
+      simp only
+      exact h_old_agree x h_x
+
+/-- A scope built by `mkOld`-keying a parameter list contains only old-idents, so `find?` at a
+    NotOld key misses. Used to show the spec/checker old-scopes have no non-old keys. -/
+theorem old_map_notold_none (oldParams : List (CoreIdent × LMonoTy)) (x : CoreIdent)
+    (h_x : ¬ CoreIdent.isOldIdent x = true) :
+    Map.find? (oldParams.map (fun p => (CoreIdent.mkOld p.1.name, LTy.forAll [] p.2))) x = none := by
+  apply Map.find?_none_of_not_mem_keys'
+  rw [Map.keys_eq_map_fst, List.map_map, List.mem_map]
+  rintro ⟨p, hp, h_key⟩
+  exact h_x (h_key ▸ isOldIdent_mkOld p.1.name)
+
+-- Bridge: `StmtModDefNotOld` (the recursive predicate the weak2 congruence threads) follows from
+-- every modified/defined var of `s` being `NotOld`. Proved by mutual structural recursion mirroring
+-- `StmtModDefNotOld`; the checker's reserved-`old`-prefix write guard supplies the `NotOld` facts.
+mutual
+theorem StmtModDefNotOld_of_vars (s : Statement)
+    (h_m : ∀ v ∈ Stmt.modifiedVars (P := Expression) (C := Command) s, NotOld v)
+    (h_d : ∀ v ∈ Stmt.definedVars (P := Expression) (C := Command) s false, NotOld v) :
+    StmtModDefNotOld s := by
+  cases s with
+  | cmd c =>
+    rw [StmtModDefNotOld_cmd]
+    exact ⟨fun v hv => h_m v (by rw [Stmt.modifiedVars.eq_1]; exact hv),
+           fun v hv => h_d v (by rw [Stmt.definedVars.eq_1]; exact hv)⟩
+  | block l bss md =>
+    rw [StmtModDefNotOld_block]
+    apply StmtsModDefNotOld_of_vars
+    · exact fun v hv => h_m v (by rw [Stmt.modifiedVars.eq_3]; exact hv)
+    · exact fun v hv => h_d v (by rw [Stmt.definedVars.eq_2]; simpa using hv)
+  | ite cnd t e md =>
+    rw [StmtModDefNotOld_ite]
+    refine ⟨?_, ?_⟩
+    · apply StmtsModDefNotOld_of_vars
+      · exact fun v hv => h_m v (by rw [Stmt.modifiedVars.eq_4]; exact List.mem_append_left _ hv)
+      · refine fun v hv => h_d v ?_
+        rw [Stmt.definedVars.eq_3]; simp only [Bool.false_eq_true, reduceIte]
+        exact List.mem_append_left _ hv
+    · apply StmtsModDefNotOld_of_vars
+      · exact fun v hv => h_m v (by rw [Stmt.modifiedVars.eq_4]; exact List.mem_append_right _ hv)
+      · refine fun v hv => h_d v ?_
+        rw [Stmt.definedVars.eq_3]; simp only [Bool.false_eq_true, reduceIte]
+        exact List.mem_append_right _ hv
+  | loop g m i bss md =>
+    rw [StmtModDefNotOld_loop]
+    apply StmtsModDefNotOld_of_vars
+    · exact fun v hv => h_m v (by rw [Stmt.modifiedVars.eq_5]; exact hv)
+    · exact fun v hv => h_d v (by rw [Stmt.definedVars.eq_4]; simpa using hv)
+  | exit l md => simp only [StmtModDefNotOld]
+  | funcDecl d f => simp only [StmtModDefNotOld]
+  | typeDecl t md => simp only [StmtModDefNotOld]
+
+theorem StmtsModDefNotOld_of_vars (ss : List Statement)
+    (h_m : ∀ v ∈ Block.modifiedVars (P := Expression) (C := Command) ss, NotOld v)
+    (h_d : ∀ v ∈ Block.definedVars (P := Expression) (C := Command) ss false, NotOld v) :
+    StmtsModDefNotOld ss := by
+  cases ss with
+  | nil => intro s hs; simp at hs
+  | cons s rest =>
+    intro s' hs'
+    rw [List.mem_cons] at hs'
+    rcases hs' with h_eq | h_rest
+    · subst h_eq
+      apply StmtModDefNotOld_of_vars
+      · exact fun v hv => h_m v (by rw [Block.modifiedVars.eq_2]; exact List.mem_append_left _ hv)
+      · exact fun v hv => h_d v (by rw [Block.definedVars.eq_2]; exact List.mem_append_left _ hv)
+    · exact StmtsModDefNotOld_of_vars rest
+        (fun v hv => h_m v (by rw [Block.modifiedVars.eq_2]; exact List.mem_append_right _ hv))
+        (fun v hv => h_d v (by rw [Block.definedVars.eq_2]; exact List.mem_append_right _ hv))
+        s' h_rest
+end
+
+/-- The checker's reserved-`old`-prefix write guard (the FIRST `if` in
+    `checkModificationRights`): reaching `.ok` means `((modifiedVars ++ definedVars).filter
+    isOldIdent).isEmpty`, so every modified/defined var of the INPUT body is `NotOld`. Purely
+    syntactic peel — needs no WF hypotheses. Feeds `bodyTyped`'s `StmtsModDefNotOld` obligation. -/
+theorem Procedure.typeCheck_modDefNotOld (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
+    (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env')) :
+    (∀ v ∈ HasVarsImp.modifiedVars (P := Expression) proc.body, NotOld v) ∧
+    (∀ v ∈ HasVarsImp.definedVars (P := Expression) proc.body false, NotOld v) := by
+  unfold Procedure.typeCheck at h
+  simp only [Procedure.checkNoDuplicates,
+    Procedure.checkModificationRights, Bind.bind, Except.bind, pure, Except.pure] at h
+  split at h
+  · simp only [reduceCtorEq] at h
+  · elim_err h with h_ta
+    · split at h
+      · simp only [reduceCtorEq] at h
+      · rename_i _ _ h_mr
+        split at h_mr
+        · simp only [reduceCtorEq] at h_mr       -- oldWritten nonempty ⟹ error
+        · rename_i h_old_neg
+          -- h_old_neg : ¬((!(filter isOldIdent (mod.eraseDups ++ def.eraseDups)).isEmpty) = true)
+          have h_filter_empty : (List.filter (fun v => CoreIdent.isOldIdent v)
+              ((HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups ++
+               (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups)) = [] := by
+            rw [← List.isEmpty_iff]
+            simpa using h_old_neg
+          rw [List.filter_eq_nil_iff] at h_filter_empty
+          -- Every var in the eraseDups'd append is NotOld.
+          have h_notold : ∀ w, w ∈ (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups ++
+              (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups → NotOld w := by
+            intro w hw
+            have h_not := h_filter_empty w hw
+            simpa only [Bool.not_eq_true] using h_not
+          refine ⟨?_, ?_⟩
+          · intro v hv
+            exact h_notold v (List.mem_append_left _ (List.mem_eraseDups.mpr hv))
+          · intro v hv
+            exact h_notold v (List.mem_append_right _ (List.mem_eraseDups.mpr hv))
+
+theorem bridge_2b_final_weak2
+    (Env' : TContext Unit) (proc' : Procedure) (bodyΓ : TContext Unit)
+    (S' userSubst : Subst) (ambient : Maps CoreIdent LTy) (freshScope declScope : Map CoreIdent LTy)
+    (h_pbc : (procBodyContext Env' proc').types = declScope :: TContext.types.subst ambient S')
+    (h_bodyΓ_types : bodyΓ.types
+      = TContext.types.subst.go S' freshScope :: TContext.types.subst ambient S')
+    (h_al : (procBodyContext Env' proc').aliases = (TContext.subst bodyΓ userSubst).aliases)
+    -- non-old keys agree exactly on the newest scopes (inputs/outputs; region_scope_collapse)
+    (h_newest_nonold : ∀ x, NotOld x →
+      declScope.find? x
+        = (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)).find? x)
+    -- old keys: spec newest (declScope) find? is AliasEquiv-related to checker newest (both none,
+    -- or both some with alias-equiv mtys). Full agreement so the bridge is pure packaging.
+    (h_newest_old : ∀ x, CoreIdent.isOldIdent x = true →
+      (declScope.find? x = none
+        ∧ (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)).find? x = none)
+      ∨ ∃ m₂ m₁, declScope.find? x = some (.forAll [] m₂)
+          ∧ (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)).find? x
+              = some (.forAll [] m₁)
+          ∧ AliasEquiv (procBodyContext Env' proc').aliases m₂ m₁)
+    (h_closed : ∀ ty ∈ Maps.values ambient, LTy.freeVars ty = []) :
+    CtxAgreeA (procBodyContext Env' proc') (TContext.subst bodyΓ userSubst) := by
+  have h_rhs : (TContext.subst bodyΓ userSubst).types
+      = TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)
+        :: TContext.types.subst (TContext.types.subst ambient S') userSubst := by
+    show TContext.types.subst bodyΓ.types userSubst = _
+    rw [h_bodyΓ_types]; simp only [TContext.types.subst]
+  have h_S'_fix : TContext.types.subst ambient S' = ambient := subst_fix_closed S' ambient h_closed
+  have h_us_fix : TContext.types.subst ambient userSubst = ambient := subst_fix_closed userSubst ambient h_closed
+  have h_single : ∀ (m : Map CoreIdent LTy) (y), Maps.find? [m] y = m.find? y := by
+    intro m y; simp only [Maps.find?]; cases m.find? y <;> rfl
+  refine ⟨h_al, ?_, ?_⟩
+  · -- nonold
+    intro x h_x
+    rw [h_pbc, h_rhs, h_S'_fix, h_us_fix]
+    show Maps.find? (declScope :: ambient) x
+      = Maps.find? (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope) :: ambient) x
+    simp only [Maps.find?, h_newest_nonold x h_x]
+  · -- old
+    intro x m₁ h_old h_find
+    rw [h_rhs, h_S'_fix, h_us_fix] at h_find
+    rw [h_pbc, h_S'_fix]
+    let newestRHS := TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)
+    show ∃ m₂, Maps.find? (declScope :: ambient) x = some (.forAll [] m₂)
+      ∧ AliasEquiv (TContext.subst bodyΓ userSubst).aliases m₂ m₁
+    -- `find? (head :: ambient) x` = if head hits, head; else ambient. Case on checker head.
+    have h_find' : Maps.find? (newestRHS :: ambient) x = some (.forAll [] m₁) := h_find
+    rw [Maps.find?] at h_find'
+    rcases h_newest_old x h_old with ⟨h_dnone, h_hnone⟩ | ⟨m₂, m₁', h_dsome, h_hsome, h_ae⟩
+    · -- both newest heads miss ⟹ both fall through to the same ambient.
+      rw [h_hnone] at h_find'
+      refine ⟨m₁, ?_, ?_⟩
+      · rw [Maps.find?, h_dnone]; exact h_find'
+      · exact .refl
+    · -- both hit; checker gives m₁' = m₁ (from h_find'), spec gives m₂ AliasEquiv m₁'.
+      rw [h_hsome] at h_find'
+      have h_m1 : m₁' = m₁ := by injection h_find' with h_eq; injection h_eq
+      subst h_m1
+      refine ⟨m₂, ?_, ?_⟩
+      · rw [Maps.find?, h_dsome]
+      · rw [← h_al]; exact h_ae
+
+/-- Every modified/defined variable of the checker-output body is `NotOld`. Peels the
+    reserved-`old`-prefix write guard in `checkModificationRights` (the old-write filter is empty
+    on the success path) and reduces the output body's vars to the input body `ss`'s vars via
+    `subst_block_{modified,defined}Vars` + `statement_typeCheck_vars`. Discharges the weak2
+    congruence's `StmtsModDefNotOld` obligation in the annotated `bodyTyped`. -/
+theorem Procedure.typeCheck_bodyModDefNotOld (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
+    (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_mono : ContextMono Env.context)
+    (h_closed : CalledProcsClosed P) :
+    (∀ v ∈ HasVarsImp.modifiedVars (P := Expression) proc'.body, NotOld v) ∧
+    (∀ v ∈ HasVarsImp.definedVars (P := Expression) proc'.body false, NotOld v) := by
+  unfold Procedure.typeCheck at h
+  simp only [Procedure.checkNoDuplicates,
+    Procedure.checkModificationRights, Bind.bind, Except.bind, pure, Except.pure] at h
+  split at h
+  · simp only [reduceCtorEq] at h
+  · elim_err h with h_ta
+    · split at h
+      · simp only [reduceCtorEq] at h
+      · rename_i _ _ h_mr
+        split at h_mr
+        · simp only [reduceCtorEq] at h_mr
+        · rename_i h_oldempty_neg
+          have h_old_empty : (List.filter (fun v => CoreIdent.isOldIdent v)
+              ((HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups ++
+               (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups)) = [] := by
+            rw [← List.isEmpty_iff]
+            simpa using h_oldempty_neg
+          rw [List.filter_eq_nil_iff] at h_old_empty
+          have h_notold : ∀ w, (w ∈ HasVarsImp.modifiedVars (P := Expression) proc.body ∨
+              w ∈ HasVarsImp.definedVars (P := Expression) proc.body false) → NotOld w := by
+            intro w hw
+            apply h_old_empty
+            rw [List.mem_append]
+            rcases hw with h | h
+            · exact Or.inl (List.mem_eraseDups.mpr h)
+            · exact Or.inr (List.mem_eraseDups.mpr h)
+          split at h_mr
+          · simp only [reduceCtorEq] at h_mr
+          · rename_i _
+            elim_err h
+            rename_i v_setup h_setup
+            elim_err h with v_pre h_pre
+            elim_err h
+            rename_i v_out h_out
+            elim_err h with v_post h_post
+            split at h
+            · rename_i ss h_body
+              elim_err h with v_unify h_unify
+              split at h
+              · simp at h
+              rename_i h_rigid_none
+              elim_err h with v_body h_stc
+              injection h with h_pair
+              injection h_pair with h_proc _
+              subst h_proc
+              have h_tc := Lambda.Except.mapError_ok_h' h_stc
+              have h_ra := Lambda.Except.mapError_ok_h' h_out
+              have h_penv := postEnv_wf C Env proc _ v_setup v_pre v_out h_ta h_setup h_pre h_ra
+                h_wf h_fwf h_resolved
+              have h_E4mono := E4_ContextMono C Env proc _ v_setup v_pre v_out h_setup h_pre h_ra
+                h_wf h_fwf h_mono
+              have h_cs_fresh := procBody_cs_fresh C Env proc _ v_setup v_pre v_out v_post
+                h_ta h_setup h_pre h_ra h_post h_wf h_fwf h_resolved
+              have h_unify' := Lambda.Except.mapError_ok_h' h_unify
+              have h_bwf := procBodyEnv_wf C _ proc v_post _ v_unify h_post h_unify' h_cs_fresh
+                h_penv.1 h_penv.2.1 h_E4mono h_penv.2.2 h_fwf
+              have h_rigid_inv : ∀ w, w ∈ (List.filterMap
+                  (fun x => match x.snd with | LMonoTy.ftvar id => some id | x => none)
+                  (List.flatten v_setup.2.snd)) →
+                LMonoTy.subst (v_post.snd.updateSubst v_unify).stateSubstInfo.subst (.ftvar w) = .ftvar w := by
+                intro w hw
+                have h_all := List.find?_eq_none.mp h_rigid_none w hw
+                simpa only [bne_iff_ne, ne_eq, Decidable.not_not] using h_all
+              obtain ⟨hb_wf, hb_ne, hb_mono, _⟩ := h_bwf
+              obtain ⟨h_bm, h_bd⟩ :=
+                statement_typeCheck_vars
+                  { functions := C.functions, datatypes := C.datatypes, knownTypes := C.knownTypes,
+                    idents := C.idents,
+                    rigidTypeVars := List.filterMap
+                      (fun x => match x.snd with | LMonoTy.ftvar id => some id | x => none)
+                      (List.flatten v_setup.2.snd) }
+                  (v_post.snd.updateSubst v_unify) P (some proc) ss v_body.fst v_body.snd
+                  hb_wf h_fwf hb_ne hb_mono h_rigid_inv h_closed h_tc
+              refine ⟨?_, ?_⟩
+              · intro v hv
+                simp only [HasVarsImp.modifiedVars, subst_block_modifiedVars, h_bm] at hv
+                exact h_notold v (Or.inl (by rw [h_body]; exact hv))
+              · intro v hv
+                simp only [HasVarsImp.definedVars, subst_block_definedVars, h_bd] at hv
+                exact h_notold v (Or.inr (by rw [h_body]; exact hv))
+            · simp at h
+
 /-- Annotated `bodyTyped`: the output body is well-typed as a statement list under the
     annotated judgment. Delegates to `Statement.typeCheck_annotated_sound` + a context
-    bridge (`StmtsHasType'_find_congr`). THE SPINE of the annotated deliverable. -/
+    bridge (weak2 `CtxAgreeA` congruence). THE SPINE of the annotated deliverable. -/
 theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -5030,6 +5619,10 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
     (h_ambient_no_rigid : C.rigidTypeVars = [])
     (h_closed : CalledProcsClosed P) :
     ProcBodyHasType' LMonoTy P C (procBodyContext Env'.context proc') proc'.body := by
+  -- Output body's mod/def vars are all `NotOld` (from the checker's reserved-`old` write guard);
+  -- extracted before peeling `h`, which destroys the original equation.
+  have h_mdno_facts := Procedure.typeCheck_bodyModDefNotOld C Env P proc proc' Env' md h
+    h_wf h_fwf h_resolved h_mono h_closed
   -- Peel Procedure.typeCheck to expose the body call and proc'.body's shape.
   simp only [Procedure.typeCheck, Procedure.checkNoDuplicates, bind, Except.bind,
     pure, Except.pure] at h
@@ -5200,41 +5793,32 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
     refine ProcBodyHasType'.structured _ ({ C_out with rigidTypeVars := C.rigidTypeVars }) _
       (StmtsHasType'_find_congr h_expr_congr h_C _ ?bridge2b ?bridge2a).choose_spec.2.2
     case bridge2b =>
-      -- BRIDGE 2b: reduce to `bridge_2b_final`'s four hypotheses.
+      -- BRIDGE 2b: reduce to `bridge_2b_final`'s four hypotheses (whole-scope equality now that the
+      -- checker's `old` scope uses the instantiated input types — equal to the spec's, not just
+      -- alias-equivalent).
       apply bridge_2b_final (S' := v_body.snd.stateSubstInfo.subst)
           (ambient := Env.context.types)
           (freshScope := Maps.newest (v_post.snd.updateSubst v_unify).context.types)
           (h_closed := fun ty hty => h_ambient_closed ty hty)
       case h_pbc =>
-        -- procBodyContext's types = declScope :: subst S' (ambient tail); assigns `declScope`.
         rw [procBodyContext_types, h_env'_shape, h_ef_pop]; rfl
       case h_bodyΓ_types =>
-        -- The checker body types split as `subst.go S' newest :: subst S' tail`.
         show TContext.types.subst (v_post.snd.updateSubst v_unify).context.types
             v_body.snd.stateSubstInfo.subst = _
         rw [h_ub]; rfl
       case h_newest =>
-        -- Region A: `proc'`'s declared newest scope (inputs++outputs++old, all `userSubst`-renamed)
-        -- equals `subst.go userSubst (subst.go S' (newest envForBody.types))`. Rewrite the checker
-        -- newest scope via `envForBody_newest_context_types`, distribute both `subst.go`s over the
-        -- two appends, then match the three sub-scopes (inputs/outputs collapse `S'` via
-        -- `region_scope_collapse`; old-inout uses the `subst S' = subst tyArgSubst` roundtrip).
-        -- Setup shape: freshtvs, userSubst = [freshtvs.zip (typeArgs.map ftvar)], rigidVars = freshtvs.
+        -- `declScope` (= `proc'`'s inputs++outputs++old newest scope) equals
+        -- `subst.go userSubst (subst.go S' (newest envForBody.types))`. All three sub-scopes are
+        -- instantiated (values' free vars ⊆ freshtvs), so `S'` collapses (it fixes freshtvs) and the
+        -- outer `userSubst` rename matches `proc'`'s declared (userSubst-renamed) types.
         obtain ⟨freshtvs, h_len, h_S, h_gf, h_nodup, h_genn⟩ :=
           setupInputEnv_shape_fresh C Env proc _ v_setup h_setup
-        have h_ta_nodup : proc.header.typeArgs.Nodup := (checkTypeArgsWF_props proc _ () h_ta).1
-        have h_us : userSubst = [freshtvs.zip (proc.header.typeArgs.map LMonoTy.ftvar)] := by
-          show [_] = _
-          rw [h_S]; congr 1
-          exact filterMap_userSubst proc.header.typeArgs freshtvs h_len.symm
-        have h_rig : rigidVars = freshtvs := by
-          show List.filterMap _ _ = _
-          rw [h_S]; exact filterMap_rigid proc.header.typeArgs freshtvs h_len.symm
-        -- `S' = v_body.snd.stateSubstInfo.subst` fixes every fresh var (rigid preservation
-        -- through the body typechecker: `typeCheckAux_go_preserves.rigid_inv` at `v_body`).
+        have h_ta_props := checkTypeArgsWF_props proc _ () h_ta
         have h_S'_fix : ∀ v ∈ freshtvs,
             LMonoTy.subst v_body.snd.stateSubstInfo.subst (LMonoTy.ftvar v) = LMonoTy.ftvar v := by
-          -- Rigid preservation through the body typechecker: `GoPreserved.rigid_inv` at `v_body`.
+          have h_rig : rigidVars = freshtvs := by
+            show List.filterMap _ _ = _
+            rw [h_S]; exact filterMap_rigid proc.header.typeArgs freshtvs h_len.symm
           have h_ri : ∀ v ∈ rigidVars,
               LMonoTy.subst v_body.snd.stateSubstInfo.subst (LMonoTy.ftvar v) = LMonoTy.ftvar v := by
             have h_go := h_stc'
@@ -5247,14 +5831,10 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
               simp only [Except.ok.injEq] at h_go
               have h_pres := typeCheckAux_go_preserves _ (v_post.snd.updateSubst v_unify) P (some proc)
                 ss [] [] ss_aux Env_aux C_aux h_goeq h_bwf.1 h_fwf h_bwf.2.1 h_bwf.2.2.1 h_rigid_inv h_closed
-              -- `v_body.snd = Env_aux.updateContext (...)`, and `updateContext` preserves
-              -- `stateSubstInfo`, so `v_body.snd`'s subst = `Env_aux`'s subst = fixed by `h_pres`.
               intro v hv
               rw [← h_go]
               exact h_pres.rigid_inv v hv
           intro v hv; exact h_ri v (h_rig ▸ hv)
-        -- The input/output sub-scopes' free vars are ⊆ freshtvs.
-        have h_ta_props := checkTypeArgsWF_props proc _ () h_ta
         have h_in_closed : ∀ w ∈ LMonoTys.freeVars (ListMap.values v_setup.1), w ∈ freshtvs :=
           setupInputEnv_values_closed C Env proc _ v_setup freshtvs h_setup h_wf h_len h_S
             (fun x hx => h_ta_props.2.1 x (List.mem_append_left _ hx))
@@ -5278,36 +5858,70 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
           exact LMonoTys.freeVars_subst_closed proc.header.typeArgs freshtvs h_len
             (ListMap.values proc.header.outputs)
             (fun tv htv => h_ta_props.2.1 tv (List.mem_append_right _ htv)) w hw_pre
-        -- Rewrite the checker newest scope, then match the three sub-scopes: inputs/outputs
-        -- collapse `S'` (fresh values fixed) then rename by `userSubst` (`region_scope_collapse`);
-        -- the old-inout scope roundtrips `subst S' = subst tyArgSubst` back through `userSubst`.
+        -- old-scope values are a sublist of the input values, so also closed under freshtvs.
+        have h_old_closed : ∀ w ∈ LMonoTys.freeVars
+            (ListMap.values (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.1))),
+            w ∈ freshtvs := by
+          intro w hw
+          apply h_in_closed w
+          obtain ⟨elt, h_elt, h_v⟩ := LMonoTys.freeVars_exists hw
+          have h_sub : ListMap.values (v_setup.1.filter (fun x => (ListMap.keys proc.header.outputs).contains x.1))
+              ⊆ ListMap.values v_setup.1 := by
+            rw [ListMap.values_eq_map_snd, ListMap.values_eq_map_snd]
+            exact (List.filter_sublist.map Prod.snd).subset
+          exact LMonoTys.freeVars_mem_subset (h_sub h_elt) h_v
+        -- Rewrite the RHS newest scope into inputs++outputs++old and match each sub-scope.
         rw [envForBody_newest_context_types C Env proc _ v_setup v_pre v_out v_post v_unify
           h_setup h_pre h_ra h_post h_ta h_wf h_fwf h_resolved]
-        -- Distribute the inner `subst.go S'` over the `List`-typed appends (`List.append_eq`
-        -- normalizes the raw `List.append` from `envForBody_newest_context_types` to `++`), then the
-        -- outer `subst.go userSubst` over the `Map`-typed appends via `TContext_types_subst_go_append`.
         simp only [List.append_eq, subst_go_append]
         rw [TContext_types_subst_go_append, TContext_types_subst_go_append]
-        -- Match the three sub-scopes componentwise (`congr 1` splits the two `++`s, using defeq for
-        -- the append head so the `List`/`Map` instance difference does not block it). Inputs/outputs
-        -- collapse via `region_scope_collapse` (now generic in the outer rename `US = userSubst`).
         congr 1
         · congr 1
           · exact (region_scope_collapse userSubst v_body.snd.stateSubstInfo.subst freshtvs
               v_setup.fst h_in_closed h_S'_fix).symm
           · exact (region_scope_collapse userSubst v_body.snd.stateSubstInfo.subst freshtvs
               ((proc.header.outputs.keys).zip v_out.fst) h_out_closed h_S'_fix).symm
-        · -- Old-inout scope roundtrip: `proc'.header.getInoutParams` (renamed via `userSubst`)
-          -- vs `proc.header.getInoutParams` (declared), bridged by
-          -- `subst userSubst (subst S' ty) = subst userSubst (subst tyArgSubst ty) = ty` on the
-          -- inout types (`subst_S'_eq_tyArgSubst_on_typeArg` + `subst_rename_inverse`).
-          sorry
+        · -- old-inout scope: `new_hdr.getInoutParams` (= filtered renamed inputs) matches the
+          -- checker's `subst.go userSubst (subst.go S' (filtered v_setup.fst))` via `old_scope_eq`.
+          -- `getInoutParams` unfolds to a filter of `new_hdr.inputs = v_setup.fst.map (·, subst US ·)`
+          -- keyed on `keys new_hdr.outputs`; the rename preserves output keys, so that filter matches
+          -- the RHS's `keys proc.header.outputs` filter.
+          -- Output keys are preserved by the `userSubst` rename (rename fixes `.fst`).
+          have h_len_out : (ListMap.keys proc.header.outputs).length ≤ v_out.fst.length := by
+            have h_len_ra := resolveAliasesList_length _ _ _ _ h_ra
+            rw [h_len_ra, List.length_map, ListMap.keys_eq_map_fst,
+              ListMap.values_eq_map_snd, List.length_map, List.length_map]
+            exact Nat.le_refl _
+          have h_okeys : ListMap.keys (List.map
+              (fun x => (x.fst, LMonoTy.subst userSubst x.snd))
+              ((ListMap.keys proc.header.outputs).zip v_out.fst))
+              = ListMap.keys proc.header.outputs := by
+            rw [ListMap.keys_eq_map_fst, List.map_map]
+            have h_ml := List.map_congr_left
+              (l := (ListMap.keys proc.header.outputs).zip v_out.fst)
+              (f := (Prod.fst ∘ fun x : CoreIdent × LMonoTy =>
+                (x.fst, LMonoTy.subst userSubst x.snd)))
+              (g := Prod.fst) (fun p _ => rfl)
+            rw [h_ml, List.map_fst_zip h_len_out]
+          show List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
+              (Procedure.Header.getInoutParams _) = _
+          rw [Procedure.Header.getInoutParams]
+          show List.map (fun x => (CoreIdent.mkOld x.fst.name, LTy.forAll [] x.snd))
+              (List.filter (fun p => (ListMap.keys (List.map
+                (fun x => (x.fst, LMonoTy.subst userSubst x.snd))
+                ((ListMap.keys proc.header.outputs).zip v_out.fst))).contains p.1)
+                (List.map (fun x => (x.fst, LMonoTy.subst userSubst x.snd)) v_setup.fst)) = _
+          rw [h_okeys]
+          -- `S'` fixes every free var of the retained inout values.
+          refine old_scope_eq v_setup.fst (ListMap.keys proc.header.outputs) userSubst
+            v_body.snd.stateSubstInfo.subst ?_
+          intro x hx v hv
+          apply h_S'_fix
+          apply h_in_closed
+          rw [ListMap.values_eq_map_snd]
+          exact LMonoTys.freeVars_mem_subset (List.mem_map_of_mem hx) hv
     case bridge2a =>
-      -- BRIDGE 2a: aliases agreement. `procBodyContext` only touches `.types`, so its
-      -- aliases are `Env'.context.aliases`; `bodyΓ.subst userSubst` peels two `subst`
-      -- layers to `(updateSubst).context.aliases`; and the checker's body derivation
-      -- `h_body_typed` preserves aliases from `bodyΓ` to `v_body.snd.context`, which
-      -- `popContext` (= `Env'`) restores.
+      -- BRIDGE 2a: aliases agreement.
       rw [procBodyContext_aliases, TContext.subst_aliases]
       show Env'.context.aliases = bodyΓ.aliases
       rw [show bodyΓ = (v_post.snd.updateSubst v_unify).context.subst
@@ -5316,6 +5930,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
       show v_body.snd.context.aliases = bodyΓ.aliases
       exact StmtsHasType'_aliases h_body_typed
   · simp only [reduceCtorEq] at h
+
 
 /-- **Annotated soundness (deliverable 1).** A successful `Procedure.typeCheck`
     implies the output procedure `proc'` satisfies `ProcHasTypeA` at the ambient
