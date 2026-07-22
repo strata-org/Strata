@@ -71,19 +71,6 @@ else
     echo "       fast LSP startup. Without it, first lean_verify call will be slow."
 fi
 
-# 6. Optional: REPL setup for lean_multi_attempt
-echo ""
-echo "=== Optional: REPL for fast multi-attempt ==="
-if grep -q "leanprover-community/repl" "$PROJECT_ROOT/lakefile.lean" 2>/dev/null || \
-   grep -q "leanprover-community/repl" "$PROJECT_ROOT/lakefile.toml" 2>/dev/null; then
-    echo "[OK] REPL dependency found in lakefile"
-else
-    echo "[INFO] REPL not configured. lean_multi_attempt will not be available."
-    echo "       To enable, add to lakefile.lean:"
-    echo "         require repl from git \"https://github.com/leanprover-community/repl\" @ \"master\""
-    echo "       Then run: lake build repl"
-fi
-
 echo ""
 echo "=== Setup complete ==="
 echo ""

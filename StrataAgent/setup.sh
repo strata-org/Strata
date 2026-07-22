@@ -40,4 +40,12 @@ cd "$PROJECT_ROOT"
 lake build SwarmAgentTools 2>&1 | tail -3
 echo
 
+# ─── 6. repl (optional — enables lean_multi_attempt) ─────────────────────────
+if grep -q 'name = "repl"' "$PROJECT_ROOT/lakefile.toml" 2>/dev/null; then
+  echo "6. repl (optional, for lean_multi_attempt)..."
+  lake update repl 2>&1 | tail -3 || echo "  [WARN] 'lake update repl' failed — lean_multi_attempt unavailable."
+  lake build repl 2>&1 | tail -3 || echo "  [WARN] 'lake build repl' failed — lean_multi_attempt unavailable."
+  echo
+fi
+
 echo "=== Setup complete ==="

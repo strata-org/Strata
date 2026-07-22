@@ -108,21 +108,51 @@ globs = ["StrataAgent.+"]'
   add_if_missing "StrataAgent" "$LEAN_LIB_ENTRY"
   add_if_missing "SwarmAgentTools" "$LEAN_EXE_ENTRY"
 
-  # Add repl dependency if missing
-  if ! grep -q 'name = "repl"' "$LAKEFILE"; then
-    echo "" >> "$LAKEFILE"
-    cat >> "$LAKEFILE" << 'EOF'
+  # ─── Optional: repl dependency (enables lean_multi_attempt) ────────────────
+  # Pick the repl tag matching this project's Lean toolchain. repl publishes a
+  # tag per Lean release (e.g. v4.29.0); toolchains without an exact tag
+  # (v4.29.1) fall back to the same major.minor .0 tag.
+  if grep -q 'name = "repl"' "$LAKEFILE"; then
+    echo "lakefile.toml already has 'repl' — skipping."
+  else
+    REPL_URL="https://github.com/leanprover-community/repl"
+    LEAN_VER=""
+    if [ -f "$TARGET_REPO/lean-toolchain" ]; then
+      LEAN_VER=$(sed 's|.*:v||' "$TARGET_REPO/lean-toolchain" | tr -d '[:space:]')
+    fi
+    REPL_REV=""
+    if [ -n "$LEAN_VER" ]; then
+      REPL_TAGS=$(git ls-remote --tags "$REPL_URL" 2>/dev/null \
+                    | grep -oP 'refs/tags/\Kv[^\^]+$')
+      if printf '%s\n' "$REPL_TAGS" | grep -qx "v$LEAN_VER"; then
+        REPL_REV="v$LEAN_VER"
+      else
+        # Fall back to same major.minor with patch .0 (e.g. 4.29.1 → v4.29.0)
+        MAJ_MIN=$(echo "$LEAN_VER" | cut -d. -f1,2)
+        if printf '%s\n' "$REPL_TAGS" | grep -qx "v$MAJ_MIN.0"; then
+          REPL_REV="v$MAJ_MIN.0"
+        fi
+      fi
+    fi
+
+    if [ -n "$REPL_REV" ]; then
+      echo "" >> "$LAKEFILE"
+      cat >> "$LAKEFILE" << EOF
 [[require]]
 name = "repl"
-git = "https://github.com/leanprover-community/repl"
-rev = "v4.29.0"
+git = "$REPL_URL"
+rev = "$REPL_REV"
 EOF
-    echo "Added 'repl' dependency to lakefile.toml."
+      echo "Added 'repl' dependency (rev $REPL_REV, matched to Lean $LEAN_VER)."
+    else
+      echo "Skipping 'repl': no matching tag for Lean '${LEAN_VER:-unknown}'."
+      echo "  (lean_multi_attempt will be unavailable; everything else works.)"
+    fi
   fi
   echo
 else
   echo "Note: lakefile.lean detected (not lakefile.toml)."
-  echo "      Add the StrataAgent lean_lib/lean_exe targets and the 'repl' require manually."
+  echo "      Add the StrataAgent lean_lib/lean_exe targets manually."
   echo
 fi
 
@@ -143,13 +173,7 @@ fi
 echo "Venv ready."
 echo
 
-# ─── 5. Update lake manifest ─────────────────────────────────────────────────
-echo "=== Updating lake manifest ==="
-cd "$TARGET_REPO"
-lake update repl 2>&1 | tail -5
-echo
-
-# ─── 6. Run setup.sh ─────────────────────────────────────────────────────────
+# ─── 5. Run setup.sh ─────────────────────────────────────────────────────────
 echo "=== Running StrataAgent setup ==="
 find "$DEST_DIR" -name "*.sh" -exec chmod +x {} \;
 if [ -f "$DEST_DIR/setup.sh" ]; then
@@ -158,18 +182,21 @@ else
   echo "Warning: No setup.sh found in StrataAgent — skipping setup."
 fi
 
-# ─── 7. Next steps ───────────────────────────────────────────────────────────
+# ─── 6. Next steps ───────────────────────────────────────────────────────────
 cat << 'EOF'
 
 === Done. StrataAgent is installed in this project. ===
 
-Start the dashboard (background):
+Start the dashboard:
 
-    nohup python StrataAgent/run_dashboard.py > StrataAgent/temp/dashboard.log 2>&1 &
+    ./StrataAgent/start_dashboard.sh                       # port 8421
+    ./StrataAgent/start_dashboard.sh --port 9000           # custom port
 
-  (custom port: append --port 9000)
+Or start it and kick off a proof in one shot:
 
-Then open http://localhost:8421
+    ./StrataAgent/start_dashboard.sh --prompt "Prove the sorries in Path/To/YourFile.lean"
+
+Then open http://localhost:8421 (Ctrl-C to stop).
 
 Stop the dashboard:
 
