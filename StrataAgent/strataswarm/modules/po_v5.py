@@ -942,17 +942,18 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
         )
         total_turns += chunk
 
-        # Check: proved?
-        if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-            cr = tools.check_compiles(stub_rel)
-            if not cr.has_sorry:
-                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-                return "proved"
-            else:
-                if entry.children:
-                    ledger.mark_contingent(entry.id)
-                    return "contingent"
-                # No children: transitive sorry from untracked imports — continue proving
+        # Check: proved? Uses the authoritative transitive oracle (#print axioms),
+        # not the text/warning-based cr.has_sorry which misses sorry reached
+        # through imported/assembled dependencies. _proved_or_contingent also
+        # parks the entry as CONTINGENT when it is locally clean but still waiting
+        # on an unproven SIBLING obligation (not just a child), matching the
+        # per-target gate — otherwise a finished target gets needlessly re-driven.
+        if tools.check_compiles(stub_rel).success:
+            verdict = _proved_or_contingent(tools, ledger, entry, cwd, stub_rel)
+            if verdict is not None:
+                return verdict
+            # None: transitive sorry from untracked imports / fresh inline
+            # helper — continue proving.
 
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
@@ -1046,16 +1047,14 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
             verify=verify_fn, max_rounds=2, max_turns=GRACE_TURNS, use_run_ai=True,
         )
 
-        if not tools.has_sorry(stub_rel) and tools.check_compiles(stub_rel).success:
-            cr = tools.check_compiles(stub_rel)
-            if not cr.has_sorry:
-                ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-                return "proved"
-            else:
-                if entry.children:
-                    ledger.mark_contingent(entry.id)
-                    return "contingent"
-                # No children: fall through to continue grace phase
+        if tools.check_compiles(stub_rel).success:
+            # Same proved/contingent/fall-through decision as the per-target gate:
+            # PROVED (transitively sorry-free), CONTINGENT (locally clean but
+            # waiting on an unproven sibling/child), or None (fall through to keep
+            # factoring out helpers in the grace phase).
+            verdict = _proved_or_contingent(tools, ledger, entry, cwd, stub_rel)
+            if verdict is not None:
+                return verdict
 
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         cur = sum(len(sorry_info.get(n, [])) for n in protected_names)
@@ -1435,12 +1434,49 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
     else:
         return Trans.ASSEMBLY_FAILED
 
-    # Check root sorry-free
+    # Verify the requested proof obligations are sorry-free. This must use the
+    # SAME authoritative transitive oracle as the per-target gate
+    # (`axioms_by_theorem` / `#print axioms`), not just the text/warning-based
+    # `cr.has_sorry`: a theorem can be textually clean yet still bottom out in a
+    # `sorryAx` through an assembled dependency.
+    #
+    # SCOPE: only the obligations the TM asked us to prove — i.e. the ones
+    # registered in the ledger (INIT narrows these to the requested subset via
+    # `_filter_requested_targets`). Un-requested sibling theorems in the same
+    # file may legitimately still carry `sorry`; they are NOT our task, so we
+    # must not gate assembly on them (neither the whole-file `has_sorry` nor the
+    # transitive check).
     root_stub = f"{state.root_workspace}/Stub.lean"
     cr = tools.check_compiles(root_stub)
-    if cr.success and not cr.has_sorry:
-        ledger.mark_proved(state.root_id, root_stub.replace("/", ".").removesuffix(".lean"))
-        await agent._emit("message", "[PO5] Assembly complete: root sorry-free ✅")
+    if not cr.success:
+        await agent._emit("message", "[PO5] Assembly: root does not compile")
+        return Trans.ASSEMBLY_FAILED
+
+    obligation_names = _requested_obligation_names(ledger, state, root_stub)
+
+    if obligation_names:
+        # Literal-sorry check scoped to our obligations (not the whole file).
+        local_sorry = tools.get_sorries_by_theorem(root_stub)
+        with_sorry = [n for n in obligation_names if local_sorry.get(n)]
+        if with_sorry:
+            await agent._emit("message",
+                f"[PO5] Assembly: requested obligations still have literal sorry: {with_sorry}")
+            return Trans.ASSEMBLY_FAILED
+        # Transitive check: none of our obligations may depend on sorryAx.
+        ax = tools.axioms_by_theorem(root_stub, obligation_names)
+        unproven = [n for n in obligation_names if not ax.is_proven(n)]
+        if unproven:
+            await agent._emit("message",
+                f"[PO5] Assembly: requested obligations transitively depend on sorry: {unproven}")
+            return Trans.ASSEMBLY_FAILED
+    elif cr.has_sorry:
+        # No registered obligation names to scope to (single-root fallback):
+        # keep the whole-file guard.
+        await agent._emit("message", "[PO5] Assembly: root still has sorry")
+        return Trans.ASSEMBLY_FAILED
+
+    ledger.mark_proved(state.root_id, root_stub.replace("/", ".").removesuffix(".lean"))
+    await agent._emit("message", "[PO5] Assembly complete: requested obligations sorry-free (transitively verified) ✅")
 
     return Trans.ASSEMBLED
 
@@ -1803,7 +1839,9 @@ def _apply_verdicts(state: PO5State, ledger: LemmaLedger, entry: LemmaEntry, cwd
                 parent_id=entry.id)
             if not isinstance(new, str) and not tools.has_sorry(v.file_path):
                 cr = tools.check_compiles(v.file_path)
-                if cr.success and not cr.has_sorry:
+                # Transitive oracle, not text/warning has_sorry: a locally clean
+                # file can still depend on sorryAx through an import.
+                if cr.success and _entry_transitively_proven(tools, new):
                     ledger.mark_proved(new.id, v.file_path.replace("/", ".").removesuffix(".lean"),
                                        proved_by="direct")
                 elif cr.success:
@@ -1814,8 +1852,73 @@ def _apply_verdicts(state: PO5State, ledger: LemmaLedger, entry: LemmaEntry, cwd
         ledger.mark_contingent(entry.id)
 
 
+def _entry_transitively_proven(tools, entry: LemmaEntry) -> bool:
+    """AUTHORITATIVE per-entry proof check: the entry's obligation (its own
+    theorem + any mutual-group peers) compiles, has no LOCAL sorry, and — via
+    `#print axioms` — depends on NO `sorryAx`.
+
+    This is the same oracle the per-target gate uses (`_attempt_prove`). It must
+    be used everywhere an entry is promoted to PROVED, because the text/warning
+    based `check_compiles.has_sorry` misses sorry reached transitively through
+    imported/assembled dependencies (and is suppressed by `set_option
+    warn.sorry false`). A synthetic `<file:...>` root has no theorem of its own,
+    so it is verified by its children, not here — callers skip it.
+    """
+    stub_rel = entry.file_path
+    cr = tools.check_compiles(stub_rel)
+    if not cr.success:
+        return False
+    protected = _get_protected_names(tools, stub_rel, entry)
+    if not protected:
+        return False
+    local_sorry = tools.get_sorries_by_theorem(stub_rel)
+    if any(local_sorry.get(n) for n in protected):
+        return False
+    ax = tools.axioms_by_theorem(stub_rel, sorted(protected))
+    return all(ax.is_proven(n) for n in protected)
+
+
+def _proved_or_contingent(tools, ledger, entry, cwd, stub_rel) -> str | None:
+    """Shared PROVED/CONTINGENT/fall-through decision for the prove loops.
+
+    Assumes the file already compiles. Returns:
+      - "proved":     protected block is transitively sorry-free (marks PROVED).
+      - "contingent": block is locally clean but transitively depends on a sorry
+                      owned by an unproven SIBLING obligation in this shared file
+                      or a registered CHILD helper — i.e. we are WAITING for a
+                      proof still in flight (marks CONTINGENT). _propagate_proved
+                      promotes it once that sibling/subtree clears.
+      - None:         no sibling/child explains the transitive sorry (untracked
+                      dep or a fresh inline helper) → caller falls through to
+                      continue proving / extraction.
+
+    Centralizes the logic the per-target gate uses so the deep and grace loops
+    stay consistent (they previously keyed CONTINGENT on `entry.children` only,
+    missing the sibling-wait case and needlessly re-driving finished targets).
+    """
+    if _entry_transitively_proven(tools, entry):
+        ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+        return "proved"
+    local_sorry = tools.get_sorries_by_theorem(stub_rel)
+    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
+    sibling_sorry = any(n in siblings and positions
+                        for n, positions in local_sorry.items())
+    if sibling_sorry or entry.children:
+        ledger.mark_contingent(entry.id)
+        return "contingent"
+    return None
+
+
 def _propagate_proved(ledger: LemmaLedger, cwd: Path):
-    """Re-check contingent entries — mark proved if sorry-free."""
+    """Re-check contingent entries — mark proved only if TRANSITIVELY proven.
+
+    A CONTINGENT entry is one that was locally sorry-free but waiting on a
+    sibling/child. It is promoted to PROVED only when the authoritative
+    transitive oracle confirms it depends on no `sorryAx` — NOT merely when the
+    file is textually sorry-free. Entries that never clear stay CONTINGENT and
+    are surfaced by the CHECK stuck-handler (re-picked → PENDING, or escalated
+    to the guide) instead of being silently promoted.
+    """
     tools = get_lean_tools()
     changed = True
     while changed:
@@ -1823,12 +1926,18 @@ def _propagate_proved(ledger: LemmaLedger, cwd: Path):
         for e in ledger.entries():
             if e.status != LemmaStatus.CONTINGENT:
                 continue
+            if e.name.startswith("<"):
+                # Synthetic file-root: proven when all its real children are.
+                kids = ledger.get_children(e.id)
+                real_kids = [k for k in kids if not k.name.startswith("<")]
+                if real_kids and all(k.status == LemmaStatus.PROVED for k in real_kids):
+                    ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"),
+                                       proved_by="assembly")
+                    changed = True
+                continue
             if not (cwd / e.file_path).exists():
                 continue
-            if tools.has_sorry(e.file_path):
-                continue
-            cr = tools.check_compiles(e.file_path)
-            if cr.success and not cr.has_sorry:
+            if _entry_transitively_proven(tools, e):
                 ledger.mark_proved(e.id, e.file_path.replace("/", ".").removesuffix(".lean"),
                                    proved_by="assembly")
                 changed = True
@@ -1863,7 +1972,10 @@ def _register_all_helpers(state: PO5State, ledger: LemmaLedger, entry: LemmaEntr
             statement=block.text, parent_id=entry.id)
         if not isinstance(new, str) and not block.has_sorry:
             cr = tools.check_compiles(stub_rel)
-            if cr.success and not cr.has_sorry:
+            # Promote to PROVED only when the transitive oracle confirms it — a
+            # locally sorry-free helper can still depend on sorryAx. Otherwise
+            # leave it CONTINGENT so _propagate_proved re-checks it later.
+            if cr.success and _entry_transitively_proven(tools, new):
                 ledger.mark_proved(new.id, stub_rel.replace("/", ".").removesuffix(".lean"),
                                    proved_by="direct")
             elif cr.success:
@@ -2003,6 +2115,38 @@ def _collect_sorry_targets(split):
             continue
         targets.append((block, False))
     return targets
+
+
+def _requested_obligation_names(ledger, state, root_stub: str) -> list[str]:
+    """The real theorem names the TM asked us to prove, for the root file.
+
+    These are the entries registered at INIT (already narrowed to the requested
+    subset by `_filter_requested_targets`): either the single real root, or the
+    children of the synthetic `<file:...>` root. Synthetic `<...>` labels are
+    excluded. Mutual-group members are expanded so the whole group is verified.
+    """
+    root = ledger.get(state.root_id)
+    if not root:
+        return []
+    if root.name.startswith("<"):
+        entries = ledger.get_children(state.root_id)
+    else:
+        entries = [root]
+
+    names: set[str] = set()
+    split = get_lean_tools().split_theorems(root_stub)
+    blocks = split.blocks if split and not split.error else []
+    groups = split.mutual_groups if split and not split.error else {}
+    for e in entries:
+        if e.name.startswith("<"):
+            continue
+        names.add(e.name)
+        # Expand mutual groups: every member must be sorry-free, not just the rep.
+        for b in blocks:
+            if b.name == e.name and b.mutual_group is not None:
+                names.update(groups.get(b.mutual_group, []))
+                break
+    return sorted(names)
 
 
 def _get_protected_names(tools, stub_rel, entry) -> set[str]:
