@@ -321,6 +321,24 @@ async def _state_thinking(state: WorkflowState, agent) -> Transition:
             await agent._emit("message", "[TM] No prover task found — blocking prover_done.")
             return Transition.RESPOND
 
+    # Hard gate: NEVER route to a (re)dispatch while a prover is already live.
+    # NEW_TASK/PROCEED/READY are the only transitions that reach Stage.DISPATCH.
+    # A monitor tick during proving has no dedicated rule, so the LLM router tends
+    # to pick "proceed" (task is specified + active) — which used to spawn a
+    # SECOND prover on top of the running one. Only the prover itself ends its
+    # lifecycle (via PROVER_DONE, gated above); until then, redundant dispatch
+    # decisions collapse to "keep monitoring". This is the structural guarantee
+    # that at most one prover is ever live; the guard in _dispatch_prover is a
+    # defense-in-depth backstop.
+    if (decision.state_transition in (Transition.NEW_TASK, Transition.PROCEED, Transition.READY)
+            and state.mode == WorkflowMode.PROVING):
+        prover_task = getattr(agent, '_prover_task', None)
+        if prover_task and not prover_task.done():
+            await agent._emit("message",
+                f"[TM] Already proving ({state.prover_agent_name or '?'}) — ignoring "
+                f"'{decision.state_transition.value}'; the prover manages its own lifecycle.")
+            return Transition.RESPOND
+
     return decision.state_transition
 
 
@@ -355,9 +373,25 @@ async def _state_setup(state: WorkflowState, agent) -> Transition:
 
 
 async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
-    """Spawn and launch the prover as a background task."""
+    """Spawn and launch the prover as a background task.
+
+    INVARIANT: at most ONE prover is ever live. If a prover task already exists
+    and has not finished, this is a no-op — spawning a second prover would leave
+    the first running orphaned (its coroutine keeps executing but its task handle
+    is overwritten), and the two would fight over the same Sandbox while each
+    restarts proof context from scratch. The monitor's PROCEED route can fire
+    while the prover is mid-proof, so this guard is the single chokepoint that
+    keeps re-dispatch from stacking provers.
+    """
     import asyncio
     from .._helpers import swarm_agent
+
+    existing = getattr(agent, "_prover_task", None)
+    if existing is not None and not existing.done():
+        await agent._emit("message",
+            f"[TM] Prover {state.prover_agent_name or '?'} already running — "
+            f"ignoring re-dispatch (only one prover at a time).")
+        return
 
     task = UserIntent(**{k: v for k, v in state.task.items() if k in UserIntent.__dataclass_fields__})
 
