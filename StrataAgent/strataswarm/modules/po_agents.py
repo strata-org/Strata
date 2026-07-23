@@ -140,24 +140,38 @@ async def verified_loop(
 async def run_splitter(agent, workspace: str, file: str,
                        verify: Callable[[], str | None] | None = None) -> LoopOutcome:
     """Spawn po_splitter with optional verification loop."""
-    from .po_verify import verify_split_complete
+    from .po_verify import verify_file_exists, verify_stub_imports_def
 
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
 
     def _default_verify() -> str | None:
-        if not verify_split_complete(cwd, workspace):
-            return "Split incomplete: Stub/Def.lean missing or Stub.lean doesn't import it."
-        # Check both files compile
         from .po_lean import get_lean_tools
         tools = get_lean_tools()
         def_rel = f"{workspace}/Stub/Def.lean"
         stub_rel = f"{workspace}/Stub.lean"
+
+        # 1. Both files must exist (pure filesystem check — no oleans needed).
+        if not (verify_file_exists(cwd, def_rel) and verify_file_exists(cwd, stub_rel)):
+            return "Split incomplete: Stub/Def.lean or Stub.lean is missing."
+
+        # 2. Build Stub/Def.lean FIRST. `check_compiles` runs `lake build`, which
+        #    produces the .olean for the new Stub.Def module. This MUST happen
+        #    before any LSP/import check, otherwise those checks fail with a stale
+        #    "Imports are out of date and must be rebuilt" error and the split is
+        #    wrongly reported as broken (the build was never delegated downstream).
         cr_def = tools.check_compiles(def_rel)
         if not cr_def.success:
             return f"Stub/Def.lean doesn't compile. Fix compilation errors."
+
+        # 3. Build Stub.lean (its imports of Stub.Def now resolve to a fresh olean).
         cr_stub = tools.check_compiles(stub_rel)
         if cr_stub.has_error:
             return f"Stub.lean has compilation errors (not sorry). Fix them."
+
+        # 4. Structural check LAST: Stub.lean must import Stub.Def. Now that the
+        #    oleans are built this reads cleanly instead of hitting a stale cache.
+        if not verify_stub_imports_def(cwd, workspace):
+            return "Stub.lean must import Stub.Def (the split-out definitions)."
         return None
 
     async with swarm_agent("po_splitter", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace) as splitter:
