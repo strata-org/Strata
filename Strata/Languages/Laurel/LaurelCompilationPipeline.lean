@@ -21,6 +21,7 @@ import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.LiftImperativeExpressions
+import Strata.Languages.Laurel.FunctionalRewrite
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.PushOldInward
@@ -172,6 +173,7 @@ private def runLaurelPasses
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
+  functionalRewritePass,
   liftImperativeExpressionsPass
 ]
 

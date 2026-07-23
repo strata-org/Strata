@@ -671,11 +671,33 @@ structure LaurelVerifyOptions where
 instance : Inhabited LaurelVerifyOptions where
   default := {}
 
-/-- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
-    `{ result := <expr>; exit "$return" } $return` → `<expr>` -/
+/-- Unwrap the return pattern from function bodies.
+    Handles two forms:
+    - Old pattern (EliminateReturnStatements): `{ result := <expr>; exit "$return" } $return` → `<expr>`
+    - New pattern (FunctionalRewrite): `{ var r := <expr>; return r }` → `<expr>`
+      For multi-statement: `{ <stmts...>; var r := <expr>; return r }` → `{ <stmts...>; <expr> }` -/
 private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
   match b.val with
   | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit "$return", _⟩] (some "$return") => value
+  | .Block stmts label =>
+    match stmts.getLast? with
+    | some ⟨.Return (some returnValue), _⟩ =>
+      let init := stmts.dropLast
+      -- If the return value is just a variable reference that was assigned in the
+      -- preceding statement, unwrap to just the assigned expression.
+      match returnValue.val, init.getLast? with
+      | .Var (.Local retVar), some ⟨.Assign [⟨.Declare ⟨name, _⟩, _⟩] value, _⟩ =>
+        if retVar == name then
+          let preceding := init.dropLast
+          if preceding.isEmpty then value
+          else ⟨.Block (preceding ++ [value]) label, b.source⟩
+        else
+          if init.isEmpty then returnValue
+          else ⟨.Block (init ++ [returnValue]) label, b.source⟩
+      | _, _ =>
+        if init.isEmpty then returnValue
+        else ⟨.Block (init ++ [returnValue]) label, b.source⟩
+    | _ => b
   | _ => b
 
 /--
