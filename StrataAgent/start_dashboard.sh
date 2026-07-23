@@ -57,6 +57,18 @@ fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
+# ─── Enable lean_multi_attempt if a standalone repl was built by setup.sh ──────
+# lean-lsp-mcp reads LEAN_REPL / LEAN_REPL_PATH from the environment; as a child
+# process of this script it inherits these exports.
+REPL_BIN="$STRATA_AGENT/.repl/.lake/build/bin/repl"
+if [[ -x "$REPL_BIN" ]]; then
+    export LEAN_REPL="true"
+    export LEAN_REPL_PATH="$REPL_BIN"
+    echo "[CONFIG] lean_multi_attempt ENABLED (repl: $REPL_BIN)"
+else
+    echo "[CONFIG] lean_multi_attempt disabled (no repl at $REPL_BIN; run setup.sh)"
+fi
+
 # ─── Build dashboard args ──────────────────────────────────────────────────────
 DASH_ARGS=(--port "$PORT")
 if [[ -n "$CHEAT_SHEET" ]]; then

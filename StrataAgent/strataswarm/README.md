@@ -20,10 +20,19 @@ curl -fsSL https://raw.githubusercontent.com/strata-org/Strata/amitayush/strata-
 ```
 
 This downloads the `StrataAgent/` folder from GitHub, copies it into the current
-project, wires up `lakefile.toml` (adds the `StrataAgent` lean_lib, the
-`SwarmAgentTools` lean_exe, and the `repl` dependency), adds `StrataAgent/` to
-`.gitignore`, installs `uv` + a venv, and runs `StrataAgent/setup.sh` (Python
-deps, ripgrep, lean-lsp-mcp, itp-interface, and the `SwarmAgentTools` Lean binary).
+project, wires up `lakefile.toml` (adds the `StrataAgent` lean_lib and the
+`SwarmAgentTools` lean_exe), adds `StrataAgent/` to `.gitignore`, installs
+`uv` + a venv, and runs `StrataAgent/setup.sh` (Python deps, ripgrep,
+lean-lsp-mcp, itp-interface, the `SwarmAgentTools` Lean binary, and a standalone
+Lean `repl` binary for `lean_multi_attempt`).
+
+**lean_multi_attempt / repl** — `setup.sh` builds a standalone `repl` binary
+under `StrataAgent/.repl` (matched to your project's Lean toolchain), without
+adding `repl` as a project dependency — so it stays robust even when your
+project's dependencies live outside `.lake/packages`. `start_dashboard.sh` then
+exports `LEAN_REPL` / `LEAN_REPL_PATH` so lean-lsp-mcp enables
+`lean_multi_attempt` automatically. If repl can't be built, everything else
+still works — just without fast multi-attempt.
 
 To copy from a local checkout instead of downloading:
 

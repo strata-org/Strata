@@ -70,36 +70,54 @@ fi
 echo
 
 # ─── 6. repl (optional — enables lean_multi_attempt) ─────────────────────────
-# Added AFTER the core build so a repl/plausible dependency conflict can never
-# block SwarmAgentTools. The rev is matched to this project's Lean toolchain;
-# if anything fails, the lakefile is restored to its pre-repl state.
-LAKEFILE="$PROJECT_ROOT/lakefile.toml"
-if [ -f "$LAKEFILE" ] && ! grep -q 'name = "repl"' "$LAKEFILE"; then
-  echo "6. repl (optional, for lean_multi_attempt)..."
-  REPL_URL="https://github.com/leanprover-community/repl"
-  REPL_TAGS=$(git ls-remote --tags "$REPL_URL" 2>/dev/null | grep -oP 'refs/tags/\Kv[^\^]+$')
-  REPL_REV=""
-  if printf '%s\n' "$REPL_TAGS" | grep -qx "v$LEAN_VERSION"; then
-    REPL_REV="v$LEAN_VERSION"
-  else
-    MAJ_MIN=$(echo "$LEAN_VERSION" | cut -d. -f1,2)
-    printf '%s\n' "$REPL_TAGS" | grep -qx "v$MAJ_MIN.0" && REPL_REV="v$MAJ_MIN.0"
-  fi
+# Built STANDALONE in StrataAgent/.repl, never as a dependency of the host
+# project. repl has no external requires, so a plain `lake build` works with no
+# `lake update` — this avoids touching the host lakefile/manifest entirely and
+# stays robust when the project's dependencies live outside .lake/packages (in
+# which case a `lake update` on the host would fail).
+#
+# start_dashboard.sh reads StrataAgent/.repl/.lake/build/bin/repl and exports
+# LEAN_REPL / LEAN_REPL_PATH so lean-lsp-mcp enables lean_multi_attempt.
+echo "6. repl (optional, for lean_multi_attempt)..."
+REPL_URL="https://github.com/leanprover-community/repl"
+REPL_DIR="$SCRIPT_DIR/.repl"
 
-  if [ -z "$REPL_REV" ]; then
-    echo "  [SKIP] No repl tag matches Lean '$LEAN_VERSION' — lean_multi_attempt unavailable."
-  else
-    cp "$LAKEFILE" "$LAKEFILE.strata_bak"
-    printf '\n[[require]]\nname = "repl"\ngit = "%s"\nrev = "%s"\n' "$REPL_URL" "$REPL_REV" >> "$LAKEFILE"
-    if lake update repl >/dev/null 2>&1 && lake build repl >/dev/null 2>&1; then
-      echo "  [OK] repl $REPL_REV built (matched to Lean $LEAN_VERSION)."
-      rm -f "$LAKEFILE.strata_bak"
-    else
-      echo "  [WARN] repl setup failed — reverting lakefile. lean_multi_attempt unavailable."
-      mv "$LAKEFILE.strata_bak" "$LAKEFILE"
-    fi
-  fi
-  echo
+# Match a repl tag to the project's Lean toolchain (repl tags one per release;
+# fall back to the same major.minor .0 tag, e.g. 4.29.1 -> v4.29.0).
+REPL_TAGS=$(git ls-remote --tags "$REPL_URL" 2>/dev/null | grep -oP 'refs/tags/\Kv[^\^]+$')
+REPL_REV=""
+if printf '%s\n' "$REPL_TAGS" | grep -qx "v$LEAN_VERSION"; then
+  REPL_REV="v$LEAN_VERSION"
+else
+  MAJ_MIN=$(echo "$LEAN_VERSION" | cut -d. -f1,2)
+  printf '%s\n' "$REPL_TAGS" | grep -qx "v$MAJ_MIN.0" && REPL_REV="v$MAJ_MIN.0"
 fi
+
+if [ -z "$REPL_REV" ]; then
+  echo "  [SKIP] No repl tag matches Lean '$LEAN_VERSION' — lean_multi_attempt unavailable."
+else
+  # Clone (or reuse) repl at the matched rev.
+  if [ ! -d "$REPL_DIR/.git" ]; then
+    rm -rf "$REPL_DIR"
+    git clone --quiet --depth 1 --branch "$REPL_REV" "$REPL_URL" "$REPL_DIR" 2>/dev/null || \
+      git clone --quiet "$REPL_URL" "$REPL_DIR"
+  fi
+  git -C "$REPL_DIR" fetch --quiet --depth 1 origin "$REPL_REV" 2>/dev/null || true
+  git -C "$REPL_DIR" checkout --quiet "$REPL_REV" 2>/dev/null || true
+  # Force the SAME toolchain as the host project so oleans are compatible.
+  cp "$PROJECT_ROOT/lean-toolchain" "$REPL_DIR/lean-toolchain"
+
+  REPL_LOG="$(mktemp)"
+  if (cd "$REPL_DIR" && lake build repl) > "$REPL_LOG" 2>&1; then
+    echo "  [OK] repl $REPL_REV built at $REPL_DIR/.lake/build/bin/repl"
+    echo "       lean_multi_attempt will be enabled by start_dashboard.sh."
+    rm -f "$REPL_LOG"
+  else
+    tail -8 "$REPL_LOG"
+    echo "  [WARN] repl build failed — lean_multi_attempt unavailable (everything else works)."
+    echo "         Full log: $REPL_LOG"
+  fi
+fi
+echo
 
 echo "=== Setup complete ==="
