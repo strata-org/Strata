@@ -70,8 +70,9 @@ def _parse_args() -> argparse.Namespace:
     g.add_argument("--no-cheat-sheet", action="store_true",
                    help="Disable the proof cheat sheet by default.")
     g.add_argument("--cheat-sheet", metavar="PATH", default=None,
-                   help="Use a custom cheat-sheet/playbook file (relative to the "
-                        "workspace root) by default instead of the bundled one.")
+                   help="Use a custom cheat-sheet/playbook file instead of the "
+                        "bundled one. Resolved to an absolute path (relative to "
+                        "the current directory); errors if the file is missing.")
     return p.parse_args()
 
 
@@ -82,9 +83,20 @@ def _apply_cheat_sheet_env(args: argparse.Namespace) -> None:
         os.environ["STRATA_CHEAT_SHEET_PATH"] = ""
         print("[CONFIG] Cheat sheet DISABLED by default (--no-cheat-sheet)")
     elif args.cheat_sheet:
+        # Resolve to an ABSOLUTE path so it survives the dashboard's cwd (the
+        # prover resolves cheat_sheet_path against the repo-root cwd, not the
+        # invoking shell's). Fail loudly if missing rather than letting the guide
+        # later report "cheat sheet inaccessible".
+        import pathlib
+        p = pathlib.Path(args.cheat_sheet)
+        resolved = p.resolve() if p.exists() else (pathlib.Path.cwd() / args.cheat_sheet).resolve()
+        if not resolved.is_file():
+            raise SystemExit(
+                f"ERROR: --cheat-sheet file not found: '{args.cheat_sheet}' "
+                f"(resolved to {resolved}; cwd: {pathlib.Path.cwd()}).")
         os.environ["STRATA_USE_CHEAT_SHEET"] = "1"
-        os.environ["STRATA_CHEAT_SHEET_PATH"] = args.cheat_sheet
-        print(f"[CONFIG] Default cheat sheet: {args.cheat_sheet}")
+        os.environ["STRATA_CHEAT_SHEET_PATH"] = str(resolved)
+        print(f"[CONFIG] Default cheat sheet: {resolved}")
 
 
 async def main(args: argparse.Namespace) -> None:

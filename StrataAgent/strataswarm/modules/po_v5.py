@@ -32,7 +32,7 @@ from typing import Any, TypeVar
 
 from .po_agents import verified_loop, run_splitter, LoopOutcome
 from .po_lean import get_lean_tools, MoveSession
-from .po_util import setup_child_workspace, copy_cheat_sheet, cheat_sheet_name
+from .po_util import setup_child_workspace, copy_cheat_sheet, cheat_sheet_name, cheat_sheet_source
 from .lemma_ledger import LemmaLedger, LemmaEntry, LemmaStatus
 from .cycle_detection import detect, MatchType
 from .verifiers.proof_writer_verifier import make_proof_writer_verifier
@@ -351,8 +351,23 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         if not stub_clean.exists():
             shutil.copy2(cwd / stub_rel, stub_clean)
 
-        copy_cheat_sheet(cwd, cwd / workspace_rel,
-                         state.use_cheat_sheet, state.cheat_sheet_path)
+        # Copy the cheat sheet into the sandbox so the guide can read it. This is
+        # a common silent-failure point: if the configured path doesn't resolve
+        # against cwd, copy_cheat_sheet returns None and the guide later reports
+        # "cheat sheet inaccessible". Surface the outcome explicitly.
+        if state.use_cheat_sheet:
+            copied = copy_cheat_sheet(cwd, cwd / workspace_rel,
+                                      state.use_cheat_sheet, state.cheat_sheet_path)
+            if copied:
+                await agent._emit("message",
+                    f"[PO5] Cheat sheet ready in sandbox: {copied}")
+            else:
+                src = cheat_sheet_source(cwd, state.use_cheat_sheet, state.cheat_sheet_path)
+                cfg = state.cheat_sheet_path or "(bundled default)"
+                await agent._emit("message",
+                    f"[PO5] ⚠️ Cheat sheet ENABLED but NOT copied — guide will run "
+                    f"WITHOUT it. Configured path: {cfg}; resolved source: "
+                    f"{src or 'NOT FOUND'} (cwd: {cwd}).")
 
         tools = get_lean_tools()
         split = tools.split_theorems(stub_rel)
