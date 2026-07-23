@@ -1544,7 +1544,14 @@ theorem eval_value_true_add_fuel (F : @Factory Tbase) (env : Env Tbase)
     rw [h_eq]
     exact this
 
-/-- Two `.value true` outputs of `eval` at different fuel levels agree on the resulting expression. -/
+/-- Two `.value true` outputs of `eval` at different fuel levels agree on the
+    resulting expression. This is the evaluator-level confluence statement:
+    `Step` itself is not confluent (e.g. `(fun x => fun y => x) (1 + 1)` steps
+    to both `fun y => 2` and `fun y => (1 + 1)`, and both are canonical), but
+    `eval`'s fixed operands-first strategy makes the fully-reduced result
+    unique regardless of fuel. Together with `evalFully_of_value_true` this
+    says `evalFully` is the canonical form assignment for the fragment the
+    evaluator can fully reduce. -/
 theorem eval_value_true_deterministic (F : @Factory Tbase) (env : Env Tbase)
     (m k : Nat) (e : LExpr Tbase.mono) (v w : LExpr Tbase.mono)
     (h1 : LExpr.eval m F env e = (v, .value true))
@@ -1614,6 +1621,15 @@ theorem evalFully_of_value_true (F : @Factory Tbase) (env : Env Tbase) (e : LExp
   unfold LExpr.evalFully
   exact evalFullyAux_of_eval F env e n v hn_eq 0 (Nat.zero_le _)
     (fun k _ hk => hn_min k hk)
+
+/-- **Fuel monotonicity, `≤` form**: a fully-reduced (`.value true`) result is
+    stable under any larger fuel. Corollary of `eval_value_true_add_fuel`. -/
+theorem eval_value_true_mono_le (F : @Factory Tbase) (env : Env Tbase)
+    (m n : Nat) (h_le : m ≤ n) (e v : LExpr Tbase.mono)
+    (h : LExpr.eval m F env e = (v, .value true)) :
+    LExpr.eval n F env e = (v, .value true) := by
+  obtain ⟨d, rfl⟩ : ∃ d, n = m + d := ⟨n - m, by omega⟩
+  exact eval_value_true_add_fuel F env m d e v h
 
 end evalFully_of_value_true
 
