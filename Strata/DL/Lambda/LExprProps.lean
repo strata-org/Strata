@@ -350,13 +350,13 @@ omit [DecidableEq Tbase.IDMeta] in
 /-- The free variables of a well-formed function body are among its inputs. -/
 theorem lfunc_body_getVars_subset_keys
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (lfunc : LFunc Tbase) (hwf : LFuncWF lfunc)
+    (lfunc : LFunc Tbase) (hclosed : LFuncClosed lfunc)
     (body : LExpr Tbase.mono) (hbody : lfunc.body = some body)
     (y : Tbase.Identifier) (hy : y ∈ LExpr.LExpr.getVars body) :
     y ∈ lfunc.inputs.keys := by
   rw [getVars_eq_freeVars_idents, List.mem_map] at hy
   obtain ⟨p, hp_mem, hp_eq⟩ := hy
-  have hbf := hwf.toFuncWF.body_freevars body hbody
+  have hbf := hclosed.toFuncClosed.body_freevars body hbody
   have hname : y.name ∈ lfunc.inputs.map (fun q => q.1.name) := by
     apply hbf
     rw [List.mem_map]

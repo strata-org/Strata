@@ -17,7 +17,7 @@ WF of Func is separately defined in Strata/DL/Util/Func.lean
 namespace Lambda
 
 open Std (ToFormat Format format)
-open Strata.DL.Util (Func FuncWF TyIdentifier)
+open Strata.DL.Util (Func FuncWF FuncClosed TyIdentifier)
 
 public section
 
@@ -67,10 +67,32 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
     intro _ h; simp [LFunc.concreteEval] at h
 
-/-- An LFunc bundled with its well-formedness proof. -/
+/-- Closedness properties for LFunc — the Lambda-specific instantiation of the
+    generic `FuncClosed`: the body and preconditions have no free variables
+    beyond the function's inputs.
+
+    NOTE: `LFuncClosed` (and its factory-level counterpart `FactoryClosed`) does
+    NOT hold of freshly typechecked functions. A local `funcDecl` statement's
+    body may legitimately reference variables from the surrounding lexical
+    context, so its raw `LFunc` is not closed. The evaluator handles this by
+    capturing those variables at `funcDecl`-evaluation time (see
+    `Core.captureFreevars` / `Statement.evalAux` for `funcDecl`). TODO: add a
+    dedicated pass that performs this capture-elimination on typechecked
+    functions up front, at which point the stronger `LFuncClosed`/`FactoryClosed`
+    condition becomes true for them. Until then, the typing proofs assume only
+    `LFuncWF`/`FactoryWF`, and only the evaluation proofs additionally assume
+    `LFuncClosed`/`FactoryClosed`. -/
+structure LFuncClosed {T : LExprParams} (f : LFunc T) extends
+    FuncClosed
+      (fun id => id.name) -- getName
+      (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
+      f.toFunc where
+
+/-- An LFunc bundled with its well-formedness and closedness proofs. -/
 structure WFLFunc (T : LExprParams) where
   func : LFunc T
   wf : LFuncWF func
+  closed : LFuncClosed func
 
 /-- The name of the underlying LFunc. -/
 def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
@@ -80,10 +102,12 @@ def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
   f.func.opExpr
 
 /-- An array of well-formed LFuncs with a proof that function
-    names are unique. -/
+    names are unique. Also carries closedness of every function (see
+    `LFuncClosed`); factories assembled from `WFLFunc`s are fully closed. -/
 structure WFLFactory (T : LExprParams) where
   toFactory : Factory T
   wf : ∀(func : LFunc T), func ∈ toFactory.toArray → LFuncWF func
+  closed : ∀(func : LFunc T), func ∈ toFactory.toArray → LFuncClosed func
 
 /-- Construct a `WFLFactory` from an array of `WFLFunc`s.
     The `name_nodup` proof defaults to `by decide`. -/
@@ -101,7 +125,13 @@ structure WFLFactory (T : LExprParams) where
         exact name_nodup
       have mem_a := Factory.ofArray_mem mem
       simp [a] at mem_a
-      have ⟨⟨func2, func2WF⟩, wfMem⟩ := mem_a
+      have ⟨⟨func2, func2WF, func2Closed⟩, wfMem⟩ := mem_a
+      grind
+    closed := by
+      intro func mem
+      have mem_a := Factory.ofArray_mem mem
+      simp [a] at mem_a
+      have ⟨⟨func2, func2WF, func2Closed⟩, wfMem⟩ := mem_a
       grind
   }
 
@@ -114,6 +144,19 @@ structure FactoryWF {T} (fac : Factory T) where
 @[simp]
 theorem WFLFactory.toFactory_wf {T} (wf : WFLFactory T) : FactoryWF wf.toFactory :=
   { lfuncs_wf := wf.wf }
+
+/--
+Closedness of a Factory: every function is closed (`LFuncClosed`).
+
+See `LFuncClosed` for why this is separated from `FactoryWF`: it does not hold
+of freshly typechecked functions.
+-/
+structure FactoryClosed {T} (fac : Factory T) where
+  lfuncs_closed : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncClosed lf
+
+@[simp]
+theorem WFLFactory.toFactory_closed {T} (wf : WFLFactory T) : FactoryClosed wf.toFactory :=
+  { lfuncs_closed := wf.closed }
 
 end -- public section
 end Lambda

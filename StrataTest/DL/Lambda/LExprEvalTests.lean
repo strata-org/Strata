@@ -342,17 +342,27 @@ macro "prove_ceval_freeVars" : tactic => `(tactic|
 private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
   intro lf hmem; simp [testFuncs] at hmem
   rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem each_testFunc_closed : ∀ lf, lf ∈ testFuncs → LFuncClosed lf := by
+  intro lf hmem; simp [testFuncs] at hmem
+  rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- Well-formedness of testBuiltIn factory
 private theorem testBuiltIn_wf : FactoryWF testBuiltIn := by
   constructor; intro lf hmem
   exact each_testFunc_wf lf (Factory.ofArray_mem hmem)
+
+-- Closedness of testBuiltIn factory
+private theorem testBuiltIn_closed : FactoryClosed testBuiltIn := by
+  constructor; intro lf hmem
+  exact each_testFunc_closed lf (Factory.ofArray_mem hmem)
 
 -- Well-formedness of testState's factory.
 private theorem testState_wf : FactoryWF testState.config.factory :=
@@ -640,12 +650,19 @@ private theorem polyState_wf : FactoryWF polyState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem polyState_closed : FactoryClosed polyState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyFuncs] at this
+  rcases this with rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
 def test_poly_tysubst := TestCase.new
@@ -681,12 +698,19 @@ private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyPairFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem polyPairState_closed : FactoryClosed polyPairState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyPairFuncs] at this
+  rcases this with rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
 def test_poly_tysubst_distinct := TestCase.new
@@ -742,17 +766,28 @@ private theorem each_evalIfCanonicalFunc_wf :
     ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncWF lf := by
   intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
   rcases hmem with rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem each_evalIfCanonicalFunc_closed :
+    ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncClosed lf := by
+  intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
+  rcases hmem with rfl | rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 private theorem evalIfCanonicalState_wf :
     FactoryWF evalIfCanonicalState.config.factory := by
   constructor; intro lf hmem
   exact each_evalIfCanonicalFunc_wf lf (Factory.ofArray_mem hmem)
+
+private theorem evalIfCanonicalState_closed :
+    FactoryClosed evalIfCanonicalState.config.factory := by
+  constructor; intro lf hmem
+  exact each_evalIfCanonicalFunc_closed lf (Factory.ofArray_mem hmem)
 
 -- Test: evalIfCanonical fires concreteEval when arg 0 is canonical but arg 1 is symbolic.
 -- NegEq(#5, x) should reduce to (#-5 == x) — arg 0 is negated, arg 1 passes through.

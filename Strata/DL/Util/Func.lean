@@ -103,10 +103,6 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
   -- No args have same name.
   arg_nodup:
     List.Nodup (f.inputs.map (getName ·.1))
-  -- Free variables of body must be arguments.
-  body_freevars:
-    ∀ b, f.body = .some b →
-      getVarNames b ⊆ f.inputs.map (getName ·.1)
   -- No typeArgs have same name
   typeArgs_nodup:
     List.Nodup f.typeArgs
@@ -116,6 +112,20 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
       getTyFreeVars ty ⊆ f.typeArgs
   output_typevars_in_typeArgs:
     getTyFreeVars f.output ⊆ f.typeArgs
+
+/--
+Closedness properties of a `Func`: its body and preconditions have no free
+variables beyond the function's own inputs. Split out of `FuncWF` because they
+do not hold of typechecked terms in general; see `Lambda.LFuncClosed` for the
+rationale.
+-/
+structure FuncClosed {IdentT ExprT TyT MetadataT : Type}
+    (getName : IdentT → String) (getVarNames : ExprT → List String)
+    (f : Func IdentT ExprT TyT MetadataT) where
+  -- Free variables of body must be arguments.
+  body_freevars:
+    ∀ b, f.body = .some b →
+      getVarNames b ⊆ f.inputs.map (getName ·.1)
   -- Free variables of preconditions must be arguments.
   precond_freevars:
     ∀ p, p ∈ f.preconditions →
@@ -127,7 +137,7 @@ instance FuncWF.arg_nodup_decidable {IdentT ExprT TyT MetadataT : Type}
     Decidable (List.Nodup (f.inputs.map (getName ·.1))) := by
   apply List.nodupDecidable
 
-instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
+instance FuncClosed.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):
     Decidable (∀ b, f.body = .some b →
@@ -156,7 +166,7 @@ instance FuncWF.output_typevars_in_typeArgs_decidable
     Decidable (getTyFreeVars f.output ⊆ f.typeArgs) := by
   apply List.instDecidableRelSubsetOfDecidableEq
 
-instance FuncWF.precond_freevars_decidable
+instance FuncClosed.precond_freevars_decidable
     {IdentT ExprT TyT MetadataT : Type}
     (getName : IdentT → String) (getVarNames : ExprT → List String)
     (f : Func IdentT ExprT TyT MetadataT):

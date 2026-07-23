@@ -462,7 +462,7 @@ theorem evalCore_getVars_subset (n' : Nat) (F : @Factory Tbase) (env : Env Tbase
     introduces no fresh free variables. -/
 theorem eval_getVars_subset
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (F : @Factory Tbase) (env : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (env : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (henv : ∀ x v, env x = some v → LExpr.LExpr.getVars v = [])
     (n : Nat) :
     ∀ (e : LExpr Tbase.mono) (y : Tbase.Identifier),
@@ -482,6 +482,7 @@ theorem eval_getVars_subset
         rename_i op_expr args lfunc h_call
         have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
         have h_wf := hWF.lfuncs_wf lfunc h_mem
+        have h_closed := hClosed.lfuncs_closed lfunc h_mem
         obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some h_call
         split
         · -- inline
@@ -498,7 +499,7 @@ theorem eval_getVars_subset
                 simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
               have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
                 simp [Option.some_get]
-              have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq y hin
+              have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_closed _ hbody_eq y hin
               have h_len : lfunc.inputs.keys.length =
                   (args.map (fun a => (LExpr.eval n' F env a).fst)).length := by
                 rw [ListMap.keys_eq_map_fst]; simp [h_arity]
@@ -614,7 +615,7 @@ theorem evalEq_env_congr (n' : Nat) (F : @Factory Tbase) (env₁ env₂ : Env Tb
 /-- `evalApp` respects environment agreement. -/
 theorem evalApp_env_congr
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (henv₂ : ∀ x v, env₂ x = some v → LExpr.LExpr.getVars v = [])
     (n' : Nat) (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
     (ih_congr : ∀ e', (∀ x ∈ LExpr.LExpr.getVars e', env₁ x = env₂ x) →
@@ -647,11 +648,11 @@ theorem evalApp_env_congr
         simp only [LExpr.subst] at hx
         rcases getVars_substK_mem 0 _ body1' x hx with hb | ⟨mv, hmv⟩
         · have hx1 : x ∈ LExpr.LExpr.getVars e1 := by
-            apply eval_getVars_subset hIdent F env₂ hWF henv₂ n' e1 x; rw [heq]; exact hb
+            apply eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' e1 x; rw [heq]; exact hb
           exact hag x (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl hx1)
         · rw [getVars_replaceMetadata1] at hmv
           have hx2 : x ∈ LExpr.LExpr.getVars e2 :=
-            eval_getVars_subset hIdent F env₂ hWF henv₂ n' e2 x hmv
+            eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' e2 x hmv
           exact hag x (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hx2)
       rw [h_ih]
   · -- default arm
@@ -666,17 +667,17 @@ theorem evalApp_env_congr
         simp only [LExpr.LExpr.getVars, List.mem_append] at hx
         rcases hx with h | h
         · have hx1 : x ∈ LExpr.LExpr.getVars e1 :=
-            eval_getVars_subset hIdent F env₂ hWF henv₂ n' e1 x h
+            eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' e1 x h
           exact hag x (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl hx1)
         · have hx2 : x ∈ LExpr.LExpr.getVars e2 :=
-            eval_getVars_subset hIdent F env₂ hWF henv₂ n' e2 x h
+            eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' e2 x h
           exact hag x (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hx2)
       rw [h_ih]
 
 /-- `evalCore` respects environment agreement. -/
 theorem evalCore_env_congr
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (henv₂ : ∀ x v, env₂ x = some v → LExpr.LExpr.getVars v = [])
     (n' : Nat) (e : LExpr Tbase.mono)
     (ih_congr : ∀ e', (∀ x ∈ LExpr.LExpr.getVars e', env₁ x = env₂ x) →
@@ -698,7 +699,7 @@ theorem evalCore_env_congr
     rw [substFvarsFromEnv_env_congr env₁ env₂ (LExpr.quant m qk n ty tr body) hag]
   | app m e1 e2 =>
     simp only [LExpr.evalCore]
-    exact evalApp_env_congr hIdent F env₁ env₂ hWF henv₂ n' m e1 e2 ih_congr hag
+    exact evalApp_env_congr hIdent F env₁ env₂ hWF hClosed henv₂ n' m e1 e2 ih_congr hag
   | eq m e1 e2 =>
     simp only [LExpr.evalCore]
     exact evalEq_env_congr n' F env₁ env₂ m e1 e2 ih_congr hag
@@ -713,7 +714,7 @@ theorem evalCore_env_congr
     introducing no fresh free variables. -/
 theorem eval_env_congr
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (n : Nat) (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F)
+    (n : Nat) (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (henv₂ : ∀ x v, env₂ x = some v → LExpr.LExpr.getVars v = [])
     (e : LExpr Tbase.mono)
     (hagree : ∀ x ∈ LExpr.LExpr.getVars e, env₁ x = env₂ x) :
@@ -735,6 +736,7 @@ theorem eval_env_congr
         rename_i op_expr args lfunc h_call
         have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
         have h_wf := hWF.lfuncs_wf lfunc h_mem
+        have h_closed := hClosed.lfuncs_closed lfunc h_mem
         obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some h_call
         have hmap : (args.map (fun a => (LExpr.eval n' F env₁ a).fst)) =
             (args.map (fun a => (LExpr.eval n' F env₂ a).fst)) := by
@@ -794,7 +796,7 @@ theorem eval_env_congr
                   simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
                 have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
                   simp [Option.some_get]
-                have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq x hin
+                have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_closed _ hbody_eq x hin
                 have h_len : lfunc.inputs.keys.length =
                     (args.map (fun a => (LExpr.eval n' F env₂ a).fst)).length := by
                   rw [ListMap.keys_eq_map_fst]; simp [h_arity]
@@ -808,7 +810,7 @@ theorem eval_env_congr
                 rw [List.mem_map] at hv_args'
                 obtain ⟨a, ha_mem, ha_eq⟩ := hv_args'
                 have hxa : x ∈ LExpr.LExpr.getVars a := by
-                  apply eval_getVars_subset hIdent F env₂ hWF henv₂ n' a x
+                  apply eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' a x
                   rw [ha_eq]; exact hv
                 exact hag x (callOfLFunc_getVars_args F e op_expr args lfunc h_call a ha_mem x hxa)
             rw [h_ih_new]
@@ -836,7 +838,7 @@ theorem eval_env_congr
                     rw [List.mem_map] at ha_mem
                     obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
                     have hxa : x ∈ LExpr.LExpr.getVars a0 := by
-                      apply eval_getVars_subset hIdent F env₂ hWF henv₂ n' a0 x
+                      apply eval_getVars_subset hIdent F env₂ hWF hClosed henv₂ n' a0 x
                       rw [ha0_eq]; exact hxa'
                     exact hag x (callOfLFunc_getVars_args F e op_expr args lfunc h_call a0 ha0_mem x hxa)
                   rw [h_ih_new]
@@ -847,7 +849,7 @@ theorem eval_env_congr
           )
       · -- callOfLFunc none → evalCore
         rename_i h_nocall
-        exact evalCore_env_congr hIdent F env₁ env₂ hWF henv₂ n' e ih hag
+        exact evalCore_env_congr hIdent F env₁ env₂ hWF hClosed henv₂ n' e ih hag
 
 end eval_env_congr
 
@@ -1074,14 +1076,14 @@ theorem evalFully_fvar_store
     This is the `WellFormedSemanticEvalExprCongr` property for `evalFully`. -/
 theorem evalFully_env_congr
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (env₁ env₂ : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (henv₂ : ∀ x v, env₂ x = some v → LExpr.LExpr.getVars v = [])
     (e : LExpr Tbase.mono)
     (hagree : ∀ x ∈ LExpr.LExpr.getVars e, env₁ x = env₂ x) :
     LExpr.evalFully F env₁ e = LExpr.evalFully F env₂ e := by
   unfold LExpr.evalFully
   exact evalFullyAux_congr F env₁ env₂ e 0
-    (fun k => eval_env_congr hIdent k F env₁ env₂ hWF henv₂ e hagree)
+    (fun k => eval_env_congr hIdent k F env₁ env₂ hWF hClosed henv₂ e hagree)
 
 end evalFully
 
@@ -3011,7 +3013,7 @@ theorem eval_call_not_full_snd
     closed — argument residuals), so `eval` is store-independent on it. -/
 theorem call_node_eval_eq
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (n' : Nat) (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
+    (n' : Nat) (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm)
@@ -3049,7 +3051,7 @@ theorem call_node_eval_eq
   have hstore_indep : ∀ (r : LExpr Tbase.mono),
       LExpr.LExpr.getVars r = [] →
       LExpr.eval n' F σ' r = LExpr.eval n' F (substStoreExpr σ' sm) r :=
-    fun r hr => eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF henvPB r
+    fun r hr => eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF hClosed henvPB r
       (fun x hx => by rw [hr] at hx; simp at hx)
   -- Each pullback-side argument residual is fully reduced, hence canonical, hence
   -- closed (`getVars = []`).
@@ -3071,6 +3073,7 @@ theorem call_node_eval_eq
   -- Bundled facts needed to bound the reducts' free variables.
   have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false hcall
   have h_wf := hWF.lfuncs_wf lfunc h_mem
+  have h_closed := hClosed.lfuncs_closed lfunc h_mem
   obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some hcall
   -- Every element of the pullback-side residual list is closed.
   have hRclosed : ∀ r ∈ args.map (fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).fst),
@@ -3114,7 +3117,7 @@ theorem call_node_eval_eq
               have hsome : lfunc.body.isSome = true := by
                 simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
               have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by simp [Option.some_get]
-              have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq x hin
+              have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_closed _ hbody_eq x hin
               have h_len : lfunc.inputs.keys.length =
                   (args.map (fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).fst)).length := by
                 rw [ListMap.keys_eq_map_fst]; simp [h_arity]
@@ -3171,7 +3174,7 @@ theorem call_node_eval_eq
 theorem eval_rename_commute
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
     (n : Nat)
-    (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm) (hTgt : TargetsDefined σ' sm)
@@ -3209,7 +3212,7 @@ theorem eval_rename_commute
             (args.all fun a => (LExpr.eval n' F (substStoreExpr σ' sm) a).snd.isValueTrue) = true
         · -- All args full: the residual `.fst` lists coincide and every reducing
           -- leaf shares a CLOSED reduct, so the value-true biconditional holds.
-          exact call_node_eval_eq hIdent n' F σ' hWF hwfs sm hVar e op_expr args lfunc
+          exact call_node_eval_eq hIdent n' F σ' hWF hClosed hwfs sm hVar e op_expr args lfunc
             hcall hcanF hfull ih v
         · -- Some arg not full: neither call node reaches `.value true`, so both
           -- directions of the biconditional are vacuous.
@@ -3374,7 +3377,7 @@ theorem eval_rename_commute
           -- Store independence on closed terms.
           have hevLR : ∀ e, LExpr.LExpr.getVars e = [] →
               LExpr.eval n' F σ' e = LExpr.eval n' F (substStoreExpr σ' sm) e := fun e he =>
-            eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF hpbcl e
+            eval_env_congr hIdent n' F σ' (substStoreExpr σ' sm) hWF hClosed hpbcl e
               (fun x hx => by rw [he] at hx; simp at hx)
           rw [LExpr.substFvars_app]
           rw [eval_succ_app_none n' F σ' m _ _ hcanL hcallL]
@@ -3416,7 +3419,7 @@ theorem eval_rename_commute
 
 theorem rename_commute
     (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
-    (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F)
+    (F : @Factory Tbase) (σ' : Env Tbase) (hWF : FactoryWF F) (hClosed : FactoryClosed F)
     (hwfs : ∀ x v, σ' x = some v → LExpr.isCanonicalValue F v = true)
     (sm : Map Tbase.Identifier (LExpr Tbase.mono))
     (hVar : VarOnly sm) (hTgt : TargetsDefined σ' sm)
@@ -3429,11 +3432,11 @@ theorem rename_commute
   have hfst_at_val : ∀ k v, LExpr.eval k F (substStoreExpr σ' sm) e = (v, .value true) →
       LExpr.eval k F σ' (LExpr.substFvars e sm) = (v, .value true) := by
     intro k v hk
-    exact (eval_rename_commute hIdent k F σ' hWF hwfs sm hVar hTgt e v).mpr hk
+    exact (eval_rename_commute hIdent k F σ' hWF hClosed hwfs sm hVar hTgt e v).mpr hk
   have hfst_at_val_rev : ∀ k v, LExpr.eval k F σ' (LExpr.substFvars e sm) = (v, .value true) →
       LExpr.eval k F (substStoreExpr σ' sm) e = (v, .value true) := by
     intro k v hk
-    exact (eval_rename_commute hIdent k F σ' hWF hwfs sm hVar hTgt e v).mp hk
+    exact (eval_rename_commute hIdent k F σ' hWF hClosed hwfs sm hVar hTgt e v).mp hk
   have hsnd' : ∀ k, (LExpr.eval k F σ' (LExpr.substFvars e sm)).snd = .value true
       ↔ (LExpr.eval k F (substStoreExpr σ' sm) e).snd = .value true := by
     intro k
