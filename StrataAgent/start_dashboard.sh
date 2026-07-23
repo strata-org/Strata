@@ -69,6 +69,24 @@ else
     echo "[CONFIG] lean_multi_attempt disabled (no repl at $REPL_BIN; run setup.sh)"
 fi
 
+# ─── Resolve the cheat sheet to an ABSOLUTE path ──────────────────────────────
+# The dashboard cd's to REPO_ROOT below, so a path relative to the user's shell
+# cwd would resolve against the wrong base (a classic silent-failure: the guide
+# then reports "cheat sheet inaccessible"). Resolve it here, while we are still
+# in the invoking cwd, and fail LOUDLY if it does not exist.
+if [[ -n "$CHEAT_SHEET" ]]; then
+    if [[ -f "$CHEAT_SHEET" ]]; then
+        CHEAT_SHEET="$(cd "$(dirname "$CHEAT_SHEET")" && pwd)/$(basename "$CHEAT_SHEET")"
+    elif [[ -f "$REPO_ROOT/$CHEAT_SHEET" ]]; then
+        # Fall back to interpreting it relative to the repo root.
+        CHEAT_SHEET="$REPO_ROOT/$CHEAT_SHEET"
+    else
+        echo "ERROR: --cheat-sheet file not found: '$CHEAT_SHEET'" >&2
+        echo "       Checked as given (cwd: $(pwd)) and relative to repo root ($REPO_ROOT)." >&2
+        exit 1
+    fi
+fi
+
 # ─── Build dashboard args ──────────────────────────────────────────────────────
 DASH_ARGS=(--port "$PORT")
 if [[ -n "$CHEAT_SHEET" ]]; then
