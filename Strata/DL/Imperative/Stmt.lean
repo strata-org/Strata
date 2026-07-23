@@ -131,6 +131,69 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### DecidableEq -/
+
+variable {P : PureExpr} {C : Type} [DecidableEq C] [DecidableEq P.Expr]
+         [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.ExprMetadata]
+
+mutual
+def Stmt.beq (s1 s2 : Stmt P C) : Bool :=
+  match s1, s2 with
+  | .cmd c1, .cmd c2 => decide (c1 = c2)
+  | .block l1 b1 md1, .block l2 b2 md2 =>
+    decide (l1 = l2) && Block.beq b1 b2 && decide (md1 = md2)
+  | .ite c1 t1 e1 md1, .ite c2 t2 e2 md2 =>
+    decide (c1 = c2) && Block.beq t1 t2 && Block.beq e1 e2 && decide (md1 = md2)
+  | .loop g1 m1 inv1 b1 md1, .loop g2 m2 inv2 b2 md2 =>
+    decide (g1 = g2) && decide (m1 = m2) && decide (inv1 = inv2) &&
+      Block.beq b1 b2 && decide (md1 = md2)
+  | .exit l1 md1, .exit l2 md2 => decide (l1 = l2) && decide (md1 = md2)
+  | .funcDecl d1 md1, .funcDecl d2 md2 => decide (d1 = d2) && decide (md1 = md2)
+  | .typeDecl t1 md1, .typeDecl t2 md2 => decide (t1 = t2) && decide (md1 = md2)
+  | _, _ => false
+  termination_by Stmt.sizeOf s1
+
+def Block.beq (b1 b2 : List (Stmt P C)) : Bool :=
+  match b1, b2 with
+  | [], [] => true
+  | s1 :: r1, s2 :: r2 => Stmt.beq s1 s2 && Block.beq r1 r2
+  | _, _ => false
+  termination_by Block.sizeOf b1
+end
+
+/-- Lift a per-element `beq_eq` (for the statements in `b1`) to the whole block. -/
+private theorem Block.beq_eq_of_forall {b1 b2 : List (Stmt P C)}
+    (h : ∀ s, s ∈ b1 → ∀ t, Stmt.beq s t = true ↔ s = t) :
+    Block.beq b1 b2 = true ↔ b1 = b2 := by
+  induction b1 generalizing b2 with
+  | nil => cases b2 <;> simp [Block.beq]
+  | cons s rest ih =>
+    cases b2 with
+    | nil => simp [Block.beq]
+    | cons s2 rest2 =>
+      simp only [Block.beq, Bool.and_eq_true, List.cons.injEq]
+      rw [h s (.head _) s2, ih (fun s hs => h s (.tail _ hs))]
+
+theorem Stmt.beq_eq (s t : Stmt P C) : Stmt.beq s t = true ↔ s = t := by
+  induction s using Stmt.inductionOn generalizing t with
+  | cmd_case c => cases t <;> simp [Stmt.beq]
+  | block_case l b md ih =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.block.injEq, reduceCtorEq, Block.beq_eq_of_forall ih] <;> grind
+  | ite_case c thn els md iht ihe =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.ite.injEq, reduceCtorEq, Block.beq_eq_of_forall iht,
+      Block.beq_eq_of_forall ihe] <;> grind
+  | loop_case g m inv b md ih =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.loop.injEq, reduceCtorEq, Block.beq_eq_of_forall ih] <;> grind
+  | exit_case l md => cases t <;> simp [Stmt.beq]
+  | funcDecl_case d md => cases t <;> simp [Stmt.beq]
+  | typeDecl_case tc md => cases t <;> simp [Stmt.beq]
+
+instance : DecidableEq (Stmt P C) :=
+  beq_eq_DecidableEq Stmt.beq Stmt.beq_eq
+
 ---------------------------------------------------------------------
 
 /-! ### NoFuncDecl

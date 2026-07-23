@@ -19,14 +19,14 @@ A type constructor declaration that can be shared across dialects.
 inductive Boundedness where
   | Finite
   | Infinite -- Default
-  deriving Repr
+  deriving Repr, DecidableEq
 
 structure TypeConstructor where
   -- (TODO) Add SMT support for Boogie's Finite types.
   bound    : Boundedness := .Infinite
   name     : String
   params   : List String
-  deriving Repr
+  deriving Repr, DecidableEq
 
 def TypeConstructor.numargs (t : TypeConstructor) : Nat := t.params.length
 

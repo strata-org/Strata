@@ -249,7 +249,7 @@ structure Procedure.Spec where
   preconditions  : ListMap CoreLabel Procedure.Check
   /-- Labeled postconditions (`ensures` clauses). -/
   postconditions : ListMap CoreLabel Procedure.Check
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, DecidableEq
 
 def Procedure.Spec.preconditionNames (s : Procedure.Spec) : List CoreLabel :=
   s.preconditions.keys
@@ -292,7 +292,7 @@ inductive Procedure.Body where
       Labels are strings; each block contains Core commands and ends with a
       deterministic transfer (conditional goto or finish). -/
   | cfg : DetCFG → Procedure.Body
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 /-- Extract the structured statements, or error if the body is a CFG. -/
 @[simp, expose]
@@ -356,7 +356,7 @@ structure Procedure where
   spec   : Procedure.Spec
   /-- The procedure body. -/
   body   : Procedure.Body := .structured []
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 ---------------------------------------------------------------------
 

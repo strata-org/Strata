@@ -32,7 +32,7 @@ structure TypeSynonym where
   -- Note also that the `typeArgs` may not contain duplicates.
   typeArgs : List TyIdentifier
   type     : LMonoTy
-  deriving Repr
+  deriving Repr, DecidableEq
 
 instance : ToFormat TypeSynonym where
   format t :=
@@ -55,7 +55,7 @@ inductive TypeDecl where
   | con : TypeConstructor → TypeDecl
   | syn : TypeSynonym → TypeDecl
   | data : List (LDatatype Unit) → TypeDecl
-  deriving Repr
+  deriving Repr, DecidableEq
 
 instance : ToFormat TypeDecl where
   format d :=

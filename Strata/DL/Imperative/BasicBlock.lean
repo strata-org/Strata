@@ -35,6 +35,26 @@ inductive DetTransferCmd (Label : Type) (P : PureExpr) where
   body, this can be interpreted as returning to the caller. -/
   | finish (md : MetaData P := .empty)
 
+@[grind] def DetTransferCmd.beq [BEq P.Expr] [BEq (MetaData P)] [BEq Label]
+    (a b : DetTransferCmd Label P) : Bool :=
+  match a, b with
+  | .condGoto p1 lt1 lf1 md1, .condGoto p2 lt2 lf2 md2 =>
+    p1 == p2 && lt1 == lt2 && lf1 == lf2 && md1 == md2
+  | .finish md1, .finish md2 => md1 == md2
+  | _, _ => false
+
+instance [BEq P.Expr] [BEq (MetaData P)] [BEq Label] : BEq (DetTransferCmd Label P) where
+  beq := DetTransferCmd.beq
+
+theorem DetTransferCmd.beq_eq {Label : Type} {P : PureExpr}
+    [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label]
+    (a b : DetTransferCmd Label P) : DetTransferCmd.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label] :
+    DecidableEq (DetTransferCmd Label P) :=
+  beq_eq_DecidableEq DetTransferCmd.beq DetTransferCmd.beq_eq
+
 /-- For the moment, we don't have an unconditional jump in the language, and
 model it instead using `condGoto`. By defining this function, we can easily
 create unconditional jumps, and future proof against the possibility of adding
@@ -60,11 +80,18 @@ non-deterministic depending on the type of transfer command. -/
 structure BasicBlock (TransferCmd Cmd : Type) where
   cmds : List Cmd
   transfer : TransferCmd
+  deriving DecidableEq
 
 /-- A deterministic basic block is a basic block parameterized by deterministic
 commands. -/
 @[expose] def DetBlock (Label Cmd : Type) (P : PureExpr) :=
   BasicBlock (DetTransferCmd Label P) Cmd
+
+-- `DetBlock` is a `def`, so instance search won't unfold it to the underlying
+-- `BasicBlock`; provide the `DecidableEq` instance explicitly.
+instance [DecidableEq Cmd] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label] :
+    DecidableEq (DetBlock Label Cmd P) :=
+  inferInstanceAs (DecidableEq (BasicBlock (DetTransferCmd Label P) Cmd))
 
 /-- A non-deterministic basic block is a basic block parameterized by
 non-deterministic commands. -/
@@ -76,6 +103,7 @@ where execution should start. -/
 structure CFG (Label Block : Type) where
   entry : Label
   blocks : List (Label × Block)
+  deriving DecidableEq
 
 --------
 
