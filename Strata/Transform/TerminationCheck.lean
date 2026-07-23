@@ -317,7 +317,7 @@ private def mkAdtRankDecls
   | none => ⟨[], []⟩
   | some block =>
     { namedDecls := block.map fun dt =>
-        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt) md)
+        (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt).toFunc md)
       axioms := block.flatMap fun dt =>
         let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
         axioms.mapIdx fun i ax =>

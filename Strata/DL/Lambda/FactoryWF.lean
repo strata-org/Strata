@@ -29,7 +29,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       (fun id => id.name) -- getName
       (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
       (fun e => e.freeVars) -- getTyFreeVars
-      f where
+      f.toFunc where
   /-- Constructors must not have a body or concreteEval. This ensures that
       canonical values (which include fully-applied constructors) are normal
       forms — they cannot be further reduced by `expand_fn` or `eval_fn`. -/
@@ -39,6 +39,14 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       prefix `$__ty` used by the type-checker. -/
   typeArgs_no_gen_prefix :
     ∀ ta, ta ∈ f.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by decide
+  /-- `concreteEval` does not succeed if the length of args is incorrect. -/
+  concreteEval_argmatch :
+    ∀ fn md args res, f.concreteEval = .some fn
+      → fn md args = .some res
+      → args.length = f.inputs.length := by intro fn _ _ _ hfn; simp [LFunc.concreteEval] at hfn
+  /-- body and concreteEval cannot exist at once. -/
+  body_or_concreteEval :
+    ¬ (f.concreteEval.isSome ∧ f.body.isSome) := by simp [LFunc.concreteEval]
   /-- `concreteEval` is metadata-insensitive: it produces
       `eraseMetadata`-equivalent results for `eraseMetadata`-equivalent
       arguments, regardless of the metadata parameter. -/
@@ -49,7 +57,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ceval md1 args1 = some res1 →
         ∃ res2, ceval md2 args2 = some res2 ∧
           LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
-    intro _ h; simp [Func.concreteEval] at h
+    intro _ h; simp [LFunc.concreteEval] at h
   /-- `concreteEval` does not introduce fresh free variables: every free
       variable of a successful result was already free in some argument. -/
   concreteEval_freeVars :
@@ -57,7 +65,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       ∀ md (args : List (LExpr T.mono)) res,
         ceval md args = some res →
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
-    intro _ h; simp [Func.concreteEval] at h
+    intro _ h; simp [LFunc.concreteEval] at h
 
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where

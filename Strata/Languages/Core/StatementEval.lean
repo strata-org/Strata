@@ -608,6 +608,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
             calling Core.Statement.evalAux"
   | .funcDecl decl _ =>
     let paramNames := decl.inputs.map (·.1)
+    -- Lift the AST funcDecl into an evaluator-facing `LFunc` (concreteEval defaults to none).
     let func : Lambda.LFunc CoreLParams := {
       name := decl.name,
       typeArgs := decl.typeArgs,
@@ -616,7 +617,6 @@ private def evalOneStmt (old_var_subst : SubstMap)
       output := Lambda.LTy.toMonoTypeUnsafe decl.output,
       body := decl.body.map (captureFreevars Ewn.env paramNames),
       attr := decl.attr,
-      concreteEval := decl.concreteEval,
       axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
     }
     match Ewn.env.addFactoryFunc func with
@@ -802,7 +802,6 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   output := Lambda.LTy.toMonoTypeUnsafe decl.output
                   body := decl.body
                   attr := decl.attr
-                  concreteEval := decl.concreteEval
                   axioms := decl.axioms
                 } with
                 | .ok E' => E'

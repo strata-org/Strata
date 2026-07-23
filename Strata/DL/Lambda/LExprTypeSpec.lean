@@ -3030,7 +3030,7 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
   | forAll vars body =>
   simp [LTy.freeVars]
   apply List.removeAll_eq_nil_of_forall_mem
-  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
+  unfold LFunc.type LFuncDefined.type at h_type; simp only [Bind.bind, Except.bind] at h_type
   elim_errs h_type
   generalize h_vals : func.inputs.values = vals at h_type
   cases vals with
@@ -3064,7 +3064,7 @@ omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.ID
 private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
     LTy.boundVars ty = func.typeArgs := by
-  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
+  unfold LFunc.type LFuncDefined.type at h_type; simp only [Bind.bind, Except.bind] at h_type
   elim_errs h_type
   generalize h_vals : func.inputs.values = vals at h_type
   cases vals with

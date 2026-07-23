@@ -694,10 +694,10 @@ def buildEnv (options : VerifyOptions) (program : Program)
   if registerCustomFunctions then
     for decl in program.decls do
       match decl with
-      | .func func _ => E ← E.addFactoryFunc func
+      | .func func _ => E ← E.addFactoryFunc func.toLFunc
       | .recFuncBlock funcs _ =>
         validateCasesTypes funcs E.datatypes
-        for func in funcs do E ← E.addFactoryFunc func
+        for func in funcs do E ← E.addFactoryFunc func.toLFunc
       | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
       | .proc proc _ =>
         let stmts := match proc.body with
@@ -729,8 +729,7 @@ where
         name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
         inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
         output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-        body := decl.body, attr := decl.attr,
-        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+        body := decl.body, attr := decl.attr, axioms := decl.axioms }]
     | .block _ ss _ => ss.flatMap collectFuncDecls
     | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
@@ -822,7 +821,9 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- regenerating them on the fly with an expression evaluator.
   let evalFuncs ← evalFuncs.mapM
     (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
-  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
+  -- `.toFunc` drops only `concreteEval`; all other data survives into the
+  -- obligation program and the SMT factory built by `buildEnv`.
+  let funcDecls := evalFuncs.map fun func => Decl.func func.toFunc .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
   let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }

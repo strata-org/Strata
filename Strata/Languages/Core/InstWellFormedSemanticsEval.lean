@@ -108,13 +108,14 @@ theorem eval_boolNot_value_iff
       = some ((Lambda.boolNotFunc (T := CoreLParams)).opExpr, [e],
               (Lambda.boolNotFunc (T := CoreLParams)).func) := by
     simp only [Lambda.Factory.callOfLFunc, Lambda.getLFuncCall, Lambda.getLFuncCall.go,
-      Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.boolNotFunc, Lambda.unaryOp]
+      Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
+      Lambda.boolNotFunc, Lambda.unaryOp]
     rw [hBN]
     simp [Lambda.boolNotFunc, Lambda.unaryOp]
   have hcan : Lambda.LExpr.isCanonicalValue f
       (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e) = false := by
     simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
-      Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+      Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.boolNotFunc, Lambda.unaryOp]
     rw [hBN]
     simp [Lambda.boolNotFunc, Lambda.unaryOp]
@@ -250,7 +251,7 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
     have hcanA : Lambda.LExpr.isCanonicalValue f
         (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0) = false := by
       simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
-        Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+        Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
         Lambda.boolNotFunc, Lambda.unaryOp]
       rw [hBN]
       simp [Lambda.boolNotFunc, Lambda.unaryOp]
@@ -406,13 +407,13 @@ theorem eval_intLt_value_of_numerals
       = some ((Lambda.intLtFunc (T := CoreLParams)).opExpr, [x, y],
               (Lambda.intLtFunc (T := CoreLParams)).func) := by
     simp only [Lambda.Factory.callOfLFunc, Lambda.getLFuncCall, Lambda.getLFuncCall.go,
-      Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.intLtFunc, Lambda.binaryOp]
+      Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr, Lambda.intLtFunc, Lambda.binaryOp]
     rw [hILt]
     simp [Lambda.intLtFunc, Lambda.binaryOp]
   have hcan : Lambda.LExpr.isCanonicalValue f
       (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = false := by
     simp only [Lambda.LExpr.isCanonicalValue, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
-      Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
+      Lambda.getLFuncCall.go, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
       Lambda.intLtFunc, Lambda.binaryOp]
     rw [hILt]
     simp [Lambda.intLtFunc, Lambda.binaryOp]

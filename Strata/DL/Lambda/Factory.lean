@@ -59,12 +59,49 @@ def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 
 /--
-A Lambda factory function - instantiation of `Func` for Lambda expressions.
+The AST-facing Lambda function structure - instantiation of the base `Func` for
+Lambda expressions. It is used for functions that appear in the Strata AST
+(e.g. `Core.Function`, `funcDecl`), and carries only plain data — the base
+`Func` excludes the function-typed `concreteEval`, so it has decidable equality.
 
 Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
 -/
-@[expose] abbrev LFunc (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+@[expose] abbrev LFuncDefined (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+
+/--
+A Lambda factory function - the full, evaluator/factory-facing function
+structure. It extends the AST-facing `Func` with the partial-evaluator hook
+`concreteEval`. All other fields live on the base `Func`.
+
+A optional evaluation function can be provided in the `concreteEval` field for
+each factory function to allow the partial evaluator to do constant propagation
+when all the arguments of a function are concrete. Such a function should take
+two inputs: a function call expression and also -- somewhat redundantly, but
+perhaps more conveniently -- the list of arguments in this expression.  Here's
+an example of a `concreteEval` function for `Int.Add`:
+
+```
+(fun e args => match args with
+               | [e1, e2] =>
+                 let e1i := LExpr.denoteInt e1
+                 let e2i := LExpr.denoteInt e2
+                 match e1i, e2i with
+                 | some x, some y => (.const (toString (x + y)) mty[int])
+                 | _, _ => e
+               | _ => e)
+```
+
+Note that if there is an arity mismatch or if the arguments are not
+concrete/constants, this fails and it returns .none.
+If LFunc already has body, it must not have concreteEval, and vice versa.
+-/
+structure LFunc (T : LExprParams) extends
+    Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata where
+  mk' ::
+  -- The Metadata argument is attached to the resulting expression of
+  -- concreteEval if evaluation was successful.
+  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
 
 /--
 Helper constructor for LFunc to maintain backward compatibility.
@@ -78,17 +115,27 @@ Helper constructor for LFunc to maintain backward compatibility.
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (measure : Option (LExpr T.mono) := .none) : LFunc T :=
   { name, typeArgs, isConstr, isRecursive, inputs, output, body, attr,
-    concreteEval, axioms, preconditions, measure }
+    axioms, preconditions, measure, concreteEval }
+
+/-- Lift an AST-facing `LFuncDefined` (base `Func`) into the full `LFunc`,
+    optionally attaching `concreteEval` at the evaluator boundary. All other
+    data carries over unchanged via `toFunc`. -/
+@[expose] def LFuncDefined.toLFunc {T : LExprParams} (f : LFuncDefined T)
+    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none) : LFunc T :=
+  { toFunc := f, concreteEval }
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
--- Provide explicit instance for LFunc to ensure proper resolution
-instance [ToFormat T.IDMeta] [Inhabited T.Metadata] : ToFormat (LFunc T) where
-  format := Func.format
+-- Take `[ToFormat (LExpr T.mono)]` as an instance argument so a more specific
+-- expression formatter (e.g. the Core CST pretty-printer for `Expression.Expr`)
+-- is chosen at concrete instantiations rather than the generic `LExpr` one.
+instance [ToFormat T.IDMeta] [Inhabited T.Metadata] [ToFormat (LExpr T.mono)] :
+    ToFormat (LFunc T) where
+  format f := Func.format f.toFunc
 
 @[expose]
-def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
+def LFuncDefined.type [DecidableEq T.IDMeta] (f : (LFuncDefined T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
@@ -105,15 +152,15 @@ def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFunc T) (ty : LTy) :
+theorem LFuncDefined.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LFuncDefined T) (ty : LTy) :
     f.type = .ok ty → f.inputs.keys.Nodup := by
   intro h
-  simp only [LFunc.type, bind, Except.bind] at h
+  simp only [LFuncDefined.type, bind, Except.bind] at h
   -- At this point grind is possible if this proof needs maintenance
   split at h <;> try contradiction
   simp_all
 
-@[expose] def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
+@[expose] def LFuncDefined.opExpr [Inhabited T.Metadata] (f: LFuncDefined T) : LExpr T.mono :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
@@ -121,21 +168,38 @@ theorem LFunc.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] (f : LF
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
   .op (default : T.Metadata) f.name (some ty)
 
-def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
+def LFuncDefined.inputPolyTypes (f : (LFuncDefined T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
-def LFunc.inputMonoSignature (f : (LFunc T)) : @LTySignature T.IDMeta :=
+def LFuncDefined.inputMonoSignature (f : (LFuncDefined T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll [] mty))
 
-def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
+def LFuncDefined.outputPolyType (f : (LFuncDefined T)) : LTy :=
   .forAll f.typeArgs f.output
 
-def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
+def LFuncDefined.eraseTypes (f : LFuncDefined T) : LFuncDefined T :=
   { f with
     body := f.body.map LExpr.eraseTypes,
     axioms := f.axioms.map LExpr.eraseTypes,
-    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes }
-  }
+    preconditions := f.preconditions.map fun p => { p with expr := p.expr.eraseTypes } }
+
+@[expose] def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy :=
+  LFuncDefined.type f.toFunc
+
+@[expose] def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
+  LFuncDefined.opExpr f.toFunc
+
+def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
+  LFuncDefined.inputPolyTypes f.toFunc
+
+def LFunc.inputMonoSignature (f : (LFunc T)) : @LTySignature T.IDMeta :=
+  LFuncDefined.inputMonoSignature f.toFunc
+
+def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
+  LFuncDefined.outputPolyType f.toFunc
+
+def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
+  { f with toFunc := LFuncDefined.eraseTypes f.toFunc }
 
 /--
 The type checker and partial evaluator for Lambda is parameterizable by

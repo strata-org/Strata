@@ -468,7 +468,7 @@ private def yNeZeroPrecond :
 private theorem yNeZeroPrecond_freeVars :
     (yNeZeroPrecond (T := T)).expr.freeVars = [(⟨"y", default⟩, some LMonoTy.int)] := by
   simp [yNeZeroPrecond, LExpr.freeVars,
-    LFunc.opExpr, boolNotFunc, unaryOp]
+    LFunc.opExpr, LFuncDefined.opExpr, boolNotFunc, unaryOp]
 
 def intSafeDivFunc : WFLFunc T :=
   binaryOp (InValTy := Int) "Int.SafeDiv" (· / ·) (· != 0)

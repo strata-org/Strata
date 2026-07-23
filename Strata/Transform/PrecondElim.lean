@@ -322,7 +322,7 @@ def transformStmt (s : Statement)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
       | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-    let F' := F.push func notMem
+    let F' := F.push func.toLFunc notMem
     setFactory F'
     let decl' := { decl with preconditions := [] }
     let hasPreconds := !decl.preconditions.isEmpty
@@ -409,7 +409,7 @@ where
         let F ← getFactory
         let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
           | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-        let F' := F.push func notMem
+        let F' := F.push func.toLFunc notMem
         setFactory F'
         let func' := { func with preconditions := [] }
         let funcDecl := Decl.func func' md
@@ -432,7 +432,7 @@ where
         let F' ← funcs.foldlM (init := F) fun F func =>  do
           let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
             | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")
-          pure <| F.push func notMem
+          pure <| F.push func.toLFunc notMem
         setFactory F'
         let funcs' := funcs.map ({ · with preconditions := [] })
         let funcDecl := Decl.recFuncBlock funcs' md

@@ -184,7 +184,6 @@ def testFuncDeclTypeCheck : List Statement :=
     output := .forAll [] .int,
     body := some eb[x],  -- Simple identity function
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [
@@ -219,7 +218,6 @@ def testOuterTyVarCapture : List Statement :=
     body := some (.app () (.abs () "z" (some (.ftvar "a")) (.bvar () 0))
                           (.fvar () ⟨"y", ()⟩ none)),
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [.funcDecl localFunc .empty]

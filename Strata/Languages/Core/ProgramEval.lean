@@ -65,12 +65,12 @@ def eval (E : Env) : Except Strata.DiagnosticModel (List Env × Statistics) :=
       go rest E (stats.merge procStats)
 
     | .func func _ => do
-      let new_env ← declsE.addFactoryFunc func
+      let new_env ← declsE.addFactoryFunc func.toLFunc
       go rest new_env stats
 
     | .recFuncBlock funcs _ => do
       validateCasesTypes funcs declsE.datatypes
-      let declsE ← funcs.foldlM (fun env func => env.addFactoryFunc func) declsE
+      let declsE ← funcs.foldlM (fun env func => env.addFactoryFunc func.toLFunc) declsE
       go rest declsE stats
 
 
@@ -83,9 +83,9 @@ def Decl.run (d : Decl) (E : Env) : Except DiagnosticModel Env :=
     | .data d => E.addMutualDatatype d
     | _ => .ok E
   | .func f _md =>
-    E.addFactoryFunc f
+    E.addFactoryFunc f.toLFunc
   | .recFuncBlock fs _md =>
-    fs.foldlM (fun E f => E.addFactoryFunc f) E
+    fs.foldlM (fun E f => E.addFactoryFunc f.toLFunc) E
   | .ax a _md =>
     -- Not strictly necessary for concrete execution
     .ok { E with pathConditions := E.pathConditions.addInNewest [.assumption (toString a.name) a.e] }

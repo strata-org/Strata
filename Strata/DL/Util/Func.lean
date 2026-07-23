@@ -32,35 +32,15 @@ public section
 structure FuncPrecondition (ExprT : Type) (MetadataT : Type) where
   expr : ExprT
   md : MetadataT
+  deriving DecidableEq
 
 /--
 A generic function structure, parameterized by identifier, expression, type, and metadata types.
 
 This structure can be instantiated for different expression languages.
-For Lambda expressions, use `LFunc`. For other expression systems, instantiate
-with appropriate types.
-
-A optional evaluation function can be provided in the `concreteEval` field for
-each factory function to allow the partial evaluator to do constant propagation
-when all the arguments of a function are concrete. Such a function should take
-two inputs: a function call expression and also -- somewhat redundantly, but
-perhaps more conveniently -- the list of arguments in this expression.  Here's
-an example of a `concreteEval` function for `Int.Add`:
-
-```
-(fun e args => match args with
-               | [e1, e2] =>
-                 let e1i := LExpr.denoteInt e1
-                 let e2i := LExpr.denoteInt e2
-                 match e1i, e2i with
-                 | some x, some y => (.const (toString (x + y)) mty[int])
-                 | _, _ => e
-               | _ => e)
-```
-
-Note that if there is an arity mismatch or if the arguments are not
-concrete/constants, this fails and it returns .none.
-If LFunc already has body, it must not have concreteEval, and vice versa.
+For Lambda expressions, use `Lambda.LFunc` (`Strata.DL.Lambda.Factory`), which
+extends this structure with a concrete evaluation function. For other expression
+systems, instantiate with appropriate types.
 
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
@@ -75,12 +55,10 @@ structure Func (IdentT : Type) (ExprT : Type) (TyT : Type) (MetadataT : Type) wh
   body     : Option ExprT := .none
   -- Structured attributes controlling partial evaluator behavior (inlining, etc.)
   attr     : Array FuncAttr := #[]
-  -- The MetadataT argument is the metadata that will be attached to the
-  -- resulting expression of concreteEval if evaluation was successful.
-  concreteEval : Option (MetadataT → List ExprT → Option ExprT) := .none
   axioms   : List ExprT := []  -- For axiomatic definitions
   preconditions : List (FuncPrecondition ExprT MetadataT) := []
   measure  : Option ExprT := .none -- Termination measure expression (from `decreases` clause)
+  deriving DecidableEq
 
 def Func.format {IdentT ExprT TyT MetadataT : Type} [ToFormat IdentT] [ToFormat ExprT] [ToFormat TyT] [Inhabited ExprT] (f : Func IdentT ExprT TyT MetadataT) : Format :=
   let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
@@ -129,14 +107,6 @@ structure FuncWF {IdentT ExprT TyT MetadataT : Type}
   body_freevars:
     ∀ b, f.body = .some b →
       getVarNames b ⊆ f.inputs.map (getName ·.1)
-  -- concreteEval does not succeed if the length of args is incorrect.
-  concreteEval_argmatch:
-    ∀ fn md args res, f.concreteEval = .some fn
-      → fn md args = .some res
-      → args.length = f.inputs.length
-  -- body and concreteEval cannot exist at once
-  body_or_concreteEval:
-    ¬ (f.concreteEval.isSome ∧ f.body.isSome)
   -- No typeArgs have same name
   typeArgs_nodup:
     List.Nodup f.typeArgs
@@ -163,14 +133,6 @@ instance FuncWF.body_freevars_decidable {IdentT ExprT TyT MetadataT : Type}
     Decidable (∀ b, f.body = .some b →
       getVarNames b ⊆ f.inputs.map (getName ·.1)) :=
   by exact f.body.decidableForallMem
-
--- FuncWF.concreteEval_argmatch is not decidable.
-
-instance FuncWF.body_or_concreteEval_decidable
-    {IdentT ExprT TyT MetadataT : Type}
-    (f : Func IdentT ExprT TyT MetadataT):
-    Decidable (¬ (f.concreteEval.isSome ∧ f.body.isSome)) := by
-  exact instDecidableNot
 
 instance FuncWF.typeArgs_decidable
     {IdentT ExprT TyT MetadataT : Type}

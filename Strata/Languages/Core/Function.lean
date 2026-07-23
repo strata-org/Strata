@@ -19,7 +19,7 @@ open Lambda
 /-! # Strata Core Functions -/
 
 @[expose]
-abbrev Function := Lambda.LFunc CoreLParams
+abbrev Function := Lambda.LFuncDefined CoreLParams
 
 instance : Inhabited Function where
   default := { name := default, inputs := [], output := default }
@@ -50,7 +50,6 @@ def Function.ofPureFunc (decl : Imperative.PureFunc Expression) : Except Format 
     output := output
     body := decl.body
     attr := decl.attr
-    concreteEval := none
     axioms := decl.axioms
     preconditions := decl.preconditions
     measure := decl.measure

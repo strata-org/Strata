@@ -2342,7 +2342,10 @@ def genDatatypeFactory (ldatatypes : List (LDatatype Unit)) :
   let factory ← match genBlockFactory ldatatypes (T := Core.CoreLParams) with
     | .ok f => pure f
     | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-  return factory.toArray.toList.map fun func => Core.Decl.func func .empty
+  -- These decls exist for name resolution only; evaluation re-derives the
+  -- factory (with concreteEval) from the `.data` decl via genBlockFactory,
+  -- so projecting concreteEval away here loses nothing.
+  return factory.toArray.toList.map fun func => Core.Decl.func func.toFunc .empty
 
 ---------------------------------------------------------------------
 

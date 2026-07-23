@@ -44,7 +44,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       (monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty))
     LMonoTy.mkArrow' last remaining.dropLast
   -- Resolve type aliases and monomorphize inputs and output.
-  let func := { func with
+  let func : Function := { func with
                   typeArgs := monoty.freeVars.eraseDups,
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
@@ -69,7 +69,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
+    let Env := Env.addInNewestContext func.inputMonoSignature
     -- Type check the body and unify with the return type.
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
@@ -131,8 +131,8 @@ theorem Function.typeCheck_inputs_nodup (C: Core.Expression.TyContext) (Env : Co
   simp only [Function.typeCheck, bind, Except.bind] at h
   split at h <;> try contradiction
   rename_i ty hty
-  -- func.type succeeded, so we can use LFunc.type_inputs_nodup
-  exact Lambda.LFunc.type_inputs_nodup func ty hty
+  -- func.type succeeded, so we can use LFuncDefined.type_inputs_nodup
+  exact Lambda.LFuncDefined.type_inputs_nodup func ty hty
 
 namespace PureFunc
 
@@ -158,7 +158,6 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl
     output := .forAll [] func'.output,
     body := func'.body,
     attr := func'.attr,
-    concreteEval := decl.concreteEval,  -- Preserve original
     axioms := func'.axioms
   }
   .ok (decl', func', Env)
