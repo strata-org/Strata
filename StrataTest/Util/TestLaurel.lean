@@ -155,7 +155,8 @@ private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
       -- most-recent-first, so we reverse). This must happen before the error
       -- check below: a callee ending in `.exiting` can carry assertion failures
       -- AND set a "failed to terminate" error, and we want to report those
-      -- failures rather than silently discarding them on throw.
+      -- failures as diagnostics. Any failures collected before a non-assertion
+      -- error are also appended to the thrown message for debuggability.
       --
       -- Dedup exact duplicates: an assert inside a loop that fails on every
       -- iteration is recorded once per iteration, but the verifier emits a
@@ -176,9 +177,12 @@ private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
       -- In collect mode a failed assertion is recorded (not set as `error`), so
       -- any lingering `error` is a genuine non-assertion failure: a test mis-setup.
       if let some e := resultEnv.error then
+        let collected := if dms.isEmpty then "" else
+          "\ncollected assertion failures before the error:" ++
+            String.join (dms.toList.map fun d => s!"\n  {d.message}")
         throw <| IO.userError
           s!"interpret: '{procName}' raised a non-assertion error: \
-             {Std.format (Imperative.EvalError.toFormat e)}"
+             {Std.format (Imperative.EvalError.toFormat e)}{collected}"
     return dms
 
 /-- Translate + type-check a Laurel program for the interpret path, then run
@@ -568,6 +572,18 @@ def testLaurel (block : SourcedProgram)
     both paths at once. For now such a case simply does not belong in
     `testLaurelMultiple` — put it in a verify-only `testLaurel` block. (Unifying
     the two wordings in the matcher is possible but deliberately not done here.)
+
+    **Known limitation — label collision for multiple preconditions at one call
+    site.** `collectAssertInfo` keys by the position-derived assert label, but
+    `mkPreChecks` emits one `Assert` per precondition at the *same* call-site
+    source position. Multiple precondition asserts at a single call site therefore
+    share a label, and the `HashMap` keeps only the last `(range, summary)` pair —
+    collapsing N distinct failures into one diagnostic on the interpret side. The
+    verifier reports each independently (keyed by a uid-augmented key), so a test
+    block with multiple preconditions at one call site will mismatch between the two
+    modes. For now such blocks must use `testLaurel` (verify-only). This is a
+    pre-existing limitation of the label scheme, not introduced by
+    `testLaurelMultiple`.
 
     If the program marks no `entry`, there is nothing for the interpreter to run,
     which is a mis-use of this entry point and is reported as an error.
