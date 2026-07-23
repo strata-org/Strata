@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import os
 import shutil
 import signal
@@ -42,6 +43,74 @@ def _ascii_escape(name: str) -> str:
     """Escape a theorem name to a safe ASCII filename component.
     Keeps alphanumeric + underscore, replaces everything else with _."""
     return "".join(c if c.isalnum() or c == "_" else "_" for c in name)[:60]
+
+
+# Lines that PREFIX a declaration but are not the declaration itself. The Lean
+# parser lumps these into the following decl's block and can mis-name the block
+# after them (e.g. `set_option warn.sorry false in` → block named `warn.sorry`).
+_DECL_PREFIX_RE = re.compile(
+    r"""^\s*(
+          @\[[^\]]*\]            # attributes:  @[simp], @[inline], …
+        | set_option\s+\S+\s+\S+\s+in\b   # set_option X v in
+        | attribute\s+.*\bin\b            # attribute [..] name in
+        | open\b.*\bin\b                  # open … in
+        | private | protected | noncomputable | partial | unsafe | scoped | local
+    )\s*""",
+    re.VERBOSE,
+)
+
+# The actual declaration keyword + name once prefixes are stripped.
+_DECL_HEAD_RE = re.compile(
+    r"^\s*(theorem|lemma|def|instance|abbrev|example)\s+([^\s({\[:]+)")
+
+
+def _strip_decl_prefixes(text: str) -> str:
+    """Drop leading doc-comments, attributes, and modifier-`in` lines so the
+    real declaration head (`theorem foo …`) is first. Returns the remaining text."""
+    lines = text.splitlines()
+    i = 0
+    in_block_comment = False
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if in_block_comment:
+            if "-/" in stripped:
+                in_block_comment = False
+            i += 1
+            continue
+        if stripped == "" or stripped.startswith("--"):
+            i += 1
+            continue
+        if stripped.startswith("/-"):
+            if "-/" not in stripped:
+                in_block_comment = True
+            i += 1
+            continue
+        # Peel a single-line prefix (attribute / set_option … in / modifier).
+        m = _DECL_PREFIX_RE.match(lines[i])
+        if m:
+            rest = lines[i][m.end():].strip()
+            if rest:
+                # prefix and decl share a line — keep the remainder in place
+                lines[i] = rest
+                break
+            i += 1
+            continue
+        break
+    return "\n".join(lines[i:]).lstrip()
+
+
+def _real_decl_name(text: str) -> tuple[str | None, str | None]:
+    """Given a declaration block's raw text (possibly with leading modifiers),
+    return (name, kind) of the real declaration, or (None, None) if none is
+    found. `kind` is normalized: lemma→theorem, everything else kept as-is."""
+    head = _strip_decl_prefixes(text)
+    m = _DECL_HEAD_RE.match(head)
+    if not m:
+        return None, None
+    kind = m.group(1)
+    if kind == "lemma":
+        kind = "theorem"
+    return m.group(2), kind
 
 
 @dataclass
@@ -892,13 +961,32 @@ class SwarmLeanTools:
             if not r.text or r.text.strip().startswith("open ") or r.text.strip().startswith("variable "):
                 continue
 
+            # Re-derive the real name/kind from the text. The parser lumps a
+            # leading modifier (e.g. `set_option warn.sorry false in`, `@[simp]`,
+            # `attribute … in`, doc comments) together with the declaration it
+            # prefixes into one `unknown` block, and mis-names the block after
+            # the modifier (e.g. `warn.sorry`) instead of the theorem. Without
+            # this, `set_option warn.sorry false in` would register a phantom
+            # sorry-target literally named `warn.sorry`.
+            real_name, real_kind = _real_decl_name(r.text)
+            name = real_name or r.name
+            decl_type = real_kind or r.decl_type
+            if real_kind is None and not real_name:
+                # A block with no real declaration keyword after stripping
+                # modifiers (bare `set_option … in`, `open … in`, stray attrs)
+                # is not a proof obligation — skip it.
+                stripped = _strip_decl_prefixes(r.text)
+                if stripped and not re.match(
+                    r"(theorem|lemma|def|instance|abbrev|example)\b", stripped):
+                    continue
+
             has_sorry = "sorry" in r.text
             blocks.append(TheoremBlock(
-                name=r.name,
+                name=name,
                 start=r.line,
                 end=r.end_line,
                 has_sorry=has_sorry,
-                decl_type=r.decl_type,
+                decl_type=decl_type,
                 text=r.text,
             ))
 
