@@ -151,6 +151,12 @@ class PO5State:
     total_attempts: int = 0
     lemmas_proved: int = 0
     cycles_detected: int = 0
+    # Full accumulated give-up reason(s), propagated to the Task Manager → user.
+    give_up_reason: str = ""
+    # If the guide, on giving up on a TOP-LEVEL requested theorem, says the user
+    # must fix something (false/mis-stated goal, wrong def, missing hypothesis,
+    # unavailable dependency), the specific request(s) are captured here.
+    user_fix_request: str = ""
 
 
 def _read_hint(state: PO5State) -> str:
@@ -504,7 +510,11 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     status = AgentStatus.COMPLETED if state.stage == "done" else AgentStatus.FAILED
     return AgentResult(name=agent.spec.name, status=status,
                        output={"stage": state.stage, "proved": state.lemmas_proved,
-                               "cycles": state.cycles_detected})
+                               "cycles": state.cycles_detected,
+                               # Full give-up reason(s) + any user-fix request, so
+                               # the Task Manager can relay them to the user.
+                               "give_up_reason": state.give_up_reason,
+                               "user_fix_request": state.user_fix_request})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -805,6 +815,8 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             await agent._emit("message", f"[PO5] Guide gives up: {reason}")
             ctx.failure_context = f"Guide gave up: {reason}"
             ledger.mark_failed(entry.id, f"Guide gave up: {reason}")
+            _record_give_up(state, entry, f"Guide gave up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Guide gave up: {reason}")
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' gave up: {reason}")
             return "failed"
         elif decision == "fresh_start":
@@ -995,6 +1007,8 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             await agent._emit("message", f"[PO5] Deep guide gives up: {reason}")
             ctx.failure_context = f"Max depth, gave up: {reason}"
             ledger.mark_failed(entry.id, f"Max depth, gave up: {reason}")
+            _record_give_up(state, entry, f"Max depth, gave up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Max depth, gave up: {reason}")
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' failed at max depth: {reason}")
             return "failed"
         elif decision == "fresh_start":
@@ -1147,6 +1161,9 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
         if decision == "give_up":
             ctx.failure_context = f"Extraction failed ({extract_error}), gave up: {reason}"
             ledger.mark_failed(entry.id, f"Extraction failed, gave up: {reason}")
+            _record_give_up(state, entry, f"Extraction failed ({extract_error}), gave up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd,
+                                      f"Extraction failed ({extract_error}), gave up: {reason}")
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' extraction failed: {reason}")
             return Trans.CONTRADICTORY
         ctx.failure_context = f"Extraction failed: {extract_error}"
@@ -1281,6 +1298,8 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
         if decision == "give_up":
             ctx.failure_context = f"Cycle, gave up: {reason}"
             ledger.mark_failed(entry.id, f"Cycle, gave up: {reason}")
+            _record_give_up(state, entry, f"Cycle, gave up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Cycle, gave up: {reason}")
             _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' has unresolvable cycle: {reason}")
             return Trans.CONTRADICTORY
         elif decision == "expand_mutual":
@@ -1378,6 +1397,10 @@ async def _phase_check(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
             return Trans.HAS_PENDING
         else:
             ledger.mark_failed(state.root_id, f"Stuck, gave up: {reason}")
+            _record_give_up(state, root_entry, f"Stuck, gave up: {reason}")
+            # Root give-up: ask the guide whether the user must fix something.
+            await _ask_guide_user_fix(agent, state, ledger, root_entry, cwd,
+                                      f"Stuck, gave up: {reason}")
 
     return Trans.BLOCKED
 
@@ -1430,6 +1453,9 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
                 options=["retry", "give_up"],
                 task=f"Fixer failed (attempt {attempt+1}/3). Retry or give up?")
             if decision == "give_up":
+                _record_give_up(state, root_entry, f"Assembly build failed, gave up: {reason}")
+                await _ask_guide_user_fix(agent, state, ledger, root_entry, cwd,
+                                          f"Assembly build failed, gave up: {reason}")
                 return Trans.ASSEMBLY_FAILED
     else:
         return Trans.ASSEMBLY_FAILED
@@ -2149,6 +2175,78 @@ def _requested_obligation_names(ledger, state, root_stub: str) -> list[str]:
     return sorted(names)
 
 
+def _is_top_level(ledger, state, entry) -> bool:
+    """True iff `entry` is one of the TOP-LEVEL requested obligations.
+
+    A top-level obligation is either the single real root, or a DIRECT child of
+    the synthetic `<file:...>` root (one of the theorems the TM asked us to prove
+    — see `_requested_obligation_names`). Decomposed helpers (grandchildren) are
+    NOT top-level: the user never asked for them, so we don't burden the user
+    with a fix request about a lemma the prover invented.
+    """
+    if entry.id == state.root_id:
+        return True
+    root = ledger.get(state.root_id)
+    if root and root.name.startswith("<"):
+        parent = ledger.get_parent(entry.id)
+        return parent is not None and parent.id == state.root_id
+    return False
+
+
+def _record_give_up(state, entry, reason: str):
+    """Accumulate a give-up reason on state so it propagates to the TM → user."""
+    line = f"'{entry.name}': {reason}"
+    if state.give_up_reason:
+        state.give_up_reason += f"\n{line}"
+    else:
+        state.give_up_reason = line
+
+
+async def _ask_guide_user_fix(agent, state, ledger, entry, cwd, give_up_reason: str):
+    """Ask the guide whether the USER must fix something before this can be proved.
+
+    Only meaningful for TOP-LEVEL requested theorems (the user owns the goal
+    statement and its definitions/dependencies; they did not write the prover's
+    internal helpers). Records the request on `state.user_fix_request` so the
+    Task Manager can relay it verbatim to the user. Best-effort: any failure
+    leaves user_fix_request untouched (the give_up_reason still propagates).
+    """
+    if not _is_top_level(ledger, state, entry):
+        return
+    try:
+        decision, _reason, extras = await _consult_guide_decide(
+            agent, state, ledger, entry, cwd,
+            options=["user_fix", "no_user_fix"],
+            task=(
+                f"You are giving up on the top-level theorem '{entry.name}'.\n"
+                f"Give-up reason: {give_up_reason}\n\n"
+                f"Does the USER need to fix something before this can be proved?\n"
+                f"- user_fix: the goal statement is false/mis-stated, a definition "
+                f"is wrong, a needed hypothesis is missing, or a required "
+                f"dependency/lemma is unavailable — something ONLY the user can change.\n"
+                f"- no_user_fix: it's provable as stated; we just couldn't find the proof."
+            ),
+            post_prompt=(
+                "FIX: <if user_fix, one or two concrete sentences telling the user "
+                "EXACTLY what to change (file/def/statement); else 'none'>"),
+            post_prompt_parser=lambda raw: {
+                "fix": (m.group(1).strip()
+                        if (m := re.search(r'FIX:\s*(.+)', raw, re.DOTALL)) else "")},
+        )
+    except Exception as e:
+        await agent._emit("message", f"[PO5] user-fix consult failed: {e}")
+        return
+    if decision == "user_fix":
+        fix = extras.get("fix", "").strip()
+        if fix and fix.lower() != "none":
+            request = f"'{entry.name}': {fix}"
+            if state.user_fix_request:
+                state.user_fix_request += f"\n{request}"
+            else:
+                state.user_fix_request = request
+            await agent._emit("message", f"[PO5] Guide requests user fix for '{entry.name}': {fix}")
+
+
 def _get_protected_names(tools, stub_rel, entry) -> set[str]:
     split = tools.split_theorems(stub_rel)
     protected = {entry.name}
@@ -2411,6 +2509,8 @@ def _save_state(cwd: Path, state: PO5State):
         "total_attempts": state.total_attempts,
         "lemmas_proved": state.lemmas_proved,
         "cycles_detected": state.cycles_detected,
+        "give_up_reason": state.give_up_reason,
+        "user_fix_request": state.user_fix_request,
     }
     (state_dir / "po5_state.yaml").write_text(
         yaml.dump(data, default_flow_style=False))

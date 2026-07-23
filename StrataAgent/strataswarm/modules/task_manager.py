@@ -385,10 +385,17 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
 
     async def _run_prover():
         try:
-            await prover.run(inp=prover_input, result_type=None)
+            result = await prover.run(inp=prover_input, result_type=None)
+            # Capture the prover's give-up reason / user-fix request so REPORT can
+            # relay them to the user (the prover's own AgentResult is otherwise
+            # discarded — the TM re-validates independently).
+            out = getattr(result, "output", None)
+            if isinstance(out, dict):
+                agent._prover_output = out
         except Exception as e:
             await agent._emit("message", f"[TM] Prover error: {e}")
 
+    agent._prover_output = None
     agent._prover_task = asyncio.create_task(_run_prover())
     state.prover_start = time.monotonic()
     state.prover_done = False
@@ -480,6 +487,17 @@ async def _state_report(state: WorkflowState, agent) -> Transition:
         if v.get("has_sorry", False): reasons.append("has sorry")
         if not v.get("statements_match", True): reasons.append("statements changed")
         msg = f"Proof of {task.theorem_file} INCOMPLETE: {', '.join(reasons) or 'failed'}."
+        # Surface the prover guide's FULL give-up reason and any request for the
+        # user to fix something (top-level theorems only). Without this the user
+        # only ever saw the generic validator verdict ("has sorry").
+        prover_out = getattr(agent, "_prover_output", None) or {}
+        give_up = (prover_out.get("give_up_reason") or "").strip()
+        user_fix = (prover_out.get("user_fix_request") or "").strip()
+        if give_up:
+            msg += f"\n\nWhy the prover gave up:\n{give_up}"
+        if user_fix:
+            msg += (f"\n\n⚠️ The prover needs YOU to fix something before this can "
+                    f"be proved:\n{user_fix}")
         state.history.append(f"failed:{task.theorem_file}:{int(time.time())}")
 
     await _send_to_user(agent, msg)
@@ -643,6 +661,7 @@ async def _cleanup_prover(agent):
         await agent._prover_ctx.__aexit__(None, None, None)
         agent._prover_ctx = None
         agent._prover_agent = None
+    agent._prover_output = None
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
