@@ -180,13 +180,8 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
   let resolve := mapStmtExpr (resolveExprNode ptMap)
-  let resolveBody : Body → Body := fun body => match body with
-    | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition resolve)) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map (·.mapCondition resolve))
-    | .External => .External
-  { proc with
-    body := resolveBody body'
+  let proc := { proc with
+    body := body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
     -- Prepend the generated input type-constraint requires. This is a
@@ -195,7 +190,8 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     -- assume block at the callee body start and the independent asserts at
     -- call sites do not depend on this order. Kept constraints-first for
     -- readability.
-    preconditions := (inputRequires ++ proc.preconditions).map (·.mapCondition resolve) }
+    preconditions := inputRequires ++ proc.preconditions }
+  mapProcedureM (m := Id) resolve proc
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source

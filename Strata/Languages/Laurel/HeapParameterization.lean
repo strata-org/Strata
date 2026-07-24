@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.HeapAnalysis
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
@@ -169,13 +170,20 @@ private def wrapList (source : FileRange) : List StmtExprMd → StmtExprMd
   | [single] => single
   | many => ⟨.Block many none, source⟩
 
+/-- Whether heap lowering may introduce imperative heap-threading assignments. -/
+inductive HeapTransformContext where
+  | executable
+  | specification
+
 /--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
-- `env`: the type environment for resolving field owners
+- `model`: the semantic model for resolving fields and procedure effects
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
+- `context`: specification contexts remain pure and never gain synthetic assignments
 -/
-def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd)
+    (valueUsed : Bool := true) (context : HeapTransformContext := .executable) : TransformM StmtExprMd :=
   recurseOne expr valueUsed
 where
   recurseOne (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
@@ -199,22 +207,29 @@ where
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
-          if valueUsed then
-            let freshVar ← freshVarName
-            let callWithHeap := ⟨ .Assign
-              [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩) source]
-              (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
-            return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
-          else
-            -- Generate throwaway Declare targets for any non-heap outputs
-            let procOutputs := match model.get callee with
-              | .staticProcedure proc => proc.outputs
-              | .instanceProcedure _ proc => proc.outputs
-              | _ => []
-            let extraTargets ← procOutputs.mapM fun out => do
-              pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩) source)
-            let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
-            return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
+          match context with
+          | .specification =>
+              -- Specifications are pure. Keep the source-level call shape so the
+              -- pure-context validator reports the call itself, rather than a
+              -- synthetic heap-threading assignment introduced by this pass.
+              return [⟨.StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source⟩]
+          | .executable =>
+            if valueUsed then
+              let freshVar ← freshVarName
+              let callWithHeap := ⟨ .Assign
+                [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩) source]
+                (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
+              return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
+            else
+              -- Generate throwaway Declare targets for any non-heap outputs
+              let procOutputs := match model.get callee with
+                | .staticProcedure proc => proc.outputs
+                | .instanceProcedure _ proc => proc.outputs
+                | _ => []
+              let extraTargets ← procOutputs.mapM fun out => do
+                pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩) source)
+              let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
+              return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
         else if calleeReadsHeap then
           return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩]
         else
@@ -378,6 +393,12 @@ where
       simp_all
       omega)
 
+/-- Heap-transform a pure specification expression without introducing
+heap-threading assignments for calls to heap-writing procedures. -/
+def heapTransformSpecificationExpr (heapName : Identifier) (model : SemanticModel)
+    (expr : StmtExprMd) : TransformM StmtExprMd :=
+  heapTransformExpr heapName model expr (context := .specification)
+
 /-- Heap-transform a modifies entry. A field target `o#f` is kept symbolic
 (only its owner is lowered) so the modifies pass can match it structurally. -/
 def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
@@ -393,6 +414,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   let uid ← Identifier.getUniqueId proc.name
   let readsHeap := (← get).heapReaders.contains uid
   let writesHeap := (← get).heapWriters.contains uid
+  let proc ← if readsHeap || writesHeap then
+    mapProcedureSpecificationsM (heapTransformSpecificationExpr heapName model) proc
+  else
+    pure proc
 
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
@@ -402,16 +427,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let inputs' := heapParam :: proc.inputs
     let outputs' := heapParam :: proc.outputs
 
-    -- Preconditions reference $heap (evaluated at entry before any mutation)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
+          let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
@@ -420,14 +442,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
     return { proc with
       inputs := inputs',
       outputs := outputs',
-      preconditions := preconditions',
       body := body' }
 
   else if readsHeap then
@@ -437,25 +458,22 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapName model bodyExpr
+          let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
     return { proc with
       inputs := inputs',
-      preconditions := preconditions',
       body := body' }
 
   else

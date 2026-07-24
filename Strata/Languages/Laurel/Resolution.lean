@@ -3612,8 +3612,7 @@ private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Proced
   let map := register map proc.name (mkNode proc)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
-  let map := proc.preconditions.foldl (fun map c => collectStmtExpr map c.condition) map
-  let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
+  let map := procedureSpecificationExprs proc |>.foldl collectStmtExpr map
   collectBody map proc.body
 
 private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)
@@ -3978,16 +3977,12 @@ private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
     contracts and are included. `.External` bodies have neither implementation
     nor postconditions, so nothing is collected. -/
 private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
-  let contractExprs :=
-    proc.preconditions.map (·.condition)
-    ++ proc.decreases.toList
-    ++ proc.invokeOn.toList
   let bodyExprs := match proc.body with
     | .Transparent b => [b]
     | .Opaque posts _impl _mods => posts.map (·.condition)
     | .Abstract posts => posts.map (·.condition)
     | .External => []
-  contractExprs ++ bodyExprs
+  procedureSpecificationExprs proc ++ bodyExprs
 
 /-- Reject calling a multi-output procedure from a transparent procedure or a
     contract. A Core *function* has exactly one output, so a multi-output
@@ -4102,8 +4097,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
-             ++ multiOutputCallErrors
+    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
+      invokeOnErrors ++ multiOutputCallErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/

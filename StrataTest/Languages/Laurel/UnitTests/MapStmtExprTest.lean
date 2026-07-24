@@ -129,5 +129,101 @@ private def lowerInt32 : HighType → HighType
 
 end MapTypeCoverage
 
+section ProcedureTraversalCoverage
+
+private def testMd (expr : StmtExpr) : StmtExprMd := ⟨expr, default⟩
+private def taggedType (name : String) : HighTypeMd :=
+  ⟨.UserDefined (mkId name), default⟩
+
+private def specificationFixture : Procedure :=
+  { name := mkId "specificationFixture"
+    inputs := []
+    outputs := []
+    preconditions := [{ condition := testMd (.LiteralInt 1) }]
+    decreases := some (testMd (.LiteralInt 2))
+    invokeOn := some (testMd (.LiteralInt 3))
+    axioms := [testMd (.LiteralInt 4)]
+    body := .Transparent (testMd (.LiteralInt 5)) }
+
+private def literalIntValue (expr : StmtExprMd) : Option Int :=
+  match expr.val with
+  | .LiteralInt value => some value
+  | _ => none
+
+#guard (procedureSpecificationExprs specificationFixture).map literalIntValue ==
+  [some 1, some 2, some 3, some 4]
+
+private def incrementLiteral (expr : StmtExprMd) : StmtExprMd :=
+  match expr.val with
+  | .LiteralInt value => { expr with val := .LiteralInt (value + 10) }
+  | _ => expr
+
+private def mappedSpecificationFixture : Procedure :=
+  mapProcedureSpecificationsM (m := Id) incrementLiteral specificationFixture
+
+#guard (procedureSpecificationExprs mappedSpecificationFixture).map literalIntValue ==
+  [some 11, some 12, some 13, some 14]
+#guard match mappedSpecificationFixture.body with
+  | .Transparent body => literalIntValue body == some 5
+  | _ => false
+
+private def procedureExpressionOrder (proc : Procedure) : List Int :=
+  let visit (expr : StmtExprMd) : StateM (List Int) Unit :=
+    match expr.val with
+    | .LiteralInt value => modify (· ++ [value])
+    | _ => pure ()
+  (foldProcedureExprsM visit proc).run [] |>.2
+
+private def withSpecifications (body : Body) : Procedure :=
+  { name := mkId "wholeProcedure"
+    inputs := []
+    outputs := []
+    preconditions := [{ condition := testMd (.LiteralInt 5) }]
+    decreases := some (testMd (.LiteralInt 6))
+    invokeOn := some (testMd (.LiteralInt 7))
+    axioms := [testMd (.LiteralInt 8)]
+    body }
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Transparent (testMd (.LiteralInt 1)))) ==
+  [1, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Opaque
+      [{ condition := testMd (.LiteralInt 1) }]
+      (some (testMd (.LiteralInt 2)))
+      [testMd (.LiteralInt 3), testMd (.LiteralInt 4)])) ==
+  [1, 2, 3, 4, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Abstract [{ condition := testMd (.LiteralInt 1) }])) ==
+  [1, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder (withSpecifications .External) ==
+  [5, 6, 7, 8]
+
+private def highTypeOrderFixture : Procedure :=
+  { name := mkId "highTypeOrder"
+    inputs := [{ name := mkId "input", type := taggedType "input" }]
+    outputs := [{ name := mkId "output", type := taggedType "output" }]
+    preconditions := [{ condition := testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "pre")) }]
+    decreases := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "decreases")))
+    invokeOn := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "invokeOn")))
+    axioms := [testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "axiom"))]
+    body := .Transparent (testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body"))) }
+
+private def highTypeTraversalOrder : List String :=
+  let visit (type : HighTypeMd) : StateM (List String) HighTypeMd := do
+    let name := match type.val with
+      | .UserDefined id => id.text
+      | _ => "unexpected"
+    modify (· ++ [name])
+    pure type
+  (mapProcedureHighTypesM visit highTypeOrderFixture).run [] |>.2
+
+#guard highTypeTraversalOrder ==
+  ["body", "input", "output", "pre", "decreases", "invokeOn", "axiom"]
+
+end ProcedureTraversalCoverage
 
 end Strata.Laurel

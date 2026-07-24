@@ -49,9 +49,8 @@ structure AnalysisResult where
     through an instance call as non-heap-writing. Callee identifiers compare by
     name, and the lifted procedure keeps the same method name, so the pre-lift
     callee still matches the procedure in the call graph. -/
-def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
-  foldStmtExprM (fun e => do
-    match e.val with
+private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := do
+  match expr.val with
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
     | .StaticCall callee _ => modify fun s => { s with callees := callee :: s.callees }
     | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
@@ -75,33 +74,19 @@ def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
         match target.val with
         | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
         | .Local _ | .Declare _ => pure ()
-    | _ => pure ()) expr
+    | _ => pure ()
+
+/-- Collect direct heap effects from every node in one expression tree. -/
+def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
+  foldStmtExprM collectExprNode expr
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
-  let bodyResult := match proc.body with
-    | .Transparent b => (collectExprMd b).run {} |>.2
-    | .Opaque postconds impl modif =>
-        if impl.isNone && !modif.isEmpty then
-          { readsHeapDirectly := true, writesHeapDirectly := true, callees := [] }
-        else
-          let r1 := postconds.foldl (fun (acc : AnalysisResult) (pc : Condition) =>
-            let r := (collectExprMd pc.condition).run {} |>.2
-            { readsHeapDirectly := acc.readsHeapDirectly || r.readsHeapDirectly,
-              writesHeapDirectly := acc.writesHeapDirectly || r.writesHeapDirectly,
-              callees := acc.callees ++ r.callees }) {}
-          let r2 := match impl with
-            | some e => (collectExprMd e).run {} |>.2
-            | none => {}
-          { readsHeapDirectly := r1.readsHeapDirectly || r2.readsHeapDirectly,
-            writesHeapDirectly := r1.writesHeapDirectly || r2.writesHeapDirectly,
-            callees := r1.callees ++ r2.callees }
-    | .Abstract postconds => (postconds.forM (collectExprMd ·.condition)).run {} |>.2
-    | .External => {}
-  -- Also analyze preconditions
-  let precondResult := (proc.preconditions.forM (collectExprMd ·.condition)).run {} |>.2
-  { readsHeapDirectly := bodyResult.readsHeapDirectly || precondResult.readsHeapDirectly,
-    writesHeapDirectly := bodyResult.writesHeapDirectly || precondResult.writesHeapDirectly,
-    callees := bodyResult.callees ++ precondResult.callees }
+  let result := (foldProcedureExprsM collectExprNode proc).run {} |>.2
+  match proc.body with
+  | .Opaque _ none modifies =>
+      if modifies.isEmpty then result else
+        { result with readsHeapDirectly := true, writesHeapDirectly := true }
+  | _ => result
 
 /-- Per-procedure input to `transitiveEffectClosure`: the procedure `name`,
     whether it has the effect `directly`, and its static `callees`. -/
