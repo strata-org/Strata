@@ -1053,7 +1053,7 @@ private inductive FormatParamKind where
   | inParam | outParam | inoutParam
 
 def procToCST {M} [Inhabited M] (proc : Core.Procedure)
-    (md : Imperative.MetaData Core.Expression := .empty) : ToCSTM M (Command M) := do
+    (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, proc.header.name.toPretty⟩
   let typeArgs := mkTypeArgsAnn proc.header.typeArgs
@@ -1222,7 +1222,7 @@ def Core.formatProcedure (proc : Core.Procedure)
   let initCtx := ToCSTContext.empty (M := SourceRange)
   let initCtx := { initCtx with annFilter }
   let initCtx := initCtx.addGlobalFreeVars extraFreeVars
-  let (cst, finalCtx) := (procToCST proc) initCtx
+  let (cst, finalCtx) := (procToCST proc .empty) initCtx
   formatWithDDM finalCtx fun ctx state =>
     (mformat (ArgF.op cst.toAst) ctx state).format
 

@@ -105,7 +105,7 @@ match ss with
       let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
       pure (HasFvar.mkFvar ident, [initCmd])
   let (accumEntry, accumBlocks) ← flushCmds "ite$" (accum ++ extraCmds)
-    (.some (.condGoto condExpr tl fl)) l
+    (.some (.condGoto condExpr tl fl .empty)) l
   pure (accumEntry, accumBlocks ++ tbs ++ fbs ++ bsNext)
 | .loop c m is bss _md :: rest => do
   -- Process rest first
@@ -145,7 +145,7 @@ match ss with
   -- For nondet guards, introduce a fresh boolean variable
   match c with
   | .det e =>
-    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext })
+    let b := (lentry, { cmds := invCmds ++ measureCmds, transfer := .condGoto e bl kNext .empty })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
   | .nondet => do
@@ -153,7 +153,7 @@ match ss with
     let ident := HasIdent.ident (P := P) freshName
     let initCmd := HasInit.init ident HasBool.boolTy .nondet synthesizedMd
     let b := (lentry, { cmds := [initCmd] ++ invCmds ++ measureCmds,
-                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext })
+                        transfer := .condGoto (HasFvar.mkFvar ident) bl kNext .empty })
     let (accumEntry, accumBlocks) ← flushCmds "before_loop$" accum .none lentry
     pure (accumEntry, accumBlocks ++ [b] ++ bbs ++ decreaseBlocks ++ bsNext)
 | .exit l _md :: _ => do
@@ -175,7 +175,7 @@ def stmtsToCFGM
   (ss : List (Stmt P CmdT)) :
   StringGenM (CFG String (DetBlock String CmdT P)) := do
   let lend ← StringGenState.gen "end$"
-  let bend := (lend, { cmds := [], transfer := .finish })
+  let bend := (lend, { cmds := [], transfer := .finish .empty })
   let (l, bs) ← stmtsToBlocks lend ss [] []
   pure { entry := l, blocks := bs ++ [bend] }
 
