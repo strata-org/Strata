@@ -60,7 +60,7 @@ jobs:
           auto-config: false
           build: true
           use-github-cache: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
       - name: Run legacy CBMC test (C_Simp)
