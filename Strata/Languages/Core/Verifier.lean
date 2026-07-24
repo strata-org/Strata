@@ -1163,6 +1163,8 @@ def SMT.Result.merge (a b : SMT.Result) : SMT.Result :=
   | _, .err e => .err e
   | .sat m, _ => .sat m
   | _, .sat m => .sat m
+  | .unknown (some m), .unknown _ => .unknown (some m)
+  | .unknown _,        .unknown (some m) => .unknown (some m)
   | .unknown m, _ => .unknown m
   | _, .unknown m => .unknown m
   | .unsat, .unsat => .unsat
@@ -1293,6 +1295,14 @@ def VCResult.isFailure (vr : VCResult) : Bool :=
 def VCResult.isUnknown (vr : VCResult) : Bool :=
   match vr.outcome with
   | .ok o => o.isUnknown
+  | .error _ => false
+
+-- Weaker gate for requeryDropAxioms: triggers when validity is unknown regardless
+-- of satisfiability. Nat VCs land in satisfiableValidityUnknown (sat + unknown_validity)
+-- so VCResult.isUnknown (which requires both unknown) misses them.
+def VCResult.hasValidityUnknown (vr : VCResult) : Bool :=
+  match vr.outcome with
+  | .ok o => match o.validityProperty with | .unknown _ => true | _ => false
   | .error _ => false
 
 def VCResult.isImplementationError (vr : VCResult) : Bool :=
@@ -1646,11 +1656,16 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       validityProperty := adjVal,
       solverLog := #[smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
-    -- Extract model from sat results (using raw solver results)
+    -- Extract model from sat or unknown-with-candidate results.
+    -- unknown (some m) arises when the solver returns a candidate model it cannot
+    -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
+    -- to sat; we still want the model available for display.
     let model := match satResult, validityResult with
-      | .sat m, _ => convertModel m (SMT.Context.getConstructorNames ctx)
-      | _, .sat m => convertModel m (SMT.Context.getConstructorNames ctx)
-      | _, _ => []
+      | .sat m, _             => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, .sat m             => convertModel m (SMT.Context.getConstructorNames ctx)
+      | .unknown (some m), _ => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, .unknown (some m) => convertModel m (SMT.Context.getConstructorNames ctx)
+      | _, _                  => []
     -- Filter out managed variables from model display
     let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
     let model := model.filter fun (name, _) => !managedVarNames.contains name.name
@@ -1945,6 +1960,10 @@ def verify (program : Program)
     (solver : Option CoreSMTSolver := none)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
+    -- Axiom names to strip on a re-query when obligations remain unknown after
+    -- the primary pass. Sound only when the named axioms are consequences of
+    -- the remaining definitions (any sat model satisfies them automatically).
+    (requeryDropAxioms : List String := [])
     : EIO DiagnosticModel VCResults := do
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
@@ -1982,7 +2001,55 @@ def verify (program : Program)
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)
   let results : VCResults := (VCss.map (·.fst)).toArray.flatten
-  .ok results.mergeByAssertion
+  let merged := results.mergeByAssertion
+  -- Re-query pass: if the caller specified axioms to drop and any obligation is
+  -- still unknown, re-run those obligations without those axioms so the solver
+  -- can return a certified sat (counterexample) unimpeded by the universals.
+  if requeryDropAxioms.isEmpty || !merged.any (·.hasValidityUnknown) then
+    return merged
+  -- Bridge axioms live in `program` (the original input); `oblProgram` already
+  -- excludes them because `toCoreProofObligationProgram` only keeps .type decls,
+  -- eval-derived functions, distinct constraints, and obligation procedures.
+  -- Check existence against `program.decls` so mis-spelled names still warn.
+  let programAxiomNames := program.decls.filterMap fun d => d.getAxiom?.map (·.name)
+  let matchedAxioms := requeryDropAxioms.filter (programAxiomNames.contains ·)
+  if matchedAxioms.isEmpty then
+    let _ ← IO.println s!"[Strata] requeryDropAxioms: none of {requeryDropAxioms} matched any axiom declaration — re-query skipped" |>.toBaseIO
+    return merged
+  -- Bridge axioms were baked into `oblProgram`'s procedure bodies as `assume`
+  -- statements by `toCoreProofObligationProgram`. Strip those assumes so the
+  -- re-query SMT problem is axiom-free and cvc5 can certify a counterexample.
+  let oblProgramNoAxioms : Program :=
+    { oblProgram with
+      decls := oblProgram.decls.map fun d =>
+        match d with
+        | .proc p md =>
+          let newBody := match p.body with
+            | .structured ss =>
+              .structured (ss.filter fun s =>
+                match s with
+                | .cmd (.cmd (.assume label _ _)) => !matchedAxioms.contains label
+                | _ => true)
+            | other => other
+          .proc { p with body := newBody } md
+        | other => other }
+  let requerySolver := mkDefaultCoreSMTSolver options counter tempDir axiomCache?
+    axiomNames (axiomProgram := program) externalPhases phases
+    (mkDischarge := mkDischarge) pctx
+  let (reQueryVCs, _) ← pctx.withPhase "requeryVcDischarge" do
+    requerySolver moreFns oblProgramNoAxioms
+  let reQueryMerged := reQueryVCs.mergeByAssertion
+  -- Build an index for O(n) lookup instead of O(n²) linear scan per unknown.
+  let reQueryIndex : Std.HashMap String VCResult :=
+    reQueryMerged.foldl (fun acc r => acc.insert r.obligation.label r) {}
+  -- Only upgrade unknown → failure; never treat a re-query unsat as a proof
+  -- (the dropped axioms might have been load-bearing for the unsat direction).
+  return merged.map fun r =>
+    if !r.hasValidityUnknown then r
+    else
+      match reQueryIndex.get? r.obligation.label with
+      | some r2 => if r2.isFailure then r2 else r
+      | none    => r
 
 end -- public section
 end Core
