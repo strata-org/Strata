@@ -53,14 +53,6 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   if genPrefixArgs != [] then
     .error f!"Function '{func.name}': type variables {genPrefixArgs} use the reserved \
               generator-variable prefix '{TState.tyPrefix}'; rename them"
-  -- Reject any `concreteEval` on a function going through `Function.typeCheck`.
-  -- Parsed/source functions never carry one (`ofPureFunc` always sets `none`);
-  -- only the built-in factories construct `concreteEval`, and they build their
-  -- `LFuncWF` directly without calling this checker. Rejecting it here makes the
-  -- three `concreteEval_*` `LFuncWF` fields vacuously true for every accepted func.
-  if func.concreteEval.isSome then
-    .error f!"Function '{func.name}': a concreteEval implementation was supplied; \
-              only built-in factory functions may carry one"
   -- Reject datatype constructors going through `Function.typeCheck`. Constructors
   -- are built directly by the datatype factory (which constructs their `LFuncWF`),
   -- never by this checker, so source/parsed functions are never constructors.
@@ -96,7 +88,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
       (monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty))
     LMonoTy.mkArrow' last remaining.dropLast
   -- Resolve type aliases and monomorphize inputs and output.
-  let func := { func with
+  let func : Function := { func with
                   typeArgs := monoty.freeVars.eraseDups,
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
@@ -126,7 +118,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let Env := Env.addInNewestContext (LFunc.inputMonoSignature func)
+    let Env := Env.addInNewestContext func.inputMonoSignature
     -- Save this initial context (formals pushed, before the body's unification)
     -- so the measure can be type-checked independently against the same context.
     let measureBaseEnv := Env
@@ -257,8 +249,8 @@ theorem Function.typeCheck_inputs_nodup (C: Core.Expression.TyContext) (Env : Co
   simp only [Function.typeCheck, bind, Except.bind] at h
   split at h <;> try contradiction
   rename_i ty hty
-  -- func.type succeeded, so we can use LFunc.type_inputs_nodup
-  exact Lambda.LFunc.type_inputs_nodup func ty hty
+  -- func.type succeeded, so we can use LFuncDefined.type_inputs_nodup
+  exact Lambda.LFuncDefined.type_inputs_nodup func ty hty
 
 namespace PureFunc
 
@@ -284,7 +276,6 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (decl
     output := .forAll [] func'.output,
     body := func'.body,
     attr := func'.attr,
-    concreteEval := decl.concreteEval,  -- Preserve original
     axioms := func'.axioms
   }
   .ok (decl', func', Env)

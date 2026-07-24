@@ -453,7 +453,7 @@ More precisely: e.eraseMetadata = mkApp () op.eraseMetadata (args_from_e.map era
 where args = args_from_e ++ acc.
 -/
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem getLFuncCall_go_eraseMetadata
+theorem getLFuncCall_go_eraseMetadata
     (e : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
     (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono))
     (h : getLFuncCall.go e acc = (op, args)) :
@@ -1516,7 +1516,7 @@ private theorem getLFuncCall_go_eraseMetadata_congr
 
 -- getLFuncCall is eraseMetadata-invariant (wrapper around go)
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem getLFuncCall_eraseMetadata_congr
+theorem getLFuncCall_eraseMetadata_congr
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
     (getLFuncCall e₁).fst.eraseMetadata = (getLFuncCall e₂).fst.eraseMetadata ∧
@@ -1526,7 +1526,7 @@ private theorem getLFuncCall_eraseMetadata_congr
 
 -- callOfLFunc is eraseMetadata-invariant
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem callOfLFunc_eraseMetadata_congr
+theorem callOfLFunc_eraseMetadata_congr
     (F : @Factory Tbase) (e₁ e₂ : LExpr Tbase.mono) (aPA : Bool)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
     match F.callOfLFunc e₁ (allowPartialApp := aPA), F.callOfLFunc e₂ (allowPartialApp := aPA) with
@@ -2130,7 +2130,7 @@ theorem isCanonicalValue_eraseMetadata_eq
 
 -- isConstrApp depends only on eraseMetadata.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isConstrApp_eraseMetadata_eq
+theorem isConstrApp_eraseMetadata_eq
     (F : @Factory Tbase)
     (e₁ e₂ : LExpr Tbase.mono)
     (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
@@ -2430,7 +2430,7 @@ private theorem typeOf_of_eraseMetadata_eq {T : LExprParams}
 -- eraseMetadata, computeTypeSubst produces the same result.
 -- computeTypeSubst depends on callee only through its .op type annotation
 -- (preserved by eraseMetadata) and on args only through typeOf (also preserved).
-private theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
+theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
     (fn : LFunc T) (op₁ op₂ : LExpr T.mono)
     (args₁ args₂ : List (LExpr T.mono))
     (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
@@ -2764,7 +2764,8 @@ theorem eval_eraseMetadata_invariant
                 next h_inline₂ =>
                   exfalso; exact h_ninline₁ (h_inline_cond_eq.trans h_inline₂)
                 next h_ninline₂ =>
-                  simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
+                  simp [apply_ite Prod.fst, LExpr.eraseMetadata_mkApp,
+                    h_op_eM, h_eval_args_eM]
               | some ceval =>
                 match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
                     (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata

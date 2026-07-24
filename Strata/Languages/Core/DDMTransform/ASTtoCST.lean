@@ -136,7 +136,7 @@ def typeSynToCST {M} [Inhabited M] (syn : Core.TypeSynonym)
 
 /-- Convert a recursive function to a RecFnDecl CST node -/
 def recFnDeclToCST {M} [Inhabited M]
-    (func : Lambda.LFunc Core.CoreLParams)
+    (func : Core.Function)
     : ToCSTM M (RecFnDecl M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩
@@ -174,7 +174,7 @@ def recFnDeclToCST {M} [Inhabited M]
 
 /-- Convert a function declaration to CST -/
 def funcToCST {M} [Inhabited M]
-    (func : Lambda.LFunc Core.CoreLParams)
+    (func : Core.Function)
     (md : Imperative.MetaData Core.Expression) : ToCSTM M (Command M) := do
   modify ToCSTContext.pushScope
   let name : Ann String M := ⟨default, func.name.name⟩

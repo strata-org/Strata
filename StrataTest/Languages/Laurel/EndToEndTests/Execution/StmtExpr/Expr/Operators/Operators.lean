@@ -9,10 +9,11 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure testArithmetic()
+  entry
   opaque
 {
     var a: int := 10;
@@ -28,6 +29,7 @@ procedure testArithmetic()
 };
 
 procedure testLogical()
+  entry
   opaque
 {
     var t: bool := true;
@@ -43,6 +45,7 @@ procedure testLogical()
 };
 
 procedure testUnary()
+  entry
   opaque
 {
     var x: int := 5;
@@ -51,6 +54,7 @@ procedure testUnary()
 };
 
 procedure testTruncatingDiv()
+  entry
   opaque
 {
     assert 7 /t 3 == 2;

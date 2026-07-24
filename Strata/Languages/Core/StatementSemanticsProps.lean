@@ -2307,6 +2307,7 @@ theorem eval_projectStore_to_full
     (h_eval : Expression.eval f (projectStore σ₀ σ) e = some v)
     (h_wfStore : WellFormedStore σ f)
     (hWF : Lambda.FactoryWF f)
+    (hClosed : Lambda.FactoryClosed f)
     (hdom : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x ≠ none) :
     Expression.eval f σ e = some v := by
   have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) f := by
@@ -2322,7 +2323,7 @@ theorem eval_projectStore_to_full
     split
     · rfl
     · simp [*] at h_ne
-  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF e _ _ h_wfStoreProj h_wfStore h_agree]
+  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF hClosed e _ _ h_wfStoreProj h_wfStore h_agree]
   exact h_eval
 
 /-! ## Assert-only blocks preserve store -/

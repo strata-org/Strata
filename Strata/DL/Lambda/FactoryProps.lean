@@ -19,6 +19,17 @@ They will be migrated here in a future cleanup.
 
 namespace Lambda
 
+/-- Lifting an `LFuncDefined` to the full `LFunc` then projecting back recovers
+    the original. -/
+theorem LFuncDefined.toLFunc_toFunc {T : LExprParams} (f : LFuncDefined T)
+    (ce : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) :
+    (f.toLFunc ce).toFunc = f := rfl
+
+/-- Projecting an `LFunc` to its base then lifting back (restoring
+    `concreteEval`) recovers the original. -/
+theorem LFunc.toFunc_toLFunc {T : LExprParams} (l : LFunc T) :
+    LFuncDefined.toLFunc l.toFunc l.concreteEval = l := rfl
+
 /-- `callOfLFunc` returns `none` for free-variable expressions. -/
 theorem callOfLFunc_fvar_none {Tbase : LExprParams} {GenericTy} (F : @Factory Tbase)
     (m : Tbase.Metadata) (v : Tbase.Identifier) (ty : Option GenericTy) :

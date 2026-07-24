@@ -32,10 +32,12 @@ parameterization which interacts poorly with counterexample search
 for the failing tests in this file).
 -/
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
+
 procedure stmtForm()
+  entry
   opaque
 {
   var x: int := 5;
@@ -50,6 +52,7 @@ procedure stmtForm()
 };
 
 procedure preIncrYieldsNew()
+  entry
   opaque
 {
   var x: int := 0;
@@ -59,6 +62,7 @@ procedure preIncrYieldsNew()
 };
 
 procedure postIncrYieldsOld()
+  entry
   opaque
 {
   var x: int := 0;
@@ -68,6 +72,7 @@ procedure postIncrYieldsOld()
 };
 
 procedure repeatedPostIncr()
+  entry
   opaque
 {
   var x: int := 0;
@@ -78,6 +83,7 @@ procedure repeatedPostIncr()
 };
 
 procedure repeatedPreIncr()
+  entry
   opaque
 {
   var x: int := 0;
@@ -88,6 +94,7 @@ procedure repeatedPreIncr()
 };
 
 procedure mixedPrePostIncr()
+  entry
   opaque
 {
   var x: int := 10;
@@ -98,6 +105,7 @@ procedure mixedPrePostIncr()
 };
 
 procedure preDecrYieldsNew()
+  entry
   opaque
 {
   var x: int := 5;
@@ -107,6 +115,7 @@ procedure preDecrYieldsNew()
 };
 
 procedure postDecrYieldsOld()
+  entry
   opaque
 {
   var x: int := 5;
@@ -115,6 +124,8 @@ procedure postDecrYieldsOld()
   assert y == 5
 };
 
+// Not marked `entry`: the concrete interpreter's loop unrolling doesn't scope
+// the body, so the hoisted step temp re-fires `.init` on iteration 2.
 procedure forLoopStep()
   opaque
 {
@@ -135,6 +146,7 @@ procedure forLoopStep()
 procedure double(n: int): int { return 2 * n };
 
 procedure incrementAsFunctionArgument()
+  entry
   opaque
 {
   var x: int := 3;
@@ -145,6 +157,7 @@ procedure incrementAsFunctionArgument()
 };
 
 procedure preIncrementAsFunctionArgument()
+  entry
   opaque
 {
   var x: int := 3;
@@ -155,6 +168,7 @@ procedure preIncrementAsFunctionArgument()
 };
 
 procedure postIncrementInIfCondition()
+  entry
   opaque
 {
   var x: int := 0;
@@ -173,6 +187,7 @@ procedure postIncrementInIfCondition()
 };
 
 procedure preIncrementInIfCondition()
+  entry
   opaque
 {
   var x: int := 0;
@@ -190,6 +205,7 @@ procedure preIncrementInIfCondition()
 };
 
 procedure incrementInShortCircuitTaken()
+  entry
   opaque
 {
   var y: int := 10;
@@ -201,6 +217,7 @@ procedure incrementInShortCircuitTaken()
 };
 
 procedure incrementInShortCircuitSkipped()
+  entry
   opaque
 {
   var x: int := 0;
@@ -213,6 +230,7 @@ procedure incrementInShortCircuitSkipped()
 };
 
 procedure mixedIncrInArithmetic()
+  entry
   opaque
 {
   var x: int := 1;
@@ -229,6 +247,7 @@ procedure mixedIncrInArithmetic()
 };
 
 procedure failingAssertOnPostIncr()
+  entry
   opaque
 {
   var x: int := 0;
@@ -238,6 +257,7 @@ procedure failingAssertOnPostIncr()
 };
 
 procedure failingAssertOnVarAfterPostIncr()
+  entry
   opaque
 {
   // After `x++`, x is 1. Asserting `x == 0` should fail — this guards the
@@ -250,6 +270,7 @@ procedure failingAssertOnVarAfterPostIncr()
 };
 
 procedure failingAssertOnSkippedShortCircuit()
+  entry
   opaque
 {
   // y++ is on the right-hand side of `&&` whose left operand is false, so

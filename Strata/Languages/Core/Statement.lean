@@ -34,12 +34,53 @@ inductive CallArg (P : PureExpr) where
 /--
 Extend Imperative's commands by adding a procedure call.
 -/
+@[grind] def CallArg.beq [BEq P.Expr] [BEq P.Ident] (a b : CallArg P) : Bool :=
+  match a, b with
+  | .inArg e1, .inArg e2 => e1 == e2
+  | .inoutArg id1, .inoutArg id2 => id1 == id2
+  | .outArg id1, .outArg id2 => id1 == id2
+  | _, _ => false
+
+instance [BEq P.Expr] [BEq P.Ident] : BEq (CallArg P) where
+  beq := CallArg.beq
+
+theorem CallArg.beq_eq {P : PureExpr} [DecidableEq P.Expr] [DecidableEq P.Ident]
+    (a b : CallArg P) : CallArg.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : DecidableEq (CallArg P) :=
+  beq_eq_DecidableEq CallArg.beq CallArg.beq_eq
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) where
+  eq_of_beq h := (CallArg.beq_eq _ _).mp h
+  rfl := (CallArg.beq_eq _ _).mpr rfl
+
+/--
+Extend Imperative's commands by adding a procedure call.
+-/
 inductive CmdExt (P : PureExpr) where
   /-- A standard imperative command. -/
   | cmd (c : Imperative.Cmd P)
   /-- A procedure call with the given name and arguments. -/
   | call (procName : String) (args : List (CallArg P))
          (md : MetaData P)
+
+@[grind] def CmdExt.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : CmdExt P) : Bool :=
+  match a, b with
+  | .cmd c1, .cmd c2 => c1 == c2
+  | .call n1 args1 md1, .call n2 args2 md2 => n1 == n2 && args1 == args2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (CmdExt P) where
+  beq := CmdExt.beq
+
+theorem CmdExt.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : CmdExt P) : CmdExt.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (CmdExt P) :=
+  beq_eq_DecidableEq CmdExt.beq CmdExt.beq_eq
 
 /--
 We parameterize Strata Core's Commands with Lambda dialect's expressions.

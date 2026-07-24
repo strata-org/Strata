@@ -75,7 +75,6 @@ private partial def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.forM collectHighTypeNames
-  | .Pure base => collectHighTypeNames base
   | .Intersection types => types.forM collectHighTypeNames
   | .TVoid | .TBool | .TInt | .TFloat64 | .TReal | .TString
   | .TBv _ | .Unknown | .MultiValuedExpr _ => pure ()
@@ -95,6 +94,12 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
         | .Declare param => collectHighTypeNames param.type
         | .Field _ _ | .Local _ => pure ()
     | .IncrDecr _ _ target =>
+      match target.val with
+      | .Declare param => collectHighTypeNames param.type
+      | .Field _ _ | .Local _ => pure ()
+    | .CompoundAssign _ target _ =>
+      -- `rhs` and any `.Field` object subtree are recursed into by `foldStmtExprM`;
+      -- only a `.Declare` target directly introduces a type name here.
       match target.val with
       | .Declare param => collectHighTypeNames param.type
       | .Field _ _ | .Local _ => pure ()

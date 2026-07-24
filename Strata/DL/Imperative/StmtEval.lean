@@ -27,6 +27,11 @@ inductive RunConfig (P : PureExpr) (CmdT : Type) (S : Type) where
   | block  : String → RunConfig P CmdT S → RunConfig P CmdT S
   | seq    : RunConfig P CmdT S → List (Stmt P CmdT) → RunConfig P CmdT S
 
+def RunConfig.state : RunConfig P CmdT S → S
+  | .stmt _ s | .stmts _ s | .terminal s | .exiting _ s => s
+  | .block _ inner => inner.state
+  | .seq inner _ => inner.state
+
 /-- Operations the stepper needs from the state. -/
 structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   /-- Evaluate a expression to a value. -/

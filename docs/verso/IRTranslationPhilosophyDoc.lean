@@ -419,7 +419,7 @@ other way around.
 ## 11. Core-to-Core translations
 
 Transforms over Core (loop elimination, call elimination, SSA,
-ANF encoding, structured-to-unstructured, ...) are the special
+CSE, structured-to-unstructured, ...) are the special
 case where both endpoints are Core itself.
 
 The default placement is *with the definition of Core*, in the

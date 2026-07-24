@@ -18,10 +18,11 @@ generates verification conditions for these preconditions.
 
 /-! ### Safe paths verify cleanly -/
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure safeDivision()
+  entry
   opaque
 {
   var x: int := 10;
@@ -37,6 +38,7 @@ procedure pureDiv(x: int, y: int): int
 };
 
 procedure callPureDivSafe()
+  entry
   opaque
 {
   var z: int := pureDiv(10, 2);
@@ -47,6 +49,9 @@ procedure callPureDivSafe()
 /-! ### Unsafe division: divisor not constrained, fails verification -/
 
 -- Error ranges are too wide because Core does not use expression locations.
+-- We can't make this a testLaurelMultiple,
+-- because unsafe division is checked through Core's safe division operator
+-- and Core interpretation does not detect unsafe division
 #eval testLaurel <|
 #strata
 program Laurel;
@@ -60,7 +65,7 @@ procedure unsafeDivision(x: int)
 
 /-! ### Unsafe call to function with `requires y != 0` -/
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 procedure pureDiv(x: int, y: int): int
@@ -75,4 +80,6 @@ procedure callPureDivUnsafe(x: int)
   var z: int := pureDiv(10, x)
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
+
+procedure root() entry opaque callPureDivUnsafe(0);
 #end

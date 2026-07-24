@@ -102,7 +102,7 @@ def Core.typeCheckAndEval (options : Core.VerifyOptions) (program : Core.Program
 
 /--
 Type-check a Core program, then build the proof-obligation program suitable for
-downstream phases (ANF encoding, SMT encoding).
+downstream phases (Common subexpression elimination, SMT encoding).
 -/
 def Core.typeCheckAndBuildObligationProgram
     (options : Core.VerifyOptions) (program : Core.Program)
@@ -183,7 +183,7 @@ def Core.transformPipelinePhases (procs : Option (List String) := none)
   _root_.Core.transformPipelinePhases procs
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding. -/
+    type checking, symbolic evaluation, and common subexpression elim. -/
 def Core.corePipelinePhases (procs : Option (List String) := none)
     (options : Core.VerifyOptions := Core.VerifyOptions.default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
@@ -251,15 +251,21 @@ def Core.verify
     (externalPhases : List Core.AbstractedPhase := [])
     (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
+    (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
-  let program ← match strataProgramToCore env ictx with
+  let translateToCore : IO Core.Program := do
+    match strataProgramToCore env ictx with
     | .ok p => pure p
     | .error msg => throw (IO.userError msg)
+  let program ← match pipelineCtx with
+    | some pctx => pctx.withPhase "ddmToCore" translateToCore
+    | none => translateToCore
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
     (keepAllFilesPrefix := keepAllFilesPrefix)
     (mkDischarge := mkDischarge)
+    (pipelineCtx := pipelineCtx)
     (fileMap := some ictx.fileMap)
     |>.toIO (fun e => IO.Error.userError e)
 

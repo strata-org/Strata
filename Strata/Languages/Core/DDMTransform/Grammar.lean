@@ -560,7 +560,15 @@ op cfg_block (label : Ident, cmds : Seq Statement, tr : Transfer) : CFGBlock =>
 // A list of CFG blocks
 category CFGBlocks;
 op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b;
-op cfg_blocks_cons (b : CFGBlock, rest : CFGBlocks) : CFGBlocks =>
+// `@[scope(b)]` makes `b`'s declarations visible to every textually-later
+// block. Visibility is purely left-to-right in source order — it is not
+// goto/dominance aware, so a block cannot see declarations in a block written
+// after it, even when the control-flow graph reaches it only via that later
+// block. If a later block re-declares a propagated name it silently shadows
+// the earlier one (ordinary nested-scope shadowing). Nothing downstream acts
+// on these declarations yet (the translator stubs CFG procedures), so name
+// resolution is currently the only consumer of this contract.
+op cfg_blocks_cons (b : CFGBlock, @[scope(b)] rest : CFGBlocks) : CFGBlocks =>
   b "\n" rest;
 
 // CFG body: entry label + blocks

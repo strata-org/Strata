@@ -9,7 +9,7 @@ public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.UnorderedCore
 import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.MapStmtExpr
-import Strata.Languages.Laurel.EliminateIncrDecr
+import Strata.Languages.Laurel.EliminateIncrDecrAndCompoundAssign
 import Strata.Languages.Laurel.TransparencyPass
 
 /-!
@@ -41,7 +41,7 @@ namespace Strata.Laurel
 /-- Substitution from an inlined local variable to the expression it was
     initialized with. A later declaration of the same name simply overwrites the
     earlier binding, so a plain map (no ordering) suffices. -/
-private abbrev InlineSubst := Std.HashMap Identifier StmtExprMd
+private abbrev InlineSubst := Std.HashMap Nat StmtExprMd
 
 /-- State threaded through the traversal: the substitution in scope, a stack of
     saved substitutions (one entry per block/quantifier scope currently being
@@ -55,7 +55,7 @@ private structure InlineState where
   /-- Diagnostics accumulated so far. -/
   diags : Array DiagnosticModel := #[]
 
-private abbrev InlineM := StateM InlineState
+private abbrev InlineM := ExceptT String (StateM InlineState)
 
 private def emitDiag (d : DiagnosticModel) : InlineM Unit :=
   modify fun s => { s with diags := s.diags.push d }
@@ -63,12 +63,13 @@ private def emitDiag (d : DiagnosticModel) : InlineM Unit :=
 /-- Enter a new scope: snapshot `subst` so it can be restored on exit. When
     `shadow` is given, that name's binding is removed for the duration of the
     scope (a quantifier's bound variable shadows any inlined local). -/
-private def enterScope (shadow : Option Identifier := none) : InlineM Unit :=
-  modify fun s =>
-    let subst := match shadow with
-      | some name => s.subst.erase name
-      | none => s.subst
-    { s with saved := s.subst :: s.saved, subst }
+private def enterScope (shadow : Option Identifier := none) : InlineM Unit := do
+  let subst ← match shadow with
+    | some name => do
+        let uid ← Identifier.getUniqueId name
+        pure ((← get).subst.erase uid)
+    | none => pure (← get).subst
+  modify fun s => { s with saved := s.subst :: s.saved, subst }
 
 /-- Exit the most recently entered scope, discarding any bindings it introduced. -/
 private def exitScope : InlineM Unit :=
@@ -96,20 +97,22 @@ private def inlinePre (_used : Bool) (e : StmtExprMd) : InlineM (Option (List St
     - Blocks and quantifiers close their scope here.
 
     `IncrDecr` (a mutation, equally invalid on an inlined local) is not handled
-    here: the `comesAfter eliminateIncrDecrPass` constraint guarantees those
-    nodes are already gone by the time this pass runs. -/
+    here: the `comesAfter eliminateIncrDecrAndCompoundAssignPass` constraint
+    guarantees those nodes are already gone by the time this pass runs. -/
 private def inlinePost (_used : Bool) (e : StmtExprMd) : InlineM (List StmtExprMd) := do
   let source := e.source
   match e.val with
   | .Var (.Local name) =>
-    match (← get).subst.get? name with
+    let uid ← Identifier.getUniqueId name
+    match (← get).subst.get? uid with
     | some replacement => return [replacement]
     | none => return [e]
   | .Block .. | .Quantifier .. => exitScope; return [e]
   | .Assign [⟨.Declare param, _⟩] value =>
     -- A local variable declaration: bind the (already-inlined) initializer for
     -- subsequent statements and remove the declaration itself.
-    modify fun s => { s with subst := s.subst.insert param.name value }
+    let uid ← Identifier.getUniqueId param.name
+    modify fun s => { s with subst := s.subst.insert uid value }
     return []
   | .Assign targets _ =>
     -- An assignment to an inlined local is contradictory: report it.
@@ -117,7 +120,8 @@ private def inlinePost (_used : Bool) (e : StmtExprMd) : InlineM (List StmtExprM
     for t in targets do
       match t.val with
       | .Local name =>
-        if subst.contains name then
+        let uid ← Identifier.getUniqueId name
+        if subst.contains uid then
           emitDiag (diagnosticFromSource (t.source.orElse fun _ => source)
             s!"cannot assign to '{name.text}': it is an inlined local variable")
       | _ => pure ()
@@ -136,8 +140,10 @@ public section
     procedure and any diagnostics. -/
 def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array DiagnosticModel :=
   let runBody (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
-    let (body', st) := (inlineExpr body).run {}
-    (body', st.diags)
+    let (result, st) := (inlineExpr body).run.run {}
+    match result with
+    | .ok body' => (body', st.diags)
+    | .error e => (body, st.diags.push (diagnosticFromSource proc.name.source s!"inline pass error: {e}" .StrataBug))
   match proc.body with
   | .Transparent body =>
     let (body', diags) := runBody body
@@ -160,11 +166,13 @@ def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
   ({ uc with functions := functions' }, diags)
 
 public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
-  name := "InlineLocalVariablesPass"
-  documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core."
+  name := "InlineLocalVariables"
+  documentation := "Inlines local variable declarations of the form `var <name> := <expr>` in function bodies. References to the variable after its declaration are replaced with the initializer expression, and the declaration is removed. Assignments to an inlined variable emit a diagnostic. Operates only on functions, which are pure and cannot carry local variable declarations into Core.
+
+  Currently, Core does not support encoding let expression, even using lambda applications, which is why this pass exists. When Core does support encoding let expression, this pass should be removed."
   comesAfter := [
     ⟨ transparencyPass.meta, "Inlining of local variables in functions only makes sense after the transparency pass has created the functions"⟩,
-    ⟨ eliminateIncrDecrPass.meta, "IncrDecr is a mutation of a local; once it is eliminated, inlining only needs to reject plain assignments to inlined locals, not increments/decrements"⟩
+    ⟨ eliminateIncrDecrAndCompoundAssignPass.meta, "IncrDecr is a mutation of a local; once it is eliminated, inlining only needs to reject plain assignments to inlined locals, not increments/decrements"⟩
   ]
   run := fun _ p _ =>
     let (uc, diags) := inlineLocalVariablesInFunctions p

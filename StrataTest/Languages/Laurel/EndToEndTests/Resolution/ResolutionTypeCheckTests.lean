@@ -390,6 +390,23 @@ procedure useUndef() opaque {
 };
 #end
 
+/-! ## Compound assignment on an unresolved-type target does not cascade
+
+A `+=` (or any compound op) on a target whose type collapsed to `Unknown` reports
+only the single "is not defined" error — `compoundAssignAccepts` treats `Unknown`
+as acceptable, so no spurious "operator only supported on ..." message stacks on
+top (matching how `x++` behaves via `checkIncrDecrTargetType`). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure compoundOnUndef() opaque {
+  var x: UndefinedType := 0;
+//       ^^^^^^^^^^^^^ error: 'UndefinedType' is not defined
+  x += 1
+};
+#end
+
 /-! ## TVoid is consistent with any type (TVoid is a supertype)
 
 A nested `if` without an `else` synthesizes `TVoid`. When such an `if` appears

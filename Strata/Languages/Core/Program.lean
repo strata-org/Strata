@@ -56,7 +56,7 @@ inductive Decl where
   | func (f : Function) (md : MetaData Core.Expression)
   /-- A mutually recursive function block. -/
   | recFuncBlock (fs : List Function) (md : MetaData Core.Expression)
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
   match d with
@@ -167,6 +167,7 @@ def Decl.formatWithMetaData (decl : Decl) : Format :=
 structure Program where
   /-- The declarations that make up this program. -/
   { decls : Decls }
+  deriving DecidableEq
 
 @[expose]
 def Program.init : Program :=
