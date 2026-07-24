@@ -27,7 +27,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install cvc5
         uses: ./.github/actions/install-cvc5
       - name: Install z3
@@ -78,7 +78,7 @@ jobs:
           - stable
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Check copyright headers
@@ -101,7 +101,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Restore lake cache
         uses: actions/cache/restore@v5
         with:
