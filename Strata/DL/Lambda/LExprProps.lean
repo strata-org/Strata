@@ -4,10 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryProps
 public import Strata.DL.Lambda.FactoryWF
 
 /-!
@@ -24,6 +26,10 @@ open Strata
 
 variable {Tbase : LExprParams}
   [DecidableEq Tbase.IDMeta]
+
+/-- Every `LExpr` has strictly positive `sizeOf`. -/
+theorem LExpr.sizeOf_pos {T} (e : LExpr T) : 0 < sizeOf e := by
+  cases e <;> simp <;> omega
 
 omit [DecidableEq Tbase.IDMeta] in
 /-- `liftBVars` does not change the free variables (only shifts de Bruijn indices). -/
