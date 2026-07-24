@@ -1130,7 +1130,14 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
 
     session = MoveSession(tools, stub_rel, entry.name, entry.workspace,
                           output_subdir="new_decomposition")
-    extractor_mcp = create_extractor_mcp_server(session)
+    # Proof-DAG ancestors (dotted workspace paths) so add_import_safely can refuse
+    # cycle-forming imports — same source as the writer's import server.
+    ancestor_modules = []
+    for anc_id in ledger.get_ancestry(entry.id):
+        anc = ledger.get(anc_id)
+        if anc:
+            ancestor_modules.append(anc.workspace.replace("/", "."))
+    extractor_mcp = create_extractor_mcp_server(session, ancestor_modules=ancestor_modules)
 
     split = tools.split_theorems(stub_rel)
     protected_names = _get_protected_names(tools, stub_rel, entry)

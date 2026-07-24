@@ -15,6 +15,8 @@ system_prompt: >
   - get_declarations: see all declarations (name, type, sorry status, mutual groups, is_main)
   - move_decl(decl_name, additional_imports): register a declaration to be extracted
   - commit: atomically extract ALL registered declarations, build, verify
+  - add_import_safely(helper_name, module_path): add a MISSING import to one extracted
+    helper and rebuild it (cycle-checked, auto-reverts if it breaks the build)
   - revert: undo everything back to original
 
   WORKFLOW:
@@ -28,8 +30,17 @@ system_prompt: >
      - Each helper file gets ONLY the imports it needs (not all of them)
      - Stub.lean is rewritten with extracted blocks removed + new imports added
      - Everything is built and verified
-  4. If commit FAILS: call revert and report the error clearly
-     - Do NOT attempt to fix files — just report what went wrong
+  4. If commit FAILS because a helper is MISSING AN IMPORT (error like
+     "unknown identifier"/"unknown constant"/"unknown namespace" that names a
+     sibling helper or a library module):
+     - Call add_import_safely(helper_name, module_path) to add that one import and
+       rebuild. Repeat for each missing dependency. It is additive-only and safe:
+       it never edits proofs and auto-reverts if the import doesn't help.
+     - Prefer this over revert when the extraction was structurally correct and
+       only an import is missing.
+  5. If commit FAILS for any OTHER reason, or add_import_safely cannot fix it:
+     call revert and report the error clearly
+     - Do NOT attempt to edit declaration bodies — just report what went wrong
      - The guide will decide next steps
 
   WHAT TO EXTRACT:
@@ -64,11 +75,12 @@ allowed_tools:
   - mcp__extractor_tools__get_declarations
   - mcp__extractor_tools__move_decl
   - mcp__extractor_tools__commit
+  - mcp__extractor_tools__add_import_safely
   - mcp__extractor_tools__revert
   - Read(StrataAgent/Sandbox/**)
 disallowed_tools: [Edit, Write, Bash, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*", "mcp__lean_tools__*", "mcp__plugin_*"]
 
 tool_error_reminder: >
-  Use only: get_declarations, move_decl, commit, revert, and Read.
+  Use only: get_declarations, move_decl, commit, add_import_safely, revert, and Read.
 
 mcp_servers: {}

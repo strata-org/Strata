@@ -63,6 +63,39 @@ _DECL_PREFIX_RE = re.compile(
 _DECL_HEAD_RE = re.compile(
     r"^\s*(theorem|lemma|def|instance|abbrev|example)\s+([^\s({\[:]+)")
 
+# Any import statement, covering every Lean 4 module-system variant:
+#   `import X`, `public import X`, `private import X`, `import all X`, `meta import X`
+_IMPORT_LINE_RE = re.compile(r"^\s*(public\s+|private\s+|meta\s+)?import\b")
+
+
+def _reconstruct_header(header_lines: list[str], extra_imports: list[str]) -> str:
+    """Rebuild a helper file's preamble from the original file's VERBATIM header,
+    inserting `extra_imports` (sibling `import …` lines) right after the last
+    existing import.
+
+    Preserving the header verbatim keeps the copyright comment, the `module`
+    keyword, all import variants, the doc-comment, and the `namespace` / `open`
+    / `section` preamble in their original order — which the Lean module system
+    requires (`module` first, then imports, then everything else). Inserting the
+    sibling imports after the last import keeps them inside the import section."""
+    lines = list(header_lines)
+    fresh = [imp for imp in extra_imports if imp not in lines]
+    if not fresh:
+        return "\n".join(lines)
+    # Prefer inserting after the last existing import; otherwise after `module`;
+    # otherwise at the very top (before any command).
+    last_import = max((i for i, l in enumerate(lines) if _IMPORT_LINE_RE.match(l)),
+                      default=None)
+    if last_import is None:
+        module_idx = next((i for i, l in enumerate(lines)
+                           if l.strip() == "module" or l.strip().startswith("module ")), None)
+        insert_at = (module_idx + 1) if module_idx is not None else 0
+    else:
+        insert_at = last_import + 1
+    for offset, imp in enumerate(fresh):
+        lines.insert(insert_at + offset, imp)
+    return "\n".join(lines)
+
 
 def _strip_decl_prefixes(text: str) -> str:
     """Drop leading doc-comments, attributes, and modifier-`in` lines so the
@@ -358,18 +391,17 @@ class MoveSession:
         # Build block lookup
         block_by_name = {b.name: b for b in split.blocks}
 
-        # Determine the stable header: imports + open + variable lines from the original
+        # Determine the stable header: EVERYTHING before the first declaration
+        # block. Real Strata files open with a `/-` copyright comment, then
+        # `module`, imports (incl. `public import` / `import all`), a doc-comment,
+        # then `namespace` / `open` / `section`. A per-line keyword allowlist that
+        # `break`s on the first non-matching line fails immediately on line 1
+        # (`/-`), stripping the whole preamble. Instead, take the header as all
+        # lines before the earliest block start (1-indexed) so the copyright,
+        # `module`, imports, `open`, and `namespace` are all preserved verbatim.
         original_lines = self._backup.splitlines()
-        header_lines = []
-        for l in original_lines:
-            stripped = l.strip()
-            if stripped.startswith("import ") or stripped.startswith("open ") or \
-               stripped.startswith("variable ") or stripped == "" or \
-               stripped.startswith("set_option") or stripped.startswith("section") or \
-               stripped.startswith("namespace"):
-                header_lines.append(l)
-            else:
-                break
+        first_block_start = min((b.start for b in split.blocks), default=len(original_lines) + 1)
+        header_lines = original_lines[:first_block_start - 1]  # start is 1-indexed
         base_header = "\n".join(header_lines)
 
         # Resolve which blocks to extract
@@ -398,39 +430,34 @@ class MoveSession:
         # Create output directory
         out_path.mkdir(parents=True, exist_ok=True)
 
-        # Write each helper file with imports from the agent's explicit additional_imports.
-        # The agent decides dependencies via move_decl(additional_imports=[...]).
-        # No heuristic auto-extraction or string-match dependency inference.
-        source_imports = [l for l in header_lines if l.strip().startswith("import ")]
-
+        # Write each helper file. The preamble is the ORIGINAL header verbatim
+        # (copyright, `module`, imports, doc-comment, `namespace`, `open`,
+        # `section`), with sibling imports from the agent's explicit
+        # additional_imports inserted into the import section. The agent decides
+        # dependencies via move_decl(additional_imports=[...]); no heuristic
+        # auto-extraction or string-match dependency inference.
         created_files: list[str] = []
         for safe_name, blocks in blocks_to_extract:
             fs_name = safe_name.replace(" ", "_").replace("/", "_")
             target_file = out_path / f"lemma_helper_{fs_name}.lean"
 
-            # Start with the source file's imports (correct Def, external libs, etc.)
-            file_imports = list(source_imports)
-
-            # Add sibling imports from agent's explicit additional_imports
+            # Sibling imports from agent's explicit additional_imports
+            extra_imports: list[str] = []
             move_intent = next((m for m in self._moves if m.decl_name == safe_name), None)
             if move_intent and move_intent.additional_imports:
                 for ai in move_intent.additional_imports:
                     ai_fs = ai.replace(" ", "_").replace("/", "_")
                     module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{ai_fs}".replace("/", ".")
                     imp_line = f"import {module}"
-                    if imp_line not in file_imports:
-                        file_imports.append(imp_line)
+                    if imp_line not in extra_imports:
+                        extra_imports.append(imp_line)
 
-            # Extract open/variable/namespace from header (not imports — we build our own)
-            non_import_header = "\n".join(
-                l for l in header_lines
-                if not l.strip().startswith("import ") and l.strip()
-            )
+            # Preserve the full preamble verbatim; splice sibling imports in.
+            header_text = _reconstruct_header(header_lines, extra_imports)
 
             # Build file content
-            imports_text = "\n".join(file_imports)
             blocks_text = "\n\n".join(b.text for b in blocks)
-            file_content = f"{imports_text}\n\n{non_import_header}\n\n{blocks_text}\n"
+            file_content = f"{header_text}\n\n{blocks_text}\n"
             target_file.write_text(file_content)
             created_files.append(str(target_file.relative_to(root)))
 
@@ -444,10 +471,13 @@ class MoveSession:
 
         # Build new Stub.lean
         new_lines = []
-        # First: add all existing imports
+        # First: add all existing imports (any variant: `public import`,
+        # `import all`, plain `import`), keeping everything up to and including
+        # the last import line — which also preserves the `module` keyword and
+        # copyright comment that precede the imports.
         import_section_end = 0
         for i, l in enumerate(original_lines):
-            if l.strip().startswith("import "):
+            if _IMPORT_LINE_RE.match(l):
                 import_section_end = i + 1
 
         # Copy original imports
@@ -561,16 +591,21 @@ class MoveSession:
             existing = target_file.read_text()
             target_file.write_text(existing.rstrip() + "\n\n" + block_text + "\n")
         else:
-            # Create with header (imports + open + variable from Stub.lean)
-            header_lines = []
-            for l in lines:
-                stripped = l.strip()
-                if stripped.startswith("import ") or stripped.startswith("open ") or stripped.startswith("variable ") or stripped == "":
-                    header_lines.append(l)
-                elif stripped.startswith("set_option") or stripped.startswith("section") or stripped.startswith("namespace"):
-                    header_lines.append(l)
-                else:
-                    break
+            # Create with header = everything before the first declaration block
+            # of Stub.lean. Parse to find the earliest block start so the full
+            # preamble (copyright comment, `module`, all import variants, `open`,
+            # `namespace`, `section`) is carried over verbatim — a per-line
+            # keyword allowlist `break`s on the leading `/-` copyright comment and
+            # loses the whole header.
+            split = self._tools.split_theorems(self._file_path)
+            if split and split.blocks and not split.error:
+                first_block_start = min(b.start for b in split.blocks)
+                header_lines = lines[:first_block_start - 1]  # start is 1-indexed
+            else:
+                # Fallback: keep everything up to and including the last import.
+                last_import = max((i for i, l in enumerate(lines) if _IMPORT_LINE_RE.match(l)),
+                                  default=-1)
+                header_lines = lines[:last_import + 1]
             header = "\n".join(header_lines)
             target_file.write_text(header + "\n\n" + block_text + "\n")
 
@@ -632,6 +667,60 @@ class MoveSession:
             target_file.write_text("\n".join(lines))
             return f"OK: added {len(added)} imports to lemma_helper_{safe_name}.lean: {added}"
         return f"OK: all imports already present in lemma_helper_{safe_name}.lean"
+
+    def add_import_to_helper(self, helper_name: str, module_path: str,
+                             ancestor_modules: list[str] | None = None) -> str:
+        """Safely add an import to a just-extracted helper file and verify it builds.
+
+        Additive-only repair: adds a single `import <module_path>` line to
+        lemma_helper_<helper_name>.lean, then rebuilds that helper's module. If
+        the build fails, the change is reverted. Refuses imports that would form
+        a cycle in the proof DAG (an ancestor's `Stub`). Declaration bodies are
+        never touched, so this cannot smuggle in `sorry`/`axiom`.
+
+        Returns a human-readable OK/BLOCKED/FAILED message (tool-facing)."""
+        import subprocess
+
+        root = self._tools._root
+        out_path = root / self._workspace / self._output_subdir
+        safe_name = helper_name.replace(" ", "_").replace("/", "_")
+        target_file = out_path / f"lemma_helper_{safe_name}.lean"
+        if not target_file.exists():
+            return f"Error: lemma_helper_{safe_name}.lean does not exist (extract it first)"
+
+        # Resolve a bare helper name to its decomposed module path.
+        if "." not in module_path:
+            mp_safe = module_path.replace(" ", "_").replace("/", "_")
+            module_path = f"{self._workspace}.{self._output_subdir}.lemma_helper_{mp_safe}".replace("/", ".")
+
+        # Cycle check: importing an ancestor's Stub would close a loop in the DAG.
+        circular = {f"{anc}.Stub" for anc in (ancestor_modules or [])}
+        if module_path in circular:
+            return (f"BLOCKED: '{module_path}' is an ancestor's Stub in the proof DAG. "
+                    f"Importing it would create a circular dependency.")
+
+        import_line = f"import {module_path}"
+        original = target_file.read_text()
+        lines = original.splitlines()
+        if import_line in [l.strip() for l in lines]:
+            return f"OK: already imported ({module_path})"
+
+        # Insert after the last existing import (module-first ordering preserved).
+        new_content = _reconstruct_header(lines, [import_line])
+        target_file.write_text(new_content + ("\n" if not new_content.endswith("\n") else ""))
+
+        # Verify the helper module builds; revert on failure.
+        helper_module = f"{self._workspace}.{self._output_subdir}.lemma_helper_{safe_name}".replace("/", ".")
+        result = subprocess.run(["lake", "build", helper_module],
+                                cwd=str(root), capture_output=True, text=True, timeout=300)
+        output = result.stdout + "\n" + result.stderr
+        errors = [l for l in output.splitlines()
+                  if ": error:" in l or l.strip().startswith("error:")]
+        if errors:
+            target_file.write_text(original)
+            return (f"FAILED: adding '{import_line}' breaks the build. Reverted.\n"
+                    + "\n".join(errors[:8]))
+        return f"OK: added '{import_line}' — lemma_helper_{safe_name}.lean compiles."
 
     def revert_last(self) -> str:
         """Undo the last move_lines: restore Stub.lean and delete the extracted file."""

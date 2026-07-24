@@ -321,18 +321,25 @@ def create_lean_tools_server(workspace: str | None = None):
     )
 
 
-def create_extractor_mcp_server(session: "MoveSession"):
+def create_extractor_mcp_server(session: "MoveSession", ancestor_modules: list[str] | None = None):
     """Create an MCP server with extraction tools bound to a MoveSession.
 
     Tools:
       - get_declarations: see all declarations in the file
       - move_decl: register a declaration to be moved (intent only, no file mutation)
       - commit: atomically extract ALL registered declarations, rewrite Stub.lean, verify
+      - add_import_safely: add an import to an extracted helper (cycle-checked, compile-gated)
       - revert: undo everything, back to original for retry
 
-    Workflow: get_declarations → move_decl (repeat) → commit → done (or revert + retry)
+    Workflow: get_declarations → move_decl (repeat) → commit → (add_import_safely to
+    repair a helper that failed to compile) → done (or revert + retry)
+
+    `ancestor_modules` (proof-DAG ancestors, dotted workspace paths) is used by
+    add_import_safely to refuse cycle-forming imports.
     """
     from .modules.po_lean import MoveSession
+
+    ancestors = list(ancestor_modules or [])
 
     @tool(
         name="get_declarations",
@@ -396,6 +403,38 @@ def create_extractor_mcp_server(session: "MoveSession"):
 
 
     @tool(
+        name="add_import_safely",
+        description=(
+            "Add a missing import to an EXTRACTED helper file and verify it compiles. "
+            "Use this AFTER commit when a helper failed to build because it is missing "
+            "a dependency (e.g. a sibling helper it uses, or a library module). "
+            "Additive-only: it adds one `import` line and rebuilds that helper — it never "
+            "edits declaration bodies. Refuses cycle-forming imports (ancestor Stubs) and "
+            "auto-reverts if the import breaks the build. "
+            "Pass a full module path (e.g. 'Strata.Transform.CallElimProps') or a bare "
+            "sibling helper name (e.g. 'detBlockSim' → resolved to its decomposed module)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "helper_name": {
+                    "type": "string",
+                    "description": "Name of the extracted helper to repair (as passed to move_decl)",
+                },
+                "module_path": {
+                    "type": "string",
+                    "description": "Module to import: full dotted path, or a bare sibling helper name",
+                },
+            },
+            "required": ["helper_name", "module_path"],
+        },
+    )
+    async def add_import_safely_tool(input: dict[str, Any]) -> dict[str, Any]:
+        result = session.add_import_to_helper(
+            input["helper_name"], input["module_path"], ancestor_modules=ancestors)
+        return {"content": [{"type": "text", "text": result}]}
+
+    @tool(
         name="verify_build",
         description=(
             "Re-build Stub.lean and all extracted files WITHOUT re-extracting. "
@@ -421,7 +460,8 @@ def create_extractor_mcp_server(session: "MoveSession"):
     return create_sdk_mcp_server(
         name="extractor_tools",
         version="1.0.0",
-        tools=[get_declarations_tool, move_decl_tool, commit_tool, revert_tool, verify_build_tool],
+        tools=[get_declarations_tool, move_decl_tool, commit_tool,
+               add_import_safely_tool, revert_tool, verify_build_tool],
     )
 
 
