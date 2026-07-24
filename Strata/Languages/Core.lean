@@ -11,6 +11,7 @@ public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.ProcedureInlining
 import Strata.Transform.CallElim
 import Strata.Transform.LoopElim
+import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Transform.FilterProcedures
 
 /-! ## Strata Core Transform & Verification API
@@ -150,6 +151,11 @@ def Core.passInlineMatching (procs : List String) : Core.PipelinePhase :=
 def Core.passInlineExcept (procs : List String) : Core.PipelinePhase :=
   Core.procedureInliningPipelinePhase
     { doInline := fun _caller callee _ => callee ∉ procs }
+
+/-- Materialize each loop's invariant/measure verification conditions as
+    explicit assert/assume statements (run before `passLoopElim`). -/
+def Core.passInsertLoopInvariantAsserts : Core.PipelinePhase :=
+  Core.insertLoopInvariantAssertsPipelinePhase
 
 /-- Replace each loop with assertions/assumptions about its invariants. -/
 def Core.passLoopElim : Core.PipelinePhase :=

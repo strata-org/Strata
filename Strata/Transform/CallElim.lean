@@ -29,13 +29,15 @@ def callElimAssertPrefix : String := "callElimAssert_"
 def callElimAssumePrefix : String := "callElimAssume_"
 
 /--
-The main call elimination transformation algorithm on a single command.
-The returned result is a sequence of statements
+The main call elimination transformation algorithm on a single statement.
+Only `call` commands are rewritten; every other statement returns `.none` so
+that `runStmtsRec` traverses into it. The returned result is a sequence of
+statements.
 -/
-def callElimCmd (cmd: Command)
+def callElimCmd (s : Statement)
   : CoreTransformM (Option (List Statement)) := do
-    match cmd with
-      | .call procName callArgs md =>
+    match s with
+      | .cmd (.call procName callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"

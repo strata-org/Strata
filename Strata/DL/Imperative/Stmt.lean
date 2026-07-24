@@ -40,8 +40,8 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   termination) and labeled invariants. When `guard` is `.nondet`, the loop iterates
   a non-deterministic number of times. Each invariant carries a label string
   (expected to be distinct, like assert labels do).
-  TODO: measure will be moved to metadata md, since it doesn't contribute to
-  the small-step semantics (StepStmt).
+  TODO: invariants and measure will be moved to metadata md, since they don't
+  contribute to the small-step semantics (StepStmt).
   -/
   | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))
@@ -637,6 +637,7 @@ by an enclosing `block` — either within `s` itself or with a label in
 
 When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
 
+mutual
 @[expose] def Stmt.exitsCoveredByBlocks : List String → Stmt P CmdT → Prop
   | _, .cmd _ => True
   | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
@@ -645,11 +646,12 @@ When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`.
   | labels, .exit l _ => l ∈ labels
   | _, .funcDecl _ _ => True
   | _, .typeDecl _ _ => True
-where
-  Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
-    | _, [] => True
-    | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
 
+@[expose] def Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
+  | _, [] => True
+  | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
+
+end
 ---------------------------------------------------------------------
 
 end -- public section

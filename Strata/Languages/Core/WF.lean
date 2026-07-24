@@ -152,7 +152,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
   bodyExitsCovered : ∀ ss, d.body = .structured ss →
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss
+    Block.exitsCoveredByBlocks [] ss
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

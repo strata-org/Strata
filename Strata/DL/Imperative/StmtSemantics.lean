@@ -215,13 +215,13 @@ def Config.noFuncDecl : Config P CmdT → Prop
     and unlabeled exits do not exist as user statements. -/
 @[expose] def Config.exitsCoveredByBlocks : List String → Config P CmdT → Prop
   | labels, .stmt s _ => s.exitsCoveredByBlocks labels
-  | labels, .stmts ss _ => Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+  | labels, .stmts ss _ => Block.exitsCoveredByBlocks labels ss
   | _, .terminal _ => True
   | labels, .exiting l _ => l ∈ labels
   | labels, .block none _ _ inner => Config.exitsCoveredByBlocks labels inner
   | labels, .block (some l) _ _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
-    Config.exitsCoveredByBlocks labels inner ∧ Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks labels ss
+    Config.exitsCoveredByBlocks labels inner ∧ Block.exitsCoveredByBlocks labels ss
 
 /-- Project an inner store through a parent store: keep the inner value only
     for variables that were already defined in the parent. Variables that were
@@ -301,69 +301,51 @@ inductive StepStmt
       (.block .none ρ.store ρ.factory (.stmts ess ρ))
 
   /-- If a loop guard is true, execute the body (followed by the loop again).
-      Each invariant expression must evaluate to a boolean (`tt` or `ff`);
-      otherwise execution is stuck here, just as a non-boolean guard would
-      block `step_ite_true`.  If any invariant evaluates to `ff`, the
-      cumulative `hasFailure` flag is set via `hasInvFailure`, matching the
-      pattern `step_cmd` uses for `assert` failure.  The invariants are
-      labeled pairs `(String × P.Expr)`; only the expression part is
-      evaluated.
+      Loop invariants are not evaluated during execution: they are treated
+      purely as verification-condition annotations elsewhere, not as runtime
+      assertions.  The invariants are labeled pairs `(String × P.Expr)`.
 
       The body alone is wrapped in an unnamed `.block`, sequenced with the
       recursive loop.  This means each iteration runs the body in its own
       block scope: variables `init`'d inside body are projected away at the
       end of each iteration, allowing the next iteration's body to re-`init`
       the same names. -/
-  | step_loop_enter {hasInvFailure : Bool} :
+  | step_loop_enter :
     P.eval ρ.factory ρ.store g = .some HasBool.tt →
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd extendFactory
       (.stmt (.loop (.det g) m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body
-          { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
+        (.block .none ρ.store ρ.factory (.stmts body ρ))
         [.loop (.det g) m inv body md])
 
   /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
-      invariants must be boolean-valued and any `ff` result flips `hasFailure`. -/
-  | step_loop_exit {hasInvFailure : Bool} :
+      loop invariants are not evaluated during execution. -/
+  | step_loop_exit :
     P.eval ρ.factory ρ.store g = .some HasBool.ff →
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
     WellFormedSemanticEvalBool (P := P) ρ.factory →
     ----
     StepStmt EvalCmd extendFactory
       (.stmt (.loop (.det g) m inv body _) ρ)
-      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
+      (.terminal ρ)
 
-  /-- Non-deterministic loop: enter the body.  Same invariant-boolean
-      condition as the deterministic case.  As with the det variant, the
-      body alone is wrapped in an unnamed `.block` and sequenced with the
-      recursive loop, giving each iteration its own block scope. -/
-  | step_loop_nondet_enter {hasInvFailure : Bool} :
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
+  /-- Non-deterministic loop: enter the body.  As with the det variant,
+      loop invariants are not evaluated during execution; the body alone is
+      wrapped in an unnamed `.block` and sequenced with the recursive loop,
+      giving each iteration its own block scope. -/
+  | step_loop_nondet_enter :
     StepStmt EvalCmd extendFactory
       (.stmt (.loop .nondet m inv body md) ρ)
       (.seq
-        (.block .none ρ.store ρ.factory (.stmts body
-          { ρ with hasFailure := ρ.hasFailure || hasInvFailure }))
+        (.block .none ρ.store ρ.factory (.stmts body ρ))
         [.loop .nondet m inv body md])
 
   /-- Non-deterministic loop: exit the loop. -/
-  | step_loop_nondet_exit {hasInvFailure : Bool} :
-    (∀ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.tt ∨
-                 P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
-    (hasInvFailure ↔ ∃ le ∈ inv, P.eval ρ.factory ρ.store le.2 = .some HasBool.ff) →
+  | step_loop_nondet_exit :
     StepStmt EvalCmd extendFactory
       (.stmt (.loop .nondet m inv body _) ρ)
-      (.terminal { ρ with hasFailure := ρ.hasFailure || hasInvFailure })
+      (.terminal ρ)
 
   /-- An exit statement produces an exiting configuration. -/
   | step_exit :
@@ -539,18 +521,15 @@ variable (extendFactory : ExtendFactory P)
 
 /-! ## Detecting an assert in a configuration -/
 
-/-- `isAtAssert cfg aid` holds when the head of `cfg` is either an `assert`
-    command whose label and expression match `aid`, or a loop statement
-    whose invariant list contains an entry with matching label and
-    expression. Recurses into `block` and `seq` wrappers so that
-    assertions inside compound statements are visible. -/
+/-- `isAtAssert cfg aid` holds when the head of `cfg` is an `assert`
+    command whose label and expression match `aid`. Recurses into `block`
+    and `seq` wrappers so that assertions inside compound statements are
+    visible. -/
 @[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
   | .stmt (.cmd (.assert label expr _)) _, aid =>
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ _ inv _ _) _, aid => (aid.label, aid.expr) ∈ inv
-  | .stmts ((.loop _ _ inv _ _) :: _) _, aid => (aid.label, aid.expr) ∈ inv
   | .block _ _ _ inner, aid => isAtAssert inner aid
   | .seq inner _, aid => isAtAssert inner aid
   | _, _ => False

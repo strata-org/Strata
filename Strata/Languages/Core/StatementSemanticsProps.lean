@@ -2381,11 +2381,6 @@ theorem stmts_allAssert_preserves_store
     derivation, with `coreIsAtAssert` playing the role of the
     `IsAtAssert` parameter. -/
 
-private theorem coreIsAtAssert_of_inv_mem
-    {g m inv body md} {ρ : Env Expression} {lbl e}
-    (hmem : (lbl, e) ∈ inv) :
-    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
-
 private theorem coreIsAtAssert_seq_of_inner
     {inner : CoreConfig} {ss a}
     (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
@@ -2434,7 +2429,6 @@ theorem core_noFailure_preserved
         (P := Expression) (extendFactory := EvalPureFunc φ)
         coreIsAtAssert
         evalCommand_failure_implies_assert_ff
-        coreIsAtAssert_of_inv_mem
         coreIsAtAssert_seq_of_inner
         coreIsAtAssert_block_of_inner
         _ _

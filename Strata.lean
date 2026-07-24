@@ -61,6 +61,7 @@ import Strata.DL.SMT.Translate
 
 /- Code Transforms — additional -/
 import Strata.Transform.StructuredToUnstructured
+import Strata.Transform.FunctionInlining
 
 /- Other -/
 import Strata.MetaVerifier
