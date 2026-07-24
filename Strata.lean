@@ -36,9 +36,11 @@ import Strata.Languages.Laurel.ResolutionProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
+import Strata.Transform.FunctionInliningProps
 import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
