@@ -322,7 +322,7 @@ theorem Statement.typeCheckAux_go_funcDecl_inv
       decl.isRecursive = false ∧
       Function.ofPureFunc decl = .ok func0 ∧
       Function.typeCheck C Env func0 = .ok (func, Env_mid) ∧
-      Statement.typeCheckAux.go P op (C.addFactoryFunction func) Env_mid srest
+      Statement.typeCheckAux.go P op (C.addFactoryFunction func.toLFunc) Env_mid srest
         (.funcDecl decl' md :: acc) labels = .ok (ss', Env', C') := by
   unfold Statement.typeCheckAux.go at h_goeq
   simp only [Bind.bind, Except.bind, tryCatchThe, tryCatch, MonadExcept.tryCatch,
@@ -1022,14 +1022,14 @@ theorem typeCheckAux_go_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
     -- Head `GoPreserved C₀ (addFactoryFunction func) Env₀ Env_mid` from the A-lemmas.
     have h_ctx : Env_mid.context = Env₀.context :=
       Function.typeCheck_context_eq C₀ Env₀ func0 func Env_mid h_ft hwf₀ hfwf₀
-    have h_lfwf : Lambda.LFuncWF func :=
+    have h_lfwf : Lambda.LFuncWF func.toLFunc :=
       Function.typeCheck_LFuncWF C₀ Env₀ func0 func Env_mid h_ft hwf₀
     have h_absorbs : Subst.absorbs Env_mid.stateSubstInfo.subst Env₀.stateSubstInfo.subst :=
       Function.typeCheck_absorbs C₀ Env₀ func0 func Env_mid h_ft hwf₀ hfwf₀
-    have h_head : GoPreserved C₀ (C₀.addFactoryFunction func) Env₀ Env_mid := by
+    have h_head : GoPreserved C₀ (C₀.addFactoryFunction func.toLFunc) Env₀ Env_mid := by
       refine ⟨Function.typeCheck_TEnvWF C₀ Env₀ func0 func Env_mid h_ft hwf₀ hfwf₀,
-        addFactoryFunction_FactoryWF C₀ func hfwf₀ h_lfwf, ?_, ?_, h_absorbs,
-        addFactoryFunction_rigidTypeVars C₀ func, ?_, ?_, ?_,
+        addFactoryFunction_FactoryWF C₀ func.toLFunc hfwf₀ h_lfwf, ?_, ?_, h_absorbs,
+        addFactoryFunction_rigidTypeVars C₀ func.toLFunc, ?_, ?_, ?_,
         Function.typeCheck_tyGen_mono C₀ Env₀ func0 func Env_mid h_ft hwf₀ hfwf₀⟩
       · rw [h_ctx]; exact hne₀
       · rw [h_ctx]; exact hmono₀
@@ -1038,12 +1038,12 @@ theorem typeCheckAux_go_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
         exact Function.typeCheck_preserves_rigid_inv C₀ Env₀ func0 func Env_mid h_ft hwf₀ hfwf₀ hrigid₀
       · rw [h_ctx]
       · rw [h_ctx]
-    -- Tail via IH at `C_mid = addFactoryFunction func`, `Env_mid`.
-    have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func).rigidTypeVars →
+    -- Tail via IH at `C_mid = addFactoryFunction func.toLFunc`, `Env_mid`.
+    have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func.toLFunc).rigidTypeVars →
         LMonoTy.subst Env_mid.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
       rw [addFactoryFunction_rigidTypeVars]; exact h_head.rigid_inv
-    have h_tail : GoPreserved (C₀.addFactoryFunction func) C'₀ Env_mid Env'₀ :=
-      ih_tail (Stmt.funcDecl decl' md₀) Env_mid (C₀.addFactoryFunction func) ss'₀ Env'₀ C'₀
+    have h_tail : GoPreserved (C₀.addFactoryFunction func.toLFunc) C'₀ Env_mid Env'₀ :=
+      ih_tail (Stmt.funcDecl decl' md₀) Env_mid (C₀.addFactoryFunction func.toLFunc) ss'₀ Env'₀ C'₀
         h_tail_eq h_head.wf h_head.fwf h_head.ne h_head.mono h_rigid_mid
     exact h_head.trans h_tail
   case case_typeDecl =>
@@ -2561,7 +2561,7 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
                 hamr₀ hamm₀ halnd₀ harrow₀
             have h_ctx : Env2.context = Env₀.context :=
               Function.typeCheck_context_eq C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
-            have h_lfwf : Lambda.LFuncWF func' :=
+            have h_lfwf : Lambda.LFuncWF func'.toLFunc :=
               Function.typeCheck_LFuncWF C₀ Env₀ func0 func' Env2 h_ft hwf₀
             -- Γ-bridge: transport FuncHasType from Env₀.context to subst Env₀.context S.
             have h_expr_congr : ∀ (Γa Γb : TContext Unit) (Cx : LContext CoreLParams)
@@ -2579,29 +2579,29 @@ theorem typeCheckAux_go_sound (C : LContext CoreLParams) (Env : TEnv Unit)
             -- Threading premises for the tail IH at C_mid = addFactoryFunction func', Env2.
             have h_wf_mid : TEnvWF (T := CoreLParams) Env2 :=
               Function.typeCheck_TEnvWF C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
-            have h_fwf_mid : FactoryWF (C₀.addFactoryFunction func').functions :=
-              addFactoryFunction_FactoryWF C₀ func' hfwf₀ h_lfwf
+            have h_fwf_mid : FactoryWF (C₀.addFactoryFunction func'.toLFunc).functions :=
+              addFactoryFunction_FactoryWF C₀ func'.toLFunc hfwf₀ h_lfwf
             have h_ne_mid : Env2.context.types ≠ [] := by rw [h_ctx]; exact hne₀
             have h_mono_mid : ContextMono Env2.context := by rw [h_ctx]; exact hmono₀
             have h_res_mid : TContext.AliasesResolved Env2.context := by rw [h_ctx]; exact hres₀
             have h_akn_mid : ∀ a ∈ Env2.context.aliases, a.name ≠ "arrow" := by rw [h_ctx]; exact hakn₀
             have h_alnd_mid : AliasesNonDropping Env2.context.aliases := by rw [h_ctx]; exact halnd₀
-            have h_arrow_mid : ArrowKnownBinary (C₀.addFactoryFunction func') :=
-              addFactoryFunction_ArrowKnownBinary C₀ func' harrow₀
+            have h_arrow_mid : ArrowKnownBinary (C₀.addFactoryFunction func'.toLFunc) :=
+              addFactoryFunction_ArrowKnownBinary C₀ func'.toLFunc harrow₀
             have h_amr_mid : ∀ x ty, Env2.context.types.find? x = some ty →
-                ∀ v ∈ LTy.freeVars ty, v ∈ (C₀.addFactoryFunction func').rigidTypeVars := by
+                ∀ v ∈ LTy.freeVars ty, v ∈ (C₀.addFactoryFunction func'.toLFunc).rigidTypeVars := by
               rw [h_ctx, addFactoryFunction_rigidTypeVars]; exact hamr₀
             have h_amm_mid : ∀ ty ∈ Maps.values Env2.context.types, LTy.boundVars ty = [] := by
               rw [h_ctx]; exact hamm₀
-            have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func').rigidTypeVars →
+            have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func'.toLFunc).rigidTypeVars →
                 LMonoTy.subst Env2.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
               rw [addFactoryFunction_rigidTypeVars]
               exact Function.typeCheck_preserves_rigid_inv C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
                 hrigid₀
-            have hS_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func').rigidTypeVars →
+            have hS_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func'.toLFunc).rigidTypeVars →
                 LMonoTy.subst S (.ftvar v) = .ftvar v := by
               rw [addFactoryFunction_rigidTypeVars]; exact hS_rigid
-            have h_tail := ih_tail (Stmt.funcDecl decl' md₀) Env2 (C₀.addFactoryFunction func')
+            have h_tail := ih_tail (Stmt.funcDecl decl' md₀) Env2 (C₀.addFactoryFunction func'.toLFunc)
               ss'₀ Env'₀ C'₀ h_goeq h_wf_mid h_fwf_mid h_ne_mid h_mono_mid
               h_res_mid h_akn_mid h_alnd_mid h_arrow_mid h_amr_mid h_amm_mid h_rigid_mid S hS_abs hS_wf hS_rigid_mid
             rw [h_ctx] at h_tail
@@ -3661,23 +3661,23 @@ theorem typeCheckAux_go_annotated_sound (C : LContext CoreLParams) (Env : TEnv U
               Function.typeCheck_annotated_sound C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀ hres₀
             have h_ctx : Env2.context = Env₀.context :=
               Function.typeCheck_context_eq C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
-            have h_lfwf : Lambda.LFuncWF func' :=
+            have h_lfwf : Lambda.LFuncWF func'.toLFunc :=
               Function.typeCheck_LFuncWF C₀ Env₀ func0 func' Env2 h_ft hwf₀
             -- Threading premises for the tail IH at `C_mid = addFactoryFunction func'`, `Env2`.
             have h_wf_mid : TEnvWF (T := CoreLParams) Env2 :=
               Function.typeCheck_TEnvWF C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
-            have h_fwf_mid : FactoryWF (C₀.addFactoryFunction func').functions :=
-              addFactoryFunction_FactoryWF C₀ func' hfwf₀ h_lfwf
+            have h_fwf_mid : FactoryWF (C₀.addFactoryFunction func'.toLFunc).functions :=
+              addFactoryFunction_FactoryWF C₀ func'.toLFunc hfwf₀ h_lfwf
             have h_ne_mid : Env2.context.types ≠ [] := by rw [h_ctx]; exact hne₀
             have h_mono_mid : ContextMono Env2.context := by rw [h_ctx]; exact hmono₀
             have h_res_mid : TContext.AliasesResolved Env2.context := by rw [h_ctx]; exact hres₀
-            have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func').rigidTypeVars →
+            have h_rigid_mid : ∀ v, v ∈ (C₀.addFactoryFunction func'.toLFunc).rigidTypeVars →
                 LMonoTy.subst Env2.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
               rw [addFactoryFunction_rigidTypeVars]
               exact Function.typeCheck_preserves_rigid_inv C₀ Env₀ func0 func' Env2 h_ft hwf₀ hfwf₀
                 hrigid₀
             obtain ⟨ss_proc_tail, h_eq_tail, h_typed_tail⟩ :=
-              ih_tail (Stmt.funcDecl decl' md₀) Env2 (C₀.addFactoryFunction func') ss'₀ Env'₀ C'₀
+              ih_tail (Stmt.funcDecl decl' md₀) Env2 (C₀.addFactoryFunction func'.toLFunc) ss'₀ Env'₀ C'₀
                 h_goeq h_wf_mid h_fwf_mid h_ne_mid h_mono_mid h_res_mid h_rigid_mid S hS_abs hS_wf
             rw [h_ctx] at h_typed_tail
             refine ⟨Stmt.funcDecl decl' md₀ :: ss_proc_tail, ?_, ?_⟩

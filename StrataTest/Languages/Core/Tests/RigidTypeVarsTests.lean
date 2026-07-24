@@ -276,7 +276,7 @@ spec { ensures true; }
 /--
 info: ok: program Core;
 ⏎
-procedure Q2b (z : a)
+procedure Q2b<a> (z : a)
 spec {
   ensures [Q2b_ensures_0]: true;
   } {
@@ -300,7 +300,7 @@ spec { ensures true; }
 };
 #end
 
-/-- info: error: (7522-7539) Rigid type variable 'a' was refined to 'int' by the initializer -/
+/-- info: error: (7525-7542) Rigid type variable 'a' was refined to 'int' by the initializer -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram q2c_inferredSideRefine)).fst
 

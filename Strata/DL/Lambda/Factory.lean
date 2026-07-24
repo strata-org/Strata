@@ -168,6 +168,17 @@ theorem LFuncDefined.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] 
   split at h <;> try contradiction
   simp_all
 
+/-- If `LFuncDefined.type` succeeds, the type args are nodup (from the second guard). -/
+theorem LFuncDefined.type_typeArgs_nodup {T : LExprParams} [DecidableEq T.IDMeta]
+    (f : LFuncDefined T) (ty : LTy) (h : f.type = .ok ty) :
+    f.typeArgs.Nodup := by
+  simp only [LFuncDefined.type, bind, Except.bind] at h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  rename_i _ h_tyargs_neg
+  simp at h_tyargs_neg
+  exact h_tyargs_neg
+
 @[expose] def LFuncDefined.opExpr [Inhabited T.Metadata] (f: LFuncDefined T) : LExpr T.mono :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output

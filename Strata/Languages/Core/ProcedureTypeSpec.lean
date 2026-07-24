@@ -86,6 +86,22 @@ def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
     (fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty))
   { Γ with types := Γ.types.push (inputScope ++ outputScope ++ oldScope) }
 
+/-- `procBodyContext` only extends `Γ.types`, so it leaves the alias list unchanged.
+    (Proved here, where `procBodyContext` is transparent, for use downstream where the
+    definition is opaque across the module boundary.) -/
+@[simp] theorem procBodyContext_aliases (Γ : TContext Unit) (proc : Procedure) :
+    (procBodyContext Γ proc).aliases = Γ.aliases := by simp only [procBodyContext]
+
+/-- `procBodyContext`'s `types` field is `Γ.types` with the parameter/output/old scope
+    pushed on top. -/
+theorem procBodyContext_types (Γ : TContext Unit) (proc : Procedure) :
+    (procBodyContext Γ proc).types = Γ.types.push
+      ((proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))) ++
+       (proc.header.outputs.map (fun (id, mty) => (id, .forAll [] mty))) ++
+       (proc.header.getInoutParams.map
+         (fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)))) := by
+  simp only [procBodyContext]
+
 /--
 Declarative typing for a procedure body, in ambient context `C` and body-scope
 `Γ_body`. Split out as an inductive (rather than an existential inside

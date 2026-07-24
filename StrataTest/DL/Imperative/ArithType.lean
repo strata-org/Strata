@@ -110,6 +110,9 @@ instance : TypeContext PureExpr Unit TEnv DiagnosticModel where
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
   typeErrorFmt := fun dm => f!"{dm.message}"
+  -- Arith has no rigid type variables / polymorphic annotations, so annotation
+  -- compatibility is vacuously satisfied.
+  checkAnnotCompat := fun _ _ => .ok ()
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
   format arg :=

@@ -274,6 +274,8 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let (et, Env) ← resolveAux C Env e'
     let (triggersT, Env) ← resolveAux C Env triggers'
     let ety := et.toLMonoTy
+    let S ← Constraints.unify [(ety, LMonoTy.bool)] Env.stateSubstInfo |>.mapError format
+    let Env := TEnv.updateSubst Env S
     let xty := LMonoTy.subst Env.stateSubstInfo.subst xty
     let etclosed := Lambda.LExpr.varCloseT 0 xv et
     let triggersClosed := Lambda.LExpr.varCloseT 0 xv triggersT
@@ -281,10 +283,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     -- Again, as in `abs`, we do not erase `xty` (if it was a fresh variable) from the
     -- substitution list.
     let Env := Env.eraseFromContext xv
-    if ety != LMonoTy.bool then do
-      .error f!"Quantifier body has non-Boolean type: {ety}"
-    else
-      .ok (.quant ⟨m, xty⟩ qk name xty triggersClosed etclosed, Env)
+    .ok (.quant ⟨m, xty⟩ qk name xty triggersClosed etclosed, Env)
 
   | .eq m e1 e2    =>
     -- `.eq A B` is well-typed if there is some instantiation of

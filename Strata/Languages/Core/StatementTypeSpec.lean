@@ -129,7 +129,7 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
   | funcDecl : ∀ C Γ L decl func md,
       ¬ decl.isRecursive →
       FuncHasType' τ C Γ func →
-      StmtHasType' τ P C Γ L (.funcDecl decl md) (C.addFactoryFunction func) Γ
+      StmtHasType' τ P C Γ L (.funcDecl decl md) (C.addFactoryFunction func.toLFunc) Γ
 
   /-- Local type declaration. The new type is added to `C` (must not clash with
       an existing known type, per `addKnownTypeWithError`). -/

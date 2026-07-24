@@ -47,7 +47,7 @@ info: error: Variable annotation references type variables [a] that are not proc
 -- environment, so the normalized annotation references only that rigid var. This
 -- mirrors how a function body may refer to its signature type parameters.
 /--
-info: ok: (procedure P (x : t)
+info: ok: (procedure P<t> (x : t)
  {
    var z : t := x;
  };

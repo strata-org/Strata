@@ -862,7 +862,7 @@ private theorem resolveAliases_mkArrow'_ok (ret : LMonoTy) (args : LMonoTys) (En
 
 theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst) (Env_r : TEnv Unit)
-    (h_type : LFunc.type func = .ok type)
+    (h_type : LFuncDefined.type func = .ok type)
     (h_ra : LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe type) Env
       = .ok (LMonoTy.subst ρ v_inst.fst, Env_r))
     (h_aw : TContext.AliasesWF Env.context)
@@ -889,7 +889,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
   have h_arrow2 := h_arrow_wf.arrow_arity_eq_two
   -- SIG = toMonoTypeUnsafe type.  From h_type, `type = .forAll typeArgs sigBody` where
   -- sigBody is either func.output (no inputs) or mkArrow ity (irest ++ destructArrow output).
-  simp only [LFunc.type, bind, Except.bind] at h_type
+  simp only [LFuncDefined.type, bind, Except.bind] at h_type
   split at h_type
   · contradiction
   split at h_type
