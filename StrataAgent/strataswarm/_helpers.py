@@ -239,6 +239,18 @@ class swarm_agent:
                 else:
                     combined_hooks = spec_hooks
 
+        # Merge any extra hooks passed via overrides (e.g. snapshot tip hook)
+        extra_hooks = self._overrides.get("extra_hooks")
+        if extra_hooks:
+            if combined_hooks:
+                for event, matchers in extra_hooks.items():
+                    if event in combined_hooks:
+                        combined_hooks[event].extend(matchers)
+                    else:
+                        combined_hooks[event] = matchers
+            else:
+                combined_hooks = extra_hooks
+
         # Add budget warning as a PreToolUse hook (fires when turns running low)
         if spec.max_turns:
             from .modules.hooks import budget_warning_hooks

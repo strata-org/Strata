@@ -8,11 +8,15 @@ Uses framework utilities from _workspace_hooks (path matching, extraction).
 
 from __future__ import annotations
 
+import logging
+import random
 from typing import Any
 
 from claude_agent_sdk.types import HookMatcher
 
 from .._workspace_hooks import matches_any, deny, allow, make_hook
+
+logger = logging.getLogger("strataswarm.hooks")
 
 
 
@@ -59,6 +63,92 @@ def budget_warning_hooks(agent_ref) -> dict:
 
     return {
         "PreToolUse": [HookMatcher(matcher=".*", hooks=[_check_budget])]
+    }
+
+
+# ─── Snapshot tip: nudge the writer to bank progress on a clean compile ──────
+
+# Lean verify/build tools whose success means "the file compiles right now".
+_VERIFY_TOOLS = {
+    "mcp__lean_lsp__lean_verify",
+    "mcp__lean_tools__show_file_state",
+}
+
+# Error signatures that mean the verify did NOT come back clean. Kept loose:
+# a false negative just skips one tip, which is harmless.
+_ERROR_MARKERS = ("error:", "❌", "failed", "does not compile", "unsolved goals")
+
+
+def _response_text(tool_response: Any) -> str:
+    """Best-effort flatten of a tool_response into searchable text."""
+    if isinstance(tool_response, str):
+        return tool_response
+    if isinstance(tool_response, dict):
+        content = tool_response.get("content")
+        if isinstance(content, list):
+            return "\n".join(
+                str(c.get("text", "")) for c in content if isinstance(c, dict))
+        return str(tool_response)
+    if isinstance(tool_response, list):
+        return "\n".join(
+            str(c.get("text", "")) if isinstance(c, dict) else str(c)
+            for c in tool_response)
+    return str(tool_response)
+
+
+def snapshot_tip_hooks(agent_ref=None, probability: float = 0.85) -> dict:
+    """After a successful Lean verify, occasionally remind the writer to snapshot.
+
+    Passive: emits `additionalContext` (no interrupt, no permission gate) so the
+    tip enters the writer's context. Fires on PostToolUse for a verify/build tool
+    when the response shows the file compiles, with the given probability on EACH
+    such call (no cooldown state — matches _nudge.py's use of `random`). Only
+    attached to agents that have the snapshots MCP server, so the tip always
+    references an available tool.
+
+    If `agent_ref` (the SwarmAgent) is provided, the tip is also surfaced as a
+    visible "message" event so it shows up in the dashboard/transcript rather
+    than only living inside the model's context.
+    """
+
+    _TIP = (
+        "✓ Compiles. If this is a real high-water mark (a goal just closed, a "
+        "key lemma landed, or the structure improved), bank it: "
+        "snapshot_progress(tag=\"...\"). It's your safety net against a later "
+        "regression. Skip it for routine intermediate states."
+    )
+
+    async def _tip(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PostToolUse":
+            return {}
+        tool_name = input_data.get("tool_name", "")
+        if tool_name not in _VERIFY_TOOLS:
+            return {}
+
+        text = _response_text(input_data.get("tool_response")).lower()
+        if any(m in text for m in _ERROR_MARKERS):
+            return {}  # not a clean compile — nothing to bank
+
+        if random.random() > probability:
+            return {}
+
+        logger.info("snapshot tip fired after %s", tool_name)
+        if agent_ref is not None:
+            try:
+                await agent_ref._emit("message", f"[snapshot tip] {_TIP}")
+            except Exception:
+                pass
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": _TIP,
+            }
+        }
+
+    return {
+        "PostToolUse": [HookMatcher(matcher=".*", hooks=[_tip])]
     }
 
 

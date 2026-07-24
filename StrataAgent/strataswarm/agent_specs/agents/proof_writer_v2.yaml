@@ -7,7 +7,8 @@ tool_error_reminder: >
   That tool is not available to you. Your tools: Read, Write, Edit, lean_verify,
   lean_goal, lean_diagnostic_messages, lean_local_search,
   lean_declaration_file, show_file_state, get_sorries_by_theorem, get_sorry_positions,
-  ledger_search, ledger_get, add_import_safely.
+  ledger_search, ledger_get, add_import_safely,
+  snapshot_progress, list_snapshots, read_snapshot.
   For definitions/lemmas, ask SearchAgent: send_message(to="SearchAgent", message="...").
 
 visibility:
@@ -49,6 +50,26 @@ system_prompt: >
   - Use add_import_safely(module_path) to import — it checks safety and compilation for you
   - Ask SearchAgent for proof BODIES not just signatures — copy tactics that work elsewhere
   - If SearchAgent shows a proof using `induction fuel generalizing`, copy that pattern
+
+  BANKING PROGRESS — NEVER THROW WORK AWAY:
+  - When you are asked to "make it compile" after running out of turns, do NOT
+    revert a partial proof back to a bare `:= by sorry`. Keep every step you have
+    already proved.
+  - If ONE subgoal is still open, cap only THAT goal with `sorry` (e.g. `· sorry`
+    on that branch) and leave the rest of the proof intact. A proof that is 80%
+    done with one `sorry` is far better than a fresh `sorry` — the guide can then
+    direct just the hard part.
+  - If a sub-lemma is genuinely hard, factor it into a NEW named helper theorem
+    declared ABOVE (with its own `sorry`) and close the goal with `exact helper ...`.
+    This preserves structure AND makes the hard part extractable.
+  - SNAPSHOT at real high-water marks: after a clean compile where you just closed
+    a goal, landed a key lemma, or reached a better structure, call
+    snapshot_progress(tag="...") to bank that state. It is your safety net — if a
+    later attempt regresses, you (or the guide) can read_snapshot to recover it.
+    You'll see a "✓ Compiles" tip after successful verifies as a reminder; only
+    snapshot genuine milestones, not routine intermediate states.
+  - Use list_snapshots / read_snapshot to review your own trajectory or recover a
+    fragment you regressed away from.
 
   RULES:
   - File must ALWAYS compile (lean_verify)
@@ -101,6 +122,9 @@ allowed_tools:
   - mcp__ledger__ledger_search
   - mcp__ledger__ledger_get
   - mcp__writer_imports__add_import_safely
+  - mcp__snapshots__snapshot_progress
+  - mcp__snapshots__list_snapshots
+  - mcp__snapshots__read_snapshot
   - send_message
   - check_messages
   - get_time

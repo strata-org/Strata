@@ -778,6 +778,9 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         sibling_note = (
             f"\nNOT YOUR TASK — sibling sorries owned by other branches (ignore): {sibling_sorry_info}\n"
             if sibling_sorry_info else "")
+        from .._snapshot_mcp import snapshot_summary
+        snap_summary = snapshot_summary(cwd, entry.workspace)
+        snap_note = f"\n{snap_summary}\n" if snap_summary else ""
         await agent._emit("message", f"[PO5] Guide reviews: {progress}{' (NOT COMPILING)' if compile_note else ''}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
@@ -786,14 +789,31 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"{progress}\nFile: {stub_rel}\n"
                 f"YOUR sorries (the ones to close): {protected_sorry_info}\n"
                 f"{sibling_note}"
+                f"{snap_note}"
                 f"{compile_note}"
-                f"Diagnose and advise what to try next."
+                f"Focus on STRATEGY and overall progress. Compilation errors (if any) are "
+                f"the writer's to fix — only flag them if you believe the writer cannot fix "
+                f"them or they signal a wrong direction. Watch the snapshot trajectory for "
+                f"regression. Diagnose and advise what to try next."
             ))
 
-        # Guide decides
+        # Guide decides. We also let the guide independently call for a snapshot
+        # of the CURRENT state (a strategic cross-check on the writer's own
+        # judgment) — but only when the file compiles, since a snapshot of a
+        # non-compiling file would be rejected anyway.
+        file_compiles = tools.check_compiles(stub_rel).success
+
         def _parse_turns(raw: str) -> dict:
+            out = {}
             m = re.search(r'TURNS:\s*(\d+)', raw)
-            return {"turns": int(m.group(1))} if m else {}
+            if m:
+                out["turns"] = int(m.group(1))
+            sm = re.search(r'SNAPSHOT:\s*(yes|no)', raw, re.IGNORECASE)
+            if sm and sm.group(1).lower() == "yes":
+                out["snapshot"] = True
+                tm = re.search(r'SNAPSHOT_TAG:\s*(.+)', raw)
+                out["snapshot_tag"] = tm.group(1).strip() if tm else "guide-checkpoint"
+            return out
 
         # Track consecutive no-reduction chunks
         if not hasattr(entry, '_stuck_count'):
@@ -811,6 +831,15 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"these obligations in the current file.\n"
             )
 
+        snapshot_prompt = ""
+        if file_compiles:
+            snapshot_prompt = (
+                "\nSNAPSHOT: <yes|no> (does the CURRENT compiling state deserve to be "
+                "banked as a safety net — real progress worth preserving? Judge this "
+                "independently of the writer.)\n"
+                "SNAPSHOT_TAG: <short label> (only if SNAPSHOT: yes)"
+            )
+
         decision, reason, extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
             options=["continue", "decompose", "fresh_start", "give_up"],
@@ -822,9 +851,22 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"- give_up: Statement is false."
                 f"{stuck_hint}"
             ),
-            post_prompt=f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)",
+            post_prompt=(
+                f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)"
+                f"{snapshot_prompt}"
+            ),
             post_prompt_parser=_parse_turns,
         )
+
+        # Guide-driven snapshot: an independent strategic checkpoint, in addition
+        # to any the writer took on its own. save_snapshot re-checks compilation
+        # and dedups, so a redundant request is a harmless no-op.
+        if extras.get("snapshot"):
+            from .._snapshot_mcp import save_snapshot
+            msg = save_snapshot(stub_rel, entry.workspace, cwd,
+                                extras.get("snapshot_tag", "guide-checkpoint"),
+                                note=f"guide checkpoint after chunk {entry.attempts}")
+            await agent._emit("message", f"[PO5] Guide snapshot: {msg}")
 
         if decision == "give_up":
             await agent._emit("message", f"[PO5] Guide gives up: {reason}")
@@ -1039,7 +1081,15 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
 
 async def _grace_phase(agent, state, ledger, entry, cwd,
                         writer, verify_fn, tools, stub_rel, protected_names) -> str:
-    """Factor sorry out of protected block into standalone helpers."""
+    """Decompose-time wrap-up: factor the protected block's remaining sorry into
+    NAMED helpers so the extraction pipeline can move them out.
+
+    This is NOT a "close ALL sorry" grind — the writer is not asked to finish the
+    hard sub-lemmas here, only to (a) prove what it easily can and (b) push each
+    remaining hard goal into a named helper theorem declared above, closing the
+    protected block with `exact helper ...`. The helpers keep their `sorry` and
+    become child obligations after extraction. No writer↔guide back-and-forth.
+    """
     sorry_info = tools.get_sorries_by_theorem(stub_rel)
     protected_sorry = sum(len(sorry_info.get(n, [])) for n in protected_names)
 
@@ -1055,22 +1105,32 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
             f"Helpers go OUTSIDE and ABOVE the mutual...end block.\n"
         )
 
-    await agent._emit("message", f"[PO5] Grace: {protected_sorry} sorry in protected block")
+    await agent._emit("message", f"[PO5] Grace (factor & wrap up): {protected_sorry} sorry in protected block")
 
+    # Bounded — this is a wrap-up, not a solve. A couple of passes is enough to
+    # lift the remaining goals into named helpers; if it stalls we stop and let
+    # extraction take whatever is factored.
     prev_count = protected_sorry
-    for grace in range(max(protected_sorry, 3)):
+    for grace in range(2):
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         positions = {n: sorry_info.get(n, []) for n in protected_names if sorry_info.get(n)}
 
         await verified_loop(
             agent_ctx=writer,
             initial_input=(
-                f"WRAP UP — grace {grace+1}.\n"
-                f"Sorry in protected block: {positions}\n"
-                f"Factor each sorry into a NEW helper theorem declared ABOVE, IN THIS SAME "
-                f"FILE (you cannot create files — the extraction pipeline moves them out "
-                f"later), then close the protected block with `exact helper ...`.\n"
-                f"Protected block ({sorted(protected_names)}) must be sorry-free."
+                f"WRAP UP for extraction — grace {grace+1}.\n"
+                f"Sorry still in the protected block: {positions}\n\n"
+                f"GOAL: make the protected block ({sorted(protected_names)}) sorry-free by "
+                f"FACTORING, not by finishing every hard proof now. For each remaining sorry:\n"
+                f"  1. If you can close it quickly, do so.\n"
+                f"  2. Otherwise, declare a NEW named helper theorem ABOVE it (with its own "
+                f"`sorry`) capturing exactly that obligation, and close the goal with "
+                f"`exact helper ...` / `apply helper ...`.\n"
+                f"The helpers keep their `sorry` — the extraction pipeline moves them into "
+                f"their own files and they become separate obligations. You cannot create "
+                f"files yourself; declare helpers IN THIS SAME FILE.\n"
+                f"The protected block itself must end up sorry-free (all its sorry pushed "
+                f"into named helpers)."
                 f"{mutual_note}\nYou have {GRACE_TURNS} turns."
             ),
             verify=verify_fn, max_rounds=2, max_turns=GRACE_TURNS, use_run_ai=True,
@@ -1561,12 +1621,15 @@ async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLed
         cheat_file = cheat_sheet_name(state.use_cheat_sheet, state.cheat_sheet_path)
         cheat_rel = f"{entry.workspace}/{cheat_file}" if cheat_file else ""
         ledger_mcp = create_ledger_mcp_server(ledger)
+        from .._snapshot_mcp import create_snapshot_server
+        stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
+        snapshot_mcp = create_snapshot_server(stub_rel, entry.workspace, cwd, can_write=False)
         ctx = swarm_agent(
             "proof_guide", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace,
             template_vars={"cheat_sheet_path": cheat_rel},
             can_see=["SearchAgent"],
-            extra_mcp_servers={"ledger": ledger_mcp},
+            extra_mcp_servers={"ledger": ledger_mcp, "snapshots": snapshot_mcp},
             disable_compaction=True,
         )
         internal = await ctx.__aenter__()
@@ -1625,11 +1688,15 @@ async def _get_writer(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLe
                 ancestor_modules.append(anc.workspace.replace("/", "."))
         stub_rel = f"{entry.workspace}/Stub.lean" if "/Stub.lean" not in entry.file_path else entry.file_path
         import_mcp = create_writer_import_server(stub_rel, ancestor_modules, ledger, current_entry_id=entry.id)
+        from .._snapshot_mcp import create_snapshot_server
+        from .hooks import snapshot_tip_hooks
+        snapshot_mcp = create_snapshot_server(stub_rel, entry.workspace, cwd, can_write=True)
         ctx = swarm_agent(
             "proof_writer_v2", swarm=agent.swarm, cwd=agent._cwd,
             workspace=entry.workspace,
             can_see=["SearchAgent"],
-            extra_mcp_servers={"writer_imports": import_mcp},
+            extra_mcp_servers={"writer_imports": import_mcp, "snapshots": snapshot_mcp},
+            extra_hooks=snapshot_tip_hooks(agent_ref=agent, probability=1.0),
         )
         internal = await ctx.__aenter__()
         setattr(agent, f"{attr}_ctx", ctx)

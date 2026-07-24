@@ -115,8 +115,17 @@ async def verified_loop(
                 f"{feedback_prefix}: {last_error}\n\n"
                 f"Your allocated turns are over. The guide will review your work and advise\n"
                 f"on how to proceed or whether the current direction is right.\n"
-                f"You have {turns} turns to ONLY fix the compilation error so the file compiles.\n"
-                f"Do NOT continue proving — leave sorry where needed. Just make it compile."
+                f"You have {turns} turns to make the file COMPILE — no more.\n\n"
+                f"BANK YOUR PROGRESS — do NOT throw work away:\n"
+                f"- Do NOT revert a partial proof back to a bare `:= by sorry`. Keep every\n"
+                f"  step you already proved.\n"
+                f"- If one subgoal is still open, cap ONLY that goal with `sorry` (e.g.\n"
+                f"  `· sorry` on that branch) and leave the rest of the proof intact.\n"
+                f"- If a sub-lemma is genuinely hard, factor it into a NEW named helper\n"
+                f"  theorem declared ABOVE (with its own `sorry`) and close the goal with\n"
+                f"  `exact helper ...`. That preserves the structure and lets the guide\n"
+                f"  direct the helper next.\n"
+                f"Just make it compile while keeping the most-proven state you can."
             )
         if use_run_ai:
             result = await agent_ctx.run_ai(inp=inp, result_type=result_type, max_turns=turns)
