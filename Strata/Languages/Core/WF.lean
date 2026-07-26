@@ -77,7 +77,8 @@ structure WFexitProp  (p : Program) (label : String) : Prop where
     1. `FuncWF` requires function parameters (`getName`, `getVarNames`) that add complexity
     2. `FuncWF.concreteEval_argmatch` is not decidable, making it harder to use in proofs
     3. For statement-level WF, only `arg_nodup` is needed; the additional `FuncWF`
-       properties (`body_freevars`, `concreteEval_argmatch`) are for factory functions
+       properties (`concreteEval_argmatch`, etc.) and the `FuncClosed` closedness
+       properties (`body_freevars`) are for factory functions
 
     Note: `WFfuncDeclProp` checks uniqueness of full `CoreIdent` (including visibility),
     while `FuncWF.arg_nodup` checks uniqueness of just the string names. -/
@@ -151,7 +152,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
   bodyExitsCovered : ∀ ss, d.body = .structured ss →
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss
+    Block.exitsCoveredByBlocks [] ss
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

@@ -199,7 +199,7 @@ where
           -- Type check the function declaration using the shared helper
           -- which returns both the type-checked PureFunc and the Function
           let (decl', func, Env) ← PureFunc.typeCheck C Env decl |>.mapError DiagnosticModel.fromFormat
-          let C := C.addFactoryFunction func
+          let C := C.addFactoryFunction func.toLFunc
           .ok (.funcDecl decl' md, Env, C)
           catch e =>
             .error (errorWithSourceLoc e md)

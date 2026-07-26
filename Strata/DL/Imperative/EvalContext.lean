@@ -225,6 +225,30 @@ class EvalContext (P : PureExpr) (State : Type) where
   addPathCondition  : State → (PathCondition P) → State
   deferObligation   : State → (ProofObligation P) → State
 
+  /-- Whether concrete execution (`Cmd.run`) should continue past a failed
+      assertion, recording it rather than halting on the first failure.
+      Defaults to `false`, preserving the halt-on-first-failure behavior. An
+      instance opts into multi-failure collection by overriding this together
+      with `recordAssertFailure`. If you override this to return `true` without
+      also overriding `recordAssertFailure`, failed assertions are silently
+      dropped. -/
+  continuePastAssert : State → Bool := fun _ => false
+  /-- Record a failed assertion (by label and evaluated condition) *without*
+      halting execution. Only consulted by `Cmd.run` when `continuePastAssert`
+      returns `true`; the default is a no-op since the default
+      `continuePastAssert` never triggers it. -/
+  recordAssertFailure : State → String → P.Expr → State := fun s _ _ => s
+
+  /-- Whether concrete execution (`Cmd.run`) should treat `assume` statements as
+      no-ops instead of enforcing them. Defaults to `false` (assumes are
+      enforced: a false or non-boolean assume is a runtime error). When `true`,
+      assumes are skipped entirely — useful for driving a contract-lowered
+      program concretely, where verification-scaffolding assumes (e.g. an
+      `assume false` in the body of a `requires false` procedure) would
+      otherwise derail execution even though the property under test is an
+      assertion, not the assume. -/
+  ignoreAssume : State → Bool := fun _ => false
+
   -- /-- If two states give the same result to all `lookup` calls, they also
   -- give the same result to all `eval` calls. -/
   -- lookupEval : (s1 : State) → (s2 : State) → (∀ x, lookup s1 x = lookup s2 x) →

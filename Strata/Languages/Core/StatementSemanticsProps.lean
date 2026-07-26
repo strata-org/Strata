@@ -2307,6 +2307,7 @@ theorem eval_projectStore_to_full
     (h_eval : Expression.eval f (projectStore σ₀ σ) e = some v)
     (h_wfStore : WellFormedStore σ f)
     (hWF : Lambda.FactoryWF f)
+    (hClosed : Lambda.FactoryClosed f)
     (hdom : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x ≠ none) :
     Expression.eval f σ e = some v := by
   have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) f := by
@@ -2322,7 +2323,7 @@ theorem eval_projectStore_to_full
     split
     · rfl
     · simp [*] at h_ne
-  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF e _ _ h_wfStoreProj h_wfStore h_agree]
+  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF hClosed e _ _ h_wfStoreProj h_wfStore h_agree]
   exact h_eval
 
 /-! ## Assert-only blocks preserve store -/
@@ -2380,11 +2381,6 @@ theorem stmts_allAssert_preserves_store
     derivation, with `coreIsAtAssert` playing the role of the
     `IsAtAssert` parameter. -/
 
-private theorem coreIsAtAssert_of_inv_mem
-    {g m inv body md} {ρ : Env Expression} {lbl e}
-    (hmem : (lbl, e) ∈ inv) :
-    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
-
 private theorem coreIsAtAssert_seq_of_inner
     {inner : CoreConfig} {ss a}
     (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
@@ -2433,7 +2429,6 @@ theorem core_noFailure_preserved
         (P := Expression) (extendFactory := EvalPureFunc φ)
         coreIsAtAssert
         evalCommand_failure_implies_assert_ff
-        coreIsAtAssert_of_inv_mem
         coreIsAtAssert_seq_of_inner
         coreIsAtAssert_block_of_inner
         _ _

@@ -160,6 +160,17 @@ structure Env where
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
   pathCap : Option Nat := .none
+  /-- When `true`, concrete execution records a failed assertion and keeps
+      going instead of halting on the first failure, so multiple assertion
+      failures can be collected in a single run. See `assertFailures`. -/
+  collectAllAssertFailures : Bool := false
+  /-- Assertion failures collected during concrete execution when
+      `collectAllAssertFailures` is set, most recent first. Each entry pairs the
+      assert's label with its evaluated (false) condition. -/
+  assertFailures : List (String × Expression.Expr) := []
+  /-- When `true`, concrete execution treats `assume` statements as no-ops
+      instead of enforcing them. See `EvalContext.ignoreAssume`. -/
+  ignoreAssumes : Bool := false
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -173,7 +184,10 @@ def Env.init (empty_factory:=false): Env :=
     pathConditions := ⟨[]⟩,
     warnings := []
     deferred := ∅
-    pathCap := .none }
+    pathCap := .none
+    collectAllAssertFailures := false
+    assertFailures := []
+    ignoreAssumes := false }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -183,7 +197,7 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _, collectAllAssertFailures := _, assertFailures := _, ignoreAssumes := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\

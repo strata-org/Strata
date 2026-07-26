@@ -122,7 +122,7 @@ C are already well-typed.
             f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
         let Env := Env.pushEmptySubstScope
         let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
-        let C := C.addFactoryFunction func'
+        let C := C.addFactoryFunction func'.toLFunc
         let Env := Env.popSubstScope
         .ok (Decl.func func' md, C, Env)
           catch e =>
@@ -151,7 +151,7 @@ C are already well-typed.
             |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
           pure (acc ++ [func'], Env)) ([], Env)
         -- Phase 3: Add all type-checked functions to the real context
-        let C := funcs'.foldl (fun C func => C.addFactoryFunction func) C
+        let C := funcs'.foldl (fun C func => C.addFactoryFunction func.toLFunc) C
         let Env := Env.popSubstScope
         .ok (Decl.recFuncBlock funcs' md, C, Env)
           catch e =>

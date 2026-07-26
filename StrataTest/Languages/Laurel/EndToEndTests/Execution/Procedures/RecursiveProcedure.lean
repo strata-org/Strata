@@ -14,7 +14,7 @@ A recursive function over a recursive datatype.
 The `isRecursive` flag should be inferred automatically from the self-call.
 -/
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 datatype IntList {
@@ -29,6 +29,7 @@ procedure listLen(xs: IntList): int
 };
 
 procedure testListLen()
+  entry
   opaque
 {
   var xs: IntList := Cons(1, Cons(2, Nil()));
@@ -49,6 +50,7 @@ procedure listLenOdd(xs: IntList): bool
 };
 
 procedure testMutualRecursion()
+  entry
   opaque
 {
   var xs: IntList := Cons(1, Cons(2, Nil()));

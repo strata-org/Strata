@@ -240,7 +240,7 @@ def assert (t : Term) : SolverM Unit := do
   emitln s!"(assert {s})"
 
 /-- Assert a raw SMT-LIB identifier string (e.g. an abbreviated name like `"t0"`).
-    Used by the Encoder after ANF decomposition, where the term has already been
+    Used by the Encoder after common subexpression elim, where the term has already been
     broken into `define-fun` definitions and only the short name needs asserting. -/
 def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"

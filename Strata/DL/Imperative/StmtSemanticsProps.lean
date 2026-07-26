@@ -220,7 +220,7 @@ private theorem step_preserves_factoryExtendsOf
   -- and no stacked block frames are added or removed.
   | step_cmd _ | step_exit | step_typeDecl
   | step_stmts_nil | step_stmts_cons | step_seq_done | step_seq_exit
-  | step_loop_exit _ _ _ _ | step_loop_nondet_exit _ _ =>
+  | step_loop_exit _ _ | step_loop_nondet_exit =>
     simp only [Config.factoryExtendsOf] at hinv ⊢; exact hinv
   -- Rules that wrap the body in a fresh block (or seq-of-block).  The active
   -- eval is unchanged, and the new block's f_parent is also the pre-config's
@@ -228,7 +228,7 @@ private theorem step_preserves_factoryExtendsOf
   | step_block
   | step_ite_true _ _ | step_ite_false _ _
   | step_ite_nondet_true | step_ite_nondet_false
-  | step_loop_enter _ _ _ _ | step_loop_nondet_enter _ _ =>
+  | step_loop_enter _ _ | step_loop_nondet_enter =>
     simp only [Config.factoryExtendsOf] at hinv ⊢; exact ⟨hinv, hinv⟩
   -- Block-exit rules: drop the inner active eval and restore f_parent.
   | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
@@ -386,8 +386,8 @@ theorem stmts_append_terminates
 local macro "apply_step" : tactic => `(tactic| first
   | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
   | exact .step_ite_false ‹_› ‹_›
-  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_›
-  | exact .step_loop_exit ‹_› ‹_› ‹_› ‹_›
+  | exact .step_loop_enter ‹_› ‹_›
+  | exact .step_loop_exit ‹_› ‹_›
   | exact .step_block
   | exact .step_exit            | exact .step_funcDecl
   | exact .step_typeDecl        | exact .step_stmts_nil
@@ -416,7 +416,7 @@ private def step_simulation
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
   | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ _ _ | step_loop_exit _ _ _ _
+  | step_loop_enter _ _ | step_loop_exit _ _
   | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, hfac⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hfac
@@ -429,14 +429,14 @@ private def step_simulation
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, hfac⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs hfac; subst hs; subst hfac
     exact ⟨_, .step_ite_nondet_false, by simp [ConfigSE]⟩
-  | step_loop_nondet_enter _ _ =>
+  | step_loop_nondet_enter =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, hfac⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs hfac; subst hs; subst hfac
-    exact ⟨_, .step_loop_nondet_enter ‹_› ‹_›, by simp_all [ConfigSE]⟩
-  | step_loop_nondet_exit _ _ =>
+    exact ⟨_, .step_loop_nondet_enter, by simp_all [ConfigSE]⟩
+  | step_loop_nondet_exit =>
     cases c₂ <;> try contradiction
     obtain ⟨rfl, hs, hfac⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs hfac; subst hs; subst hfac
-    exact ⟨_, .step_loop_nondet_exit ‹_› ‹_›, by simp_all [ConfigSE]⟩
+    exact ⟨_, .step_loop_nondet_exit, by simp_all [ConfigSE]⟩
   | step_seq_inner h =>
     cases c₂ with
     | seq i₂ _ =>
@@ -645,7 +645,7 @@ omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
     (`Block.exitsCoveredByBlocks [] bss`), then `.stmts bss ρ` never reaches `.exiting`. -/
 theorem block_exitsCoveredByBlocks_noEscape
     (bss : List (Stmt P CmdT))
-    (hwp : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] bss) :
+    (hwp : Block.exitsCoveredByBlocks [] bss) :
     ∀ (ρ : Env P) (lbl : String) (ρ' : Env P),
       ¬ StepStmtStar P EvalCmd extendFactory (.stmts bss ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
@@ -1037,9 +1037,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
     simp [isAtAssert]
   | .stmt (.loop _ _ inv _ _) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
-    intro hat
-    exact hno.1 label expr hat rfl
+    simp [isAtAssert]
   | .stmts [] _ => simp [isAtAssert]
   | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
@@ -1052,10 +1050,7 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmts ((.funcDecl ..) :: _) _ | .stmts ((.typeDecl ..) :: _) _ =>
     simp [isAtAssert]
   | .stmts ((.loop _ _ inv _ _) :: _) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert,
-      Stmt.noMatchingAssert] at hno
-    intro hat
-    exact hno.1.1 label expr hat rfl
+    simp [isAtAssert]
   | .terminal _ | .exiting _ _ => simp [isAtAssert]
   | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
@@ -1244,38 +1239,6 @@ evaluator `EvalCmd`, and an `IsAtAssert` predicate.  Language extensions
 to the loop / seq / block structure of configurations. -/
 
 omit [HasFvar P] [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
-/-- Helper: when all asserts at a loop config pass (via `hv`), the
-    loop-step's `hasInvFailure` boolean is forced to `false`. -/
-theorem loop_step_hasInvFailure_false
-    {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-    (IsAtAssert : Config P CmdT → AssertId P → Prop)
-    (h_IsAtAssert_loop_inv : ∀ {g m inv body md ρ lbl e},
-      (lbl, e) ∈ inv →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
-    {c : Config P CmdT} {ρ : Env P}
-    {inv : List (String × P.Expr)} {guard : ExprOrNondet P}
-    {m : Option P.Expr} {body : List (Stmt P CmdT)} {md : MetaData P}
-    {hasInvFailure : Bool}
-    (hc_shape : c = .stmt (.loop guard m inv body md) ρ)
-    (hv : ∀ a cfg, StepStmtStar P EvalCmd extendFactory c cfg →
-      IsAtAssert cfg a → P.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt)
-    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ inv ∧
-      P.eval ρ.factory ρ.store le.snd = some HasBool.ff) :
-    hasInvFailure = false := by
-  cases hb : hasInvFailure with
-  | false => rfl
-  | true =>
-    exfalso
-    rw [hb] at hff_iff
-    have ⟨⟨lbl, e⟩, hmem, he_ff⟩ := hff_iff.mp rfl
-    have hat : IsAtAssert c ⟨lbl, e⟩ := hc_shape ▸ h_IsAtAssert_loop_inv hmem
-    have htt := hv ⟨lbl, e⟩ c (.refl _) hat
-    rw [hc_shape] at htt
-    simp only [Config.getStore, Config.getEnv] at htt
-    rw [he_ff] at htt
-    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-
-omit [HasFvar P] [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Single-step: if hasFailure is false and all reachable asserts pass,
     then hasFailure stays false after one step.
 
@@ -1290,9 +1253,6 @@ theorem step_preserves_noFailure
         EvalCmd ρ.factory ρ.store c σ' true →
         ∃ a : AssertId P, IsAtAssert (.stmt (.cmd c) ρ) a ∧
           P.eval ρ.factory ρ.store a.expr = some HasBool.ff)
-    (h_IsAtAssert_loop : ∀ {g m inv body md ρ lbl e},
-      (lbl, e) ∈ inv →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
     (h_IsAtAssert_seq : ∀ {inner ss a},
       IsAtAssert inner a → IsAtAssert (.seq inner ss) a)
     (h_IsAtAssert_block : ∀ {label σ_parent f_parent inner a},
@@ -1317,14 +1277,9 @@ theorem step_preserves_noFailure
       rw [hff] at htt
       exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
   | step_block | step_funcDecl => simp [Config.getEnv]; exact hnf
-  | step_loop_enter _ _ hff_iff _
-  | step_loop_exit _ _ hff_iff _
-  | step_loop_nondet_enter _ hff_iff | step_loop_nondet_exit _ hff_iff =>
-    simp only [Config.getEnv]
-    have hinv := loop_step_hasInvFailure_false (P := P) (extendFactory := extendFactory)
-      IsAtAssert h_IsAtAssert_loop rfl hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact hinv
+  | step_loop_enter _ _ | step_loop_exit _ _
+  | step_loop_nondet_enter | step_loop_nondet_exit =>
+    simp only [Config.getEnv] at hnf ⊢; exact hnf
   | step_seq_inner h ih =>
     exact ih
       (fun a cfg hr hat =>
@@ -1363,7 +1318,6 @@ theorem allAssertsValid_preserves_noFailure
         (fun hcmd => by
           cases hcmd with
           | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩)
-        (fun hmem => hmem)
         (fun h => h)
         (fun h => h)
         _ _ hv hnf hstep)
@@ -1766,7 +1720,7 @@ omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem stmtsT_append_terminal
     (ss₁ : List (Stmt P CmdT)) (s : Stmt P CmdT) (ρ₀ ρ' : Env P)
     (hstar : ReflTransT (StepStmt P EvalCmd extendFactory) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] ss₁) :
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] ss₁) :
     ∃ (ρ₁ : Env P), ∃ (_ : StepStmtStar P EvalCmd extendFactory (.stmts ss₁ ρ₀) (.terminal ρ₁)),
       ∃ (hs : ReflTransT (StepStmt P EvalCmd extendFactory) (.stmt s ρ₁) (.terminal ρ')),
       hs.len < hstar.len := by

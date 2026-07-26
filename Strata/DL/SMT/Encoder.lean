@@ -38,9 +38,10 @@ The encoding pipeline has two layers:
 The Encoder works purely with `Term` values. The `SolverM` layer handles all
 string conversion and caching when emitting commands.
 
-Deduplication of common subexpressions is handled by the Core-level ANF
-encoder (`ANFEncoder.lean`), which runs as a pipeline phase before SMT
-encoding. This keeps the SMT encoder simple and close to a 1-1 translation.
+Deduplication of common subexpressions is handled by the Core-level
+common-subexpression-elimination pass (`CommonSubexprElim.lean`), which runs as
+a pipeline phase before SMT encoding. This keeps the SMT encoder simple and
+close to a 1-1 translation.
 
  We will use the following type representations for primitive types:
  * `TermType.bool`:     builtin SMT `Bool` type

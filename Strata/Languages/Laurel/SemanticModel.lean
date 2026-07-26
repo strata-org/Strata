@@ -122,9 +122,9 @@ structure SemanticModel where
   /-- Procedures that (transitively) read the heap, by name. Computed once by
       `HeapAnalysis` during resolution so downstream checks can decide whether a
       call reads the heap without re-running the call-graph analysis. -/
-  heapReaders: Std.HashSet Identifier := {}
+  heapReaders: Std.HashSet Nat := {}
   /-- Procedures that (transitively) write the heap, by name. See `heapReaders`. -/
-  heapWriters: Std.HashSet Identifier := {}
+  heapWriters: Std.HashSet Nat := {}
   deriving Repr
 
 /-- Look up the resolved node for an identifier, returning `none` if the identifier
@@ -139,7 +139,7 @@ def SemanticModel.get (model: SemanticModel) (iden: Identifier): ResolvedNode :=
 Compute the flattened set of ancestors for a composite type, including itself.
 Traverses the `extending` list transitively.
 -/
-def computeAncestors (model: SemanticModel) (name : Identifier) : List CompositeType :=
+def computeAncestors (model: SemanticModel) (name : Identifier) : Except String (List CompositeType) := do
   let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
     match fuel with
     | 0 =>
@@ -151,7 +151,11 @@ def computeAncestors (model: SemanticModel) (name : Identifier) : List Composite
         | .compositeType (ty : CompositeType) =>
           [ty] ++ ty.extending.flatMap (fun parent => go fuel' parent)
         | _ => []
-  let seen : List Identifier := []
-  (go model.compositeCount name).foldl (fun (acc, seen) ct =>
-    if seen.contains ct.name then (acc, seen)
-    else (acc ++ [ct], seen ++ [ct.name])) ([], seen) |>.1
+  let mut seen : Std.HashSet Nat := {}
+  let mut acc : List CompositeType := []
+  for ct in go model.compositeCount name do
+    let uid ← Identifier.getUniqueId ct.name
+    if !seen.contains uid then
+      acc := acc ++ [ct]
+      seen := seen.insert uid
+  pure acc

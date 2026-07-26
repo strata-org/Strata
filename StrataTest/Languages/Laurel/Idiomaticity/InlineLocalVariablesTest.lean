@@ -120,4 +120,35 @@ procedure shadowing() returns (r: bool) {
 };
 #end
 
+/-! ## Inner-scope shadow: same `.text`, different `uniqueId`
+
+    Two `var x` — one outer, one inner — share `.text` but resolve to
+    different `uniqueId`s. The inliner must key by `uniqueId` so the
+    inner use inlines to `2` and the post-block use inlines to `1`. -/
+
+/--
+info: procedure innerShadow()
+  returns (r: int)
+{
+  if true
+    then {
+      assert 2 == 2
+    };
+  return 1
+};
+-/
+#guard_msgs in
+#eval printInlined
+#strata
+program Laurel;
+procedure innerShadow() returns (r: int) {
+  var x: int := 1;
+  if (true) then {
+    var x: int := 2;
+    assert x == 2
+  };
+  return x
+};
+#end
+
 end Laurel

@@ -6,6 +6,7 @@
 module
 
 import Strata.Transform.LoopElim
+import Strata.Transform.InsertLoopInvariantAsserts
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.SMTEncoder
@@ -49,10 +50,15 @@ def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
     axms := ctx.axms.toArray, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
-  { sorts := .ofArray ctx.sorts
-    ufs := .ofArray ctx.ufs
-    ifs := .ofArray ctx.ifs
-    axms := .ofArray ctx.axms
+  -- Build each OrderedKeyedSet with `ofArrayUnchecked`, not `ofArray`.
+  -- The reflection tactic `gen_smt_vcs` evaluates this context in the
+  -- *kernel* and `ofArray` which uses `HashSet` insert-fold does not reduce.
+  -- The fields come from `ofCore` which are already-deduped,
+  -- so their keys are distinct and the invariant holds.
+  { sorts := .ofArrayUnchecked ctx.sorts
+    ufs := .ofArrayUnchecked ctx.ufs
+    ifs := .ofArrayUnchecked ctx.ifs
+    axms := .ofArrayUnchecked ctx.axms
     tySubst := ctx.tySubst
     typeFactory := #[]
     seenDatatypes := {}
@@ -69,7 +75,11 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := (loopElim program).fst
+  let transform : Transform.CoreTransformM (Bool × Program) := do
+    let (_, program') ← insertLoopInvariantAsserts program
+    loopElim program'
+  let (res, _) := StateT.run (ExceptT.run transform) Transform.CoreTransformState.emp
+  let (_, program) ← res.toOption
   match Core.typeCheck options program with
   | .error _ => none
   | .ok tcProgram =>

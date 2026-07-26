@@ -17,7 +17,7 @@ from `T23_IncrDecr.lean` to avoid the heap-parameterized program perturbing
 counterexample search for the failing tests there.
 
 Why field-IncrDecr in expression position works: the pipeline runs
-`EliminateIncrDecr` first, which lowers `(c#n)++` to
+`EliminateIncrDecrAndCompoundAssign` first, which lowers `(c#n)++` to
 `(c#n := c#n + 1) - 1`. `HeapParameterization` then runs and rewrites the
 inner `c#n := c#n + 1` field-assign into a sequence:
 

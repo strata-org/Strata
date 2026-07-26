@@ -360,9 +360,6 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let base' ← resolveHighType base
     let args' ← args.mapM resolveHighType
     pure (.Applied base' args')
-  | .Pure base =>
-    let base' ← resolveHighType base
-    pure (.Pure base')
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
     pure (.Intersection tys')
@@ -516,6 +513,31 @@ private def underlyingBaseType (s : ResolveState) (fuel : Nat) (ty : HighType) :
       | _ => ty
     | _ => ty
 
+/-- A short display name for a primitive/base `HighType`, for compound-assignment
+    diagnostics. Shared by the target check and the RHS check so their wording
+    cannot drift. -/
+private def highTypeDisplayName : HighType → String
+  | .TInt => "int" | .TReal => "real" | .TFloat64 => "float64"
+  | .TString => "string" | .TBool => "bool" | .TBv n => s!"bv{n}"
+  | .UserDefined r => r.text | _ => "<unknown>"
+
+/-- Whether the (already base-peeled) element type `baseTy` is an acceptable target
+    for compound-assignment operator `op`. Used by the resolution-time target check
+    (`checkCompoundAssignTargetType`), driven by what the Laurel→Core lowering of
+    `target op rhs` supports: `+= -= *= /=` accept `int`/`real`; `%=` is `int`-only
+    (`.Mod` has no real lowering); `^=` is `string`-only. `Unknown` is accepted for
+    every operator so an already-unresolved target is left alone rather than stacking a
+    spurious operator-type error on top of its real resolution error (mirrors the
+    `.Unknown` arm of `checkIncrDecrTargetType`). -/
+private def compoundAssignAccepts (op : Operation) (baseTy : HighType) : Bool :=
+  match baseTy with
+  | .Unknown => true
+  | _ =>
+    match op with
+    | .StrConcat => match baseTy with | .TString => true | _ => false
+    | .Mod       => match baseTy with | .TInt => true | _ => false
+    | _          => match baseTy with | .TInt | .TReal => true | _ => false
+
 /-- Look up the declared type of an `IncrDecr` target during resolution.
     Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
     `none` when the type cannot be determined (e.g. an unresolved name). -/
@@ -534,7 +556,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
 
 /-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
     Only `int` and int-based constrained types (e.g. `nat`) are supported by the
-    `EliminateIncrDecr` lowering; `bv`, `real`, and `float64` are rejected here
+    `EliminateIncrDecrAndCompoundAssign` lowering; `bv`, `real`, and `float64` are rejected here
     with a clear Laurel diagnostic (and a source range) rather than leaking a raw
     Core unification error from a later pass. Unknown/unresolved types are left
     alone so that resolution errors are not duplicated as spurious incr/decr
@@ -546,21 +568,47 @@ private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
   | some ty =>
     let s ← get
     let baseTy := underlyingBaseType s 100 ty
-    let unsupported? : Option String := match baseTy with
-      | .TReal => some "real"
-      | .TFloat64 => some "float64"
-      | .TBv n => some s!"bv{n}"
-      | _ => none
-    match unsupported? with
-    | none => pure ()
-    | some tyName =>
+    -- Allowlist: `++`/`--` lower to `x := x + 1` with an *int* literal, so only `int`
+    -- (and int-based constrained types, which peel to `TInt`) are supported. `Unknown`
+    -- is left alone so an unresolved target does not get a spurious incr/decr error on
+    -- top of its real resolution error. Everything else (`real`, `float64`, `bv`,
+    -- `string`, composites, …) is rejected here with a clear message rather than leaking
+    -- a raw Core unification error from a later pass.
+    match baseTy with
+    | .TInt | .Unknown => pure ()
+    | _ =>
       let opName := match op with
         | .Incr => "increment ('++')"
         | .Decr => "decrement ('--')"
+      let tyName := highTypeDisplayName baseTy
       let diag := diagnosticFromSource source
         s!"The {opName} operator is only supported on 'int' and int-based \
            constrained types (e.g. 'nat'), but the operand has type '{tyName}'. \
            Use an explicit assignment instead, e.g. 'x := x + 1'."
+      modify fun s => { s with errors := s.errors.push diag }
+
+/-- Emit a diagnostic if a compound-assignment operator is applied to an unsupported
+    target element type, per `compoundAssignAccepts`. Checks only the *target*; the RHS
+    is type-checked by the `Check.resolveStmtExpr` call in `Synth.compoundAssign`. -/
+private def checkCompoundAssignTargetType (op : Operation) (target : VariableMd)
+    (source : Option FileRange) : ResolveM Unit := do
+  match (← incrDecrTargetType target) with
+  | none => pure ()
+  | some ty =>
+    let s ← get
+    let baseTy := underlyingBaseType s 100 ty
+    let opTok := match op with
+      | .Add => "+=" | .Sub => "-=" | .Mul => "*=" | .Div => "/="
+      | .Mod => "%=" | .StrConcat => "^=" | _ => "(compound assignment)"
+    if !(compoundAssignAccepts op baseTy) then
+      let allowed := match op with
+        | .StrConcat => "'string'"
+        | .Mod => "'int' and int-based constrained types (e.g. 'nat')"
+        | _ => "'int', int-based constrained types (e.g. 'nat'), and 'real'"
+      let tyName := highTypeDisplayName baseTy
+      let diag := diagnosticFromSource source
+        s!"The '{opTok}' operator is only supported on {allowed}, but the operand has \
+           type '{tyName}'. Use an explicit assignment instead, e.g. 'x := x {opTok.dropEnd 1} e'."
       modify fun s => { s with errors := s.errors.push diag }
 
 /-! ## Typing rules
@@ -608,7 +656,7 @@ statements are in effect position (synthesized and discarded via
 
 Each typing rule is implemented as its own helper inside the mutual
 block below. Helpers are grouped by section to mirror the *Typing
-rules* index in `LaurelDoc.lean`:
+rules* index in `LaurelUserGuide.lean`:
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Check.varDeclare`
@@ -671,6 +719,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
   | .Var (.Local ref) => Synth.varLocal ref source
   | .IncrDecr mode op target =>
     Synth.incrDecr exprMd mode op target source (by rw [h_node])
+  | .CompoundAssign op target rhs =>
+    Synth.compoundAssign exprMd op target rhs source (by rw [h_node])
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
   | .Assign targets value =>
@@ -1561,7 +1611,7 @@ def Check.assign (exprMd : StmtExprMd)
     type is then checked by `checkIncrDecrTargetType`, which emits a Laurel
     diagnostic when `++`/`--` is applied to an unsupported type (`bv`,
     `real`, `float64`) rather than letting a raw Core unification error leak
-    from the later `EliminateIncrDecr` lowering. Used in expression position
+    from the later `EliminateIncrDecrAndCompoundAssign` lowering. Used in expression position
     (`var y := ++x`, `if x++ > 0`, `f(x++)`); in statement position the
     yielded value is discarded by `Check.statement`. -/
 def Synth.incrDecr (exprMd : StmtExprMd)
@@ -1596,6 +1646,60 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     have hsz2 := target.sizeOf_val_lt
     rw [h_tgt] at hsz2
     term_by_mem
+
+/-- (CompoundAssign)
+    ```
+    Γ ⊢ target ⇒ T    T accepts op    Γ ⊢ rhs ⇐ T
+    ─────────────────────────────────────────────
+    Γ ⊢ CompoundAssign op target rhs ⇒ T
+    ```
+    `x op= e` reads and writes its target, so it synthesizes the target's own type
+    `T` and checks the RHS against it. Reviewable by analogy to two existing rules:
+    target resolution is identical to `Synth.incrDecr` (including the conservative
+    `.Declare` arm — unlike `Synth.assign`, the target is never *introduced*, so no
+    `defineNameCheckDup`); the RHS is then checked against the single target type with
+    `Check.resolveStmtExpr`, as `Synth.assign` does for its (here always single) target.
+    The element type is checked by `checkCompoundAssignTargetType`. Used in expression
+    position (`var y := (x += 2)`); in statement position the value is discarded by
+    `Check.statement`. -/
+def Synth.compoundAssign (exprMd : StmtExprMd)
+    (op : Operation) (target : VariableMd) (rhs : StmtExprMd)
+    (source : Option FileRange)
+    (h : exprMd.val = .CompoundAssign op target rhs) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let target' ← match h_tgt : target.val with
+    | .Local ref =>
+      let ref' ← resolveRef ref source
+      pure (⟨.Local ref', target.source⟩ : VariableMd)
+    | .Field tgt fieldName =>
+      let (tgt', _) ← Synth.resolveStmtExpr tgt
+      let fieldName' ← resolveFieldRef tgt' fieldName source
+      pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
+    | .Declare param =>
+      -- Should not occur — the translator rejects a declaration target.
+      let ty' ← resolveHighType param.type
+      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+  checkCompoundAssignTargetType op target' source
+  let resultTy ← match target'.val with
+    | .Local ref => getVarType ref
+    | .Declare param => pure param.type
+    | .Field _ fieldName => getVarType fieldName
+  let rhs' ← Check.resolveStmtExpr rhs resultTy
+  pure (.CompoundAssign op target' rhs', resultTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    -- Two recursive calls, two obligations. `Check rhs` (rhs is a direct subterm)
+    -- needs only the CompoundAssign step; `Synth tgt` (the `.Field` arm, where `tgt`
+    -- is nested inside `target`) also needs the `target` step — hence the `try`.
+    -- This is `Synth.incrDecr`'s proof generalised with `all_goals` to also cover
+    -- the rhs obligation, using mainline's `term_by_mem` to close.
+    all_goals
+      apply Prod.Lex.left
+      have hsz := exprMd.sizeOf_val_lt
+      rw [h] at hsz
+      try (have hsz2 := target.sizeOf_val_lt
+           rw [h_tgt] at hsz2)
+      term_by_mem
 
 -- ### Calls
 
@@ -1649,14 +1753,15 @@ def Synth.staticCall (exprMd : StmtExprMd)
   --   * `select(map, key)`     ⇒ the map's value type
   --   * `update(map, key, val)` ⇒ the map type itself
   --   * `mapConst(val)`        ⇒ `Map _ (typeof val)` (key type is not recoverable)
-  if callee == "select" || callee == "update" || callee == "mapConst" then
+  if callee.text == "select" || callee.text == "update" || callee.text == "mapConst" then
+    let callee' ← resolveRef callee source
     let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Synth.resolveStmtExpr a)
     let args' := resolved.map (·.1)
     let argTys := resolved.map (·.2)
     let resultTy : HighTypeMd ←
-      match callee, argTys with
+      match callee.text, argTys with
       | "select", mapTy :: _ =>
         match mapTy.val with
         | .TMap _ valueTy => pure valueTy
@@ -1664,7 +1769,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       | "update", mapTy :: _ => pure mapTy
       | "mapConst", valTy :: _ => pure ⟨ .TMap ⟨.UserDefined "TypeTag", source⟩ valTy, source ⟩
       | _, _ => pure ⟨ .Unknown, source ⟩
-    return (.StaticCall callee args', resultTy)
+    return (.StaticCall callee' args', resultTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
@@ -2834,7 +2939,6 @@ private def collectHighType (map : Std.HashMap Nat ResolvedNode) (ty : HighTypeM
   | .Applied base args =>
     let map := collectHighType map base
     args.foldl collectHighType map
-  | .Pure base => collectHighType map base
   | .Intersection tys => tys.foldl collectHighType map
   | .MultiValuedExpr tys => tys.foldl collectHighType map
   | _ => map
@@ -2944,25 +3048,31 @@ def buildRefToDef (program : Program) : Std.HashMap Nat ResolvedNode :=
 Check if a field can be reached through a given type (directly declared or inherited).
 Returns true if the type or any of its ancestors declares the field.
 -/
-def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+def canReachField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Except String Bool := do
   match model.get fieldName with
-  | .field owner _ => ((computeAncestors model typeName).find? (fun t => t.name == owner)).isSome
-  | _ => false -- recover from a resolution error
+  | .field owner _ =>
+    let ancestors ← computeAncestors model typeName
+    let found ← ancestors.anyM (fun t => owner.sameId t.name)
+    pure found
+  | _ => pure false -- recover from a resolution error
 
 /--
 Check if a field is inherited through multiple parent paths (diamond inheritance).
 Returns true if more than one direct parent of the given type can reach the field.
 -/
-def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Bool :=
+def isDiamondInheritedField (model : SemanticModel) (typeName : Identifier) (fieldName : Identifier) : Except String Bool := do
   match model.get typeName with
   | .compositeType ct =>
     -- If the field is directly declared on this type, it's not a diamond
-    if ct.fields.any (·.name == fieldName) then false
-    else
+    let directlyDeclared ← ct.fields.anyM (fun f => fieldName.sameId f.name)
+    if directlyDeclared then pure false
+    else do
       -- Count how many direct parents can reach this field
-      let parentsWithField := ct.extending.filter (canReachField model · fieldName)
-      parentsWithField.length > 1
-  | _ => false
+      let count ← ct.extending.foldlM (init := 0) fun count parent => do
+        let reaches ← canReachField model parent fieldName
+        pure (if reaches then count + 1 else count)
+      pure (count > 1)
+  | _ => pure false
 
 /--
 Check whether accessing `fieldName` on `target` is a diamond-inherited field access,
@@ -2972,13 +3082,15 @@ private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd
     (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
   match (computeExprType model target).val with
   | .UserDefined typeName =>
-    if isDiamondInheritedField model typeName fieldName then
+    match isDiamondInheritedField model typeName fieldName with
+    | .ok true =>
       match source with
       | some fileRange =>
         [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
       | none =>
         [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
-    else []
+    | .ok false => []
+    | .error e => [DiagnosticModel.fromMessage e .StrataBug]
   | _ => []
 
 /--
@@ -2998,6 +3110,12 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
         | .Field target fieldName => checkDiamondFieldAccess model target fieldName t.source
         | .Local _ | .Declare _ => []
     | .IncrDecr _ _ target =>
+      match target.val with
+      | .Field tgt fieldName => checkDiamondFieldAccess model tgt fieldName target.source
+      | .Local _ | .Declare _ => []
+    | .CompoundAssign _ target _ =>
+      -- `rhs` and any nested field subtree are visited by `collectStmtExprList`'s
+      -- fold; only the direct `.Field` target introduces a field access here.
       match target.val with
       | .Field tgt fieldName => checkDiamondFieldAccess model tgt fieldName target.source
       | .Local _ | .Declare _ => []
@@ -3094,17 +3212,21 @@ private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
     (`x#f`) directly, or calls a procedure that (transitively) reads the heap.
     The latter uses the `heapReaders` set precomputed on the `SemanticModel`, so
     e.g. `old(f(x))` is recognized as meaningful when `f` reads the heap. -/
-private def containsHeapRead (heapReaders : Std.HashSet Identifier) (e : StmtExprMd) : Bool :=
+private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
   let result := ((collectExprMd e).run {}).2
-  result.readsHeapDirectly || result.callees.any heapReaders.contains
+  result.readsHeapDirectly || result.callees.any (fun c =>
+    match c.uniqueId with
+    | some uid => heapReaders.contains uid
+    | none => dbg_trace s!"WARNING: containsHeapRead: callee '{c.text}' missing uniqueId"; false)
 
 /-- Names of a procedure's inout parameters: those appearing in both the inputs
     and the outputs. The pre- and post-state of an inout parameter differ, so
     `old(...)` over such a parameter is meaningful even when the procedure does
     not touch the heap. Mirrors `PushOldInward.procInoutNames`. -/
-private def procInoutNames (proc : Procedure) : List String :=
-  proc.inputs.filterMap fun inp =>
-    if proc.outputs.any (·.name == inp.name) then some inp.name.text else none
+private def procInoutNames (proc : Procedure) : Except String (List String) :=
+  proc.inputs.foldlM (init := []) fun result inp => do
+    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
+    pure (if isInout then result ++ [inp.name.text] else result)
 
 /-- True when `e` references one of `inoutNames` (an inout parameter), in which
     case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/
@@ -3132,9 +3254,11 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     the single source of user-program diagnostics. The two notions stay in sync
     because both classify "writes the heap" / "reads the heap" via the shared
     `HeapAnalysis` and inout membership via the same input/output name match. -/
-private def oldWarningsForProc (heapReaders : Std.HashSet Identifier) (writesHeap : Bool)
+private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Bool)
     (proc : Procedure) : List DiagnosticModel :=
-  let inoutNames := procInoutNames proc
+  match procInoutNames proc with
+  | .error e => [DiagnosticModel.fromMessage e .StrataBug]
+  | .ok inoutNames =>
   let visit (n : StmtExprMd) : StateM (List DiagnosticModel) (Option StmtExprMd) := do
     match n.val with
     | .Old inner =>
@@ -3167,7 +3291,10 @@ def validateOldUsage (model : SemanticModel) (program : Program) : List Diagnost
     | _ => []
   let allProcs := program.staticProcedures ++ instanceProcs
   allProcs.flatMap fun proc =>
-    oldWarningsForProc model.heapReaders (model.heapWriters.contains proc.name) proc
+    let writesHeap := match proc.name.uniqueId with
+      | some uid => model.heapWriters.contains uid
+      | none => dbg_trace s!"WARNING: validateOldUsage: proc '{proc.name.text}' missing uniqueId"; false
+    oldWarningsForProc model.heapReaders writesHeap proc
 
 /-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
     `ContractPass` generates is quantified over the procedure's inputs only, so an
@@ -3210,13 +3337,24 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   let allProcs := program'.staticProcedures ++ program'.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
+  let heapReadersResult := computeReadsHeap allProcs
+  let heapWritersResult := computeWritesHeap allProcs
+  let heapReaders := heapReadersResult.toOption.getD {}
+  let heapWriters := heapWritersResult.toOption.getD {}
   let semanticModel := {
     compositeCount := program.types.length,
     refToDef := refToDef,
     nextId := finalState.nextId,
-    heapReaders := computeReadsHeap allProcs,
-    heapWriters := computeWritesHeap allProcs
+    heapReaders := heapReaders
+    heapWriters := heapWriters
   }
+  let heapAnalysisErrors : Array DiagnosticModel :=
+    (match heapReadersResult with
+      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeReadsHeap: {e}" .StrataBug]
+      | .ok _ => #[]) ++
+    (match heapWritersResult with
+      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeWritesHeap: {e}" .StrataBug]
+      | .ok _ => #[])
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
   -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
   -- resolution: later passes (and their re-resolutions) deliberately rewrite
@@ -3229,7 +3367,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     if existingModel.isNone then validateInvokeOnOutputRefs program' else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
+    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
