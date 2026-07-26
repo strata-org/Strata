@@ -19,7 +19,7 @@ If an E2E test fails, the likely cause is one of Laurel's lowering passes. We ca
 
 # Idiomaticity
 
-Idiomaticity tests enable manually reviewing the quality of the encoding of a particular pass. Such a test is always made for a particular pass, named <pass>Test, and compares code right before and right after the pass runs. Note that many passes only take a subset of Laurel code, so idiomaticity must take this into account when specifying the input program.
+Idiomaticity tests enable manually reviewing the quality of the encoding of a particular pass. Such a test is always made for a particular pass, named `<pass>Test`, and compares code right before and right after the pass runs. Note that many passes only take a subset of Laurel code, so idiomaticity must take this into account when specifying the input program.
 
 Having an idiomaticity test per pass is recommend but not required.
 

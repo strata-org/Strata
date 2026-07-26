@@ -57,7 +57,7 @@ theorem consequence (params : L.InitEnvWFParamsTy)
 
 end
 
-/-! ## Structural Hoare rules (Imperative-specific) -/
+/-! ## Structural Hoare rules (Structured Imperative-specific) -/
 
 section StmtRules
 
@@ -248,7 +248,88 @@ theorem ite (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn
         have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀ hexit
         subst heq; exact hpost_proj ρ_inner _ _ hext hpost hf
 
-/- TODO: the WHILE rule -/
+omit [HasOps P] in
+/-- Helper for the `while` rule: strong induction on the length of the
+    (type-valued) execution derivation.  Each loop iteration runs the body
+    once and re-enters the loop with a strictly shorter remaining trace. -/
+private theorem while_gen
+    {g : P.Expr} {m : Option P.Expr} {inv : List (String × P.Expr)}
+    {body : List (Stmt P CmdT)} {md : MetaData P}
+    {Inv : Env P → Prop}
+    (hbody : TripleBlock evalCmd extendFactory
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store g = some HasBool.tt) body Inv)
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
+    (hInv_proj : PostWF extendFactory Inv)
+    (ρ₀ ρ' : Env P) (n : Nat)
+    (hInv : Inv ρ₀)
+    (hwf : WellFormedSemanticEval (P := P) ρ₀.factory)
+    (hf₀ : ρ₀.hasFailure = false)
+    (hstarT : ReflTransT (StepStmt P evalCmd extendFactory)
+      (.stmt (.loop (.det g) m inv body md) ρ₀) (.terminal ρ'))
+    (hlen : hstarT.len ≤ n) :
+    (Inv ρ' ∧ P.eval ρ'.factory ρ'.store g = some HasBool.ff) ∧ ρ'.hasFailure = false := by
+  induction n generalizing ρ₀ ρ' with
+  | zero =>
+    -- A run from a loop statement to a terminal must take at least one step.
+    match hstarT, hlen with
+    | .step _ _ _ _ _, hlen => simp [ReflTransT.len] at hlen
+  | succ n ih =>
+    match hstarT, hlen with
+    | .step _ _ _ (StepStmt.step_loop_exit hg _) hrest, hlen =>
+      -- Guard is false: the loop terminates immediately, `ρ' = ρ₀`.
+      match hrest with
+      | .refl _ => exact ⟨⟨hInv, hg⟩, hf₀⟩
+      | .step _ _ _ h _ => exact nomatch h
+    | .step _ _ _ (StepStmt.step_loop_enter hg _) hrest, hlen =>
+      -- Guard is true: run the body once (in its block), then re-enter the loop.
+      -- Split the `.seq (block body) [loop]` into the block run and the loop run.
+      have ⟨ρ_mid, h_block_term, h_loop_rest, hlen_seq⟩ := seqT_reaches_terminal hrest
+      -- The body's block cannot escape (its exits are covered), so its inner
+      -- statements reach terminal at some `ρ_inner`.
+      have h_noescape := block_exitsCoveredByBlocks_noEscape P evalCmd extendFactory body hcov ρ₀
+      have ⟨ρ_inner, h_inner_term, heq_ρ_mid, hlen_inner⟩ :=
+        blockT_reaches_terminal_noExit h_block_term h_noescape
+      -- One body iteration preserves the invariant (using guard = true).
+      have ⟨hInv_inner, hf_inner⟩ :=
+        hbody ρ₀ ρ_inner ⟨hInv, hg⟩ hwf hf₀ (.inl (reflTransT_to_prop h_inner_term))
+      -- Project the invariant back across the block boundary to `ρ_mid`.
+      have hinv₀ : Config.factoryExtendsOf P extendFactory ρ₀.factory (.stmts body ρ₀) := by
+        simp only [Config.factoryExtendsOf]; exact .refl
+      have hext := star_preserves_factoryExtendsOf P evalCmd extendFactory hinv₀
+        (reflTransT_to_prop h_inner_term)
+      have ⟨hInv_mid, hf_mid⟩ := hInv_proj ρ_inner ρ₀.store ρ₀.factory hext hInv_inner hf_inner
+      rw [← heq_ρ_mid] at hInv_mid hf_mid
+      -- The tail `.stmts [loop] ρ_mid` re-runs the loop and ends at `ρ'`.
+      have ⟨ρ_x, h_loop_T, h_nil, hlen_cons⟩ := stmtsT_cons_terminal h_loop_rest
+      have hρx : ρ_x = ρ' := by
+        match h_nil with
+        | .step _ _ _ StepStmt.step_stmts_nil hr =>
+          match hr with
+          | .refl _ => rfl
+          | .step _ _ _ h _ => exact nomatch h
+      subst hρx
+      have hwf_mid : WellFormedSemanticEval (P := P) ρ_mid.factory := by
+        rw [heq_ρ_mid]; exact hwf
+      -- Recurse: the loop-tail derivation is strictly shorter.
+      exact ih ρ_mid ρ_x hInv_mid hwf_mid hf_mid h_loop_T
+        (by simp [ReflTransT.len] at hlen; omega)
+
+omit [HasOps P] in
+/-- While rule. -/
+theorem while_rule (params : (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn).InitEnvWFParamsTy)
+    {g : P.Expr} {m : Option P.Expr} {inv : List (String × P.Expr)}
+    {body : List (Stmt P CmdT)} {md : MetaData P}
+    {Inv : Env P → Prop}
+    (hbody : TripleBlock evalCmd extendFactory
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store g = some HasBool.tt) body Inv)
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
+    (hInv_proj : PostWF extendFactory Inv) :
+    Triple (Lang.imperative P CmdT evalCmd extendFactory isAtAssertFn) params
+      Inv (.loop (.det g) m inv body md)
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store g = some HasBool.ff) := by
+  intro ρ₀ ρ' hInv hinit hf₀ hstar
+  exact while_gen evalCmd extendFactory hbody hcov hInv_proj
+    ρ₀ ρ' _ hInv hinit hf₀ (reflTrans_to_T hstar) (Nat.le_refl _)
 
 end StmtRules
 

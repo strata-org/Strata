@@ -339,6 +339,9 @@ The proof is structured in three layers:
    `WellScoped` — no `checkContextTypesClosed`/`allKeysFresh`). This is the form
    consumed by callers that compose substitutions themselves (e.g. `CmdType.inferType_HasType`).
 
+   Note: we require only `FactoryWF`, not `FactoryClosed` — the latter does not hold of
+   typechecked terms in general (a `funcDecl` body may capture surrounding-scope variables).
+
 3. **`resolve_HasType`**: The top-level theorem. Building on `resolve_HasType_core`, it adds
    the composability postconditions (`checkContextTypesClosed Env'`,
    `allKeysFresh Env'.subst Env'.context`) under the extra `checkContextTypesClosed Env` /
@@ -3030,7 +3033,7 @@ private theorem LFunc.type_freeVars_eq_nil [DecidableEq T.IDMeta]
   | forAll vars body =>
   simp [LTy.freeVars]
   apply List.removeAll_eq_nil_of_forall_mem
-  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
+  unfold LFunc.type LFuncDefined.type at h_type; simp only [Bind.bind, Except.bind] at h_type
   elim_errs h_type
   generalize h_vals : func.inputs.values = vals at h_type
   cases vals with
@@ -3064,7 +3067,7 @@ omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.ID
 private theorem LFunc.type_boundVars_eq_typeArgs [DecidableEq T.IDMeta]
     (func : LFunc T) (ty : LTy) (h_type : func.type = .ok ty) :
     LTy.boundVars ty = func.typeArgs := by
-  unfold LFunc.type at h_type; simp only [Bind.bind, Except.bind] at h_type
+  unfold LFunc.type LFuncDefined.type at h_type; simp only [Bind.bind, Except.bind] at h_type
   elim_errs h_type
   generalize h_vals : func.inputs.values = vals at h_type
   cases vals with

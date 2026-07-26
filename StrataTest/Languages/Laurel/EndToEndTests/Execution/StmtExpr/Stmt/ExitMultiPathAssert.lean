@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 procedure foo(x: int)
@@ -22,5 +22,16 @@ procedure foo(x: int)
   } myBlock;
   assert false
 //^^^^^^^^^^^^ error: assertion does not hold
+};
+
+// A parameterless `entry` so the concrete interpreter can drive this too: `foo`
+// reaches `assert false` on every path (the `exit` only skips the empty
+// remainder of the guarded block), so calling it with any concrete argument
+// hits the same failing assertion the verifier reports.
+procedure runFoo()
+  entry
+  opaque
+{
+  foo(1)
 };
 #end

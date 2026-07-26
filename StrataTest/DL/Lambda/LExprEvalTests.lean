@@ -342,17 +342,27 @@ macro "prove_ceval_freeVars" : tactic => `(tactic|
 private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
   intro lf hmem; simp [testFuncs] at hmem
   rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem each_testFunc_closed : ∀ lf, lf ∈ testFuncs → LFuncClosed lf := by
+  intro lf hmem; simp [testFuncs] at hmem
+  rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- Well-formedness of testBuiltIn factory
 private theorem testBuiltIn_wf : FactoryWF testBuiltIn := by
   constructor; intro lf hmem
   exact each_testFunc_wf lf (Factory.ofArray_mem hmem)
+
+-- Closedness of testBuiltIn factory
+private theorem testBuiltIn_closed : FactoryClosed testBuiltIn := by
+  constructor; intro lf hmem
+  exact each_testFunc_closed lf (Factory.ofArray_mem hmem)
 
 -- Well-formedness of testState's factory.
 private theorem testState_wf : FactoryWF testState.config.factory :=
@@ -640,12 +650,19 @@ private theorem polyState_wf : FactoryWF polyState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem polyState_closed : FactoryClosed polyState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyFuncs] at this
+  rcases this with rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- polyEq<bool>(#true, #false): type substitution maps %a to bool in the body
 def test_poly_tysubst := TestCase.new
@@ -681,12 +698,19 @@ private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
   have := Factory.ofArray_mem hmem
   simp [polyPairFuncs] at this
   rcases this with rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem polyPairState_closed : FactoryClosed polyPairState.config.factory := by
+  constructor; intro lf hmem
+  have := Factory.ofArray_mem hmem
+  simp [polyPairFuncs] at this
+  rcases this with rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 -- polyPair<int, bool>(#42, #true): %a maps to int, %b maps to bool
 def test_poly_tysubst_distinct := TestCase.new
@@ -742,17 +766,28 @@ private theorem each_evalIfCanonicalFunc_wf :
     ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncWF lf := by
   intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
   rcases hmem with rfl | rfl <;> exact {
-    arg_nodup := by decide, body_freevars := by decide, body_or_concreteEval := by decide
+    arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
-    output_typevars_in_typeArgs := by decide, precond_freevars := by decide
+    output_typevars_in_typeArgs := by decide
     concreteEval_eraseMetadata := concreteEval_eraseMetadata_of_unit
     concreteEval_argmatch := by prove_ceval_argmatch
     concreteEval_freeVars := by prove_ceval_freeVars }
+
+private theorem each_evalIfCanonicalFunc_closed :
+    ∀ lf, lf ∈ evalIfCanonicalFuncs → LFuncClosed lf := by
+  intro lf hmem; simp [evalIfCanonicalFuncs] at hmem
+  rcases hmem with rfl | rfl <;> exact {
+    body_freevars := by decide, precond_freevars := by decide }
 
 private theorem evalIfCanonicalState_wf :
     FactoryWF evalIfCanonicalState.config.factory := by
   constructor; intro lf hmem
   exact each_evalIfCanonicalFunc_wf lf (Factory.ofArray_mem hmem)
+
+private theorem evalIfCanonicalState_closed :
+    FactoryClosed evalIfCanonicalState.config.factory := by
+  constructor; intro lf hmem
+  exact each_evalIfCanonicalFunc_closed lf (Factory.ofArray_mem hmem)
 
 -- Test: evalIfCanonical fires concreteEval when arg 0 is canonical but arg 1 is symbolic.
 -- NegEq(#5, x) should reduce to (#-5 == x) — arg 0 is negated, arg 1 passes through.
@@ -955,6 +990,80 @@ def test_vt_inline_alias := TestCase.new
 /-- info: true -/
 #guard_msgs in
 #eval checkResultValueTrue test_vt_inline_alias
+
+-- A factory with a datatype constructor (`Box`: no body, no `concreteEval`,
+-- `isConstr`) plus `Int.Add`, for the constructor-certification tests below.
+private def constrState : LState TestParams :=
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with
+      factory := .ofArray ((testFuncs.push
+        (LFunc.mk (name := "Box") (isConstr := true)
+          (inputs := [("x", mty[int])]) (output := mty[int]))).push
+        (LFunc.mk (name := "Pair") (isConstr := true)
+          (inputs := [("x", mty[int]), ("y", mty[int])]) (output := mty[int]))) } }
+
+-- Test: a constructor applied to an already-canonical argument is canonical,
+-- so `eval` certifies it `.value true`.
+def test_vt_constr_canonical_arg := TestCase.new
+  constrState
+  esM[(~Box #5)]
+  esM[(~Box #5)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_constr_canonical_arg
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_constr_canonical_arg
+
+-- Test: a constructor applied to a REDUCIBLE argument: `Box (Int.Add #1 #1)`
+-- rebuilds to the canonical `Box #2` and is certified `.value true`.
+-- Regression for the bug where the no-`concreteEval` branch flagged the
+-- canonical rebuilt call `.nonvalue`, making `evalFully` diverge on any
+-- constructor with reducible arguments.
+def test_vt_constr_reducible_arg := TestCase.new
+  constrState
+  esM[(~Box ((~Int.Add #1) #1))]
+  esM[(~Box #2)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_constr_reducible_arg
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_constr_reducible_arg
+
+-- Test: a BINARY constructor with mixed-readiness arguments — the first needs
+-- reduction, the second is already canonical: `Pair (Int.Add #1 #1) #5`
+-- rebuilds to the canonical `Pair #2 #5` and is certified `.value true`,
+-- exercising `argsAllFull` over a list where the argument statuses differ.
+def test_vt_constr_mixed_args := TestCase.new
+  constrState
+  esM[((~Pair ((~Int.Add #1) #1)) #5)]
+  esM[((~Pair #2) #5)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_constr_mixed_args
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_constr_mixed_args
+
+-- Test: NESTED constructors — the inner `Box (Int.Add #1 #1)` must first
+-- reduce to the certified canonical `Box #2`, and the outer `Box` must then
+-- recognize that certified argument as canonical and be certified itself.
+-- Exercises the new canonicity check through recursive evaluation.
+def test_vt_constr_nested := TestCase.new
+  constrState
+  esM[(~Box (~Box ((~Int.Add #1) #1)))]
+  esM[(~Box (~Box #2))]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_vt_constr_nested
+/-- info: true -/
+#guard_msgs in
+#eval checkResultValueTrue test_vt_constr_nested
 
 /-! ### Contrastive tests: `eval` does NOT produce `.value true` on unreduced
 expressions.  These show that `.value true` isn't trivially always returned. -/

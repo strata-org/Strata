@@ -10,11 +10,12 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel <|
+#eval testLaurelMultiple <|
 #strata
 program Laurel;
 procedure testStringKO()
   returns (result: string)
+  entry
   opaque
 {
   var message: string := "Hello";
@@ -26,6 +27,7 @@ procedure testStringKO()
 
 procedure testStringOK()
 returns (result: string)
+  entry
   opaque
 {
   var message: string := "Hello";
@@ -35,6 +37,7 @@ returns (result: string)
 };
 
 procedure testStringLiteralConcatOK()
+  entry
   opaque
 {
   var result: string := "a" ^ "b";
@@ -42,6 +45,7 @@ procedure testStringLiteralConcatOK()
 };
 
 procedure testStringLiteralConcatKO()
+  entry
   opaque
 {
   var result: string := "a" ^ "b";
@@ -50,6 +54,7 @@ procedure testStringLiteralConcatKO()
 };
 
 procedure testStringVarConcatOK()
+  entry
   opaque
 {
   var x: string := "Hello";
@@ -58,6 +63,7 @@ procedure testStringVarConcatOK()
 };
 
 procedure testStringVarConcatKO()
+  entry
   opaque
 {
   var x: string := "Hello";

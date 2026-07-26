@@ -37,6 +37,15 @@ private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :
   ⟨ uri, sr ⟩
 
 private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
+  -- `SourceRange.none` ({0,0}) is StrataDDM's own "no location" sentinel (see
+  -- `StrataDDM.SourceRange.none`/`isNone`; its `format` prints "unknown", and
+  -- the Ion reader materializes a null range annotation as this value — no
+  -- producer literally writes zeroes on the wire). Surface it as `none` rather
+  -- than as a real-looking 0-0 location that downstream diagnostics would
+  -- point at (a real token at offset 0 has stop > 0). If source ranges become
+  -- mandatory, this check should give way to enclosing-range synthesis — see
+  -- `translateSingleReturnType` for the first instance of that pattern.
+  if arg.ann.isNone then return none
   return match (← get).uri with
   | some uri => some (SourceRange.toFileRange uri arg.ann)
   | none => none
@@ -281,6 +290,24 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.postDecr, #[arg0] =>
       let target ← translateIncrDecrTarget arg0 "postDecr"
       return mkStmtExprMd (.IncrDecr .Post .Decr target) src
+    | q`Laurel.addAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "+="
+      return mkStmtExprMd (.CompoundAssign .Add target (← translateStmtExpr arg1)) src
+    | q`Laurel.subAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "-="
+      return mkStmtExprMd (.CompoundAssign .Sub target (← translateStmtExpr arg1)) src
+    | q`Laurel.mulAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "*="
+      return mkStmtExprMd (.CompoundAssign .Mul target (← translateStmtExpr arg1)) src
+    | q`Laurel.divAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "/="
+      return mkStmtExprMd (.CompoundAssign .Div target (← translateStmtExpr arg1)) src
+    | q`Laurel.modAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "%="
+      return mkStmtExprMd (.CompoundAssign .Mod target (← translateStmtExpr arg1)) src
+    | q`Laurel.strConcatAssign, #[arg0, arg1] =>
+      let target ← translateIncrDecrTarget arg0 "^="
+      return mkStmtExprMd (.CompoundAssign .StrConcat target (← translateStmtExpr arg1)) src
     | q`Laurel.multiAssign, #[targetsSeq, valueArg] =>
       let targets ← match targetsSeq with
         | .seq _ .comma args => args.toList.mapM fun targ => do
@@ -519,6 +546,33 @@ def translateEnsuresClauses (arg : Arg) : TransM (List Condition) := do
     pure allEnsures
   | _ => pure []
 
+/-- Translate the single-output `Laurel.returnType` op into the implicit
+    `$result` output parameter.
+
+    A producer may attach a source range only to the outer `returnType` op:
+    the Java front-end builds the inner type op from a javac `Type`, which
+    carries no tree position, so the inner op's range is the `SourceRange.none`
+    sentinel. Fall back to the outer op's range in that case, so the `ensures`
+    that `ConstrainedTypeElim` synthesizes for a constrained output type (e.g.
+    `int32` for a Java `int`) inherits a real location — otherwise an implicit
+    no-overflow failure is reported at the whole-file fallback position instead
+    of at the return type.
+
+    The jverify producer now stamps the declared type tree's range on the inner
+    op itself (this CR's StrataJavaFrontEnd commit), so for current jverify the
+    inner range wins and this fallback is a safety net — it remains load-bearing
+    for other producers and previously-emitted Ion. -/
+def translateSingleReturnType (returnTypeOp : StrataDDM.Operation) :
+    TransM (List Parameter) := do
+  match returnTypeOp.name, returnTypeOp.args with
+  | q`Laurel.returnType, #[typeArg] =>
+    let retType ← translateHighType typeArg
+    let retType ← match retType.source with
+      | some _ => pure retType
+      | none => do pure { retType with source := ← getArgFileRange (.op returnTypeOp) }
+    pure [{ name := resultOutputName, type := retType : Parameter }]
+  | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
+
 def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
@@ -543,11 +597,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Either returnTypeArg or returnParamsArg may have a value, not both
     -- If returnTypeArg is set, create a single "result" parameter
     let returnParameters ← match returnTypeArg with
-      | .option _ (some (.op returnTypeOp)) => match returnTypeOp.name, returnTypeOp.args with
-        | q`Laurel.returnType, #[typeArg] =>
-          let retType ← translateHighType typeArg
-          pure [{ name := resultOutputName, type := retType : Parameter }]
-        | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
+      | .option _ (some (.op returnTypeOp)) => translateSingleReturnType returnTypeOp
       | .option _ none =>
         -- No return type, check returnParamsArg instead
         match returnParamsArg with

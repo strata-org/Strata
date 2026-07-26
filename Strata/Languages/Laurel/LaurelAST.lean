@@ -13,7 +13,9 @@ public import Strata.Util.FileRange
 open StrataDDM
 
 /-
-Documentation for Laurel can be found in docs/verso/LaurelDoc.lean
+Documentation for Laurel can be found in docs/verso/LaurelDesignGuide.lean
+(language definition) and docs/verso/LaurelImplementationGuide.lean
+(translation to Core).
 
 This module contains the Laurel AST. The high-level Laurel API is in
 `Strata.Languages.Laurel`.
@@ -34,15 +36,6 @@ structure Identifier where
   source : Option FileRange := none
   deriving Repr
 
--- Temporary hack because the Python through Laurel pipeline doesn't resolve
-instance : BEq Identifier where
-  beq a b := a.text == b.text
-
--- Hash by `text` only, keeping this lawful with the `BEq` above (which compares
--- by `text`): equal identifiers must hash equally.
-instance : Hashable Identifier where
-  hash id := hash id.text
-
 instance : Inhabited Identifier where
  default := { text := "defaultIdentifier" }
 
@@ -53,6 +46,19 @@ instance : Coe String Identifier where
   coe s := { text := s }
 
 def mkId (name: String): Identifier := { text := name }
+
+/-- Extract the unique ID, or fail with a descriptive message when unresolved. -/
+def Identifier.getUniqueId (id : Identifier) : Except String Nat :=
+  match id.uniqueId with
+  | some n => .ok n
+  | none => .error s!"identifier '{id.text}' missing uniqueId (not resolved)"
+
+/-- Compare two identifiers by uniqueId. Throws if either is unresolved. -/
+def Identifier.sameId (a b : Identifier) : Except String Bool :=
+  match a.uniqueId, b.uniqueId with
+  | some x, some y => .ok (x == y)
+  | none, _ => .error s!"identifier '{a.text}' missing uniqueId (not resolved)"
+  | _, none => .error s!"identifier '{b.text}' missing uniqueId (not resolved)"
 
 /--
 Primitive operations available in Laurel expressions.
@@ -165,8 +171,6 @@ inductive HighType : Type where
   | UserDefined (name : Identifier)
   /-- A generic type application, e.g. `List<Int>`. -/
   | Applied (base : AstNode HighType) (typeArguments : List (AstNode HighType))
-  /-- A pure (value) variant of a composite type that uses structural equality instead of reference equality. -/
-  | Pure (base : AstNode HighType)
   /-- An intersection of types. Used for implicit intersection types, e.g. `Scientist & Scandinavian`. -/
   | Intersection (types : List (AstNode HighType))
   /-- Bitvector type of a given width. -/
@@ -386,8 +390,17 @@ inductive StmtExpr : Type where
       `Variable`. As an expression, prefix form yields the new value (after the update)
       and postfix form yields the old value (before the update). As a statement the
       yielded value is discarded.
-      Eliminated by the `EliminateIncrDecr` pass before lifting imperative expressions. -/
+      Eliminated by the `EliminateIncrDecrAndCompoundAssign` pass before lifting imperative expressions. -/
   | IncrDecr (mode : IncrDecrMode) (op : IncrDecrOp) (target : AstNode Variable)
+  /-- C-style compound assignment (`x += e`, `x -= e`, `x *= e`, `x /= e`, `x %= e`),
+      plus `x ^= e` for string concatenation (Laurel uses `^` for concat, OCaml-style,
+      not bitwise XOR). Lowers to `target := target op rhs` and yields the new value.
+      The target must be a `Local` or `Field` `Variable`.
+      Invariant: `op` is one of `Add`/`Sub`/`Mul`/`Div`/`Mod`/`StrConcat` — the only
+      operators the concrete-to-abstract translator ever constructs here. Downstream
+      sites may treat any other `Operation` as a `StrataBug`.
+      Eliminated by the `EliminateIncrDecrAndCompoundAssign` pass before lifting imperative expressions. -/
+  | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
   /-- Call a static procedure by name with the given arguments. -/
@@ -463,6 +476,7 @@ def StmtExpr.constrName : StmtExpr → String
   | .Assign ..           => ":="
   | .IncrDecr _ .Incr .. => "++"
   | .IncrDecr _ .Decr .. => "--"
+  | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
   | .PrimitiveOp op ..   => toString op
@@ -575,7 +589,6 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
   | HighType.UserDefined r1, HighType.UserDefined r2 => r1.text == r2.text
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.attach.zip args2 |>.all (fun (a1, a2) => highEq a1.1 a2))
-  | HighType.Pure b1, HighType.Pure b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.attach.zip ts2 |>.all (fun (t1, t2) => highEq t1.1 t2))
   | HighType.Unknown, HighType.Unknown => true
@@ -592,7 +605,9 @@ def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.va
 instance : BEq HighTypeMd where
   beq := highEq
 
-deriving instance BEq for HighType
+instance : BEq HighType where
+  beq a b := highEq ⟨a, none⟩ ⟨b, none⟩
+
 
 /-- Lookup tables threaded through subtyping/consistency checks. Built from
     the program's `TypeDefinition`s by the resolution pass:
@@ -669,7 +684,7 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    All child-carrying constructors are INVARIANT by design: `isConsistent`
    bottoms out in `highEq` (structural equality) for `TSet`, `TMap`,
-   `Applied`, `Pure`, and `Intersection`. So `TSet Unknown ~
+   `Applied`, and `Intersection`. So `TSet Unknown ~
    TSet TInt` is FALSE — `Unknown` is a wildcard only at the TOP of a type,
    never under a constructor. This is intentional: `TSet` / `TMap` are MUTABLE
    collections, where covariance would be unsound; if you don't know the
@@ -680,11 +695,6 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
    tuple of independent procedure-output values matched against multi-assignment
    targets, so per-element consistency (letting an `Unknown` output flow into
    one slot) is correct rather than unsound.
-
-   `Pure b` is invariant today, but it is the one constructor where covariance
-   would be SOUND and desirable — it is the immutable value-view of a composite,
-   and immutability is exactly the condition that makes covariance safe.
-   TODO: Pure could be covariant once it matters (immutable value-view ⇒ covariance is sound)
 
    `Applied` (generics) is invariant as the safe default for not-yet-designed
    parametric types; real variance is per-constructor and deliberately deferred.
@@ -783,6 +793,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .All => "All"
   | .Hole .. => "Hole"
   | .IncrDecr .. => "IncrDecr"
+  | .CompoundAssign .. => "CompoundAssign"
 
 /-- Build an expression that reads back the value of a variable reference.
 

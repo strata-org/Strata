@@ -9,10 +9,11 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure exitSkipsRest()
+  entry
   opaque
 {
     var x: int := 0;
@@ -24,6 +25,7 @@ procedure exitSkipsRest()
 };
 
 procedure exitFromNestedBlock()
+  entry
   opaque
 {
     var x: int := 0;

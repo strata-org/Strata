@@ -373,7 +373,6 @@ def testFuncDecl : List Statement :=
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) x)],
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [
@@ -428,7 +427,6 @@ def testFuncDeclSymbolic : List Statement :=
     output := .forAll [] .int,
     body := some eb[((~Int.Add x) n)],  -- Captures 'n' at declaration time
     attr := #[],
-    concreteEval := none,
     axioms := []
   }
   [
@@ -494,7 +492,6 @@ def testPolymorphicFuncDecl : List Statement :=
     output := .forAll [] (.ftvar "a"),
     body := some eb[(if cond then x else y)],
     attr := #[.inline],  -- Enable inlining so body is expanded during evaluation
-    concreteEval := none,
     axioms := []
   }
   [

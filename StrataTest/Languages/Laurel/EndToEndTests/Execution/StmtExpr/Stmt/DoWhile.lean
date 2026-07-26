@@ -20,10 +20,11 @@ only after BODY, an invariant must hold of the *pre-body* state. For
 `do { x := x+1 } while(x<3)` the loop exits at x==3, but the head invariant sees
 the pre-increment value, so the bound is `x <= 2` (not `x <= 3`). -/
 
-#eval testLaurel
+#eval testLaurelMultiple
 #strata
 program Laurel;
 procedure basic()
+  entry
   opaque
 {
   var x: int := 0;
@@ -35,6 +36,7 @@ procedure basic()
 };
 
 procedure runsAtLeastOnce()
+  entry
   opaque
 {
   var x: int := 5;
@@ -64,6 +66,7 @@ procedure nested()
 };
 
 procedure breakOut()
+  entry
   opaque
 {
   var x: int := 0;
@@ -78,6 +81,7 @@ procedure breakOut()
 };
 
 procedure noInvariant()
+  entry
   opaque
 {
   var x: int := 0;

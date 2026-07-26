@@ -9,11 +9,12 @@ public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Transform.CallElim
+import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
+import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
-import Strata.Transform.LoopElim
-import Strata.Transform.ANFEncoder
 import Strata.Languages.Core.ObligationExtraction
 public import Strata.Transform.IrrelevantAxioms
 public import Std.Tactic.BVDecide.Normalize.BitVec
@@ -694,10 +695,10 @@ def buildEnv (options : VerifyOptions) (program : Program)
   if registerCustomFunctions then
     for decl in program.decls do
       match decl with
-      | .func func _ => E ← E.addFactoryFunc func
+      | .func func _ => E ← E.addFactoryFunc func.toLFunc
       | .recFuncBlock funcs _ =>
         validateCasesTypes funcs E.datatypes
-        for func in funcs do E ← E.addFactoryFunc func
+        for func in funcs do E ← E.addFactoryFunc func.toLFunc
       | .distinct _ es _ => E := { E with distinct := es :: E.distinct }
       | .proc proc _ =>
         let stmts := match proc.body with
@@ -729,8 +730,7 @@ where
         name := decl.name, typeArgs := decl.typeArgs, isConstr := decl.isConstr,
         inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
         output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-        body := decl.body, attr := decl.attr,
-        concreteEval := decl.concreteEval, axioms := decl.axioms }]
+        body := decl.body, attr := decl.attr, axioms := decl.axioms }]
     | .block _ ss _ => ss.flatMap collectFuncDecls
     | .ite _ tss ess _ => tss.flatMap collectFuncDecls ++ ess.flatMap collectFuncDecls
     | .loop _ _ _ body _ => body.flatMap collectFuncDecls
@@ -761,7 +761,7 @@ def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
 
 /-- Proof obligation program construction: Program → Program.
     Runs symbolic execution and converts obligations to a program
-    suitable for downstream phases (ANF encoding, SMT encoding). -/
+    suitable for downstream phases (CSE, SMT encoding). -/
 def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except DiagnosticModel (Program × Statistics) := do
@@ -813,7 +813,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
 
   -- Include function declarations and distinct constraints from the
   -- evaluation environment so the obligations program is self-contained
-  -- for downstream phases (ANF encoding, SMT encoding).
+  -- for downstream phases (CSE, SMT encoding).
   -- Get functions added during evaluation (not in the initial factory)
   let initialFactorySize := E.exprEnv.config.factory.toArray.size
   let evalFuncs := postEvalEnv.exprEnv.config.factory.toArray.toList.drop initialFactorySize
@@ -822,7 +822,9 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- regenerating them on the fly with an expression evaluator.
   let evalFuncs ← evalFuncs.mapM
     (generateRecursiveAxioms postEvalEnv.datatypes postEvalEnv.exprEval)
-  let funcDecls := evalFuncs.map fun func => Decl.func func .empty
+  -- `.toFunc` drops only `concreteEval`; all other data survives into the
+  -- obligation program and the SMT factory built by `buildEnv`.
+  let funcDecls := evalFuncs.map fun func => Decl.func func.toFunc .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
   let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
@@ -1492,11 +1494,12 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
     | none => []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase] ++ [termCheckPipelinePhase] ++ [precondElimPipelinePhase] ++ postFilterPhases ++ [loopElimPipelinePhase]
+  filterPhases ++ [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+    ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
-    type checking, symbolic evaluation, and ANF encoding.
-    ANF encoding runs after symbolic evaluation to extract common
+    type checking, symbolic evaluation, and common subexpression elim.
+    CSE runs after symbolic evaluation to extract common
     subexpressions introduced by partial evaluation inlining. -/
 def corePipelinePhases (procs : Option (List String) := none)
     (options : VerifyOptions := VerifyOptions.default)
@@ -1512,7 +1515,7 @@ def corePipelinePhases (procs : Option (List String) := none)
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, anfEncoderPipelinePhase]
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, commonSubexprElimPhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -1927,7 +1930,12 @@ All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
 When `keepAllFilesPrefix` is provided, the program state after each pipeline
-phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1). -/
+phase is written to `{prefix}.{n}.{phaseName}.core.st` (numbered from 1).
+
+When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
+drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
+`showsProfiling`; `options.profile` only decides the `outputMode` of the
+context created internally when `pipelineCtx` is `none`. -/
 def verify (program : Program)
     (tempDir : System.FilePath)
     (proceduresToVerify : Option (List String) := none)
@@ -1940,12 +1948,12 @@ def verify (program : Program)
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pipelineCtx : Option PipelineContext := none)
     : EIO DiagnosticModel VCResults := do
-  let profile := options.profile
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
     | none =>
-      let mode := if profile then Strata.Pipeline.OutputMode.profile else .quiet
+      let mode := if options.profile then Strata.Pipeline.OutputMode.profile else .quiet
       (PipelineContext.create (outputMode := mode) : BaseIO _)
+  let profile := pctx.outputMode.showsProfiling
 
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)

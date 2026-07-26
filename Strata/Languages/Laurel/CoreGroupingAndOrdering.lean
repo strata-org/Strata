@@ -39,7 +39,6 @@ def collectTypeRefs : HighTypeMd → List String
   | ⟨.TMap k v, _⟩ => collectTypeRefs k ++ collectTypeRefs v
   | ⟨.Applied base args, _⟩ =>
       collectTypeRefs base ++ args.flatMap collectTypeRefs
-  | ⟨.Pure base, _⟩ => collectTypeRefs base
   | ⟨.Intersection ts, _⟩ => ts.flatMap collectTypeRefs
   | _ => []
 
@@ -211,7 +210,7 @@ where
       if members.isEmpty then none else some members
 
 public def orderingPass : LaurelPass UnorderedCoreWithLaurelTypes CoreWithLaurelTypes where
-  name := "OrderingPass"
+  name := "Ordering"
   comesBefore := []
   documentation := "Produce a `CoreWithLaurelTypes` from a `UnorderedCoreWithLaurelTypes` by
 computing a combined ordering of functions and proofs using the call graph,

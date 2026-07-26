@@ -40,14 +40,14 @@ public def embeddedExampleFiles : Array (String × String) := #[
   ("expected/IrrelevantAxioms.removeIrrelevantAxioms.core.st", include_str "../../Examples/expected/IrrelevantAxioms.removeIrrelevantAxioms.core.st"),
   ("expected/LoopSimple.core.expected", include_str "../../Examples/expected/LoopSimple.core.expected"),
   ("expected/LoopSimple.csimp.expected", include_str "../../Examples/expected/LoopSimple.csimp.expected"),
-  ("expected/LoopSimple.loopElim.core.expected", include_str "../../Examples/expected/LoopSimple.loopElim.core.expected"),
-  ("expected/LoopSimple.loopElim.core.st", include_str "../../Examples/expected/LoopSimple.loopElim.core.st"),
+  ("expected/LoopSimple.insertLoopInvariantAsserts.loopElim.core.expected", include_str "../../Examples/expected/LoopSimple.insertLoopInvariantAsserts.loopElim.core.expected"),
+  ("expected/LoopSimple.insertLoopInvariantAsserts.loopElim.core.st", include_str "../../Examples/expected/LoopSimple.insertLoopInvariantAsserts.loopElim.core.st"),
   ("expected/ProcedureTypeError.core.expected", include_str "../../Examples/expected/ProcedureTypeError.core.expected"),
   ("expected/SafeBvOps.callElim.core.expected", include_str "../../Examples/expected/SafeBvOps.callElim.core.expected"),
   ("expected/SafeBvOps.callElim.core.st", include_str "../../Examples/expected/SafeBvOps.callElim.core.st"),
   ("expected/SimpleProc.core.expected", include_str "../../Examples/expected/SimpleProc.core.expected"),
   ("expected/TwoLoops.core.expected", include_str "../../Examples/expected/TwoLoops.core.expected"),
-  ("expected/TwoLoops.loopElim.core.expected", include_str "../../Examples/expected/TwoLoops.loopElim.core.expected"),
-  ("expected/TwoLoops.loopElim.core.st", include_str "../../Examples/expected/TwoLoops.loopElim.core.st"),
+  ("expected/TwoLoops.insertLoopInvariantAsserts.loopElim.core.expected", include_str "../../Examples/expected/TwoLoops.insertLoopInvariantAsserts.loopElim.core.expected"),
+  ("expected/TwoLoops.insertLoopInvariantAsserts.loopElim.core.st", include_str "../../Examples/expected/TwoLoops.insertLoopInvariantAsserts.loopElim.core.st"),
   ("expected/TypeError.core.expected", include_str "../../Examples/expected/TypeError.core.expected")
 ]

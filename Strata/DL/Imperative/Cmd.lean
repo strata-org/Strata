@@ -37,6 +37,26 @@ inductive ExprOrNondet (P : PureExpr) where
   | nondet
   deriving Inhabited
 
+@[grind] def ExprOrNondet.beq [BEq P.Expr] (a b : ExprOrNondet P) : Bool :=
+  match a, b with
+  | .det e1, .det e2 => e1 == e2
+  | .nondet, .nondet => true
+  | _, _ => false
+
+instance [BEq P.Expr] : BEq (ExprOrNondet P) where
+  beq := ExprOrNondet.beq
+
+theorem ExprOrNondet.beq_eq {P : PureExpr} [DecidableEq P.Expr]
+    (a b : ExprOrNondet P) : ExprOrNondet.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] : DecidableEq (ExprOrNondet P) :=
+  beq_eq_DecidableEq ExprOrNondet.beq ExprOrNondet.beq_eq
+
+instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
+  eq_of_beq h := (ExprOrNondet.beq_eq _ _).mp h
+  rfl := (ExprOrNondet.beq_eq _ _).mpr rfl
+
 /-! ## Assertion Identity -/
 
 /-- An assertion identifier: the label + expression attached to an
@@ -81,6 +101,31 @@ inductive Cmd (P : PureExpr) : Type where
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .set default .nondet default
+
+@[grind] def Cmd.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : Cmd P) : Bool :=
+  match a, b with
+  | .init n1 t1 e1 md1, .init n2 t2 e2 md2 =>
+    n1 == n2 && t1 == t2 && e1 == e2 && md1 == md2
+  | .set n1 e1 md1, .set n2 e2 md2 => n1 == n2 && e1 == e2 && md1 == md2
+  | .assert l1 b1 md1, .assert l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | .assume l1 b1 md1, .assume l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | .cover l1 b1 md1, .cover l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (Cmd P) where
+  beq := Cmd.beq
+
+theorem Cmd.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : Cmd P) : Cmd.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (Cmd P) :=
+  beq_eq_DecidableEq Cmd.beq Cmd.beq_eq
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : LawfulBEq (Cmd P) where
+  eq_of_beq h := (Cmd.beq_eq _ _).mp h
+  rfl := (Cmd.beq_eq _ _).mpr rfl
 
 ---------------------------------------------------------------------
 

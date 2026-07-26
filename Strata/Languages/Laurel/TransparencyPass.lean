@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.DL.Lambda.TypeFactory
 
 /-!
@@ -321,13 +322,33 @@ where
       | _ => false) e
 
 public def transparencyPass : LaurelPass Laurel.Program UnorderedCoreWithLaurelTypes where
-  name := "TransparencyPass"
-  comesBefore := [⟨ orderingPass.meta, "Transparency pass creates functions that are not ordered" ⟩]
+  name := "Transparency"
+  comesBefore := [
+    ⟨ orderingPass.meta, "The transparency pass creates functions, and ordering can only be done once the Core functions and procedures are known, so the ordering pass needs to come after the transparency one." ⟩,
+    ⟨ liftImperativeExpressionsPass.meta, "First, the transparency pass changes some or all calls to procedures into calls to functions. Only calls to procedures need to be lifted, so doing the lifting before the transparency pass would lift all calls, which is unnecessary. Lifting complicates the code so it's better not to do it if not necessary. Secondly, the lifting pass will lift all assertions and assumptions, but the transparency pass removes all assertions and assumptions from functions. If we would lift these before the transparency pass, you would see the remnants of that lifting even though no lifting was necessary for functions." ⟩]
   documentation := "Translate a Laurel program to the UnorderedCoreWithLaurelTypes IR.
-For each procedure:
-  - Generate a function with the same signature, named `foo$asFunction`
-  - If transparent, the function gets a functional body (assertions erased, calls to functional versions)
-  - If the function has a body, add a free postcondition equating the procedure output to the function"
+
+This pass has three modes:
+- Execute
+- Verify
+- BothSuboptimally
+
+**BothSuboptimally** mode allows the translated program to be used both for interpretation and for verification, but it won't perform as well when verified, sometimes letting the SMT solver return UNKNOWN instead of SAT. For interpretation it'll execute performantly, but the compilation time will be unnecessarily long since Core functions will be created but not used.
+
+For each procedure, BothSuboptimally mode will:
+  - Generate a function with the same signature, named `foo$asFunction`. The procedure and associated function are called a twin.
+  - If transparent, the function gets a functional body (assertions erased, all calls are to functional siblings)
+  - If the function has a body, add a free postcondition equating the procedure output to the function. This postcondition is called the 'bridge' and it's this bridge that regresses verification performance because it introduces additional quantifiers.
+
+**Execute** mode will create as few procedures as necessary. When interpreting, all calls will be to procedures. Currently execute mode still creates some functions because calls from quantifiers can only be to functions and can't be lifted, but this may change.
+
+**Verify** mode will change all calls to be to functions and no longer generate the bridges between twins. Currently, verify mode still needs some calls to be to procedures, because:
+  - We are not yet able to generate function twins for procedures with multiple output parameters
+  - There is a bug in Core's partial evaluator that causes its runtime to become exponential when calling bodiless functions.
+
+Since execute mode tries not to generate any functions, it could work well even if the heap is still implicit. Maybe instead of the transparency pass we should define a separate 'Execute' and 'Verify' pass, where only the latter needs to come after the heap encoding.
+"
+
   run := fun opts p _ =>
     (createFunctionsForTransparentBodies p opts, [], {})
 

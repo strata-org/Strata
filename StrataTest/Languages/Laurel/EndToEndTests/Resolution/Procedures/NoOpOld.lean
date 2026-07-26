@@ -90,7 +90,7 @@ procedure bump(c: C)
 /-! ### Heap write performed via `c#f++`
 
 `bumpIncr` writes the heap only through an increment (`c#v++`), which is an
-`.IncrDecr` node at initial resolution — before `EliminateIncrDecr` lowers it to
+`.IncrDecr` node at initial resolution — before `EliminateIncrDecrAndCompoundAssign` lowers it to
 `.Assign .Field`. The heap-effect analysis must recognize `IncrDecr` with a
 field target as a write, otherwise `bumpIncr` is misclassified as non-heap
 -writing and `old(c#v)` is spuriously warned. No warning. -/
@@ -106,6 +106,28 @@ procedure bumpIncr(c: C)
   ensures c#v == old(c#v) + 1
   modifies c
 { c#v++ };
+#end
+
+/-! ### Heap write performed via `c#f += e`
+
+`bumpCompound` writes the heap only through a compound assignment (`c#v += 1`),
+which is a `.CompoundAssign` node at initial resolution — before
+`EliminateIncrDecrAndCompoundAssign` lowers it to `.Assign .Field`. Like the
+`c#v++` case above, the heap-effect analysis must recognize `.CompoundAssign` with
+a field target as a write, otherwise `bumpCompound` is misclassified as non-heap
+-writing and `old(c#v)` is spuriously warned. No warning. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C {
+  var v: int
+}
+procedure bumpCompound(c: C)
+  opaque
+  ensures c#v == old(c#v) + 1
+  modifies c
+{ c#v += 1 };
 #end
 
 /-! ### True positive still fires

@@ -18,11 +18,13 @@ import Strata.DL.Imperative
 
 /- Utilities -/
 import Strata.Util.NameProofs
+import Strata.Util.OrderedSetProps
 import Strata.Util.Sarif
 
 /- Strata Languages -/
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
+import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 
@@ -59,6 +61,7 @@ import Strata.DL.SMT.Translate
 
 /- Code Transforms — additional -/
 import Strata.Transform.StructuredToUnstructured
+import Strata.Transform.FunctionInlining
 
 /- Other -/
 import Strata.MetaVerifier
@@ -97,6 +100,7 @@ import Strata.Languages.Core.StatementWF
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
+
 
 import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData

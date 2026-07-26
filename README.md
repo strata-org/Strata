@@ -13,6 +13,12 @@ Strata. Also see the [Architecture](docs/Architecture.md) document
 that introduces some terminology and describes Strata's components,
 and a [Getting Started](docs/GettingStarted.md) guide that describes
 how to create a new dialect and analysis using existing features.
+Language-specific manuals live alongside the code: Laurel,
+Strata's intermediate verification language, is documented by three
+guides indexed in
+[`Strata/Languages/Laurel/README.md`](Strata/Languages/Laurel/README.md),
+and the [Python front-end guide](docs/PythonFrontend.md) describes how
+Python is compiled through Laurel.
 
 **N.B.: Strata is under active development, and there may be breaking
 changes!**

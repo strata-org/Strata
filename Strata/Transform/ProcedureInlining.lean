@@ -206,11 +206,11 @@ the reachability query.
 -/
 def inlineCallCmd
     (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
-    (cmd: Command)
+    (s: Statement)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
-    match cmd with
-      | .call procName callArgs md =>
+    match s with
+      | .cmd (.call procName callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"

@@ -157,6 +157,9 @@ def MetaData.findElem {P : PureExpr} [BEq P.Ident]
 def MetaDataElem.beq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Expr]
   (e1 e2 : MetaDataElem P) : Bool := e1.fld.beq e2.fld && e1.value.beq e2.value
 
+instance [DecidableEq P.Ident] [DecidableEq P.Expr] : BEq (MetaDataElem P) where
+  beq := MetaDataElem.beq
+
 theorem MetaDataElem.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Expr]
   (e1 e2 : MetaDataElem P) : MetaDataElem.beq e1 e2 = true ↔ e1 = e2 := by
   unfold MetaDataElem.beq
@@ -164,6 +167,12 @@ theorem MetaDataElem.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.
 
 instance [DecidableEq P.Ident] [DecidableEq P.Expr] : DecidableEq (MetaDataElem P) :=
   beq_eq_DecidableEq MetaDataElem.beq MetaDataElem.beq_eq
+
+-- Lawfulness lets `==` on `MetaData P` (= `Array (MetaDataElem P)`) rewrite to
+-- `=` when proving `beq_eq` for types with a metadata field.
+instance [DecidableEq P.Ident] [DecidableEq P.Expr] : LawfulBEq (MetaDataElem P) where
+  eq_of_beq h := (MetaDataElem.beq_eq _ _).mp h
+  rfl := (MetaDataElem.beq_eq _ _).mpr rfl
 
 instance [ToFormat (MetaDataElem.Field P)] [ToFormat (MetaDataElem.Value P)] :
     ToFormat (MetaDataElem P) where

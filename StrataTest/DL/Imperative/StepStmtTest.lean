@@ -163,13 +163,7 @@ theorem progReachesTerminal :
   refine .step _ _ _
     (StepStmt.step_block_body
       (StepStmt.step_seq_inner
-        (StepStmt.step_loop_enter
-          (hasInvFailure := false)
-          htt ?inv_bool ?inv_iff miniEval_wfBool))) ?_
-  · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+        (StepStmt.step_loop_enter htt miniEval_wfBool))) ?_
   -- Now: outer block (L) > seq > seq > body's block (.none) > stmts [exit "L"]
   -- Step 4: descend into the inner seq, then into the body's block,
   --         then through stmts_cons.
@@ -510,11 +504,7 @@ theorem loopScopeTest :
   -- Step 1: step_loop_nondet_enter — produces:
   --   .seq (.block .none ρ_x.store (.stmts [init y] ρ_x')) [loop ...]
   refine .step _ _ _
-    (StepStmt.step_loop_nondet_enter (hasInvFailure := false) ?_ ?_) ?_
-  · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+    (StepStmt.step_loop_nondet_enter) ?_
   -- Step 2: step_seq_inner (step_block_body step_stmts_cons)
   refine .step _ _ _
     (StepStmt.step_seq_inner
@@ -555,11 +545,7 @@ theorem loopScopeTest :
   -- Step 9: step_seq_inner step_loop_nondet_exit
   refine .step _ _ _
     (StepStmt.step_seq_inner
-      (StepStmt.step_loop_nondet_exit (hasInvFailure := false) ?_ ?_)) ?_
-  · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+      (StepStmt.step_loop_nondet_exit)) ?_
   -- Step 10: step_seq_done
   refine .step _ _ _ StepStmt.step_seq_done ?_
   -- Step 11: step_stmts_nil — final terminal
@@ -709,11 +695,7 @@ theorem progLoopFuncDecl_eval_restored :
       (.stmt progLoopFuncDecl ρ_x) (.terminal ρ_x) := by
   -- Step 1: step_loop_nondet_enter — body wrapped in `.block .none ... ρ_x.eval ...`.
   refine .step _ _ _
-    (StepStmt.step_loop_nondet_enter (hasInvFailure := false) ?_ ?_) ?_
-  · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+    (StepStmt.step_loop_nondet_enter) ?_
   -- Steps 2-6: descend into the body's block, fire the funcDecl, run out.
   refine .step _ _ _
     (StepStmt.step_seq_inner
@@ -736,11 +718,7 @@ theorem progLoopFuncDecl_eval_restored :
   -- Step 9: step_seq_inner step_loop_nondet_exit — guard chooses to leave.
   refine .step _ _ _
     (StepStmt.step_seq_inner
-      (StepStmt.step_loop_nondet_exit (hasInvFailure := false) ?_ ?_)) ?_
-  · intro _ hmem; nomatch hmem
-  · constructor <;> intro h
-    · cases h
-    · rcases h with ⟨_, hmem, _⟩; nomatch hmem
+      (StepStmt.step_loop_nondet_exit)) ?_
   refine .step _ _ _ StepStmt.step_seq_done ?_
   -- The store has been projected once (body's block) but `ρ_x.store`'s shape
   -- is preserved (no `init` ran).  Adjust the rhs shape to match
