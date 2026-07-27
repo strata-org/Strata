@@ -654,5 +654,372 @@ mutual
 end
 ---------------------------------------------------------------------
 
+
+---------------------------------------------------------------------
+-- S2U pipeline syntactic helpers: pure functions on Stmt/Block/Cmd.
+---------------------------------------------------------------------
+
+/-! ### UniqueInits
+
+Collect the names of every variable initialized by an `init` command anywhere
+in a statement (across all nesting levels). The companion predicate
+`Block.uniqueInits` asserts that the resulting list is `Nodup`, ruling out
+the edge case where a name is projected away by `step_block_done` and then
+reinitialized — a pattern the unstructured CFG cannot replicate because its
+flat namespace has no projection.
+-/
+
+mutual
+/-- Collect every variable initialized by an `init` command in a statement. -/
+@[expose] def Stmt.initVars (s : Stmt P (Cmd P)) : List P.Ident :=
+  match s with
+  | .cmd (.init x _ _ _) => [x]
+  | .cmd _ => []
+  | .block _ bss _ => Block.initVars bss
+  | .ite _ tss ess _ => Block.initVars tss ++ Block.initVars ess
+  | .loop _ _ _ bss _ => Block.initVars bss
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl _ _ => []
+  termination_by (Stmt.sizeOf s)
+
+/-- Collect every variable initialized by an `init` command in a block. -/
+@[expose] def Block.initVars (ss : List (Stmt P (Cmd P))) : List P.Ident :=
+  match ss with
+  | [] => []
+  | s :: rest => Stmt.initVars s ++ Block.initVars rest
+  termination_by (Block.sizeOf ss)
+end
+
+/-- Every `init` in the program (across all nesting levels) names a unique
+variable. The flat-namespace CFG can simulate the structured semantics only
+when this holds — without uniqueness, structured `step_block_done` can
+project a name away that the structured semantics later reinitializes, a
+pattern the CFG cannot replicate. -/
+@[expose] def Block.uniqueInits (ss : List (Stmt P (Cmd P))) : Prop :=
+  (Block.initVars ss).Nodup
+
+---------------------------------------------------------------------
+
+/-! ### SimpleShape
+
+Predicate stating that a statement or block has a "simple" shape suitable
+for the structured-to-CFG soundness proof under axiom-free assumptions:
+- no nondeterministic `.ite`
+- no nondeterministic `.loop` guards (only `.det _` loops are admitted)
+- `.loop` is permitted **provided its body is itself simple-shape**.
+  Auxiliary predicates `loopBodyNoInits`, `loopHasNoInvariants`, and
+  `noMeasureLoops` further restrict which loops are admissible for the
+  current proof scope (no body-local var inits, no labeled invariants,
+  no termination measure). Those predicates are defined below.
+
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, `.funcDecl`,
+and `.typeDecl` are all allowed.
+-/
+
+mutual
+/-- Returns true if the statement satisfies the simple-shape restriction. -/
+@[expose] def Stmt.simpleShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.simpleShape bss
+  | .ite (.det _) tss ess _ => Block.simpleShape tss && Block.simpleShape ess
+  | .ite .nondet _ _ _ => false
+  | .loop guard _ _ bss _ =>
+    (match guard with | .det _ => true | .nondet => false) && Block.simpleShape bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block satisfies the simple-shape restriction. -/
+@[expose] def Block.simpleShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.simpleShape s && Block.simpleShape srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-!
+`transportShape` is a second shape walker, finer than `simpleShape`: it carves out
+the fragment the loop-init hoist pass's body simulation can express (the
+`BodyTransport` correspondence in `Strata.Transform.LoopInitHoistCorrect`).
+Unlike `simpleShape`, which treats every `.cmd _` alike, `transportShape` inspects
+the command — `init`/`set` are admitted with either a `.det` or `.nondet` rhs, and
+`.funcDecl` is rejected — and it admits a nested `.loop` only when it is
+measure-free, invariant-free, and `.det`-guarded (`.loop (.det _) none [] _`).
+-/
+mutual
+@[expose] def Stmt.transportShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ (.det _) _) => true
+  | .cmd (.init _ _ .nondet _) => true
+  | .cmd (.set _ (.det _) _) => true
+  | .cmd (.set _ .nondet _) => true
+  | .cmd (.assert _ _ _) => true
+  | .cmd (.assume _ _ _) => true
+  | .cmd (.cover _ _ _) => true
+  | .block _ bss _ => Block.transportShape bss
+  | .ite (.det _) tss ess _ => Block.transportShape tss && Block.transportShape ess
+  | .ite .nondet tss ess _ => Block.transportShape tss && Block.transportShape ess
+  | .loop (.det _) none [] lbody _ => Block.transportShape lbody
+  | .loop _ _ _ _ _ => false
+  | .exit _ _ => true
+  | .funcDecl _ _ => false
+  | .typeDecl _ _ => true
+  termination_by sizeOf s
+
+@[expose] def Block.transportShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: rest => Stmt.transportShape s && Block.transportShape rest
+  termination_by sizeOf ss
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### LoopBodyNoInits
+
+Predicate stating that every `.loop _ _ _ bss _` reachable inside a
+statement (or block) has `Block.initVars bss = []`. Used by the
+structured-to-CFG soundness proof: the CFG flat namespace cannot
+re-execute body inits at iteration ≥ 2, so we restrict to loops whose
+body declares no local variables.
+-/
+
+mutual
+/-- Returns true if every reachable loop's body declares no local vars. -/
+@[expose] def Stmt.loopBodyNoInits (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopBodyNoInits bss
+  | .ite _ tss ess _ => Block.loopBodyNoInits tss && Block.loopBodyNoInits ess
+  | .loop _ _ _ bss _ =>
+      (Block.initVars bss).isEmpty && Block.loopBodyNoInits bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
+@[expose] def Block.loopBodyNoInits (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### LoopHasNoInvariants
+
+Predicate stating that every `.loop _ _ is _ _` reachable inside a
+statement (or block) has `is = []` (no labeled invariants). Used by
+the structured-to-CFG soundness proof to collapse the assert-chain
+at the loop entry block to empty.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no invariants. -/
+@[expose] def Stmt.loopHasNoInvariants (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopHasNoInvariants bss
+  | .ite _ tss ess _ => Block.loopHasNoInvariants tss && Block.loopHasNoInvariants ess
+  | .loop _ _ is bss _ =>
+      is.isEmpty && Block.loopHasNoInvariants bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopHasNoInvariants`. -/
+@[expose] def Block.loopHasNoInvariants (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopHasNoInvariants s && Block.loopHasNoInvariants srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### NoMeasureLoops
+
+Predicate stating that every `.loop _ m _ _ _` reachable inside a
+statement (or block) has `m = .none` (no termination measure). Used
+by the structured-to-CFG soundness proof to collapse the
+`measure_lb` / `measure_decrease` blocks in the translator's loop
+CFG layout.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no termination measure. -/
+@[expose] def Stmt.noMeasureLoops (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noMeasureLoops bss
+  | .ite _ tss ess _ => Block.noMeasureLoops tss && Block.noMeasureLoops ess
+  | .loop _ m _ bss _ =>
+      m.isNone && Block.noMeasureLoops bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.noMeasureLoops`. -/
+@[expose] def Block.noMeasureLoops (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noMeasureLoops s && Block.noMeasureLoops srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### NoBlocks
+
+A boolean predicate asserting that a statement (or block) contains no
+`.block` constructor anywhere in its tree. Used by the structured-to-CFG
+correctness proof to identify subprograms whose CFG end-store is exactly
+the structured end-store (no projection occurs).
+-/
+
+mutual
+/-- Returns true if the statement contains no `.block` constructor. -/
+@[expose] def Stmt.noBlocks (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ _ _ => false
+  | .ite _ tss ess _ => Block.noBlocks tss && Block.noBlocks ess
+  | .loop _ _ _ bss _ => Block.noBlocks bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.block` constructor. -/
+@[expose] def Block.noBlocks (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noBlocks s && Block.noBlocks srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+/-! ### NoInitsAnywhere -/
+
+mutual
+/-- Returns true if the statement contains no `.init` command anywhere. -/
+@[expose] def Stmt.noInitsAnywhere (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ _ _) => false
+  | .cmd _ => true
+  | .block _ bss _ => Block.noInitsAnywhere bss
+  | .ite _ tss ess _ => Block.noInitsAnywhere tss && Block.noInitsAnywhere ess
+  | .loop _ _ _ bss _ => Block.noInitsAnywhere bss
+  | .exit _ _ => true
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.init` command anywhere. -/
+@[expose] def Block.noInitsAnywhere (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noInitsAnywhere s && Block.noInitsAnywhere srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-! ### IsInitCmd helper -/
+
+/-- Helper: a statement is `.cmd (.init ...)`. Useful for the hoisting
+pass's per-statement classification (`liftInitsInLoopBody`). -/
+@[expose] def Stmt.isInitCmd (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ _ _) => true
+  | _ => false
+
+/-! ### ContainsNondetLoop / ContainsFuncDecl
+
+Boolean predicates flagging features that the hoisting pass cannot
+admit: the trace-inversion swap lemma `stmt_init_commute_terminates_det`
+relies on the deterministic fragment of `StepStmt`. Programs containing
+`.loop _ .nondet ...` or `.funcDecl ...` would need additional API
+(`WFCongr` for nondet loops; `WellFormedExtendEval` for funcDecl) to
+support the swap, which the deterministic swap lemma does not provide.
+We exclude them at the predicate level.
+-/
+
+mutual
+/-- Returns true if the statement contains a `.loop _ .nondet ...` somewhere. -/
+@[expose] def Stmt.containsNondetLoop (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => false
+  | .block _ bss _ => Block.containsNondetLoop bss
+  | .ite _ tss ess _ => Block.containsNondetLoop tss || Block.containsNondetLoop ess
+  | .loop guard _ _ bss _ =>
+      match guard with
+      | .nondet => true
+      | .det _ => Block.containsNondetLoop bss
+  | .exit _ _ => false
+  | .funcDecl _ _ => false
+  | .typeDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if any statement in `ss` contains a nondet loop. -/
+@[expose] def Block.containsNondetLoop (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => false
+  | s :: srest =>
+      Stmt.containsNondetLoop s || Block.containsNondetLoop srest
+  termination_by (Block.sizeOf ss)
+end
+
+mutual
+/-- Returns true if the statement contains a `.funcDecl ...` somewhere. -/
+@[expose] def Stmt.containsFuncDecl (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => false
+  | .block _ bss _ => Block.containsFuncDecl bss
+  | .ite _ tss ess _ => Block.containsFuncDecl tss || Block.containsFuncDecl ess
+  | .loop _ _ _ bss _ => Block.containsFuncDecl bss
+  | .exit _ _ => false
+  | .funcDecl _ _ => true
+  | .typeDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if any statement in `ss` contains a funcDecl. -/
+@[expose] def Block.containsFuncDecl (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => false
+  | s :: srest =>
+      Stmt.containsFuncDecl s || Block.containsFuncDecl srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+/-! ## `userBlockLabels`
+
+`userBlockLabels` collects all user-provided `Stmt.block` labels appearing in a
+list of statements. The command type `C` is left abstract: `userBlockLabels`
+never inspects a command, so this applies uniformly to the pipeline's
+`Imperative.Cmd`-bodied statement lists and to extended command types. -/
+
+@[expose] def Block.userBlockLabels {P : PureExpr} {C : Type} :
+    List (Stmt P C) → List String
+  | [] => []
+  | s :: rest => stmtUserBlockLabels s ++ Block.userBlockLabels rest
+where
+  stmtUserBlockLabels : Stmt P C → List String
+    | .block l ss _ => l :: Block.userBlockLabels ss
+    | .ite _ tss ess _ => Block.userBlockLabels tss ++ Block.userBlockLabels ess
+    | .loop _ _ _ ss _ => Block.userBlockLabels ss
+    | _ => []
+
+
 end -- public section
 end Imperative

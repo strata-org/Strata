@@ -631,6 +631,84 @@ theorem overapproximatesUpto_comp (L₁ L₂ L₃ : Lang P)
     · intro hfail; exact hr₂.2.1 (hr₁.2.1 hfail)
   | none => rw [h] at ht; exact absurd ht (by nofun)
 
+/-- Rewriting the *output* relation `Rout → Rout'`, holding the input relation
+    `Rin` fixed.  `OverapproximatesUptoWhen`'s output relation appears only in the
+    positive position of the terminal/exiting witnesses, so the change is purely
+    monotone: `Rout ⊆ Rout'` suffices. -/
+theorem OverapproximatesUptoWhen.mono_out (L₁ L₂ : Lang P)
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    {Rin Rout Rout' : Relation (Env P)}
+    (hout : ∀ a b, Rout a b → Rout' a b)
+    (h : OverapproximatesUptoWhen Rin Rout L₁ L₂ T pre params₁ params₂) :
+    OverapproximatesUptoWhen Rin Rout' L₁ L₂ T pre params₁ params₂ := by
+  intro st st' ht hpre ρ₀ ρ₀' hRin hwf
+  have hr := h st st' ht hpre ρ₀ ρ₀' hRin hwf
+  refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, hr.2.1, hr.2.2⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').1 hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+  · obtain ⟨ρ'', hR, hstar'⟩ := (hr.1 ρ').2 lbl hstar; exact ⟨ρ'', hout _ _ hR, hstar'⟩
+
+/-- **Compositionality** (shared-start form): composing two transforms that each
+    run source and target from the *same* initial env (input relation `(· = ·)`)
+    composes their output relations via `RComp` and keeps the shared-start input
+    relation.  Pass 2's source `initEnvWF` at `ρ₀` is exactly pass 1's target
+    `initEnvWF` conjunct (`hr₁.2.2`), so the intermediate initial-environment
+    freshness threads through `initEnvWF` with no separate input relation or
+    per-env precondition (the input `(· = ·)` collapses the RComp intermediate to
+    `ρ₀` outright). -/
+theorem OverapproximatesUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {R₁ R₂ : Relation (Env P)}
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen (· = ·) R₁ L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen (· = ·) R₂ L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen (· = ·) (RComp R₁ R₂)
+      L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ := by
+  intro st st'' ht hpre₁ ρ₀ ρ₀' hEq hwf
+  subst hEq
+  simp only [bind, Option.bind] at ht
+  match hT₁ : T₁ st with
+  | none => rw [hT₁] at ht; exact absurd ht (by nofun)
+  | some st' =>
+    rw [hT₁] at ht
+    have hr₁ := h₁ st st' hT₁ hpre₁ ρ₀ ρ₀ rfl hwf
+    have hr₂ := h₂ st' st'' ht (hpre st st' hT₁ hpre₁) ρ₀ ρ₀ rfl hr₁.2.2
+    refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩,
+            fun hcf => hr₂.2.1 (hr₁.2.1 hcf), hr₂.2.2⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').1 hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).1 hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+    · obtain ⟨ρ'₂, hR₁', hstar₂⟩ := (hr₁.1 ρ').2 lbl hstar
+      obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).2 lbl hstar₂
+      exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
+
+/-- **Compositionality** (shared-start preorder form): if the shared output
+    relation `R` is *transitive* then composing two shared-start
+    `OverapproximatesUptoWhen (· = ·) R` transforms yields another
+    `OverapproximatesUptoWhen (· = ·) R` transform.  This is the combinator that
+    threads per-stage freshness through a pipeline: because the initial
+    environment is shared and each pass's target `initEnvWF` re-establishes the
+    next pass's source `initEnvWF` at that env, no per-environment precondition is
+    needed; transitivity collapses the `RComp`-composed output relation back to
+    `R`. -/
+theorem OverapproximatesUptoWhen.comp_preorder_eq (L₁ L₂ L₃ : Lang P)
+    (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
+    {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (params₃ : L₃.InitEnvWFParamsTy)
+    {R : Relation (Env P)}
+    (htrans : Transitive R)
+    (hpre : ∀ st st', T₁ st = some st' → pre₁ st → pre₂ st')
+    (h₁ : OverapproximatesUptoWhen (· = ·) R L₁ L₂ T₁ pre₁ params₁ params₂)
+    (h₂ : OverapproximatesUptoWhen (· = ·) R L₂ L₃ T₂ pre₂ params₂ params₃) :
+    OverapproximatesUptoWhen (· = ·) R L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃ :=
+  OverapproximatesUptoWhen.mono_out L₁ L₃ (fun s => T₁ s >>= T₂) pre₁ params₁ params₃
+    (fun _ _ h => RComp.collapse htrans (fun _ _ => id) (fun _ _ => id) h)
+    (OverapproximatesUptoWhen.comp_eq L₁ L₂ L₃ T₁ T₂ params₁ params₂ params₃ hpre h₁ h₂)
+
 /-- Composition of two overapproximations. -/
 theorem overapproximates_comp (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)

@@ -38,7 +38,7 @@ abbrev Expression : PureExpr :=
 instance : HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
 
-instance : Imperative.HasVarsPure Expression Expression.Expr where
+instance : HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
 instance : HasOps Expression where
@@ -66,6 +66,22 @@ instance : HasSubstFvar Core.Expression where
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩
+
+/-- Syntactic free-variable laws for `Core.Expression`'s structural `Has*`
+operations, independent of the evaluator: `mkFvar`/`getFvars`/`ident`
+agree with the abstract `Lawful*` contracts. -/
+instance : LawfulHasFvar Core.Expression where
+  getFvar_mkFvar := fun _ => rfl
+
+instance : LawfulHasFvars Core.Expression where
+  mkFvar_getFvars := fun _ => by
+    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
+
+instance : LawfulHasIdent Core.Expression where
+  ident_inj := by
+    intro a b h
+    cases h
+    rfl
 
 @[expose, match_pattern]
 def Core.true : Core.Expression.Expr := .boolConst () Bool.true

@@ -34,7 +34,10 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.LoopInitHoist
+import Strata.Transform.NondetElim
 import Strata.Transform.ProcBodyVerifyCorrect
 
 /- Strata Languages — additional -/
