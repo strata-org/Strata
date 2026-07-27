@@ -249,8 +249,12 @@ where
           match _htv : t.val with
           | .Field target fieldName => do
               let some qualifiedName := resolveQualifiedFieldName model fieldName
-                -- Field name did not resolve; a diagnostic will have been emitted by the resolution pass.
-                | return (accTargets ++ [t], accStmts)
+                -- Unresolved field name = a write to an unmodeled object's attribute. Drop it from the heap
+                -- model (retarget to a throwaway local; emit no updateField) — an untracked field write is
+                -- unobservable in the heap abstraction.
+                | do
+                  let discardVar ← freshVarName
+                  return (accTargets ++ [mkVarMd (.Declare ⟨discardVar, ⟨.Unknown, source⟩⟩)], accStmts)
               let valTy := (model.get fieldName).getType
               recordBoxConstructor model valTy.val
               let freshVar ← freshVarName

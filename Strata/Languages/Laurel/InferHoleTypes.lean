@@ -117,7 +117,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
   | AstNode.mk val source =>
   match val with
   | .Hole det _ =>
-      if expectedType.val matches .Unknown then
+      -- A hole with no inferable context (expectedType `.Unknown`, e.g. a bare `<?>` proc body) is a
+      -- genuine "could not infer type" error, so the diagnostic fires here. The sound gradual escape
+      -- for an unmodeled field-write RHS hole is handled in the `.Assign` arm (which knows the target
+      -- is Unknown-typed), so such a hole never reaches this arm.
+      if expectedType.val == .Unknown then
         modify fun s => { s with
           statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}"
           diagnostics := s.diagnostics ++ [diagnosticFromSource source "could not infer type"]
@@ -162,7 +166,17 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd) : InferHol
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, none⟩ fieldName), target.source⟩
           | .Declare param => param.type
         | _ => ⟨ .Unknown, source ⟩
-      return ⟨.Assign targets (← inferExpr value targetType), source⟩
+      -- An unmodeled field-write target yields `targetType = .Unknown`. The RHS of an assignment whose
+      -- target type is Unknown is a sound gradual hole: annotate it `.Unknown` directly so hole
+      -- elimination emits an uninterpreted fn over `Unknown`, rather than treating it as a contextless
+      -- hole that "could not infer type". A contextless hole is not an assign RHS, so it still errors.
+      let value' ← match value.val, targetType.val with
+        | .Hole det _, .Unknown => do
+            modify fun s => { s with
+              statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}" }
+            pure (⟨.Hole det (some ⟨.Unknown, value.source⟩), value.source⟩ : StmtExprMd)
+        | _, _ => inferExpr value targetType
+      return ⟨.Assign targets value', source⟩
   | .While cond invs dec body postTest =>
       let dec' ← match dec with
         | some d => pure (some (← inferExpr d (⟨ .TInt, source ⟩)))

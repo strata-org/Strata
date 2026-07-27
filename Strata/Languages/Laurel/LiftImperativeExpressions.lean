@@ -278,7 +278,9 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       return seqCall
     else
       let callResultVar ← freshTempVar
-      let callResultType ← computeType expr
+      let callResultTypeFull ← computeType expr
+      -- The temp var holds the call's value; drop the maybe-except output from its type.
+      let callResultType := stripTrailingErrors callResultTypeFull
 
       let prepends ← asLifted (transformStmtAssignImperativeCall
         [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)

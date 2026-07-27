@@ -225,6 +225,7 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
   else
     defineName iden node overrideResolutionName
 
+
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
     When `expected` is provided, emits a diagnostic if the resolved node's kind is not
@@ -242,6 +243,10 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
       modify fun s => { s with errors := s.errors.push diag }
     return name'
   | none =>
+    -- Name not in scope: report it. Language frontends that reference unmodeled external
+    -- names (e.g. the Python pipeline's imported/stdlib names) inject bodiless declarations
+    -- for them so they resolve through the normal declaration path, rather than pre-registering
+    -- them in the resolver.
     let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
@@ -316,7 +321,21 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName source
+  -- The field name (an attribute, not a variable) did not resolve in any type scope.
+  -- Leave it unresolved with no diagnostic ONLY for a genuinely gradual receiver:
+  -- Unknown/Any, or a `UserDefined` name registered in `gradualTypes` (the dynamic top).
+  -- Such a field access is sound-but-uninterpreted. For every other receiver — a known
+  -- composite that lacks this field, OR a primitive (`int`/`bool`/… whose `targetTypeName`
+  -- is `none`) — a missing field is a real bug (typo'd attribute), so fall through to
+  -- `resolveRef` and preserve the "Resolution failed: 'field' is not defined" diagnostic.
+  let s ← get
+  let isGradualReceiver (n? : Option String) : Bool := match n? with
+    | some n => s.typeLattice.gradualTypes.contains n
+    | none => false  -- primitive / void / inferred receiver: NOT a gradual escape
+  if isGradualReceiver typeName? || isGradualReceiver s.instanceTypeName then
+    return { fieldName with uniqueId := none }
+  else
+    resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -565,14 +584,68 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
   let diag := diagnosticFromSource source s!"{constructor}{problem}{suffix}"
   modify fun s => { s with errors := s.errors.push diag }
 
+/-- Collapse a proc-output type `(T, Error, ...)` to its value type `T` by dropping trailing
+    `Error` outputs. The maybe-thrown exception is carried as an output but is not a value the
+    caller binds, so single-output use sites compare against `T`, not the tuple. Shared by the
+    resolver's subtyping checks and the imperative-expression lifter. -/
+def stripTrailingErrors (actual : HighTypeMd) : HighTypeMd :=
+  match actual.val with
+  | .MultiValuedExpr (first :: rest) =>
+    if rest.all (fun o => match o.val with | .UserDefined id => id.text == "Error" | _ => false)
+    then first else actual
+  | _ => actual
+
+/-- `void` and `()` (unit) are mutually compatible — they both denote "no value." -/
+private def isVoidLikeHT (t : HighType) : Bool := match t with
+  | .TVoid | .MultiValuedExpr [] => true
+  | .UserDefined id => id.text == "()"
+  | _ => false
+
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
     output) — equivalent to `Check.resolveStmtExpr e expected` but without re-synthesizing. -/
 private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx actual expected do
+  let actual' := stripTrailingErrors actual
+  -- Strip trailing `Error` from BOTH sides: an `.err`-grade body has actual type
+  -- `(T, Error)` and an `.err`-grade declared output has expected type `(T, Error)`.
+  -- Stripping only `actual` left `T` vs `(T, Error)` → a spurious mismatch whose
+  -- diagnostic misleadingly printed identical tuples ("expected '(bool, Error)', got
+  -- '(bool, Error)'"). Symmetric stripping compares the value types `T` vs `T`.
+  let expected' := stripTrailingErrors expected
+  let compatible :=
+    (isVoidLikeHT actual'.val && isVoidLikeHT expected'.val) ||
+    isConsistentSubtype ctx actual' expected'
+  unless compatible do
     typeMismatch source none s!"expected '{formatType expected}'" actual
+
+/-- PROOF-RELEVANT `[⇐] Sub`: check `actual ≤ expected` AND, on success, REALIZE the
+    coercion witness onto the rewritten term `e` (returning the coerced term). This
+    is `checkSubtype` plus term-rewriting; use it wherever the resolver holds the
+    expression and rebuilds the AST (subsumption fallback, assignment RHS, …).
+
+    The witness is the abstract `coerce` verdict; the concrete coercion is inserted
+    by the frontend-supplied `ctx.realizeCoercion` (identity for native Laurel, so
+    this is a no-op there). The decision and the realized coercion share the single
+    `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
+    as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
+    position) inserts no coercion. -/
+private def coerceTo (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+    (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let ctx := (← get).typeLattice
+  let actual' := stripTrailingErrors actual
+  let expected' := stripTrailingErrors expected
+  if isVoidLikeHT actual'.val && isVoidLikeHT expected'.val then
+    pure e
+  else match coerce ctx actual' expected' with
+    | some verdict =>
+      match ctx.realizeCoercion with
+      | some realize => pure (realize verdict e)
+      | none => pure e
+    | none =>
+      typeMismatch source none s!"expected '{formatType expected}'" actual
+      pure e
 
 /-- Test whether a type is in the set of numeric primitives
     (`TInt` / `TReal` / `TFloat64` / `TBv`). `Unknown` is
@@ -645,12 +718,15 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   match s.scope.get? callee.text with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
     pure (procReturnType callee proc, proc.inputs.map (·.type))
-  | some (_, .datatypeConstructor t _) =>
-    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+  | some (_, .datatypeConstructor t ctor) =>
+    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type.
+    -- A constructor's argument types ARE its parameter types: return them so the
+    -- call rule checks + coerces each argument against them (e.g. `ListAny_cons(1,
+    -- …)` coerces `1` into the `Any` head slot).
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
-      pure ({ val := .UserDefined t, source := callee.source }, [])
+      pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .datatypeDestructor dtName p) =>
     -- A destructor's result is its field's declared type — except on a *generic*
     -- datatype, where that type may mention the datatype's erased type
@@ -1218,10 +1294,40 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .PrimitiveOp .Implies args skipProof =>
     Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
-    -- Subsumption fallback: synth then check `actual <: expected`.
+    -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
+    -- realize the coercion witness onto the term. This chokepoint covers call
+    -- arguments, return values, functional bodies, and primitive-op subsumption —
+    -- every check-mode boundary without a bespoke rule funnels here.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
-    checkSubtype source expected actual
-    pure e'
+    -- Truthiness (bool context): when the slot expects `TBool` but the actual type is not
+    -- bool-coercible by `coerce`, apply the caller's `toBool` hook. Truthiness is a
+    -- boolean-context coercion, not subtyping, so it is deliberately not part of `coerce`; the
+    -- hook fires only here, where the slot is known to be bool. Otherwise fall back to the
+    -- normal subsumption.
+    let ctx ← (do pure (← get).typeLattice)
+    -- Refl-gate for the truthiness hook: fire `toBool` when the slot is `TBool`, the actual is
+    -- not already bool, and `coerce` yields either no witness (there is no `int <: bool`) or only
+    -- a spurious gradual `refl` — i.e. a gradual-registered `UserDefined` that the gradual-top
+    -- fallback declares consistent-with-bool, which would otherwise let the raw value land in the bool
+    -- slot. A real `inject`/`project`/`upcast` witness (e.g. `Any → bool`) is not diverted: it
+    -- flows through `coerceTo`. Truthiness is a boolean-context coercion, not subtyping.
+    --
+    -- The "not already bool" clause is load-bearing and tested against the UNFOLDED actual:
+    -- `coerce TBool TBool` returns `some .refl` (via `highEq`), so without this guard an operand
+    -- that is already `bool` (or a phantom `UserDefined "bool"` that `unfold` canonicalizes to
+    -- `TBool`) would spuriously route through `toBool` and get wrapped in a redundant truthiness
+    -- call whenever a frontend installs the hook. Native Laurel (`toBool = none`) is unaffected
+    -- either way, but the Python frontend's `Any_to_bool` must not double-wrap native `bool`s.
+    let actualStripped := stripTrailingErrors actual
+    let fireToBool := expected.val == .TBool &&
+      (ctx.unfold actualStripped).val != .TBool &&
+      (match coerce ctx actualStripped expected with | none => true | some .refl => true | _ => false)
+    if fireToBool then
+      match ctx.toBool with
+      | some mk => pure (mk actualStripped.val e')
+      | none => coerceTo source expected actual e'
+    else
+      coerceTo source expected actual e'
   termination_by (exprMd, 3)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
@@ -1688,7 +1794,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     `join` (`Unknown ⊔ T = T`), so a hole branch promotes to the other
     branch's concrete type and the synthesized type is independent of
     branch order. (`isConsistent` stays the accept/reject gate: it admits
-    a lone `TCore` corner where `join` is `none`, for which the result
+    a gradual corner where `join` is `none`, for which the result
     falls back to the then-branch type, leaving that boundary unchanged.)
     Inconsistent branches (e.g. `if c then 1 else "x"`) emit a diagnostic
     and synthesize `Unknown` to suppress cascading errors. Without an
@@ -1711,14 +1817,30 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
   | some e =>
     let (e', elseTy) ← Synth.resolveStmtExpr e
     let ctx := (← get).typeLattice
+    -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
+    -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
+    -- position both branches run for effect, and the `Heap` value is the threaded heap, not a
+    -- user value. Treat `Heap` as void-like for this join only (not the shared `isVoidLikeHT`,
+    -- which gates coercion).
+    let isStmtBranchTy (t : HighType) : Bool :=
+      isVoidLikeHT t || (match t with | .UserDefined id => id.text == "Heap" | _ => false)
     let ty ←
+      -- Primary: the shared `join` (handles Unknown/TVoid/equal — e.g. an `int`/`void`
+      -- branch pair joins to `void`). Fallback: the frontend tolerances an `.err`-grade
+      -- `(T, Error)` body or a heap-threading branch needs (strip trailing Error; treat
+      -- Heap as void-like for this join only).
       match join ctx thenTy elseTy with
       | some joined => pure joined
       | none =>
-        let diag := diagnosticFromSource source
-          s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
-        modify fun s => { s with errors := s.errors.push diag }
-        pure { val := .Unknown, source := source }
+        if isConsistent ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy) ||
+            isVoidLikeHT (stripTrailingErrors thenTy).val && isVoidLikeHT (stripTrailingErrors elseTy).val ||
+            isStmtBranchTy (stripTrailingErrors thenTy).val && isStmtBranchTy (stripTrailingErrors elseTy).val then
+          pure ((join ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy)).getD (stripTrailingErrors thenTy))
+        else
+          let diag := diagnosticFromSource source
+            s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
+          modify fun s => { s with errors := s.errors.push diag }
+          pure { val := .Unknown, source := source }
     pure (.IfThenElse cond' thenBr' (some e'), ty)
   termination_by (exprMd, 1)
   decreasing_by
@@ -2404,8 +2526,8 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
   -- Guard (all operator families): a `MultiValuedExpr` operand is a
   -- multi-output call (`multi(x)` declared `returns (a, b)`) used in value
   -- position. It is an internal pseudo-type with no Core lowering, so it must
-  -- never reach an operator slot — letting it through crashes a later pass as
-  -- a `StrataBug`. Emit the position-oriented diagnostic per offending operand
+  -- never reach an operator slot — letting it through crashes a later pass.
+  -- Emit the position-oriented diagnostic per offending operand
   -- and return `true` so the caller short-circuits to the operator's natural
   -- result type, suppressing the per-family check (and its cascading error)
   -- on that operand.
@@ -3184,12 +3306,17 @@ def resolveBody (body : Body) : ResolveM Body := do
     let (b', _) ← Synth.resolveStmtExpr b
     return .Transparent b'
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    -- Postconditions are boolean: check against `TBool` (like preconditions and loop
+    -- invariants) so a non-bool `ensures` errors instead of silently synthesizing, and
+    -- the truthiness coercion is inserted for an `Any`-typed condition.
+    let posts' ← posts.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let impl' ← impl.mapM Synth.resolveStmtExpr
     let mods' ← resolveModifies mods
     return .Opaque posts' (impl'.map (fun t => t.1)) mods'
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    let posts' ← posts.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     return .Abstract posts'
   | .External => return .External
 
@@ -3219,7 +3346,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3276,7 +3409,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3895,7 +4034,10 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
         | _ => none
 
 /-- Run the full resolution pass on a Laurel program. -/
-public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
+public def resolve (program : Program) (existingModel: Option SemanticModel := none)
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
+    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
     preRegisterTopLevel program
@@ -3906,7 +4048,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let typeLattice := TypeLattice.ofTypes program.types
+  let typeLattice := { TypeLattice.ofTypes program.types with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
@@ -3976,8 +4119,11 @@ but they are because certain type references have incorrectly not been updated.
 public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
+    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
-  -- Phase 1: pre-register all top-level names, then resolve references
+  -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions
       (additionalTypes ++ uc.datatypes.map .Datatype)
@@ -4019,7 +4165,14 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
              datatypes := datatypes', constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let (uc', finalState) := phase1.run { nextId := nextId }
+  -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
+  -- lattice so consistency/coercion treats them as the dynamic top (e.g. Python `Any`) and
+  -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
+  -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
+  -- differ between passes, producing spurious "resolution introduced this diagnostic".
+  let typeLattice := { TypeLattice.ofTypes (uc.datatypes.map .Datatype ++ additionalTypes) with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
+  let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
 
   -- Phase 2: build refToDef from the resolved unordered core
   let program' : Program := {
