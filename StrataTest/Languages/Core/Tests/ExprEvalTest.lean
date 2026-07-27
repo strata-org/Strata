@@ -17,7 +17,6 @@ meta import Strata.Languages.Core.Identifiers
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core.Verifier
-meta import all StrataTest.DL.Lambda.TestGen
 meta import all StrataTest.DL.Lambda.PlausibleHelpers
 public meta import Plausible.Arbitrary
 meta import Plausible
@@ -200,29 +199,6 @@ open Lambda.LTy.Syntax
 
 -- This may take a while
 #eval (checkFactoryOps false)
-
-open Plausible TestGen
-
-deriving instance Arbitrary for Unit
-
-def test_lctx : LContext CoreLParams :=
-{
-  LContext.empty with
-  functions := Core.Factory
-  knownTypes := Core.KnownTypes
-}
-
-def test_ctx : TContext Unit := ⟨[[]], []⟩
-
-abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
-#guard_msgs(drop all) in
-#eval do
-    let P : LExpr CoreLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
-    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    IO.println s!"Generated {t}"
-    let b ← checkValid t
-    if ¬ b then
-      IO.println s!"Invalid!"
 
 end Tests
 
