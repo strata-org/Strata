@@ -26,6 +26,11 @@ to the declarative typing relations `CmdExtHasType` and `CmdExtHasTypeA`.
 
 * **`Command.typeCheckCmd_annotated_sound`** — if `typeCheckCmd` succeeds,
   the output command satisfies `CmdExtHasTypeA`.
+
+Also exports the threading lemmas the statement-level soundness proofs consume:
+`typeCheckCmd_preserves` (the `GoPreserved`-style invariants) and
+`typeCheckCmd_preserves_ambient_mono`/`_ambient_rigid` (the ambient context stays
+monomorphic / rigid-annotated across a command step).
 -/
 
 namespace Core

@@ -15,8 +15,13 @@ import all Strata.DL.Util.Nodup
 
 /-! ## Per-component alias inverse (`typeCheck_inverse_components`)
 
-Helper lemmas and the shared per-component alias adapter used to prove
-`typeCheck_inverse_components`. -/
+The top-level result is `Function.typeCheck_inverse_components`: the reconstructed
+output and input components of the instantiated signature's arrow spine are
+alias-equivalent (via the renaming `ρ`) to `func.output` and `func.inputs.values`.
+
+Also exports `ArrowKnownBinary` (the `"arrow"`-registered-at-arity-2 context
+hypothesis the soundness chain needs) with `arrow_arity_eq_two`, and
+`knownInstance_of_instantiateWithCheck`. -/
 
 namespace Core
 namespace TypeSpec

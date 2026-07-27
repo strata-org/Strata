@@ -22,6 +22,20 @@ set_option linter.unusedVariables false
 
 Relates the executable function typechecker `Function.typeCheck` to the
 declarative typing specifications `FuncHasType` and `FuncHasTypeA`.
+
+Three top-level soundness results:
+
+* **`Function.typeCheck_sound`** — the *input* function satisfies polymorphic
+  `FuncHasType`.
+* **`Function.typeCheck_annotated_sound`** — the *output* function satisfies the
+  annotated `FuncHasTypeA` at any ambient `Γ`.
+* **`Function.typeCheck_HasType_output`** — the *output* function satisfies
+  polymorphic `FuncHasType` (needed by the statement-level `funcDecl` case, which
+  registers the output function). Currently `sorry`.
+
+Also exports the threading facts the statement/procedure soundness proofs consume:
+`typeCheck_context_eq`, `typeCheck_absorbs`, `typeCheck_TEnvWF`,
+`typeCheck_preserves_rigid_inv`, and `typeCheck_LFuncWF`.
 -/
 
 namespace Core

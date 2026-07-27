@@ -26,7 +26,7 @@ analogue of `FunctionTypeSpecProps.lean` / `StatementTypeSpecProps.lean`.
 * **Annotated** `Procedure.typeCheck_annotated_sound`: success ⇒ the OUTPUT
   procedure `proc'` satisfies `ProcHasTypeA` at the body type-scope `Env'.context`.
 * **Polymorphic** `Procedure.typeCheck_sound`: success ⇒ the INPUT procedure
-  `proc` satisfies `ProcHasType` in the ambient `Env.context`.
+  `proc` satisfies `ProcHasType` in the ambient `Env.context`. Currently `sorry`.
 
 The body obligation delegates to the already-proved statement soundness theorems
 (`Statement.typeCheck_{annotated_sound,sound}`) plus a context bridge.

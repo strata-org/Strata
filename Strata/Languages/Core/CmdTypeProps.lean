@@ -20,6 +20,12 @@ import Strata.Util.Tactics
 Properties of the `CmdType` typechecker definitions (`lookup`, `preprocess`,
 `inferType`, `unifyTypes`, etc.), used to prove command-typechecker soundness in
 `CmdTypeSpecProps`.
+
+For each definition these establish the threading invariants the soundness proof
+relies on — context/`stateSubstInfo` preservation, substitution refinement
+(`_absorbs`), `TEnvWF`/`ContextMono` preservation, and generator monotonicity —
+plus the two key semantic facts: `inferType_HasType` (inference is sound) and
+`Cmd.typeCheck_preserves_rigid_inv` (checking fixes every rigid type variable).
 -/
 
 namespace Core
