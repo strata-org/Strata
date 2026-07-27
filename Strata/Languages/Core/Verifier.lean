@@ -377,14 +377,18 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     (varDeclarations : List Core.VarDeclaration := [])
     (pctx : PipelineContext) :
     SolverM (List String × EncoderState) := do
+  -- Phase naming convention: `build*` is the Term-to-Term rewrite pass (no SMT
+  -- text produced), `write*` renders terms to SMT-LIB text and writes them.
+  -- Though a `write*` phase may also rewrite in the same loop.
   let phase {α} (name : String) (action : SolverM α) : SolverM α :=
     pctx.withRepeatedPhase name action
   Solver.setLogic "ALL"
   phase "prelude" do
     prelude
 
-  let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
-  ctx.emitDatatypes
+  phase "writeSorts" do
+    let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
+    ctx.emitDatatypes
   let varDefNames := varDefinitions.map (·.name)
   let varDeclNames := varDeclarations.map (·.name)
   let managedNames := varDefNames ++ varDeclNames
@@ -392,13 +396,13 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
   let preDeclaredNames := ctx.preDeclaredNames
 
-  let estate ← phase "encodeUFs" do
+  let estate ← phase "writeUFs" do
     let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
       else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
     let (_ufs, estate) ← ufsToDecl.mapM (fun uf => encodeUF uf) |>.run (EncoderState.initWithNames preDeclaredNames)
     pure estate
 
-  let estate ← phase "encodeFunctions" do
+  let estate ← phase "writeFunctions" do
     let estate := if managedNames.isEmpty then estate
       else
         let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
@@ -410,32 +414,35 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
     let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => encodeFunctionDef fn) |>.run estate
     pure estate
 
-  let (_axms, estate) ← phase "encodeAxioms" do
+  let (_axms, estate) ← phase "buildAxioms" do
     ctx.axms.toArray.mapM (fun ax => encodeTerm ax) |>.run estate
 
-  for id in _axms do
-    Solver.assert id
+  phase "writeAxioms" do
+    for id in _axms do
+      Solver.assert id
   -- Emit variable declarations as declare-fun
-  for decl in varDeclarations do
-    Solver.declareFun decl.name [] decl.ty
+  phase "writeVarDecls" do
+    for decl in varDeclarations do
+      Solver.declareFun decl.name [] decl.ty
 
   -- Emit variable definitions as define-fun (macro expansions, not constraints)
-  let estate ← phase "defineFunTerms" do
+  let estate ← phase "writeVarDefs" do
     varDefinitions.foldlM (init := estate) fun estate def_ => do
       let (bodyEnc, estate) ← (encodeTerm def_.body) |>.run estate
       Solver.defineFunTerm def_.name [] def_.ty bodyEnc
       pure estate
 
-  let (assumptionIds, estate) ← phase "encodeAssumptions" do
+  let (assumptionIds, estate) ← phase "buildAssumptions" do
     assumptionTerms.mapM (encodeTerm) |>.run estate
 
-  for id in assumptionIds do
-    Solver.assert id
+  phase "writeAssumptions" do
+    for id in assumptionIds do
+      Solver.assert id
 
-  let (obligationId, estate) ← phase "encodeObligation" do
+  let (obligationId, estate) ← phase "buildObligation" do
     (encodeTerm obligationTerm) |>.run estate
 
-  let ids ← phase "epilog" do
+  let ids ← phase "writeObligation" do
     let ids := estate.functions.toList.filterMap fun (uf, id) =>
       if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
 
@@ -1681,6 +1688,14 @@ private structure SolverJob where
   varDefs : List VarDefinition := []
   varDecls : List VarDeclaration := []
 
+/-- Disposition of one obligation coming out of the `smtDischarge` phase: either
+    solved inline with a ready `VCResult` (`resolved` -- also used for encoding
+    errors), or only prepared as a `SolverJob` that the parallel dispatch pass
+    solves later (`deferred`). -/
+private inductive ObligationDisposition where
+  | resolved (result : VCResult)
+  | deferred (job : SolverJob)
+
 /-- Dispatch a single solver job. Spawns a solver process and reads the result. -/
 private def dispatchSolverJob (job : SolverJob) (p : Program)
     (options : VerifyOptions) (counter : IO.Ref Nat) (tempDir : System.FilePath)
@@ -1799,7 +1814,7 @@ def verifySingleEnv (oblProgram : Program)
         | .deductive, _ =>
           if obligation.property.passWhenUnreachable then (false, true) else (true, false)
         | .bugFinding, _ => (true, false)
-    let (obligation, peSatResult?, peValResult?) ← pctx.withRepeatedPhase "preprocess" do
+    let (obligation, peSatResult?, peValResult?) ← pctx.withRepeatedPhase "evalDischarge" do
       preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
@@ -1825,70 +1840,77 @@ def verifySingleEnv (oblProgram : Program)
     -- Need the solver for at least one check
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
     let needValCheck := validityCheck && peValResult?.isNone
-    let maybeTerms ← pctx.withRepeatedPhase "smtEncode" do
-      -- Seed the encoding context: `datatypes` with the env's datatypes (the
-      -- encoder reads datatype declarations from there) and the encoder flags.
+    -- `smtDischarge`: the whole SMT path for one obligation.
+    -- The action returns an `ObligationDisposition` plus the encoding statistics to merge;
+    -- On the parallel path this phase wraps only `coreToSMT`/`collectVars`;
+    -- the solver phases then run in the phase-2 dispatch and are recorded there.
+    let (disposition, encStats) ← pctx.withRepeatedPhase "smtDischarge" do
+      -- Seed the encoding context with the env's datatypes and encoder flags.
       let smtCtx := { SMT.Context.default with
         uniqueBoundNames := options.uniqueBoundNames, datatypes,
         useArrayTheory := options.useArrayTheory }
-      pure (ProofObligation.toSMTTerms E.factory obligation smtCtx)
-    match maybeTerms with
-    | .error err =>
-      let result := { obligation,
-                      outcome := .error (.encoding (toString err)),
-                      verbose := options.verbose,
-                      checkLevel := options.checkLevel,
-                      checkMode := options.checkMode,
-                      lexprModel := [] }
-      if options.verbose >= .debug then
-        let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-        dbg_trace f!"\n\nResult: {result}\n{prog}"
+      -- `toSMTTerms` is pure, so it must go through the `*Pure` helper
+      -- otherwise the compiler will evaluate it before the phase is entered.
+      let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
+        ProofObligation.toSMTTerms E.factory obligation smtCtx
+      match maybeTerms with
+      | .error err =>
+        let result := { obligation,
+                        outcome := .error (.encoding (toString err)),
+                        verbose := options.verbose,
+                        checkLevel := options.checkLevel,
+                        checkMode := options.checkMode,
+                        lexprModel := [] }
+        pure (ObligationDisposition.resolved result, (default : Statistics))
+      | .ok (assumptionTerms, varDefs, varDecls, obligationTerm, ctx, encStats) =>
+        -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
+        let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
+          let vars := ProofObligation.getVars obligation
+          let managedNames := (varDefs.map (·.name)) ++ (varDecls.map (·.name))
+          vars.filter fun (v, _) => !managedNames.contains v.name
+        let typedVarsInObligation ← varsInObligation.mapM
+          (fun (v,ty) => do
+            match ty with
+            | .some ty => return (v,LTy.forAll [] ty)
+            | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
+        if useParallel then
+          -- Prepared only; the phase-2 dispatch solves it later.
+          let job : SolverJob := {
+            obligation, assumptionTerms, obligationTerm, ctx,
+            needSatCheck, needValCheck, peSatResult?, peValResult?,
+            typedVarsInObligation, varDefs, varDecls }
+          pure (ObligationDisposition.deferred job, encStats)
+        else
+          let discharge := mkDischarge options counter tempDir
+            typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
+          let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
+                        discharge needSatCheck needValCheck (externalPhases ++ corePhases)
+                        (varDefinitions := varDefs) (varDeclarations := varDecls)
+          -- Merge evaluator results with solver results
+          let result := match result.outcome with
+            | .ok solverOutcome =>
+              let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
+              let valResult := peValResult?.getD solverOutcome.validityProperty
+              { result with outcome := .ok { solverOutcome with
+                  satisfiabilityProperty := satResult,
+                  validityProperty := valResult } }
+            | .error _ => result
+          pure (ObligationDisposition.resolved result, encStats)
+    stats := stats.merge encStats
+    match disposition with
+    | .resolved result =>
       results := results.push result
-      if options.stopOnFirstError then break
-    | .ok (assumptionTerms, varDefs, varDecls, obligationTerm, ctx, encStats) =>
-      stats := stats.merge encStats
-      let varsInObligation := ProofObligation.getVars obligation
-      -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
-      let managedNames := (varDefs.map (·.name)) ++ (varDecls.map (·.name))
-      let varsInObligation := varsInObligation.filter fun (v, _) =>
-        !managedNames.contains v.name
-      let typedVarsInObligation ← varsInObligation.mapM
-        (fun (v,ty) => do
-          match ty with
-          | .some ty => return (v,LTy.forAll [] ty)
-          | .none => throw (DiagnosticModel.fromMessage s!"{v} untyped"))
-      if useParallel then
-        let job : SolverJob := {
-          obligation, assumptionTerms, obligationTerm, ctx,
-          needSatCheck, needValCheck, peSatResult?, peValResult?,
-          typedVarsInObligation, varDefs, varDecls }
-        solverJobs := job :: solverJobs
-        solverJobIndices := results.size :: solverJobIndices
-        results := results.push { obligation, outcome := .error (.encoding "pending parallel dispatch"),
-                                  verbose := options.verbose, checkLevel := options.checkLevel,
-                                  checkMode := options.checkMode, lexprModel := [] }
-      else
-        let discharge := mkDischarge options counter tempDir
-          typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
-        let result ← pctx.withRepeatedPhase "solver" do
-          getObligationResult assumptionTerms obligationTerm ctx obligation p options
-                      discharge needSatCheck needValCheck (externalPhases ++ corePhases)
-                      (varDefinitions := varDefs) (varDeclarations := varDecls)
-        -- Merge evaluator results with solver results
-        let result := match result.outcome with
-          | .ok solverOutcome =>
-            let satResult := peSatResult?.getD solverOutcome.satisfiabilityProperty
-            let valResult := peValResult?.getD solverOutcome.validityProperty
-            { result with outcome := .ok { solverOutcome with
-                satisfiabilityProperty := satResult,
-                validityProperty := valResult } }
-          | .error _ => result
-        results := results.push result
-        if result.isNotSuccess then
-          if options.verbose >= .debug then
-            let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
-            dbg_trace f!"\n\nResult: {result}\n{prog}"
-          if options.stopOnFirstError then break
+      if result.isNotSuccess then
+        if options.verbose >= .debug then
+          let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
+          dbg_trace f!"\n\nResult: {result}\n{prog}"
+        if options.stopOnFirstError then break
+    | .deferred job =>
+      solverJobs := job :: solverJobs
+      solverJobIndices := results.size :: solverJobIndices
+      results := results.push { obligation, outcome := .error (.encoding "pending parallel dispatch"),
+                                verbose := options.verbose, checkLevel := options.checkLevel,
+                                checkMode := options.checkMode, lexprModel := [] }
   -- Phase 2: Parallel solver dispatch
   if useParallel && !solverJobs.isEmpty then
     let phases := externalPhases ++ corePhases
@@ -1968,9 +1990,9 @@ def verify (program : Program)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
-  let axiomCache? ← pctx.withPhase "buildAxiomCache" do
-    pure (if options.removeIrrelevantAxioms == .Off then .none
-          else .some (IrrelevantAxioms.Cache.build program))
+  let axiomCache? ← pctx.withPhasePure "buildAxiomCache" fun _ =>
+    if options.removeIrrelevantAxioms == .Off then .none
+    else .some (IrrelevantAxioms.Cache.build program)
   let counter ← IO.toEIO (fun e => DiagnosticModel.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← pctx.withPhase "vcDischarge" do
     if options.checkOnly then

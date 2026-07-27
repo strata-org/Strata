@@ -259,13 +259,14 @@ def Core.verify
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
-  let translateToCore : IO Core.Program := do
-    match strataProgramToCore env ictx with
+  -- Run the translation within a pure phase so that we can capture the timing
+  -- properly, and unwrap the error outside of it.
+  let translated ← show BaseIO _ from match pipelineCtx with
+    | some pctx => pctx.withPhasePure "ddmToCore" fun _ => strataProgramToCore env ictx
+    | none => pure (strataProgramToCore env ictx)
+  let program ← match translated with
     | .ok p => pure p
     | .error msg => throw (IO.userError msg)
-  let program ← match pipelineCtx with
-    | some pctx => pctx.withPhase "ddmToCore" translateToCore
-    | none => translateToCore
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
