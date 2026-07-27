@@ -41,7 +41,9 @@ def parseLowerIncrDecr (input : String) : IO Program := do
     -- Step 2: resolve so liftExpressionAssignments has a valid SemanticModel
     let result := resolve program
     let (program, model) := (result.program, result.model)
-    pure (liftExpressionAssignments program model [])
+    match liftExpressionAssignments program model [] with
+    | .ok p => pure p
+    | .error e => throw (IO.userError s!"Lift error: {e}")
 
 /-- Statement form: `x++;` and `--x` as statements. Prefix (`--x`) produces
     a clean assignment. Postfix (`x++`) emits the same assignment-based form as

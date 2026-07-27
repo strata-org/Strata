@@ -14,6 +14,7 @@ public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapAnalysis
 import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Languages.Laurel.PushOldInward
 
 /-!
 # Name Resolution Pass
@@ -3446,14 +3447,6 @@ private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : 
     | some id => heapReaders.contains id
     | none => false
 
-/-- Names of a procedure's inout parameters: those appearing in both the inputs
-    and the outputs. The pre- and post-state of an inout parameter differ, so
-    `old(...)` over such a parameter is meaningful even when the procedure does
-    not touch the heap. Mirrors `PushOldInward.procInoutNames`. -/
-private def procInoutNames (proc : Procedure) : Except String (List String) :=
-  proc.inputs.foldlM (init := []) fun result inp => do
-    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
-    pure (if isInout then result ++ [inp.name.text] else result)
 
 /-- True when `e` references one of `inoutNames` (an inout parameter), in which
     case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/

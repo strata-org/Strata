@@ -29,7 +29,9 @@ namespace Strata.Laurel
 private def parseLaurelAndLift (roots : List String) (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
-  pure (liftExpressionAssignments result.program result.model roots)
+  match liftExpressionAssignments result.program result.model roots with
+  | .ok p => pure p
+  | .error e => throw (IO.userError s!"Lift error: {e}")
 
 private def printLifted (roots : List String) (program : StrataDDM.Program) : IO Unit := do
   let lifted ← parseLaurelAndLift roots program
