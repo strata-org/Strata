@@ -235,6 +235,27 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   let mut fnModel := model
   let mut ucDiags : List DiagnosticModel := []
 
+  -- Re-resolve after transparency pass (needed for synthetic variables it introduces,
+  -- e.g. proof-procedure guard variables).
+  if transparencyPass.needsResolves then
+    let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
+    -- Thread the same gradual-type and coercion hooks as every other resolve site: this
+    -- pass must see the same type lattice as the main `resolve`, or the widen arm (gated
+    -- on `realizeCoercion.isSome`) and the `toBool` truthiness hook differ between passes
+    -- and a well-formed gradually-typed program is rejected here. See the note on
+    -- `resolveUnorderedCore` in `Resolution.lean`.
+    let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
+                              options.gradualTypes options.realizeCoercion options.toBool
+    if !errors.isEmpty then
+      let newDiags := errors.toList.map fun d =>
+        { d with
+            message :=
+              s!"Internal error: resolution after '{transparencyPass.name}' introduced this diagnostic: {d.message}"
+            type := .StrataBug }
+      return (none, passDiags ++ ucDiags ++ newDiags, program, stats)
+    unorderedCore := uc'
+    fnModel := m'
+
   for pass in unorderedCorePipeline do
     let (uc, passPassDiags, _) := pass.run options unorderedCore fnModel
     unorderedCore := uc
