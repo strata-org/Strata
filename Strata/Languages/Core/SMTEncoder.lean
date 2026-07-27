@@ -61,6 +61,30 @@ structure SMT.EncodedFnDef where
 deriving Repr, Inhabited
 
 /--
+The encoder's datatype registry: the env's `TypeFactory` (kept in topological,
+mutual-block order for emission) paired with a name→datatype index for O(1)
+lookup during encoding.
+-/
+structure SMT.Datatypes where
+  private mk ::
+  factory : @Lambda.TypeFactory CoreLParams.IDMeta
+  private index : Std.HashMap String (LDatatype CoreLParams.IDMeta)
+deriving Repr, Inhabited
+
+/-- Build a `Datatypes` from a `TypeFactory`, computing the name index in one
+    pass. -/
+def SMT.Datatypes.ofFactory (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Datatypes :=
+  .mk tf (tf.allDatatypes.foldl (fun m d => m.insertIfNew d.name d) {})
+
+/-- The empty registry (no datatypes). -/
+def SMT.Datatypes.empty : SMT.Datatypes := .ofFactory #[]
+
+/-- Lookup a datatype by name. -/
+def SMT.Datatypes.getType (d : SMT.Datatypes) (name : String) :
+    Option (LDatatype CoreLParams.IDMeta) :=
+  d.index.get? name
+
+/--
 SMT.Context holds the list of created SMT sorts, declared/defined functions, axioms,
 type substitutions and others while translating Imperative.ProofObligation Expression to
 SMT. This is one of the returned objects from ProofObligation.toSMTTerms.
@@ -77,13 +101,13 @@ structure SMT.Context where
   ifs : OrderedKeyedSet IF.toUF := .empty
   axms : OrderedSet Term := .empty
   tySubst: Map String TermType := []
-  /-- Stores the TypeFactory purely for ordering datatype declarations
-  correctly (TypeFactory in topological order).
-  It is seeded by the caller (from the env's datatype factory) before encoding
-  and is not modified afterwards — it holds *all* known datatypes, including
-  ones never referenced by the encoded terms; `seenDatatypes` records which of
-  them are actually used. -/
-  typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
+  /-- The known datatypes: the `TypeFactory` (kept in topological order for
+  emission) together with a name→datatype index for O(1) lookup. Seeded by the
+  caller (from the env's datatype factory) before encoding, via
+  `SMT.Datatypes.ofFactory`/`withTypeFactory`, and not modified afterwards — it
+  holds *all* known datatypes, including ones never referenced by the encoded
+  terms; `seenDatatypes` records which of them are actually used. -/
+  datatypes : SMT.Datatypes := .empty
   seenDatatypes : Std.HashSet String := {}
   datatypeFuns : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := {}
   /-- Global counter for generating unique bound variable names across all terms. -/
@@ -142,7 +166,7 @@ def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
     registry so that later UF/function encoding cannot collide with them. -/
 def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
   let sortNames := ctx.sorts.toArray.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
-  let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+  let dtNames := ctx.datatypes.factory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
       if ctx.seenDatatypes.contains d.name then
         let acc := acc.insert d.name
@@ -173,7 +197,7 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
     { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
-  { ctx with typeFactory := tf }
+  { ctx with datatypes := .ofFactory tf }
 
 /--
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
@@ -222,10 +246,10 @@ Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
-  match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+  match validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
-  for block in ctx.typeFactory.toList do
+  for block in ctx.datatypes.factory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
@@ -281,11 +305,15 @@ partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Cont
       if isBuiltinCoreTy id1 then ctx
       else SMT.Context.addType id1 args1 ctx
     | _ => ctx) ctx
-  -- Datatypes are looked up from the context's `typeFactory` (seeded by the
-  -- caller from the env's datatypes); see `SMT.Context.typeFactory`.
-  match ctx.typeFactory.getType id with
+  -- Already registered: its constructors were recursed when first added, so
+  -- there is nothing to do. `seenDatatypes` only ever holds factory datatype
+  -- names (its sole writer is `addDatatype`, called below on a `getType`
+  -- result), so this branch fires only for factory datatypes (emitted as
+  -- declare-datatype), never for the opaque sorts (declare-sort) the `none`
+  -- branch handles.
+  if ctx.hasDatatype id then ctx
+  else match ctx.datatypes.getType id with
   | some d =>
-    if ctx.hasDatatype id then ctx else
     let ctx := ctx.addDatatype d
     d.constrs.foldl (fun (ctx : SMT.Context) c =>
       c.args.foldl (fun (ctx: SMT.Context) (_, t) =>
