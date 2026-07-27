@@ -85,10 +85,16 @@ def callElimCmd (s : Statement)
         let postExprs := proc.spec.postconditions.values.map Procedure.Check.expr
         let inputNames := instantiatedInputs.keys
         let outputNames := instantiatedOutputs.keys
-        -- Variables needing old handling: input/output params with old refs.
-        let oldVars := lhs.filter fun g =>
-          (inputNames.contains g && outputNames.contains g) && -- Inout params
-          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld g.name))
+        -- Inout params referenced via "old" in a postcondition, paired as
+        -- (caller argument variable, callee parameter name). `lhs` is positionally
+        -- aligned with the callee's outputs, so the pairing recovers the callee
+        -- parameter name even when the caller passes a differently-named variable.
+        -- The caller variable drives the snapshot init; the callee parameter drives
+        -- the type lookup and the "old" substitution key that appears in the spec.
+        let oldPairs := (lhs.zip outputNames).filter fun (_arg, param) =>
+          inputNames.contains param && -- Inout param (an output that is also an input)
+          postExprs.any (fun e => Lambda.LExpr.freeVars e |>.any (fun (id, _) => id == CoreIdent.mkOld param.name))
+        let oldVars := oldPairs.map (·.1)
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy instantiatedInputs) args
         let argTrips
@@ -102,13 +108,14 @@ def callElimCmd (s : Statement)
 
         -- Generate fresh variables for "old g" (one per modified variable in lhs).
         -- For input/output parameters, look up types from the callee's inputs.
+        let oldParams := oldPairs.map (·.2)
         let genOldIdents ← genOldExprIdents oldVars
-        let oldTys ← oldVars.mapM fun id => do
-          match instantiatedInputs.find? id with
+        let oldTys ← oldParams.mapM fun param => do
+          match instantiatedInputs.find? param with
           | some ty => pure (Lambda.LTy.forAll [] ty)
-          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format id}")
+          | none => throw (Strata.DiagnosticModel.fromFormat f!"failed to find type for {Std.format param}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
-        let oldGVars := oldVars.map (fun g => CoreIdent.mkOld g.name)
+        let oldGVars := oldParams.map (fun p => CoreIdent.mkOld p.name)
         let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
           ((fresh, ty), oldG)
 
