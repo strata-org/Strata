@@ -21,6 +21,7 @@ open Strata (DiagnosticModel FileRange)
 
 namespace Procedure
 
+/-- Rewrite fresh instantiation-variable names back to user names in an error message. -/
 private def renameTypeVars (userSubst : Lambda.Subst) (msg : String) : String :=
   userSubst.flatten.foldl (fun acc (fresh, v) =>
     match v with
@@ -34,13 +35,11 @@ private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
   if !proc.header.outputs.keys.Nodup then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
 
-/-- Well-formedness of a procedure's type parameters, mirroring `LFunc.type`'s
-    checks for functions (which `Procedure.typeCheck` does not otherwise perform):
-    the `typeArgs` must be distinct, every type variable appearing in an
-    input/output type must be declared in `typeArgs`, and no `typeArgs` name may
-    use the reserved generator-variable prefix `$__ty` (instantiation renames each
-    type parameter to a fresh `$__ty<n>`; a user parameter literally named `$__ty0`
-    would alias one of these and the fresh→user back-renaming could capture). -/
+/-- Well-formedness of a procedure's type parameters (mirroring `LFunc.type`'s checks
+    for functions): `typeArgs` must be distinct, every type variable in an input/output
+    type must be declared in `typeArgs`, and no `typeArgs` name may use the reserved
+    generator prefix `$__ty` (which instantiation uses for fresh vars, so a collision
+    would let the fresh→user back-renaming capture). -/
 private def checkTypeArgsWF (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   if !proc.header.typeArgs.Nodup then
@@ -65,13 +64,11 @@ private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except DiagnosticModel Unit := do
   let modifiedVars := (HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups
   let definedVars := (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups
-  -- The `old ` prefix is reserved for the pre-state ghost bindings of in-out parameters
-  -- (`CoreIdent.mkOld`). A body may READ `old x`, but must not MODIFY (`set`/call-output) or
-  -- DEFINE (`var`/`init`) a variable whose name uses that prefix: such a write collides with the
-  -- reserved namespace, and (in the soundness proof) would make the checker's raw-typed body
-  -- context disagree with the spec's alias-resolved context on an `old`-key that is not an inout
-  -- ghost. The `init` freshness check does not catch a fresh `old z`, and the modification check
-  -- below permits writing an old-named *output*, so both mod and def vars are guarded explicitly.
+  -- The `old ` prefix is reserved for pre-state ghost bindings of in-out parameters
+  -- (`CoreIdent.mkOld`). A body may READ `old x` but must not MODIFY or DEFINE an
+  -- old-prefixed variable. The checks below don't otherwise catch this (the `init`
+  -- freshness check misses a fresh `old z`, and an old-named output is permitted), so
+  -- both modified and defined vars are guarded explicitly here.
   let oldWritten := (modifiedVars ++ definedVars).filter (fun v => CoreIdent.isOldIdent v)
   if !oldWritten.isEmpty then
     .error <| DiagnosticModel.withRange sourceLoc f!"[{proc.header.name}]: body modifies or defines variables {oldWritten} \
@@ -99,12 +96,9 @@ def conditionErrorMsgPrefix (procName : CoreIdent) (condName : CoreLabel)
     (md : MetaData Expression) : DiagnosticModel :=
   md.toDiagnosticF f!"[{procName}:{condName}]:"
 
--- Type checking procedure pre/post conditions.
--- Structured as an explicit tail recursion (`go`) over the condition list rather
--- than a `for`/`forIn` loop, so soundness proofs can reason via the generated
--- `go.induct` instead of unfolding a `forIn` desugaring. Behavior is unchanged:
--- each condition is resolved in the threaded env, its type checked to be `bool`,
--- and the annotated expression accumulated in order.
+-- Type checking procedure pre/post conditions. Structured as an explicit tail recursion
+-- (`go`) rather than a `for`/`forIn` loop, so soundness proofs can use the generated
+-- `go.induct` instead of unfolding a `forIn` desugaring.
 open Lambda.LTy.Syntax in
 private def typeCheckConditions (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Check) (procName : CoreIdent) :
@@ -153,14 +147,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
   let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds out_lty_sig
 
-  -- Add "old" variables for in-out parameters (those in both inputs and outputs)
-  -- so that postconditions and body can reference `old x`. Use the *instantiated* input
-  -- signature `inp_mty_sig` (alias-resolved, type parameters replaced by the shared fresh
-  -- vars via `tyArgSubst`) rather than the raw declared types, so that `old x` has the same
-  -- type as `x` itself in the body context. Using the raw declared type would leave `old x`
-  -- with an unresolved alias (e.g. `MyAlias` vs the resolved `int` stored for `x`), an
-  -- internal inconsistency; matching the input signature keeps the pre-state snapshot's type
-  -- identical to the parameter's.
+  -- Add "old" variables for in-out parameters (those in both inputs and outputs) so
+  -- postconditions and body can reference `old x`. Use the *instantiated* input signature
+  -- `inp_mty_sig` (alias-resolved, type parameters replaced by the shared fresh vars) rather
+  -- than the raw declared types, so `old x` has the same type as `x` in the body context.
   let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
     (inp_mty_sig.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
       fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)
@@ -189,14 +179,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let rigidVars := tyArgSubst.flatten.filterMap fun (_, v) =>
     match v with | .ftvar id => some id | _ => none
   let C := { C with rigidTypeVars := rigidVars }
-  -- The fresh instantiation vars must remain abstract in the body env: a
-  -- pre/postcondition (or the tyArg unification) may not have refined them to a
-  -- concrete type. This mirrors `Function.typeCheck`'s rigid-refinement guard
-  -- (`FunctionType.lean`): reaching `.ok` forces `rigid_inv` — every rigid type
-  -- variable is fixed by `envForBody`'s substitution — which the body
-  -- typechecker (`Statement.typeCheck`) requires. Without it, e.g.
-  -- `procedure P<a>(x:a) requires 0 < x` would silently pin `a := int` (a
-  -- soundness gap at call sites: a caller could instantiate `a := bool`).
+  -- The fresh instantiation vars must remain abstract in the body env: a pre/postcondition
+  -- (or the tyArg unification) may not refine them to a concrete type. Otherwise, e.g.
+  -- `procedure P<a>(x:a) requires 0 < x` would silently pin `a := int` — a soundness gap,
+  -- since a caller could instantiate `a := bool`. (Mirrors `Function.typeCheck`'s guard.)
   match rigidVars.find? (fun v =>
       Lambda.LMonoTy.subst envForBody.stateSubstInfo.subst (Lambda.LMonoTy.ftvar v)
         != Lambda.LMonoTy.ftvar v) with
@@ -220,12 +206,10 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   -- Construct final result.
   let finalPreconditions := Procedure.Spec.updateCheckExprs preconditions.toList proc.spec.preconditions
   let finalPostconditions := Procedure.Spec.updateCheckExprs postconditions.toList proc.spec.postconditions
-  -- Keep the declared type parameters: the signature below is renamed back to the
-  -- original type-variable names by `userSubst`, so it still references `proc.header.typeArgs`.
-  -- Clearing them to `[]` would leave a polymorphic signature with undeclared type
-  -- variables — an internally inconsistent procedure the checker itself would reject on a
-  -- second pass (non-idempotent), and one whose `∀`-binder is dropped in formatting.
-  -- (This mirrors `Function.typeCheck`, which likewise retains its type parameters.)
+  -- Keep the declared type parameters: `userSubst` renames the signature below back to the
+  -- original type-variable names, so it still references `proc.header.typeArgs`. Clearing
+  -- them to `[]` would leave a polymorphic signature with undeclared type variables — an
+  -- inconsistent procedure the checker would reject on a second pass. (Mirrors `Function.typeCheck`.)
   let new_hdr := { proc.header with typeArgs := proc.header.typeArgs,
                                     inputs := inp_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)),
                                     outputs := out_mty_sig.map (fun (id, mty) => (id, Lambda.LMonoTy.subst userSubst mty)) }

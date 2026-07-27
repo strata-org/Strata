@@ -66,9 +66,7 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
 def CoreIdent.isOldIdent (ident : CoreIdent) : Bool := ident.name.startsWith CoreIdent.oldStr
 
-/-- `mkOld`-prefixed identifiers are recognized as `old`-idents: `("old " ++ n).startsWith "old "`.
-    Proved here where `isOldIdent`/`mkOld` are transparent; reduces the `String.startsWith` to the
-    slice-searcher `startsWith_iff` characterization with the append remainder `n` as witness. -/
+/-- `mkOld`-prefixed identifiers are recognized as `old`-idents. -/
 theorem CoreIdent.isOldIdent_mkOld (n : String) :
     CoreIdent.isOldIdent (CoreIdent.mkOld n) = true := by
   unfold CoreIdent.isOldIdent CoreIdent.mkOld CoreIdent.oldStr

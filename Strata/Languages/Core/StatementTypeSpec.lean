@@ -24,7 +24,7 @@ the ambient `LContext` `C` (built-in/declared functions and known types), the
 blocks (so `exit` targets an enclosing block). The relations are 6-place:
 `C Γ L stmt C' Γ'`.
 
-### Scoping (lexical, post-#1392)
+### Scoping (lexical)
 
 `goBlock` runs the block body under `pushEmptyContext` and restores via
 `popContext`, AND discards the body's output `LContext`, returning the input
@@ -41,17 +41,10 @@ The running unification substitution does persist across blocks/branches, but it
 is invisible at the `(C, Γ)` level: the soundness theorems relate *substituted*
 contexts, so the persisted refinement is absorbed there.
 
-### Function dependency
-
-The `funcDecl` constructor's premise is `FuncHasType'`, the declarative function
-typing specification, evaluated in the ambient context `C, Γ` the declaration is
-checked in.
-
 ### Labels
 
-`block label` types its body under `label :: L` and requires `label ∉ L` (no
-shadowing); `exit label` requires `label ∈ L`. At the top level `L = []`, so every
-`exit` must be caught by a lexically enclosing block.
+At the top level `L = []`, so every `exit` must be caught by a lexically
+enclosing block.
 -/
 
 namespace Core
@@ -83,17 +76,15 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       StmtHasType' τ P C Γ L (.cmd c) C Γ'
 
   /-- A labeled block. Its label must not shadow an enclosing one (`label ∉ L`);
-      the body is typed under the input `C, Γ` with `label` added to the label
-      set. The body's output context is existentially discarded (the block is
-      lexically scoped), so the block's own output context is the input `C, Γ`. -/
+      the body is typed with `label` added to the label set. The body's output
+      context is existentially discarded (the block is lexically scoped). -/
   | block : ∀ C Γ C_body Γ_body L label body md,
       label ∉ L →
       StmtsHasType' τ P C Γ (label :: L) body C_body Γ_body →
       StmtHasType' τ P C Γ L (.block label body md) C Γ
 
   /-- Deterministic if-then-else: the condition must be `bool`; each branch is
-      typed independently from the input `C, Γ` (no cross-branch leakage) under
-      the same label set `L`. The output context is the input `C, Γ`. -/
+      typed independently (no cross-branch leakage). -/
   | ite_det : ∀ C Γ C_t Γ_t C_e Γ_e L cond thenb elseb md,
       S.exprTyped C Γ cond (S.embed .bool) →
       StmtsHasType' τ P C Γ L thenb C_t Γ_t →
@@ -107,9 +98,7 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       StmtHasType' τ P C Γ L (.ite .nondet thenb elseb md) C Γ
 
   /-- Loop. The guard (if deterministic) must be `bool`; the measure (if
-      present) must be `int`; each invariant must be `bool`; the body is typed
-      from the input `C, Γ` under the same label set `L`. Output context is the
-      input `C, Γ`. -/
+      present) must be `int`; each invariant must be `bool`. -/
   | loop : ∀ C Γ C_body Γ_body L guard measure invariants body md,
       (∀ g, guard = .det g → S.exprTyped C Γ g (S.embed .bool)) →
       (∀ m, measure = some m → S.exprTyped C Γ m (S.embed .int)) →
@@ -117,8 +106,7 @@ inductive StmtHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       StmtsHasType' τ P C Γ L body C_body Γ_body →
       StmtHasType' τ P C Γ L (.loop guard measure invariants body md) C Γ
 
-  /-- Exit statement: its target must name an enclosing block (`label ∈ L`).
-      Context unchanged. -/
+  /-- Exit statement: its target must name an enclosing block (`label ∈ L`). -/
   | exit : ∀ C Γ L label md,
       label ∈ L →
       StmtHasType' τ P C Γ L (.exit label md) C Γ

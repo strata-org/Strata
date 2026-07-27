@@ -62,7 +62,7 @@ private theorem Subst.polyKeysFresh_of_mono (S : Subst) (Γ : TContext Unit)
 /-! ### Inversion lemmas -/
 
 /--
-Context scaffolding for the `init x := det` case: establishes that the final
+Context setup for the `init x := det` case: establishes that the final
 context equals the original and computes the monotype inserted by `update`.
 -/
 theorem init_det_context_setup (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -118,7 +118,7 @@ theorem init_det_context_setup (C : LContext CoreLParams) (Env : TEnv Unit)
   exact ⟨h_ctx_eq, h_wf_pre, mty_pre, h_mty_pre, mty, h_mty, h_mty_eq, h_post_res.2⟩
 
 /--
-Context scaffolding for `init x := *` (nondet): the context is preserved and
+Context setup for `init x := *` (nondet): the context is preserved and
 the inserted type is mono.
 -/
 theorem init_nondet_context_setup (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -286,16 +286,10 @@ private theorem inferType_bool_HasType (C : LContext CoreLParams) (Env Env_out :
 Soundness of the command typechecker: if `Cmd.typeCheck` succeeds, then
 `CmdHasType` holds between the substituted input/output contexts.
 
-**Rigid-var-identity invariant** (`h_rigid_inv`):
-`∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`.
-
-*Established* in `ProcedureType.typeCheck`: `setupInputEnv` generates fresh vars
-(e.g. `$__ty0`) as rigid, then unifies the original names with them — the rigid
-vars are values (not keys) of the initial substitution, so the invariant holds.
-(TODO: prove)
-
-*Preserved* by `Cmd.typeCheck_preserves_rigid_inv`: each command's `checkAnnotCompat`
-verifies identity on all rigid vars after unification, rejecting any refinement.
+The rigid-var-identity hypothesis `∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`
+is established in `ProcedureType.typeCheck` (rigid vars are values, not keys, of the
+initial substitution) and preserved by `Cmd.typeCheck_preserves_rigid_inv` (each
+command's `checkAnnotCompat` rejects any refinement of a rigid var).
 -/
 theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
@@ -511,22 +505,7 @@ theorem Cmd.typeCheck_sound_gen (C : LContext CoreLParams) (Env : TEnv Unit)
 Soundness of the command typechecker (fixed final-substitution corollary): if
 `Cmd.typeCheck` succeeds, then `CmdHasType` holds between the substituted
 input/output contexts, grounding type variables at `Env'.stateSubstInfo.subst`.
-
-This is the `S := Env'.stateSubstInfo.subst` instance of
-`Cmd.typeCheck_sound_gen`: `absorbs` is reflexive, `SubstWF` is the env's `isWF`,
-and the rigid-identity invariant at `Env'.subst` follows from `h_rigid_inv` (at
-`Env.subst`) via `Cmd.typeCheck_preserves_rigid_inv`.
-
-**Rigid-var-identity invariant** (`h_rigid_inv`):
-`∀ v ∈ C.rigidTypeVars, subst S (ftvar v) = ftvar v`.
-
-*Established* in `ProcedureType.typeCheck`: `setupInputEnv` generates fresh vars
-(e.g. `$__ty0`) as rigid, then unifies the original names with them — the rigid
-vars are values (not keys) of the initial substitution, so the invariant holds.
-(TODO: prove)
-
-*Preserved* by `Cmd.typeCheck_preserves_rigid_inv`: each command's `checkAnnotCompat`
-verifies identity on all rigid vars after unification, rejecting any refinement.
+The `S := Env'.stateSubstInfo.subst` instance of `Cmd.typeCheck_sound_gen`.
 -/
 theorem Cmd.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
@@ -774,10 +753,8 @@ theorem Cmd.typeCheck_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
 
 /-- **Structural shape preservation** for `Imperative.Cmd.typeCheck`: a successful
     run preserves the *tail* of the `types` stack (`Maps.pop`), the alias list, and is
-    gen-counter monotone. No well-scoping assumption — every context mutation is
-    either a full preservation (preprocess/infer/unify/postprocess) or an
-    `addInNewestContext` (`update`), and `Maps.pop (addInNewest …) = Maps.pop …`. This
-    is what lets `block`/`goBlock` recover the input context after `popContext`. -/
+    gen-counter monotone (no well-scoping assumption). This is what lets
+    `block`/`goBlock` recover the input context after `popContext`. -/
 theorem Cmd.typeCheck_preserves_shape (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
@@ -907,8 +884,6 @@ theorem Cmd.typeCheck_preserves_shape (C : LContext CoreLParams) (Env : TEnv Uni
     have h_ctx := CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf
     exact ⟨by rw [h_ctx], by rw [h_ctx],
       CmdType.inferType_genState_mono C Env Env_infer _ e e' ety h_infer h_wf h_fwf⟩
-
-/-! ## Part II — Annotated soundness (`Cmd.typeCheck_annotated_sound`) -/
 
 /-! ## Part II — Annotated soundness (`Cmd.typeCheck_annotated_sound`) -/
 
@@ -1264,16 +1239,8 @@ theorem Cmd.typeCheck_annotated_sound_gen (C : LContext CoreLParams) (Env : TEnv
 Annotated soundness of the command typechecker (fixed final-substitution
 corollary): if `Cmd.typeCheck` succeeds, the output command satisfies
 `CmdHasTypeA` between the substituted contexts, grounding type variables at
-`Env'.stateSubstInfo.subst`.
-
-This is the `S := Env'.stateSubstInfo.subst` instance of
-`Cmd.typeCheck_annotated_sound_gen` (`absorbs` reflexive, `SubstWF` from the
-env's `isWF`).
-
-The substitution is needed because variable types in `Env.context` may contain
-unresolved type variables. After applying the final substitution, the context
-types become ground and match the expression types from `resolve` (which already
-applies the substitution internally).
+`Env'.stateSubstInfo.subst`. The `S := Env'.stateSubstInfo.subst` instance of
+`Cmd.typeCheck_annotated_sound_gen`.
 -/
 theorem Cmd.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)

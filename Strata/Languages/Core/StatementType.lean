@@ -129,7 +129,7 @@ where
             let _ ← Env.freeVarCheck c f!"[{s}]" |>.mapError DiagnosticModel.fromFormat
             let (conda, Env) ← LExpr.resolve C Env c |>.mapError DiagnosticModel.fromFormat
             -- Reject guards that refine a rigid type variable, as `Cmd.typeCheck`
-            -- does for other commands (the `ite`/`loop` analogue of #1397, #1410).
+            -- does for other commands (the `ite`/`loop` analogue).
             let _ ← CmdType.checkAnnotCompat C Env
             let condty := conda.toLMonoTy
             match condty with
@@ -174,7 +174,7 @@ where
               .error <| md.toDiagnosticF f!"[{s}]: Loop's invariant {i} is not of type `bool`!"
           ) (([] : List (String × _)), Env)
           -- Reject guards/measures/invariants that refine a rigid type variable,
-          -- as `Cmd.typeCheck` does for other commands (analogue of #1397, #1410).
+          -- as `Cmd.typeCheck` does for other commands.
           let _ ← CmdType.checkAnnotCompat C Env
           let mty := mt.map LExpr.toLMonoTy
           match mty with

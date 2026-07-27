@@ -62,6 +62,7 @@ def Map.union (m1 m2 : Map α β) : Map α β :=
 
 abbrev Map.empty : Map α β := []
 
+/-- Appending the empty map on the right is the identity. -/
 theorem Map.append_nil (m : Map α β) :
     (m ++ (Map.empty : Map α β) : Map α β) = m :=
   List.append_nil m
@@ -793,7 +794,7 @@ theorem Map.find?_insert_ne [DecidableEq α]
       simp [h_ne2]
     · simp only [Map.find?]; split <;> simp_all
 
--- Helper: Map.values distributes over append
+/-- `Map.values` distributes over append. -/
 theorem Map.values_append {α β : Type} (m1 m2 : Map α β) :
     Map.values (m1 ++ m2) = Map.values m1 ++ Map.values m2 := by
   show Map.values (List.append m1 m2) = Map.values m1 ++ Map.values m2

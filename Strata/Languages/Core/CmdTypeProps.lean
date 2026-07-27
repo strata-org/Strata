@@ -83,8 +83,7 @@ theorem update_ContextMono (Env : TEnv Unit) (x : CoreIdent) (mty : LMonoTy)
   · rw [h_old] at h_find
     exact h_mono y ty (by simpa only [TEnv.context] using h_find)
 
-/-- `update` with a gen-fresh monomorphic binding preserves `TEnvWF`. Direct
-    application of `TEnvWF.of_addInNewestContext_singleton` (`update = addInNewestContext`). -/
+/-- `update` with a gen-fresh monomorphic binding preserves `TEnvWF`. -/
 theorem update_TEnvWF (Env : TEnv Unit) (x : CoreIdent) (mty : LMonoTy)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fresh : ∀ v, v ∈ LMonoTy.freeVars mty →
@@ -246,9 +245,7 @@ theorem unifyTypes_eq (Env Env' : TEnv Unit)
 
 /-- `unifyTypes` on a single monomorphic constraint preserves `TEnvWF`, provided
     the constraint's free type variables are gen-fresh for the input generator
-    state. `unifyTypes` runs `Constraints.unify [(xmty, emty)] Env.subst` then
-    `updateSubst`, so this is a direct application of `TEnvWF.of_unify_updateSubst`
-    with the constraint freshness assembled from the two sides. -/
+    state. -/
 theorem unifyTypes_TEnvWF (Env Env' : TEnv Unit) (xmty emty : LMonoTy)
     (h : CmdType.unifyTypes Env [(.forAll [] xmty, .forAll [] emty)] = .ok Env')
     (h_wf : TEnvWF (T := CoreLParams) Env)
@@ -434,12 +431,7 @@ theorem preprocess_preserves_TEnvWF (C : LContext CoreLParams) (Env : TEnv Unit)
   exact LTy_instantiateWithCheck_TEnvWF ty C Env mty Env' h_iwc h_wf
 
 /-- The free variables of `preprocess`'s output type are gen-fresh for the output
-    generator state. The output type is `subst Env'.subst mty_inst` where `mty_inst`
-    is the `instantiateWithCheck` result; `LTy_instantiateWithCheck_freeVars_fresh`
-    gives that `mty_inst` is gen-fresh and `Env'`'s `TEnvWF` gives that its
-    substitution is gen-fresh, so `freeVars_subst_genFresh` composes them. Consumed
-    by `Cmd.typeCheck_preserves` to supply the unify-constraint freshness side
-    condition for the `init.det` case. -/
+    generator state. -/
 theorem preprocess_output_fresh (C : LContext CoreLParams) (Env : TEnv Unit)
     (ty : LTy) (mty : LMonoTy) (Env' : TEnv Unit)
     (h : CmdType.preprocess C Env ty = .ok (.forAll [] mty, Env'))
@@ -470,8 +462,7 @@ theorem inferType_preserves_context (C : LContext CoreLParams) (Env Env' : TEnv 
   have h_ws : WellScoped e Env.context := inferType_fvars_in_knownVars C Env c e e' ety Env' h
   exact resolve_preserves_context e ea C Env Env' h_resolve h_wf h_ne h_fwf
 
-/-- `inferType` preserves `TEnvWF`. It runs `freeVarCheck` (no env change) then
-    `LExpr.resolve`, so `resolve_TEnvWF` applies. -/
+/-- `inferType` preserves `TEnvWF`. -/
 theorem inferType_TEnvWF (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
     (h : CmdType.inferType C Env c e = .ok (e', ety, Env'))
@@ -481,9 +472,7 @@ theorem inferType_TEnvWF (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   obtain ⟨ea, h_resolve, _, _⟩ := inferType_decompose C Env c e e' ety Env' h
   exact Lambda.resolve_TEnvWF e ea C Env Env' h_resolve h_wf h_fwf
 
-/-- `inferType` never decreases the generator counter. Follows from
-    `resolveAux_properties.genState_mono` (and `resolve`'s `Env0` step, which only
-    rewrites the context, leaving the generator untouched). -/
+/-- `inferType` never decreases the generator counter. -/
 theorem inferType_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
     (h : CmdType.inferType C Env c e = .ok (e', ety, Env'))
@@ -516,12 +505,7 @@ theorem inferType_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit
     rw [← h_gen_eq]; exact h_props.genState_mono
 
 /-- The free variables of `inferType`'s output type are gen-fresh for the output
-    generator state. The output type is `subst Env'.subst (et.toLMonoTy)` where
-    `et` is the raw resolve result; `resolveAux_properties.preserves.2` gives that
-    the raw type is gen-fresh and `Env'`'s `TEnvWF` gives that its substitution is
-    gen-fresh, so `freeVars_subst_genFresh` composes them. Consumed by
-    `Cmd.typeCheck_preserves` to supply the unify-constraint freshness side
-    condition of `TEnvWF.of_unify_updateSubst`. -/
+    generator state. -/
 theorem inferType_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (c : Cmd Expression) (e e' : LExpr CoreLParams.mono) (ety : LTy)
     (h : CmdType.inferType C Env c e = .ok (e', ety, Env'))

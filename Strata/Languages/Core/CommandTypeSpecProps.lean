@@ -67,6 +67,7 @@ theorem zip_getElem_mem {α β : Type} (as : List α) (bs : List β) (i : Nat)
   have h : (as.zip bs)[i]'hlt = (as[i], bs[i]) := List.getElem_zip
   exact h ▸ List.getElem_mem hlt
 
+/-- Mapping the values of a zipped map commutes with a successful `find?`. -/
 private theorem map_find?_zip_map_of_find [DecidableEq α]
     (keys : List α) (vals : List β) (f : β → γ) (x : α) (v : β)
     (h_find : Map.find? (keys.zip vals) x = some v) :
@@ -81,6 +82,7 @@ private theorem map_find?_zip_map_of_find [DecidableEq α]
       split at h_find <;> split <;> try grind
       · exact ih vls h_find
 
+/-- `find?` over a single-scope `Maps` reduces to `find?` over that scope. -/
 private theorem maps_find?_singleton [DecidableEq α] (m : Map α β) (x : α) :
     Maps.find? [m] x = Map.find? m x := by
   unfold Maps.find?
@@ -214,6 +216,7 @@ private theorem instantiateEnvWithSubst_context
   show genEnv'.context = Env.genEnv.context
   exact TGenEnv.genTyVars_context ids.length Env.genEnv freshtvs genEnv' h_gen
 
+/-- `instantiateWithSubst` leaves the context unchanged (it only allocates fresh vars). -/
 theorem instantiateWithSubst_preserves_context (C : LContext CoreLParams)
     (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
     (result : LMonoTySignature × TEnv Unit × Subst)
@@ -312,10 +315,7 @@ private theorem instantiateWithSubst_go_values_fresh (C : LContext CoreLParams)
       exact ih Env_mid (mtrest, Env_end) h_rest mt' h_in v hv n hn
 
 /-- Every instantiated signature value (`values v2.fst`) produced by
-    `instantiateWithSubst` is gen-fresh at its output generator state. The output
-    signature is `sig.keys.zip newtys`, whose values are exactly the go-loop
-    output `newtys`. Consumed by the `.call` `h_cs_fresh` obligation (the input-sig
-    list `B`). -/
+    `instantiateWithSubst` is gen-fresh at its output generator state. -/
 theorem instantiateWithSubst_values_fresh (C : LContext CoreLParams)
     (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
     (result : LMonoTySignature × TEnv Unit × Subst)
@@ -454,6 +454,7 @@ private theorem instantiateAndSubsts_preserves_stateSubstInfo
           Identifier_instantiateAndSubst_stateSubstInfo x C Env Env_mid xty h_step
         rw [ih Env_mid xtys Env_end h_rest, h_mid_subst]
 
+/-- `instantiateAndSubsts` leaves the context unchanged. -/
 theorem instantiateAndSubsts_preserves_context (xs : List CoreLParams.Identifier)
     (C : LContext CoreLParams) (Env : TEnv Unit) (tys : List LMonoTy) (Env' : TEnv Unit)
     (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (tys, Env'))) :
@@ -509,6 +510,7 @@ private theorem Identifier_instantiateAndSubst_TEnvWF
     exact LTy_instantiateAndSubst_TEnvWF ty C E Emid mt h_ias h_wf
   · simp [pure, Except.pure] at h
 
+/-- `instantiateAndSubsts` preserves `TEnvWF`. -/
 theorem instantiateAndSubsts_preserves_wf (xs : List CoreLParams.Identifier)
     (C : LContext CoreLParams) (Env : TEnv Unit) (tys : List LMonoTy) (Env' : TEnv Unit)
     (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (tys, Env')))
@@ -636,12 +638,8 @@ private theorem Identifier_instantiateAndSubst_output_fresh
   · simp [pure, Except.pure] at h
 
 /-- Output-freshness for `Identifier.instantiateAndSubsts`: every produced lhs
-    type is gen-fresh at the **final** generator state. Freshness is forward-
-    monotone in the counter (each accumulated type stays fresh as later steps only
-    grow the counter, via `Identifier_instantiateAndSubst_TEnvWF`'s implied
-    monotonicity through `instantiateAndSubsts_preserves_stateSubstInfo`); each new
-    element is fresh at its step output via the single-step lemma. Consumed by the
-    `.call` `h_cs_fresh` obligation (the lhs list `C`). -/
+    type is gen-fresh at the **final** generator state (freshness is forward-monotone
+    in the counter, and each new element is fresh at its step output). -/
 theorem instantiateAndSubsts_values_fresh (xs : List CoreLParams.Identifier)
     (C : LContext CoreLParams) (Env : TEnv Unit) (tys : List LMonoTy) (Env' : TEnv Unit)
     (h : Identifier.instantiateAndSubsts xs C Env = .ok (some (tys, Env')))
@@ -739,6 +737,7 @@ private theorem instantiateWithSubst_go_TEnvWF (C : LContext CoreLParams)
       LTy_instantiateWithCheck_TEnvWF t C Env mt Env_mid h_iwc h_wf
     exact ih Env_mid (mtrest, Env_end) h_rest h_mid_wf
 
+/-- `instantiateWithSubst` preserves `TEnvWF`. -/
 theorem instantiateWithSubst_preserves_wf (C : LContext CoreLParams)
     (Env : TEnv Unit) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Unit)
     (result : LMonoTySignature × TEnv Unit × Subst)
@@ -959,8 +958,7 @@ theorem resolves_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   exact resolves_go_genState_mono C es Env Env' [] ets h h_wf h_fwf
 
 /-- Output-freshness for `resolves`: every resolved type is gen-fresh at the
-    final generator state. Consumed by the `.call` `h_cs_fresh` obligation (the
-    resolved input types `map toLMonoTy v3.fst`). -/
+    final generator state. -/
 theorem resolves_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (es : List (LExpr CoreLParams.mono)) (ets : List (LExprT CoreLParams.mono))
     (h : LExpr.resolves C Env es = .ok (ets, Env'))
@@ -1008,7 +1006,7 @@ private theorem instantiateEnvWithSubst_decompose
   show genEnv'.context = Env.context
   exact TGenEnv.genTyVars_context ids.length Env.genEnv freshtvs genEnv' h_gen
 
-/-- **Output-signature freshness for the call's `tyArgSubst` step (case D).** When
+/-- **Output-signature freshness for the call's `tyArgSubst` step.** When
     `instantiateWithSubst` is run for `typeArgs`/inputs, its returned substitution
     `v2.2.snd = [typeArgs.zip (freshtvs.map ftvar)]` maps every `typeArgs` variable
     to a fresh generated variable. So for any monotype `s` whose free vars are all
@@ -1637,7 +1635,7 @@ private theorem resolves_go_fvar_aliasEquiv_core (C : LContext CoreLParams)
     · intro i hi m x h_fvar
       match i with
       | 0 =>
-        -- Head element: use Layer 2 on the per-step `resolve`.
+        -- Head element: use the per-step `resolve` alias-equivalence lemma.
         simp only [List.get_eq_getElem, List.getElem_cons_zero] at h_fvar
         subst h_fvar
         obtain ⟨mty_ctx, h_find, h_ae_et⟩ :=
@@ -2193,7 +2191,7 @@ theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
     have h_mono_lhsv2 : v2.2.fst.genEnv.genState.tyGen ≥ h_inst_lhs.genEnv.genState.tyGen :=
       instantiateWithSubst_genState_mono C h_inst_lhs proc.header.typeArgs proc.header.inputs v2
         F.inst_inp_raw
-    -- Freshness of list A (resolved input types) at `v3.snd`'s gen-state.
+    -- Freshness of the resolved input types at `v3.snd`'s gen-state.
     have h_A : ∀ v, v ∈ LMonoTys.freeVars (List.map toLMonoTy v3.fst) →
         ∀ n, n ≥ v3.snd.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv n hn
@@ -2202,7 +2200,7 @@ theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
       subst h_et_eq
       exact resolves_output_fresh C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
         F.resolves_raw F.wf_v2 h_fwf et h_et_mem v h_v_ty n hn
-    -- Freshness of list B (instantiated input signature) at `v2.2.fst`'s gen-state.
+    -- Freshness of the instantiated input signature at `v2.2.fst`'s gen-state.
     have h_B : ∀ v, v ∈ LMonoTys.freeVars
         (LMonoTys.subst v2.2.fst.stateSubstInfo.subst (ListMap.values v2.fst)) →
         ∀ n, n ≥ v2.2.fst.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
@@ -2214,14 +2212,14 @@ theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
           proc.header.inputs v2 F.inst_inp_raw mt h_mt_mem v h_v_mt n hn
       exact LMonoTys.freeVars_subst_genFresh v2.2.fst.stateSubstInfo (ListMap.values v2.fst)
         v2.2.fst.genEnv.genState F.wf_v2.substFreshForGen h_mtys
-    -- Freshness of list C (lhs types) at `h_inst_lhs`'s gen-state.
+    -- Freshness of the lhs types at `h_inst_lhs`'s gen-state.
     have h_C : ∀ v, v ∈ LMonoTys.freeVars v1 →
         ∀ n, n ≥ h_inst_lhs.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
       intro v hv n hn
       obtain ⟨mt, h_mt_mem, h_v_mt⟩ := LMonoTys.freeVars_exists hv
       exact instantiateAndSubsts_values_fresh (CallArg.getLhs callArgs) C Env v1 h_inst_lhs
         F.inst_lhs_raw h_wf mt h_mt_mem v h_v_mt n hn
-    -- Freshness of list D (instantiated output signature) at `v2.2.fst`'s gen-state.
+    -- Freshness of the instantiated output signature at `v2.2.fst`'s gen-state.
     have h_D : ∀ v, v ∈ LMonoTys.freeVars
         (LMonoTys.subst v2.2.fst.stateSubstInfo.subst
           (List.map (LMonoTy.subst v2.2.snd) (ListMap.values proc.header.outputs))) →
@@ -2412,7 +2410,7 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
           F.resolves_raw F.wf_v2 h_fwf F.ne_v2 (F.ctx_eq ▸ h_mono) F.ws F.len i hi m x h_node'
       rw [h_node]
       refine ⟨LMonoTy.subst S mty_ctx, ?_, ?_⟩
-      · -- AliasEquiv via trans(Layer-3 @ S, call_input_type_eq).
+      · -- AliasEquiv by transitivity of the context-type equivalence (at `S`) with `call_input_type_eq`.
         rw [TContext.subst_aliases, ← F.ctx_lhs_env]
         have h_ae_S := h_ae_ctx S h_abs_S_v3
         simp only [List.get_eq_getElem] at h_ae_S
@@ -2502,9 +2500,8 @@ substituted input and output contexts, grounding type variables at
 
 The `cmd` case delegates to the fixed-`S` `Cmd.typeCheck_sound` corollary (which
 discharges its own rigid-identity bookkeeping internally); the `call` case uses
-`typeCheckCmd_call_sound_aux` at `S := Env'.stateSubstInfo.subst` (`absorbs`
-reflexive, `SubstWF` from the env's `isWF`). The rigid invariant `h_rigid_inv` is
-needed only by the `cmd` case.
+`typeCheckCmd_call_sound_aux` at `S := Env'.stateSubstInfo.subst`. The rigid
+invariant `h_rigid_inv` is needed only by the `cmd` case.
 -/
 theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
@@ -2674,11 +2671,13 @@ private theorem getInputExprs_transformed_length (callArgs : List (CallArg Expre
 private theorem getInputExprs_inArg (e : Expression.Expr) (rest : List (CallArg Expression)) :
     CallArg.getInputExprs (.inArg e :: rest) = e :: CallArg.getInputExprs rest := rfl
 
+/-- `getInputExprs` on an `inoutArg` emits a bare unannotated `fvar` for it. -/
 private theorem getInputExprs_inoutArg (id : Expression.Ident)
     (rest : List (CallArg Expression)) :
     CallArg.getInputExprs (.inoutArg id :: rest)
       = Lambda.LExpr.fvar () id none :: CallArg.getInputExprs rest := rfl
 
+/-- `getInputExprs` skips an `outArg` (outputs are not input expressions). -/
 private theorem getInputExprs_outArg (id : Expression.Ident)
     (rest : List (CallArg Expression)) :
     CallArg.getInputExprs (.outArg id :: rest) = CallArg.getInputExprs rest := rfl
@@ -2920,7 +2919,7 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
           (by simp only [List.get_eq_getElem]; exact h_node_orig)
       rw [h_node_tr]
       refine ⟨LMonoTy.subst S mty_ctx, ?_, ?_⟩
-      · -- AliasEquiv via trans(Layer-3 @ S, call_input_type_eq).
+      · -- AliasEquiv by transitivity of the context-type equivalence (at `S`) with `call_input_type_eq`.
         have h_ae_S := h_ae_ctx S h_abs_S_v3
         simp only [List.get_eq_getElem] at h_ae_S
         rw [F.ctx_eq, ← F.ctx_lhs_env] at h_ae_S
@@ -3036,10 +3035,8 @@ theorem Command.typeCheckCmd_annotated_sound_gen (C : LContext CoreLParams) (Env
 Annotated soundness of the command typechecker for `Command` (fixed
 final-substitution corollary): if `typeCheckCmd` succeeds, the output command
 satisfies `CmdExtHasTypeA`, grounding type variables at `Env'.stateSubstInfo.subst`.
-
-This is the `S := Env'.stateSubstInfo.subst` instance of
-`Command.typeCheckCmd_annotated_sound_gen` (`absorbs` reflexive, `SubstWF` from
-the env's `isWF`).
+The `S := Env'.stateSubstInfo.subst` instance of
+`Command.typeCheckCmd_annotated_sound_gen`.
 -/
 theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
@@ -3061,7 +3058,7 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
     (Subst.absorbs_refl _ Env'.stateSubstInfo.isWF) Env'.stateSubstInfo.isWF
 
 
-/-! ### Ambient-invariant preservation across a command step (for §B threading) -/
+/-! ### Ambient-invariant preservation across a command step -/
 
 
 /-- Every value of `addInNewest ms [(x, v)]` is either an old value of `ms` or the
@@ -3209,6 +3206,7 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
     rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
     exact h_ambient_mono
 
+/-- A successful `typeCheckCmd` step keeps every context type monomorphic. -/
 theorem typeCheckCmd_preserves_ambient_mono (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
     (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
@@ -3238,7 +3236,7 @@ theorem typeCheckCmd_preserves_ambient_mono (C : LContext CoreLParams) (Env : TE
 
 
 /-- A successful `postprocess` stores a type whose free type variables are all in
-    `C.rigidTypeVars` — this is exactly the stray-var guard (lines 68-71 of `CmdType.lean`). -/
+    `C.rigidTypeVars` (enforced by `postprocess`'s stray-var guard). -/
 theorem postprocess_freeVars_rigid (C : LContext CoreLParams) (Env : TEnv Unit)
     (ty ty' : LTy) (Env' : TEnv Unit)
     (h : CmdType.postprocess C Env ty = .ok (ty', Env')) :
@@ -3280,6 +3278,7 @@ theorem postprocess_preserves_context (C : LContext CoreLParams) (Env : TEnv Uni
     · simp only [Except.ok.injEq, Prod.mk.injEq] at h; rw [h.2]
   · simp only [reduceCtorEq] at h
 
+/-- A successful `Cmd.typeCheck` step keeps every context type's free variables rigid. -/
 theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : TEnv Unit)
     (cmd cmd' : Cmd Expression) (Env' : TEnv Unit)
     (h : Imperative.Cmd.typeCheck C Env cmd = .ok (cmd', Env'))
@@ -3411,6 +3410,7 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
       exact CmdType.inferType_preserves_context C Env Env_out (.cover label e md) e e' ety heq h_wf h_ne h_fwf
     intro y ty h_find; rw [h_ctx] at h_find; exact h_ambient_rigid y ty h_find
 
+/-- A successful `typeCheckCmd` step keeps every context type's free variables rigid. -/
 theorem typeCheckCmd_preserves_ambient_rigid (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (cmd cmd' : Command) (Env' : TEnv Unit)
     (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))

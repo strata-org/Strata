@@ -145,16 +145,16 @@ theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   unfold destructArrow; split <;> simp_all
 
 mutual
-/-- Every `"arrow"` type constructor in `mty` has exactly 2 arguments (recursively).
-    A well-formed function/arrow type is always binary (`t1 → t2` = `tcons "arrow" [t1, t2]`);
-    this rejects malformed non-binary arrows like `tcons "arrow" [a, b, c]` that would otherwise
-    be silently flattened/re-nested by `destructArrow`/`mkArrow'`. -/
+/-- Every `"arrow"` constructor in `mty` has exactly 2 arguments (recursively): a
+    well-formed arrow type is always binary (`t1 → t2` = `tcons "arrow" [t1, t2]`). Rejects
+    malformed non-binary arrows that `destructArrow`/`mkArrow'` would flatten and re-nest. -/
 def LMonoTy.arrowsBinary (mty : LMonoTy) : Bool :=
   match mty with
   | .ftvar _ | .bitvec _ => true
   | .tcons name args =>
     (if name = "arrow" then args.length == 2 else true) && LMonoTys.arrowsBinary args
 
+/-- `LMonoTy.arrowsBinary` lifted pointwise over a list of types. -/
 def LMonoTys.arrowsBinary (mtys : LMonoTys) : Bool :=
   match mtys with
   | [] => true

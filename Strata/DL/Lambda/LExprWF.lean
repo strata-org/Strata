@@ -43,6 +43,8 @@ in it.
   | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
 
 omit [DecidableEq T.IDMeta] in
+/-- The names of `e`'s free variables (first components of `freeVars`) are exactly
+    `LExpr.getVars e`. -/
 theorem freeVars_map_fst_eq_getVars (e : LExpr ⟨T, GenericTy⟩) :
     (freeVars e).map Prod.fst = LExpr.getVars e := by
   induction e with

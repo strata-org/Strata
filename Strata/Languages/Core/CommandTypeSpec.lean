@@ -53,34 +53,21 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       Program.Procedure.find? P pname = some proc →
       (CallArg.getInputExprs callArgs).length = proc.header.inputs.length →
       (CallArg.getLhs callArgs).length = proc.header.outputs.length →
-      -- All lhs variables exist in context
       (∀ v, v ∈ CallArg.getLhs callArgs → (Γ.types.find? v).isSome) →
-      -- Input positions have a type alias-equivalent to the instantiated formal
-      -- type. (The typechecker resolves aliases in the formal types via
-      -- `instantiateWithCheck`, so the actual inferred type may differ from the
-      -- raw formal `subst [σ] inputs.values[i]` only by alias expansion.)
-      --
-      -- The typing predicate branches on the kind of argument node:
-      -- * an in-out argument is a pass-by-reference variable; `getInputExprs`
-      --   manufactures it as a bare, *unannotated* `fvar` whose type lives in the
-      --   context, so we assert its type via context lookup (as in the LHS/output
-      --   obligation below). This is the only way the annotated relation
-      --   `HasTypeA` — which cannot type an unannotated `fvar` — can be satisfied.
-      -- * a genuine by-value input is a self-typing expression (after resolution
-      --   even a bare-variable actual carries its annotation), typed via
-      --   `S.exprTyped`.
+      -- Each input's type is alias-equivalent to the instantiated formal input type.
+      -- The predicate branches on the argument node: an in-out argument is an
+      -- unannotated `fvar` typed by context lookup (the only form `HasTypeA` can
+      -- satisfy); a by-value input is self-typing via `S.exprTyped`.
       (∀ i (hi : i < (CallArg.getInputExprs callArgs).length)
            (hj : i < proc.header.inputs.values.length),
         ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.inputs.values[i])) ∧
           (match (CallArg.getInputExprs callArgs)[i] with
            | .fvar _ x none => Γ.types.find? x = some (.forAll [] mty)
            | e => S.exprTyped C Γ e (S.embed mty))) →
-      -- LHS variable types are alias-equivalent to the instantiated output types
       (∀ i (hi : i < (CallArg.getLhs callArgs).length)
            (hj : i < proc.header.outputs.values.length),
         ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.outputs.values[i])) ∧
           Γ.types.find? ((CallArg.getLhs callArgs)[i]) = some (.forAll [] mty)) →
-      -- In-out arguments are simple variables with matching names
       (∀ i (hi : i < proc.header.inputs.keys.length),
         (ListMap.keys proc.header.outputs).contains (proc.header.inputs.keys[i]) →
         ∃ m ty, (CallArg.getInputExprs callArgs)[i]? =

@@ -5,9 +5,6 @@
 -/
 module
 
--- `public import`s expose the signature symbols (`Factory`, `LExpr`, `LMonoTy`,
--- `LFunc`) referenced by the `public` `OpsConsistentR` inductive below; the
--- `import all`s additionally bring in the private internals used by the proofs.
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Factory
@@ -66,11 +63,7 @@ def fvars_annotated_by [DecidableEq T.IDMeta]
 
 /-- Every `.op` node in `e` whose name is in the factory has a type annotation
 that is a valid instantiation of the function's generic type (via `opTypeSubst`).
-This is checked at every `.op` node directly, not just at complete calls.
-
-Marked `@[expose] public` so downstream (non-`module`) clients can both name and
-*unfold* it directly (`opTypeSubst` is likewise `@[expose]`), without mirroring it
-through an `import all` shim. -/
+This is checked at every `.op` node directly, not just at complete calls. -/
 @[expose] public def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
   match e with
   | .op _ name ty =>
@@ -91,19 +84,9 @@ through an `import all` shim. -/
   | .quant _ _ _ _ tr body => OpsConsistent F tr ∧ OpsConsistent F body
   | _ => True
 
-/-- Declarative specification of `OpsConsistent`, phrased as an inductive
-relation. The only interesting case is `.op`: an operator node in the factory
-is consistent when there *exists* a type substitution that turns the function's
-generic type `mkArrow' fn.output fn.inputs.values` into the node's annotation.
-Operators not in the factory are unconstrained, mirroring `OpsConsistent`.
-
-This is the natural specification; `OpsConsistent` is the operational check that
-derives the witness substitution by unification (`opTypeSubst`). See
-`OpsConsistent_OpsConsistentR` for the soundness direction.
-
-Marked `public` so downstream (non-`module`) clients can name it directly without
-mirroring it through an `import all` shim; its constructors reference only public
-API (`Factory` lookup, `LMonoTy.mkArrow'`, `LMonoTy.subst`). -/
+/-- Declarative form of `OpsConsistent` as an inductive relation. The `.op` case
+requires that *some* type substitution turns the function's generic type into the
+node's annotation; operators not in the factory are unconstrained. -/
 public inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
   | const {m c} : OpsConsistentR F (.const m c)
   | bvar {m i} : OpsConsistentR F (.bvar m i)
@@ -129,9 +112,8 @@ public inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
       OpsConsistentR F (.quant m k name ty tr body)
 
 omit [DecidableEq T.IDMeta] in
-/-- Soundness of the operational check w.r.t. the declarative relation:
-`OpsConsistent` implies `OpsConsistentR`. The witness substitution for the `.op`
-case is exactly the one computed by `opTypeSubst`. -/
+/-- Soundness: `OpsConsistent` implies `OpsConsistentR`, using the substitution
+from `opTypeSubst` as the `.op` witness. -/
 public theorem OpsConsistent_OpsConsistentR {F : @Factory T} :
     ∀ {e : LExpr T.mono}, OpsConsistent F e → OpsConsistentR F e := by
   intro e

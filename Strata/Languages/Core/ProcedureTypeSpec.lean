@@ -14,47 +14,13 @@ Specifies when a `Procedure` is well-typed, parameterized over the
 `ExprTypingSpec` typeclass (so it instantiates to both the polymorphic `HasType`
 and the annotated `HasTypeA`), reusing `StmtsHasType'` for the body.
 
-A procedure is well-typed (per `Core.Procedure.typeCheck`) when:
-
-1. Its formal parameter names are distinct and its return variable names are
-   distinct (`checkNoDuplicates`).
-2. Its type argument names are distinct and every type variable in the
-   input/output signature is declared in `typeArgs` (`checkTypeArgsWF`).
-3. Every variable the body modifies is either an output parameter or a variable
-   defined in the body (`checkModificationRights`).
-4. Each precondition is a `bool` expression in the *input* context — the ambient
-   `Γ` extended with a scope binding each input parameter to its declared type
-   (`typeCheckConditions … proc.spec.preconditions` against `envWithInputs`).
-   Preconditions may not reference return variables.
-5. Each postcondition is a `bool` expression in the *body* context — the input
-   context further extended with the output parameters and, for each in-out
-   parameter `g`, an `old g` binding (`typeCheckConditions … proc.spec.postconditions`
-   against `envWithOldVars`).
-6. Its body (when structured) is well-typed as a statement list in the body
-   context, under the empty enclosing-label set `L = []` (so every `exit` in the
-   body must target a lexically enclosing `block`). CFG bodies are rejected by
-   the checker (`Statement.typeCheck … proc.body`).
-
-This is intended as a *complete* characterization of `Procedure.typeCheck`'s
-type-level obligations (only the soundness direction — a successful check implies
-this spec — is proved).
-
-### Type parameters
-
-The declarative contexts store the parameter types with their *declared*
-(user-named) type variables; the soundness proof bridges to the checker's
-fresh-variable instantiation/renaming. `Procedure.typeCheck` requires the
-`typeArgs` to be distinct and every signature type variable to be declared in
-`typeArgs`, captured by the `typeArgsNodup` and `noUndeclaredVars` fields.
-
-### Contexts
-
-Both `procInputContext` and `procBodyContext` push a *single new scope* onto
-`Γ.types` (mirroring `setupInputEnv`'s one `pushEmptyContext` followed by
-`addInNewestContext` calls that all append to that same newest scope):
-
-* `procInputContext` — newest scope = inputs.
-* `procBodyContext`  — newest scope = inputs ++ outputs ++ old-inout bindings.
+A procedure is well-typed when: its parameter/return/type-argument names are
+distinct and its signature has no undeclared type variables; every variable the
+body modifies is an output or body-local; each pre/postcondition is a `bool`
+expression in the appropriate context; and its body (structured only — CFG bodies
+are rejected) is well-typed under the empty enclosing-label set. Preconditions are
+typed in the input context (inputs only); postconditions and the body in the body
+context (inputs, outputs, and an `old g` binding per in-out parameter `g`).
 -/
 
 namespace Core
@@ -65,20 +31,15 @@ open Lambda LExpr Imperative
 public section
 
 /-- The typing context for a procedure's preconditions: the ambient context `Γ`
-    (in which the procedure declaration is checked) with one new newest scope
-    binding each input parameter to its declared monotype (as a trivial polytype).
-    Mirrors `setupInputEnv` (`pushEmptyContext` then `addInNewestContext` of the
-    inputs). Return variables are intentionally absent — preconditions may not
-    reference them. -/
+    with one new scope binding each input parameter to its declared monotype.
+    Return variables are intentionally absent — preconditions may not reference them. -/
 def procInputContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
   let inputScope := proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))
   { Γ with types := Γ.types.push inputScope }
 
 /-- The typing context for a procedure's postconditions and body: the input
-    context further extended (in the *same* newest scope) with the output
-    parameters and, for each in-out parameter `g`, an `old g` binding at `g`'s
-    type. Mirrors the `envWithOutputs`/`envWithOldVars` steps, each of which
-    `addInNewestContext`s onto the scope pushed by `setupInputEnv`. -/
+    context's scope further extended with the output parameters and, for each
+    in-out parameter `g`, an `old g` binding at `g`'s type. -/
 def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
   let inputScope := proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))
   let outputScope := proc.header.outputs.map (fun (id, mty) => (id, .forAll [] mty))
@@ -86,9 +47,7 @@ def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
     (fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty))
   { Γ with types := Γ.types.push (inputScope ++ outputScope ++ oldScope) }
 
-/-- `procBodyContext` only extends `Γ.types`, so it leaves the alias list unchanged.
-    (Proved here, where `procBodyContext` is transparent, for use downstream where the
-    definition is opaque across the module boundary.) -/
+/-- `procBodyContext` only extends `Γ.types`, so it leaves the alias list unchanged. -/
 @[simp] theorem procBodyContext_aliases (Γ : TContext Unit) (proc : Procedure) :
     (procBodyContext Γ proc).aliases = Γ.aliases := by simp only [procBodyContext]
 
@@ -104,18 +63,11 @@ theorem procBodyContext_types (Γ : TContext Unit) (proc : Procedure) :
 
 /--
 Declarative typing for a procedure body, in ambient context `C` and body-scope
-`Γ_body`. Split out as an inductive (rather than an existential inside
-`ProcHasType'`) so the body's output contexts `C'`/`Γ'` are carried by the
-`structured` constructor instead of being existentially quantified — this keeps
-`ProcHasType'` free of `∀`/`∃` alternation, which eases deriving property-based
-testing generators.
+`Γ_body`. The body's output contexts `C'`/`Γ'` are free arguments of `structured`.
 
 * `structured`: the statement list is well-typed with no enclosing labels
-  (`L = []`), so every `exit` in the body targets a lexically enclosing `block`.
-  The body's output context is not retained (the body scope is popped after
-  checking), so `C'`/`Γ'` are free constructor arguments.
-* `cfg`: CFG bodies are rejected by `Procedure.typeCheck`, so they carry no
-  typing obligation (this constructor always applies).
+  (`L = []`), so every `exit` targets a lexically enclosing `block`.
+* `cfg`: CFG bodies are rejected by the checker, so they carry no obligation.
 -/
 inductive ProcBodyHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ]
     (C : LContext CoreLParams) (Γ_body : TContext Unit) : Procedure.Body → Prop where

@@ -46,6 +46,17 @@ theorem callOfLFunc_fvar_none {Tbase : LExprParams} {GenericTy} (F : @Factory Tb
     rw [← (Prod.mk.inj hgl).1] at hop
     exact absurd hop (by simp)
 
+/-- If `LFuncDefined.type` succeeds, the type args are nodup. -/
+theorem LFuncDefined.type_typeArgs_nodup {T : LExprParams} [DecidableEq T.IDMeta]
+    (f : LFuncDefined T) (ty : LTy) (h : f.type = .ok ty) :
+    f.typeArgs.Nodup := by
+  simp only [LFuncDefined.type, bind, Except.bind] at h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  rename_i _ h_tyargs_neg
+  simp at h_tyargs_neg
+  exact h_tyargs_neg
+
 namespace Factory
 
 /-- Pushing a *differently*-named function via `pushIfNew` preserves an

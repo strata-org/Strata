@@ -38,11 +38,11 @@ class TypeContext (P : PureExpr) (Context TypeEnv TypeError : Type) where
   inferType    : Context → TypeEnv → Cmd P → P.Expr → Except TypeError (P.Expr × P.Ty × TypeEnv)
   unifyTypes   : TypeEnv → List (P.Ty × P.Ty) → Except TypeError TypeEnv
   typeErrorFmt : TypeError → Std.Format
-  /-- Post-unification check for rigid (skolemized) type variables. Called after
-      each unification step in `Cmd.typeCheck`. A valid implementation must reject
-      when unification has refined a type variable that should remain abstract.
-      Returning `.ok ()` is always sound (it disables the check); this is
-      appropriate for languages without parametric polymorphism. -/
+  /-- Post-unification check for rigid (skolemized) type variables, called after
+      each unification step in `Cmd.typeCheck`: a valid implementation rejects when
+      unification has refined a type variable that should remain abstract. Returning
+      `.ok ()` disables the check — sound, and appropriate for languages without
+      parametric polymorphism. -/
   checkAnnotCompat : Context → TypeEnv → Except TypeError Unit
 
 ---------------------------------------------------------------------

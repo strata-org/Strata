@@ -145,11 +145,9 @@ def LFuncDefined.type [DecidableEq T.IDMeta] (f : (LFuncDefined T)) : Except For
               quantified type identifiers!\
               {Format.line}\
               {f.typeArgs}"
-  -- Reject any arrow type with ≠ 2 arguments (a well-formed function type is always binary
-  -- `t1 → t2`). Without this, a malformed `tcons "arrow" [a,b,c]` in the output is silently
-  -- flattened by `destructArrow` below and re-nested binary, so the reconstructed signature would
-  -- disagree with the original output — breaking function soundness (`bodyTyped` would assert the
-  -- body has the original non-binary output type, which it does not).
+  -- Reject any arrow type with ≠ 2 arguments: a non-binary `tcons "arrow" [a,b,c]` would be
+  -- flattened by `destructArrow` below and re-nested binary, so the reconstructed signature
+  -- would disagree with the original output.
   else if !(f.output.arrowsBinary && Lambda.LMonoTys.arrowsBinary f.inputs.values) then
     .error f!"[{f.name}] Signature contains an arrow type with ≠ 2 arguments; \
               function types must be binary (t1 -> t2)."
@@ -167,17 +165,6 @@ theorem LFuncDefined.type_inputs_nodup {T : LExprParams} [DecidableEq T.IDMeta] 
   -- At this point grind is possible if this proof needs maintenance
   split at h <;> try contradiction
   simp_all
-
-/-- If `LFuncDefined.type` succeeds, the type args are nodup (from the second guard). -/
-theorem LFuncDefined.type_typeArgs_nodup {T : LExprParams} [DecidableEq T.IDMeta]
-    (f : LFuncDefined T) (ty : LTy) (h : f.type = .ok ty) :
-    f.typeArgs.Nodup := by
-  simp only [LFuncDefined.type, bind, Except.bind] at h
-  split at h <;> try contradiction
-  split at h <;> try contradiction
-  rename_i _ h_tyargs_neg
-  simp at h_tyargs_neg
-  exact h_tyargs_neg
 
 @[expose] def LFuncDefined.opExpr [Inhabited T.Metadata] (f: LFuncDefined T) : LExpr T.mono :=
   let input_tys := f.inputs.values

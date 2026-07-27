@@ -86,11 +86,13 @@ def RigidAnnotCompat (aliases : List TypeAlias) (rigidVars : List TyIdentifier)
     (∀ v, v ∈ rigidVars → LMonoTy.subst [σ] (.ftvar v) = .ftvar v) ∧
     AliasEquiv aliases (LMonoTy.subst [σ] ann) mty
 
+/-- `RigidAnnotCompat` is reflexive (witnessed by the empty substitution). -/
 theorem RigidAnnotCompat.of_eq {aliases : List TypeAlias} {rigidVars : List TyIdentifier}
     {ann : LMonoTy} : RigidAnnotCompat aliases rigidVars ann ann :=
   ⟨[], fun _ _ => by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty], by
     unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact .refl⟩
 
+/-- `AliasEquiv` implies `RigidAnnotCompat` (with the empty substitution). -/
 theorem RigidAnnotCompat.of_aliasEquiv {aliases : List TypeAlias}
     {rigidVars : List TyIdentifier} {ann mty : LMonoTy}
     (h : AliasEquiv aliases ann mty) : RigidAnnotCompat aliases rigidVars ann mty :=
@@ -306,18 +308,14 @@ theorem HasType.of_rigidTypeVars_irrel [DecidableEq T.IDMeta] {C : LContext T}
     exact HasType.top_annotated _ _ _ _ _ _ _ _ hf ht hl ho ha
   | talias Γ e mty mty' hae ht ih => exact HasType.talias _ _ _ _ hae ih
 
-/-- **Γ-congruence for `HasType`.** The typing relation reads the type-context `Γ`
-    only through `Γ.types.find?` (the `tvar`/`tvar_annotated` cases, and `isFresh` in
-    `tgen`) and `Γ.aliases` (the `tvar_annotated`/`tabs`/`tquant`/`talias` cases). So
-    typing is invariant under replacing `Γ₁` by any `Γ₂` that agrees pointwise on
-    `find?` and has the same `aliases`. The output-`Γ₂` is quantified *inside* the
-    conclusion so the binder-extending cases (`tabs`/`tquant`) can re-apply the IH at
-    the *extended* contexts (both sides insert the identical binding, preserving the
-    pointwise `find?` agreement via `Maps.find?_insert_self`/`_insert_ne`).
+/-- **Γ-congruence for `HasType`.** Typing reads `Γ` only through `Γ.types.find?`
+    and `Γ.aliases`, so it is invariant under replacing `Γ₁` by any `Γ₂` that agrees
+    pointwise on `find?` and has the same aliases. `Γ₂` is quantified inside the
+    conclusion so the binder-extending cases can re-apply the IH at extended contexts.
 
-    Needed by the statement typechecker's soundness proof: `typeCheckAux` types
-    block/branch bodies under `pushEmptyContext` (`Γ = []::Γ₀`), whereas the spec
-    types them under the plain `Γ₀`; the two contexts agree exactly on `find?`. -/
+    Needed by statement-typechecker soundness: `typeCheckAux` types block/branch
+    bodies under `pushEmptyContext` (`Γ = []::Γ₀`) while the spec uses `Γ₀`; the two
+    agree exactly on `find?`. -/
 theorem HasType.find_congr {T : LExprParams} [DecidableEq T.IDMeta]
     {C : LContext T} {Γ₁ : TContext T.IDMeta}
     {e : LExpr T.mono} {ty : LTy}
@@ -894,12 +892,9 @@ theorem HasType_subst_fresh_all
 
 /--
 Two typing contexts are *alias-equivalent* (w.r.t. `aliases`) when every monotype
-binding in `Γ` is matched, at the same key, by a binding in `Γ'` whose stored
-monotype is alias-equivalent to it. (All bindings are required to be monotypes,
-i.e. `.forAll []`, which holds for both `funcContext` and the body-resolution
-context; the relation also pins this down so the `tvar` case can re-derive the
-variable's type.) The direction `AliasEquiv aliases mty' mty` (Γ'-type ↝ Γ-type)
-is the one needed to transport a judgment from `Γ` to `Γ'` via `talias`. -/
+binding in `Γ` is matched, at the same key, by a monotype binding in `Γ'` that is
+alias-equivalent to it. The direction `AliasEquiv aliases mty' mty` (Γ'-type ↝
+Γ-type) is the one needed to transport a judgment from `Γ` to `Γ'` via `talias`. -/
 def TContextAliasEquiv (aliases : List TypeAlias) (Γ Γ' : TContext T.IDMeta) : Prop :=
   ∀ x ty, Γ.types.find? x = some ty →
     ∃ mty mty', ty = .forAll [] mty ∧
@@ -1017,12 +1012,10 @@ theorem Constraints.unify_keys_incl
   exact (Constraints.unifyCore_sound cs S relS h_core).keys_incl
 
 /-- **Predicate transfer through `Constraints.unify`.** If a predicate `P` on type
-    variables holds for every free variable of the constraints and for every key and
-    range variable of the input substitution, then it holds for every key and range
-    variable of the unify result. The keys side uses `unify_keys_incl`; the range side
-    uses the `goodSubset` field of the unify relation. Used to thread the
-    "every type variable avoids `func.typeArgs`" invariant through the body's
-    return-type unification (`v_unify`). -/
+    variables holds for every free variable of the constraints and every key/range
+    variable of the input substitution, then it holds for every key/range variable of
+    the unify result. Used to thread the "every type variable avoids `func.typeArgs`"
+    invariant through the body's return-type unification (`v_unify`). -/
 theorem Constraints.unify_pred
     {cs : Constraints} {S S' : SubstInfo}
     (h_unify : Constraints.unify cs S = .ok S')
@@ -1396,9 +1389,8 @@ private theorem expand_preserves_freeVars
 
 mutual
 /-- **`AliasEquiv` preserves free type variables** when all aliases are non-dropping
-    (WF + every declared arg actually occurs in the body). This is the payoff of the
-    `TEnv.addTypeAlias` phantom guard: it makes the per-key freshness reflection in
-    `HasType_context_aliasEquiv` dischargeable at the call sites. -/
+    (WF + every declared arg actually occurs in the body — enforced by
+    `TEnv.addTypeAlias`'s guards). -/
 theorem AliasEquiv_preserves_freeVars
     (aliases : List TypeAlias)
     (h_ali : AliasesNonDropping aliases)
@@ -2161,16 +2153,10 @@ private theorem unify_preserves_SubstFreshForGen
     · exact h_fresh_S v (Or.inr h) n hn
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- **`TEnvWF` is preserved through `updateSubst`-of-`unify`.** Replacing the
-    running substitution with the result of `Constraints.unify` keeps every
-    `TEnvWF` field: the context and generator are untouched (so `aliasesWF`,
-    `ctxFreshForGen`, `boundVarsNodup`, `boundVarsFresh` transfer directly), and
-    `substFreshForGen` is re-established by `unify_preserves_SubstFreshForGen`
-    provided the constraint's free vars are gen-fresh for the input state.
-
-    This is the public bridge consumed by the command-level
-    `Cmd.typeCheck_preserves` / `typeCheckCmd_call_preserves` lemmas (the
-    `unifyTypes`/`updateSubst` step). -/
+/-- **`TEnvWF` is preserved through `updateSubst`-of-`unify`.** Replacing the running
+    substitution with a `Constraints.unify` result keeps every `TEnvWF` field,
+    provided the constraint's free vars are gen-fresh for the input state (needed to
+    re-establish `substFreshForGen`). -/
 theorem TEnvWF.of_unify_updateSubst
     {cs : Constraints} {S' : SubstInfo} {Env : TEnv T.IDMeta}
     (h_wf : TEnvWF Env)
@@ -2647,6 +2633,8 @@ theorem LMonoTy_instantiateWithCheck_context'
   exact LMonoTys.instantiateEnv_context _ _ Env _ _ h_inst
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Every free variable of `instantiateWithCheck`'s output monotype is gen-fresh
+    for the output state (no future-generated name). -/
 theorem LTy_instantiateWithCheck_freeVars_fresh
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
@@ -3724,8 +3712,7 @@ private theorem LMonoTy.mem_destructArrow_freeVars_subset (monoty x : LMonoTy)
 
 /-- The reconstructed output monotype `mkArrow' R DL`, where `R` is the last element of
 `drop n (destructArrow monoty)` (or the global last as default) and `DL` is its dropLast,
-has free vars contained in those of `monoty`. This is the `h_sub` obligation `bodyTyped`
-owes `bodyTyped_chain`: the declared output is assembled entirely from
+has free vars contained in those of `monoty`: the declared output is assembled entirely from
 `monoty.destructArrow` components. -/
 theorem LMonoTy.freeVars_reconstructedOutput_subset (monoty : LMonoTy) (n : Nat) :
     ∀ v, v ∈ LMonoTy.freeVars
@@ -5465,7 +5452,7 @@ theorem AliasEquivList.symm (h : AliasEquivList aliases as bs) : AliasEquivList 
   | .cons h_hd h_tl => exact .cons (AliasEquiv.symm h_hd) (AliasEquivList.symm h_tl)
 end
 
--- Opening a monomorphic scheme with the empty list is the identity.
+/-- Opening a monomorphic scheme with the empty list is the identity. -/
 private theorem openFull_nil_mono (mm : LMonoTy) : (LTy.forAll [] mm).openFull [] = mm := by
   simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, List.zip_nil_left]
   rw [LMonoTy.subst_emptyS (by simp [Subst.hasEmptyScopes, Map.isEmpty])]
@@ -5646,9 +5633,8 @@ omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc 
 `Γ'` has the same aliases and bindings alias-equivalent to `Γ`'s, then `e : ty`
 in `Γ'`. The `h_fresh` hypothesis (per-key freshness reflection: every free tyvar
 in a `Γ'`-entry reflects to the `Γ`-entry at the same key) is required by the
-`tgen` generalization rule and is dischargeable at the call sites from the
-phantom-alias guard (aliases are non-dropping, so
-`freeVars(Γ'-entry) ⊆ freeVars(Γ-entry)`). -/
+`tgen` generalization rule and is dischargeable at the call sites because aliases
+are non-dropping, so `freeVars(Γ'-entry) ⊆ freeVars(Γ-entry)`. -/
 theorem HasType_context_aliasEquiv
     (C : LContext T) (Γ Γ' : TContext T.IDMeta) (e : LExpr T.mono) (ty : LTy)
     (h : HasType C Γ e ty)
@@ -5758,6 +5744,7 @@ private theorem LMonoTys_resolveAliases_subst_eq
 end
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `LTy.resolveAliases` preserves `stateSubstInfo` (it only touches `genEnv`). -/
 private theorem LTy_resolveAliases_subst_eq
     (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
@@ -5770,6 +5757,7 @@ private theorem LTy_resolveAliases_subst_eq
     {Env with genEnv := genEnv'} mty Env' h
 
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `LTy.resolveAliases` leaves the type-generator counter monotone (non-decreasing). -/
 private theorem LTy_resolveAliases_genState_mono
     (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
@@ -5790,6 +5778,7 @@ private theorem LTy_resolveAliases_genState_mono
     exact Nat.le_trans (genTyVars_tyGen_mono _ Env.genEnv tvs Env1 h_gen) h_ra_mono
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `LTy.instantiateWithCheck` preserves `TEnvWF`. -/
 theorem LTy_instantiateWithCheck_TEnvWF
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
     (mty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -5881,8 +5870,7 @@ theorem LTy_instantiateWithCheck_isInstance
   exact resolveAliases_aliasEquiv (Γ := Env.context) mty_inst
     { Env with genEnv := genEnv1 } mty_ra Env_ra h_ra h_aliases_eq h_aw
 
--- === BEGIN: helpers transplanted from StrataScratch/InstWithCheckInverse.lean ===
-/-- Local copy of the host's private `LMonoTys.subst_cons_eq`. -/
+/-- `LMonoTys.subst` distributes over `cons`. -/
 theorem subst_cons_eq' (S : Subst) (hd : LMonoTy) (tl : LMonoTys) :
     LMonoTys.subst S (hd :: tl) = LMonoTy.subst S hd :: LMonoTys.subst S tl := by
   rw [LMonoTys.subst_eq_substLogic, LMonoTys.subst_eq_substLogic]
@@ -6080,14 +6068,12 @@ theorem subst_rename_inverse
       simp only [LMonoTy.freeVars]
       exact LMonoTys.freeVars_mem_subset hty hv))
 
-/- Renaming commutes with `resolveAliases`, transferring across environments with
-    equal alias lists. If `resolveAliases mty Env1 = .ok (v1, Env1)` and `σ` is a
-    renaming (maps each var to a `.ftvar`), then resolving the renamed type at `Env2`
-    (same aliases) yields the renamed value. `resolveAliases` never errors and returns
-    its input env unchanged, so the output env is exactly `Env2`. -/
 section
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata]
 mutual
+/-- Renaming commutes with `resolveAliases`, transferring across environments with
+    equal alias lists: for a renaming `σ` (each var maps to a `.ftvar`), resolving the
+    renamed type at `Env2` yields the renamed value. -/
 theorem LMonoTy_resolveAliases_subst_comm (σ : Subst)
     (h_ren : ∀ x, ∃ w, LMonoTy.subst σ (.ftvar x) = .ftvar w)
     (mty : LMonoTy) (Env1 Env2 : TEnv T.IDMeta)
@@ -6127,6 +6113,7 @@ theorem LMonoTy_resolveAliases_subst_comm (σ : Subst)
     rw [← h_ctx]
     exact tconsAliasSimple_subst_comm σ name args1 Env1.context.aliases h_aw
 
+/-- List version of `LMonoTy_resolveAliases_subst_comm`. -/
 theorem LMonoTys_resolveAliases_subst_comm (σ : Subst)
     (h_ren : ∀ x, ∃ w, LMonoTy.subst σ (.ftvar x) = .ftvar w)
     (mtys : LMonoTys) (Env1 Env2 : TEnv T.IDMeta)
@@ -6208,56 +6195,45 @@ theorem subst_zip_ftvar_renaming (ids freshtvs : List TyIdentifier) (y : TyIdent
     have h_tmem : t ∈ List.map LMonoTy.ftvar freshtvs := List.mem_of_mem_take h_tval
     obtain ⟨w, _, hw⟩ := List.mem_map.mp h_tmem
     exact ⟨w, by rw [hw]⟩
--- === END transplanted helpers ===
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
-/-- **Instantiation inverse (structural, general).** `LTy.instantiateWithCheck`
-    instantiates the scheme's ∀-bound variables with fresh type variables (in
-    *declaration* order) and resolves aliases. There is a *renaming* `ρ` (the fresh
-    variables back to the scheme's body, declaration-order — NOT the appearance-order
-    `freeVars.eraseDups.zip typeArgs`) such that applying `ρ` to the produced monotype
-    `mty` recovers exactly the alias-*resolved* raw scheme body: resolving aliases on
+/-- **Instantiation inverse.** `LTy.instantiateWithCheck` instantiates the scheme's
+    ∀-bound variables with fresh type variables (in *declaration* order) and resolves
+    aliases. There is a *renaming* `ρ` (the fresh variables back to the scheme's body,
+    in declaration order) such that applying `ρ` to the produced monotype `mty` recovers
+    exactly the alias-*resolved* raw scheme body: resolving aliases on
     `LTy.toMonoTypeUnsafe ty` yields `LMonoTy.subst ρ mty`.
 
-    This is the structural (equality, not `AliasEquiv`) form: it commutes the renaming
-    `ρ` through `resolveAliases` and uses that `ρ` exactly inverts the fresh
-    instantiation. The equality is decomposable component-by-component (via
-    `mkArrow'`-injectivity at the call site), avoiding any abstract `AliasEquiv`
-    inversion across the arrow spine. The per-component `AliasEquiv` facts then follow
-    from `resolveAliases_aliasEquiv` applied to each raw component. -/
+    This is the structural (equality, not `AliasEquiv`) form, so it is decomposable
+    component-by-component via `mkArrow'`-injectivity, avoiding any abstract
+    `AliasEquiv` inversion across the arrow spine. -/
 theorem LTy_instantiateWithCheck_inverse
     (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta)
     (mty : LMonoTy) (Env' : TEnv T.IDMeta)
     (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env'))
     (h_aw : TContext.AliasesWF Env.context)
-    -- Closedness: every free var of the scheme body is ∀-bound. FALSE without this (open
-    -- schemes: a free `w` is neither instantiated nor bound, forcing `ρ₀ : w↦w` into both keys
-    -- and range, contradicting the range⊆boundVars conjunct). Discharged at both call sites from
-    -- the `undeclaredVars` guard (`h_undecl`, before `instantiateWithCheck` in `Function.typeCheck`).
+    -- Closedness: every free var of the scheme body is ∀-bound. Required: for an open
+    -- scheme a free `w` is neither instantiated nor bound, forcing `ρ₀ : w↦w` into both
+    -- keys and range, contradicting the range⊆boundVars conjunct.
     (h_closed : LTy.freeVars ty = [])
-    -- No bound var uses the generator prefix `$__ty`. FALSE without this even when closed: a
-    -- scheme `∀"$__ty0". "$__ty0"` instantiates to a no-op (the "fresh" var IS `$__ty0`), forcing
-    -- `ρ₀ : "$__ty0"↦"$__ty0"` — key = range var, so NOT `SubstWF`. This is a SECOND, independent
-    -- falsity source from `h_closed` (which only covers open schemes). Discharged at both call sites
-    -- from the gen-prefix guard (`h_genprefix`) via `typeCheck_input_typeArgs_no_gen_prefix` +
-    -- `LFunc.type_boundVars_eq_typeArgs`.
+    -- No bound var uses the generator prefix `$__ty`. Required even when closed: the
+    -- scheme `∀"$__ty0". "$__ty0"` instantiates to a no-op (the "fresh" var IS `$__ty0`),
+    -- forcing `ρ₀ : "$__ty0"↦"$__ty0"` — key = range var, so not `SubstWF`.
     (h_no_gen_prefix : ∀ x ∈ LTy.boundVars ty,
       ¬ (TState.tyPrefix.toList.isPrefixOf x.toList = true)) :
     -- `ρ` is a *single-scope* renaming `[ρ₀]` (the fresh→user inverse is built as one
-    -- scope; ROUTE B's composite needs this to apply `LMonoTy.subst_compose`).
+    -- scope, so that `LMonoTy.subst_compose` applies).
     ∃ (ρ₀ : SubstOne) (Env_r : TEnv T.IDMeta), SubstWF [ρ₀] ∧
       LMonoTy.resolveAliases (LTy.toMonoTypeUnsafe ty) Env = .ok (LMonoTy.subst [ρ₀] mty, Env_r) ∧
       (∀ x ∈ Map.keys ρ₀, TContext.isFresh (T := T) x Env.context) ∧
-      -- ρ₀-contract for ROUTE B's `SubstWF` (used by `bodyComposite_wf_hyps`):
-      -- C2: ρ₀'s keys cover the instantiation variables (`freeVars mty`);
-      -- C1: ρ₀'s range is the scheme's bound variables (the user type arguments).
+      -- ρ₀'s keys cover the instantiation variables (`freeVars mty`), and its
+      -- range is the scheme's bound variables (the user type arguments).
       (∀ v, v ∈ LMonoTy.freeVars mty → v ∈ Map.keys ρ₀) ∧
       (∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ LTy.boundVars ty) ∧
-      -- ρ₀ is a genuine variable RENAMING: every range value is a `.ftvar`. Needed by
-      -- `typeCheck_inverse_components` — the `Subst.freeVars`-based facts above are vacuous for a
-      -- ground range and do NOT stop `subst ρ₀` from collapsing/injecting arrow structure; this
-      -- shape fact does (a renaming preserves `destructArrow` length). ρ₀ is built from
-      -- `userSubst = pairs.map (fun (fresh,orig) => (fresh, .ftvar orig))` so this holds by construction.
+      -- ρ₀ is a genuine variable renaming: every range value is a `.ftvar`. Needed
+      -- because a renaming preserves `destructArrow` length (the `Subst.freeVars`-based
+      -- facts above are vacuous for a ground range and do not stop `subst ρ₀` from
+      -- collapsing/injecting arrow structure).
       (∀ mty ∈ Map.values ρ₀, ∃ w, mty = LMonoTy.ftvar w) := by
   -- Decompose `instantiateWithCheck` = `resolveAliases ty` (then pure checks).
   simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
@@ -6698,6 +6674,8 @@ private theorem SubstWF.key_not_in_LTy_freeVars_subst
       (keys_go_mem S xs a h_key h_not_xs) (SubstWF_go S xs h_wf) h_in_fv
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- A `some` lookup in the substituted scope comes from a `some` lookup in the
+    original scope (with the substitution applied to the value). -/
 theorem TContext_types_subst_go_find_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Map.find? (TContext.types.subst.go S scope) x = some ty) :
@@ -6710,6 +6688,8 @@ theorem TContext_types_subst_go_find_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- A `none` lookup in the substituted scope means the key is absent from the
+    original scope too. -/
 theorem TContext_types_subst_go_find_none_reverse
     (scope : Map (T.Identifier) LTy) (S : Subst) (x : T.Identifier)
     (h : Map.find? (TContext.types.subst.go S scope) x = none) :
@@ -6722,6 +6702,8 @@ theorem TContext_types_subst_go_find_none_reverse
     grind
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- `Maps`-level form of `TContext_types_subst_go_find_reverse`: a `some` lookup in
+    the substituted context reflects a `some` lookup in the original. -/
 theorem TContext_types_subst_find_reverse
     (types : Maps (T.Identifier) LTy) (S : Subst) (x : T.Identifier) (ty : LTy)
     (h : Maps.find? (TContext.types.subst types S) x = some ty) :
@@ -7086,16 +7068,11 @@ theorem inferFVar_HasType
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
-Helper for the input-typing obligation of the `call` command spec.
-
-In the unannotated case, `inferFVar` looks up `x` in the context to get a
-scheme that is monomorphic by `h_mono` (so `forAll [] mty_ctx`), and the
-inferred type `ty_res` is alias-equivalent to `mty_ctx`. The equivalence is
-preserved under any substitution `S`.
-
-Unlike `inferFVar_HasType`, this extracts only the alias-equivalence fact,
-which is relation-independent (used by both `HasType` and `HasTypeA`).
--/
+For an unannotated `x`, `inferFVar` looks up `x` in the context to get a scheme
+that is monomorphic by `h_mono` (so `forAll [] mty_ctx`), and the inferred type
+`ty_res` is alias-equivalent to `mty_ctx` under any substitution `S`. Unlike
+`inferFVar_HasType`, extracts only the alias-equivalence fact, so it serves both
+`HasType` and `HasTypeA`. -/
 theorem inferFVar_none_find_aliasEquiv
     (C : LContext T) (Env Env' : TEnv T.IDMeta) (x : Identifier T.IDMeta)
     (ty_res : LMonoTy)
@@ -7647,6 +7624,8 @@ private theorem WellScoped_varOpen
   · exact h_sub y.1 (h_ws y h_orig)
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] [DecidableEq T.IDMeta] in
+/-- The bound variable produced by `typeBoundVar` is fresh: it is not among the
+    context's known variables. -/
 theorem typeBoundVar_xv_not_in_knownVars
     (C : LContext T) (Env : TEnv T.IDMeta) (bty : Option LMonoTy)
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
@@ -7667,6 +7646,8 @@ theorem typeBoundVar_xv_not_in_knownVars
     simp at h; obtain ⟨h_xv, _, _⟩ := h; subst h_xv; exact h_fresh
 
 omit [ToString T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] [DecidableEq T.IDMeta]  in
+/-- A variable fresh for a well-scoped expression's context does not occur in the
+    expression's variables. -/
 theorem WellScoped_fresh_not_in_getVars
     (e : LExpr T.mono) (Γ : TContext T.IDMeta) (xv : T.Identifier)
     (h_ws : WellScoped e Γ) (h_fresh : xv ∉ TContext.knownVars Γ) :
@@ -8823,14 +8804,9 @@ omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /--
 For a bare input free variable (`fvar m x none`, as emitted for inout call
 arguments), `resolve` returns a typed expression whose monotype is alias-
-equivalent to the (monomorphic) context type of `x`, under any substitution
-that absorbs the final environment's substitution.
-
-This is the `resolve`-level wrapper of `inferFVar_none_find_aliasEquiv`,
-threading the algorithm's `applySubstT` step through `applySubstT_toLMonoTy`
-and `LMonoTy.subst_absorbs`. Relation-independent (no `HasType`/`HasTypeA`),
-so it serves both soundness theorems.
--/
+equivalent to the (monomorphic) context type of `x`, under any substitution that
+absorbs the final environment's substitution. The `resolve`-level wrapper of
+`inferFVar_none_find_aliasEquiv`, serving both soundness theorems. -/
 theorem resolve_fvar_none_find_aliasEquiv
     (C : LContext T) (Env Env' : TEnv T.IDMeta)
     (m : T.mono.base.Metadata) (x : Identifier T.IDMeta) (et : LExprT T.mono)
@@ -8860,7 +8836,7 @@ theorem resolve_fvar_none_find_aliasEquiv
     obtain ⟨ty, Env_inf⟩ := v_if
     simp at h_aux
     obtain ⟨h_et_aux, h_env_r⟩ := h_aux
-    -- Apply Layer 1 to the `inferFVar` call.
+    -- Extract the alias-equivalence fact from the `inferFVar` call.
     have h_ae := inferFVar_none_find_aliasEquiv C Env Env_inf x ty h_inf h_mono
       h_wf.aliasesWF
     obtain ⟨mty_ctx, h_find, h_ae_S⟩ := h_ae

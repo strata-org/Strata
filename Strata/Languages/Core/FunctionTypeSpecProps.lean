@@ -9,6 +9,7 @@ import all Strata.Languages.Core.FunctionTypeSpec
 import all Strata.Languages.Core.FunctionType
 import all Strata.Languages.Core.CommandTypeSpecProps
 import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.LExprResolveProps
 import all Strata.DL.Lambda.LExprTypeSpec
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst
@@ -128,7 +129,7 @@ theorem AliasEquivList.length_eq {al : List TypeAlias} :
 /-- Formals-scope lookup: from the pointwise `AliasEquivList aliases (f <$> slice) inputs.values`,
     a key `x` bound to `forAll [] s` in the formals scope yields `AliasEquiv aliases (f s)` against
     the matching `inputs.values` entry. `f` is arbitrary (instantiated to `subst ρ` at the call site). -/
-private theorem region_a_input_lookup {aliases : List TypeAlias}
+private theorem formals_scope_input_lookup {aliases : List TypeAlias}
     (inputs : List (Identifier CoreLParams.IDMeta × LMonoTy)) (slice : LMonoTys)
     (f : LMonoTy → LMonoTy) (x : Identifier CoreLParams.IDMeta) (s : LMonoTy)
     (h_len : slice.length = inputs.length)
@@ -473,7 +474,7 @@ Built from `monoty.freeVars.eraseDups` as the inverse of the unifier `S` on thos
 `alphaEquivMap` guarantees `subst S` acts as an injective variable renaming on `monoty`'s vars;
 the lemmas below establish the lookup / `SubstWF` / inverse properties of `renameMap`. -/
 
-/-- The new renaming scope as a plain `Map`. -/
+/-- The renaming scope as a plain `Map`. -/
 private def renameMap (S : Subst) (vs : List TyIdentifier) : Map TyIdentifier LMonoTy :=
   vs.filterMap (fun x =>
     match LMonoTy.subst S (.ftvar x) with
@@ -499,7 +500,7 @@ private theorem alphaEquivMap_sigma_inj (S : Subst) (monoty : LMonoTy)
   rw [hby1] at hby2
   exact (Option.some.injEq _ _ ▸ hby2)
 
-/-- Membership in the new `renameMap`: `(y, t) ∈ renameMap S vs` iff `t = ftvar x` for some
+/-- Membership in `renameMap`: `(y, t) ∈ renameMap S vs` iff `t = ftvar x` for some
     `x ∈ vs` with `subst S (ftvar x) = ftvar y` and `x ≠ y`. Direct from `List.mem_filterMap`. -/
 private theorem mem_renameMap_iff (S : Subst) (vs : List TyIdentifier)
     (y : TyIdentifier) (t : LMonoTy) :
@@ -529,7 +530,7 @@ private theorem mem_renameMap_iff (S : Subst) (vs : List TyIdentifier)
     simp only
     rw [if_neg (by simpa only [beq_iff_eq] using hxy), ht]
 
-/-- A key of the new `renameMap` is the `S`-image of some instantiation variable. -/
+/-- A key of `renameMap` is the `S`-image of some instantiation variable. -/
 private theorem mem_keys_renameMap (S : Subst) (vs : List TyIdentifier) (y : TyIdentifier)
     (h : y ∈ Map.keys (renameMap S vs)) :
     ∃ x, x ∈ vs ∧ LMonoTy.subst S (.ftvar x) = .ftvar y ∧ x ≠ y := by
@@ -540,9 +541,9 @@ private theorem mem_keys_renameMap (S : Subst) (vs : List TyIdentifier) (y : TyI
   obtain ⟨x, hx_mem, _, hsub, hxy⟩ := (mem_renameMap_iff S vs y' t).mp hp_mem
   exact ⟨x, hx_mem, hsub, hxy⟩
 
-/-! ### New-shape `SubstWF` and inverse (the foregrounded composite-`S` building blocks) -/
+/-! ### `SubstWF` and inverse (composite-`S` building blocks) -/
 
-/-- `Subst.freeVars` of the new `renameMap`: a free variable of its values is some `x ∈ vs`
+/-- `Subst.freeVars` of `renameMap`: a free variable of its values is some `x ∈ vs`
     with `subst S (ftvar x) = ftvar y ≠ ftvar x`. (Values are exactly `ftvar x`.) -/
 private theorem freeVars_renameMap (S : Subst) (vs : List TyIdentifier) (z : TyIdentifier)
     (h : z ∈ Subst.freeVars [renameMap S vs]) :
@@ -583,7 +584,7 @@ private theorem freeVars_renameMap_mem_vs (S : Subst) (vs : List TyIdentifier) (
   subst hmty_fv
   exact hx_mem
 
-/-- **`SubstWF` of the new renameSubst (single-scope).** Needs only idempotence of the
+/-- `SubstWF` of the renameSubst (single-scope). Needs only idempotence of the
     well-formed `S`: a key `y` of `renameMap S vs` is `S`-fixed (`subst S (ftvar y) = ftvar y`,
     by idempotence applied to its preimage), while any value-occurrence of `y` would be a
     *moved* variable (`subst S (ftvar y) = ftvar y' ≠ ftvar y`) — contradiction.
@@ -627,7 +628,7 @@ private theorem Map.find?_of_mem_nodup {α β : Type} [DecidableEq α] (m : Map 
     · have hk'_ne : k' ≠ k := fun heq => hk'_notin (heq ▸ List.mem_map.mpr ⟨(k, v), h_tl, rfl⟩)
       rw [if_neg hk'_ne]; exact ih h_tl hnd_rest
 
-/-- Keys of the new `renameMap` are nodup, from σ-injectivity on `vs` (⊆ `freeVars monoty`)
+/-- Keys of `renameMap` are nodup, from σ-injectivity on `vs` (⊆ `freeVars monoty`)
     plus `Nodup vs`: distinct preimages give distinct keys (σ injective), and the only
     preimage of a given key is unique. -/
 private theorem renameMap_keys_nodup (monoty : LMonoTy) (S : Subst)
@@ -664,7 +665,7 @@ private theorem renameMap_keys_nodup (monoty : LMonoTy) (S : Subst)
         have : a = a' := alphaEquivMap_sigma_inj S monoty bwdMap h_alpha a a' ya ha_fv ha'_fv hsub hsub'
         exact ha_notin (this ▸ ha'_mem)
 
-/-- **Inverse leaf (new shape).** On a single free variable `x` of `monoty`, the new
+/-- Inverse leaf: on a single free variable `x` of `monoty`,
     `renameMap` undoes `subst S`: `subst [renameMap S vs] (subst S (ftvar x)) = ftvar x`,
     where `vs` lists exactly `freeVars monoty`. Uses `alphaEquivMap_self_subst_bwd`
     (irreducible core: `subst S (ftvar x) = ftvar y`), σ-injectivity for the fixed-point
@@ -701,7 +702,7 @@ private theorem renameMap_inverse_ftvar (monoty : LMonoTy) (S : Subst)
     rw [show Maps.find? [renameMap S vs] y = Map.find? (renameMap S vs) y from by
       simp only [Maps.find?, h_find], h_find]
 
-/-- The new `renameMap` inverts the unification substitution on any monotype `t` whose free
+/-- `renameMap` inverts the unification substitution on any monotype `t` whose free
     vars are all free in `monoty`: `subst [renameMap S vs] (subst S t) = t`, where `vs` lists
     exactly `freeVars monoty` (nodup). Structural lift of `renameMap_inverse_ftvar`. At the call
     site `t` is the declared output (a `destructArrow` component), free vars ⊆ `monoty`'s. -/
@@ -779,8 +780,7 @@ theorem typeCheck_body_type_eq
 
 /-- The full body-typing chain: starting from a resolved, `AbsWF`, well-typed body,
     apply the three substitutions (`unify`, `rename`, `user`) and land at the
-    declared output type. Abstracts plan steps 1–7; used identically in all measure
-    branches of `bodyTyped`. -/
+    declared output type. Used identically in all measure branches of `bodyTyped`. -/
 theorem bodyTyped_chain {T : LExprParams} [DecidableEq T.IDMeta]
     (et₀ : LExprT T.mono) (S userSubst : Subst)
     (monoty output_mty : LMonoTy)
@@ -920,6 +920,8 @@ theorem List.map_snd_zip_sublist {α β : Type} (a : List α) (b : List β) :
       simp only [List.zip_cons_cons, List.map_cons]
       exact (ih ys).cons₂ y
 
+/-- A type-checked function's input parameter names are distinct (the `inputsNodup`
+    field of `FuncHasType'`). -/
 theorem Function.typeCheck_inputsNodup (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env')) :
@@ -979,6 +981,8 @@ theorem Function.typeCheck_inputsNodup (C : LContext CoreLParams) (Env : TEnv Un
       elim_err h; cases h
       exact h_close _ _ (fun _ => rfl)
 
+/-- A type-checked function's type argument names are distinct (the `typeArgsNodup`
+    field of `FuncHasType'`). -/
 theorem Function.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env')) :
@@ -992,7 +996,7 @@ theorem Function.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv 
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -1047,12 +1051,11 @@ theorem Function.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv 
       elim_err h; cases h
       exact h_close _
 
-/-- **D1 (rename-image).** Substituting the renaming `userSubst = [ids.zip (map ftvar tgts)]`
+/-- Rename-image: substituting the renaming `userSubst = [ids.zip (map ftvar tgts)]`
     into a monotype `W` whose free vars are all keys (`⊆ ids`) yields a monotype whose free
     vars are all renamed targets (`∈ (ids.zip tgts).map Prod.snd`). When `ids.length ≤
     tgts.length` (coverage), the keys are exactly `ids` and the targets are exactly
-    `func'.typeArgs`. Reduces to the existing `LMonoTy.freeVars_subst_closed` with the fresh
-    set instantiated to `tgts.take ids.length`. -/
+    `func'.typeArgs`. -/
 private theorem freeVars_rename_subset
     (ids tgts : List TyIdentifier) (W : LMonoTy)
     (h_cov : ids.length ≤ tgts.length)
@@ -1105,10 +1108,9 @@ private theorem freeVars_rename_subset
       | cons f frest => rfl
     exact LMonoTy.freeVars_subst_closed (a :: rest) (tgts.take (a :: rest).length) h_len W h_closed v hv
 
-/-- **D2 (coverage).** The distinct free vars of an `LTy.instantiateWithCheck` output number
-    at most the scheme's bound variables. The output's free vars are all freshly generated
-    (`freeVars_subst_closed` + `resolveAliases` doesn't grow freeVars), and the fresh set is
-    nodup with `length = boundVars.length`. -/
+/-- The distinct free vars of an `LTy.instantiateWithCheck` output number
+    at most the scheme's bound variables. The output's free vars are all freshly generated,
+    and the fresh set is nodup with `length = boundVars.length`. -/
 private theorem instantiateWithCheck_freeVars_eraseDups_length_le
     (type : LTy) (C : LContext CoreLParams) (Env : TEnv Unit)
     (monoty : LMonoTy) (Env' : TEnv Unit)
@@ -1261,6 +1263,8 @@ theorem instantiateWithCheck_freeVars_gen_prefixed
   intro v hv
   exact h_inst_gen v (h_ra_sub v hv)
 
+/-- Every free type variable in a type-checked function's signature is declared in
+    `typeArgs` (the `noUndeclaredVars` field of `FuncHasType'`). -/
 theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -1271,7 +1275,7 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -1296,7 +1300,8 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
   have h_in_ids : ∀ v, v ∈ v_inst.fst.freeVars → v ∈ v_inst.fst.freeVars.eraseDups :=
     fun v hv => List.mem_eraseDups.mpr hv
   -- `h_close` works on the whole `subst userSubst (mkArrow' RO ins)` term; its free vars are all in
-  -- `monoty.freeVars` (inputs are destructArrow slices, RO is the reconstructed output), so D1 applies.
+  -- `monoty.freeVars` (inputs are destructArrow slices, RO is the reconstructed output), so
+  -- `freeVars_rename_subset` applies.
   have h_close : ∀ v, v ∈ LMonoTy.freeVars
       (LMonoTy.subst
           [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map (fun x => (x.1, LMonoTy.ftvar x.2))]
@@ -1387,6 +1392,8 @@ theorem Function.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TE
       rw [ListMap.values_eq_map_snd, List.map_map] at hv
       exact h_finish v hv
 
+/-- A type-checked function's body (if present) has the declared output type under
+    `HasTypeA` (the `bodyTyped` field of `FuncHasTypeA`). -/
 theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -1399,7 +1406,7 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -1470,8 +1477,8 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
         | error e => rw [hc] at h_unify; simp [Except.mapError] at h_unify
         | ok w => rw [hc] at h_unify; simp [Except.mapError] at h_unify; rw [h_unify]
       have h_unify_eq := Constraints.unify_sound _ _ _ h_unify' _ List.mem_cons_self
-      -- The full body-typing chain. The renaming is now built directly from
-      -- `v_inst.fst.freeVars.eraseDups` (the new checker shape), with `alphaMap` as the
+      -- The full body-typing chain. The renaming is built directly from
+      -- `v_inst.fst.freeVars.eraseDups`, with `alphaMap` as the
       -- bwd witness for the inverse property.
       have h_chain := bodyTyped_chain v_resolve.fst v_unify.subst
         [(v_inst.fst.freeVars.eraseDups.zip func.typeArgs).map (fun x => (x.1, LMonoTy.ftvar x.2))]
@@ -1510,6 +1517,8 @@ theorem Function.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env :
         subst h_eq'
         exact h_chain
 
+/-- A type-checked function's non-variable measure (if present) has type `int` under
+    `HasTypeA` (the `measureTyped` field of `FuncHasTypeA`). -/
 theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -1523,7 +1532,7 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -1534,9 +1543,9 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
   elim_err h
   rename_i v_inst h_inst
   split at h
-  · -- body = none: the typechecker now rejects a measure on a bodiless function,
+  · -- body = none: the typechecker rejects a measure on a bodiless function,
     -- so on the success path `func.measure = none`, hence `func'.measure = none`
-    -- and the obligation is vacuous.
+    -- and the goal is vacuous.
     rename_i h_body_none
     split at h
     · simp at h
@@ -1660,7 +1669,7 @@ theorem Function.typeCheck_measureTyped_annotated (C : LContext CoreLParams) (En
           rename_i v_measure h_measure_resolve
           elim_err h
           rename_i h_measure_ty
-          -- New anti-refinement guard: the `protectedVars.find?` match. Its
+          -- Anti-refinement guard: the `protectedVars.find?` match. Its
           -- `some v` branch errors; close it and keep the `none` branch.
           elim_err h
           rename_i h_measure_norefine
@@ -1805,7 +1814,7 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -1853,8 +1862,8 @@ theorem Function.typeCheck_noUndeclaredVars_orig (C : LContext CoreLParams) (Env
       · right; left; exact h
     · right; right; exact LMonoTy.freeVars_subset_destructArrow func.output h
 
--- `Function.typeCheck_inverse_components` (the shared per-component alias adapter) now lives in
--- `Strata/Languages/Core/InverseComponents.lean` (proven, 0 sorry). It gains two hypotheses
+-- `Function.typeCheck_inverse_components` (the shared per-component alias adapter) lives in
+-- `Strata/Languages/Core/InverseComponents.lean`. It takes two extra hypotheses
 -- `h_known`/`h_arrow2`, discharged at the call sites below.
 
 /-- **`h_fresh` bridge.** From `TContextAliasEquiv` (the Γ→Γ' direction, giving
@@ -1936,8 +1945,8 @@ theorem Function.hdom_base (Env : TEnv Unit)
 /-- Shared core of the body and measure context-alias proofs, parameterized over the resolution
     context `Γ0` by a `find?`-agreement hypothesis `h_find_eq` against `FORMALS :: ambient`. Given
     that, the three conjuncts (`.aliases`-equality, `TContextAliasEquiv`, and the Γ'→Γ freshness
-    reflection) against `funcContext Env.context func` follow from the renaming `ρ`: Region A
-    (formals) via `region_a_input_lookup`; Region B (ambient) via `h_ambient_mono` + ρ-freshness. -/
+    reflection) against `funcContext Env.context func` follow from the renaming `ρ`: the formals
+    via `formals_scope_input_lookup`; the ambient bindings via `h_ambient_mono` + ρ-freshness. -/
 theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
     (func : Function) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst)
     (Γ0 : TContext Unit)
@@ -1993,7 +2002,7 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
         (List.map (fun p => (p.fst, LTy.forAll [] p.snd))
           (func.inputs.keys.zip (List.take func.inputs.keys.length v_inst.fst.destructArrow))) x with
     | some tyF =>
-      -- Region A (formals scope).
+      -- Formals scope.
       rw [h_formals] at h1
       simp only [Option.some.injEq] at h1
       have h_mem := Map.find?_mem _ x tyF h_formals
@@ -2017,7 +2026,7 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
           ((List.take func.inputs.keys.length v_inst.fst.destructArrow).map (LMonoTy.subst ρ))
           (func.inputs.map Prod.snd) := by
         rw [← ListMap.values_eq_map_snd]; exact h_ae_ins
-      obtain ⟨mty', h_find', h_ae'⟩ := region_a_input_lookup func.inputs
+      obtain ⟨mty', h_find', h_ae'⟩ := formals_scope_input_lookup func.inputs
         (List.take func.inputs.keys.length v_inst.fst.destructArrow) (LMonoTy.subst ρ) x p.2
         h_len h_ae_ins' h_fmls'
       refine ⟨LMonoTy.subst ρ p.2, mty', h_ty_final, ?_, AliasEquiv.symm h_ae'⟩
@@ -2025,7 +2034,7 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
       simp only [Maps.push, Maps.find?]
       rw [h_find']
     | none =>
-      -- Region B (ambient scope).
+      -- Ambient scope.
       rw [h_formals] at h1
       simp only [] at h1
       have h_bv : LTy.boundVars ty1 = [] := h_ambient_mono ty1 (Maps.find?_mem_values _ h1)
@@ -2086,9 +2095,9 @@ theorem Function.contextAliasEquiv_base (Env : TEnv Unit)
 
 /-- The context-alias facts for `Γ_inst = ((FORMALS :: ambient).subst v_unify.subst).subst
     renameSubst`, shared by the body and measure instantiated lemmas. Proves `h_find_eq` (the inner
-    `v_unify`+`renameSubst` layers are the identity on visible bindings: Region A formals via the
-    alpha-equiv roundtrip, Region B ambient via the rigid + generalization guards) and delegates the
-    ρ-walk to `contextAliasEquiv_base`. -/
+    `v_unify`+`renameSubst` layers are the identity on visible bindings: the formals via the
+    alpha-equiv roundtrip, the ambient bindings via the rigid + generalization guards) and delegates
+    the ρ-walk to `contextAliasEquiv_base`. -/
 theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst)
     (v_unify : SubstInfo) (bwdMap : Std.HashMap TyIdentifier TyIdentifier)
@@ -2144,7 +2153,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
     rw [h_ctx_eq]
   -- Body-specific obligation: the inner `v_unify`+`renameSubst` layers are the identity
   -- on every visible binding, so `Γ_inst.types` agrees with the base context at every key.
-  -- Region A (formals) uses the alpha-equiv roundtrip; Region B (ambient) uses the rigid check +
+  -- The formals use the alpha-equiv roundtrip; the ambient bindings use the rigid check +
   -- generalization guard. The ρ-walk + funcContext matching is delegated to `contextAliasEquiv_base`.
   have h_find_eq : ∀ x,
       Maps.find? Γ_inst.types x = Maps.find? (FORMALS :: Env.context.types) x := by
@@ -2170,7 +2179,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
       have h_id : LTy.subst renameSubst (LTy.subst v_unify.subst ty0) = ty0 := by
         cases h_formals : Map.find? FORMALS x with
         | some tyF =>
-          -- Region A (formals scope).
+          -- Formals scope.
           rw [h_formals] at h_base
           simp only [Option.some.injEq] at h_base
           subst h_base
@@ -2188,7 +2197,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
               v_inst.fst.freeVars.eraseDups (fun v => List.mem_eraseDups) (eraseDups_Nodup _) h_sub
           rw [h_tyF, LTy.subst_forAll_nil, LTy.subst_forAll_nil, h_round]
         | none =>
-          -- Region B (ambient scope).
+          -- Ambient scope.
           rw [h_formals] at h_base
           simp only [] at h_base
           have h_bv : LTy.boundVars ty0 = [] := h_ambient_mono ty0 (Maps.find?_mem_values _ h_base)
@@ -2220,7 +2229,7 @@ theorem Function.contextAliasEquiv_facts (C : LContext CoreLParams) (Env : TEnv 
                   x (LTy.forAll [] mty0) k h_find_subst
                   (by rw [LTy.freeVars, List.removeAll_nil]; exact hk_fv)
                 simpa only [TContext.knownTypeVars] using hh
-              -- New shape: a key `k` of `renameMap` has a preimage `x' ∈ freeVars v_inst.fst`
+              -- A key `k` of `renameMap` has a preimage `x' ∈ freeVars v_inst.fst`
               -- with `subst v_unify (ftvar x') = ftvar k`, so `k` is free in `subst v_unify v_inst.fst`.
               have hk_keys' : k ∈ Map.keys (renameMap v_unify.subst v_inst.fst.freeVars.eraseDups) := by
                 unfold Maps.keys at hk_key
@@ -2345,11 +2354,11 @@ theorem Function.bodyComposite_wf_hyps
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit)
     (v_unify : SubstInfo) (ρ₀ : SubstOne)
     (h_type : func.type = .ok type)
-    -- C1/C2 raw, from the strengthened `LTy_instantiateWithCheck_inverse` (ρ₀-contract):
+    -- The ρ₀-contract, from `LTy_instantiateWithCheck_inverse`:
     (h_ρ₀_range : ∀ v, v ∈ Subst.freeVars [ρ₀] → v ∈ LTy.boundVars type)
     (h_ρ₀_cover : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∈ Map.keys ρ₀)
     -- `vunify_avoids_typeArgs` outputs (keys + range of v_unify avoid typeArgs) and the
-    -- instantiation-side closure `hA` (freeVars v_inst.fst avoid typeArgs). `hUT` is derived.
+    -- instantiation-side closure (freeVars v_inst.fst avoid typeArgs).
     (hVU : ∀ k, k ∈ Maps.keys v_unify.subst → k ∉ func.typeArgs)
     (hVUr : ∀ k, k ∈ Subst.freeVars v_unify.subst → k ∉ func.typeArgs)
     (hA : ∀ v, v ∈ LMonoTy.freeVars v_inst.fst → v ∉ func.typeArgs) :
@@ -2413,7 +2422,7 @@ theorem Function.bodyComposite_wf
       exact hUT k hk_fv hk_ta
   -- hcover: every key of the inner composite that occurs in its own range is an instantiation
   -- var (hence covered by ρ₀). The self-referential characterization `hSelf` is direct from the
-  -- new `renameMap` value characterization (values are `ftvar x`, `x ∈ freeVars v_inst.fst`).
+  -- `renameMap` value characterization (values are `ftvar x`, `x ∈ freeVars v_inst.fst`).
   have hSelf : ∀ k, k ∈ Maps.keys (Subst.compose rs₀ v_unify.subst) →
       k ∈ Subst.freeVars (Subst.compose rs₀ v_unify.subst) →
       k ∈ LMonoTy.freeVars v_inst.fst := by
@@ -2695,19 +2704,17 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
-    -- TODO(preservation): no context alias is named `"arrow"` (so resolution distributes over the
-    -- arrow spine). Enforced by `TEnv.addTypeAlias` (rejects names colliding with `C.knownTypes`).
+    -- No context alias is named `"arrow"` (so resolution distributes over the arrow
+    -- spine). Enforced by `TEnv.addTypeAlias` (rejects names colliding with `C.knownTypes`).
     (h_aliases_not_known :
       ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
-    -- TODO(preservation): ambient bindings' free tyvars are rigid (ambient region of `TContextAliasEquiv`).
-    -- Established by ProcedureType.setupInputEnv; preserved by checkAnnotCompat/goBlock; vacuous at top level.
+    -- Ambient bindings' free tyvars are rigid (ambient region of `TContextAliasEquiv`).
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    -- TODO(preservation): ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
-    -- Established by setupInputEnv + CmdType var-decls; preserved by checkAnnotCompat/goBlock; vacuous at top level.
+    -- Ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
     (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
-    -- TODO(preservation): aliases are non-dropping (enforced by the `TEnv.addTypeAlias` phantom-arg
-    -- guard); makes `AliasEquiv` free-var preserving, needed by `HasType_context_aliasEquiv`'s `tgen`.
+    -- Aliases are non-dropping (enforced by the `TEnv.addTypeAlias` phantom-arg guard);
+    -- makes `AliasEquiv` free-var preserving, needed by `HasType_context_aliasEquiv`'s `tgen`.
     (h_ali_nd : AliasesNonDropping Env.context.aliases)
     (h_arrow_wf : ArrowKnownBinary C) :
     ∀ body, func.body = some body →
@@ -2756,7 +2763,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
   rename_i bwdMap h_alpha
   -- Extract the rigid-typevar check from `h` before discarding it: the typechecker
   -- only reaches `.ok` when `List.find? (subst ≠ id) rigidTypeVars = none`, i.e. `v_unify.subst`
-  -- fixes every rigid type variable. (Needed for Region B of the context-alias conjunct.)
+  -- fixes every rigid type variable. (Needed for the ambient part of the context-alias conjunct.)
   have h_rigid_fixed : ∀ v ∈ C.rigidTypeVars,
       LMonoTy.subst v_unify.subst (LMonoTy.ftvar v) = LMonoTy.ftvar v := by
     intro v hv
@@ -2770,7 +2777,7 @@ theorem Function.typeCheck_bodyTyped_instantiated (C : LContext CoreLParams) (En
       simpa only [TEnv.updateSubst] using h_all
   -- Extract the generalization guard from `h`: the typechecker only reaches `.ok` when
   -- no to-be-generalized var (free in `subst v_unify.subst v_inst.fst`) is also free in the
-  -- substituted ambient context. (Needed for Region B B1b: `renameSubst` keys lie in that
+  -- substituted ambient context. (Needed for the ambient part: `renameSubst` keys lie in that
   -- generalized-var set, hence are disjoint from ambient free vars.)
   have h_rigid_none : List.find?
       (fun v => LMonoTy.subst (v_resolve.snd.updateSubst v_unify).stateSubstInfo.subst
@@ -3038,15 +3045,15 @@ theorem Function.typeCheck_bodyTyped (C : LContext CoreLParams) (Env : TEnv Unit
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
-    -- TODO(preservation): no context alias is named `"arrow"` (so resolution distributes over the arrow spine).
+    -- No context alias is named `"arrow"` (so resolution distributes over the arrow spine).
     (h_aliases_not_known :
       ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
-    -- TODO(preservation): ambient bindings' free tyvars are rigid.
+    -- Ambient bindings' free tyvars are rigid.
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    -- TODO(preservation): ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
+    -- Ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
     (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
-    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    -- Aliases non-dropping (see `typeCheck_bodyTyped_instantiated`).
     (h_ali_nd : AliasesNonDropping Env.context.aliases)
     (h_arrow_wf : ArrowKnownBinary C) :
     ∀ body, func.body = some body →
@@ -3131,15 +3138,15 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
-    -- TODO(preservation): no context alias is named `"arrow"` (so resolution distributes over the arrow spine).
+    -- No context alias is named `"arrow"` (so resolution distributes over the arrow spine).
     (h_aliases_not_known :
       ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
-    -- TODO(preservation): ambient bindings' free tyvars are rigid.
+    -- Ambient bindings' free tyvars are rigid.
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    -- TODO(preservation): ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
+    -- Ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
     (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
-    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    -- Aliases non-dropping (see `typeCheck_bodyTyped_instantiated`).
     (h_ali_nd : AliasesNonDropping Env.context.aliases)
     (h_arrow_wf : ArrowKnownBinary C) :
     ∀ m, func.measure = some m →
@@ -3159,7 +3166,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -3194,7 +3201,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     rename_i alphaMap h_alphaMap
     elim_err h
     rename_i bwdMap h_alpha
-    -- Extract the rigid-typevar check (Region B of the context-alias conjunct).
+    -- Extract the rigid-typevar check (the ambient part of the context-alias conjunct).
     have h_rigid_fixed : ∀ v ∈ C.rigidTypeVars,
         LMonoTy.subst v_unify.subst (LMonoTy.ftvar v) = LMonoTy.ftvar v := by
       intro v hv
@@ -3234,7 +3241,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
     -- outer match reduces to the `some` arm.
     rw [h_measure] at h
     simp only at h
-    -- The measure resolves (`h_measure_resolve`); the int check and the new
+    -- The measure resolves (`h_measure_resolve`); the int check and the
     -- refine-guard both pass on the success path.
     elim_err h
     rename_i v_measure h_measure_resolve
@@ -3320,7 +3327,7 @@ theorem Function.typeCheck_measureTyped_instantiated (C : LContext CoreLParams) 
       simp only [bne_iff_ne, ne_eq, Decidable.not_not] at h_measure_int
       exact h_measure_int
     rw [h_core.2.1, h_int] at h_sm_typed
-    -- L1b: `Sm` is the identity on every visible binding of the measure-base context
+    -- `Sm` is the identity on every visible binding of the measure-base context
     -- (`h_measure_norefine`: `Sm` fixes every var in `v_inst.fst.freeVars.eraseDups ++
     -- C.rigidTypeVars`, ⊇ all free vars of the formals/ambient context).
     have h_find_eq : ∀ x,
@@ -3493,15 +3500,15 @@ theorem Function.typeCheck_measureTyped (C : LContext CoreLParams) (Env : TEnv U
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
-    -- TODO(preservation): no context alias is named `"arrow"` (so resolution distributes over the arrow spine).
+    -- No context alias is named `"arrow"` (so resolution distributes over the arrow spine).
     (h_aliases_not_known :
       ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
-    -- TODO(preservation): ambient bindings' free tyvars are rigid.
+    -- Ambient bindings' free tyvars are rigid.
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    -- TODO(preservation): ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
+    -- Ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
     (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
-    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    -- Aliases non-dropping (see `typeCheck_bodyTyped_instantiated`).
     (h_ali_nd : AliasesNonDropping Env.context.aliases)
     (h_arrow_wf : ArrowKnownBinary C) :
     ∀ m, func.measure = some m →
@@ -3553,7 +3560,7 @@ theorem Function.typeCheck_context_eq (C : LContext CoreLParams) (Env : TEnv Uni
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -3648,7 +3655,7 @@ theorem Function.typeCheck_absorbs (C : LContext CoreLParams) (Env : TEnv Unit)
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -3758,7 +3765,7 @@ theorem Function.typeCheck_tyGen_mono (C : LContext CoreLParams) (Env : TEnv Uni
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -3849,7 +3856,7 @@ theorem Function.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env :
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -3913,12 +3920,8 @@ theorem Function.typeCheck_preserves_rigid_inv (C : LContext CoreLParams) (Env :
       · elim_err h; cases h; rw [h_ret_subst]; exact h_fixed
 
 /-- Output-type gen-freshness for `resolve`, needing only `TEnvWF` (no
-    `AliasesResolved`). This is exactly the third conjunct of
-    `Lambda.resolve_properties`, whose proof of that conjunct never touches the
-    `AliasesResolved` hypothesis: it follows from `resolveAux_properties`'
-    `preserves` field alone. We reproduce it here because the call site
-    (`Function.typeCheck_TEnvWF`) has no `AliasesResolved Env.context`
-    hypothesis, so the bundled `resolve_properties` is unavailable. -/
+    `AliasesResolved`). Reproduces the third conjunct of `Lambda.resolve_properties`
+    without its `AliasesResolved` hypothesis, which the call site lacks. -/
 theorem resolve_output_freeVars_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (e : LExpr CoreLParams.mono) (et : LExprT CoreLParams.mono)
     (h : LExpr.resolve C Env e = .ok (et, Env'))
@@ -3975,7 +3978,7 @@ theorem Function.typeCheck_TEnvWF (C : LContext CoreLParams) (Env : TEnv Unit)
     elim_err h
     rename_i type h_type
     elim_err h with h_genprefix
-    elim_err h  -- isConstr guard (added by main's DecidableEq split)
+    elim_err h  -- isConstr guard
     elim_err h
     elim_err h
     elim_err h
@@ -4166,15 +4169,15 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
-    -- TODO(preservation): no context alias is named `"arrow"` (so resolution distributes over the arrow spine).
+    -- No context alias is named `"arrow"` (so resolution distributes over the arrow spine).
     (h_aliases_not_known :
       ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
-    -- TODO(preservation): ambient bindings' free tyvars are rigid.
+    -- Ambient bindings' free tyvars are rigid.
     (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
       ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
-    -- TODO(preservation): ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
+    -- Ambient bindings are monomorphic (`forAll []`), as `TContextAliasEquiv` requires.
     (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
-    -- TODO(preservation): aliases non-dropping; see `typeCheck_bodyTyped_instantiated`.
+    -- Aliases non-dropping (see `typeCheck_bodyTyped_instantiated`).
     (h_ali_nd : AliasesNonDropping Env.context.aliases)
     (h_arrow_wf : ArrowKnownBinary C) :
     FuncHasType C Env.context func := by
@@ -4186,26 +4189,18 @@ theorem Function.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     measureTyped := Function.typeCheck_measureTyped C Env func func' Env' h h_wf h_fwf h_resolved h_aliases_not_known h_ambient_rigid h_ambient_mono h_ali_nd h_arrow_wf
   }
 
--- Deferred (pre-existing, off the annotated `Procedure.typeCheck_annotated_sound` deliverable
--- path). Kept as a `sorry`; demote `warningAsError` locally so the file still builds now that
--- the proof chain is in the default target via `Strata.lean`.
+-- Currently `sorry`; `warningAsError` demoted locally so the file still builds.
 set_option warningAsError false in
 /--
-**DEFERRED (single outstanding `sorry`).** Output-oriented polymorphic soundness: the
-type-checked *output* function `func'` (the one `Function.typeCheck` produces and that a
-statement-level `funcDecl` registers into the context via `addFactoryFunction`) satisfies
-`FuncHasType` at any ambient `Γ`. This mirrors the annotated twin
-`Function.typeCheck_annotated_sound` (which concludes about `func'`), whereas
+Output-oriented polymorphic soundness: the type-checked *output* function `func'` (the one
+`Function.typeCheck` produces and that a statement-level `funcDecl` registers into the context
+via `addFactoryFunction`) satisfies `FuncHasType` at any ambient `Γ`. This mirrors the
+annotated twin `Function.typeCheck_annotated_sound` (which concludes about `func'`), whereas
 `Function.typeCheck_sound` above concludes about the *input* `func`.
 
-It is the ONE remaining gap for `Statement`-level polymorphic soundness (obligation C's
-`funcDecl` case): `go` registers `func'`, so the `StmtHasType'.funcDecl` node needs
-`FuncHasType C Γ func'`, not `FuncHasType C Γ func`. `func'` has the monomorphized/renamed
-signature and the resolved body; proving `FuncHasType` about it requires relating the
-`resolve`/instantiation output back through the checker's transforms (or an
-`HasTypeA(func')`+`OpsConsistent`+`fvars_annotated_by` → `HasType` bridge with the three extra
-well-formedness hyps identified in the investigation). Deferred by design; see
-`STMT_FUNCDECL_REMAINING.md`. Everything else in the statement-soundness chain is proved against this. -/
+Needed for `Statement`-level polymorphic soundness in the `funcDecl` case: `go` registers
+`func'`, so the `StmtHasType'.funcDecl` node needs `FuncHasType C Γ func'`, not
+`FuncHasType C Γ func`. Currently `sorry`. -/
 theorem Function.typeCheck_HasType_output (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))
@@ -4233,7 +4228,7 @@ theorem Function.typeCheck_isConstr_preserved
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -4311,7 +4306,7 @@ theorem Function.typeCheck_typeArgs_subset (C : LContext CoreLParams) (Env : TEn
   elim_err h
   rename_i type h_type
   elim_err h with h_genprefix
-  elim_err h  -- isConstr guard (added by main's DecidableEq split)
+  elim_err h  -- isConstr guard
   elim_err h
   elim_err h
   elim_err h
@@ -4359,14 +4354,12 @@ theorem Function.typeCheck_typeArgs_subset (C : LContext CoreLParams) (Env : TEn
     · elim_err h; cases h; exact h_close _
 
 /-- **Bridge: a successfully type-checked function is `LFuncWF`.**
-    If `Function.typeCheck` succeeds, the resulting `func'` (lifted into an `LFunc` via
-    `toLFunc`, exactly as the checker registers it) satisfies the structural
-    well-formedness predicate `LFuncWF`. Since `toLFunc` attaches no `concreteEval`, the
-    evaluation-level fields of `LFuncWF` hold by their structure defaults; only the
-    `FuncWF` type-structure fields need proof. The closedness fields (`body_freevars`,
-    `precond_freevars`) are NOT part of `LFuncWF` — they live in `LFuncClosed`, which
-    does not hold of freshly typechecked functions (their body may reference the ambient
-    lexical scope). -/
+    If `Function.typeCheck` succeeds, the resulting `func'` (lifted via `toLFunc`, as the
+    checker registers it) satisfies the structural well-formedness predicate `LFuncWF`.
+    Since `toLFunc` attaches no `concreteEval`, only the `FuncWF` type-structure fields
+    need proof. The closedness fields are NOT part of `LFuncWF` — they live in
+    `LFuncClosed`, which does not hold of freshly typechecked functions (their body may
+    reference the ambient lexical scope). -/
 theorem Function.typeCheck_LFuncWF (C : LContext CoreLParams) (Env : TEnv Unit)
     (func func' : Function) (Env' : TEnv Unit)
     (h : Function.typeCheck C Env func = .ok (func', Env'))

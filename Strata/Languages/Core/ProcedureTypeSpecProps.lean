@@ -24,14 +24,12 @@ declarative relation `ProcHasType'` from `ProcedureTypeSpec.lean`. Procedure-lev
 analogue of `FunctionTypeSpecProps.lean` / `StatementTypeSpecProps.lean`.
 
 * **Annotated** `Procedure.typeCheck_annotated_sound`: success ⇒ the OUTPUT
-  procedure `proc'` satisfies `ProcHasTypeA` (for any ambient `Γ`, since the
-  annotated judgment is context-free).
+  procedure `proc'` satisfies `ProcHasTypeA` at the body type-scope `Env'.context`.
 * **Polymorphic** `Procedure.typeCheck_sound`: success ⇒ the INPUT procedure
   `proc` satisfies `ProcHasType` in the ambient `Env.context`.
 
 The body obligation delegates to the already-proved statement soundness theorems
-(`Statement.typeCheck_{annotated_sound,sound}`) plus a context bridge; see
-`PROC_TYPE_SOUND_PLAN.md`.
+(`Statement.typeCheck_{annotated_sound,sound}`) plus a context bridge.
 -/
 
 namespace Core
@@ -40,14 +38,14 @@ namespace TypeSpec
 open Lambda LExpr Imperative
 open Core.Statement
 
-/-! ### Group P — procedure-entry well-formedness preservation
+/-! ### Procedure-entry well-formedness preservation
 
 Lemmas showing the body-typing environment `envForBody` inside `Procedure.typeCheck`
 is well-formed, built by composing the per-step preservation primitives across
 `setupInputEnv` / `typeCheckConditions` / etc. These discharge the WF hypotheses of
 `Statement.typeCheck_{sound,annotated_sound}` when it is invoked on the procedure body. -/
 
--- TEnvWF preserved through typeCheckConditions.go (structural recursion over conditions).
+/-- `TEnvWF` is preserved through `typeCheckConditions.go`. -/
 theorem typeCheckConditions_go_TEnvWF (C : Core.Expression.TyContext) (procName : CoreIdent)
     (conds : List (CoreLabel × Core.Procedure.Check)) (acc : Array Expression.Expr)
     (Env : Core.Expression.TyEnv) (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -75,8 +73,8 @@ theorem typeCheckConditions_go_TEnvWF (C : Core.Expression.TyContext) (procName 
           Lambda.resolve_TEnvWF condition.expr annotatedExpr C Env newEnv h_res h_wf h_fwf
         exact ih (acc.push annotatedExpr.unresolved) newEnv h h_newwf
 
--- resolve preserves the full context when the input context is nonempty
--- (the empty-init guard `if types.isEmpty then ... else Env` is a no-op).
+/-- `resolve` preserves the full context when the input context is nonempty (the
+    empty-init guard is a no-op). -/
 theorem resolve_context_eq_of_ne (C : Core.Expression.TyContext) (Env Env' : Core.Expression.TyEnv)
     (e : Expression.Expr) (et : LExprT CoreLParams.mono)
     (h : Lambda.LExpr.resolve C Env e = .ok (et, Env'))
@@ -103,7 +101,8 @@ theorem resolve_context_eq_of_ne (C : Core.Expression.TyContext) (Env Env' : Cor
     exact (resolveAux_properties e et' C Env Env_out h_res h_ne
       h_wf.aliasesWF h_fwf h_wf.substFreshForGen h_wf.ctxFreshForGen h_wf.boundVarsFresh).context
 
--- typeCheckConditions.go preserves the whole context (hence types≠[], ContextMono, AliasesResolved).
+/-- `typeCheckConditions.go` preserves the whole context (hence `types ≠ []`, `ContextMono`,
+    `AliasesResolved`). -/
 theorem typeCheckConditions_go_context (C : Core.Expression.TyContext) (procName : CoreIdent)
     (conds : List (CoreLabel × Core.Procedure.Check)) (acc : Array Expression.Expr)
     (Env : Core.Expression.TyEnv) (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -136,7 +135,7 @@ theorem typeCheckConditions_go_context (C : Core.Expression.TyContext) (procName
         have h_rec := ih (acc.push annotatedExpr.unresolved) newEnv h h_newwf h_newne
         rw [h_rec, h_ctx]
 
--- Top-level typeCheckConditions wrappers (strip the `go` accumulator).
+/-- Top-level wrapper: `typeCheckConditions` preserves `TEnvWF`. -/
 theorem typeCheckConditions_TEnvWF (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Core.Procedure.Check) (procName : CoreIdent)
     (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -147,6 +146,7 @@ theorem typeCheckConditions_TEnvWF (C : Core.Expression.TyContext) (Env : Core.E
   simp only [Core.Procedure.typeCheckConditions] at h
   exact typeCheckConditions_go_TEnvWF C procName conditions #[] Env res h h_wf h_fwf
 
+/-- Top-level wrapper: `typeCheckConditions` preserves the whole context. -/
 theorem typeCheckConditions_context (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Core.Procedure.Check) (procName : CoreIdent)
     (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -158,7 +158,7 @@ theorem typeCheckConditions_context (C : Core.Expression.TyContext) (Env : Core.
   simp only [Core.Procedure.typeCheckConditions] at h
   exact typeCheckConditions_go_context C procName conditions #[] Env res h h_wf h_ne h_fwf
 
--- setupInputEnv: TEnvWF preservation (pushEmptyContext → instantiateWithSubst → addInNewestContext).
+/-- `setupInputEnv` preserves `TEnvWF`. -/
 theorem setupInputEnv_TEnvWF (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (res : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -221,7 +221,7 @@ theorem setupInputEnv_AliasesResolved (C : Core.Expression.TyContext) (Env : Cor
     exact TContext.AliasesResolved.of_addInNewestContext (T := CoreLParams) Env₁
       (Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig) h_inst_resolved
 
-/-! ### Group P (cont.) — body-env WF cluster (postEnv_wf / procBodyEnv_wf) and
+/-! ### Body-env WF cluster (postEnv_wf / procBodyEnv_wf) and
     the alias/nonempty preservation lemmas they and `noUndeclaredVars` rely on. -/
 
 mutual
@@ -245,6 +245,8 @@ theorem LMonoTy_resolveAliases_env_local (mty : LMonoTy) (Env : Core.Expression.
       (simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
        rw [← h.2]
        exact LMonoTys_resolveAliases_env_local args Env args' Env1 h_args)
+
+/-- `LMonoTys.resolveAliases` leaves the environment unchanged. -/
 theorem LMonoTys_resolveAliases_env_local (mtys : LMonoTys) (Env : Core.Expression.TyEnv)
     (mtys' : LMonoTys) (Env' : Core.Expression.TyEnv)
     (h : LMonoTys.resolveAliases mtys Env = .ok (mtys', Env')) : Env' = Env := by
@@ -266,6 +268,7 @@ theorem LMonoTys_resolveAliases_env_local (mtys : LMonoTys) (Env : Core.Expressi
         LMonoTy_resolveAliases_env_local mty Env mty' Env1 h_hd]
 end
 
+/-- `addInNewestContext` keeps the type-scope stack non-empty. -/
 theorem addInNewestContext_types_ne (Env : Core.Expression.TyEnv) (m : Map CoreLParams.Identifier LTy)
     (h : Env.context.types ≠ []) :
     (Env.addInNewestContext m).context.types ≠ [] := by
@@ -303,6 +306,7 @@ theorem setupInputEnv_types_ne (C : Core.Expression.TyContext) (Env : Core.Expre
     show (Env₁.addInNewestContext (Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig)).context.types ≠ []
     exact addInNewestContext_types_ne Env₁ _ h_env1_ne
 
+/-- `typeCheckConditions` preserves `AliasesWF`. -/
 theorem typeCheckConditions_AliasesWF (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Core.Procedure.Check) (procName : CoreIdent)
     (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -316,7 +320,7 @@ theorem typeCheckConditions_AliasesWF (C : Core.Expression.TyContext) (Env : Cor
   rw [h_ctx]
   exact h_wf.aliasesWF
 
--- (2) AliasesWF preservation through setupInputEnv (aliases unchanged from Env).
+/-- `AliasesWF` is preserved through `setupInputEnv` (aliases unchanged from `Env`). -/
 theorem setupInputEnv_AliasesWF (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (res : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -348,8 +352,8 @@ theorem setupInputEnv_AliasesWF (C : Core.Expression.TyContext) (Env : Core.Expr
     simp only [TContext.AliasesWF, h_aliases]
     exact h_inst_aw
 
--- (3) Corollary: exact discharge for the noUndeclaredVars call site.
--- Mirrors the in-scope hyps at ProcedureTypeSpecProps.lean:519.
+/-- `AliasesWF` at the pre-condition-checked env (`v_pre.2`), the form the `noUndeclaredVars`
+    call site needs. -/
 theorem pre_env_AliasesWF
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
@@ -415,7 +419,7 @@ theorem checkTypeArgsWF_props (proc : Procedure) (fr : Strata.FileRange) (v : Un
 
 /-! ### Freshness lemmas for `postEnv_wf`'s two `of_addInNewestContext_mono` obligations. -/
 
--- A list is a prefix of itself appended with anything (for the gen-prefix bridge).
+/-- A list is a prefix of itself appended with anything. -/
 private theorem list_isPrefixOf_append_left {α} [BEq α] [LawfulBEq α] (xs ys : List α) :
     xs.isPrefixOf (xs ++ ys) = true := by
   induction xs with
@@ -423,7 +427,7 @@ private theorem list_isPrefixOf_append_left {α} [BEq α] [LawfulBEq α] (xs ys 
   | cons a rest ih =>
     simp only [List.cons_append, List.isPrefixOf, beq_self_eq_true, Bool.true_and]; exact ih
 
--- Bridge: a name that is not gen-prefixed cannot equal any `tyPrefix ++ toString n`.
+/-- A name that is not gen-prefixed cannot equal any `tyPrefix ++ toString n`. -/
 private theorem not_prefix_ne_gen (ta : String)
     (h : ¬ Lambda.TState.tyPrefix.toList.isPrefixOf ta.toList) :
     ∀ n : Nat, ta ≠ Lambda.TState.tyPrefix ++ toString n := by
@@ -432,6 +436,8 @@ private theorem not_prefix_ne_gen (ta : String)
   rw [heq, String.toList_append]
   exact list_isPrefixOf_append_left _ _
 
+/-- Shape and freshness of `setupInputEnv`'s substitution: it is a single scope mapping
+    the type args to distinct, gen-fresh, gen-prefixed fresh variables. -/
 theorem setupInputEnv_shape_fresh
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
@@ -444,7 +450,6 @@ theorem setupInputEnv_shape_fresh
         ∀ n, n ≥ v_setup.2.fst.genEnv.genState.tyGen → tv ≠ TState.tyPrefix ++ toString n) ∧
       freshtvs.Nodup ∧
       (∀ tv, tv ∈ freshtvs → ∃ k : Nat, tv = TState.tyPrefix ++ toString k) := by
-  -- Decompose setupInputEnv: pushEmptyContext (gen unchanged), instantiateWithSubst, addInNewest.
   simp only [Core.Procedure.setupInputEnv, Bind.bind, Except.bind, Except.mapError, pure,
     Except.pure] at h_setup
   cases h_inst : Lambda.LMonoTySignature.instantiateWithSubst C Env.pushEmptyContext
@@ -455,7 +460,6 @@ theorem setupInputEnv_shape_fresh
     rw [h_inst] at h_setup
     simp only [Except.ok.injEq] at h_setup
     subst h_setup
-    -- Peel instantiateWithSubst into instantiateEnvWithSubst (genTyVars) + go loop.
     simp only [Lambda.LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h_inst
     elim_err h_inst with v_env h_env; obtain ⟨mtys, Env_e, S⟩ := v_env
     elim_err h_inst with v_go h_go; obtain ⟨newtys, Env₂⟩ := v_go
@@ -479,29 +483,21 @@ theorem setupInputEnv_shape_fresh
       show tyArgSubst = _
       rw [← h_S2]; exact h_S
     case _fresh =>
-      -- v_setup.2.1 = Env₁.addInNewestContext _ (gen unchanged), and Env₁ = Env₂ from the go loop.
-      -- gen chain: genEnv'.gen ≤ Env₂.gen = v_setup.2.1.gen.
       show ∀ tv, tv ∈ freshtvs →
         ∀ n, n ≥ (inp_mty_sig, Env₁.addInNewestContext
           (Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig), tyArgSubst).2.1.genEnv.genState.tyGen →
           tv ≠ TState.tyPrefix ++ toString n
       intro tv h_tv n hn
-      -- addInNewestContext preserves genState.
       have h_gen_add : (Env₁.addInNewestContext
           (Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig)).genEnv.genState = Env₁.genEnv.genState := rfl
-      -- Env₁ = Env₂ (from instantiateWithSubst go-loop output).
       have h_env1_eq : Env₁ = Env₂ := by rw [← h_env2]
-      -- gen mono across go loop: Env₂.gen ≥ Env_e.gen; and Env_e.genEnv = genEnv'.
       have h_go_mono : Env₂.genEnv.genState.tyGen ≥ Env_e.genEnv.genState.tyGen :=
         instantiateWithSubst_go_genState_mono C _ Env_e (newtys, Env₂) h_go
-      -- Env_e.genEnv = genEnv' (from decompose: result.2.1.genEnv = genEnv').
       have h_ene_gen : Env_e.genEnv = genEnv' := h_genEnv
-      -- genTyVars fresh at genEnv'.genState.
       have h_gf : ∀ tv', tv' ∈ freshtvs →
           ∀ m, m ≥ genEnv'.genState.tyGen → tv' ≠ TState.tyPrefix ++ toString m :=
         genTyVars_genFresh' (T := CoreLParams) proc.header.typeArgs.length Env.pushEmptyContext.genEnv
           freshtvs genEnv' h_gen
-      -- Assemble: n ≥ v_setup.gen = Env₁.gen = Env₂.gen ≥ Env_e.gen = genEnv'.gen.
       simp only [h_gen_add] at hn
       have h_n_gen : n ≥ genEnv'.genState.tyGen := by
         rw [h_env1_eq] at hn
@@ -509,7 +505,7 @@ theorem setupInputEnv_shape_fresh
         omega
       exact h_gf tv h_tv n h_n_gen
 
--- typeCheckConditions.go never decreases the gen counter.
+/-- `typeCheckConditions.go` never decreases the gen counter. -/
 theorem typeCheckConditions_go_genState_mono
     (C : Core.Expression.TyContext) (procName : CoreIdent)
     (conds : List (CoreLabel × Core.Procedure.Check)) (acc : Array Expression.Expr)
@@ -545,7 +541,7 @@ theorem typeCheckConditions_go_genState_mono
         have h_rec := ih (acc.push annotatedExpr.unresolved) newEnv h h_newwf h_newne
         omega
 
--- typeCheckConditions never decreases the gen counter.
+/-- `typeCheckConditions` never decreases the gen counter. -/
 theorem typeCheckConditions_genState_mono
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (conditions : ListMap CoreLabel Core.Procedure.Check) (procName : CoreIdent)
@@ -612,11 +608,8 @@ private theorem go_freeVars_subset (C : LContext CoreLParams) (mtys : LMonoTys) 
         LTy_instantiateWithCheck_context' (LTy.forAll [] m) C Env mt Env_mid h_iwc
       exact ih Env_mid mtrest Env_end h_rest (h_ctx ▸ h_aw) w hw_tl
 
-/-- Closedness of the instantiated input signature values under `freshtvs`:
-    `instantiateWithSubst` computes `mtys = subst [zip typeArgs (map ftvar freshtvs)]
-    sig.values` then runs the `go` loop (non-growing under AliasesWF). So if
-    `sig.values` is closed under `typeArgs`, every output value free var is in
-    `freshtvs`. Inputs analogue of the outputs branch's closedness step. -/
+/-- If `sig.values` is closed under `typeArgs`, then every free var of the
+    `instantiateWithSubst` output values is in `freshtvs`. -/
 private theorem instantiateWithSubst_values_freeVars_closed
     (C : LContext CoreLParams) (Env : TEnv Unit)
     (typeArgs freshtvs : List TyIdentifier) (sig : @LMonoTySignature Unit)
@@ -634,7 +627,6 @@ private theorem instantiateWithSubst_values_freeVars_closed
   elim_err h with v_go h_go; obtain ⟨newtys, Env₂'⟩ := v_go
   simp only [Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨h_sig, h_env2, h_S'⟩ := h
-  -- `values inp_mty_sig` is a sublist of `newtys`, so `w ∈ freeVars newtys`.
   have h_sub : ListMap.values inp_mty_sig ⊆ newtys := by
     rw [← h_sig, ListMap.values_eq_map_snd]
     exact (List.map_snd_zip_sublist (ListMap.keys sig) newtys).subset
@@ -649,7 +641,7 @@ private theorem instantiateWithSubst_values_freeVars_closed
       (mtys.map (fun m => LTy.forAll [] m)) = .ok (newtys, Env₂') := h_go
   have hw_mtys : w ∈ LMonoTys.freeVars mtys :=
     go_freeVars_subset C mtys Env_e newtys Env₂' h_go' h_aw_e w hw_new
-  -- `freshtvs' = freshtvs`: the two substitution scopes agree, `map ftvar` is injective.
+  -- `freshtvs' = freshtvs` since the two substitution scopes agree and `map ftvar` is injective.
   have h_flen' : freshtvs'.length = typeArgs.length :=
     TGenEnv.genTyVars_length typeArgs.length Env.genEnv freshtvs' genEnv' h_gen
   have h_zip_eq : typeArgs.zip (List.map LMonoTy.ftvar freshtvs')
@@ -704,7 +696,8 @@ private theorem setupInputEnv_values_closed
       proc.header.typeArgs freshtvs proc.header.inputs inp_mty_sig Env₁ tyArgSubst
       h_inst h_push_aw h_len h_S h_closed
 
-theorem freshnessA
+/-- The resolved-substituted output signature values are gen-fresh for the output state. -/
+theorem output_sig_values_fresh
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -721,18 +714,14 @@ theorem freshnessA
     (h_aw : TContext.AliasesWF v_pre.2.context) :
     ∀ p ∈ proc.header.outputs.keys.zip v_out.1, ∀ v ∈ LMonoTy.freeVars p.2,
       ∀ n, n ≥ v_out.2.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  -- Shape of the tyArgSubst PLUS gen-freshness of the fresh vars.
   obtain ⟨freshtvs, h_len, h_S, h_fresh_setup, _, _⟩ :=
     setupInputEnv_shape_fresh C Env proc fr v_setup h_setup
-  -- v_out.2 = v_pre.2 (resolveAliases leaves env unchanged).
   have h_vout_env : v_out.2 = v_pre.2 :=
     LMonoTys_resolveAliases_env_local _ v_pre.2 v_out.1 v_out.2 h_ra
-  -- outputs freeVars ⊆ typeArgs.
   have h_ta_props := checkTypeArgsWF_props proc fr () h_ta
   intro p hp v hv n hn
-  -- p.2 ∈ v_out.1.
   have hp_snd : p.2 ∈ v_out.1 := (List.of_mem_zip hp).2
-  -- Closedness: v ∈ freeVars p.2 ⊆ freshtvs (replicate noUndeclaredVars lines 822-847).
+  -- Every free var of an output value is a fresh var (`freeVars ⊆ freshtvs`).
   have h_v_fresh : v ∈ freshtvs := by
     have hw_list : v ∈ LMonoTys.freeVars v_out.1 := LMonoTys.freeVars_mem_subset hp_snd hv
     have hw_pre : v ∈ LMonoTys.freeVars
@@ -745,7 +734,6 @@ theorem freshnessA
         tv ∈ proc.header.typeArgs := fun tv htv => h_ta_props.2.1 tv (List.mem_append_right _ htv)
     exact LMonoTys.freeVars_subst_closed proc.header.typeArgs freshtvs h_len
       (ListMap.values proc.header.outputs) h_out_closed v hw_pre
-  -- gen chain: setup.gen ≤ v_pre.gen = v_out.gen ≤ n.
   have h_setup_wf : TEnvWF (T := CoreLParams) v_setup.2.1 :=
     setupInputEnv_TEnvWF C Env proc fr v_setup h_setup h_wf
   have h_setup_ne : v_setup.2.1.context.types ≠ [] :=
@@ -757,9 +745,9 @@ theorem freshnessA
     rw [h_vout_env] at hn; omega
   exact h_fresh_setup v h_v_fresh n h_n_setup
 
-/-! ### Freshness B -/
+/-! ### Old-inout binding freshness -/
 
-theorem freshnessB
+theorem oldInout_bindings_fresh
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -779,19 +767,15 @@ theorem freshnessB
         (fun (x : CoreIdent × LMonoTy) => (CoreIdent.mkOld x.1.name, x.2)),
       ∀ v ∈ LMonoTy.freeVars p.2,
       ∀ n, n ≥ envWithOutputs.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
-  -- The old-scope values are now the instantiated input signature values `v_setup.1`, whose free
-  -- vars are the setup fresh vars (< setup gen ≤ envWithOutputs gen), so never `$__tyN` for large N.
   obtain ⟨freshtvs, h_len, h_S, h_fresh_setup, _, _⟩ :=
     setupInputEnv_shape_fresh C Env proc fr v_setup h_setup
   have h_ta_props := checkTypeArgsWF_props proc fr () h_ta
   intro p hp v hv n hn
-  -- p = (mkOld x.1.name, x.2) for some x ∈ (v_setup.1.filter ...).
   rw [List.mem_map] at hp
   obtain ⟨x, hx_mem, hx_eq⟩ := hp
   have hp2 : p.2 = x.2 := by rw [← hx_eq]
   rw [hp2] at hv
   have hx_setup := (List.mem_filter.mp hx_mem).1
-  -- x.2 ∈ v_setup.1.values; its free vars ⊆ freshtvs (setupInputEnv_values_closed).
   have hx2_val : x.2 ∈ ListMap.values v_setup.1 := by
     rw [ListMap.values_eq_map_snd, List.mem_map]
     exact ⟨x, hx_setup, rfl⟩
@@ -799,9 +783,10 @@ theorem freshnessB
     setupInputEnv_values_closed C Env proc fr v_setup freshtvs h_setup h_wf h_len h_S
       (fun tv htv => h_ta_props.2.1 tv (List.mem_append_left _ htv)) v
       (LMonoTys.freeVars_mem_subset hx2_val hv)
-  -- gen chain: setup.gen ≤ envWithOutputs.gen ≤ n.
   exact h_fresh_setup v h_v_fresh n (by omega)
 
+/-- The body environment after adding outputs and old-inout bindings (`E4`) is well-formed:
+    `TEnvWF`, non-empty type-scope, and `AliasesResolved`. -/
 theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -827,10 +812,8 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     E4.context.types ≠ [] ∧
     TContext.AliasesResolved E4.context := by
   intro out_mty_sig out_lty_sig envWithOutputs oldInoutBindings E4
-  -- v_out.2 = v_pre.2 : resolveAliases leaves the Env unchanged.
   have h_vout_env : v_out.2 = v_pre.2 :=
     LMonoTys_resolveAliases_env_local _ v_pre.2 v_out.1 v_out.2 h_ra
-  -- WF chain up to v_pre.2 (= v_out.2).
   have h_setup_wf : TEnvWF (T := CoreLParams) v_setup.2.1 :=
     setupInputEnv_TEnvWF C Env proc fr v_setup h_setup h_wf
   have h_setup_res : TContext.AliasesResolved v_setup.2.1.context :=
@@ -845,12 +828,11 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
       h_setup_wf h_setup_ne h_fwf
   have h_pre_res : TContext.AliasesResolved v_pre.2.context := by rw [h_pre_ctx]; exact h_setup_res
   have h_pre_ne : v_pre.2.context.types ≠ [] := by rw [h_pre_ctx]; exact h_setup_ne
-  -- E4 conjuncts.
   refine ⟨?_tenvwf, ?_types_ne, ?_resolved⟩
   case _tenvwf =>
     show TEnvWF (T := CoreLParams) E4
-    -- Layer 1: envWithOutputs = addInNewestContext v_out.2 (toTrivialLTy out_mty_sig).
-    -- toTrivialLTy s = s.map (fun p => (p.1, .forAll [] p.2)), so of_addInNewestContext_mono applies.
+    -- `envWithOutputs = addInNewestContext v_out.2 (toTrivialLTy out_mty_sig)`, and the bindings
+    -- are all `.forAll [] _`, so `of_addInNewestContext_mono` applies.
     have h_out_eq : out_lty_sig = out_mty_sig.map (fun p => (p.1, LTy.forAll [] p.2)) := rfl
     have h_envWithOutputs_wf : TEnvWF (T := CoreLParams) envWithOutputs := by
       show TEnvWF (T := CoreLParams) (Lambda.TEnv.addInNewestContext (T := CoreLParams) v_out.2 out_lty_sig)
@@ -858,13 +840,13 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
       refine TEnvWF.of_addInNewestContext_mono (T := CoreLParams) v_out.2 out_mty_sig
         (by rw [h_vout_env]; exact h_pre_wf) ?_out_fresh
       case _out_fresh =>
-        -- freshness A: free vars of the resolved-substituted output types are the setup fresh
-        -- vars (< setup gen ≤ v_out.2 gen), so never `$__tyN` for N ≥ v_out.2 gen.
+        -- Free vars of the resolved-substituted output types are the setup fresh vars
+        -- (< setup gen ≤ v_out.2 gen), so never `$__tyN` for N ≥ v_out.2 gen.
         have h_aw : TContext.AliasesWF v_pre.2.context :=
           pre_env_AliasesWF C Env proc fr v_setup v_pre h_setup h_pre h_wf h_fwf
-        exact freshnessA C Env proc fr v_setup v_pre v_out h_ta h_setup h_pre h_ra h_wf h_fwf h_aw
-    -- Layer 2: E4 = addInNewestContext envWithOutputs oldInoutBindings.
-    -- oldInoutBindings = (filter inout v_setup.1).map (mkOld,ty), already `.forAll [] ty` shape.
+        exact output_sig_values_fresh C Env proc fr v_setup v_pre v_out h_ta h_setup h_pre h_ra h_wf h_fwf h_aw
+    -- `E4 = addInNewestContext envWithOutputs oldInoutBindings`, and `oldInoutBindings` is
+    -- already in `.forAll [] ty` shape, so `of_addInNewestContext_mono` applies again.
     have h_old_eq : oldInoutBindings =
         ((v_setup.1.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
           fun (id, ty) => (CoreIdent.mkOld id.name, ty)).map
@@ -877,14 +859,14 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     refine TEnvWF.of_addInNewestContext_mono (T := CoreLParams) envWithOutputs _
       h_envWithOutputs_wf ?_old_fresh
     case _old_fresh =>
-      -- freshness B: old-binding types are now the instantiated input signature values, whose
-      -- free vars are the setup fresh vars (< setup gen ≤ envWithOutputs gen).
+      -- Old-binding types are the instantiated input signature values, whose free vars are the
+      -- setup fresh vars (< setup gen ≤ envWithOutputs gen).
       have h_gen : envWithOutputs.genEnv.genState.tyGen ≥ v_setup.2.1.genEnv.genState.tyGen := by
         have h_eq : envWithOutputs.genEnv.genState.tyGen = v_out.2.genEnv.genState.tyGen := rfl
         rw [h_eq, h_vout_env]
         exact typeCheckConditions_genState_mono C v_setup.2.1 proc.spec.preconditions proc.header.name
           v_pre h_pre h_setup_wf h_setup_ne h_fwf
-      exact freshnessB C Env proc fr v_setup v_pre v_out envWithOutputs h_ta h_setup h_pre h_ra
+      exact oldInout_bindings_fresh C Env proc fr v_setup v_pre v_out envWithOutputs h_ta h_setup h_pre h_ra
         h_wf h_fwf h_gen
   case _types_ne =>
     -- addInNewest ×2 preserves types ≠ []; v_out.2 = v_pre.2 nonempty.
@@ -899,6 +881,8 @@ theorem postEnv_wf (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     apply TContext.AliasesResolved.of_addInNewestContext
     rw [h_vout_env]; exact h_pre_res
 
+/-- After postconditions and the type-argument unify/`updateSubst`, the body environment stays
+    well-formed: `TEnvWF`, non-empty type-scope, `ContextMono`, and `AliasesResolved`. -/
 theorem procBodyEnv_wf (C : Core.Expression.TyContext) (E4 : Core.Expression.TyEnv)
     (proc : Procedure)
     (v_post : Array Expression.Expr × Core.Expression.TyEnv)
@@ -917,14 +901,12 @@ theorem procBodyEnv_wf (C : Core.Expression.TyContext) (E4 : Core.Expression.TyE
     (v_post.2.updateSubst S).context.types ≠ [] ∧
     ContextMono (v_post.2.updateSubst S).context ∧
     TContext.AliasesResolved (v_post.2.updateSubst S).context := by
-  -- typeCheckConditions preserves the whole context (given TEnvWF + types≠[] + FactoryWF).
   have h_post_ctx : v_post.2.context = E4.context :=
     typeCheckConditions_context C E4 proc.spec.postconditions proc.header.name v_post h_post
       h_E4_wf h_E4_ne h_fwf
   have h_post_wf : TEnvWF (T := CoreLParams) v_post.2 :=
     typeCheckConditions_TEnvWF C E4 proc.spec.postconditions proc.header.name v_post h_post
       h_E4_wf h_fwf
-  -- updateSubst leaves the context untouched.
   have h_us_ctx : (v_post.2.updateSubst S).context = v_post.2.context := rfl
   refine ⟨?_tenvwf, ?_types_ne, ?_mono, ?_resolved⟩
   case _tenvwf =>
@@ -939,10 +921,7 @@ theorem procBodyEnv_wf (C : Core.Expression.TyContext) (E4 : Core.Expression.TyE
     show TContext.AliasesResolved (v_post.2.updateSubst S).context
     rw [h_us_ctx, h_post_ctx]; exact h_E4_res
 
-/-! ### `ContextMono` of the body env, chained from `ContextMono Env.context`.
-    `find?` on the body env falls through the pushed `forAll []` scopes to the ambient
-    context, so `ContextMono` of the body env genuinely needs `ContextMono Env.context`
-    (a documented Core invariant, exposed as a hypothesis of the annotated deliverable). -/
+/-! ### `ContextMono` of the body env, chained from `ContextMono Env.context`. -/
 
 /-- `addInNewestContext` with a single `forAll []` binding preserves `ContextMono`. -/
 theorem addInNewestContext_single_ContextMono (Env : Core.Expression.TyEnv)
@@ -1078,10 +1057,7 @@ theorem tyArgConstraints_freeVars_mem (l : List (TyIdentifier × LMonoTy)) (v : 
       · exact Or.inr ⟨kv, List.mem_cons_of_mem _ h_mem, h_mem2⟩
 
 /-- The free vars of the body's `tyArgConstraints` are gen-fresh at the postcondition
-    env's generator counter — the freshness precondition of `procBodyEnv_wf`'s
-    `updateSubst` step. Declared typeArgs are never gen-prefixed (`checkTypeArgsWF_props`);
-    the fresh instantiation vars are gen-fresh at setup (`setupInputEnv_shape_fresh`), and
-    the counter only grows through pre/resolveAliases/post. -/
+    env's generator counter. -/
 theorem procBody_cs_fresh (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -1151,11 +1127,9 @@ theorem procBody_cs_fresh (C : Core.Expression.TyContext) (Env : Core.Expression
     rw [h_mem2]
     exact h_fresh_setup fresh h_fresh_mem n h_n_setup
 
-/-! ### Part I — Annotated soundness (about the output `proc'`)
+/-! ### Annotated soundness (about the output `proc'`)
 
-Field lemmas feeding `Procedure.typeCheck_annotated_sound`. Each concludes about
-`proc'` and takes only the lightweight hypotheses (the annotated `HasTypeA`
-judgment needs no alias bridge). ALL currently `sorry` (layer-1 stubs). -/
+Field lemmas feeding `Procedure.typeCheck_annotated_sound`. -/
 
 /-- `setupInputEnv`, on success, returns a signature whose keys are a sublist of
     `proc.header.inputs.keys` (it is `proc.header.inputs.keys.zip newtys`). -/
@@ -1195,19 +1169,19 @@ theorem Procedure.typeCheck_inputsNodup (C : LContext CoreLParams) (Env : TEnv U
     · simp at h_in_guard
     · rename_i h_no
       simpa using h_no
-  elim_err h                       -- checkTypeArgsWF
-  elim_err h                       -- checkModificationRights
-  elim_err h                       -- setupInputEnv
+  elim_err h
+  elim_err h
+  elim_err h
   rename_i v_setup h_setup
-  elim_err h                       -- typeCheckConditions (pre)
-  elim_err h                       -- resolveAliases
-  elim_err h                       -- typeCheckConditions (post)
-  split at h                       -- proc.body
+  elim_err h
+  elim_err h
+  elim_err h
+  split at h
   · rename_i ss h_body
-    elim_err h                     -- unify
-    split at h                     -- rigid-refinement guard
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                     -- Statement.typeCheck (guard's none branch)
+    elim_err h
     injection h with h_pair
     injection h_pair with h_proc _
     subst h_proc
@@ -1245,20 +1219,20 @@ theorem Procedure.typeCheck_outputsNodup (C : LContext CoreLParams) (Env : TEnv 
     · simp at h_in_guard
     · rename_i h_out_no
       simpa using h_out_no
-  elim_err h                       -- checkTypeArgsWF
-  elim_err h                       -- checkModificationRights
-  elim_err h                       -- setupInputEnv
+  elim_err h
+  elim_err h
+  elim_err h
   rename_i v_setup h_setup
-  elim_err h                       -- typeCheckConditions (pre)
-  elim_err h                       -- resolveAliases
+  elim_err h
+  elim_err h
   rename_i v_out h_out
-  elim_err h                       -- typeCheckConditions (post)
-  split at h                       -- proc.body
+  elim_err h
+  split at h
   · rename_i ss h_body
-    elim_err h                     -- unify
-    split at h                     -- rigid-refinement guard
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                     -- Statement.typeCheck (guard's none branch)
+    elim_err h
     injection h with h_pair
     injection h_pair with h_proc _
     subst h_proc
@@ -1280,8 +1254,8 @@ theorem Procedure.typeCheck_outputsNodup (C : LContext CoreLParams) (Env : TEnv 
   · simp at h
 
 /-- Annotated `typeArgsNodup`. `Procedure.typeCheck` preserves `proc'.typeArgs =
-    proc.header.typeArgs` (`ProcedureType.lean:171`), so this follows from the
-    `checkTypeArgsWF` guard's `Nodup` check on the input. -/
+    proc.header.typeArgs`, so this follows from the `checkTypeArgsWF` guard's
+    `Nodup` check on the input. -/
 theorem Procedure.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env')) :
@@ -1294,22 +1268,19 @@ theorem Procedure.typeCheck_typeArgsNodup (C : LContext CoreLParams) (Env : TEnv
   elim_err h
   elim_err h
   elim_err h
-  split at h                       -- proc.body
-  · elim_err h                     -- pure ss (bodyStmts)
-    elim_err h                     -- unify
-    split at h                     -- rigid-refinement guard
+  split at h
+  · elim_err h
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                     -- pure () (guard's none branch)
-    elim_err h                     -- Statement.typeCheck
+    elim_err h
+    elim_err h
     cases h
     exact (checkTypeArgsWF_props proc _ _ h_ta).1
   · simp at h
 
-/-- Annotated `noUndeclaredVars`. `proc'`'s input/output types are `userSubst`-renamed
-    back to the declared names, and `proc'.typeArgs = proc.header.typeArgs` is preserved,
-    so the `checkTypeArgsWF` guard (every signature type var ∈ typeArgs) transports to
-    `proc'`. Requires relating `freeVars (subst userSubst mty)` back to the declared
-    type args. -/
+/-- The fresh→user `filterMap` over `typeArgs.zip (freshtvs.map ftvar)` equals
+    `(freshtvs.zip typeArgs).map (·.1, ftvar ·.2)`. -/
 theorem userSubst_filterMap_eq (typeArgs freshtvs : List TyIdentifier)
     (h_len : freshtvs.length = typeArgs.length) :
     List.filterMap (fun x => match x.snd with
@@ -1325,6 +1296,8 @@ theorem userSubst_filterMap_eq (typeArgs freshtvs : List TyIdentifier)
       simp only [List.map_cons, List.zip_cons_cons, List.filterMap_cons, List.map_cons]
       rw [ih frest (by simpa using h_len)]
 
+/-- Applying the fresh→user renaming to a monotype whose free vars are all fresh yields a monotype
+    whose free vars are all declared type args. -/
 theorem freeVars_userSubst_mem_typeArgs
     (typeArgs freshtvs : List TyIdentifier) (mty : LMonoTy)
     (h_len : freshtvs.length = typeArgs.length)
@@ -1349,6 +1322,8 @@ theorem freeVars_userSubst_mem_typeArgs
   rw [e1 freshtvs typeArgs] at h_sub
   exact List.mem_of_mem_take h_sub
 
+/-- Shape of `setupInputEnv`: the substitution is a single scope mapping type args to fresh vars,
+    and every input-signature value's free vars are gen-fresh. -/
 theorem setupInputEnv_shape (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
     (v_setup : @Lambda.LMonoTySignature Unit × Core.Expression.TyEnv × Lambda.Subst)
@@ -1372,7 +1347,6 @@ theorem setupInputEnv_shape (C : Core.Expression.TyContext) (Env : Core.Expressi
     subst h
     have h_fresh := instantiateWithSubst_values_fresh C Env.pushEmptyContext
       proc.header.typeArgs proc.header.inputs (inp_mty_sig, Env₁, tyArgSubst) h_inst
-    -- decompose instantiateWithSubst to expose tyArgSubst shape
     simp only [Lambda.LMonoTySignature.instantiateWithSubst, Bind.bind, Except.bind] at h_inst
     elim_err h_inst with v_env h_env; obtain ⟨mtys, Env_e, S⟩ := v_env
     elim_err h_inst with v_go h_go; obtain ⟨newtys, Env₂⟩ := v_go
@@ -1390,6 +1364,8 @@ theorem setupInputEnv_shape (C : Core.Expression.TyContext) (Env : Core.Expressi
     · show ∀ mt, mt ∈ ListMap.values inp_mty_sig → _
       exact h_fresh
 
+/-- Every free type variable in a type-checked procedure's signature is declared in `typeArgs`
+    (the `noUndeclaredVars` field of `ProcHasType'`). -/
 theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -1400,24 +1376,23 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
          v ∈ proc'.header.typeArgs := by
   simp only [Procedure.typeCheck, bind, Except.bind] at h
   elim_err h
-  elim_err h with h_ta          -- checkTypeArgsWF
+  elim_err h with h_ta
   elim_err h
-  elim_err h with h_setup       -- setupInputEnv
+  elim_err h with h_setup
   rename_i v_setup
   elim_err h with h_pre
   rename_i v_pre
-  elim_err h with h_ra_out      -- resolveAliases outputs
+  elim_err h with h_ra_out
   rename_i v_out
   elim_err h with h_post
-  split at h                    -- proc.body
-  · elim_err h                  -- pure ss (bodyStmts)
-    elim_err h                  -- unify
-    split at h                  -- rigid-refinement guard
+  split at h
+  · elim_err h
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                  -- pure () (guard's none branch)
-    elim_err h with h_body      -- Statement.typeCheck
+    elim_err h
+    elim_err h with h_body
     cases h
-    -- Common: expose the tyArgSubst shape and declared-vars closedness.
     obtain ⟨freshtvs, h_len, h_S, _⟩ := setupInputEnv_shape C Env proc _ v_setup h_setup
     have h_flat : List.flatten v_setup.2.snd
         = proc.header.typeArgs.zip (freshtvs.map LMonoTy.ftvar) := by
@@ -1430,10 +1405,8 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
     rw [h_flat] at hv
     cases hv with
     | inl hv_in =>
-      -- INPUTS: v ∈ freeVars of (subst userSubst) applied to the instantiated inputs.
-      -- Closedness of `v_setup.fst` values under `freshtvs`: the instantiate output
-      -- is `resolveAliases (subst tyArgSubst input)` (non-growing under AliasesWF),
-      -- and inputs are closed under `typeArgs` (`checkTypeArgsWF_props`).
+      -- Inputs case: the setup input values are closed under `freshtvs` (instantiate outputs
+      -- resolve non-growing under AliasesWF; inputs are closed under `typeArgs`).
       have h_in_closed : ∀ x, x ∈ LMonoTys.freeVars (ListMap.values proc.header.inputs) →
           x ∈ proc.header.typeArgs := by
         intro x hx
@@ -1442,7 +1415,6 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
           w ∈ freshtvs :=
         setupInputEnv_values_closed C Env proc _ v_setup freshtvs h_setup h_wf h_len h_S
           h_in_closed
-      -- extract the element carrying `v` and finish via `freeVars_userSubst_mem_typeArgs`.
       obtain ⟨elt, h_elt_mem, h_v_elt⟩ := LMonoTys.freeVars_exists hv_in
       simp only [List.mem_map, Function.comp_apply] at h_elt_mem
       obtain ⟨p, hp_mem, hp_eq⟩ := h_elt_mem
@@ -1455,24 +1427,19 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
       exact freeVars_userSubst_mem_typeArgs proc.header.typeArgs freshtvs p.snd h_len
         h_closed_elt v h_v_elt
     | inr hv_out =>
-      -- OUTPUTS: v ∈ freeVars of (subst userSubst) applied to resolveAliases outputs.
+      -- Outputs case.
       obtain ⟨elt, h_elt_mem, h_v_elt⟩ := LMonoTys.freeVars_exists hv_out
       simp only [List.mem_map, Function.comp_apply] at h_elt_mem
       obtain ⟨p, hp_mem, hp_eq⟩ := h_elt_mem
-      -- p ∈ (keys proc.header.outputs).zip v_out.fst, so p.snd ∈ v_out.fst.
       have hp_snd : p.snd ∈ v_out.fst := (List.of_mem_zip hp_mem).2
       subst hp_eq
-      -- Closedness of p.snd (a resolveAliases output value) under freshtvs.
       have h_closed_elt : ∀ w, w ∈ LMonoTy.freeVars p.snd → w ∈ freshtvs := by
         intro w hw
-        -- w ∈ freeVars of the whole resolveAliases output list.
         have hw_list : w ∈ LMonoTys.freeVars v_out.fst :=
           LMonoTys.freeVars_mem_subset hp_snd hw
-        -- resolveAliases doesn't grow free vars (needs AliasesWF of pre-env).
         have h_ra := Lambda.Except.mapError_ok_h' h_ra_out
-        -- AliasesWF of the pre-conditions env: the pre-loop preserves the whole context
-        -- (`typeCheckConditions_context`, needs FactoryWF + types≠[]) and setupInputEnv leaves
-        -- aliases as `Env.context`'s, so `AliasesWF` transports from `h_wf`.
+        -- `resolveAliases` does not grow free vars, needing `AliasesWF` of the pre-conditions env
+        -- (which transports from `h_wf` since the pre-loop and setup preserve the alias list).
         have h_aw : TContext.AliasesWF v_pre.snd.context :=
           pre_env_AliasesWF C Env proc _ v_setup v_pre h_setup h_pre h_wf h_fwf
         have hw_pre : w ∈ LMonoTys.freeVars
@@ -1480,9 +1447,7 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
           LMonoTys_resolveAliases_freeVars_subset (T := CoreLParams)
             (List.map (LMonoTy.subst v_setup.2.snd) (ListMap.values proc.header.outputs))
             v_pre.snd v_out.fst v_out.snd h_ra h_aw w hw_list
-        -- rewrite map (subst S) = LMonoTys.subst S, and S = [typeArgs.zip (freshtvs.map ftvar)]
         rw [← LMonoTys_subst_eq_map, h_S] at hw_pre
-        -- now closedness via freeVars_subst_closed.
         have h_out_closed : ∀ tv, tv ∈ LMonoTys.freeVars (ListMap.values proc.header.outputs) →
             tv ∈ proc.header.typeArgs := by
           intro tv htv
@@ -1500,8 +1465,8 @@ theorem Procedure.typeCheck_noUndeclaredVars (C : LContext CoreLParams) (Env : T
 variables, so the `checkModificationRights` guard (checked on the *input* body)
 transports to the output `proc'.body`. -/
 
--- LEMMA A: Statement.subst preserves modifiedVars.
 mutual
+/-- `Statement.subst` preserves a statement's `modifiedVars`. -/
 theorem subst_modifiedVars (S : Subst) (s : Statement) :
     Stmt.modifiedVars (Statement.subst S s) = Stmt.modifiedVars s := by
   cases s with
@@ -1530,6 +1495,7 @@ theorem subst_modifiedVars (S : Subst) (s : Statement) :
   | funcDecl decl md => simp [Statement.subst, Stmt.modifiedVars]
   | typeDecl tc md => simp [Statement.subst, Stmt.modifiedVars]
 
+/-- Block form of `subst_modifiedVars`. -/
 theorem subst_block_modifiedVars (S : Subst) (bss : List Statement) :
     Block.modifiedVars (List.map (Statement.subst S) bss) = Block.modifiedVars bss := by
   match bss with
@@ -1539,8 +1505,8 @@ theorem subst_block_modifiedVars (S : Subst) (bss : List Statement) :
     rw [subst_modifiedVars S s, subst_block_modifiedVars S rest]
 end
 
--- LEMMA B: Statement.subst preserves definedVars.
 mutual
+/-- `Statement.subst` preserves a statement's `definedVars`. -/
 theorem subst_definedVars (S : Subst) (s : Statement) (b : Bool) :
     Stmt.definedVars (Statement.subst S s) b = Stmt.definedVars s b := by
   cases s with
@@ -1569,6 +1535,7 @@ theorem subst_definedVars (S : Subst) (s : Statement) (b : Bool) :
   | funcDecl decl md => simp [Statement.subst]
   | typeDecl tc md => simp [Statement.subst]
 
+/-- Block form of `subst_definedVars`. -/
 theorem subst_block_definedVars (S : Subst) (bss : List Statement) (b : Bool) :
     Block.definedVars (List.map (Statement.subst S) bss) b = Block.definedVars bss b := by
   match bss with
@@ -1578,7 +1545,7 @@ theorem subst_block_definedVars (S : Subst) (bss : List Statement) (b : Bool) :
       subst_definedVars S s b, subst_block_definedVars S rest b]
 end
 
--- LEMMA C: Imperative.Cmd.typeCheck preserves modifiedVars and definedVars.
+/-- `Imperative.Cmd.typeCheck` preserves `modifiedVars` and `definedVars`. -/
 theorem cmd_typeCheck_modifiedVars (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (c c' : Cmd Expression)
     (h : Imperative.Cmd.typeCheck C Env c = .ok (c', Env')) :
@@ -1637,6 +1604,7 @@ theorem cmd_typeCheck_modifiedVars (C : LContext CoreLParams) (Env Env' : TEnv U
       exact ⟨rfl, rfl⟩
     · cases h
 
+/-- `replaceInArgs` (rewriting the input expressions of a call) leaves the LHS variables unchanged. -/
 private theorem getLhs_replaceInArgs (args : List (CallArg Expression))
     (es : List Expression.Expr) :
     CallArg.getLhs (CallArg.replaceInArgs args es) = CallArg.getLhs args := by
@@ -1659,7 +1627,7 @@ private theorem getLhs_replaceInArgs (args : List (CallArg Expression))
     | .outArg id, es =>
       simp only [CallArg.replaceInArgs.go, CallArg.getLhs, List.filterMap_cons]; congr 1; exact ih es
 
--- LEMMA D: Statement.typeCheckCmd preserves modifiedVars and definedVars (Command level).
+/-- `Statement.typeCheckCmd` preserves `modifiedVars` and `definedVars` (Command level). -/
 theorem typeCheckCmd_modifiedVars (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (P : Program) (cmd cmd' : Command)
     (h : Statement.typeCheckCmd C Env P cmd = .ok (cmd', Env'))
@@ -1682,6 +1650,7 @@ theorem typeCheckCmd_modifiedVars (C : LContext CoreLParams) (Env Env' : TEnv Un
     subst h_cmd
     simp only [Command.modifiedVars, Command.definedVars, getLhs_replaceInArgs, and_self]
 
+/-- `Block.modifiedVars` distributes over list append. -/
 theorem block_modifiedVars_append (l1 l2 : List Statement) :
     Block.modifiedVars (l1 ++ l2) = Block.modifiedVars l1 ++ Block.modifiedVars l2 := by
   induction l1 with
@@ -1689,6 +1658,7 @@ theorem block_modifiedVars_append (l1 l2 : List Statement) :
   | cons s rest ih =>
     simp only [List.cons_append, Block.modifiedVars.eq_2, ih, List.append_assoc]
 
+/-- `Block.definedVars` distributes over list append. -/
 theorem block_definedVars_append (l1 l2 : List Statement) (b : Bool) :
     Block.definedVars (l1 ++ l2) b = Block.definedVars l1 b ++ Block.definedVars l2 b := by
   induction l1 with
@@ -1696,12 +1666,12 @@ theorem block_definedVars_append (l1 l2 : List Statement) (b : Bool) :
   | cons s rest ih =>
     simp only [List.cons_append, Block.definedVars.eq_2, ih, List.append_assoc]
 
--- Abbreviation for the vars-preservation conclusion.
+/-- The vars-preservation conclusion threaded through `typeCheckAux.go`. -/
 def VarsPreserved (ss' acc ss : List Statement) : Prop :=
   Block.modifiedVars ss' = Block.modifiedVars acc.reverse ++ Block.modifiedVars ss ∧
   (∀ b, Block.definedVars ss' b = Block.definedVars acc.reverse b ++ Block.definedVars ss b)
 
--- LEMMA E: typeCheckAux.go preserves modifiedVars/definedVars (modulo accumulator).
+/-- `typeCheckAux.go` preserves `modifiedVars`/`definedVars` (modulo the accumulator). -/
 theorem typeCheckAux_go_vars (P : Program) (op : Option Procedure)
     (h_closed : CalledProcsClosed P)
     (C : LContext CoreLParams) (Env : TEnv Unit) (ss acc : List Statement) (labels : List String)
@@ -1782,12 +1752,10 @@ theorem typeCheckAux_go_vars (P : Program) (op : Option Procedure)
       obtain ⟨bss', Env_blk, C_blk⟩ := v
       rw [h_blk] at h_goeq
       simp only [pure, Except.pure] at h_goeq
-      -- goBlock preservation (threading) via the existing lemma.
       obtain ⟨h_head, h_Cblk⟩ :=
         goBlock_eq_GoPreserved P op C₀ Env₀ bss₀ [] (label₀ :: labels₀) bss' Env_blk C_blk
           h_blk hwf₀ hfwf₀ hne₀ hmono₀ hrigid₀ h_closed
       subst h_Cblk
-      -- vars of block body via the goBlock motive IH.
       obtain ⟨hm_blk, hd_blk⟩ := ih_block bss' Env_blk C_blk h_blk hwf₀ hfwf₀ hne₀ hmono₀ hrigid₀
       obtain ⟨ih_m, ih_d⟩ := ih_tail (Stmt.block label₀ bss' md₀) Env_blk C_blk ss'₀ Env'₀ C'₀ h_goeq
         h_head.wf h_head.fwf h_head.ne h_head.mono h_head.rigid_inv
@@ -2333,7 +2301,7 @@ theorem typeCheckAux_go_vars (P : Program) (op : Option Procedure)
         exact hrigid₀
       exact ih_body bss' Env_body C_body h_body_run h_push_wf hfwf₀ h_push_ne h_push_mono h_push_rigid
 
--- LEMMA F: Statement.typeCheck (top level) preserves modifiedVars/definedVars.
+/-- `Statement.typeCheck` (top level) preserves `modifiedVars`/`definedVars`. -/
 theorem statement_typeCheck_vars (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss ss' : List Statement) (Env' : TEnv Unit)
     (h_wf : TEnvWF (T := CoreLParams) Env)
@@ -2354,12 +2322,10 @@ theorem statement_typeCheck_vars (C : LContext CoreLParams) (Env : TEnv Unit)
     rw [h_aux] at h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_ss', _⟩ := h
-    -- Vars of the type-annotated (pre-subst) statements.
     obtain ⟨hm_aux, hd_aux⟩ :=
       typeCheckAux_go_vars P op h_closed C Env ss [] [] ssA Env_aux C_aux
         h_wf h_fwf h_ne h_mono h_rigid_inv h_aux
     simp only [List.reverse_nil, Block.modifiedVars.eq_1, List.nil_append] at hm_aux
-    -- `ss' = subst.go S ssA []`; subst preserves vars.
     refine ⟨?_, ?_⟩
     · rw [← h_ss', Statement.subst_go_nil, subst_block_modifiedVars, hm_aux]
     · intro b
@@ -2371,11 +2337,8 @@ theorem statement_typeCheck_vars (C : LContext CoreLParams) (Env : TEnv Unit)
 /-! ### `rigidVars_fixed_by_unify` — the fresh instantiation vars are fixed by the
     body-unify result (feeds `modRights`/`bodyTyped`'s rigid_inv). -/
 
-/-- Per-step keys bound. When the LHS of the constraint is a type variable `a` that
-    is NOT already a key of `S`, `unifyOne` cannot take the `some sty` branch (which is
-    the only one that recurses with a possibly-different key set); it takes the reflexive
-    branch (no new key) or the `none` branch (adds exactly key `a`). Either way the
-    resulting keys are contained in `a :: keys S`. -/
+/-- Per-step keys bound: when the constraint's LHS is a type variable `a` not already a key of
+    `S`, `unifyOne`'s result keys are contained in `a :: keys S`. -/
 theorem unifyOne_keys_ftvar_lhs (a : TyIdentifier) (t : LMonoTy) (S : SubstInfo)
     (relS : ValidSubstRelation [(LMonoTy.ftvar a, t)] S)
     (h : Constraint.unifyOne (LMonoTy.ftvar a, t) S = .ok relS)
@@ -2418,16 +2381,12 @@ theorem unifyOne_keys_ftvar_lhs (a : TyIdentifier) (t : LMonoTy) (S : SubstInfo)
 def lhsVars (cs : Constraints) : List TyIdentifier :=
   cs.filterMap (fun p => match p.1 with | .ftvar a => some a | _ => none)
 
-/-- Core induction. Under the assumptions that every constraint's LHS is a type
-    variable (`h_lhs_ftvar`), those LHS variables are pairwise distinct
-    (`h_nodup`) and none of them is already a key of `S_in` (`h_lhs_fresh`), the
-    ONLY new keys `unifyCore` can add are those LHS variables. Hence a variable `w`
-    that is neither a key of `S_in` nor one of the LHS variables is not a key of the
-    result.
+/-- When every constraint's LHS is a type variable, those LHS vars are distinct, and none is
+    already a key of `S_in`, the only new keys `unifyCore` adds are those LHS variables — so a
+    `w` that is neither a key of `S_in` nor an LHS variable stays a non-key.
 
-    The `h_lhs_fresh` hypothesis is essential: it forces `Maps.find? S a = none` at
-    each head, killing the `some sty` recursion branch of `unifyOne` (which would
-    otherwise be able to add arbitrary keys, including `w`). -/
+    `h_lhs_fresh` is essential: it forces `Maps.find? S a = none` at each head, killing the
+    `some sty` branch of `unifyOne` that could otherwise add arbitrary keys. -/
 theorem unifyCore_keys_orient : ∀ (cs : Constraints) (S_in : SubstInfo)
     (relS : ValidSubstRelation cs S_in),
     Constraints.unifyCore cs S_in = .ok relS →
@@ -2461,16 +2420,13 @@ theorem unifyCore_keys_orient : ∀ (cs : Constraints) (S_in : SubstInfo)
       · simp only [reduceCtorEq] at h
       · rename_i relS_rest h_rest
         simp only [Except.ok.injEq] at h; subst h
-        -- a ∉ keys S_in
         have h_a_S : a ∉ Maps.keys S_in.subst :=
           h_fresh (LMonoTy.ftvar a, c2) (List.mem_cons_self) a rfl
-        -- Per-step: keys(relS_one) ⊆ a :: keys S_in.
         have h_step := unifyOne_keys_ftvar_lhs a c2 S_in relS_one h_one h_a_S
-        -- lhsVars ((ftvar a, c2) :: rest) = a :: lhsVars rest
         have h_lhs_cons : lhsVars ((LMonoTy.ftvar a, c2) :: rest) = a :: lhsVars rest := by
           simp only [lhsVars, List.filterMap_cons]
         rw [h_lhs_cons] at h_nodup
-        -- Re-establish hypotheses for rest with S = relS_one.newS.
+        -- Re-establish the hypotheses for `rest` with `S = relS_one.newS`.
         have h_ftvar_rest : ∀ p, p ∈ rest → ∃ b, p.1 = LMonoTy.ftvar b :=
           fun p hp => h_ftvar p (List.mem_cons_of_mem _ hp)
         have h_fresh_rest : ∀ p, p ∈ rest → ∀ b, p.1 = LMonoTy.ftvar b →
@@ -2515,20 +2471,19 @@ theorem unify_keys_orient (cs : Constraints) (S_in S_out : SubstInfo)
     exact unifyCore_keys_orient cs S_in relS h_core h_lhs_ftvar h_lhs_fresh h_nodup
       w h_w_notin_S h_w_notin_lhs
 
-/-- Main deliverable. -/
+/-- Fresh RHS type variables introduced by `tyArgSubst` are fixed points of the
+    unifying substitution `S_out`. -/
 theorem rigidVars_fixed_by_unify
     (S_in S_out : SubstInfo) (tyArgSubst : Subst)
     (h_unify : Constraints.unify (tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2))) S_in
       = .ok S_out)
-    -- Provenance (call-site discharge): fresh RHS vars are not keys of the incoming subst.
+    -- Fresh RHS vars are not keys of the incoming subst.
     (h_fresh_notin : ∀ id, (∃ k, (k, LMonoTy.ftvar id) ∈ tyArgSubst.flatten) →
       id ∉ Maps.keys S_in.subst)
-    -- Provenance (call-site discharge): fresh RHS vars are distinct from the declared
-    -- (LHS / first-component) vars.
+    -- Fresh RHS vars are distinct from the declared (LHS) vars.
     (h_fresh_ne_lhs : ∀ id, (∃ k, (k, LMonoTy.ftvar id) ∈ tyArgSubst.flatten) →
       ∀ k, (∃ t, (k, t) ∈ tyArgSubst.flatten) → id ≠ k)
-    -- Provenance (call-site discharge): declared (LHS / first-component) vars are not
-    -- keys of the incoming subst.
+    -- Declared (LHS) vars are not keys of the incoming subst.
     (h_orig_notin_S : ∀ k, (∃ t, (k, t) ∈ tyArgSubst.flatten) → k ∉ Maps.keys S_in.subst)
     -- Provenance (call-site discharge): declared (LHS) vars are pairwise distinct.
     (h_orig_nodup : (tyArgSubst.flatten.map (fun kv => kv.1)).Nodup)
@@ -2536,7 +2491,6 @@ theorem rigidVars_fixed_by_unify
     (h_v : v ∈ tyArgSubst.flatten.filterMap (fun kv => match kv.2 with
       | LMonoTy.ftvar id => some id | _ => none)) :
     LMonoTy.subst S_out.subst (LMonoTy.ftvar v) = LMonoTy.ftvar v := by
-  -- v is a fresh RHS var: there is a key k with (k, ftvar v) ∈ flatten.
   have h_v_prov : ∃ k, (k, LMonoTy.ftvar v) ∈ tyArgSubst.flatten := by
     obtain ⟨kv, h_mem, h_eq⟩ := List.mem_filterMap.mp h_v
     split at h_eq
@@ -2547,29 +2501,24 @@ theorem rigidVars_fixed_by_unify
       rw [← heq]
       exact h_mem
     · simp only [reduceCtorEq] at h_eq
-  -- v ∉ keys(S_in)
   have h_v_notin_S : v ∉ Maps.keys S_in.subst := h_fresh_notin v h_v_prov
-  -- Every constraint's LHS is a type variable.
   have h_lhs_ftvar : ∀ p, p ∈ tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)) →
       ∃ a, p.1 = LMonoTy.ftvar a := by
     intro p hp
     obtain ⟨kv, _, h_p⟩ := List.mem_map.mp hp
     exact ⟨kv.1, by rw [← h_p]⟩
-  -- Membership helper: an element of the constraint list comes from `(kv.1, kv.2) ∈ flatten`.
   have h_cs_mem : ∀ p, p ∈ tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)) →
       ∃ kv : TyIdentifier × LMonoTy, (kv.1, kv.2) ∈ tyArgSubst.flatten ∧
         p = (LMonoTy.ftvar kv.1, kv.2) := by
     intro p hp
     obtain ⟨kv, h_kv_mem, h_p⟩ := List.mem_map.mp hp
     exact ⟨kv, h_kv_mem, h_p.symm⟩
-  -- LHS vars are not keys of S_in.
   have h_lhs_fresh : ∀ p, p ∈ tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)) →
       ∀ a, p.1 = LMonoTy.ftvar a → a ∉ Maps.keys S_in.subst := by
     intro p hp a ha
     obtain ⟨kv, h_kv_mem, h_peq⟩ := h_cs_mem p hp
     rw [h_peq] at ha; simp only [LMonoTy.ftvar.injEq] at ha; subst ha
     exact h_orig_notin_S kv.1 ⟨kv.2, h_kv_mem⟩
-  -- lhsVars of the constraint list = map fst flatten (Nodup transfers).
   have h_lhsVars_eq : lhsVars (tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)))
       = tyArgSubst.flatten.map (fun kv => kv.1) := by
     simp only [lhsVars, List.filterMap_map, Function.comp_def]
@@ -2578,18 +2527,15 @@ theorem rigidVars_fixed_by_unify
     | cons a l ih => simp only [List.filterMap_cons, List.map_cons, ih]
   have h_nodup : (lhsVars (tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)))).Nodup := by
     rw [h_lhsVars_eq]; exact h_orig_nodup
-  -- v is not a LHS var of any constraint.
   have h_v_notin_lhs : ∀ p, p ∈ tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2)) →
       ∀ a, p.1 = LMonoTy.ftvar a → v ≠ a := by
     intro p hp a ha
     obtain ⟨kv, h_kv_mem, h_peq⟩ := h_cs_mem p hp
     rw [h_peq] at ha; simp only [LMonoTy.ftvar.injEq] at ha; subst ha
     exact h_fresh_ne_lhs v h_v_prov kv.1 ⟨kv.2, h_kv_mem⟩
-  -- v ∉ keys(S_out)
   have h_v_notkey : v ∉ Maps.keys S_out.subst :=
     unify_keys_orient _ S_in S_out h_unify h_lhs_ftvar h_lhs_fresh h_nodup
       v h_v_notin_S h_v_notin_lhs
-  -- subst fixes vars not in the domain.
   apply LMonoTy.subst_no_relevant_keys
   intro x hx
   have h_xv : x = v := by
@@ -2598,6 +2544,8 @@ theorem rigidVars_fixed_by_unify
   exact h_v_notkey
 
 
+/-- Every variable a type-checked procedure's body modifies is an output or body-local
+    (the `modRights` field of `ProcHasType'`). -/
 theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -2624,11 +2572,10 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
       · simp only [reduceCtorEq] at h
       · rename_i _ _ h_mr
         split at h_mr
-        · simp only [reduceCtorEq] at h_mr       -- oldDefined nonempty ⟹ error
+        · simp only [reduceCtorEq] at h_mr
         split at h_mr
-        · simp only [reduceCtorEq] at h_mr       -- modifiedVars not ⊆ allowed ⟹ error
+        · simp only [reduceCtorEq] at h_mr
         · rename_i h_empty_neg
-          -- h_empty_neg : ¬((!(filter ...).isEmpty) = true), i.e. the filter is empty.
           have h_filter_empty : (List.filter
               (fun v => !(ListMap.keys proc.header.outputs ++
                 (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups).contains v)
@@ -2636,7 +2583,6 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
             rw [← List.isEmpty_iff]
             simpa using h_empty_neg
           rw [List.filter_eq_nil_iff] at h_filter_empty
-          -- The guard as a membership implication on `proc.body`'s vars.
           have h_guard : ∀ w, w ∈ HasVarsImp.modifiedVars (P := Expression) proc.body →
               w ∈ ListMap.keys proc.header.outputs ++
                   HasVarsImp.definedVars (P := Expression) proc.body false := by
@@ -2653,28 +2599,24 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
             · exact List.mem_append_left _ h_out
             · exact List.mem_append_right _ (List.mem_eraseDups.mp h_def)
           clear h_empty_neg h_filter_empty
-          -- Peel the remaining pipeline to expose proc'.
-          elim_err h                       -- setupInputEnv
+          elim_err h
           rename_i v_setup h_setup
-          elim_err h with v_pre h_pre      -- typeCheckConditions (pre)
-          elim_err h                       -- resolveAliases
+          elim_err h with v_pre h_pre
+          elim_err h
           rename_i v_out h_out
-          elim_err h with v_post h_post    -- typeCheckConditions (post)
-          split at h                       -- proc.body
+          elim_err h with v_post h_post
+          split at h
           · rename_i ss h_body
-            elim_err h with v_unify h_unify -- unify
-            split at h                     -- rigid-refinement guard
+            elim_err h with v_unify h_unify
+            split at h
             · simp at h
-            rename_i h_rigid_none            -- rigidVars.find? (subst ≠ id) = none
-            elim_err h with v_body h_stc   -- Statement.typeCheck (via mapError)
+            rename_i h_rigid_none
+            elim_err h with v_body h_stc
             injection h with h_pair
             injection h_pair with h_proc _
             subst h_proc
-            -- Strip the mapError wrapper on `Statement.typeCheck`.
             have h_tc := Lambda.Except.mapError_ok_h' h_stc
-            -- Strip the mapError wrapper on `resolveAliases` for the outputs.
             have h_ra := Lambda.Except.mapError_ok_h' h_out
-            -- WF of the body env via `procBodyEnv_wf` + the guard's `rigid_inv`.
             have h_penv := postEnv_wf C Env proc _ v_setup v_pre v_out h_ta h_setup h_pre h_ra
               h_wf h_fwf h_resolved
             have h_E4mono := E4_ContextMono C Env proc _ v_setup v_pre v_out h_setup h_pre h_ra
@@ -2695,7 +2637,6 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
             have hb_fwf : FactoryWF C.functions := h_fwf
             have hb_rigid := h_rigid_inv
             have hb_closed : CalledProcsClosed P := h_closed
-            -- Vars of the type-annotated body equal vars of the input body `ss`.
             obtain ⟨h_bm, h_bd⟩ :=
               statement_typeCheck_vars
                 { functions := C.functions, datatypes := C.datatypes, knownTypes := C.knownTypes,
@@ -2705,7 +2646,6 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
                     (List.flatten v_setup.2.snd) }
                 (v_post.snd.updateSubst v_unify) P (some proc) ss v_body.fst v_body.snd
                 hb_wf hb_fwf hb_ne hb_mono hb_rigid hb_closed h_tc
-            -- outputs.keys is preserved: keys.length ≤ length of resolved outputs.
             have h_len : (ListMap.keys proc.header.outputs).length ≤ v_out.fst.length := by
               have h_len_ra := resolveAliasesList_length _ _ _ _ h_ra
               rw [h_len_ra, List.length_map, ListMap.keys_eq_map_fst,
@@ -2728,17 +2668,14 @@ theorem Procedure.typeCheck_modRights (C : LContext CoreLParams) (Env : TEnv Uni
                       (List.flatten v_setup.2.snd)]) x.snd)))
                 (g := Prod.fst) (fun p _ => rfl)
               rw [h_ml, List.map_fst_zip h_len]
-            -- Assemble. Reduce proc'.body's modified/defined vars to `ss`'s.
             intro v hv
             simp only [HasVarsImp.modifiedVars, HasVarsImp.definedVars,
               subst_block_modifiedVars, subst_block_definedVars, h_bm, h_bd] at hv ⊢
-            -- proc.body = .structured ss, so proc's modified/defined vars are `ss`'s.
             have h_gm : v ∈ HasVarsImp.modifiedVars (P := Expression) proc.body := by
               rw [h_body]; exact hv
             have h_res := h_guard v h_gm
             rw [h_body] at h_res
-            -- h_res : v ∈ proc.header.outputs.keys ++ Block.definedVars ss false;
-            -- rewrite outputs.keys forward to the annotated (subst-renamed) keys.
+            -- Rewrite `outputs.keys` forward to the annotated (subst-renamed) keys.
             rw [← h_keys] at h_res
             exact h_res
           · simp at h
@@ -2787,9 +2724,7 @@ theorem updateCheckExprs_values_expr_mem (es : List Expression.Expr)
 
 open Lambda.LTy.Syntax in
 /-- Every expression accumulated by `typeCheckConditions.go` is annotated-typed as
-    `bool` (`HasTypeA [] e bool`), provided the accumulator's elements already are.
-    The guard `annotatedExpr.toLMonoTy != mty[bool]` forces the resolved type to be
-    `bool`, and `resolve_HasTypeA` gives the judgment. -/
+    `bool` (`HasTypeA [] e bool`), provided the accumulator's elements already are. -/
 theorem typeCheckConditions_go_HasTypeA (C : Core.Expression.TyContext) (procName : CoreIdent)
     (conds : List (CoreLabel × Core.Procedure.Check)) (acc : Array Expression.Expr)
     (Env : Core.Expression.TyEnv) (res : Array Expression.Expr × Core.Expression.TyEnv)
@@ -2904,23 +2839,23 @@ theorem Procedure.typeCheck_preconditionsTyped_annotated (C : LContext CoreLPara
       instHasTypeA.exprTyped C (procInputContext Γ proc') c.expr (instHasTypeA.embed .bool) := by
   intro Γ c hc
   simp only [Procedure.typeCheck, bind, Except.bind] at h
-  elim_err h                       -- checkNoDuplicates
-  elim_err h                       -- checkTypeArgsWF
-  elim_err h                       -- checkModificationRights
-  elim_err h with h_setup          -- setupInputEnv
+  elim_err h
+  elim_err h
+  elim_err h
+  elim_err h with h_setup
   rename_i v_setup
-  elim_err h with h_pre            -- typeCheckConditions (pre)
+  elim_err h with h_pre
   rename_i v_pre
-  elim_err h                       -- resolveAliases
-  elim_err h                       -- typeCheckConditions (post)
-  split at h                       -- match proc.body
+  elim_err h
+  elim_err h
+  split at h
   · rename_i ss h_body
-    elim_err h                     -- pure ss (bodyStmts)
-    elim_err h                     -- unify
-    split at h                     -- rigid-refinement guard
+    elim_err h
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                     -- pure () (guard's none branch)
-    elim_err h                     -- Statement.typeCheck
+    elim_err h
+    elim_err h
     injection h with h_pair
     injection h_pair with h_proc _
     subst h_proc
@@ -2944,9 +2879,7 @@ theorem Procedure.typeCheck_preconditionsTyped_annotated (C : LContext CoreLPara
 
 open Lambda.LTy.Syntax in
 /-- Annotated `postconditionsTyped`: each output postcondition is `bool` under the
-    annotated judgment. The two remaining `sorry`s are the shared layer-2
-    `procBodyEnv_wf` obligation (`TEnvWF` + `AliasesResolved` of the postcondition
-    env, after `setupInputEnv` → pre → resolveAliases → addInNewest×2). -/
+    annotated judgment. -/
 theorem Procedure.typeCheck_postconditionsTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -2957,25 +2890,25 @@ theorem Procedure.typeCheck_postconditionsTyped_annotated (C : LContext CoreLPar
       instHasTypeA.exprTyped C (procBodyContext Γ proc') c.expr (instHasTypeA.embed .bool) := by
   intro Γ c hc
   simp only [Procedure.typeCheck, bind, Except.bind] at h
-  elim_err h                       -- checkNoDuplicates
-  elim_err h with h_ta             -- checkTypeArgsWF
-  elim_err h                       -- checkModificationRights
-  elim_err h with h_setup          -- setupInputEnv
+  elim_err h
+  elim_err h with h_ta
+  elim_err h
+  elim_err h with h_setup
   rename_i v_setup
-  elim_err h with h_pre            -- typeCheckConditions (pre)
+  elim_err h with h_pre
   rename_i v_pre
-  elim_err h with h_out            -- resolveAliases
+  elim_err h with h_out
   rename_i v_out
-  elim_err h with h_post           -- typeCheckConditions (post)
+  elim_err h with h_post
   rename_i v_post
-  split at h                       -- match proc.body
+  split at h
   · rename_i ss h_body
-    elim_err h                     -- pure ss (bodyStmts)
-    elim_err h                     -- unify
-    split at h                     -- rigid-refinement guard
+    elim_err h
+    elim_err h
+    split at h
     · simp at h
-    elim_err h                     -- pure () (guard's none branch)
-    elim_err h                     -- Statement.typeCheck
+    elim_err h
+    elim_err h
     injection h with h_pair
     injection h_pair with h_proc _
     subst h_proc
@@ -2987,7 +2920,6 @@ theorem Procedure.typeCheck_postconditionsTyped_annotated (C : LContext CoreLPar
       rw [Array.length_toList, h_len_arr, ListMap.values_eq_map_snd, List.length_map]
     have h_mem : c.expr ∈ v_post.1.toList :=
       updateCheckExprs_values_expr_mem v_post.1.toList proc.spec.postconditions h_len c hc
-    -- WF + AliasesResolved of the postcondition env (E4) via `postEnv_wf`.
     have h_ra := Lambda.Except.mapError_ok_h' h_out
     have h_penv := postEnv_wf C Env proc _ v_setup v_pre v_out h_ta h_setup h_pre h_ra
       h_wf h_fwf h_resolved
@@ -2996,12 +2928,10 @@ theorem Procedure.typeCheck_postconditionsTyped_annotated (C : LContext CoreLPar
   · exact absurd h (by simp only [reduceCtorEq, not_false_eq_true])
 
 
-/-! ## Both-sides RigidAnnotCompat transport (proven in W2Transport.lean). -/
+/-! ## Call-site shape lemmas: simplify the three filterMaps over
+`flatten [ids.zip (freshtvs.map ftvar)]`. -/
 
-/-! ## W2 call-site helpers (userSubst renaming shape + SubstReq fields). -/
-
-/-! Call-site shape lemmas: simplify the three filterMaps over `flatten [ids.zip (freshtvs.map ftvar)]`. -/
-
+/-- The `filterMap` extracting range vars recovers `freshtvs`. -/
 theorem filterMap_rigid (ids freshtvs : List TyIdentifier) (h : ids.length = freshtvs.length) :
     List.filterMap (fun x => match x.snd with | LMonoTy.ftvar id => some id | _ => none)
       (List.flatten [ids.zip (freshtvs.map LMonoTy.ftvar)]) = freshtvs := by
@@ -3013,6 +2943,7 @@ theorem filterMap_rigid (ids freshtvs : List TyIdentifier) (h : ids.length = fre
     | nil => simp at h
     | cons f fs => simp only [List.map_cons, List.zip_cons_cons, List.filterMap_cons]; rw [ih fs (by simpa using h)]
 
+/-- The `filterMap` building the fresh→user renaming recovers `freshtvs.zip (ids.map ftvar)`. -/
 theorem filterMap_userSubst (ids freshtvs : List TyIdentifier) (h : ids.length = freshtvs.length) :
     List.filterMap (fun x => match x.snd with
         | LMonoTy.ftvar fresh => some (fresh, LMonoTy.ftvar x.fst) | _ => none)
@@ -3026,6 +2957,7 @@ theorem filterMap_userSubst (ids freshtvs : List TyIdentifier) (h : ids.length =
     | nil => simp at h
     | cons f fs => simp only [List.map_cons, List.zip_cons_cons, List.filterMap_cons]; rw [ih fs (by simpa using h)]
 
+/-- The `filterMap` building the user→fresh renaming recovers `ids.zip (freshtvs.map ftvar)`. -/
 theorem filterMap_invSubst (ids freshtvs : List TyIdentifier) (h : ids.length = freshtvs.length) :
     List.filterMap (fun x => match x.snd with
         | LMonoTy.ftvar fresh => some (x.fst, LMonoTy.ftvar fresh) | _ => none)
@@ -3041,8 +2973,8 @@ theorem filterMap_invSubst (ids freshtvs : List TyIdentifier) (h : ids.length = 
 
 
 
--- The forward renaming subst[ids.zip(freshtvs.map ftvar)] inverts subst[freshtvs.zip(ids.map ftvar)]
--- on any v ∈ freshtvs.
+/-- The forward renaming `subst [ids.zip (freshtvs.map ftvar)]` inverts
+    `subst [freshtvs.zip (ids.map ftvar)]` on any `v ∈ freshtvs`. -/
 theorem userSubst_inv (ids freshtvs : List TyIdentifier)
     (h_len : ids.length = freshtvs.length) (h_ids_nodup : ids.Nodup)
     (v : TyIdentifier) (hv : v ∈ freshtvs) :
@@ -3052,11 +2984,12 @@ theorem userSubst_inv (ids freshtvs : List TyIdentifier)
   exact subst_rename_inverse freshtvs ids h_len.symm h_ids_nodup (.ftvar v)
     (by intro w hw; simp only [LMonoTy.freeVars, List.mem_singleton] at hw; subst hw; exact hv)
 
--- userSubst is a renaming (every ftvar → some ftvar).
+/-- `userSubst` is a renaming (every `ftvar` maps to some `ftvar`). -/
 theorem userSubst_ren (ids freshtvs : List TyIdentifier) (v : TyIdentifier) :
     ∃ w, LMonoTy.subst [freshtvs.zip (ids.map LMonoTy.ftvar)] (.ftvar v) = .ftvar w :=
   subst_zip_ftvar_renaming freshtvs ids v
 
+/-- A key in a map's `keys` has a `some` lookup. -/
 theorem mem_keys_find?_isSome (m : Map TyIdentifier LMonoTy) (k : TyIdentifier)
     (hk : k ∈ Map.keys m) : (Map.find? m k).isSome := by
   induction m with
@@ -3070,8 +3003,8 @@ theorem mem_keys_find?_isSome (m : Map TyIdentifier LMonoTy) (k : TyIdentifier)
       · exact absurd h.symm hne
       · exact ih h
 
--- rig_notin_range: for v ∈ freshtvs (disjoint from ids), v is not a free var of any
--- userSubst-image. userSubst maps each ftvar to either itself (∉ freshtvs) or some ftvar ids[i].
+/-- For `v ∈ freshtvs` (disjoint from `ids`), `v` is not a free var of any `userSubst`-image:
+    `userSubst` maps each `ftvar` to itself (∉ freshtvs) or to some `ftvar ids[i]`. -/
 theorem userSubst_rig_notin (ids freshtvs : List TyIdentifier)
     (h_len : ids.length = freshtvs.length)
     (h_disj : ∀ f ∈ freshtvs, f ∉ ids)
@@ -3101,6 +3034,8 @@ theorem userSubst_rig_notin (ids freshtvs : List TyIdentifier)
     intro h_eq; subst h_eq
     exact h_disj v hv hu_mem
 
+/-- Lifts a per-variable substitution-commutation fact (`h_base`) to arbitrary monotypes whose
+    free vars lie in `mty0`. -/
 theorem subst_pullback_gen (S : Subst) (σ σ' : Map TyIdentifier LMonoTy) (mty0 : LMonoTy)
     (h_base : ∀ v, v ∈ LMonoTy.freeVars mty0 →
       LMonoTy.subst [σ'] (LMonoTy.subst S (.ftvar v))
@@ -3129,6 +3064,8 @@ theorem subst_pullback_gen (S : Subst) (σ σ' : Map TyIdentifier LMonoTy) (mty0
       congr 1
       exact ihl (fun a ha => ih a (.tail _ ha)) h_tl_cl
 
+/-- `RigidAnnotCompat` is preserved by applying a renaming `S` to both sides, given `S` is a
+    renaming on `mty0`'s free vars, invertible by `Sinv`, and disjoint from the rigid vars. -/
 theorem RigidAnnotCompat_subst_both
     {aliases : List TypeAlias} {rigidVars : List TyIdentifier}
     {mty0 mty : LMonoTy} (S Sinv : Subst)
@@ -3179,6 +3116,7 @@ theorem RigidAnnotCompat_subst_both
     have h_pull := subst_pullback_gen S σ σ' mty0 h_base mty0 (fun v hv => hv)
     rw [h_pull]; exact h_ae_S
 
+/-- Every free var of `subst S mty` comes from substituting some free var of `mty`. -/
 theorem freeVars_subst_mem_exists (S : Subst) (mty : LMonoTy) (w : TyIdentifier)
     (hw : w ∈ LMonoTy.freeVars (LMonoTy.subst S mty)) :
     ∃ v, v ∈ LMonoTy.freeVars mty ∧ w ∈ LMonoTy.freeVars (LMonoTy.subst S (.ftvar v)) := by
@@ -3194,6 +3132,7 @@ theorem freeVars_subst_mem_exists (S : Subst) (mty : LMonoTy) (w : TyIdentifier)
     obtain ⟨v, hv_mem, hv_fv⟩ := ih a ha_mem hb_fv
     exact ⟨v, by simp only [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset ha_mem hv_mem, hv_fv⟩
 
+/-- `openFull`-of-monomorphic form of `RigidAnnotCompat_subst_both`. -/
 theorem RigidAnnotCompat_openFull_mono_subst
     {aliases : List TypeAlias} {rigidVars : List TyIdentifier}
     {mty0 mty : LMonoTy} {tys : List LMonoTy} (S Sinv : Subst)
@@ -3215,18 +3154,21 @@ theorem RigidAnnotCompat_openFull_mono_subst
 
 
 
-/-! ## InitClosed predicate. -/
+/-! ## InitClosed predicate: every `var`-init annotation is monomorphic with only rigid free vars. -/
 
+/-- A command is init-closed: any `init` annotation is a closed monotype over the rigid vars. -/
 def CmdInitClosed (rig : List TyIdentifier) (c : Cmd Expression) : Prop :=
   match c with
   | .init _ xty _ _ => xty.boundVars = [] ∧ (∀ v, v ∈ LMonoTy.freeVars xty.toMonoTypeUnsafe → v ∈ rig)
   | _ => True
 
+/-- `CmdInitClosed` lifted to extended commands (calls are trivially init-closed). -/
 def CommandInitClosed (rig : List TyIdentifier) (c : Command) : Prop :=
   match c with
   | .cmd c0 => CmdInitClosed rig c0
   | .call _ _ _ => True
 
+/-- `CommandInitClosed` lifted structurally to statements. -/
 def StmtInitClosed (rig : List TyIdentifier) (s : Statement) : Prop :=
   match s with
   | .cmd c => CommandInitClosed rig c
@@ -3263,6 +3205,8 @@ theorem init_transport {C : LContext CoreLParams} {Γ : TContext Unit} {S Sinv :
   · intro v _; exact hS.ren v
   · intro v hv; exact hS.inv_on_rigid v (h_closed v hv)
 
+/-- `CmdHasTypeA` is preserved under applying a rigid-respecting renaming `S` to the command
+    and both contexts (given the command is init-closed). -/
 theorem CmdHasTypeA_subst (C : LContext CoreLParams) (Γ Γ' : TContext Unit)
     (c : Cmd Expression) (S Sinv : Subst)
     (h : CmdHasTypeA C Γ c Γ')
@@ -3305,7 +3249,6 @@ theorem CmdHasTypeA_subst (C : LContext CoreLParams) (Γ Γ' : TContext Unit)
     exact CmdHasType'.cover _ l (LExpr.applySubst e S) md h_expr_subst
   | init_det x xty e mty tys md h_find h_getvars h_len h_rac h_expr =>
     simp only [Cmd.subst, substExprOrNondet, ExprOrNondet.map]
-    -- Mono-init: xty = forAll [] mty0.
     have h_ic' : xty.boundVars = [] ∧ (∀ v, v ∈ LMonoTy.freeVars xty.toMonoTypeUnsafe → v ∈ C.rigidTypeVars) := by
       simpa only [CmdInitClosed] using h_ic
     obtain ⟨h_bv, h_closed⟩ := h_ic'
@@ -3376,17 +3319,20 @@ def substCallArgFn (S : Subst) : CallArg Expression → CallArg Expression
   | .inoutArg id => .inoutArg id
   | .outArg id => .outArg id
 
+/-- `Command.subst` on a `.call` maps `substCallArgFn` over the arguments. -/
 theorem Command_subst_call (S : Subst) (pname : String)
     (args : List (CallArg Expression)) (md : MetaData Expression) :
     Core.Statement.Command.subst S (.call pname args md)
       = .call pname (args.map (substCallArgFn S)) md := by
   simp only [Command.subst]; congr 1
 
+/-- `applySubst` fixes a bare unannotated `fvar` (no annotation to rewrite). -/
 theorem fvar_none_applySubst (id : Expression.Ident) (S : Subst) :
     (LExpr.fvar () id none : Expression.Expr).applySubst S = LExpr.fvar () id none := by
   rw [LExpr.applySubst_eq_replaceUserProvidedType]
   simp [LExpr.replaceUserProvidedType]
 
+/-- `substCallArgFn` leaves the LHS variables of a call unchanged. -/
 theorem getLhs_map_substCallArgFn (args : List (CallArg Expression)) (S : Subst) :
     CallArg.getLhs (args.map (substCallArgFn S)) = CallArg.getLhs args := by
   induction args with
@@ -3395,6 +3341,7 @@ theorem getLhs_map_substCallArgFn (args : List (CallArg Expression)) (S : Subst)
     unfold CallArg.getLhs at ih ⊢
     cases a <;> simp only [List.map_cons, substCallArgFn, List.filterMap_cons, ih]
 
+/-- `substCallArgFn` distributes over `getInputExprs`, applying `applySubst` to each input. -/
 theorem getInputExprs_map_substCallArgFn (args : List (CallArg Expression)) (S : Subst) :
     CallArg.getInputExprs (args.map (substCallArgFn S))
       = (CallArg.getInputExprs args).map (LExpr.applySubst · S) := by
@@ -3426,11 +3373,13 @@ theorem getInputExprs_map_substCallArgFn (args : List (CallArg Expression)) (S :
           show CallArg.getInputExprs (CallArg.outArg id :: rest)
           = CallArg.getInputExprs rest from rfl, ih]
 
+/-- `substCallArgFn` preserves the number of input expressions. -/
 theorem getInputExprs_map_substCallArgFn_length (args : List (CallArg Expression)) (S : Subst) :
     (CallArg.getInputExprs (args.map (substCallArgFn S))).length
       = (CallArg.getInputExprs args).length := by
   rw [getInputExprs_map_substCallArgFn, List.length_map]
 
+/-- Zipping a list with its own image under `f` is the diagonal `map (v, f v)`. -/
 theorem zip_map_eq {α β} (xs : List α) (f : α → β) :
     xs.zip (xs.map f) = xs.map (fun v => (v, f v)) := by
   induction xs with
@@ -3488,6 +3437,8 @@ theorem input_node_transport (E : Expression.Expr) (S : Subst) (Γ : TContext Un
       rw [LExpr.applySubst_eq_replaceUserProvidedType] at h0
       simpa [LExpr.replaceUserProvidedType] using h0)
 
+/-- `CmdExtHasTypeA` is preserved under applying a rigid-respecting renaming `S` to the command
+    and both contexts (given the command is init-closed). -/
 theorem CmdExtHasTypeA_subst (C : LContext CoreLParams) (P : Program)
     (Γ Γ' : TContext Unit) (c : Command) (S Sinv : Subst)
     (h : CmdExtHasTypeA C P Γ c Γ')
@@ -3578,11 +3529,13 @@ theorem CmdExtHasTypeA_subst (C : LContext CoreLParams) (P : Program)
 
 
 
+/-- `CmdHasType'` leaves the alias list unchanged. -/
 theorem CmdHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
     {C : LContext CoreLParams} {Γ Γ' : TContext Unit} {c : Cmd Expression}
     (h : CmdHasType' (τ := τ) C Γ c Γ') : Γ'.aliases = Γ.aliases := by
   cases h <;> rfl
 
+/-- `CmdExtHasType'` leaves the alias list unchanged. -/
 theorem CmdExtHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
     {C : LContext CoreLParams} {P : Program} {Γ Γ' : TContext Unit} {c : Command}
     (h : CmdExtHasType' (τ := τ) C P Γ c Γ') : Γ'.aliases = Γ.aliases := by
@@ -3593,8 +3546,8 @@ theorem CmdExtHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
 /-- A statement-list derivation preserves the alias list from input to output.
     Only the `cmd` constructor mutates `Γ` (via `CmdExtHasType'`, which preserves
     aliases); `block`/`ite`/`loop`/`exit`/`funcDecl`/`typeDecl` all leave `Γ` fixed,
-    and `cons` chains the two ends. Used to bridge the checker's body output context
-    to `procBodyContext Env'.context proc'` in `bodyTyped` (BRIDGE 2a). -/
+    and `cons` chains the two ends. Used to relate the checker's body output context
+    to `procBodyContext Env'.context proc'` in `bodyTyped`. -/
 theorem StmtsHasType'_aliases {τ : Type} [ES : ExprTypingSpec τ]
     {C C' : LContext CoreLParams} {P : Program} {Γ Γ' : TContext Unit} {L : List String}
     {ss : List Statement}
@@ -3673,21 +3626,28 @@ theorem StmtHasType'_rigid_eq {P : Program}
 
 /-! ## Unfolding lemmas for InitClosed (well-founded recursion). -/
 
+/-- `StmtInitClosed` on a `block` unfolds to init-closedness of the body. -/
 theorem StmtInitClosed_block (rig) (l b md) :
     StmtInitClosed rig (.block l b md) = ∀ s ∈ b, StmtInitClosed rig s := by
   simp only [StmtInitClosed]
+
+/-- `StmtInitClosed` on an `ite` unfolds to init-closedness of both branches. -/
 theorem StmtInitClosed_ite (rig) (cnd t e md) :
     StmtInitClosed rig (.ite cnd t e md)
       = ((∀ s ∈ t, StmtInitClosed rig s) ∧ (∀ s ∈ e, StmtInitClosed rig s)) := by
   simp only [StmtInitClosed]
+
+/-- `StmtInitClosed` on a `loop` unfolds to init-closedness of the body. -/
 theorem StmtInitClosed_loop (rig) (g m i b md) :
     StmtInitClosed rig (.loop g m i b md) = ∀ s ∈ b, StmtInitClosed rig s := by
   simp only [StmtInitClosed]
+
+/-- `StmtInitClosed` on a `cmd` unfolds to `CommandInitClosed`. -/
 theorem StmtInitClosed_cmd (rig) (c) :
     StmtInitClosed rig (.cmd c) = CommandInitClosed rig c := by simp only [StmtInitClosed]
 
 
-/-! ## The statement-list deliverable (both-sides subst, with InitClosed). -/
+/-! ## Statement-list substitution (both-sides subst, with InitClosed). -/
 
 theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
     (Γ : TContext Unit) (L : List String) (ss : List Statement)
@@ -3801,7 +3761,8 @@ theorem StmtsHasTypeA_subst_gen (P : Program) (C : LContext CoreLParams)
       (ih_s hS' h_ic_head) (ih_ss hSb h_ic_tail)
 
 
-/-! ## BRIDGE 2b helpers: the checker's body context `find?`-agrees with `procBodyContext`. -/
+/-! ## Body-context agreement helpers: the checker's body context `find?`-agrees with
+`procBodyContext`. -/
 
 /-- Substitution commutes with `Maps.pop` (both act structurally on the scope list). -/
 theorem types_subst_pop (ts : Maps CoreIdent LTy) (S : Subst) :
@@ -3811,10 +3772,7 @@ theorem types_subst_pop (ts : Maps CoreIdent LTy) (S : Subst) :
   | cons t rest => simp only [TContext.types.subst, Maps.pop]
 
 /-- For a successful `Statement.typeCheck`, the output env's popped context types equal
-    `subst S' (pop input.types)` (S' = output subst). The internal `go` balances its
-    push/pop (`types_pop`), the top-level `updateContext` substitutes by S', and the outer
-    `popContext` strips the balanced newest scope. Used to shape `Env'.context.types` in
-    BRIDGE 2b. -/
+    `subst S' (pop input.types)` (S' = output subst). -/
 theorem statement_typeCheck_popContext_types
     (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss ss' : List Statement) (Env' : TEnv Unit)
@@ -3845,9 +3803,8 @@ theorem statement_typeCheck_popContext_types
     rw [types_subst_pop, h_tp]
 
 /-- `userSubst` (domain ⊆ `freshtvs`) fixes any monotype all of whose free vars are gen-below
-    a bound `g`, given every element of `freshtvs` is gen-named at index `≥ g`. This discharges
-    BRIDGE 2b's ambient-tail region for a *closed* ambient (where the hypothesis is vacuous),
-    and more generally for gen-below ambients. -/
+    a bound `g`, given every element of `freshtvs` is gen-named at index `≥ g`. Used to leave the
+    ambient tail untouched (vacuous for a closed ambient, and more generally for gen-below ones). -/
 theorem userSubst_fixes_of_ambient_fresh
     (freshtvs ids : List TyIdentifier) (mty : LMonoTy) (g : Nat)
     (h_len : freshtvs.length = ids.length)
@@ -3870,8 +3827,7 @@ theorem userSubst_fixes_of_ambient_fresh
   rw [h_none]
 
 /-- Any substitution fixes a closed monomorphic `LTy` (`boundVars = []`, `freeVars = []`).
-    Ambient bindings satisfy both (mono via `ContextMono`, closed via `h_ambient_closed`),
-    so `S'`/`userSubst` leave the ambient tail untouched in BRIDGE 2b. -/
+    Ambient bindings satisfy both, so any substitution leaves the ambient tail untouched. -/
 theorem LTy.subst_eq_self_of_mono_closed (S : Subst) (ty : LTy)
     (h_mono : LTy.boundVars ty = []) (h_closed : LTy.freeVars ty = []) :
     LTy.subst S ty = ty := by
@@ -3915,9 +3871,7 @@ theorem setupInputEnv_pop_context_types
       Maps.newest, Maps.pop, Maps.push]
 
 /-- The checker's body-input env has exactly one scope over the ambient:
-    `pop envForBody.context.types = Env.context.types`. Chains setupInputEnv (one push) →
-    pre (context-preserving) → resolveAliases (env-local) → 2×addInNewest (depth-preserving) →
-    post (context-preserving) → updateSubst (context-preserving). Feeds BRIDGE 2b's ambient tail. -/
+    `pop envForBody.context.types = Env.context.types`. -/
 theorem envForBody_pop_context_types
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (proc : Procedure)
     (fr : Strata.FileRange)
@@ -3974,10 +3928,7 @@ theorem addInNewestContext_newest_types (Env : Core.Expression.TyEnv) (m : Map C
   show Maps.newest (Maps.addInNewest Env.context.types m) = _
   simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push]
 
-/-- `setupInputEnv`'s newest scope is exactly the instantiated inputs (`toTrivialLTy inp_mty_sig`).
-    Mirror of `setupInputEnv_pop_context_types` but for `Maps.newest`: setup pushes an empty scope,
-    instantiate preserves the context (so the pushed-empty newest stays `[]`), then `addInNewest`
-    of `toTrivialLTy inp_mty_sig` gives `[] ++ toTrivialLTy inp_mty_sig`. -/
+/-- `setupInputEnv`'s newest scope is exactly the instantiated inputs (`toTrivialLTy inp_mty_sig`). -/
 theorem setupInputEnv_newest_context_types
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
     (proc : Procedure) (fr : Strata.FileRange)
@@ -4005,10 +3956,7 @@ theorem setupInputEnv_newest_context_types
     rfl
 
 /-- The checker's body-input env's newest scope is exactly the accumulated
-    inputs ++ outputs ++ old-inout bindings. Newest-analogue of `envForBody_pop_context_types`;
-    chains setupInputEnv (newest = inputs) → pre (context-preserving) → resolveAliases (env-local) →
-    2×addInNewest (append outputs, then old) → post (context-preserving) → updateSubst
-    (context-preserving). Feeds BRIDGE 2b's Region A (`h_newest`). -/
+    inputs ++ outputs ++ old-inout bindings. Newest-analogue of `envForBody_pop_context_types`. -/
 theorem envForBody_newest_context_types
     (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (proc : Procedure)
     (fr : Strata.FileRange)
@@ -4066,9 +4014,7 @@ theorem envForBody_newest_context_types
   rfl
 
 /-- After instantiation, `subst [ids ↦ freshtvs.map ftvar] mty` has free vars ⊆ `freshtvs`,
-    provided the original `mty`'s free vars are all declared in `ids`. Combined with
-    `h_rigid_inv` (the body subst fixes the fresh params), this shows the checker's fresh
-    signature values are fixed by `S'` — the hypothesis of `subst_go_fixes_scope` in Region A. -/
+    provided the original `mty`'s free vars are all declared in `ids`. -/
 theorem subst_zip_freeVars_subset (ids freshtvs : List TyIdentifier) (mty : LMonoTy)
     (h_len : ids.length = freshtvs.length)
     (h_mty : ∀ v ∈ LMonoTy.freeVars mty, v ∈ ids) :
@@ -4099,10 +4045,9 @@ theorem subst_zip_freeVars_subset (ids freshtvs : List TyIdentifier) (mty : LMon
     subst hv_w
     exact hu_mem
 
-/-- Old-scope roundtrip core (Region A, inout params): the body substitution `S'` (the unify of
-    the `tyArg` constraints) sends each declared `orig` to its fresh var `fresh`, exactly as
-    `tyArgSubst` does. Via `Constraints.unify_sound` (the constraint `(orig, fresh)` is satisfied
-    by `S'`) + the guard fact that `S'` fixes `fresh`. No `∉ keys` invariant needed. -/
+/-- Old-scope roundtrip core (inout params): the body substitution `S'` (the unify of the
+    `tyArg` constraints) sends each declared `orig` to its fresh var `fresh`, exactly as
+    `tyArgSubst` does. -/
 theorem subst_S'_eq_tyArgSubst_on_typeArg
     (tyArgSubst : Subst) (S_in S' : SubstInfo)
     (h_unify : Constraints.unify (tyArgSubst.flatten.map (fun kv => (LMonoTy.ftvar kv.1, kv.2))) S_in
@@ -4119,9 +4064,9 @@ theorem subst_S'_eq_tyArgSubst_on_typeArg
   rw [h_fix] at h_sound
   exact h_sound
 
-/-- `subst.go S` fixes a scope whose bindings are all `S`-fixed. Region A of BRIDGE 2b:
-    the checker's fresh signature scope is fixed by the body substitution `S'` (its type
-    vars are the rigid params), so the `subst.go S'` layer collapses. -/
+/-- `subst.go S` fixes a scope whose bindings are all `S`-fixed. Applies to the checker's
+    fresh signature scope, fixed by the body substitution `S'` (its type vars are the rigid
+    params), so the `subst.go S'` layer collapses. -/
 theorem subst_go_fixes_scope (S : Subst) (scope : Map CoreIdent LTy)
     (h : ∀ p : CoreIdent × LTy, p ∈ scope.toList → LTy.subst S p.2 = p.2) :
     TContext.types.subst.go S scope = scope := by
@@ -4140,7 +4085,7 @@ theorem maps_eq_newest_cons_pop (ts : Maps CoreIdent LTy) (h : ts ≠ []) :
   | nil => exact absurd rfl h
   | cons t rest => simp only [Maps.newest, Maps.pop]
 
-/-- `subst.go` distributes over scope append (Region A: the newest scope is inputs++outputs++old). -/
+/-- `subst.go` distributes over scope append (the newest scope is inputs++outputs++old). -/
 theorem subst_go_append (S : Subst) (l1 l2 : List (CoreIdent × LTy)) :
     TContext.types.subst.go S (l1 ++ l2)
       = TContext.types.subst.go S l1 ++ TContext.types.subst.go S l2 := by
@@ -4170,7 +4115,7 @@ theorem subst_go_toTrivialLTy (S : Subst) (sig : @LMonoTySignature Unit) :
   exact subst_go_trivial_map S sig
 
 /-- `subst.go` on an `mkOld`-keyed `forAll []` scope pushes the `LMonoTy.subst` into each stored
-    monotype (keys `mkOld x.1.name` are unchanged). The old-inout scope of `bridge_2b_final`'s
+    monotype (keys `mkOld x.1.name` are unchanged). The old-inout scope of `body_context_find_agree`'s
     `h_newest`. -/
 theorem subst_go_old_scope (S : Subst) {β : Type} (l : List β) (key : β → CoreIdent) (val : β → LMonoTy) :
     TContext.types.subst.go S
@@ -4181,11 +4126,8 @@ theorem subst_go_old_scope (S : Subst) {β : Type} (l : List β) (key : β → C
   | cons p rest ih =>
     simp only [List.map_cons, TContext.types.subst.go, LTy.subst_forAll_nil, ih]
 
-/-- The old-inout scope match (Region A of BRIDGE 2b, `old` sub-scope). The spec's `old` scope is
-    built by `mkOld`-keying the *renamed* inout params (filter of `sig.map (·, subst US ·)`); the
-    checker's is `subst.go US (subst.go S' (mkOld-keyed filter of sig))`. Since the renaming `US`
-    preserves `.fst` (so the filter predicate and keys are unchanged) and `S'` fixes every free var
-    of the retained inout values, both sides collapse to the same `mkOld`-keyed renamed scope. -/
+/-- The old-inout scope match (`old` sub-scope of the newest scope): the spec's `mkOld`-keyed
+    renamed inout params equal the checker's `subst.go US (subst.go S' (mkOld-keyed filter of sig))`. -/
 theorem old_scope_eq
     (sig : List (CoreIdent × LMonoTy)) (okeys : List CoreIdent) (US S' : Subst)
     (h_fix : ∀ x ∈ sig, ∀ v ∈ LMonoTy.freeVars x.snd,
@@ -4210,11 +4152,10 @@ theorem old_scope_eq
     LMonoTy.subst_eq_self_of_fixes _ _ (h_fix p h_mem)
   simp only [Function.comp, h_pfix]
 
-/-- Per-scope collapse-then-rename for inputs/outputs (Region A of BRIDGE 2b): if every value of
-    `sig` has free vars ⊆ `freshtvs` and `S'` fixes every `freshtvs` var, then
-    `subst.go userSubst (subst.go S' (toTrivialLTy sig)) = toTrivialLTy (sig.map (·, subst userSubst ·))`.
-    `S'` collapses (fixes the fresh values), leaving only the `userSubst` rename. -/
-theorem region_scope_collapse (US S' : Subst) (freshtvs : List TyIdentifier)
+/-- Per-scope collapse-then-rename for inputs/outputs: if every value of `sig` has free vars ⊆
+    `freshtvs` and `S'` fixes every `freshtvs` var, then
+    `subst.go userSubst (subst.go S' (toTrivialLTy sig)) = toTrivialLTy (sig.map (·, subst userSubst ·))`. -/
+theorem subst_go_collapse_rename (US S' : Subst) (freshtvs : List TyIdentifier)
     (sig : @LMonoTySignature Unit)
     (h_closed : ∀ w ∈ LMonoTys.freeVars (ListMap.values sig), w ∈ freshtvs)
     (h_fix : ∀ v ∈ freshtvs, LMonoTy.subst S' (LMonoTy.ftvar v) = LMonoTy.ftvar v) :
@@ -4250,7 +4191,7 @@ theorem subst_go_fix_scope (S : Subst) (scope : Map CoreIdent LTy)
       (h ty (by show ty ∈ ty :: Map.values rest; exact List.mem_cons_self))]
     rw [ih (fun t ht => h t (by show t ∈ ty :: Map.values rest; exact List.mem_cons_of_mem _ ht))]
 
-/-- Any substitution fixes a closed `Maps` stack — the ambient-tail collapse in BRIDGE 2b
+/-- Any substitution fixes a closed `Maps` stack — the ambient-tail collapse
     (both `S'` and `userSubst` leave the closed ambient untouched). Closed alone suffices. -/
 theorem subst_fix_closed (S : Subst) (ts : Maps CoreIdent LTy)
     (h : ∀ ty ∈ Maps.values ts, LTy.freeVars ty = []) :
@@ -4264,11 +4205,9 @@ theorem subst_fix_closed (S : Subst) (ts : Maps CoreIdent LTy)
     rw [ih (fun ty hty => h ty (by
       show ty ∈ scope.values ++ Maps.values rest; exact List.mem_append_right _ hty))]
 
-/-- BRIDGE 2b assembly: given the LHS/RHS `types`-stack shapes, the newest-scope agreement
-    (Region A `h_newest`), and the ambient being closed (so every subst fixes it), the two
-    contexts agree on `find?`. Both ambient tails collapse to `ambient`; the newest scopes
-    agree by `h_newest`. -/
-theorem bridge_2b_final
+/-- Body-context agreement assembly: given the LHS/RHS `types`-stack shapes, the newest-scope
+    agreement (`h_newest`), and the ambient being closed, the two contexts agree on `find?`. -/
+theorem body_context_find_agree
     (Env' : TContext Unit) (proc' : Procedure) (bodyΓ : TContext Unit)
     (S' userSubst : Subst) (ambient : Maps CoreIdent LTy) (freshScope declScope : Map CoreIdent LTy)
     (h_pbc : (procBodyContext Env' proc').types = declScope :: TContext.types.subst ambient S')
@@ -4643,8 +4582,7 @@ theorem typeCheckAux_go_InitClosed (P : Program) (op : Option Procedure)
     elim_err h_goeq with v heq
     have h_body := trycatch_ok _ _ v heq
     clear heq
-    -- Common: from `h_body` extract the goBlock run + output loop shape, then finish.
-    -- We build the shape existentially, covering both guard branches uniformly at the tail.
+    -- Shared tail for both guard branches, built existentially over the goBlock/output-loop shape.
     have h_finish : ∀ (guarda' : ExprOrNondet Expression) (mtOpt' : Option (LExprT CoreLParams.mono))
         (it' : List (String × LExprT CoreLParams.mono)) (Env_inv : TEnv Unit),
         (∃ tb Env_loop C_loop,
@@ -4830,6 +4768,7 @@ theorem subst_preserves_CommandInitClosed (rig : List TyIdentifier) (S : Subst)
     rw [Command_subst_call]
     simp only [CommandInitClosed]
 
+/-- `Statement.subst` by a substitution fixing the rigid vars preserves `StmtInitClosed`. -/
 theorem subst_preserves_StmtInitClosed (rig : List TyIdentifier) (S : Subst)
     (h_fix : ∀ v, v ∈ rig → LMonoTy.subst S (.ftvar v) = .ftvar v)
     (s : Statement) (h_ic : StmtInitClosed rig s) :
@@ -4892,7 +4831,7 @@ theorem subst_preserves_StmtInitClosed (rig : List TyIdentifier) (S : Subst)
       · exact h_acc s' h_mem
     exact ih_rest h_acc' h_ss_tail
 
-/-! ### Top-level deliverable. -/
+/-! ### Statement typechecking yields `InitClosed`. -/
 
 theorem statement_typeCheck_InitClosed (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (op : Option Procedure) (ss ss' : List Statement) (Env' : TEnv Unit)
@@ -4911,17 +4850,14 @@ theorem statement_typeCheck_InitClosed (C : LContext CoreLParams) (Env : TEnv Un
     rw [h_aux] at h
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_ss', _⟩ := h
-    -- InitClosed of the pre-subst annotated statements.
     have h_ssA_ic : StmtsInitClosed C.rigidTypeVars ssA :=
       typeCheckAux_go_InitClosed P op C Env ss [] [] ssA Env_aux C_aux h_aux
         (fun s hs => absurd hs (List.not_mem_nil))
-    -- The output subst fixes every rigid var (via go preservation).
     have h_pres := typeCheckAux_go_preserves C Env P op ss [] [] ssA Env_aux C_aux
       h_aux h_wf h_fwf h_ne h_mono h_rigid_inv h_closed
     have h_fix : ∀ v, v ∈ C.rigidTypeVars →
         LMonoTy.subst Env_aux.stateSubstInfo.subst (.ftvar v) = .ftvar v := by
       intro v hv; exact h_pres.rigid_inv v (h_pres.rigid_eq ▸ hv)
-    -- `ss' = subst.go S ssA []`; subst preserves InitClosed.
     rw [← h_ss', Statement.subst_go_nil]
     intro s hs
     simp only [List.mem_map] at hs
@@ -4931,7 +4867,7 @@ theorem statement_typeCheck_InitClosed (C : LContext CoreLParams) (Env : TEnv Un
       s0 (h_ssA_ic s0 h_s0_mem)
 
 
-/-! ## BRIDGE 1: annotated body derivation transports across a `rigidTypeVars` drop. -/
+/-! ## Annotated body derivation transports across a `rigidTypeVars` drop. -/
 
 theorem RigidAnnotCompat_antitone (aliases : List TypeAlias) (R1 R2 : List Lambda.TyIdentifier)
     (ann mty : LMonoTy) (h_sub : R2 ⊆ R1)
@@ -5070,10 +5006,9 @@ theorem isOldIdent_mkOld (n : String) : CoreIdent.isOldIdent (CoreIdent.mkOld n)
 
 abbrev NotOld (x : CoreIdent) : Prop := ¬ CoreIdent.isOldIdent x = true
 
-/-- Context-agreement for the annotated bridge. `Γ₂` agrees with `Γ₁`:
-    (1) same aliases; (2) exact `find?` on non-old keys; (3) on old keys, `find?` matches up to
-    `AliasEquiv` of the stored monotype (both none, or both `some (forAll [] ·)` with the mtys
-    alias-equiv). Point (3) is what lets a `call Q(old x)` input transport. -/
+/-- Context-agreement for the annotated bridge. `Γ₂` agrees with `Γ₁`: (1) same aliases;
+    (2) exact `find?` on non-old keys; (3) on old keys, `find?` matches up to `AliasEquiv` of the
+    stored monotype (both none, or both `some (forAll [] ·)` with the mtys alias-equiv). -/
 structure CtxAgreeA (Γ₂ Γ₁ : TContext Unit) : Prop where
   al : Γ₂.aliases = Γ₁.aliases
   nonold : ∀ x, NotOld x → Γ₂.types.find? x = Γ₁.types.find? x
@@ -5198,20 +5133,29 @@ def StmtModDefNotOld (s : Statement) : Prop :=
 
 abbrev StmtsModDefNotOld (ss : List Statement) : Prop := ∀ s ∈ ss, StmtModDefNotOld s
 
+/-- `StmtModDefNotOld` on a `block` unfolds to the property over the body. -/
 theorem StmtModDefNotOld_block (l b md) :
     StmtModDefNotOld (.block l b md) = ∀ s ∈ b, StmtModDefNotOld s := by simp only [StmtModDefNotOld]
+
+/-- `StmtModDefNotOld` on an `ite` unfolds to the property over both branches. -/
 theorem StmtModDefNotOld_ite (cnd t e md) :
     StmtModDefNotOld (.ite cnd t e md)
       = ((∀ s ∈ t, StmtModDefNotOld s) ∧ (∀ s ∈ e, StmtModDefNotOld s)) := by
   simp only [StmtModDefNotOld]
+
+/-- `StmtModDefNotOld` on a `loop` unfolds to the property over the body. -/
 theorem StmtModDefNotOld_loop (g m i b md) :
     StmtModDefNotOld (.loop g m i b md) = ∀ s ∈ b, StmtModDefNotOld s := by simp only [StmtModDefNotOld]
+
+/-- `StmtModDefNotOld` on a `cmd` unfolds to `NotOld` of its modified/defined vars. -/
 theorem StmtModDefNotOld_cmd (c) :
     StmtModDefNotOld (.cmd c)
       = ((∀ v ∈ Command.modifiedVars c, NotOld v) ∧ (∀ v ∈ Command.definedVars c, NotOld v)) := by
   simp only [StmtModDefNotOld]
 
 set_option maxHeartbeats 1000000 in
+/-- `StmtsHasTypeA` transfers along a `CtxAgreeA`-related context, given every modified/defined
+    var is `NotOld` (so the `old`-key discrepancies between the contexts are irrelevant). -/
 theorem StmtsHasTypeA_find_congr_weak2 {P : Program}
     {C C' : LContext CoreLParams} {Γ₁ Γ₁' : TContext Unit} {L : List String} {ss : List Statement}
     (h : StmtsHasTypeA P C Γ₁ L ss C' Γ₁')
@@ -5284,13 +5228,10 @@ theorem StmtsHasTypeA_find_congr_weak2 {P : Program}
     obtain ⟨Γc', h_agc, h_ss'⟩ := ih_ss h_ss Γb' h_agb
     exact ⟨Γc', h_agc, StmtsHasType'.cons Ca Cb Cc Γ₂ Γb' Γc' La s ss h_s' h_ss'⟩
 
-/-- Structural core for the newest-scope agreement feeding `bridge_2b_final_weak2`. Two newest
+/-- Structural core for the newest-scope agreement feeding `body_context_ctxAgreeA`. Two newest
     scopes share an IO prefix `ioScope` (inputs++outputs, values all `forAll [] _`) and differ only
-    in their old tails `oldA`/`oldB` (no non-old keys); the old tails are per-key `AliasEquiv`-related.
-    Then the full scopes agree exactly on NotOld keys and up to `AliasEquiv` on old keys. An old key
-    that happens to hit the shared IO prefix agrees exactly on both sides (`AliasEquiv.refl`); no need
-    to forbid old-shaped IO keys. `Map ++` uses its own `HAppend` (List.append), so `find?`
-    distributes via `Map.find?_map_append`. -/
+    in their old tails `oldA`/`oldB`, which are per-key `AliasEquiv`-related. Then the full scopes
+    agree exactly on NotOld keys and up to `AliasEquiv` on old keys. -/
 theorem newest_scope_agree
     (aliases : List TypeAlias) (ioScope oldA oldB : Map CoreIdent LTy)
     (h_io_forall : ∀ x m, ioScope.find? x = some m → ∃ mty, m = .forAll [] mty)
@@ -5332,10 +5273,8 @@ theorem old_map_notold_none (oldParams : List (CoreIdent × LMonoTy)) (x : CoreI
   rintro ⟨p, hp, h_key⟩
   exact h_x (h_key ▸ isOldIdent_mkOld p.1.name)
 
--- Bridge: `StmtModDefNotOld` (the recursive predicate the weak2 congruence threads) follows from
--- every modified/defined var of `s` being `NotOld`. Proved by mutual structural recursion mirroring
--- `StmtModDefNotOld`; the checker's reserved-`old`-prefix write guard supplies the `NotOld` facts.
 mutual
+/-- `StmtModDefNotOld` follows from every modified/defined var of `s` being `NotOld`. -/
 theorem StmtModDefNotOld_of_vars (s : Statement)
     (h_m : ∀ v ∈ Stmt.modifiedVars (P := Expression) (C := Command) s, NotOld v)
     (h_d : ∀ v ∈ Stmt.definedVars (P := Expression) (C := Command) s false, NotOld v) :
@@ -5372,6 +5311,7 @@ theorem StmtModDefNotOld_of_vars (s : Statement)
   | funcDecl d f => simp only [StmtModDefNotOld]
   | typeDecl t md => simp only [StmtModDefNotOld]
 
+/-- Block form of `StmtModDefNotOld_of_vars`. -/
 theorem StmtsModDefNotOld_of_vars (ss : List Statement)
     (h_m : ∀ v ∈ Block.modifiedVars (P := Expression) (C := Command) ss, NotOld v)
     (h_d : ∀ v ∈ Block.definedVars (P := Expression) (C := Command) ss false, NotOld v) :
@@ -5392,10 +5332,9 @@ theorem StmtsModDefNotOld_of_vars (ss : List Statement)
         s' h_rest
 end
 
-/-- The checker's reserved-`old`-prefix write guard (the FIRST `if` in
-    `checkModificationRights`): reaching `.ok` means `((modifiedVars ++ definedVars).filter
-    isOldIdent).isEmpty`, so every modified/defined var of the INPUT body is `NotOld`. Purely
-    syntactic peel — needs no WF hypotheses. Feeds `bodyTyped`'s `StmtsModDefNotOld` obligation. -/
+/-- The checker's reserved-`old`-prefix write guard (the first `if` in `checkModificationRights`):
+    reaching `.ok` means `((modifiedVars ++ definedVars).filter isOldIdent).isEmpty`, so every
+    modified/defined var of the INPUT body is `NotOld`. -/
 theorem Procedure.typeCheck_modDefNotOld (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env')) :
@@ -5411,9 +5350,8 @@ theorem Procedure.typeCheck_modDefNotOld (C : LContext CoreLParams) (Env : TEnv 
       · simp only [reduceCtorEq] at h
       · rename_i _ _ h_mr
         split at h_mr
-        · simp only [reduceCtorEq] at h_mr       -- oldWritten nonempty ⟹ error
+        · simp only [reduceCtorEq] at h_mr
         · rename_i h_old_neg
-          -- h_old_neg : ¬((!(filter isOldIdent (mod.eraseDups ++ def.eraseDups)).isEmpty) = true)
           have h_filter_empty : (List.filter (fun v => CoreIdent.isOldIdent v)
               ((HasVarsImp.modifiedVars (P := Expression) proc.body).eraseDups ++
                (HasVarsImp.definedVars (P := Expression) proc.body false).eraseDups)) = [] := by
@@ -5432,19 +5370,20 @@ theorem Procedure.typeCheck_modDefNotOld (C : LContext CoreLParams) (Env : TEnv 
           · intro v hv
             exact h_notold v (List.mem_append_right _ (List.mem_eraseDups.mpr hv))
 
-theorem bridge_2b_final_weak2
+/-- The `CtxAgreeA` (annotated) variant of `body_context_find_agree`: the two body contexts agree
+    exactly on non-old keys and up to `AliasEquiv` on old keys. -/
+theorem body_context_ctxAgreeA
     (Env' : TContext Unit) (proc' : Procedure) (bodyΓ : TContext Unit)
     (S' userSubst : Subst) (ambient : Maps CoreIdent LTy) (freshScope declScope : Map CoreIdent LTy)
     (h_pbc : (procBodyContext Env' proc').types = declScope :: TContext.types.subst ambient S')
     (h_bodyΓ_types : bodyΓ.types
       = TContext.types.subst.go S' freshScope :: TContext.types.subst ambient S')
     (h_al : (procBodyContext Env' proc').aliases = (TContext.subst bodyΓ userSubst).aliases)
-    -- non-old keys agree exactly on the newest scopes (inputs/outputs; region_scope_collapse)
+    -- Non-old keys agree exactly on the newest scopes.
     (h_newest_nonold : ∀ x, NotOld x →
       declScope.find? x
         = (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)).find? x)
-    -- old keys: spec newest (declScope) find? is AliasEquiv-related to checker newest (both none,
-    -- or both some with alias-equiv mtys). Full agreement so the bridge is pure packaging.
+    -- Old keys agree up to `AliasEquiv` (both none, or both `some (forAll [] ·)` with equiv mtys).
     (h_newest_old : ∀ x, CoreIdent.isOldIdent x = true →
       (declScope.find? x = none
         ∧ (TContext.types.subst.go userSubst (TContext.types.subst.go S' freshScope)).find? x = none)
@@ -5494,11 +5433,8 @@ theorem bridge_2b_final_weak2
       · rw [Maps.find?, h_dsome]
       · rw [← h_al]; exact h_ae
 
-/-- Every modified/defined variable of the checker-output body is `NotOld`. Peels the
-    reserved-`old`-prefix write guard in `checkModificationRights` (the old-write filter is empty
-    on the success path) and reduces the output body's vars to the input body `ss`'s vars via
-    `subst_block_{modified,defined}Vars` + `statement_typeCheck_vars`. Discharges the weak2
-    congruence's `StmtsModDefNotOld` obligation in the annotated `bodyTyped`. -/
+/-- Every modified/defined variable of the checker-output body is `NotOld` (from the
+    reserved-`old`-prefix write guard in `checkModificationRights`). -/
 theorem Procedure.typeCheck_bodyModDefNotOld (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -5593,7 +5529,7 @@ theorem Procedure.typeCheck_bodyModDefNotOld (C : LContext CoreLParams) (Env : T
 
 /-- Annotated `bodyTyped`: the output body is well-typed as a statement list under the
     annotated judgment. Delegates to `Statement.typeCheck_annotated_sound` + a context
-    bridge (weak2 `CtxAgreeA` congruence). THE SPINE of the annotated deliverable. -/
+    bridge (weak2 `CtxAgreeA` congruence). -/
 theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -5601,54 +5537,40 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
     (h_fwf : FactoryWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
     (h_mono : ContextMono Env.context)
-    -- Ambient value bindings are type-var-closed. Needed by BRIDGE 2b's ambient-tail region:
-    -- the checker's body substitution `S'` and the fresh→declared rename `userSubst` both fix a
-    -- closed ambient, so the two context tails agree on `find?`. (Analogous to
-    -- `Function.typeCheck_sound`'s `h_ambient_rigid`, but the procedure checker *replaces*
-    -- `C.rigidTypeVars` with the fresh params — so "rigid" w.r.t. the original `C` does not
-    -- transfer to the body-time substitution; closedness is the invariant that does.) Vacuous
-    -- at the `Program` level: Core has no global variable declarations
-    -- (`Decl` = type/ax/distinct/proc/func/recFuncBlock), so the ambient carries no value
-    -- bindings with free type vars. Does not obstruct upward composition.
+    -- Ambient bindings are closed, so both body substitutions fix them and the context tails
+    -- agree. Vacuous at the `Program` level (Core has no global variable declarations).
     (h_ambient_closed : ∀ ty, ty ∈ Maps.values Env.context.types → LTy.freeVars ty = [])
-    -- The ambient `C` carries no rigid type variables. The procedure checker *sets*
-    -- `C.rigidTypeVars := rigidVars` (the fresh params) for the body, so BRIDGE 1's transport of
-    -- the body derivation back to the ambient `C` needs `C.rigidTypeVars ⊆ rigidVars`; since
-    -- `rigidVars` are fresh (disjoint from anything in `C`), this is `C.rigidTypeVars = []`.
-    -- Vacuous at the `Program` level: top-level procedures are checked with the program ambient
-    -- `C`, whose `rigidTypeVars` is empty (nothing in the program loop sets it). Same EXPOSE
-    -- status as `h_ambient_closed`/`h_mono`; no external consumers.
+    -- The ambient carries no rigid type vars, so the body derivation transports back to `C`.
+    -- Vacuous at the `Program` level (`C.rigidTypeVars` is empty there).
     (h_ambient_no_rigid : C.rigidTypeVars = [])
     (h_closed : CalledProcsClosed P) :
     ProcBodyHasType' LMonoTy P C (procBodyContext Env'.context proc') proc'.body := by
-  -- Output body's mod/def vars are all `NotOld` (from the checker's reserved-`old` write guard);
-  -- extracted before peeling `h`, which destroys the original equation.
+  -- Extract the body's `NotOld` mod/def facts before peeling `h` (which destroys the equation).
   have h_mdno_facts := Procedure.typeCheck_bodyModDefNotOld C Env P proc proc' Env' md h
     h_wf h_fwf h_resolved h_mono h_closed
-  -- Peel Procedure.typeCheck to expose the body call and proc'.body's shape.
   simp only [Procedure.typeCheck, Procedure.checkNoDuplicates, bind, Except.bind,
     pure, Except.pure] at h
   split at h
   · simp at h
   rename_i h_in_guard
-  elim_err h with h_ta             -- checkTypeArgsWF
-  elim_err h                       -- checkModificationRights
-  elim_err h                       -- setupInputEnv
+  elim_err h with h_ta
+  elim_err h
+  elim_err h
   rename_i v_setup h_setup
-  elim_err h                       -- typeCheckConditions (pre)
+  elim_err h
   rename_i v_pre h_pre
-  elim_err h                       -- resolveAliases
+  elim_err h
   rename_i v_out h_out
-  elim_err h                       -- typeCheckConditions (post)
+  elim_err h
   rename_i v_post h_post
-  split at h                       -- proc.body
+  split at h
   · rename_i ss h_body
-    elim_err h                     -- unify
+    elim_err h
     rename_i v_unify h_unify
-    split at h                     -- rigid-refinement guard
+    split at h
     · simp at h
-    rename_i h_rigid_none           -- rigidVars.find? (subst ≠ id) = none
-    elim_err h                     -- Statement.typeCheck (the body call)
+    rename_i h_rigid_none
+    elim_err h
     rename_i v_body h_stc
     -- The guard's `none` branch gives `rigid_inv` directly (as in `Function.typeCheck`).
     have h_rigid_inv : ∀ v, v ∈ (List.filterMap
@@ -5661,9 +5583,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
     injection h with h_pair
     injection h_pair with h_proc h_env'
     subst h_proc
-    -- Strip the mapError wrapper from h_stc.
     have h_stc' := Core.WF.Except.mapError_ok h_stc
-    -- WF of the body env via `procBodyEnv_wf` (postEnv_wf + E4_ContextMono + procBody_cs_fresh).
     have h_ra := Lambda.Except.mapError_ok_h' h_out
     have h_penv := postEnv_wf C Env proc _ v_setup v_pre v_out h_ta h_setup h_pre h_ra
       h_wf h_fwf h_resolved
@@ -5704,7 +5624,6 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
       obtain ⟨freshtvs, h_len, h_S, h_gf, h_nodup, h_genn⟩ :=
         setupInputEnv_shape_fresh C Env proc _ v_setup h_setup
       have h_ta_nodup : proc.header.typeArgs.Nodup := (checkTypeArgsWF_props proc _ () h_ta).1
-      -- Rewrite the three lets via the shape.
       have h_us : userSubst = [freshtvs.zip (proc.header.typeArgs.map LMonoTy.ftvar)] := by
         show [_] = _
         rw [h_S]; congr 1
@@ -5716,7 +5635,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
         show [_] = _
         rw [h_S]; congr 1
         exact filterMap_invSubst proc.header.typeArgs freshtvs h_len.symm
-      -- Disjointness: freshtvs (gen-named) ∩ typeArgs (not gen-prefixed) = ∅.
+      -- Disjoint since freshtvs are gen-named but typeArgs are not gen-prefixed.
       have h_disj : ∀ f ∈ freshtvs, f ∉ proc.header.typeArgs := by
         intro f hf hmem
         obtain ⟨k, h_fk⟩ := h_genn f hf
@@ -5740,18 +5659,13 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
           v_body.snd.stateSubstInfo.subst).aliases → TypeAlias.WF a
         rw [TContext.subst_aliases]
         exact h_bwf.1.aliasesWF
-    -- InitClosed: every init annotation in the checker-output body is mono + rigid-closed.
     have h_IC : StmtsInitClosed ({ C with rigidTypeVars := rigidVars }).rigidTypeVars v_body.1 :=
       statement_typeCheck_InitClosed ({ C with rigidTypeVars := rigidVars })
         (v_post.snd.updateSubst v_unify) P (some proc) ss v_body.1 v_body.2 h_stc'
         h_bwf.1 h_fwf h_bwf.2.1 h_bwf.2.2.1 h_rigid_inv h_closed
-    -- Both-sides subst of the body derivation by userSubst.
     have h_subst := StmtsHasTypeA_subst_gen P ({ C with rigidTypeVars := rigidVars })
       bodyΓ [] v_body.1 C_out v_body.2.context userSubst invSubst h_body_typed h_SR h_IC
-    -- BRIDGE 1 (C rigidTypeVars): transport the derivation from `{C with rig := rigidVars}` back to
-    -- ambient `C`. `StmtsHasTypeA_rig_drop` drops the rigid set (needs `C.rigidTypeVars ⊆ rigidVars`,
-    -- here vacuous since `C.rigidTypeVars = []`); it also rig-swaps the output context, but
-    -- `ProcBodyHasType'` discards the body's output context, so `{C_out with rig := ...}` is fine.
+    -- Transport the derivation from `{C with rig := rigidVars}` back to ambient `C`.
     have h_C : StmtsHasTypeA P C
         (TContext.subst bodyΓ userSubst) []
         (List.map (Statement.subst userSubst) v_body.fst)
@@ -5765,14 +5679,11 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
         (TContext.subst v_body.snd.context userSubst) h_subst h_sub
       -- `{{C with rig := rigidVars} with rig := C.rigidTypeVars} = C` by structure eta.
       exact h_drop
-    -- BRIDGE 2 (context): checkerCtx vs procBodyContext Γ proc' agree on find?/aliases.
     have h_expr_congr : ∀ (Γa Γb : TContext Unit) (Cx : LContext CoreLParams)
         (e : Expression.Expr) (t : LMonoTy),
         (∀ x, Γb.types.find? x = Γa.types.find? x) → Γb.aliases = Γa.aliases →
         instHasTypeA.exprTyped Cx Γa e t → instHasTypeA.exprTyped Cx Γb e t :=
       fun _ _ _ _ _ _ _ h_e => h_e
-    -- BRIDGE 2b: the checker body context find?-agrees with `procBodyContext Env'.context proc'`.
-    -- Shape: Env'.context.types = subst S' (pop envForBody.types) = subst S' Env.context.types.
     have h_env'_shape : Env'.context.types
         = TContext.types.subst (Maps.pop (v_post.snd.updateSubst v_unify).context.types)
             v_body.snd.stateSubstInfo.subst := by
@@ -5782,23 +5693,17 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
     have h_ef_pop : Maps.pop (v_post.snd.updateSubst v_unify).context.types = Env.context.types :=
       envForBody_pop_context_types C Env proc _ v_setup v_pre v_out v_post v_unify
         h_setup h_pre h_ra h_post h_ta h_wf h_fwf h_resolved
-    -- The checker's body-input types = `newest :: Env.context.types` (setup pushes one scope).
     have h_ub : (v_post.snd.updateSubst v_unify).context.types
         = Maps.newest (v_post.snd.updateSubst v_unify).context.types :: Env.context.types := by
       have h_nc := maps_eq_newest_cons_pop _ h_bwf.2.1
       rw [h_ef_pop] at h_nc
       exact h_nc
-    -- `proc'` was substituted into a literal, so it is not a name; the output context and body
-    -- are inferred from the goal. `structured`'s output `Γ'` unifies with the `find_congr`
-    -- existential's witness (`.choose`), and its `Γ_body` (= `procBodyContext Env'.context proc'`)
-    -- pins the `find_congr` input context, so the two bridge goals below are concrete.
+    -- Close `bodyTyped` via `find_congr`, leaving the two body-context bridge goals below.
     refine ProcBodyHasType'.structured _ ({ C_out with rigidTypeVars := C.rigidTypeVars }) _
       (StmtsHasType'_find_congr h_expr_congr h_C _ ?bridge2b ?bridge2a).choose_spec.2.2
     case bridge2b =>
-      -- BRIDGE 2b: reduce to `bridge_2b_final`'s four hypotheses (whole-scope equality now that the
-      -- checker's `old` scope uses the instantiated input types — equal to the spec's, not just
-      -- alias-equivalent).
-      apply bridge_2b_final (S' := v_body.snd.stateSubstInfo.subst)
+      -- Reduce to `body_context_find_agree`'s four hypotheses.
+      apply body_context_find_agree (S' := v_body.snd.stateSubstInfo.subst)
           (ambient := Env.context.types)
           (freshScope := Maps.newest (v_post.snd.updateSubst v_unify).context.types)
           (h_closed := fun ty hty => h_ambient_closed ty hty)
@@ -5809,10 +5714,8 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
             v_body.snd.stateSubstInfo.subst = _
         rw [h_ub]; rfl
       case h_newest =>
-        -- `declScope` (= `proc'`'s inputs++outputs++old newest scope) equals
-        -- `subst.go userSubst (subst.go S' (newest envForBody.types))`. All three sub-scopes are
-        -- instantiated (values' free vars ⊆ freshtvs), so `S'` collapses (it fixes freshtvs) and the
-        -- outer `userSubst` rename matches `proc'`'s declared (userSubst-renamed) types.
+        -- `S'` collapses on the instantiated sub-scopes (free vars ⊆ freshtvs) and the outer
+        -- `userSubst` rename matches `proc'`'s declared types.
         obtain ⟨freshtvs, h_len, h_S, h_gf, h_nodup, h_genn⟩ :=
           setupInputEnv_shape_fresh C Env proc _ v_setup h_setup
         have h_ta_props := checkTypeArgsWF_props proc _ () h_ta
@@ -5879,16 +5782,12 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
         rw [TContext_types_subst_go_append, TContext_types_subst_go_append]
         congr 1
         · congr 1
-          · exact (region_scope_collapse userSubst v_body.snd.stateSubstInfo.subst freshtvs
+          · exact (subst_go_collapse_rename userSubst v_body.snd.stateSubstInfo.subst freshtvs
               v_setup.fst h_in_closed h_S'_fix).symm
-          · exact (region_scope_collapse userSubst v_body.snd.stateSubstInfo.subst freshtvs
+          · exact (subst_go_collapse_rename userSubst v_body.snd.stateSubstInfo.subst freshtvs
               ((proc.header.outputs.keys).zip v_out.fst) h_out_closed h_S'_fix).symm
-        · -- old-inout scope: `new_hdr.getInoutParams` (= filtered renamed inputs) matches the
-          -- checker's `subst.go userSubst (subst.go S' (filtered v_setup.fst))` via `old_scope_eq`.
-          -- `getInoutParams` unfolds to a filter of `new_hdr.inputs = v_setup.fst.map (·, subst US ·)`
-          -- keyed on `keys new_hdr.outputs`; the rename preserves output keys, so that filter matches
-          -- the RHS's `keys proc.header.outputs` filter.
-          -- Output keys are preserved by the `userSubst` rename (rename fixes `.fst`).
+        · -- Old-inout scope: matched via `old_scope_eq`, since the `userSubst` rename fixes output
+          -- keys (so both sides filter on the same key set).
           have h_len_out : (ListMap.keys proc.header.outputs).length ≤ v_out.fst.length := by
             have h_len_ra := resolveAliasesList_length _ _ _ _ h_ra
             rw [h_len_ra, List.length_map, ListMap.keys_eq_map_fst,
@@ -5923,7 +5822,7 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
           rw [ListMap.values_eq_map_snd]
           exact LMonoTys.freeVars_mem_subset (List.mem_map_of_mem hx) hv
     case bridge2a =>
-      -- BRIDGE 2a: aliases agreement.
+      -- Aliases agreement.
       rw [procBodyContext_aliases, TContext.subst_aliases]
       show Env'.context.aliases = bodyΓ.aliases
       rw [show bodyΓ = (v_post.snd.updateSubst v_unify).context.subst
@@ -5934,15 +5833,10 @@ theorem Procedure.typeCheck_bodyTyped_annotated (C : LContext CoreLParams) (Env 
   · simp only [reduceCtorEq] at h
 
 
-/-- **Annotated soundness (deliverable 1).** A successful `Procedure.typeCheck`
-    implies the output procedure `proc'` satisfies `ProcHasTypeA` at the ambient
-    type-scope `Env'.context` in which the checker typed the body. Procedures
-    register nothing into `C` and leave the ambient scope stack unchanged
-    (`Env'.context = Env.context` up to substitution), so a `Program`-level
-    soundness theorem — which threads exactly this `Env'` through its `go` loop
-    (`ProgramType.lean:110-113`) — can instantiate this directly for each `proc`
-    declaration. The body scope is Γ-dependent (see `bodyTyped`), so unlike the
-    Γ-free pre/postcondition fields we conclude at the specific `Env'.context`. -/
+/-- Annotated soundness: a successful `Procedure.typeCheck` implies the output procedure `proc'`
+    satisfies `ProcHasTypeA` at the ambient type-scope `Env'.context` in which the checker typed
+    the body. It concludes at `Env'.context` specifically because `bodyTyped`'s scope is
+    Γ-dependent (unlike the Γ-free pre/postcondition fields). -/
 theorem Procedure.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TEnv Unit)
     (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
     (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
@@ -5971,6 +5865,26 @@ theorem Procedure.typeCheck_annotated_sound (C : LContext CoreLParams) (Env : TE
       Procedure.typeCheck_bodyTyped_annotated C Env P proc proc' Env' md h h_wf h_fwf h_resolved
         h_mono h_ambient_closed h_ambient_no_rigid h_closed
   }
+
+set_option warningAsError false in
+/-- Polymorphic soundness: a successful `Procedure.typeCheck` implies the INPUT procedure `proc`
+    satisfies `ProcHasType` in the ambient type-scope `Env.context`. Currently `sorry`. -/
+theorem Procedure.typeCheck_sound (C : LContext CoreLParams) (Env : TEnv Unit)
+    (P : Program) (proc proc' : Procedure) (Env' : TEnv Unit) (md : MetaData Expression)
+    (h : Procedure.typeCheck C Env P proc md = .ok (proc', Env'))
+    (h_wf : TEnvWF (T := CoreLParams) Env)
+    (h_fwf : FactoryWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_aliases_not_known : ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
+    (h_ali_nd : AliasesNonDropping Env.context.aliases)
+    (h_arrow_wf : ArrowKnownBinary C)
+    (h_ambient_rigid : ∀ x ty, Env.context.types.find? x = some ty →
+      ∀ v ∈ LTy.freeVars ty, v ∈ C.rigidTypeVars)
+    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = [])
+    (h_ambient_no_rigid : C.rigidTypeVars = [])
+    (h_closed : CalledProcsClosed P) :
+    ProcHasType P C Env.context proc := by
+  sorry
 
 end TypeSpec
 end Core

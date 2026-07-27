@@ -15,8 +15,8 @@ import all Strata.DL.Util.Nodup
 
 /-! ## Per-component alias inverse (`typeCheck_inverse_components`)
 
-Helper lemmas + the shared per-component alias adapter, extracted to its own file to keep
-`FunctionTypeSpecProps` from growing by ~1100 lines. -/
+Helper lemmas and the shared per-component alias adapter used to prove
+`typeCheck_inverse_components`. -/
 
 namespace Core
 namespace TypeSpec
@@ -38,18 +38,15 @@ theorem ArrowKnownBinary.arrow_arity_eq_two {C : LContext CoreLParams} (h : Arro
   intro k hk
   unfold ArrowKnownBinary at h
   simp only [Lambda.KnownTypes.contains, Lambda.Identifiers.contains] at h hk
-  -- both are `match C.knownTypes["arrow"]? with | some i => _ == i | none => false`
   cases h_lookup : C.knownTypes["arrow"]? with
   | none => rw [h_lookup] at h; simp at h
   | some i =>
     rw [h_lookup] at h hk
     simp only [beq_iff_eq] at h hk
-    -- h : 2 = i, hk : k = i  ⇒  k = 2
     subst h; exact hk
 
 /-- A successful `instantiateWithCheck` guarantees its result is a known instance: the checker
-    returns `.ok` only after the `isInstanceOfKnownType` guard passes. Extracted here so both call
-    sites of `typeCheck_inverse_components` can discharge the `h_known` hypothesis from `h_inst`. -/
+    returns `.ok` only after the `isInstanceOfKnownType` guard passes. -/
 theorem knownInstance_of_instantiateWithCheck (type : LTy) (C : LContext CoreLParams)
     (Env : TEnv Unit) (v_inst : LMonoTy × TEnv Unit)
     (h_inst : LTy.instantiateWithCheck type C Env = .ok v_inst) :
@@ -71,13 +68,14 @@ theorem knownInstance_of_instantiateWithCheck (type : LTy) (C : LContext CoreLPa
       simpa only [isInstanceOfKnownType] using h_isknown
     · simp only [reduceCtorEq] at h
 
--- Size measure for the mutual induction over `LMonoTy`/`LMonoTys`.
 mutual
+/-- Size measure on `LMonoTy` for the mutual induction below. -/
 private def icSize (mty : LMonoTy) : Nat :=
   match mty with
   | .ftvar _ => 1
   | .bitvec _ => 1
   | .tcons _ args => 1 + icSizes args
+/-- Size measure on `LMonoTys` for the mutual induction below. -/
 private def icSizes (mtys : LMonoTys) : Nat :=
   match mtys with
   | [] => 0
@@ -136,8 +134,7 @@ private theorem destructArrow_subst_combined (ρ : Subst)
       rw [LMonoTy.subst_tcons, subst_list_eq_map]
       -- destructArrow only cares about the arrow shape: `tcons "arrow" (t1 :: trest)`.
       by_cases h_shape : (name = "arrow" ∧ ∃ t1 trest, args = t1 :: trest)
-      · -- arrow case both sides
-        obtain ⟨h_name, t1, trest, h_args⟩ := h_shape
+      · obtain ⟨h_name, t1, trest, h_args⟩ := h_shape
         subst h_name; subst h_args
         simp only [List.map_cons, LMonoTy.destructArrow]
         have h_trest_sz : icSizes trest < n := by
@@ -270,7 +267,7 @@ private theorem getLast?_destructArrow_atomic (ks : Lambda.KnownTypes)
             = t1 :: LMonoTys.destructArrow trest := by simp only [LMonoTy.destructArrow]
         rw [h_da] at h_last
         have h_trest_sz : icSizes trest < n := by simp only [icSize, icSizes] at h_sz ⊢; omega
-        -- knownInstance forces arity 2: args = t1 :: trest has length 2, so trest = [t2].
+        -- knownInstance forces `"arrow"` to arity 2, so `trest = [t2]`.
         simp only [LMonoTy.knownInstance, Bool.and_eq_true] at h_ki
         obtain ⟨h_contains, h_ki_args⟩ := h_ki
         have h_len2 : (t1 :: trest).length = 2 := h_arrow2 _ h_contains
@@ -280,7 +277,6 @@ private theorem getLast?_destructArrow_atomic (ks : Lambda.KnownTypes)
           | [t2] => exact ⟨t2, rfl⟩
           | _ :: _ :: _ => simp only [List.length_cons] at h_len2; omega
         subst h_t2
-        -- knownInstance t2
         have h_ki_t2 : LMonoTy.knownInstance t2 ks = true := by
           simp only [LMonoTys.knownInstances] at h_ki_args
           split at h_ki_args
@@ -289,7 +285,6 @@ private theorem getLast?_destructArrow_atomic (ks : Lambda.KnownTypes)
             · rename_i h; exact h
             · exact absurd h_ki_args (by simp)
           · exact absurd h_ki_args (by simp)
-        -- da = t1 :: destructArrow t2 (nonempty), last = last of destructArrow t2.
         have h_dt_ne : (LMonoTy.destructArrow t2) ≠ [] := LMonoTy.destructArrow_non_empty t2
         have h_dt2 : LMonoTys.destructArrow [t2] = LMonoTy.destructArrow t2 := by
           simp only [LMonoTys.destructArrow, List.append_nil]
@@ -321,7 +316,6 @@ private theorem getLast?_destructArrow_atomic (ks : Lambda.KnownTypes)
       rw [h_da, List.getLast?_append] at h_last
       have h_mty_sz : icSize mty < n := by simp only [icSizes] at h_sz; omega
       have h_mrest_sz : icSizes mrest < n := by simp only [icSizes] at h_sz; omega
-      -- knownInstances (mty :: mrest) gives knownInstance mty AND knownInstances mrest.
       have h_ki_split : LMonoTy.knownInstance mty ks = true ∧ LMonoTys.knownInstances mrest ks = true := by
         simp only [LMonoTys.knownInstances] at h_ki
         split at h_ki
@@ -359,11 +353,9 @@ private theorem mkArrow'_destructArrow_roundtrip (ks : Lambda.KnownTypes)
     by_cases h_arrow : name = "arrow" ∧ ∃ t1 trest, args = t1 :: trest
     · obtain ⟨h_name, t1, trest, h_args⟩ := h_arrow
       subst h_name; subst h_args
-      -- knownInstance gives arity 2 and knownInstance of the codomain.
       simp only [LMonoTy.knownInstance, Bool.and_eq_true] at h_known
       obtain ⟨h_contains, h_ki_args⟩ := h_known
       have h_len2 : (t1 :: trest).length = 2 := h_arrow2 _ h_contains
-      -- trest is a singleton [t2]
       have h_trest : ∃ t2, trest = [t2] := by
         match trest with
         | [] => simp only [List.length_cons, List.length_nil] at h_len2; omega
@@ -371,7 +363,6 @@ private theorem mkArrow'_destructArrow_roundtrip (ks : Lambda.KnownTypes)
         | _ :: _ :: _ => simp only [List.length_cons] at h_len2; omega
       obtain ⟨t2, h_t2⟩ := h_trest
       subst h_t2
-      -- knownInstance t2
       have h_ki_t2 : LMonoTy.knownInstance t2 ks = true := by
         simp only [LMonoTys.knownInstances] at h_ki_args
         split at h_ki_args
@@ -380,19 +371,16 @@ private theorem mkArrow'_destructArrow_roundtrip (ks : Lambda.KnownTypes)
           · rename_i h; exact h
           · exact absurd h_ki_args (by simp)
         · exact absurd h_ki_args (by simp)
-      -- destructArrow (arrow t1 t2) = t1 :: destructArrow t2
       have h_da : (LMonoTy.tcons "arrow" [t1, t2]).destructArrow = t1 :: t2.destructArrow := by
         rw [show LMonoTy.tcons "arrow" [t1, t2] = LMonoTy.arrow t1 t2 from rfl]
         exact destructArrow_arrow t1 t2
       rw [h_da]
-      -- destructArrow t2 is nonempty
       have h_ne := LMonoTy.destructArrow_non_empty t2
       obtain ⟨b, rest, h_da2⟩ : ∃ b rest, t2.destructArrow = b :: rest := by
         match h : t2.destructArrow with
         | [] => exact absurd h h_ne
         | b :: rest => exact ⟨b, rest, rfl⟩
       rw [h_da2, List.getLast?_cons_cons, List.dropLast_cons₂, LMonoTy.mkArrow'_cons]
-      -- IH on t2
       have h_sz_t2 : icSize t2 < n := by
         simp only [icSize, icSizes] at h_sz; omega
       have h_rt_t2 := ih (icSize t2) h_sz_t2 t2 (Nat.le_refl _) h_ki_t2
@@ -425,7 +413,6 @@ private theorem mkArrow'_destructArrow_roundtrip_binary (d : LMonoTy) (n : Nat) 
     by_cases h_arrow : name = "arrow" ∧ ∃ t1 trest, args = t1 :: trest
     · obtain ⟨h_name, t1, trest, h_args⟩ := h_arrow
       subst h_name; subst h_args
-      -- arrowsBinary gives arity 2 and arrowsBinary of the args.
       simp only [LMonoTy.arrowsBinary, if_pos, Bool.and_eq_true, beq_iff_eq] at h_bin
       obtain ⟨h_len2, h_bin_args⟩ := h_bin
       obtain ⟨t2, h_t2⟩ : ∃ t2, trest = [t2] := by
@@ -464,7 +451,6 @@ private theorem destructArrow_mkArrow_snoc (hd : LMonoTy) (init : LMonoTys) (las
       = (hd :: init) ++ last.destructArrow := by
   induction init generalizing hd with
   | nil =>
-    -- mkArrow hd [last] = arrow hd last
     show (LMonoTy.mkArrow hd [last]).destructArrow = _
     rw [show LMonoTy.mkArrow hd [last] = LMonoTy.arrow hd (LMonoTy.mkArrow last []) from rfl,
       show LMonoTy.mkArrow last [] = last from rfl, destructArrow_arrow]
@@ -528,13 +514,11 @@ private theorem destructArrow_mkArrow_flat (hd : LMonoTy) (mids : LMonoTys) (bas
   have h_tl_ne : mids ++ base.destructArrow ≠ [] := by
     intro h_eq
     exact absurd (List.append_eq_nil_iff.mp h_eq).2 (LMonoTy.destructArrow_non_empty base)
-  -- Peel with destructArrow_mkArrow_cons: need tl in `x :: xs` form.
   obtain ⟨x, xs, h_xxs⟩ : ∃ x xs, mids ++ base.destructArrow = x :: xs := by
     cases h_c : mids ++ base.destructArrow with
     | nil => exact absurd h_c h_tl_ne
     | cons a as => exact ⟨a, as, rfl⟩
-  -- The last element `u` of `x::xs` (= mids ++ base.destructArrow) comes from base.destructArrow's
-  -- last, hence is atomic. Get it via getLast? to avoid dependent getLast proofs.
+  -- The list's last element is atomic; obtain it via `getLast?` to avoid dependent `getLast` proofs.
   have h_base_ne := LMonoTy.destructArrow_non_empty base
   obtain ⟨u, h_u⟩ : ∃ u, base.destructArrow.getLast? = some u := by
     cases h_g : base.destructArrow.getLast? with
@@ -548,7 +532,6 @@ private theorem destructArrow_mkArrow_flat (hd : LMonoTy) (mids : LMonoTys) (bas
   have h_u_atomic : u.destructArrow = [u] :=
     (getLast?_destructArrow_atomic ks h_arrow2 (icSize base)).1 base (Nat.le_refl _) h_ki_base u h_u
   rw [h_xxs, destructArrow_mkArrow_cons, h_gl_val, h_u_atomic]
-  -- (hd :: (x::xs).dropLast) ++ [u] = hd :: (x :: xs), where u = (x::xs).getLast
   have h_reassemble : (x :: xs).dropLast ++ [(x :: xs).getLast (by simp)] = x :: xs :=
     List.dropLast_concat_getLast (by simp)
   rw [h_gl_val] at h_reassemble
@@ -575,18 +558,15 @@ private theorem resolveAliases_arrow (t1 t2 : LMonoTy) (Env : TEnv Unit) (r : LM
     ∃ r1 r2, LMonoTy.resolveAliases t1 Env = .ok (r1, Env)
       ∧ LMonoTy.resolveAliases t2 Env = .ok (r2, Env)
       ∧ r = LMonoTy.arrow r1 r2 := by
-  -- arrow t1 t2 = tcons "arrow" [t1, t2]
   rw [show LMonoTy.arrow t1 t2 = LMonoTy.tcons "arrow" [t1, t2] from rfl] at h
   simp only [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
   elim_err h
   rename_i v1 h_args; obtain ⟨args', Env1⟩ := v1; simp only at h h_args
-  -- Resolve the 2-element list [t1, t2] via nested binds.
   simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h_args
   elim_err h_args
   rename_i w1 h_r1; obtain ⟨r1, E1⟩ := w1; simp only at h_args h_r1
   elim_err h_args
   rename_i w2 h_r2; obtain ⟨r2, E2⟩ := w2; simp only at h_args h_r2
-  -- h_r2 : (match t2.resolveAliases E1 ...) = .ok (r2, E2); peel it.
   elim_err h_r2
   rename_i w3 h_r2a; obtain ⟨r2a, E3⟩ := w3; simp only at h_r2 h_r2a
   simp only [pure, Except.pure] at h_r2
@@ -597,11 +577,9 @@ private theorem resolveAliases_arrow (t1 t2 : LMonoTy) (Env : TEnv Unit) (r : LM
   obtain ⟨h_args1, h_env1⟩ := h_args
   have hE1 : E1 = Env := LMonoTy.resolveAliases_env t1 Env r1 E1 h_r1
   have hE3 : E3 = E1 := LMonoTy.resolveAliases_env t2 E1 r2a E3 h_r2a
-  -- Chain env equalities: E3 = E1 = Env; E2 = E3; Env1 = E2.  (h_env1 : E2 = Env1)
   subst hE1; subst hE3
-  subst h_E2      -- E2 := Env
-  subst h_env1    -- Env1 := Env
-  -- args' = r1 :: r2 = r1 :: [r2a] = [r1, r2a]
+  subst h_E2
+  subst h_env1
   rw [← h_r2list] at h_args1
   rw [← h_args1] at h
   rw [tconsAliasSimple_arrow_not_alias _ _ h_na] at h
@@ -620,7 +598,6 @@ private theorem resolveAliases_mkArrow (hd : LMonoTy) (tl : LMonoTys) (Env : TEn
       ∧ r = LMonoTy.mkArrow rhd rtl := by
   induction tl generalizing hd r Env' with
   | nil =>
-    -- mkArrow hd [] = hd
     have h_mk : LMonoTy.mkArrow hd [] = hd := by simp only [LMonoTy.mkArrow]
     rw [h_mk] at h
     have h_env : Env' = Env := LMonoTy.resolveAliases_env hd Env r Env' h
@@ -628,16 +605,13 @@ private theorem resolveAliases_mkArrow (hd : LMonoTy) (tl : LMonoTys) (Env : TEn
     exact ⟨r, [], h, by simp only [LMonoTys.resolveAliases, pure, Except.pure], by
       simp only [LMonoTy.mkArrow]⟩
   | cons x xs ih =>
-    -- mkArrow hd (x :: xs) = arrow hd (mkArrow x xs)
     have h_mk : LMonoTy.mkArrow hd (x :: xs) = LMonoTy.arrow hd (LMonoTy.mkArrow x xs) := by
       simp only [LMonoTy.mkArrow]
     rw [h_mk] at h
     obtain ⟨r1, r2, h_r1, h_r2, h_req⟩ := resolveAliases_arrow hd (LMonoTy.mkArrow x xs) Env r Env' h_na h
-    -- recurse on mkArrow x xs (env is Env, unchanged)
     obtain ⟨rx, rxs, h_rx, h_rxs, h_r2eq⟩ := ih x r2 Env h_r2
     refine ⟨r1, rx :: rxs, h_r1, ?_, ?_⟩
-    · -- resolve (x :: xs) = rx :: rxs
-      simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind, h_rx, h_rxs, pure, Except.pure]
+    · simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind, h_rx, h_rxs, pure, Except.pure]
     · rw [h_req, h_r2eq]; simp only [LMonoTy.mkArrow]
 
 /-- Resolving a list distributes over append: `resolveAliases (as ++ bs) = resolve as ++ resolve bs`
@@ -656,7 +630,6 @@ private theorem resolveAliasesList_append (as bs : LMonoTys) (Env : TEnv Unit)
     exact ⟨[], rab, by simp only [LMonoTys.resolveAliases, pure, Except.pure], h, by rw [List.nil_append]⟩
   | cons a as ih =>
     rw [List.cons_append] at h
-    -- resolve (a :: (as ++ bs)) = ra :: r_rest
     simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     elim_err h
     rename_i v1 h_a; obtain ⟨ra, E1⟩ := v1; simp only at h h_a
@@ -847,12 +820,9 @@ private theorem resolveAliases_mkArrow'_ok (ret : LMonoTy) (args : LMonoTys) (En
     have hE1 : E1 = Env := LMonoTy.resolveAliases_env a Env ra E1 h_a
     rw [hE1] at h_a h_as
     rw [h_env] at h_as
-    -- ih on the tail: resolve (mkArrow' ret as) Env = ok (mkArrow' rret ras, Env).
     have h_M := ih ras h_as
-    -- mkArrow' ret (a :: as) = arrow a (mkArrow' ret as) = tcons "arrow" [a, mkArrow' ret as].
     rw [LMonoTy.mkArrow'_cons,
       show LMonoTy.arrow a (LMonoTy.mkArrow' ret as) = LMonoTy.tcons "arrow" [a, LMonoTy.mkArrow' ret as] from rfl]
-    -- Resolve the tcons: resolve-list [a, mkArrow' ret as] then tconsAliasSimple.
     simp only [LMonoTy.resolveAliases, LMonoTys.resolveAliases, Bind.bind, Except.bind,
       h_a, h_M, pure, Except.pure]
     rw [tconsAliasSimple_arrow_not_alias _ _ h_na,
@@ -860,6 +830,9 @@ private theorem resolveAliases_mkArrow'_ok (ret : LMonoTy) (args : LMonoTys) (En
         = LMonoTy.arrow ra (LMonoTy.mkArrow' rret ras) from rfl,
       ← LMonoTy.mkArrow'_cons, ← h_rargs]
 
+/-- Per-component alias inverse: the reconstructed output and input components of the
+    instantiated signature's arrow spine are alias-equivalent (via `ρ`) to `func.output`
+    and `func.inputs.values` respectively. -/
 theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : TEnv Unit)
     (func : Function) (type : LTy) (v_inst : LMonoTy × TEnv Unit) (ρ : Subst) (Env_r : TEnv Unit)
     (h_type : LFuncDefined.type func = .ok type)
@@ -887,42 +860,35 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       func.inputs.values) := by
   -- Derive the `∀ k` arity form from the named well-formedness hypothesis.
   have h_arrow2 := h_arrow_wf.arrow_arity_eq_two
-  -- SIG = toMonoTypeUnsafe type.  From h_type, `type = .forAll typeArgs sigBody` where
-  -- sigBody is either func.output (no inputs) or mkArrow ity (irest ++ destructArrow output).
+  -- `type` unfolds to `forAll typeArgs sigBody`, where `sigBody` is `func.output` (no inputs)
+  -- or `mkArrow ity (irest ++ func.output.destructArrow)`; the proof splits on these two below.
   simp only [LFuncDefined.type, bind, Except.bind] at h_type
   split at h_type
   · contradiction
   split at h_type
   · contradiction
-  -- New arrowsBinary guard: in the success branch, the guard condition holds.
   split at h_type
   · contradiction
   rename_i h_iv_dup h_ta_dup h_arrows
-  -- h_arrows : ¬ (!(func.output.arrowsBinary && LMonoTys.arrowsBinary func.inputs.values)) = true
   have h_out_binary : func.output.arrowsBinary = true := by
     simp only [Bool.not_eq_true', Bool.not_eq_false, Bool.and_eq_true] at h_arrows
     exact h_arrows.1
   simp only [pure, Except.pure] at h_type
-  -- Now split on inputs.values shape
-  -- First: inputs.keys.length = inputs.values.length
   have h_len : func.inputs.keys.length = func.inputs.values.length := by
     rw [ListMap.keys_eq_map_fst, ListMap.values_eq_map_snd, List.length_map, List.length_map]
   split at h_type
-  · -- inputs.values = []: n = 0, take 0 = [], AliasEquivList over [] is trivial
+  · -- No inputs: `n = 0`, so the input conjunct is trivial and the output roundtrips.
     rename_i h_iv_nil
     rw [Except.ok.injEq] at h_type
     subst h_type
-    -- SIG = toMonoTypeUnsafe (forAll typeArgs func.output) = func.output
     have h_sig : LTy.toMonoTypeUnsafe (LTy.forAll func.typeArgs func.output) = func.output := rfl
     rw [h_sig] at h_ra
-    -- n = 0
     have h_n0 : func.inputs.keys.length = 0 := by rw [h_len, h_iv_nil]; rfl
     rw [h_n0]
     simp only [List.take_zero, List.drop_zero]
     refine ⟨?_, ?_⟩
-    · -- output: subst ρ (mkArrow' (getLast da / getD) (dropLast da)) ≈ func.output.
-      -- `v_inst.fst` roundtrips through its destructArrow spine (binary via `h_known`), so the
-      -- reconstruction is `subst ρ v_inst.fst`; `resolveAliases_aliasEquiv` + `h_ra` + symm close it.
+    · -- `v_inst.fst` roundtrips through its (binary) destructArrow spine, so the reconstruction is
+      -- `subst ρ v_inst.fst`, which `h_ra` shows alias-equivalent to `func.output`.
       have h_rt : LMonoTy.mkArrow'
           (v_inst.fst.destructArrow.getLast?.getD
             (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst)))
@@ -930,47 +896,36 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
         mkArrow'_destructArrow_roundtrip C.knownTypes h_arrow2 _ (icSize v_inst.fst) v_inst.fst
           (Nat.le_refl _) h_known
       rw [h_rt]
-      -- resolveAliases gives AliasEquiv func.output (subst ρ v_inst.fst).
       have h_ae : AliasEquiv Env.context.aliases func.output (LMonoTy.subst ρ v_inst.fst) :=
         resolveAliases_aliasEquiv (T := CoreLParams) (Γ := Env.context) func.output Env
           (LMonoTy.subst ρ v_inst.fst) Env_r h_ra rfl h_aw
       exact AliasEquiv.symm h_ae
-    · -- inputs: AliasEquivList aliases [] func.inputs.values, and inputs.values = []
-      rw [h_iv_nil]; exact .nil
-  · -- inputs.values = ity :: irest
-    rename_i ity irest h_iv
+    · rw [h_iv_nil]; exact .nil
+  · rename_i ity irest h_iv
     rw [Except.ok.injEq] at h_type
     subst h_type
-    -- SIG = mkArrow ity (irest ++ func.output.destructArrow).
     have h_sig : LTy.toMonoTypeUnsafe
         (LTy.forAll func.typeArgs (ity.mkArrow (irest ++ func.output.destructArrow)))
         = ity.mkArrow (irest ++ func.output.destructArrow) := rfl
     rw [h_sig] at h_ra
-    -- Distribute resolveAliases over the arrow spine (arrow is not aliased).
     obtain ⟨rhd, rtl, h_rhd, h_rtl, h_split⟩ :=
       resolveAliases_mkArrow ity (irest ++ func.output.destructArrow) Env
         (LMonoTy.subst ρ v_inst.fst) Env_r h_aliases_not_known h_ra
-    -- Split the resolved tail-list along the append: rtl = r_irest ++ r_outspine.
     obtain ⟨r_irest, r_outspine, h_r_irest, h_r_outspine, h_rtl_split⟩ :=
       resolveAliasesList_append irest func.output.destructArrow Env rtl Env h_rtl
-    -- `subst ρ v_inst.fst = mkArrow rhd (r_irest ++ r_outspine)`.
     have h_svfst : LMonoTy.subst ρ v_inst.fst = LMonoTy.mkArrow rhd (r_irest ++ r_outspine) := by
       rw [h_split, h_rtl_split]
-    -- The destructArrow spine of `subst ρ v_inst.fst` = map (subst ρ) da.
     have h_da_map : LMonoTy.destructArrow (LMonoTy.subst ρ v_inst.fst)
         = v_inst.fst.destructArrow.map (LMonoTy.subst ρ) :=
       destructArrow_subst ρ h_ρ_ftvar v_inst.fst
-    -- Also, knownInstance of `subst ρ v_inst.fst` (ρ is a renaming).
     have h_known_subst : LMonoTy.knownInstance (LMonoTy.subst ρ v_inst.fst) C.knownTypes = true :=
       (knownInstance_subst_renaming ρ C.knownTypes h_ρ_ftvar (icSize v_inst.fst)).1
         v_inst.fst (Nat.le_refl _) h_known
-    -- `r_outspine` is nonempty (resolve preserves length; `output.destructArrow` nonempty).
     have h_ros_ne : r_outspine ≠ [] := by
       intro h_eq
       have h_len_os := resolveAliasesList_length func.output.destructArrow Env r_outspine Env h_r_outspine
       rw [h_eq, List.length_nil] at h_len_os
       exact absurd (List.eq_nil_of_length_eq_zero h_len_os.symm) (LMonoTy.destructArrow_non_empty func.output)
-    -- Length facts: n = (ity::irest).length = 1 + irest.length = 1 + r_irest.length.
     have h_rirest_len : r_irest.length = irest.length :=
       resolveAliasesList_length irest Env r_irest Env h_r_irest
     have h_n : func.inputs.keys.length = 1 + irest.length := by
@@ -979,19 +934,14 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       fun h => absurd (List.append_eq_nil_iff.mp h).2 h_ros_ne
     have h_dropLast : (r_irest ++ r_outspine).dropLast = r_irest ++ r_outspine.dropLast :=
       List.dropLast_append_of_ne_nil h_ros_ne
-    -- Split `r_outspine = r_od ++ [r_ol]` to peel the spine without a dependent `getLast`.
+    -- Split off the last element to peel the spine without a dependent `getLast`.
     obtain ⟨r_od, r_ol, h_ros_split⟩ : ∃ r_od r_ol, r_outspine = r_od ++ [r_ol] :=
       ⟨r_outspine.dropLast, r_outspine.getLast h_ros_ne, (List.dropLast_concat_getLast h_ros_ne).symm⟩
-    -- spine = destructArrow (mkArrow rhd (r_irest ++ r_od ++ [r_ol]))
-    --       = rhd :: (r_irest ++ r_od) ++ destructArrow r_ol   (via destructArrow_mkArrow' style)
     have h_spine : v_inst.fst.destructArrow.map (LMonoTy.subst ρ)
         = (rhd :: (r_irest ++ r_od)) ++ r_ol.destructArrow := by
       rw [← h_da_map, h_svfst, h_ros_split]
-      -- mkArrow rhd (r_irest ++ (r_od ++ [r_ol])) = mkArrow' r_ol (rhd :: (r_irest ++ r_od))?  No.
-      -- Use destructArrow_mkArrow_cons-based full peel: prove by the mkArrow'/destructArrow bridge.
       rw [show r_irest ++ (r_od ++ [r_ol]) = (r_irest ++ r_od) ++ [r_ol] from by
         rw [List.append_assoc]]
-      -- mkArrow rhd ((r_irest++r_od) ++ [r_ol]) : destructArrow = rhd :: (r_irest++r_od) ++ destructArrow r_ol
       rw [destructArrow_mkArrow_snoc]
     -- ============ INPUTS conjunct ============
     have h_inputs : Lambda.AliasEquivList Env.context.aliases
@@ -1002,7 +952,6 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
         show List.map (LMonoTy.subst ρ) (List.take func.inputs.keys.length v_inst.fst.destructArrow)
           = rhd :: r_irest
         rw [List.map_take, h_spine]
-        -- take (1 + irest.length) ((rhd :: (r_irest ++ r_od)) ++ r_ol.destructArrow)
         rw [h_n, List.take_append_of_le_length (by
           simp only [List.length_cons, List.length_append]; omega)]
         rw [List.take_cons (by omega)]
@@ -1026,15 +975,11 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
     obtain ⟨od_init, od_last, h_od_split⟩ : ∃ od_init od_last, func.output.destructArrow = od_init ++ [od_last] :=
       ⟨func.output.destructArrow.dropLast, func.output.destructArrow.getLast h_od_ne,
         (List.dropLast_concat_getLast h_od_ne).symm⟩
-    -- Resolve func.output's spine list: `h_r_outspine : resolve (output.destructArrow) = (r_outspine, Env)`.
-    -- Split it along `od_init ++ [od_last]` = `r_od ++ [r_ol]` (both equal r_outspine).
     have h_ros_eq : r_outspine = r_od ++ [r_ol] := h_ros_split
-    -- resolve (od_init ++ [od_last]) = r_od ++ [r_ol], so resolve od_init = r_od, resolve [od_last] = [r_ol].
     have h_r_out_spine' : LMonoTys.resolveAliases (od_init ++ [od_last]) Env = .ok (r_od ++ [r_ol], Env) := by
       rw [← h_od_split, ← h_ros_eq]; exact h_r_outspine
     obtain ⟨r_odi, r_oll, h_r_odi, h_r_oll, h_ros_app⟩ :=
       resolveAliasesList_append od_init [od_last] Env (r_od ++ [r_ol]) Env h_r_out_spine'
-    -- resolve [od_last] = r_oll (a singleton), so resolve od_last = its head.
     obtain ⟨r_odlast, h_r_odlast, h_oll_eq⟩ : ∃ r_odlast, LMonoTy.resolveAliases od_last Env = .ok (r_odlast, Env)
         ∧ r_oll = [r_odlast] := by
       simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h_r_oll
@@ -1045,10 +990,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       have hEl : El = Env := LMonoTy.resolveAliases_env od_last Env rl El h_w1
       subst hEl
       exact ⟨rl, h_w1, h_r_oll.1.symm⟩
-    -- Resolve func.output as a whole: rewrite via roundtrip to mkArrow' od_last od_init, then
-    -- resolveAliases_mkArrow'_ok gives resolve = mkArrow' r_odlast r_odi.
     have h_out_split_rt : func.output = LMonoTy.mkArrow' od_last od_init := by
-      -- getLast? (destructArrow func.output) = some od_last (non-dependent, via the split).
       have h_gl? : func.output.destructArrow.getLast? = some od_last := by
         rw [h_od_split, List.getLast?_append]
         simp only [List.getLast?_singleton, Option.some_or]
@@ -1057,7 +999,6 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
         rw [h_gl?, Option.getD_some]
       have h_dl : func.output.destructArrow.dropLast = od_init := by
         rw [h_od_split, List.dropLast_concat]
-      -- h_out_rt with the two rewrites gives mkArrow' od_last od_init = func.output.
       rw [h_gl, h_dl] at h_out_rt
       exact h_out_rt.symm
     have h_r_out : LMonoTy.resolveAliases func.output Env = .ok (LMonoTy.mkArrow' r_odlast r_odi, Env) := by
@@ -1066,12 +1007,9 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
     have h_ae_out : AliasEquiv Env.context.aliases func.output (LMonoTy.mkArrow' r_odlast r_odi) :=
       resolveAliases_aliasEquiv (T := CoreLParams) (Γ := Env.context) func.output Env
         (LMonoTy.mkArrow' r_odlast r_odi) Env h_r_out rfl h_aw
-    -- GOAL: AliasEquiv aliases (subst ρ (mkArrow' R DL)) func.output. Show LHS = mkArrow' r_odlast r_odi.
-    -- First: r_od = r_odi and [r_ol] = [r_odlast] from the append split (lengths match).
     have h_r_odi_len : r_odi.length = od_init.length := resolveAliasesList_length od_init Env r_odi Env h_r_odi
     have h_r_od_len : r_od.length = od_init.length := by
       have := resolveAliasesList_length od_init Env r_od Env
-      -- from h_ros_app : r_od ++ [r_ol] = r_odi ++ r_oll, and h_oll_eq : r_oll = [r_odlast]
       rw [h_oll_eq] at h_ros_app
       have h_len_eq : (r_od ++ [r_ol]).length = (r_odi ++ [r_odlast]).length := by rw [h_ros_app]
       simp only [List.length_append, List.length_cons, List.length_nil] at h_len_eq
@@ -1080,14 +1018,13 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       rw [h_oll_eq] at h_ros_app
       have h := List.append_inj h_ros_app (by rw [h_r_od_len, h_r_odi_len])
       exact ⟨h.1, by have := h.2; simpa using this⟩
-    -- `drop n` of the spine peels `rhd :: r_irest` (n = 1 + r_irest.length), leaving the output spine.
+    -- `drop n` peels `rhd :: r_irest` (n = 1 + r_irest.length), leaving the output spine.
     have h_drop : LMonoTy.subst ρ <$> (List.drop func.inputs.keys.length v_inst.fst.destructArrow)
         = r_od ++ r_ol.destructArrow := by
       show List.map (LMonoTy.subst ρ) (List.drop func.inputs.keys.length v_inst.fst.destructArrow) = _
       rw [List.map_drop, h_spine, h_n]
-      -- drop (1 + irest.length) ((rhd :: (r_irest ++ r_od)) ++ r_ol.destructArrow)
       rw [List.drop_append_of_le_length (by simp only [List.length_cons, List.length_append]; omega)]
-      -- drop (1 + irest.length) (rhd :: (r_irest ++ r_od)): peel rhd, then drop irest.length from r_irest.
+      -- Peel `rhd`, then drop `irest.length` from `r_irest`, leaving `r_od`.
       rw [show (1 + irest.length) = (irest.length + 1) from by omega]
       rw [List.drop_succ_cons]
       rw [List.drop_append_of_le_length (by omega), List.drop_of_length_le (by omega), List.nil_append]
@@ -1110,8 +1047,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
         apply h_ab_tail
         rw [h_ros_split]
         exact List.mem_append_right _ (by rw [List.mem_append]; right; exact List.mem_singleton_self _)
-      -- Move `map subst` through getLast?/dropLast, then use h_drop.
-      -- First arg: subst ρ (getLast?.getD (drop) default) = (map subst (drop)).getLast?.getD (subst default).
+      -- Move `map subst` through getLast?/dropLast, then rewrite by `h_drop`.
       have h_arg1 : LMonoTy.subst ρ
           ((List.drop func.inputs.keys.length v_inst.fst.destructArrow).getLast?.getD
             (List.getLast v_inst.fst.destructArrow (LMonoTy.destructArrow_non_empty v_inst.fst)))
@@ -1125,18 +1061,15 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
       have h_drop' : List.map (LMonoTy.subst ρ) (List.drop func.inputs.keys.length v_inst.fst.destructArrow)
           = r_od ++ r_ol.destructArrow := h_drop
       rw [h_arg1, List.map_dropLast, h_drop']
-      -- Now goal over `r_od ++ r_ol.destructArrow`. getLast?/dropLast of the append (r_ol.da nonempty).
       have h_rol_ne := LMonoTy.destructArrow_non_empty r_ol
       rw [List.getLast?_append, List.dropLast_append_of_ne_nil h_rol_ne]
-      -- getLast? (r_od ++ r_ol.da) = r_ol.da.getLast?.or r_od.getLast? = r_ol.da.getLast? (nonempty)
       obtain ⟨u, h_u⟩ : ∃ u, r_ol.destructArrow.getLast? = some u := by
         cases h_g : r_ol.destructArrow.getLast? with
         | none => exact absurd (List.getLast?_eq_none_iff.mp h_g) h_rol_ne
         | some u => exact ⟨u, rfl⟩
       rw [h_u, Option.some_or, Option.getD_some]
-      -- LHS = mkArrow' u (r_od ++ r_ol.da.dropLast) = mkArrow' (mkArrow' u r_ol.da.dropLast) r_od.
       rw [mkArrow'_append]
-      -- inner mkArrow' u r_ol.da.dropLast = r_ol by roundtrip (arrowsBinary r_ol); u = getLast? r_ol.da.
+      -- The inner `mkArrow'` reconstructs `r_ol` by the binary roundtrip.
       have h_rt_rol : LMonoTy.mkArrow' (r_ol.destructArrow.getLast?.getD u) r_ol.destructArrow.dropLast = r_ol :=
         mkArrow'_destructArrow_roundtrip_binary u (icSize r_ol) r_ol (Nat.le_refl _) h_ab_rol
       rw [h_u, Option.getD_some] at h_rt_rol

@@ -731,10 +731,6 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
   match xs with
   | [] => S | x :: rest => go rest (S.remove x)
 
-theorem LTy.subst_forAll_nil (S : Subst) (mty : LMonoTy) :
-    LTy.subst S (.forAll [] mty) = .forAll [] (LMonoTy.subst S mty) := by
-  simp [LTy.subst, LTy.subst.go]
-
 /--
 Open `ty` by instantiating the bound type variable `x` with `xty`.
 Note: there is function LTy.close in LTy.lean. LTy.open is located in
@@ -766,14 +762,6 @@ Substitution on `LMonoTy.bool` is the identity (ground type).
 -/
 theorem LMonoTy.subst_bool (S : Subst) : LMonoTy.subst S LMonoTy.bool = LMonoTy.bool := by
   simp [LMonoTy.bool, LMonoTy.subst]
-  intro h
-  simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
-
-/--
-Substitution on `LMonoTy.int` is the identity (ground type).
--/
-theorem LMonoTy.subst_int (S : Subst) : LMonoTy.subst S LMonoTy.int = LMonoTy.int := by
-  simp [LMonoTy.int, LMonoTy.subst]
   intro h
   simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
 
@@ -1504,10 +1492,9 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
-    -- TODO: the original constraint `c` is recorded raw, without applying `S`, so
-    -- the "Impossible to unify ..." message can show stale type variables (e.g.
-    -- `$__ty1` for a var already solved to `int`). Apply `S` to `c` here before
-    -- `addOriginalConstraint` to report solved types.
+    -- `c` is recorded raw (without applying `S`), so an "Impossible to unify ..."
+    -- message can show stale type variables (e.g. `$__ty1` for a var already solved
+    -- to `int`); applying `S` to `c` before `addOriginalConstraint` would fix this.
     let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
     .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }

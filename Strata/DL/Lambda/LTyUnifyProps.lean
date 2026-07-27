@@ -298,7 +298,7 @@ private theorem Maps.find?_compose (s : SubstOne) (S : Subst) (x : TyIdentifier)
     values are pre-substituted by `s` (so no residual `S`-keys survive), and `s`'s
     own bindings cover keys not bound by `S`. Unconditional (no `SubstWF`, no
     single-scope restriction on `S`). This is the `Subst`-level composition law
-    Route B uses to fold the fresh→user renaming into the resolve substitution. -/
+    used to fold the fresh→user renaming into the resolve substitution. -/
 theorem LMonoTy.subst_compose (s : SubstOne) (S : Subst) (mty : LMonoTy) :
     LMonoTy.subst [s] (LMonoTy.subst S mty) =
     LMonoTy.subst (Subst.compose s S) mty := by
@@ -348,7 +348,7 @@ private theorem Subst.freeVars_compose_subset (s : SubstOne) (S : Subst) :
 /-- **`SubstWF` of the composite `Subst.compose s S`** (outer single scope `[s]`,
     inner arbitrary `S`). Well-formed when both factors are, `S`'s keys are disjoint
     from `s`'s free variables (range), and `s`'s keys are disjoint from `S`'s free
-    variables (range). For the Route B composite (fresh→user rename ∘ resolve subst)
+    variables (range). For the composite (fresh→user rename ∘ resolve subst)
     the user names are disjoint from the resolve/inst vars in both directions. -/
 theorem SubstWF.compose (s : SubstOne) (S : Subst)
     (hs : SubstWF [s]) (hS : SubstWF S)
@@ -415,11 +415,9 @@ theorem Subst.freeVars_compose_subset_scrub (s : SubstOne) (S : Subst) (hs : Sub
 /-- **`SubstWF` of `Subst.compose s S` WITHOUT requiring `SubstWF S`.** When the outer single
     scope `[s]` is well-formed, every `S`-key avoids `[s]`'s range (`hkeys`), and every `S`-key
     that occurs in `S`'s own range is *covered* by `s` (`hcover`, so `apply s` scrubs it), the
-    composite is well-formed. This is the lemma Route B needs: the inner composite
-    `compose rs₀ v_unify` is NOT itself `SubstWF` (it has a self-identity entry), so the
-    factor-by-factor `SubstWF.compose` cannot apply; the outer renaming `ρ₀` covers the offending
-    key and scrubs it, which is exactly what `hcover` records. Engine: the scrub bound
-    `Subst.freeVars_compose_subset_scrub`. -/
+    composite is well-formed. Needed when the inner `S` is not itself `SubstWF` (e.g. it has a
+    self-identity entry), so the factor-by-factor `SubstWF.compose` cannot apply but the outer
+    renaming covers and scrubs the offending key. -/
 theorem SubstWF_compose_of_cover (s : SubstOne) (S : Subst)
     (hs : SubstWF [s])
     (hkeys : ∀ k ∈ Maps.keys S, k ∉ Subst.freeVars [s])
@@ -1015,6 +1013,17 @@ theorem Constraints.unify_sound (constraints : Constraints) (S_old S_new : Subst
   · rename_i relS h_core
     simp only [Except.ok.injEq] at h; subst h
     exact (Constraints.unifyCore_sound constraints S_old relS h_core).sound
+
+/-- Substituting into a monomorphic `forAll []` type pushes `S` through to the body. -/
+theorem LTy.subst_forAll_nil (S : Subst) (mty : LMonoTy) :
+    LTy.subst S (.forAll [] mty) = .forAll [] (LMonoTy.subst S mty) := by
+  simp [LTy.subst, LTy.subst.go]
+
+/-- Substitution on `LMonoTy.int` is the identity (ground type). -/
+theorem LMonoTy.subst_int (S : Subst) : LMonoTy.subst S LMonoTy.int = LMonoTy.int := by
+  simp [LMonoTy.int, LMonoTy.subst]
+  intro h
+  simp [LMonoTys.subst, h, LMonoTys.subst.substAux]
 
 end -- public section
 end Lambda
