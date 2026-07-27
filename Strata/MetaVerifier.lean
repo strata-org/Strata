@@ -381,7 +381,20 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   trace[debug] m!"Created {mvs.length} SMT VC goals: {mvs}"
   let ps ← mvs.mapM MVarId.getType
   let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
-  mv.assign hP
+  -- Lean 4.31 changed kernel reduction of auxiliary match functions generated
+  -- by complex patterns in `denoteQueries`/`denoteTerm`, so `mv.assign hP`
+  -- would fail the final kernel type-check. Per Joe Hendrix's recommendation
+  -- (issue #1442), we add a local axiom connecting the `translateQuery`-based
+  -- conjunction `andN ps` to the `smtVCsCorrect` goal, making `translateQuery`
+  -- part of the trusted computing base. The axiom is applied only after the
+  -- user has supplied proofs of every individual VC (the `mvs` subgoals).
+  let mvType ← mv.getType
+  let bridgeType := Lean.Expr.forallE `h (andN ps) mvType .default
+  let bridgeName ← Lean.mkAuxDeclName `_genSMTVCs_tcbBridge
+  Lean.addDecl (Declaration.axiomDecl {
+    name := bridgeName, levelParams := [], type := bridgeType, isUnsafe := false
+  })
+  mv.assign (mkApp (.const bridgeName []) hP)
   return mvs
 
 @[implemented_by genSMTVCsUnsafe]
