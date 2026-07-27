@@ -281,6 +281,61 @@ info: error: Error: datatype Cycle1 not inhabited
 #guard_msgs in
 #eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram threeWayCyclePgm) |>.fst).stripMetaData
 
+---------------------------------------------------------------------
+-- Test 15: Datatype named after a reserved/known type is rejected
+--
+-- Regression test: a datatype literally named `arrow` would (if accepted)
+-- shadow the built-in arrow type constructor `LMonoTy.arrow` = `tcons "arrow"`,
+-- diverging from the declarative spec's `NotNested`/`StrictPosUnif` (whose
+-- `.arrow` cases and `headBlock` do not special-case the name). The default
+-- context's known-type guard in `LContext.addMutualBlock` rejects it, since
+-- `KnownTypes.default` contains the arrow type (and `bool`/`int`/`string`).
+---------------------------------------------------------------------
+
+def arrowNamePgm : Program :=
+#strata
+program Core;
+
+datatype arrow () { MkArrow(x: int) };
+#end
+
+/--
+info: error: Cannot name datatype same as known type!
+type:
+arrow
+Type Arguments:
+[]
+Constructors:
+[Name: MkArrow Args: [(x, int)] Tester: arrow..isMkArrow ]
+
+KnownTypes' names:
+[arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram arrowNamePgm) |>.fst).stripMetaData
+
+def intNamePgm : Program :=
+#strata
+program Core;
+
+datatype int () { MkInt(x: bool) };
+#end
+
+/--
+info: error: Cannot name datatype same as known type!
+type:
+int
+Type Arguments:
+[]
+Constructors:
+[Name: MkInt Args: [(x, bool)] Tester: int..isMkInt ]
+
+KnownTypes' names:
+[arrow, Sequence, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
+-/
+#guard_msgs in
+#eval Core.typeCheck .default (TransM.run Inhabited.default (translateProgram intNamePgm) |>.fst).stripMetaData
+
 end Strata.DatatypeTypingTests
 
 end

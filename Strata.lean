@@ -103,6 +103,9 @@ import Strata.Languages.Core.StatementWF
 -- Type-soundness proof chain (transitively pulls Function/Statement/Cmd/Command/Procedure
 -- TypeSpecProps) so `lake build` compiles and sorry-checks the whole proof development.
 import Strata.Languages.Core.ProcedureTypeSpecProps
+import Strata.DL.Lambda.DatatypeWF
+import Strata.Languages.Core.DatatypeTypeSpec
+import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
