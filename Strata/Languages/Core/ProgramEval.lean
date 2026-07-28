@@ -131,26 +131,6 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
   let E := { E with exprEnv }
   Statement.Command.runCall lhs proc.header.name.name [] fuel E
 
-/-- Build a map from assert labels to their source `FileRange` and *property
-    summary*. The summary (e.g. "precondition", "postcondition") is what the
-    verifier prefixes onto its "… does not hold" diagnostic, so a caller mapping
-    an interpreter `AssertFail` back to source can reproduce the verifier's exact
-    wording. Absent a summary the label maps to the default "assertion". -/
-def collectAssertInfo (prog : Program) : Std.HashMap String (Strata.FileRange × String) := Id.run do
-  let mut m : Std.HashMap String (Strata.FileRange × String) := {}
-  for decl in prog.decls do
-    if let some proc := decl.getProc? then
-      if let .ok ss := proc.body.getStructured then
-        for (label, md) in Core.Statement.Statements.collectAsserts ss do
-          if let some fr := Imperative.getFileRange md then
-            m := m.insert label (fr, md.getPropertySummary.getD "assertion")
-  return m
-
-/-- Build a map from assert labels to their source `FileRange`. Projection of
-    `collectAssertInfo` that discards the property summary. -/
-def collectAssertRanges (prog : Program) : Std.HashMap String Strata.FileRange :=
-  (collectAssertInfo prog).fold (init := {}) fun m k (fr, _) => m.insert k fr
-
 /-- Mark every bodied, non-recursive function in the program with
     `inlineIfAllCanonical`, so the concrete interpreter unfolds it once all of
     its arguments are concrete values. Verification keeps these functions

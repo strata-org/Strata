@@ -71,7 +71,7 @@ def Cmd.eval [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P �
         (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | some false =>
         if assumptions.isEmpty then
-          (c', EC.updateError σ (.AssertFail label e))
+          (c', EC.updateError σ (.AssertFail label e md))
         else
           (c', EC.deferObligation σ (ProofObligation.mk label propType assumptions e md))
       | none =>
@@ -159,7 +159,7 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
           let (expr, σ) := EC.genFreeVar σ x xty
           EC.update σ x xty expr
 
-    | .assert label e _ =>
+    | .assert label e md =>
       let (e, σ) := EC.preprocess σ c e
       let e := EC.eval σ e
       match EC.denoteBool e with
@@ -172,10 +172,14 @@ def Cmd.run {P S} [BEq P.Ident] [EC : EvalContext P S] (σ : S) (c : Cmd P) : S 
         -- multiple independent assertion failures can be collected in one run.
         -- An assertion does not mutate the store, so continuing past it is
         -- sound for the remaining (assertion-independent) statements.
+        --
+        -- `md` travels with the failure so consumers can resolve its source
+        -- location (and property summary) directly, instead of treating `label`
+        -- as a key into a separately-built map.
         if EC.continuePastAssert σ then
-          EC.recordAssertFailure σ label e
+          EC.recordAssertFailure σ label e md
         else
-          EC.updateError σ (.AssertFail label e)
+          EC.updateError σ (.AssertFail label e md)
       | none =>
         EC.updateError σ (.Misc f!"assert ({label}) condition did not reduce to bool")
 

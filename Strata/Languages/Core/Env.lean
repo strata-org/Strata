@@ -165,9 +165,11 @@ structure Env where
       failures can be collected in a single run. See `assertFailures`. -/
   collectAllAssertFailures : Bool := false
   /-- Assertion failures collected during concrete execution when
-      `collectAllAssertFailures` is set, most recent first. Each entry pairs the
-      assert's label with its evaluated (false) condition. -/
-  assertFailures : List (String × Expression.Expr) := []
+      `collectAllAssertFailures` is set, most recent first. Each entry carries the
+      assert's label, its evaluated (false) condition, and the statement's
+      metadata — the last of which resolves the failure's source location and
+      property summary without consulting the label. -/
+  assertFailures : List (String × Expression.Expr × Imperative.MetaData Expression) := []
   /-- When `true`, concrete execution treats `assume` statements as no-ops
       instead of enforcing them. See `EvalContext.ignoreAssume`. -/
   ignoreAssumes : Bool := false

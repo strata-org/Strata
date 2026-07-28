@@ -465,6 +465,14 @@ def translateExpr (expr : StmtExprMd)
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
 
+/-- Build the parenthesized suffix that names an `assert`/`assume` after its
+    source position.
+
+    The result is a display name only — it is not required to be unique, and
+    nothing resolves a failure back to source through it. Consumers use the
+    statement's `MetaData`, which travels with the failure (see
+    `Imperative.EvalError.AssertFail`) and carries both the `FileRange` and the
+    property summary. -/
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   match Imperative.getProvenance md with
   | some (.loc _ range) => s!"({range.start})"

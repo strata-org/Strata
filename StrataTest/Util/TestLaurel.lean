@@ -94,8 +94,8 @@ the very same inline `// ^^^` annotations the verifier is checked against.
 This mirrors `laurelInterpretCommand` in `StrataMainLib`: translate to Core,
 type-check with the default Core factory, inline bodied functions so concrete
 evaluation can reduce them, then run each `entry` procedure from a fresh
-environment and map any `AssertFail` back to source via `collectAssertRanges`
-(the helper now shared out of `Core.Program`).
+environment and map any `AssertFail` back to source via the metadata the failure
+carries.
 
 Only *deterministic* assertion failures reproduce under concrete execution:
 verifier-only diagnostics (a precondition that "does not hold" over all inputs,
@@ -135,7 +135,6 @@ assume makes the assert unreachable) belongs in `testLaurel`, not
 private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
     IO (Array Strata.DiagnosticModel) := do
   let core := Core.Program.inlineBodiedFunctions core
-  let assertInfo := Core.Program.collectAssertInfo core
   match core.run with
   | .error diag =>
     throw <| IO.userError s!"interpreter setup failed: {diag.message}"
@@ -165,9 +164,10 @@ private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
       -- (same range and message) keeps the interpret path 1:1 with the verifier
       -- under `checkAgainstAnnotations`. Only *exact* duplicates are dropped —
       -- two distinct asserts that happen to share wording are both kept.
-      for (label, _) in resultEnv.assertFailures.reverse do
-        match assertInfo[label]? with
-        | some (fr, summary) =>
+      for (label, _e, md) in resultEnv.assertFailures.reverse do
+        match Imperative.getFileRange md with
+        | some fr =>
+          let summary := md.getPropertySummary.getD "assertion"
           let dm := Strata.DiagnosticModel.withRange fr s!"{summary} does not hold"
           unless seen.contains dm do
             dms := dms.push dm
@@ -574,17 +574,12 @@ def testLaurel (block : SourcedProgram)
     `testLaurelMultiple` — put it in a verify-only `testLaurel` block. (Unifying
     the two wordings in the matcher is possible but deliberately not done here.)
 
-    **Known limitation — label collision for multiple preconditions at one call
-    site.** `collectAssertInfo` keys by the position-derived assert label, but
-    `mkPreChecks` emits one `Assert` per precondition at the *same* call-site
-    source position. Multiple precondition asserts at a single call site therefore
-    share a label, and the `HashMap` keeps only the last `(range, summary)` pair —
-    collapsing N distinct failures into one diagnostic on the interpret side. The
-    verifier reports each independently (keyed by a uid-augmented key), so a test
-    block with multiple preconditions at one call site will mismatch between the two
-    modes. For now such blocks must use `testLaurel` (verify-only). This is a
-    pre-existing limitation of the label scheme, not introduced by
-    `testLaurelMultiple`.
+    Note: multiple preconditions at a single call site used to collapse into one
+    diagnostic here, because the interpret side keyed source lookups by the
+    position-derived assert label and `mkPreChecks` emits one `Assert` per
+    precondition at the *same* call-site position. Failures now carry their own
+    metadata instead of being looked up by label, so each is reported
+    independently, matching the verifier.
 
     If the program marks no `entry`, there is nothing for the interpreter to run,
     which is a mis-use of this entry point and is reported as an error.
