@@ -475,7 +475,13 @@ async def _state_validate(state: WorkflowState, agent) -> Transition:
         has_sorry: bool
         statements_match: bool
 
-    async with swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd) as validator:
+    # Inject lean_tools so the validator can use verify_no_sorry (the authoritative
+    # build-then-#print-axioms oracle) — lean_verify fails on this repo's module files.
+    # verify_no_sorry is read-only (explicit file_path), so no workspace scoping needed.
+    from .._lean_tools_mcp import create_lean_tools_server
+    _validator_mcp = {"lean_tools": create_lean_tools_server(workspace=None)}
+    async with swarm_agent("deep_proof_validator", swarm=agent.swarm, cwd=agent._cwd,
+                           extra_mcp_servers=_validator_mcp) as validator:
         result = await validator.run(
             inp={
                 "stub_file": task.theorem_file,

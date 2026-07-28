@@ -4,10 +4,12 @@ stateless: false
 auto_start: false
 module: null
 tool_error_reminder: >
-  That tool is not available to you. Your tools: Read, Write, Edit, lean_verify,
+  That tool is not available to you. Your tools: Read, Write, Edit, verify_no_sorry,
   lean_goal, lean_diagnostic_messages, lean_local_search,
   lean_declaration_file, show_file_state, get_sorries_by_theorem, get_sorry_positions,
   ledger_search, ledger_get, add_import_safely.
+  NOTE: lean_verify does NOT work on this repo's `module` files — use
+  lean_diagnostic_messages for compile errors and verify_no_sorry for the sorry-free verdict.
   For definitions/lemmas, ask SearchAgent: send_message(to="SearchAgent", message="...").
 
 visibility:
@@ -47,7 +49,10 @@ system_prompt: >
   4. For complex goals: build up from smaller helpers
      - Prove helper lemmas first (fully — no sorry)
      - Then use them in the main proof
-  5. lean_verify after EVERY change — file must always compile
+  5. Run lean_diagnostic_messages after EVERY change — file must always compile
+     (no `error:`). When all sorry are gone, run
+     verify_no_sorry(file_path, theorem_names=[...]) as the AUTHORITATIVE check.
+     Do NOT use lean_verify — it fails on this repo's `module` files.
 
   MUTUAL RECURSION:
   If you see a mutual block where theorems call each other, the proof must stay
@@ -69,7 +74,6 @@ prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)
   - Edit(StrataAgent/Sandbox/**)
-  - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_run_code
   - mcp__lean_lsp__lean_hover_info
   - mcp__lean_lsp__lean_goal
@@ -79,6 +83,7 @@ allowed_tools:
   - mcp__lean_tools__show_file_state
   - mcp__lean_tools__get_sorries_by_theorem
   - mcp__lean_tools__get_sorry_positions
+  - mcp__lean_tools__verify_no_sorry
   - mcp__ledger__ledger_search
   - mcp__ledger__ledger_get
   - mcp__writer_imports__add_import_safely
@@ -86,6 +91,6 @@ allowed_tools:
   - check_messages
   - get_time
 # Write is intentionally NOT granted: no file creation. Only Edits to the assigned file.
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, Write, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_tools__write_decomposed_lemma, mcp__lean_tools__write_helper_lemma, TaskCreate, TaskUpdate, TaskGet, TaskList]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, Write, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_verify, mcp__lean_tools__write_decomposed_lemma, mcp__lean_tools__write_helper_lemma, TaskCreate, TaskUpdate, TaskGet, TaskList]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

@@ -32,7 +32,8 @@ system_prompt: >
   2. Read both files mentioned
   3. Identify the minimal fix (prefer adding imports over duplicating code)
   4. Edit the file
-  5. Use lean_verify to confirm the fix works
+  5. Use lean_diagnostic_messages to confirm the fix works (no `error:` remaining).
+     Do NOT use lean_verify — it fails on this repo's `module` files.
 
   RULES:
   - Make MINIMAL changes — only fix the compilation error
@@ -47,10 +48,9 @@ allowed_tools:
   - Read(StrataAgent/Sandbox/**)
   - Write(StrataAgent/Sandbox/**)
   - Edit(StrataAgent/Sandbox/**)
-  - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_diagnostic_messages
   - Bash(grep*)
   - Bash(find*)
-disallowed_tools: [Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_multi_attempt]
+disallowed_tools: [Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_multi_attempt]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

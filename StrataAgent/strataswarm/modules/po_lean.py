@@ -38,6 +38,26 @@ logger = logging.getLogger("strataswarm.lean_tools")
 
 COMMAND_PAD = 15  # must match Lean side
 
+# Soundness-adjacent source patterns invisible to `#print axioms` (a decl can be
+# sorryAx-free yet compromised by `@[implemented_by]`, `opaque`, etc.). Ported
+# verbatim from lean-lsp-mcp's verify.py so the oracle is a strict superset of
+# lean_verify's `scan_source`. Advisory warnings — the LLM/guide decides risk.
+_SOUNDNESS_WARNING_PATTERNS: list[str] = [
+    r"set_option\s+debug\.",
+    r"\bunsafe\b",
+    r"@\[implemented_by\b",
+    r"@\[extern\b",
+    r"\bopaque\b",
+    r"local\s+instance\b",
+    r"local\s+notation\b",
+    r"local\s+macro_rules\b",
+    r"scoped\s+notation\b",
+    r"scoped\s+instance\b",
+    r"@\[csimp\b",
+    r"import\s+Lean\.Elab\b",
+    r"import\s+Lean\.Meta\b",
+]
+
 
 def _ascii_escape(name: str) -> str:
     """Escape a theorem name to a safe ASCII filename component.
@@ -154,21 +174,53 @@ class AxiomCheckResult:
 
 
 @dataclass
+class SourceWarning:
+    """A soundness-adjacent source pattern that `#print axioms` cannot see
+    (e.g. `@[implemented_by]`, `opaque`, `unsafe`). Advisory, not a hard gate —
+    matches lean_verify's `scan_source` warnings."""
+    line: int
+    pattern: str
+
+
+@dataclass
 class AxiomSorryResult:
     """Per-theorem transitive-sorry verdict from `#print axioms`.
 
-    sorry_by_name[name] is True iff the theorem transitively depends on `sorryAx`
-    (i.e. it or anything it uses — including imported helpers — still has a sorry).
-    ok_by_name[name] is True iff `#print axioms` produced a parseable verdict for it
-    (False means the name wasn't found / the file failed to elaborate — treat as
-    NOT confirmed, never as proven)."""
+    This is produced by the build-then-probe oracle (see
+    ``SwarmLeanTools.axioms_by_theorem``): the target module is built to a fresh
+    olean, then a throwaway NON-module scratch file imports it and runs
+    ``#print axioms <name>``. Reading the built olean is what makes the axiom set
+    TRANSITIVE (it sees sorry reached through imported helpers), and doing it from
+    a non-module file is what makes it work at all on this repo's ``module`` files
+    (``#print axioms`` is illegal inside a ``module``).
+
+    sorry_by_name[name] is True iff the theorem transitively depends on `sorryAx`.
+    ok_by_name[name] is True iff a parseable `#print axioms` verdict was produced
+    for it (False means the name wasn't found / elaboration failed — treat as NOT
+    confirmed, never as proven).
+    axioms_by_name[name] is the full transitive axiom list (parity with
+    lean_verify's `axioms`), e.g. ``["propext", "Classical.choice", "Quot.sound"]``.
+    build_ok is False iff `lake build <module>` failed (real compile error) — in
+    that case NO name is confirmed (we couldn't check), which is distinct from a
+    genuine "depends on sorry" verdict.
+    warnings mirrors lean_verify's source-pattern scan."""
     sorry_by_name: dict[str, bool] = field(default_factory=dict)
     ok_by_name: dict[str, bool] = field(default_factory=dict)
+    axioms_by_name: dict[str, list[str]] = field(default_factory=dict)
+    warnings: list[SourceWarning] = field(default_factory=list)
+    build_ok: bool = True
+    build_error: str | None = None
     error: str | None = None
 
     def is_proven(self, name: str) -> bool:
-        """True only if we got a verdict AND it depends on no sorry."""
-        return self.ok_by_name.get(name, False) and not self.sorry_by_name.get(name, True)
+        """True only if the build succeeded, we got a verdict, AND it depends on
+        no sorry. Build failure and 'name not found' both return False — we never
+        conflate 'couldn't check' with 'proven'."""
+        return (
+            self.build_ok
+            and self.ok_by_name.get(name, False)
+            and not self.sorry_by_name.get(name, True)
+        )
 
 
 def _get_project_root() -> Path:
@@ -984,36 +1036,148 @@ class SwarmLeanTools:
             axiom_names=result.get("axiom_names", []),
         )
 
+    def _scan_source_warnings(self, file_path: str) -> list[SourceWarning]:
+        """Grep the source for soundness-adjacent patterns invisible to
+        `#print axioms` (parity with lean_verify's scan_source). Best-effort:
+        returns [] on any read failure."""
+        warnings: list[SourceWarning] = []
+        try:
+            text = (self._root / file_path).read_text(encoding="utf-8")
+        except Exception:
+            return warnings
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for pat in _SOUNDNESS_WARNING_PATTERNS:
+                if m := re.search(pat, line):
+                    warnings.append(SourceWarning(line=lineno, pattern=m.group(0)))
+                    break
+        return warnings
+
     def axioms_by_theorem(self, file_path: str, names: list[str]) -> AxiomSorryResult:
-        """Transitive sorry check via `#print axioms` for the given theorem names.
+        """Transitive sorry check via `#print axioms` — the AUTHORITATIVE proof oracle.
 
-        This is the AUTHORITATIVE proof oracle: a theorem is genuinely proven iff it
-        transitively depends on NO `sorryAx`. Unlike the text-based has_sorry/
-        get_sorries_by_theorem (which only see literal `sorry` tokens in the file),
-        this catches sorry reached through imported helpers or referenced lemmas.
+        A theorem is genuinely proven iff it transitively depends on NO `sorryAx`.
+        Unlike text-based has_sorry (which only sees literal `sorry` tokens), this
+        catches sorry reached through imported helpers or referenced lemmas.
 
-        The backend appends `#print axioms <name>` for each name to a temp copy of the
-        file, elaborates it once with `lake env lean`, and scans each verdict for
-        `sorryAx`. One lake run covers all names.
+        Correctness-first design (replaces the old in-place `print_axioms___` RPC,
+        which was broken on `module` files because `#print axioms` is illegal inside
+        a `module`):
 
-        Returns an AxiomSorryResult; use `.is_proven(name)` for the safe verdict
-        (only True when a verdict was produced AND no sorry dependency).
+          1. `lake build <module>` the target FIRST → guarantees a fresh olean, so
+             we never read a stale cache (the classic false-success trap). If the
+             build fails, we return build_ok=False and confirm NOTHING — "couldn't
+             check" is never conflated with "proven".
+          2. Write a throwaway NON-module scratch file that `import`s the built
+             module by name and runs `#print axioms <name>` per target. A non-module
+             file makes `#print axioms` legal; importing the olean makes the axiom
+             set TRANSITIVE (sees sorry through imports).
+          3. Parse each verdict for `sorryAx` and record the full axiom list.
+          4. Scan the source for soundness-adjacent patterns (parity with
+             lean_verify's scan_source).
+
+        Returns an AxiomSorryResult; use `.is_proven(name)` for the safe verdict.
         """
         if not names:
             return AxiomSorryResult()
-        payload = "\n".join([file_path, *names])
-        result = self._send("print_axioms___", payload)
-        if "error" in result:
-            return AxiomSorryResult(error=result["error"])
+
+        module_name = file_path.replace("/", ".").removesuffix(".lean")
+        warnings = self._scan_source_warnings(file_path)
+
+        # 1. Build the module to a fresh olean — no stale cache.
+        try:
+            build = subprocess.run(
+                ["lake", "build", module_name],
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            return AxiomSorryResult(
+                build_ok=False, build_error="build timed out (600s)",
+                warnings=warnings, error="build timed out (600s)",
+            )
+        except Exception as e:
+            return AxiomSorryResult(
+                build_ok=False, build_error=str(e), warnings=warnings, error=str(e),
+            )
+        if build.returncode != 0:
+            out = (build.stdout + "\n" + build.stderr)
+            err_lines = [l for l in out.splitlines()
+                         if ": error:" in l or "error:" in l.lower()]
+            detail = "\n".join(err_lines[:10]) if err_lines else out.strip()[-500:]
+            # build failed → confirm nothing (ok=False for every name)
+            return AxiomSorryResult(
+                build_ok=False, build_error=detail, warnings=warnings,
+                ok_by_name={n: False for n in names},
+                sorry_by_name={n: True for n in names},
+            )
+
+        # 2. Probe from a throwaway NON-module scratch file that imports the olean.
+        print_cmds = "\n".join(f"#print axioms {n}" for n in names)
+        scratch_content = f"import {module_name}\n\n{print_cmds}\n"
+        scratch_rel = f"_mcp_axprobe_{os.getpid()}_{int(time.time() * 1000) % 100000}.lean"
+        scratch_abs = self._root / scratch_rel
+        try:
+            scratch_abs.write_text(scratch_content, encoding="utf-8")
+        except Exception as e:
+            return AxiomSorryResult(warnings=warnings, error=f"scratch write failed: {e}")
+
+        try:
+            probe = subprocess.run(
+                ["lake", "env", "lean", scratch_rel],
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            output = probe.stdout + "\n" + probe.stderr
+        except subprocess.TimeoutExpired:
+            return AxiomSorryResult(warnings=warnings, error="axiom probe timed out (300s)")
+        except Exception as e:
+            return AxiomSorryResult(warnings=warnings, error=str(e))
+        finally:
+            try:
+                scratch_abs.unlink()
+            except FileNotFoundError:
+                pass
+            except Exception as exc:
+                logger.warning("failed to remove axiom scratch %s: %s", scratch_abs, exc)
+
+        # 3. Parse verdicts. `#print axioms` emits one of:
+        #    'X' depends on axioms: [a, b, c]
+        #    'X' does not depend on any axioms
         sorry_by_name: dict[str, bool] = {}
         ok_by_name: dict[str, bool] = {}
-        for r in result.get("results", []):
-            n = r.get("name", "")
-            if not n:
+        axioms_by_name: dict[str, list[str]] = {}
+        # Collapse to single line per verdict; messages can wrap.
+        flat = output.replace("\n", " ")
+        for n in names:
+            short = n.rsplit(".", 1)[-1]
+            # Match the verdict line for this name (fully-qualified or trailing segment).
+            m = re.search(
+                rf"'(?:[\w.]*\.)?{re.escape(short)}'\s+"
+                rf"(depends on axioms:\s*\[(?P<ax>[^\]]*)\]|does not depend on any axioms)",
+                flat,
+            )
+            if not m:
+                ok_by_name[n] = False
+                sorry_by_name[n] = True
+                axioms_by_name[n] = []
                 continue
-            sorry_by_name[n] = bool(r.get("sorry", True))
-            ok_by_name[n] = bool(r.get("ok", False))
-        return AxiomSorryResult(sorry_by_name=sorry_by_name, ok_by_name=ok_by_name)
+            ok_by_name[n] = True
+            ax_group = m.group("ax")
+            axioms = [a.strip() for a in ax_group.split(",")] if ax_group else []
+            axioms_by_name[n] = axioms
+            sorry_by_name[n] = any("sorryAx" in a for a in axioms)
+
+        return AxiomSorryResult(
+            sorry_by_name=sorry_by_name,
+            ok_by_name=ok_by_name,
+            axioms_by_name=axioms_by_name,
+            warnings=warnings,
+            build_ok=True,
+        )
 
     def split_theorems(self, file_path: str) -> SplitResult:
         """Get theorem/def blocks with line extents, sorry status, and text.

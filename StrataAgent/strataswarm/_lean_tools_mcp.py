@@ -290,6 +290,63 @@ def create_lean_tools_server(workspace: str | None = None):
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
     @tool(
+        name="verify_no_sorry",
+        description=(
+            "SOUNDNESS ORACLE — the authoritative check that a theorem is proved sorry-free. "
+            "Use this instead of `lean_verify` for the final proved/not-proved verdict.\n\n"
+            "How it works: (1) `lake build`s the module to a fresh olean (no stale cache), "
+            "(2) imports it from a throwaway NON-module scratch file and runs `#print axioms`. "
+            "Reading the built olean makes the axiom set TRANSITIVE — it catches `sorry` reached "
+            "through any imported helper, not just this file. Doing it from a non-module file is "
+            "what makes it work on this repo's `module` files at all (`#print axioms` is ILLEGAL "
+            "inside a `module`, which is why `lean_verify` fails here with 'Axiom check failed').\n\n"
+            "For each requested name it returns: proven (build ok + verdict + no sorryAx), "
+            "has_sorry (transitively depends on sorryAx), axioms (full transitive list), and "
+            "found (whether a verdict was produced). It also returns build_ok/build_error (a build "
+            "failure confirms NOTHING — 'couldn't check' is never 'proven') and source `warnings` "
+            "for soundness escape hatches `#print axioms` can't see (@[implemented_by], @[extern], "
+            "opaque, unsafe, @[csimp], etc.)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path from project root to the .lean file (module or non-module)",
+                },
+                "theorem_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Names of theorems to check (fully-qualified or short). Check the main theorem AND every helper it uses.",
+                },
+            },
+            "required": ["file_path", "theorem_names"],
+        },
+    )
+    async def verify_no_sorry(input: dict[str, Any]) -> dict[str, Any]:
+        tools = get_lean_tools()
+        names = input["theorem_names"]
+        result = tools.axioms_by_theorem(input["file_path"], names)
+        per_name = {
+            n: {
+                "proven": result.is_proven(n),
+                "has_sorry": result.sorry_by_name.get(n, True),
+                "found": result.ok_by_name.get(n, False),
+                "axioms": result.axioms_by_name.get(n, []),
+            }
+            for n in names
+        }
+        all_proven = result.build_ok and all(result.is_proven(n) for n in names)
+        return {"content": [{"type": "text", "text": json.dumps({
+            "all_proven": all_proven,
+            "build_ok": result.build_ok,
+            "build_error": result.build_error,
+            "results": per_name,
+            "warnings": [{"line": w.line, "pattern": w.pattern} for w in result.warnings],
+            "error": result.error,
+        }, indent=2)}]}
+
+    @tool(
         name="collect_progress",
         description=(
             "Recursively collect all progress.md files under the workspace. "
@@ -317,7 +374,8 @@ def create_lean_tools_server(workspace: str | None = None):
         version="1.0.0",
         tools=[write_decomposed_lemma, count_sorries, list_theorems,
                check_imports, show_file_state, write_helper_lemma_tool,
-               get_sorry_positions, get_sorries_by_theorem, collect_progress_tool],
+               get_sorry_positions, get_sorries_by_theorem, verify_no_sorry,
+               collect_progress_tool],
     )
 
 

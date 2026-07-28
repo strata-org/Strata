@@ -432,10 +432,14 @@ async def compile_check(
     return await ask(
         inp={"file": file_path, "action": "compile and report pass/fail"},
         result_type=bool,
-        system_prompt="Run lean_verify on the file. Return true if it compiles without errors, false otherwise.",
+        system_prompt=(
+            "Run lean_diagnostic_messages on the file. Return true if it compiles "
+            "without errors (sorry warnings are OK), false if there is any `error:`. "
+            "Do NOT use lean_verify — it fails on this repo's `module` files."
+        ),
         cwd=cwd,
         mcp_servers={"lean_lsp": {"command": "uvx", "args": ["lean-lsp-mcp"], "type": "stdio"}},
-        allowed_tools=["mcp__lean_lsp__lean_verify", "Read"],
+        allowed_tools=["mcp__lean_lsp__lean_diagnostic_messages", "Read"],
     )
 
 

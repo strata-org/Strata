@@ -71,6 +71,8 @@ def budget_warning_hooks(agent_ref) -> dict:
 # Lean verify/build tools whose success means "the file compiles right now".
 _VERIFY_TOOLS = {
     "mcp__lean_lsp__lean_verify",
+    "mcp__lean_lsp__lean_diagnostic_messages",
+    "mcp__lean_tools__verify_no_sorry",
     "mcp__lean_tools__show_file_state",
 }
 

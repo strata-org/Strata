@@ -32,7 +32,7 @@ system_prompt: >
   IMPORTANT:
   - Use RELATIVE paths (e.g. StrataAgent/Sandbox/Stub.lean)
   - Do NOT modify lakefile.toml — the library is already configured
-  - Do NOT run lean_build, lean_verify, lean_diagnostic_messages, or any compilation tool.
+  - Do NOT run lean_build, lean_diagnostic_messages, or any compilation tool.
     Compilation is verified AUTOMATICALLY by the orchestrator after you finish.
   - Just write the two files correctly and report success. Nothing else.
 prompt: ""
@@ -40,11 +40,10 @@ allowed_tools:
   - Read(StrataAgent/Sandbox/**)
   - Write(StrataAgent/Sandbox/**)
   - Edit(StrataAgent/Sandbox/**)
-  - mcp__lean_lsp__lean_verify
   - mcp__lean_lsp__lean_diagnostic_messages
   - send_message
   - check_messages
   - get_time
-disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_goal, mcp__lean_lsp__lean_hover_info, mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_file_outline]
+disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_goal, mcp__lean_lsp__lean_hover_info, mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_file_outline]
 mcp_servers:
   lean_lsp: { command: uvx, args: [lean-lsp-mcp], type: stdio }

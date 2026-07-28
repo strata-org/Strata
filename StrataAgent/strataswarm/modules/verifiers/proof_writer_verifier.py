@@ -58,7 +58,8 @@ def make_proof_writer_verifier(
             return (
                 "COMPILATION ERROR: Your file does not compile. "
                 "Fix the errors — the file must compile even with sorry. "
-                "Run lean_verify to see the exact errors."
+                "Run lean_diagnostic_messages to see the exact errors "
+                "(lean_verify does not work on this repo's module files)."
             )
 
         # 2. No axiom
