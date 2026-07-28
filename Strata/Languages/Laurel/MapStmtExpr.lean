@@ -506,6 +506,32 @@ def mapProgramM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) 
 def mapProgram (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
   mapProgramM (m := Id) f program
 
+/-- Apply `f` to every `StmtExprMd` node appearing *anywhere* in a program: every
+    procedure (top-level static procedures and composite instance procedures, via
+    `mapProcedureM` — bodies, preconditions, decreases, invokeOn, and axioms), the
+    constraint and witness of constrained types, and constant initializers. `f` is
+    applied per node in a bottom-up traversal (see `mapStmtExprM`).
+
+    This is the expression analogue of `mapProgramHighTypesM`: the single place
+    that knows where expressions live in a `Program`, so passes that rewrite call
+    sites (or any other node) don't each re-enumerate procedures, constrained
+    types, and constants — and silently miss one. -/
+def mapProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (program : Program) : m Program := do
+  let mapExpr := mapStmtExprM f
+  let program ← mapProgramProceduresM (mapProcedureM mapExpr) program
+  let types ← program.types.mapM fun td => do
+    match td with
+    | .Constrained ct =>
+      pure (.Constrained { ct with constraint := ← mapExpr ct.constraint, witness := ← mapExpr ct.witness })
+    | other => pure other
+  let constants ← program.constants.mapM fun c => do
+    pure { c with initializer := ← c.initializer.mapM mapExpr }
+  return { program with types := types, constants := constants }
+
+/-- Pure version of `mapProgramStmtExprM`. -/
+def mapProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : Program) : Program :=
+  mapProgramStmtExprM (m := Id) f program
+
 /-! ## Type-annotation traversals
 
 `mapStmtExprHighTypesM` and friends apply a `HighType → HighType` rewrite to

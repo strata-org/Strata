@@ -986,6 +986,17 @@ structure Program where
     explicitly, use the named-return form `returns (r: T)`. -/
 def resultOutputName : String := "$result"
 
+/-- Reserved prefix stamped onto a call site whose overload resolution failed
+    (no overload matched, or the call was ambiguous). The `UniqueOverloadNames`
+    pass renames every overloaded definition away, so an unrewritten call site
+    would otherwise re-resolve to a spurious *'<name>' is not defined* error.
+    The marker lets re-resolution recognize the site and stay silent. -/
+def overloadFailurePrefix : String := "$ovFail$"
+
+/-- Rename a call site to the reserved overload-failure marker. -/
+def overloadFailureName (name : Identifier) : Identifier :=
+  { name with text := overloadFailurePrefix ++ name.text }
+
 end -- public section
 
 end Laurel
