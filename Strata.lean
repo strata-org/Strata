@@ -38,6 +38,8 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
+import Strata.Transform.LiftInternalFuncDecls
+import Strata.Transform.LiftInternalFuncDeclsCorrect
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect

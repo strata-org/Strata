@@ -14,6 +14,7 @@ import Strata.Transform.CallElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.LiftInternalFuncDecls
 import Strata.Transform.LoopElim
 import Strata.Transform.PrecondElim
 import Strata.Transform.TerminationCheck
@@ -1503,12 +1504,16 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
     | none => []
   let postFilterPhases := match procs with
     | some ps =>
+      -- TODO: this doesn't target functions with preconditions that were factored
+      -- out from internal declarations by liftInternalFuncDeclsPipelinePhase.
+      -- Relying on procedure names is brittle, however. This is kept as it-is for now.
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
   -- precondElimPipelinePhase will immediately return if there is no Factory
   -- set up at CoreTransformState.
-  filterPhases ++ [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+  filterPhases ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
+      termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including

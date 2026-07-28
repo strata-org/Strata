@@ -86,6 +86,51 @@ cross-site unification — is fully proven here.
 namespace Core
 namespace Transform
 
+/-! ## Monad plumbing for `CoreTransformM`
+
+`CoreTransformM = ExceptT Err (StateM CoreTransformState)`, so a computation
+applied to a state `σ` returns an `(Except Err _) × CoreTransformState` pair.
+The lemmas here expose the facts about `pure`, `throw`, `>>=`, and `Except.ok`
+pair equalities that transform-correctness proofs need — letting them treat the
+effectful sub-computations (`genLiftVar`, `mapM`, `capturedVars`, …) as opaque. -/
+
+/-- Running `pure v` from state `σ` yields `.ok v` with `σ` unchanged. -/
+theorem pure_apply {α : Type} (v : α) (σ : CoreTransformState) :
+    (pure v : CoreTransformM α) σ = (Except.ok v, σ) := rfl
+
+/-- Running `throw e` from state `σ` yields `.error e` with `σ` unchanged. -/
+theorem throw_apply {α : Type} (e : Err) (σ : CoreTransformState) :
+    (throw e : CoreTransformM α) σ = (Except.error e, σ) := rfl
+
+/-- Inversion for a successful `>>=` run: if `(x >>= k) σ` returns `.ok b`, then
+`x` first ran to some `.ok a` at an intermediate state `σ2`, and `k a` ran from
+`σ2` to `.ok b`. -/
+theorem bind_ok_inv {α β : Type} (x : CoreTransformM α) (k : α → CoreTransformM β)
+    {σ σ' : CoreTransformState} {b : β}
+    (h : (x >>= k) σ = (Except.ok b, σ')) :
+    ∃ a σ2, x σ = (Except.ok a, σ2) ∧ k a σ2 = (Except.ok b, σ') := by
+  rcases hx : x σ with ⟨r, σ2⟩
+  cases r with
+  | ok a =>
+    refine ⟨a, σ2, rfl, ?_⟩
+    have hred : (x >>= k) σ = k a σ2 := by
+      simp only [bind, ExceptT.bind, ExceptT.mk, StateT.bind, ExceptT.bindCont, hx]
+    rw [hred] at h; exact h
+  | error e =>
+    exfalso
+    have hred : (x >>= k) σ = (Except.error e, σ2) := by
+      simp only [bind, ExceptT.bind, ExceptT.mk, StateT.bind, ExceptT.bindCont, hx, pure, StateT.pure]
+    rw [hred] at h
+    injection h with he _
+    nomatch he
+
+/-- Injectivity of `(Except.ok _, _)` pairs: from
+`(Except.ok a, s) = (Except.ok b, t)` recover `a = b ∧ s = t`. -/
+theorem ok_pair_inj {ε α σT : Type} {a b : α} {s t : σT}
+    (h : ((@Except.ok ε α a), s) = (Except.ok b, t)) : a = b ∧ s = t := by
+  simp only [Prod.mk.injEq, Except.ok.injEq] at h
+  exact h
+
 variable (prefixStr : String)
 
 /-- `genTyVarName` is `CoreGenState.gen` at the fresh type-var prefix, with the

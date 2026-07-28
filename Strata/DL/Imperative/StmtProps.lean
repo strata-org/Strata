@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Util.StringGen
+import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Util.ListUtils
 
@@ -36,6 +37,9 @@ Equational theory for the boolean shape walkers defined in
   (`Stmt`/`Block.definedVars_eq_initVars_of_noFuncDecl`), the block-to-statement
   non-membership projection `all_not_mem_definedVars_of_block`, and the
   init-⊆-defined inclusion (`Stmt`/`Block.mem_initVars_mem_definedVars`).
+- `Stmt`/`Block.noFuncDecl_mapExpr` — `mapExpr` preserves `noFuncDecl`: rewriting
+  the expressions in a statement or block never introduces or removes a
+  `funcDecl`.
 -/
 
 /-! ### Disjointness of funcDeclNames from definedVars
@@ -678,12 +682,53 @@ theorem Block.noMeasureLoops_append (xs ys : List (Stmt P (Cmd P))) :
   | cons x rest ih => simp [Block.noMeasureLoops, ih, Bool.and_assoc]
 
 /-- Concatenation distributes over `Block.noFuncDecl`. -/
-theorem Block.noFuncDecl_append (xs ys : List (Stmt P (Cmd P))) :
+theorem Block.noFuncDecl_append (xs ys : List (Stmt P C)) :
     Block.noFuncDecl (xs ++ ys) =
       (Block.noFuncDecl xs && Block.noFuncDecl ys) := by
   induction xs with
   | nil => simp [Block.noFuncDecl]
   | cons x rest ih => simp [Block.noFuncDecl, ih, Bool.and_assoc]
+
+mutual
+/-- `Stmt.mapExpr` preserves `noFuncDecl`: it recurses structurally and passes
+`funcDecl` through unchanged, so it never changes whether a statement contains a
+function declaration. -/
+theorem Stmt.noFuncDecl_mapExpr
+    (fe : P.Expr → P.Expr) (fc : C → C) (s : Stmt P C) :
+    Stmt.noFuncDecl (Stmt.mapExpr fe fc s) = Stmt.noFuncDecl s := by
+  match s with
+  | .cmd c => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .block l ss md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc ss
+  | .ite (.det c) t e md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
+               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
+  | .ite .nondet t e md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl,
+               Block.noFuncDecl_mapExpr fe fc t, Block.noFuncDecl_mapExpr fe fc e]
+  | .loop (.det g) mea inv b md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc b
+  | .loop .nondet mea inv b md =>
+    simp only [Stmt.mapExpr, Stmt.noFuncDecl]
+    exact Block.noFuncDecl_mapExpr fe fc b
+  | .exit l md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .funcDecl decl md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  | .typeDecl tc md => simp [Stmt.mapExpr, Stmt.noFuncDecl]
+  termination_by sizeOf s
+
+/-- `Block.mapExpr` preserves `noFuncDecl` (pointwise over the block). -/
+theorem Block.noFuncDecl_mapExpr
+    (fe : P.Expr → P.Expr) (fc : C → C) (ss : Block P C) :
+    Block.noFuncDecl (Block.mapExpr fe fc ss) = Block.noFuncDecl ss := by
+  match ss with
+  | [] => simp [Block.mapExpr, Block.noFuncDecl]
+  | s :: rest =>
+    simp only [Block.mapExpr, Block.noFuncDecl,
+               Stmt.noFuncDecl_mapExpr fe fc s, Block.noFuncDecl_mapExpr fe fc rest]
+  termination_by sizeOf ss
+end
 
 mutual
 /-- Under `noFuncDecl`, a statement's defined variables coincide with its

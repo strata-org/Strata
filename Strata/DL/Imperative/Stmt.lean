@@ -226,6 +226,58 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### LocalTypeDecls
+
+Collect the type declarations (`typeDecl`) that appear inside a statement or
+block, recursing into nested `block` / `ite` / `loop` bodies.
+-/
+
+mutual
+/-- All type declarations appearing in a statement, including those nested in
+    `block` / `ite` / `loop` bodies. -/
+@[expose] def Stmt.localTypeDecls (s : Stmt P C) : List TypeConstructor :=
+  match s with
+  | .cmd _ => []
+  | .block _ bss _ => Block.localTypeDecls bss
+  | .ite _ tss ess _ => Block.localTypeDecls tss ++ Block.localTypeDecls ess
+  | .loop _ _ _ bss _ => Block.localTypeDecls bss
+  | .exit _ _ => []
+  | .funcDecl _ _ => []
+  | .typeDecl tc _ => [tc]
+  termination_by (Stmt.sizeOf s)
+
+/-- All type declarations appearing in a block. -/
+@[expose] def Block.localTypeDecls (ss : Block P C) : List TypeConstructor :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.localTypeDecls s ++ Block.localTypeDecls srest
+  termination_by (Block.sizeOf ss)
+end
+
+mutual
+/-- Does the statement contain any `typeDecl` (recursively through
+    `block` / `ite` / `loop` bodies)?  Linear-time short-circuiting predicate;
+    prefer this over `Stmt.localTypeDecls.isEmpty` for emptiness checks. -/
+@[expose] def Stmt.hasLocalTypeDecl (s : Stmt P C) : Bool :=
+  match s with
+  | .typeDecl _ _ => true
+  | .block _ b _ => Block.hasLocalTypeDecl b
+  | .ite _ t e _ => Block.hasLocalTypeDecl t || Block.hasLocalTypeDecl e
+  | .loop _ _ _ b _ => Block.hasLocalTypeDecl b
+  | .cmd _ | .exit _ _ | .funcDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Does the block contain any `typeDecl` (recursively)?  Linear-time
+    short-circuiting predicate. -/
+@[expose] def Block.hasLocalTypeDecl (ss : Block P C) : Bool :=
+  match ss with
+  | [] => false
+  | s :: rest => Stmt.hasLocalTypeDecl s || Block.hasLocalTypeDecl rest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### MapExpr
 
 Apply a function to all expressions in a statement's structural positions
