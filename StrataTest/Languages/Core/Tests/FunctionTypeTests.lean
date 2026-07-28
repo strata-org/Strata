@@ -301,6 +301,61 @@ open Strata in
   Std.format (Core.typeCheck .default pgm.stripMetaData)
 
 ---------------------------------------------------------------------
+-- A user function must not silently shadow an existing factory function.
+--
+-- Regression test: `select` is a built-in Map factory function. Previously
+-- `Program.typeCheck` called `LContext.addFactoryFunction`, which silently
+-- no-ops on a name clash, so the user declaration was accepted and then
+-- dropped. It is now rejected via `addFactoryFunctionWithError`.
+---------------------------------------------------------------------
+
+open Strata in
+private def clashBuiltinPgm :=
+#strata
+program Core;
+
+function select(x : int) : int {
+  x
+}
+#end
+
+/--
+info: error: A function of name select already exists! Redefinitions are not allowed.
+Existing Function: func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
+New Function:func select :  ((x : int)) → int :=
+  ((x : int))
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram clashBuiltinPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+-- Same clash inside a recursive function block (Phase 1 stub insertion).
+open Strata in
+private def clashBuiltinRecPgm :=
+#strata
+program Core;
+
+rec function select(x : int) : int {
+  x
+};
+#end
+
+-- The clash is caught in Phase 1 (stub insertion), so the reported "New
+-- Function" is the bodiless stub signature.
+/--
+info: error: A function of name select already exists! Redefinitions are not allowed.
+Existing Function: func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
+New Function:func select :  ((x : int)) → int;
+-/
+#guard_msgs in
+open Strata in
+#eval
+  let pgm := (TransM.run Inhabited.default (translateProgram clashBuiltinRecPgm)).fst
+  Std.format (Core.typeCheck .default pgm.stripMetaData)
+
+---------------------------------------------------------------------
 -- alphaEquivMap unit tests
 ---------------------------------------------------------------------
 

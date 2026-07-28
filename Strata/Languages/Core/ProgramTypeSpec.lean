@@ -38,6 +38,36 @@ public section
 /-! ### Declaration and program typing -/
 
 /--
+`FactoryExtendedBy C C' newFuncs` says the context `C'` is `C` with exactly the
+functions `newFuncs` added: `C'` agrees with `C` on every field except
+`functions`, its factory contains everything `C`'s does plus each `f ∈ newFuncs`,
+and it introduces no other function names.
+
+This is the declarative counterpart of folding `LContext.addFactoryFunctionWithError`
+over `newFuncs` (as `Program.typeCheck`'s `.func`/`recFuncBlock` cases do): after
+the fix that makes a name clash a hard error (never a silent no-op), a successful
+fold produces exactly such a `C'`. Using this predicate instead of a literal
+`List.foldl` frees the soundness proof from inducting over the fold.
+-/
+structure FactoryExtendedBy
+    (C C' : LContext CoreLParams) (newFuncs : List (LFunc CoreLParams)) : Prop where
+  /-- Only the function factory changes. -/
+  knownTypes_eq : C'.knownTypes = C.knownTypes
+  /-- Only the function factory changes. -/
+  datatypes_eq : C'.datatypes = C.datatypes
+  /-- Only the function factory changes. -/
+  idents_eq : C'.idents = C.idents
+  /-- Only the function factory changes. -/
+  rigidTypeVars_eq : C'.rigidTypeVars = C.rigidTypeVars
+  /-- Every function already in `C` is still present. -/
+  preserves_old : ∀ nm ∈ C.functions, nm ∈ C'.functions
+  /-- Every new function's name is present in `C'`. -/
+  contains_new : ∀ f ∈ newFuncs, f.name.name ∈ C'.functions
+  /-- No name is present in `C'` unless it was in `C` or is one of the new
+      functions (the factory grows by exactly `newFuncs`). -/
+  no_other : ∀ nm ∈ C'.functions, nm ∈ C.functions ∨ nm ∈ newFuncs.map (·.name.name)
+
+/--
 Declarative typing for a single declaration, parameterized over `ExprTypingSpec`.
 
 `DeclHasType' τ P C Γ decl C' Γ'` reads: "under program `P`, in ambient context
@@ -100,28 +130,36 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       DeclHasType' τ P C Γ (.proc proc md) C Γ
 
   /-- A function declaration: non-recursive and well-typed per `FuncHasType'`;
-      the function is added to `C`. `Γ` is unchanged. -/
-  | func : ∀ C Γ func md,
+      the output `C'` is `C` extended with the function (stated declaratively via
+      `FactoryExtendedBy`, matching the checker's erroring add). `Γ` is unchanged. -/
+  | func : ∀ C C' Γ func md,
       ¬ func.isRecursive →
       FuncHasType' τ C Γ func →
-      DeclHasType' τ P C Γ (.func func md) (C.addFactoryFunction func.toLFunc) Γ
+      FactoryExtendedBy C C' [func.toLFunc] →
+      DeclHasType' τ P C Γ (.func func md) C' Γ
 
   /-- A mutually recursive function block. Two-phase, mirroring
-      `Program.typeCheck`: signature stubs for all functions are added to `C`
-      first (so mutual calls resolve), each body is well-typed against that
-      stub-extended context, and the resulting `C'` extends the *original* `C`
-      with all functions. The block is non-empty and contains no `inline`
-      functions. `Γ` is unchanged. -/
-  | recFuncBlock : ∀ C Γ funcs md,
+      `Program.typeCheck`, but stated declaratively via `FactoryExtendedBy` rather
+      than the checker's literal `List.foldl`:
+
+      * `Cstub` is `C` extended with a signature stub for every block function (so
+        mutual calls resolve during body checking);
+      * every block function is well-typed against `Cstub`;
+      * the output `C'` is `C` extended with each block function's full
+        `toLFunc`.
+
+      The block is non-empty and contains no `inline` functions. `Γ` is unchanged.
+      The stub/full factories add the *same* set of names, so `Cstub` and `C'`
+      have the same function-name domain. -/
+  | recFuncBlock : ∀ C Cstub C' Γ funcs md,
       funcs ≠ [] →
       (∀ f ∈ funcs, ∀ a ∈ f.attr, a ≠ .inline) →
-      (∀ f ∈ funcs, FuncHasType' τ
-        (funcs.foldl (fun C f =>
-          C.addFactoryFunction
-            { name := f.name, typeArgs := f.typeArgs, inputs := f.inputs, output := f.output }) C)
-        Γ f) →
-      DeclHasType' τ P C Γ (.recFuncBlock funcs md)
-        (funcs.foldl (fun C f => C.addFactoryFunction f.toLFunc) C) Γ
+      FactoryExtendedBy C Cstub
+        (funcs.map (fun f => { name := f.name, typeArgs := f.typeArgs,
+                               inputs := f.inputs, output := f.output })) →
+      FactoryExtendedBy C C' (funcs.map (·.toLFunc)) →
+      (∀ f ∈ funcs, FuncHasType' τ Cstub Γ f) →
+      DeclHasType' τ P C Γ (.recFuncBlock funcs md) C' Γ
 
 /--
 Declarative typing for a list of declarations, threading `C` and `Γ` (analogue

@@ -582,6 +582,17 @@ def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
   else
     { C with functions := C.functions.push fn h }
 
+/-- Like `addFactoryFunction`, but errors on a name clash with an existing
+    function in `C.functions` instead of silently discarding `fn`. Delegates to
+    `Factory.tryPush` (which produces the "A function of name … already exists!"
+    diagnostic). Use this when `fn` is a user declaration that must not be
+    shadowed by (or shadow) an existing function such as a built-in factory
+    function — `addFactoryFunction`'s silent no-op would otherwise drop it. -/
+@[expose]
+def LContext.addFactoryFunctionWithError [Inhabited T.Metadata] [ToFormat T.IDMeta]
+    (C : LContext T) (fn : LFunc T) : Except DiagnosticModel (LContext T) := do
+  .ok { C with functions := (← C.functions.tryPush fn) }
+
 /--
 Add a mutual block of datatypes `block` to an `LContext` `C`.
 This adds all types to `C.datatypes` and `C.knownTypes`,

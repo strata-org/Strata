@@ -122,7 +122,8 @@ C are already well-typed.
             f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
         let Env := Env.pushEmptySubstScope
         let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
-        let C := C.addFactoryFunction func'.toLFunc
+        let C ← C.addFactoryFunctionWithError func'.toLFunc
+          |>.mapError (fun e => e.withRangeIfUnknown fileRange)
         let Env := Env.popSubstScope
         .ok (Decl.func func' md, C, Env)
           catch e =>
@@ -141,17 +142,25 @@ C are already well-typed.
               f!"recursive function '{func.name}' cannot be marked inline")
           else pure ()) ()
         -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
-        -- Note: duplicate function names have already been checked by addListWithError above.
-        let C' := funcs.foldl (fun C func =>
-          C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
-                                 inputs := func.inputs, output := func.output }) C
+        -- `addListWithError` above catches intra-block / cross-declaration name
+        -- clashes, but not clashes with functions already in `C.functions`
+        -- (built-ins and datatype-generated functions); `addFactoryFunctionWithError`
+        -- rejects those (rather than silently discarding the declaration).
+        let C' ← funcs.foldlM (fun C func => do
+          let stub : LFunc CoreLParams :=
+            { name := func.name, typeArgs := func.typeArgs,
+              inputs := func.inputs, output := func.output }
+          C.addFactoryFunctionWithError stub
+            |>.mapError (fun e => e.withRangeIfUnknown fileRange)) C
         -- Phase 2: Type-check each function body against C'
         let (funcs', Env) ← funcs.foldlM (fun (acc, Env) func => do
           let (func', Env) ← Function.typeCheck C' Env func
             |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
           pure (acc ++ [func'], Env)) ([], Env)
         -- Phase 3: Add all type-checked functions to the real context
-        let C := funcs'.foldl (fun C func => C.addFactoryFunction func.toLFunc) C
+        let C ← funcs'.foldlM (fun C func => do
+          C.addFactoryFunctionWithError func.toLFunc
+            |>.mapError (fun e => e.withRangeIfUnknown fileRange)) C
         let Env := Env.popSubstScope
         .ok (Decl.recFuncBlock funcs' md, C, Env)
           catch e =>

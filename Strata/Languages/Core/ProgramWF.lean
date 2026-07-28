@@ -387,6 +387,40 @@ private theorem foldl_addFactoryFunction_idents {T : LExprParams} {C : LContext 
   | cons _ _ ih =>
     simp only [List.foldl, ih, addFactoryFunction_idents]
 
+/-- A successful `addFactoryFunctionWithError` does not change `idents`: it only
+    updates `functions` (via `Factory.tryPush`), leaving `idents` untouched. We
+    case on the opaque `tryPush` result without unfolding it. -/
+private theorem addFactoryFunctionWithError_idents {T : LExprParams}
+    [Inhabited T.Metadata] [ToFormat T.IDMeta] {C C' : LContext T} {fn : LFunc T}
+    (h : C.addFactoryFunctionWithError fn = .ok C') : C'.idents = C.idents := by
+  unfold LContext.addFactoryFunctionWithError at h
+  cases hp : C.functions.tryPush fn with
+  | error e => simp [hp, bind, Except.bind] at h
+  | ok f => simp [hp, bind, Except.bind] at h; subst h; rfl
+
+/-- A successful `List.foldlM addFactoryFunctionWithError` does not change `idents`. -/
+private theorem foldlM_addFactoryFunctionWithError_idents {T : LExprParams}
+    [Inhabited T.Metadata] [ToFormat T.IDMeta] {C C' : LContext T} {fs : List α}
+    {g : α → LFunc T} {e : DiagnosticModel → DiagnosticModel}
+    (h : (fs.foldlM (fun C f => (C.addFactoryFunctionWithError (g f)).mapError e)
+            (init := C)) = .ok C') : C'.idents = C.idents := by
+  induction fs generalizing C with
+  | nil => simp only [List.foldlM] at h; injection h with h; subst h; rfl
+  | cons hd tl ih =>
+    simp only [List.foldlM, bind, Except.bind] at h
+    cases hstep : (C.addFactoryFunctionWithError (g hd)).mapError e with
+    | error err => rw [hstep] at h; simp at h
+    | ok C1 =>
+      rw [hstep] at h; simp only [] at h
+      have hids : C1.idents = C.idents := by
+        cases hp : C.addFactoryFunctionWithError (g hd) with
+        | error er => rw [hp] at hstep; simp [Except.mapError] at hstep
+        | ok C2 =>
+          rw [hp] at hstep; simp [Except.mapError] at hstep; subst hstep
+          exact addFactoryFunctionWithError_idents hp
+      have htail := ih h
+      grind
+
 /-- If `Except.mapError` returns `.ok`, then the underlying result was also `.ok`. -/
 private theorem Except.mapError_ok {α β γ} {f : α → β} {e : Except α γ} {v : γ} :
     Except.mapError f e = .ok v → e = .ok v := by
@@ -450,7 +484,10 @@ private theorem Program.typeCheckFunctionDisjoint :
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
       simp only[pure, Except.pure] at Hty
-      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      rename_i haddok
+      cases Hty
       specialize (IH tcok)
       match hx with
       | Or.inl hx =>
@@ -461,7 +498,9 @@ private theorem Program.typeCheckFunctionDisjoint :
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         specialize a_in' tcok a_in x_in
         have a_notin := IH x a_in';
-        simp only[LContext.addFactoryFunction] at a_notin
+        have hidok := Except.mapError_ok haddok
+        have hids := addFactoryFunctionWithError_idents hidok
+        rw [hids] at a_notin
         grind
     | recFuncBlock fs =>
       split_contra_case Hty; rename_i Hty
@@ -469,8 +508,11 @@ private theorem Program.typeCheckFunctionDisjoint :
       simp only[pure, Except.pure] at Hty
       split at Hty <;> try contradiction
       split at Hty <;> try contradiction
-      cases Hty; simp at tcok
-      rename_i Heq
+      rename_i hp1
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      rename_i hp3
+      cases Hty
       specialize (IH tcok)
       match hx with
       | Or.inl hx =>
@@ -480,7 +522,8 @@ private theorem Program.typeCheckFunctionDisjoint :
         have Hcontains := Identifiers.addListWithErrorContains Hid x
         specialize a_in' tcok a_in x_in
         have a_notin := IH x a_in'
-        rw[foldl_addFactoryFunction_idents] at a_notin
+        have hids := foldlM_addFactoryFunctionWithError_idents hp3
+        rw [hids] at a_notin
         grind
     | type t =>
       cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty; split_contra Hty <;> rename_i Hty)
@@ -559,15 +602,19 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
       simp only[pure, Except.pure] at Hty
-      split_contra_case Hty; rename_i Hty
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      rename_i haddok
+      cases Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
       intros a a_in; simp[Decl.names] at a_in; subst_vars
       intros x x_in;
       have Hdisj:= Program.typeCheckFunctionDisjoint tcok _ x_in
       have x_contains := (Identifiers.addListWithErrorContains Hid x)
+      have hidok := Except.mapError_ok haddok
+      have hids := addFactoryFunctionWithError_idents hidok
       simp_all
-      simp[LContext.addFactoryFunction] at Hdisj
       grind
     | recFuncBlock fs =>
       split_contra_case Hty; rename_i Hty
@@ -575,7 +622,11 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       simp only[pure, Except.pure] at Hty
       split at Hty <;> try contradiction
       split at Hty <;> try contradiction
-      cases Hty; simp at tcok
+      rename_i hp1
+      split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
+      rename_i hp3
+      cases Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr
       constructor; apply (Identifiers.addListWithErrorNoDup Hid)
@@ -584,7 +635,8 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       intros x x_in
       have Hdisj := Program.typeCheckFunctionDisjoint tcok _ x_in
       have x_contains := (Identifiers.addListWithErrorContains Hid x)
-      rw [foldl_addFactoryFunction_idents] at Hdisj
+      have hids := foldlM_addFactoryFunctionWithError_idents hp3
+      rw [hids] at Hdisj
       grind
     | type td =>
       specialize (IH tcok)
