@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.AdtRankAxioms
 import Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.FactoryProps
 import Strata.Util.Tactics
 
 /-! # Termination Checking for Recursive Functions

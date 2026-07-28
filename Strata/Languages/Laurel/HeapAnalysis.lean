@@ -134,7 +134,8 @@ def transitiveEffectClosure {α : Type} [BEq α] [Hashable α]
       if next.size == current.size then current else fixpoint fuel' next
   fixpoint info.length (Std.HashSet.ofList direct)
 
-def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) := do
+private def computeEffectClosure (procs : List Procedure)
+    (directly : AnalysisResult → Bool) : Except String (Std.HashSet Nat) := do
   let info ← procs.mapM fun p => do
     let name ← Identifier.getUniqueId p.name
     let r := analyzeProc p
@@ -142,19 +143,14 @@ def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) 
     -- from failed name resolution (already reported as a diagnostic). They
     -- can't match any procedure in the set, so filtering them is sound.
     let callees := r.callees.filterMap (·.uniqueId)
-    pure { name, directly := r.readsHeapDirectly, callees : ProcEffectInfo Nat }
+    pure { name, directly := directly r, callees : ProcEffectInfo Nat }
   pure (transitiveEffectClosure info)
 
-def computeWritesHeap (procs : List Procedure) : Except String (Std.HashSet Nat) := do
-  let info ← procs.mapM fun p => do
-    let name ← Identifier.getUniqueId p.name
-    let r := analyzeProc p
-    -- Callees are reference-position: unresolved ones (uniqueId = none) come
-    -- from failed name resolution (already reported as a diagnostic). They
-    -- can't match any procedure in the set, so filtering them is sound.
-    let callees := r.callees.filterMap (·.uniqueId)
-    pure { name, directly := r.writesHeapDirectly, callees : ProcEffectInfo Nat }
-  pure (transitiveEffectClosure info)
+def computeReadsHeap (procs : List Procedure) : Except String (Std.HashSet Nat) :=
+  computeEffectClosure procs (·.readsHeapDirectly)
+
+def computeWritesHeap (procs : List Procedure) : Except String (Std.HashSet Nat) :=
+  computeEffectClosure procs (·.writesHeapDirectly)
 
 end Strata.Laurel
 

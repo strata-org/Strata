@@ -30,10 +30,10 @@ where `n` is the total number of blocks in the graph.
 where execution should proceed next, if anywhere. -/
 inductive DetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Transfer to `lt` if `p` is true, or `lf` is `p` is false. -/
-  | condGoto (p : P.Expr) (lt lf : Label) (md : MetaData P := .empty)
+  | condGoto (p : P.Expr) (lt lf : Label) (md : MetaData P)
   /-- Stop execution of the current unstructured program. If in a procedure
   body, this can be interpreted as returning to the caller. -/
-  | finish (md : MetaData P := .empty)
+  | finish (md : MetaData P)
 
 @[grind] def DetTransferCmd.beq [BEq P.Expr] [BEq (MetaData P)] [BEq Label]
     (a b : DetTransferCmd Label P) : Bool :=
@@ -74,7 +74,7 @@ anywhere. -/
 inductive NondetTransferCmd (Label : Type) (P : PureExpr) where
   /-- Transfer to any one of a list of labels, non-deterministically. `goto`
   with no labels is equivalent to `finish` in `DetTransferCmd` -/
-  | goto (ls : List Label) (md : MetaData P := .empty)
+  | goto (ls : List Label) (md : MetaData P)
   deriving Inhabited
 
 def NondetTransferCmd.targets : NondetTransferCmd Label P → List Label

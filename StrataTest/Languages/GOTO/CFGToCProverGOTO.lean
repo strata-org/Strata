@@ -287,15 +287,18 @@ info: ok: #[LOCATION 0,
 
 /-! ### Test: entry block must be listed first -/
 
+/--
+info: error: [detCFGToGotoTransform] Entry label 'second' does not match first block label 'first'. The entry block must be listed first.
+-/
+#guard_msgs in
 #eval do
   -- Construct a CFG where entry label doesn't match the first block
   let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
     { entry := "second",
-      blocks := [("first", { cmds := [], transfer := .finish }),
-                 ("second", { cmds := [], transfer := .finish })] }
-  match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with
-  | .error e => assert! (s!"{e}".splitOn "Entry label").length > 1
-  | .ok _ => assert! false
+      blocks := [("first", { cmds := [], transfer := .finish .empty }),
+                 ("second", { cmds := [], transfer := .finish .empty })] }
+  let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
+  return format ans.instructions
 
 -------------------------------------------------------------------------------
 
@@ -316,16 +319,19 @@ info: ok: ()
 
 /-! ### Test: unresolved label produces an error -/
 
+/--
+info: error: [detCFGToGotoTransform] Unresolved label 'also_missing' referenced by GOTO at instruction index 1.
+-/
+#guard_msgs in
 #eval do
   let trueExpr : LExprTP.Expr :=
     .const { underlying := (), type := mty[bool] } (.boolConst true)
   let blk : Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP :=
-    { cmds := [], transfer := .condGoto trueExpr "missing_label" "also_missing" }
+    { cmds := [], transfer := .condGoto trueExpr "missing_label" "also_missing" .empty }
   let cfg : Imperative.CFG String (Imperative.DetBlock String (Imperative.Cmd LExprTP) LExprTP) :=
     { entry := "entry", blocks := [("entry", blk)] }
-  match Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg with
-  | .error e => assert! (s!"{e}".splitOn "Unresolved label").length > 1
-  | .ok _ => assert! false
+  let ans ← Imperative.detCFGToGotoTransform Lambda.TEnv.default "test" cfg
+  return format ans.instructions
 
 -------------------------------------------------------------------------------
 

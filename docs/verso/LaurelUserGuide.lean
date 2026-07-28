@@ -138,12 +138,11 @@ shortTitle := "Laurel User Guide"
 
 Laurel is an intermediate analysis language. Its purpose is to reduce the cost of analysing code for
 popular languages. Currently Laurel is focused on enabling analysis of Java, Python, and JavaScript,
-but this list will grow and you can already use it for other languages as well. We recommend
-targeting Laurel when trying to analyse any programming language using Strata.
+but this list will grow and you can already use it for other languages as well.
 
-Laurel is a good target when your source language has a procedure-like construct and its features
-map onto Laurel's. Some source-language features must be compiled away before or during translation,
-because Laurel does not model them directly:
+Laurel is a good target when your source language has mutation and a function-like construct. Some
+source-language features must be compiled away before or during translation, because Laurel does not
+model them directly:
 - metaprogramming (macros, reflection, runtime code generation);
 - type-system features that do not fit Laurel's type system, which is close to C#'s (for example
   higher-kinded types or advanced generics);
@@ -151,8 +150,7 @@ because Laurel does not model them directly:
 
 Laurel is *not* a good target for languages that use none of its features — typically languages with
 no procedure-like construct, such as assembly, or inputs that are not programming languages at all.
-For those, target Strata Core directly. A stack-based language like JVM bytecode still benefits from
-targeting Laurel.
+A stack-based language like JVM bytecode still benefits from targeting Laurel.
 
 You use Laurel by building a compiler from your source language to Laurel. This guide will help you
 understand Laurel and thus help build such compilers.

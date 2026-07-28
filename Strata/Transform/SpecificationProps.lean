@@ -685,7 +685,7 @@ theorem OverapproximatesUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
       obtain ⟨ρ'₃, hR₂', hstar₃⟩ := (hr₂.1 ρ'₂).2 lbl hstar₂
       exact ⟨ρ'₃, ⟨ρ'₂, hR₁', hR₂'⟩, hstar₃⟩
 
-/-- **Compositionality** (shared-start preorder form): if the shared output
+/-- **Compositionality** (shared-start transitive form): if the shared output
     relation `R` is *transitive* then composing two shared-start
     `OverapproximatesUptoWhen (· = ·) R` transforms yields another
     `OverapproximatesUptoWhen (· = ·) R` transform.  This is the combinator that
@@ -693,8 +693,9 @@ theorem OverapproximatesUptoWhen.comp_eq (L₁ L₂ L₃ : Lang P)
     environment is shared and each pass's target `initEnvWF` re-establishes the
     next pass's source `initEnvWF` at that env, no per-environment precondition is
     needed; transitivity collapses the `RComp`-composed output relation back to
-    `R`. -/
-theorem OverapproximatesUptoWhen.comp_preorder_eq (L₁ L₂ L₃ : Lang P)
+    `R`.  Only transitivity of `R` is consumed (no reflexivity), so an
+    irreflexive-but-transitive `R` — e.g. agreement modulo frame — composes here. -/
+theorem OverapproximatesUptoWhen.comp_trans_eq (L₁ L₂ L₃ : Lang P)
     (T₁ : L₁.StmtT → Option L₂.StmtT) (T₂ : L₂.StmtT → Option L₃.StmtT)
     {pre₁ : L₁.StmtT → Prop} {pre₂ : L₂.StmtT → Prop}
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)

@@ -63,29 +63,6 @@ private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtEx
     | _ => expr
   | _ => expr
 
-/-- Apply call-site rewriting to every expression in a procedure. -/
-private def rewriteCallsInProc (model : SemanticModel) (proc : Procedure) : Procedure :=
-  let f := mapStmtExpr (rewriteCallNode model)
-  let resolveBody : Body → Body := fun body => match body with
-    | .Transparent b => .Transparent (f b)
-    | .Opaque ps impl modif =>
-      .Opaque (ps.map (·.mapCondition f)) (impl.map f) (modif.map f)
-    | .Abstract ps => .Abstract (ps.map (·.mapCondition f))
-    | .External => .External
-  { proc with
-    body := resolveBody proc.body
-    preconditions := proc.preconditions.map (·.mapCondition f)
-    decreases := proc.decreases.map f
-    invokeOn := proc.invokeOn.map f }
-
-/-- Apply call-site rewriting to a constrained type's constraint and witness. -/
-private def rewriteCallsInType (model : SemanticModel) (td : TypeDefinition) : TypeDefinition :=
-  match td with
-  | .Constrained ct =>
-    let f := mapStmtExpr (rewriteCallNode model)
-    .Constrained { ct with constraint := f ct.constraint, witness := f ct.witness }
-  | _ => td
-
 public section
 
 /--
@@ -105,21 +82,19 @@ def liftInstanceProcedures (model : SemanticModel) (program : Program) : Program
 
   if liftedProcs.isEmpty then program else
 
-  -- Step 2: rewrite call sites in procedure bodies and constrained-type
-  let rewrittenStaticProcs := program.staticProcedures.map (rewriteCallsInProc model)
-  let rewrittenLiftedProcs := liftedProcs.map (rewriteCallsInProc model)
-  let rewrittenTypes := program.types.map (rewriteCallsInType model)
+  -- Step 2: move the lifted procs to static scope and clear instanceProcedures
+  -- on every composite, so the whole program is in its final shape.
+  let program := { program with
+    staticProcedures := program.staticProcedures ++ liftedProcs
+    types := program.types.map fun td =>
+      match td with
+      | .Composite ct => .Composite { ct with instanceProcedures := [] }
+      | _ => td }
 
-  -- Step 3: clear instanceProcedures on every composite.
-  let cleanedTypes := rewrittenTypes.map fun td =>
-    match td with
-    | .Composite ct => .Composite { ct with instanceProcedures := [] }
-    | _ => td
-
-  -- Step 4: append lifted procs.
-  { program with
-    staticProcedures := rewrittenStaticProcs ++ rewrittenLiftedProcs
-    types := cleanedTypes }
+  -- Step 3: rewrite call sites everywhere expressions can appear (procedure
+  -- bodies and contracts, constrained-type constraint/witness, constant
+  -- initializers).
+  mapProgramStmtExpr (rewriteCallNode model) program
 
 end -- public section
 

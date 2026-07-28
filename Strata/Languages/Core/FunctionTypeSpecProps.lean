@@ -10,6 +10,7 @@ import all Strata.Languages.Core.FunctionType
 import all Strata.Languages.Core.CommandTypeSpecProps
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryProps
+import all Strata.DL.Lambda.IdentifiersProps
 import all Strata.DL.Lambda.LExprResolveProps
 import all Strata.DL.Lambda.LExprTypeSpec
 import all Strata.DL.Lambda.Denote.LExprDenoteTySubst

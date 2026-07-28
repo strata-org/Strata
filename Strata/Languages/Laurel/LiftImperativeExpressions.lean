@@ -84,7 +84,7 @@ structure LiftState where
   /-- Names of callees whose calls should be treated as imperative (lifted) -/
   imperativeCallees : List String := []
 
-@[expose] abbrev LiftM := StateM LiftState
+@[expose] abbrev LiftM := ExceptT String (StateM LiftState)
 
 private def freshTempFor (varName : Identifier) : LiftM Identifier := do
   let counters := (← get).varCounters
@@ -138,8 +138,7 @@ private def getSubst (varName : Identifier) : LiftM Identifier := do
   | none => return varName
 
 private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit := do
-  let some uid := varName.uniqueId | return
-
+  let uid ← Identifier.getUniqueId varName
   modify fun s => { s with subst := s.subst.insert uid value }
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
@@ -394,13 +393,13 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let (argPrepends, newCond) ← transformLiftedExpr cond
       prepend ⟨ .Assume newCond, source⟩
       prependList argPrepends
-      default
+      pure default
 
   | .Assert cond summary =>
       let (argPrepends, newCond) ← transformLiftedExpr cond
       prepend ⟨ .Assert newCond summary, source⟩
       prependList argPrepends
-      default
+      pure default
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
@@ -628,11 +627,13 @@ list are transformed; all others are left unchanged. When `procedureNames` is
 empty, no procedures are transformed.
 -/
 def liftExpressionAssignments (program : Program)
-    (model : SemanticModel) (imperativeCallees : List String) : Program :=
+    (model : SemanticModel) (imperativeCallees : List String) : Except String Program :=
   let initState : LiftState := { model := model, imperativeCallees := imperativeCallees }
   let transform := program.staticProcedures.mapM transformProcedure
-  let (seqProcedures, _) := transform.run initState
-  { program with staticProcedures := seqProcedures }
+  let (result, _) := (ExceptT.run transform).run initState
+  match result with
+  | .ok seqProcedures => .ok { program with staticProcedures := seqProcedures }
+  | .error e => .error e
 
 end -- public section
 
@@ -642,15 +643,14 @@ Apply `liftExpressionAssignments` to the core (non-functional) procedures in an
 procedure list are transformed; functions are left unchanged.
 -/
 def liftImperativeExpressionsInCore (uc : UnorderedCoreWithLaurelTypes)
-    (model : SemanticModel) : UnorderedCoreWithLaurelTypes :=
+    (model : SemanticModel) : Except String UnorderedCoreWithLaurelTypes := do
   let imperativeCallees := uc.coreProcedures.map (·.name.text)
-  let liftedProgram := liftExpressionAssignments
+  let liftedProgram ← liftExpressionAssignments
     { staticProcedures := uc.coreProcedures, staticFields := [], types := [], constants := [] }
     model imperativeCallees
-  let liftedProcs := liftedProgram.staticProcedures
-  { uc with
+  pure { uc with
     functions := uc.functions
-    coreProcedures := liftedProcs
+    coreProcedures := liftedProgram.staticProcedures
   }
 
 public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
@@ -658,6 +658,8 @@ public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTyp
   documentation := "Lifts assignments, assertions, assumptions and calls to a configurable list of procedures, that appear in expression contexts, to preceding statements. Lifting is necessary because Strata Core does not support assignments, assumes, asserts and calls to Core procedures within expressions. The pass introduces fresh temporary variables where needed. Lifting expressions that occur in conditional control flow that is also in an expression, can require duplicating some of that control flow. If we do not encode the heap before the lifting pass, we will need to lift any calls to heap mutating procedures, since they are implicitly mutating. The Laurel resolver should be able to tell us which procedures are heap mutating, so this is simple."
   needsResolves := true
   run := fun _ p m =>
-    (liftImperativeExpressionsInCore p m, [], {})
+    match liftImperativeExpressionsInCore p m with
+    | .ok p' => (p', [], {})
+    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in LiftImperativeExpressions: {e}" .StrataBug], {})
 
 end Laurel

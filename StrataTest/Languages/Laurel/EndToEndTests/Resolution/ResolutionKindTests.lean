@@ -83,3 +83,16 @@ procedure test() opaque {
 //       ^^^^^^^^ error: multi-output call cannot be used as a value here
 };
 #end
+
+/-! ## Destructor result assigned to wrong type -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype IntList { Nil(), Cons(head: int, tail: IntList) }
+procedure test() opaque {
+  var xs: IntList := Cons(1, Nil());
+  var x: bool := IntList..head!(xs)
+//               ^^^^^^^^^^^^^^^^^^ error: expected 'bool', got 'int'
+};
+#end
