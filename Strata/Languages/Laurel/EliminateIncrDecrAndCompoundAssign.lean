@@ -71,7 +71,7 @@ private def targetAsRead (target : VariableMd) : StmtExprMd :=
     RHS). The `.PrimitiveOp` keeps the default `skipProof := false`, so `/=`/`%=` carry
     the same division-by-zero obligation as a hand-written `x := x / e`. -/
 private def lowerOpAssign (primOp : Operation) (target : VariableMd)
-    (rhs : StmtExprMd) (source : Option FileRange) : StmtExprMd :=
+    (rhs : StmtExprMd) (source : FileRange) : StmtExprMd :=
   let read := targetAsRead target
   let updated : StmtExprMd := ⟨.PrimitiveOp primOp [read, rhs], source⟩
   ⟨.Assign [target] updated, source⟩
@@ -79,7 +79,7 @@ private def lowerOpAssign (primOp : Operation) (target : VariableMd)
 /-- Build `.Assign [target] (target ⊕ 1)` where `⊕` is `Add` for `Incr` and
     `Sub` for `Decr`. The resulting assignment expression yields the new value. -/
 private def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
-    (source : Option FileRange) : StmtExprMd :=
+    (source : FileRange) : StmtExprMd :=
   let primOp : Operation := match op with
     | .Incr => .Add
     | .Decr => .Sub
@@ -88,7 +88,7 @@ private def lowerToAssign (op : IncrDecrOp) (target : VariableMd)
 /-- Lower a single `.IncrDecr` node to the expression form that yields the
     correct value for the given `mode` (Pre or Post). -/
 private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
-    (target : VariableMd) (source : Option FileRange) : StmtExprMd :=
+    (target : VariableMd) (source : FileRange) : StmtExprMd :=
   let assign := lowerToAssign op target source
   match mode with
   | .Pre => assign

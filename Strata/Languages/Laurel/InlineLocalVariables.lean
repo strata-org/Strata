@@ -100,7 +100,6 @@ private def inlinePre (_used : Bool) (e : StmtExprMd) : InlineM (Option (List St
     here: the `comesAfter eliminateIncrDecrAndCompoundAssignPass` constraint
     guarantees those nodes are already gone by the time this pass runs. -/
 private def inlinePost (_used : Bool) (e : StmtExprMd) : InlineM (List StmtExprMd) := do
-  let source := e.source
   match e.val with
   | .Var (.Local name) =>
     let uid ← Identifier.getUniqueId name
@@ -122,7 +121,7 @@ private def inlinePost (_used : Bool) (e : StmtExprMd) : InlineM (List StmtExprM
       | .Local name =>
         let uid ← Identifier.getUniqueId name
         if subst.contains uid then
-          emitDiag (diagnosticFromSource (t.source.orElse fun _ => source)
+          emitDiag (diagnosticFromSource t.source
             s!"cannot assign to '{name.text}': it is an inlined local variable")
       | _ => pure ()
     return [e]

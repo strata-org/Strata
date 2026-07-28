@@ -230,7 +230,7 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
     Returns the identifier with its ID filled in.
     When `expected` is provided, emits a diagnostic if the resolved node's kind is not
     in the list of expected kinds. -/
-def resolveRef (name : Identifier) (source : Option FileRange := none)
+def resolveRef (name : Identifier) (source : FileRange := name.source)
     (expected : Array ResolvedNodeKind := #[]) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.text with
@@ -238,7 +238,7 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     let name' := { name with uniqueId := some defId }
     if expected.size > 0 && node.kind != .unresolved && !expected.contains node.kind then
       let expectedStr := ", ".intercalate (expected.toList.map ResolvedNodeKind.name)
-      let diag := diagnosticFromSource (source.orElse fun _ => name.source)
+      let diag := diagnosticFromSource source
         s!"'{name}' resolves to {node.kind.name}, but expected {expectedStr}"
       modify fun s => { s with errors := s.errors.push diag }
     return name'
@@ -247,7 +247,7 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     -- names (e.g. the Python pipeline's imported/stdlib names) inject bodiless declarations
     -- for them so they resolve through the normal declaration path, rather than pre-registering
     -- them in the resolver.
-    let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
+    let diag := diagnosticFromSource source s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
@@ -311,7 +311,7 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
     Falls back to the instance type name (for `self.field` in instance methods),
     then to unqualified lookup if the target type cannot be determined. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (source : Option FileRange) : ResolveM Identifier := do
+    (source : FileRange) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -463,7 +463,7 @@ private def datatypeTypeParamNames (name : String) : ResolveM (List String) := d
     constrained type is unaffected. (The erased constructor-result-type reference,
     e.g. `Nothing() : Option`, is produced internally via `getCallInfo` and never
     reaches here.) -/
-private def checkBareGenericDatatype (name : Identifier) (source : Option FileRange) : ResolveM Unit := do
+private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : ResolveM Unit := do
   match ← datatypeTypeArgArity name.text with
   | some n =>
     if n > 0 then
@@ -482,7 +482,7 @@ private def checkBareGenericDatatype (name : Identifier) (source : Option FileRa
       reaches Core / `translateType` and surfaces as an internal-error
       `strata-bug` instead of a clean *type 'X' is not generic* diagnostic.
     An unresolved base is left alone (`resolveRef` already reported it). -/
-private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : Option FileRange) : ResolveM Unit := do
+private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : FileRange) : ResolveM Unit := do
   match (← get).scope.get? base.text with
   | some (_, .typeParameter _) =>
     modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
@@ -510,7 +510,7 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : O
     from being type-checked against a phantom type. Shared by the bare
     `.UserDefined` arm and an `.Applied` base; the bare-generic-reference
     rejection is applied only by the former (an `.Applied` base is not bare). -/
-private def resolveTypeRef (ref : Identifier) (source : Option FileRange) : ResolveM HighType := do
+private def resolveTypeRef (ref : Identifier) (source : FileRange) : ResolveM HighType := do
   let ref' ← resolveRef ref source
     (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter])
   let s ← get
@@ -573,7 +573,7 @@ private def formatType (ty : HighTypeMd) : String :=
     "<problem>, got '<actual>'". When `actual` is `Unknown` the trailing
     `got '…'` is dropped — "we couldn't synthesize a type" is the
     statement, not "the type we got was Unknown". -/
-private def typeMismatch (source : Option FileRange) (construct : Option StmtExpr)
+private def typeMismatch (source : FileRange) (construct : Option StmtExpr)
     (problem : String) (actual : HighTypeMd) : ResolveM Unit := do
   let constructor := match construct with
     | some c => s!"'{c.constrName}' "
@@ -605,7 +605,7 @@ private def isVoidLikeHT (t : HighType) : Bool := match t with
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
     output) — equivalent to `Check.resolveStmtExpr e expected` but without re-synthesizing. -/
-private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
+private def checkSubtype (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   let ctx := (← get).typeLattice
   let actual' := stripTrailingErrors actual
   -- Strip trailing `Error` from BOTH sides: an `.err`-grade body has actual type
@@ -631,7 +631,7 @@ private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (ac
     `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
     as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
     position) inserts no coercion. -/
-private def coerceTo (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
     (e : StmtExprMd) : ResolveM StmtExprMd := do
   let ctx := (← get).typeLattice
   let actual' := stripTrailingErrors actual
@@ -710,7 +710,7 @@ private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd
   match proc.outputs with
   | [] => { val := .TVoid, source := callee.source }
   | [singleOutput] => singleOutput.type
-  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := callee.source }
 
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
@@ -975,7 +975,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     alone so that resolution errors are not duplicated as spurious incr/decr
     errors. -/
 private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
-    (source : Option FileRange) : ResolveM Unit := do
+    (source : FileRange) : ResolveM Unit := do
   match (← incrDecrTargetType target) with
   | none => pure ()
   | some ty =>
@@ -1004,7 +1004,7 @@ private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
     target element type, per `compoundAssignAccepts`. Checks only the *target*; the RHS
     is type-checked by the `Check.resolveStmtExpr` call in `Synth.compoundAssign`. -/
 private def checkCompoundAssignTargetType (op : Operation) (target : VariableMd)
-    (source : Option FileRange) : ResolveM Unit := do
+    (source : FileRange) : ResolveM Unit := do
   match (← incrDecrTargetType target) with
   | none => pure ()
   | some ty =>
@@ -1338,24 +1338,24 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
 -- ### Literals
 
 /-- `Γ ⊢ LiteralInt n ⇒ TInt` -/
-def Synth.litInt (v : Int) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litInt (v : Int) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralInt v, { val := .TInt, source := source })
 
 /-- `Γ ⊢ LiteralBool b ⇒ TBool` -/
-def Synth.litBool (v : Bool) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litBool (v : Bool) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralBool v, { val := .TBool, source := source })
 
 /-- `Γ ⊢ LiteralString s ⇒ TString` -/
-def Synth.litString (v : String) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litString (v : String) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralString v, { val := .TString, source := source })
 
 /-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
-def Synth.litDecimal (v : StrataDDM.Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litDecimal (v : StrataDDM.Decimal) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralDecimal v, { val := .TReal, source := source })
 
 /-- `Γ ⊢ LiteralBv v (width := n) ⇒ TBv n` — a bitvector literal's type is
     fixed by its declared width. -/
-def Synth.litBv (v : Nat) (width : Nat) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litBv (v : Nat) (width : Nat) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralBv v width, { val := .TBv width, source := source })
 
 -- ### Variables
@@ -1367,7 +1367,7 @@ def Synth.litBv (v : Nat) (width : Nat) (source : Option FileRange) : StmtExpr �
     Γ ⊢ Var (.Local x) ⇒ T
     ```
     Resolves `ref` against the lexical scope and reads its declared type. -/
-def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
+def Synth.varLocal (ref : Identifier) (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
   let ty ← getVarType ref
@@ -1383,7 +1383,7 @@ def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
     `f` is looked up against the type of `e` (or the enclosing instance type
     for `self.f`); the typing rule itself is path-agnostic. -/
 def Synth.varField (exprMd : StmtExprMd)
-    (target : StmtExprMd) (fieldName : Identifier) (source : Option FileRange)
+    (target : StmtExprMd) (fieldName : Identifier) (source : FileRange)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
@@ -1414,7 +1414,7 @@ def Synth.varField (exprMd : StmtExprMd)
     diagnostic and still extends the scope — but with an *unresolved*
     placeholder rather than `x : T_x`, so later uses of `x` do not
     cascade further type errors. -/
-def Check.varDeclare (param : Parameter) (source : Option FileRange) :
+def Check.varDeclare (param : Parameter) (source : FileRange) :
     ResolveM StmtExprMd := do
   let ty' ← resolveHighType param.type
   let name' ← defineNameCheckDup param.name (.var param.name ty')
@@ -1447,7 +1447,7 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
     (dec : Option StmtExprMd) (body : StmtExprMd) (postTest : Bool)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .While cond invs dec body postTest) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1486,7 +1486,7 @@ def Check.while (exprMd : StmtExprMd)
     (`ResolveState.labelScope`, populated by `Check.block` via
     `withLabel`). An unknown label is reported here as
     `"label '<l>' is not in scope"`. -/
-def Check.exit (target : String) (source : Option FileRange) :
+def Check.exit (target : String) (source : FileRange) :
     ResolveM StmtExprMd := do
   unless (← get).labelScope.contains target do
     let diag := diagnosticFromSource source
@@ -1556,7 +1556,7 @@ def Check.exit (target : String) (source : Option FileRange) :
     otherwise synthesized — so any errors inside `e` are reported in
     addition to the arity diagnostic. -/
 def Check.return (exprMd : StmtExprMd)
-    (val : Option StmtExprMd) (source : Option FileRange)
+    (val : Option StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Return val) :
     ResolveM StmtExprMd := do
   let expectedReturn := (← get).answerType
@@ -1604,7 +1604,7 @@ def Check.return (exprMd : StmtExprMd)
     empty list. When an empty block appears in check position,
     `Resolution.Check.resolveStmtExpr`'s wildcard arm synth-then-subsumes
     via the standard \[⇐\] Sub fallback. -/
-def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
+def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
 /-- (Synth-Discard) Check a statement in *effect position*, written `Γ ⊢ s ⋄`.
@@ -1672,7 +1672,7 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
     so nested `exit l` checks can see it. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   -- A non-last statement is in effect position: admitted by `Check.statement`
   -- (`Γ ⊢ s ⋄` — synthesized and the type discarded).
@@ -1699,12 +1699,10 @@ def Check.block (exprMd : StmtExprMd)
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
-      let nextSource : Option FileRange :=
+      let nextSource : FileRange :=
         match init'[i + 1]? with
         | some next => next.source
-        | none      => -- terminator is the last of init', so the dead one
-                       -- is the block's actual last statement
-          (stmts.getLast?.bind (·.source))
+        | none      => (stmts.getLast?.map (·.source)).getD source
       let termName : String :=
         match init'[i]? with
         | some s => s.val.constrName
@@ -1758,7 +1756,7 @@ def Check.block (exprMd : StmtExprMd)
     composes with for an empty block. -/
 def Check.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) : ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let thenBr' ← Check.resolveStmtExpr thenBr expected
@@ -1806,7 +1804,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     type into both branches); this rule fires only at the synth wildcard. -/
 def Synth.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1867,7 +1865,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     at the dispatch site; this rule only runs on a non-empty block. -/
 def Synth.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM (StmtExpr × HighTypeMd) := do
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
@@ -1879,10 +1877,10 @@ def Synth.block (exprMd : StmtExprMd)
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
-      let nextSource : Option FileRange :=
+      let nextSource : FileRange :=
         match init'[i + 1]? with
         | some next => next.source
-        | none      => (stmts.getLast?.bind (·.source))
+        | none      => (stmts.getLast?.map (·.source)).getD source
       let termName : String :=
         match init'[i]? with
         | some s => s.val.constrName
@@ -1918,7 +1916,7 @@ def Synth.block (exprMd : StmtExprMd)
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assert (exprMd : StmtExprMd)
     (condExpr : StmtExprMd) (summary : Option String)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .Assert condExpr summary) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
@@ -1939,7 +1937,7 @@ def Check.assert (exprMd : StmtExprMd)
     `cond` is checked against `TBool`. `assume` is a statement: it
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assume (exprMd : StmtExprMd)
-    (cond : StmtExprMd) (source : Option FileRange)
+    (cond : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assume cond) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1968,7 +1966,7 @@ def Check.assume (exprMd : StmtExprMd)
     so the surrounding context sees the type the RHS was checked
     against. -/
 def Synth.assign (exprMd : StmtExprMd)
-    (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
+    (targets : List VariableMd) (value : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
@@ -2017,7 +2015,7 @@ def Synth.assign (exprMd : StmtExprMd)
     discarded in statement position, exactly as for calls. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
   let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
     let ⟨vv, vs⟩ := v
@@ -2075,7 +2073,7 @@ def Check.assign (exprMd : StmtExprMd)
     yielded value is discarded by `Check.statement`. -/
 def Synth.incrDecr (exprMd : StmtExprMd)
     (mode : IncrDecrMode) (op : IncrDecrOp) (target : VariableMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .IncrDecr mode op target) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let target' ← match h_tgt : target.val with
@@ -2123,7 +2121,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     `Check.statement`. -/
 def Synth.compoundAssign (exprMd : StmtExprMd)
     (op : Operation) (target : VariableMd) (rhs : StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .CompoundAssign op target rhs) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let target' ← match h_tgt : target.val with
@@ -2200,7 +2198,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     The result type is the (possibly multi-valued) declared output type
     from `getCallInfo`. -/
 def Synth.staticCall (exprMd : StmtExprMd)
-    (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
+    (callee : Identifier) (args : List StmtExprMd) (source : FileRange)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
@@ -2315,11 +2313,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
         s!"constructor '{callee}' expects {ctor.args.length} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
     let ctx := (← get).typeLattice
-    let unknownTy : HighTypeMd := { val := .Unknown, source := none }
     -- Pad with `Unknown` so a surplus argument (arity already reported) is still
     -- resolved — surfacing any error inside it; a missing one is dropped by `zip`.
+    -- Each pad carries the surplus argument's own source, so any diagnostic from
+    -- resolving it points at that argument.
     let fieldTys : List HighTypeMd :=
-      ctor.args.map (·.type) ++ List.replicate (args.length - ctor.args.length) unknownTy
+      ctor.args.map (·.type)
+        ++ (args.drop ctor.args.length).map (fun a => { val := .Unknown, source := a.source })
     let args' ← (args.attach.zip fieldTys).mapM (fun (⟨a, hMem⟩, fieldTy) => do
       have := hMem
       -- A field is a *polymorphic slot* when its declared type mentions one of the
@@ -2339,9 +2339,11 @@ def Synth.staticCall (exprMd : StmtExprMd)
       else
         Check.resolveStmtExpr a fieldTy)
     return (.StaticCall callee' args', retTy)
-  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  -- Surplus arguments (an arity error, reported below) have no declared
+  -- parameter type. Pad with `.Unknown` carrying each surplus argument's own
+  -- source, so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
-    paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
+    paramTypes ++ (args.drop paramTypes.length).map (fun a => { val := .Unknown, source := a.source })
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
@@ -2397,7 +2399,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     conditional-shaped arguments route through their own check rules. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .InstanceCall target callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
@@ -2429,9 +2431,11 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   let callParamTypes :=
     if dropSelf then (match paramTypes with | _ :: rest => rest | [] => [])
     else paramTypes
-  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  -- As in `Synth.staticCall`: pad surplus arguments with `.Unknown` carrying
+  -- the argument's own source so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
-    callParamTypes ++ List.replicate (args.length - callParamTypes.length) unknownTy
+    callParamTypes
+      ++ (args.drop callParamTypes.length).map (fun a => { val := .Unknown, source := a.source })
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
@@ -2518,7 +2522,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     `Check.resolveStmtExpr` instead of synth-then-`checkSubtype`,
     surfacing operand-shaped errors at their natural location. -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
-    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : Option FileRange)
+    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : FileRange)
     (h_expr : expr = .PrimitiveOp op args skipProof)
     (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -2665,7 +2669,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     `_ =>` arm of `Check.resolveStmtExpr`. -/
 def Check.primitiveOp (exprMd : StmtExprMd)
     (op : Operation) (args : List StmtExprMd) (skipProof : Bool)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM StmtExprMd := do
   let operandTy : HighTypeMd ← match op with
@@ -2714,7 +2718,7 @@ def Check.primitiveOp (exprMd : StmtExprMd)
     *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
     branch instead — `resolveRef` has already reported the name, so
     re-flagging it here would only duplicate that diagnostic. -/
-def Synth.new (ref : Identifier) (source : Option FileRange) :
+def Synth.new (ref : Identifier) (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
     (expected := #[.compositeType, .datatypeDefinition])
@@ -2773,7 +2777,7 @@ def Synth.asType (exprMd : StmtExprMd)
     that share a lineage modulo gradual `Unknown`; testing `5 is Cat`
     is statically nonsense. The synthesized type is `TBool`. -/
 def Synth.isType (exprMd : StmtExprMd)
-    (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange)
+    (target : StmtExprMd) (ty : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .IsType target ty) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
@@ -2809,7 +2813,7 @@ def Synth.isType (exprMd : StmtExprMd)
     extends `Animal` (the gradual `Unknown` wildcard makes either side
     flow freely against the other). -/
 def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
-    (lhs rhs : StmtExprMd) (source : Option FileRange)
+    (lhs rhs : StmtExprMd) (source : FileRange)
     (h_expr : expr = .ReferenceEquals lhs rhs)
     (h : exprMd.val = .ReferenceEquals lhs rhs) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -2878,7 +2882,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     itself synthesizes `TBool`. -/
 def Synth.quantifier (exprMd : StmtExprMd)
     (mode : QuantifierMode) (param : Parameter)
-    (trigger : Option StmtExprMd) (body : StmtExprMd) (source : Option FileRange)
+    (trigger : Option StmtExprMd) (body : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Quantifier mode param trigger body) :
     ResolveM (StmtExpr × HighTypeMd) := do
   withScope do
@@ -2917,7 +2921,7 @@ def Synth.quantifier (exprMd : StmtExprMd)
     deliberately leaves the operand unconstrained rather than rejecting,
     say, `assigned (a + b)`. -/
 def Synth.assigned (exprMd : StmtExprMd)
-    (name : StmtExprMd) (source : Option FileRange)
+    (name : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assigned name) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (name', _) ← Synth.resolveStmtExpr name
@@ -2949,7 +2953,7 @@ def Synth.assigned (exprMd : StmtExprMd)
     one, so resolution only resolves names inside `v` and checks its
     type; it imposes no syntactic shape on `v`. -/
 def Check.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
+    (val : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Old val) :
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
@@ -2977,7 +2981,7 @@ def Check.old (exprMd : StmtExprMd)
     construct would fall into the synth wildcard and spuriously report
     that its type cannot be synthesized. -/
 def Synth.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (source : Option FileRange)
+    (val : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Old val) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (val', valTy) ← Synth.resolveStmtExpr val
@@ -3000,7 +3004,7 @@ def Synth.old (exprMd : StmtExprMd)
     `Unknown`) — `Fresh` only makes sense on heap-allocated references, so
     `fresh(5)` is rejected. The construct itself synthesizes `TBool`. -/
 def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
-    (val : StmtExprMd) (source : Option FileRange)
+    (val : StmtExprMd) (source : FileRange)
     (h_expr : expr = .Fresh val)
     (h : exprMd.val = .Fresh val) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -3028,7 +3032,7 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     propagates into `v`. The proof itself has no constraint on its type
     and is still synthesized. -/
 def Check.proveBy (exprMd : StmtExprMd)
-    (val proof : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
+    (val proof : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .ProveBy val proof) :
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
@@ -3055,7 +3059,7 @@ def Check.proveBy (exprMd : StmtExprMd)
     `T`, `proof` is synthesized only for its name-resolution side effects
     (its type is discarded), and `T` is returned. -/
 def Synth.proveBy (exprMd : StmtExprMd)
-    (val proof : StmtExprMd) (source : Option FileRange)
+    (val proof : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .ProveBy val proof) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (val', valTy) ← Synth.resolveStmtExpr val
@@ -3091,7 +3095,7 @@ def Synth.proveBy (exprMd : StmtExprMd)
     Otherwise an error is emitted ("'this' is not allowed outside instance
     methods") and the type collapses to `Unknown` to suppress cascading
     errors. -/
-def Synth.this (source : Option FileRange) :
+def Synth.this (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let s ← get
   match s.instanceTypeName with
@@ -3109,11 +3113,11 @@ def Synth.this (source : Option FileRange) :
 -- ### Untyped forms
 
 /-- `Γ ⊢ Abstract ⇒ Unknown` -/
-def Synth.abstract (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.abstract (source : FileRange) : StmtExpr × HighTypeMd :=
   (.Abstract, { val := .Unknown, source := source })
 
 /-- `Γ ⊢ All ⇒ Unknown` -/
-def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.all (source : FileRange) : StmtExpr × HighTypeMd :=
   (.All, { val := .Unknown, source := source })
 
 -- ### ContractOf
@@ -3162,7 +3166,7 @@ def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
     implemented" for it. The typing rule exists so resolution remains
     exhaustive over `StmtExpr`. -/
 def Synth.contractOf (exprMd : StmtExprMd)
-    (ty : ContractType) (fn : StmtExprMd) (source : Option FileRange)
+    (ty : ContractType) (fn : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .ContractOf ty fn) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (fn', _) ← Synth.resolveStmtExpr fn
@@ -3182,7 +3186,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     modify fun s => { s with errors := s.errors.push diag }
   let resultTy : HighType := match ty with
     | .Precondition | .PostCondition => .TBool
-    | .Reads | .Modifies => .TSet { val := .Unknown, source := none }
+    | .Reads | .Modifies => .TSet { val := .Unknown, source := fn.source }
   pure (.ContractOf ty fn', { val := resultTy, source := source })
   termination_by (exprMd, 1)
   decreasing_by
@@ -3205,7 +3209,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     downstream passes (hole elimination) can generate correctly typed
     uninterpreted functions. -/
 def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
-    (source : Option FileRange) : ResolveM StmtExprMd := do
+    (source : FileRange) : ResolveM StmtExprMd := do
   let ty' ← resolveHighType ty
   checkSubtype source expected ty'
   pure { val := .Hole det (some ty'), source := source }
@@ -3218,7 +3222,7 @@ def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
     An untyped hole in check mode records the expected type on the node
     so downstream passes (hole elimination) don't have to infer it
     again. -/
-def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : Option FileRange) :
+def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : FileRange) :
     StmtExprMd :=
   { val := .Hole det (some expected), source := source }
 
@@ -3436,7 +3440,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
+    let extending' ← ct.extending.mapM (fun name => resolveRef name name.source (expected := #[.compositeType]))
     let fields' ← ct.fields.mapM (resolveField ctName')
     -- Build per-type scope BEFORE resolving instance procedures, so that
     -- field references (e.g. self.field) inside methods can be resolved.
@@ -3527,13 +3531,14 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
     (e.g. `IntList..isNil(x)`) without requiring a separate AST pass. -/
 private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : Procedure :=
   let tName := dt.testerName ctor
+  let src := dt.name.source
   let inputParam : Parameter := {
     name := mkId "value"
-    type := { val := .UserDefined dt.name, source := none }
+    type := { val := .UserDefined dt.name, source := src }
   }
   let outputParam : Parameter := {
     name := mkId "$result"
-    type := { val := .TBool, source := none }
+    type := { val := .TBool, source := src }
   }
   { name := mkId tName
     inputs := [inputParam]
@@ -3702,16 +3707,12 @@ Check whether accessing `fieldName` on `target` is a diamond-inherited field acc
 and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
-    (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
+    (fieldName : Identifier) (source : FileRange) : List DiagnosticModel :=
   match (computeExprType model target).val with
   | .UserDefined typeName =>
     match isDiamondInheritedField model typeName fieldName with
     | .ok true =>
-      match source with
-      | some fileRange =>
-        [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
-      | none =>
-        [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
+      [DiagnosticModel.withRange source s!"fields that are inherited multiple times can not be accessed."]
     | .ok false => []
     | .error e => [DiagnosticModel.fromMessage e .StrataBug]
   | _ => []
@@ -3769,7 +3770,8 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
 
 /-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
-private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
+private def placeholderNode : ResolvedNode :=
+  .var "$placeholder" { val := .TVoid, source := { file := .file "Strata/Languages/Laurel/Resolution.lean", range := SourceRange.none } }
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
@@ -3951,7 +3953,7 @@ private def effectiveOutputCount (heapWriters : Std.HashSet Nat)
     resolved `uniqueId` (an `InstanceCall`'s is stamped from the container-scoped
     lookup — see `Synth.instanceCall`), which `validateMultiOutputCallContexts`
     uses to resolve the callee to its correctly-scoped procedure. -/
-private def calleesOf (e : StmtExprMd) : List (Identifier × Option FileRange) :=
+private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
   collectStmtExprList (fun n => match n.val with
     | .StaticCall callee _ => [(callee, n.source)]
     | .InstanceCall _ callee _ => [(callee, n.source)]

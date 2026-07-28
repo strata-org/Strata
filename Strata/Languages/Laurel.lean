@@ -104,10 +104,11 @@ Translate a program in the generic AST for Strata into the dialect-specific AST
 for Laurel. This can fail with an error message if the input is not a
 well-structured instance of the Laurel dialect.
 
-TODO: possibly add an input context argument
+`uri` names the file `p` was parsed from; it is recorded in the source location
+of every translated AST node.
 -/
-def strataProgramToLaurel (p : StrataDDM.Program) : Except String Laurel.Program :=
-  Laurel.TransM.run .none (Laurel.parseProgram p)
+def strataProgramToLaurel (uri : Uri) (p : StrataDDM.Program) : Except String Laurel.Program :=
+  Laurel.TransM.run uri (Laurel.parseProgram p)
 
 /-! ### Transformation between dialects -/
 

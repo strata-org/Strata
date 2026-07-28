@@ -25,7 +25,7 @@ public section
 
 /-- `highEq` only inspects the wrapped type values, never the source metadata
     of either argument. -/
-theorem highEq_source_irrel (a b : HighTypeMd) (sa sb : Option FileRange) :
+theorem highEq_source_irrel (a b : HighTypeMd) (sa sb : FileRange) :
     highEq ⟨a.val, sa⟩ ⟨b.val, sb⟩ = highEq a b := by
   rw [highEq.eq_def, highEq.eq_def]
 

@@ -50,7 +50,9 @@ procedure mapConst(value: int) : Box
 The core map operation definitions as a `Laurel.Program`, parsed at compile time.
 -/
 def coreDefinitionsForLaurel : Program :=
-  match TransM.run none (parseProgram coreDefinitionsForLaurelDDM) with
+  match TransM.run
+      (.file "Strata/Languages/Laurel/CoreDefinitionsForLaurel.lean")
+      (parseProgram coreDefinitionsForLaurelDDM) (synthesized := true) with
   | .ok program => program
   | .error e => dbg_trace s!"BUG: CoreDefinitionsForLaurel parse error: {e}"; default
 

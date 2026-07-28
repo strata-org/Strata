@@ -187,7 +187,7 @@ exactly as in `mapStmtExprUsedM`).
 -/
 def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List StmtExprMd)))
     (post : Bool → StmtExprMd → m (List StmtExprMd)) (resultUsed : Bool) (expr : StmtExprMd) : m StmtExprMd := do
-  let collapse (results : List StmtExprMd) (src : Option FileRange) : StmtExprMd :=
+  let collapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
     match results with
     | [single] => single
     | many => ⟨.Block many none, src⟩
@@ -666,12 +666,14 @@ is a coverage test of the traversal, not an independent re-implementation of it.
 -/
 
 private def covSentinelText : String := "§MAP_STMT_EXPR_COVERAGE_SENTINEL§"
-private def covId (s : String) : Identifier := ⟨s, none, none⟩
-private def covS : StmtExprMd := ⟨.LiteralString covSentinelText, none⟩
-private def covMd (e : StmtExpr) : StmtExprMd := ⟨e, none⟩
-private def covVmd (v : Variable) : VariableMd := ⟨v, none⟩
-private def covTy : HighTypeMd := ⟨.TInt, none⟩
-private def covParam : Parameter := { name := covId "p", type := ⟨.TInt, none⟩ }
+private def covSyntheticSource : FileRange :=
+  { file := .file "Strata/Languages/Laurel/MapStmtExpr.lean", range := SourceRange.none }
+private def covId (s : String) : Identifier := ⟨s, none, covSyntheticSource⟩
+private def covS : StmtExprMd := ⟨.LiteralString covSentinelText, covSyntheticSource⟩
+private def covMd (e : StmtExpr) : StmtExprMd := ⟨e, covSyntheticSource⟩
+private def covVmd (v : Variable) : VariableMd := ⟨v, covSyntheticSource⟩
+private def covTy : HighTypeMd := ⟨.TInt, covSyntheticSource⟩
+private def covParam : Parameter := { name := covId "p", type := ⟨.TInt, covSyntheticSource⟩ }
 
 /-- A distinct key per `StmtExpr` constructor. Exhaustive (no wildcard): a new
     constructor forces an entry here, and then the completeness assertion in the

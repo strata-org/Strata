@@ -479,8 +479,8 @@ def transformStmtAssignImperativeCall
     (targets : List (AstNode Variable))
     (callee: Identifier)
     (args: List StmtExprMd)
-    (source: Option FileRange)
-    (callSource: Option FileRange): LiftM (List StmtExprMd) := do
+    (source: FileRange)
+    (callSource: FileRange): LiftM (List StmtExprMd) := do
   let seqArgs ← args.reverse.mapM transformExpr
   let argPrepends ← takePrepends
   modify fun s => { s with subst := {} }
@@ -602,7 +602,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end
 
-def transformProcedureBody (source: Option FileRange) (body : StmtExprMd) : LiftM StmtExprMd := do
+def transformProcedureBody (source: FileRange) (body : StmtExprMd) : LiftM StmtExprMd := do
   let stmts ← transformStmt body
   match stmts with
   | [single] => pure single

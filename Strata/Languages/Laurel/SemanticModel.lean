@@ -85,11 +85,11 @@ inductive ResolvedNode where
       to a type parameter resolve through the normal scope lookup — like any other
       type name — instead of being special-cased by name via a threaded list. -/
   | typeParameter (name : Identifier)
-  | unresolved (referenceSource: Option FileRange)
+  | unresolved (referenceSource: FileRange)
   deriving Repr
 
 instance : Inhabited ResolvedNode where
-  default := ResolvedNode.unresolved none
+  default := ResolvedNode.unresolved default
 
 /-- Return the constructor tag of a `ResolvedNode`. -/
 def ResolvedNode.kind : ResolvedNode → ResolvedNodeKind
@@ -113,13 +113,18 @@ def ResolvedNode.getType (node: ResolvedNode): HighTypeMd := match node with
  | .var _ type => type
  | .parameter p => p.type
  | .field _ f => f.type
- | .datatypeConstructor type _ => ⟨ .UserDefined type, none ⟩
+ | .datatypeConstructor type _ => ⟨ .UserDefined type, type.source ⟩
  | .datatypeDestructor _ fld => fld.type
  | .constant c => c.type
  | .quantifierVar _ type => type
  | .unresolved source => ⟨ .Unknown, source ⟩
- | .staticProcedure _ | .instanceProcedure _ _ | .compositeType _
- | .constrainedType _ | .datatypeDefinition _ | .typeAlias _ | .typeParameter _ => ⟨ .Unknown, none ⟩
+ | .staticProcedure proc => ⟨ .Unknown, proc.name.source ⟩
+ | .instanceProcedure _ proc => ⟨ .Unknown, proc.name.source ⟩
+ | .compositeType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .constrainedType ty => ⟨ .Unknown, ty.name.source ⟩
+ | .datatypeDefinition ty => ⟨ .Unknown, ty.name.source ⟩
+ | .typeAlias ty => ⟨ .Unknown, ty.name.source ⟩
+ | .typeParameter name => ⟨ .Unknown, name.source ⟩
 
 /-! ## Resolution result -/
 

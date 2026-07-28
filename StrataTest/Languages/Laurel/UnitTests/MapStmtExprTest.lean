@@ -94,38 +94,38 @@ private def lowerInt32 : HighType → HighType
 -- `Box int32` -> `Box int`: the callback fires inside `.Applied`'s type argument;
 -- the generic base `Box` is left untouched.
 #guard HighType.mapType lowerInt32
-    (.Applied ⟨.UserDefined (mkId "Box"), none⟩ [⟨.UserDefined (mkId "int32"), none⟩])
-  == .Applied ⟨.UserDefined (mkId "Box"), none⟩ [⟨.TInt, none⟩]
+    (.Applied ⟨.UserDefined (mkId "Box"), default⟩ [⟨.UserDefined (mkId "int32"), default⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), default⟩ [⟨.TInt, default⟩]
 
 -- `Box (Wrap int32)` -> `Box (Wrap int)`: recursion through two `.Applied` layers.
 #guard HighType.mapType lowerInt32
-    (.Applied ⟨.UserDefined (mkId "Box"), none⟩
-      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), none⟩ [⟨.UserDefined (mkId "int32"), none⟩], none⟩])
-  == .Applied ⟨.UserDefined (mkId "Box"), none⟩
-      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), none⟩ [⟨.TInt, none⟩], none⟩]
+    (.Applied ⟨.UserDefined (mkId "Box"), default⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), default⟩ [⟨.UserDefined (mkId "int32"), default⟩], default⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), default⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), default⟩ [⟨.TInt, default⟩], default⟩]
 
 -- `Set int32` -> `Set int`: recursion through `.TSet`'s element type.
-#guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), none⟩)
-  == HighType.TSet ⟨.TInt, none⟩
+#guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), default⟩)
+  == HighType.TSet ⟨.TInt, default⟩
 
 -- `Map int32 string` -> `Map int string`: recursion through `.TMap`'s key and
 -- value types (the non-constrained value type is untouched). Also covered
 -- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`.
 #guard HighType.mapType lowerInt32
-    (.TMap ⟨.UserDefined (mkId "int32"), none⟩ ⟨.TString, none⟩)
-  == HighType.TMap ⟨.TInt, none⟩ ⟨.TString, none⟩
+    (.TMap ⟨.UserDefined (mkId "int32"), default⟩ ⟨.TString, default⟩)
+  == HighType.TMap ⟨.TInt, default⟩ ⟨.TString, default⟩
 
 -- `int32 & T` -> `int & T`: recursion through `.Intersection`'s components;
 -- the non-constrained component is untouched.
 #guard HighType.mapType lowerInt32
-    (.Intersection [⟨.UserDefined (mkId "int32"), none⟩, ⟨.UserDefined (mkId "T"), none⟩])
-  == HighType.Intersection [⟨.TInt, none⟩, ⟨.UserDefined (mkId "T"), none⟩]
+    (.Intersection [⟨.UserDefined (mkId "int32"), default⟩, ⟨.UserDefined (mkId "T"), default⟩])
+  == HighType.Intersection [⟨.TInt, default⟩, ⟨.UserDefined (mkId "T"), default⟩]
 
 -- `(int32, bool)` -> `(int, bool)`: recursion through `.MultiValuedExpr`'s
 -- components; the non-constrained component is untouched.
 #guard HighType.mapType lowerInt32
-    (.MultiValuedExpr [⟨.UserDefined (mkId "int32"), none⟩, ⟨.TBool, none⟩])
-  == HighType.MultiValuedExpr [⟨.TInt, none⟩, ⟨.TBool, none⟩]
+    (.MultiValuedExpr [⟨.UserDefined (mkId "int32"), default⟩, ⟨.TBool, default⟩])
+  == HighType.MultiValuedExpr [⟨.TInt, default⟩, ⟨.TBool, default⟩]
 
 end MapTypeCoverage
 

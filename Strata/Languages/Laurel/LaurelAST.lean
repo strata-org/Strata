@@ -33,7 +33,7 @@ structure Identifier where
   /-- Unique ID assigned by the resolution pass. -/
   uniqueId : Option Nat := none
   /-- Source location for this identifier. -/
-  source : Option FileRange := none
+  source : FileRange := .unknown
   deriving Repr
 
 instance : Inhabited Identifier where
@@ -139,7 +139,7 @@ structure AstNode (t : Type) : Type where
   /-- The wrapped value. -/
   val : t
   /-- Source location for this AST node. -/
-  source : Option FileRange
+  source : FileRange
   deriving Repr
 
 /--
@@ -540,14 +540,12 @@ def Condition.mapM [Monad m] (f : AstNode StmtExpr → m (AstNode StmtExpr)) (c 
 def Condition.mapCondition (f : AstNode StmtExpr → AstNode StmtExpr) (c : Condition) : Condition :=
   { c with condition := f c.condition }
 
-/-- Build a provenance from an optional source location. -/
-def fileRangeToProvenance (source : Option FileRange) : Provenance :=
-  match source with
-  | some fr => Provenance.ofSourceRange fr.file fr.range
-  | none => .synthesized .laurel
+/-- Build a provenance from a source location. -/
+def fileRangeToProvenance (source : FileRange) : Provenance :=
+  Provenance.ofSourceRange source.file source.range
 
-/-- Build Core metadata from an optional source location. -/
-def fileRangeToCoreMd (source : Option FileRange) : Imperative.MetaData Core.Expression :=
+/-- Build Core metadata from a source location. -/
+def fileRangeToCoreMd (source : FileRange) : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (fileRangeToProvenance source)
 
 /-- Build Core metadata from an AstNode's source location. -/
@@ -558,23 +556,21 @@ def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
 def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
   fileRangeToCoreMd id.source
 
-/-- Create a DiagnosticModel from an optional source location and a message. -/
-def diagnosticFromSource (source : Option FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
-  match source with
-  | some fr => DiagnosticModel.withRange fr msg type
-  | none => DiagnosticModel.fromMessage msg type
+/-- Create a DiagnosticModel from a source location and a message. -/
+def diagnosticFromSource (source : FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
+  DiagnosticModel.withRange source msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole
 
 instance : Inhabited (AstNode Variable) where
-  default := { val := .Local default, source := none }
+  default := { val := .Local default, source := default }
 
 instance : Inhabited HighTypeMd where
-  default := { val := HighType.Unknown, source := some { file := .file "HighTypeMd default", range := default} }
+  default := { val := HighType.Unknown, source := default }
 
 instance : Inhabited StmtExprMd where
-  default := { val := default, source := none }
+  default := { val := default, source := default }
 
 def highEq (a : HighTypeMd) (b : HighTypeMd) : Bool := match _a: a.val, _b: b.val with
   | HighType.TVoid, HighType.TVoid => true
@@ -606,7 +602,7 @@ instance : BEq HighTypeMd where
   beq := highEq
 
 instance : BEq HighType where
-  beq a b := highEq ⟨a, none⟩ ⟨b, none⟩
+  beq a b := highEq ⟨a, default⟩ ⟨b, default⟩
 
 
 /-- The proof-relevant verdict of `coerce sub sup`: not just "is `sub <: sup`?" but

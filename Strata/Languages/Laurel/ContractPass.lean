@@ -34,8 +34,8 @@ namespace Strata.Laurel
 
 public section
 
-private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
-private def mkVarMd (v : Variable) : VariableMd := { val := v, source := none }
+private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
+private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val := v, source }
 
 /-- Name for the i-th precondition helper procedure. -/
 def preCondProcName (procName : String) (i : Nat) : String := s!"{procName}$pre{i}"
@@ -51,12 +51,12 @@ private def getPostconditions (body : Body) : List Condition :=
   | _ => []
 
 /-- Build a call expression. -/
-private def mkCall (callee : String) (args : List StmtExprMd) : StmtExprMd :=
-  mkMd (.StaticCall (mkId callee) args)
+private def mkCall (callee : String) (args : List StmtExprMd) (source : FileRange) : StmtExprMd :=
+  mkMd (.StaticCall (mkId callee) args) source
 
 /-- Convert parameters to identifier expressions. -/
-private def paramsToArgs (params : List Parameter) : List StmtExprMd :=
-  params.map fun p => mkMd (.Var (.Local p.name))
+private def paramsToArgs (params : List Parameter) (source : FileRange) : List StmtExprMd :=
+  params.map fun p => mkMd (.Var (.Local p.name)) source
 
 /-- Build a helper function for a single condition over the given parameters.
     Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`. -/
@@ -76,7 +76,7 @@ private def mkConditionProc (name : String) (params : List Parameter)
   let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", { val := .TBool, source := none }⟩]
+    outputs := [⟨mkId "$result", { val := .TBool, source := src }⟩]
     preconditions := []
     decreases := none
     body := .Transparent body }
@@ -163,7 +163,7 @@ private def mkPostConditionProc (name : String) (inputs outputs : List Parameter
     ⟨.Block (preAssumes ++ [assignResult, exitReturn]) (some "$return"), postExpr.source⟩
   { name := mkId name
     inputs := inputs ++ renamedOutputs
-    outputs := [⟨resultName, { val := .TBool, source := none }⟩]
+    outputs := [⟨resultName, { val := .TBool, source := postExpr.source }⟩]
     preconditions := []
     decreases := none
     body := .Transparent body }
@@ -211,7 +211,7 @@ private def freshTemp : ContractM String := do
 /-- Generate temporary variable assignments for input arguments at a call site.
     Returns (temp declarations+assignments, temp variable references). -/
 private def mkTempAssignments (args : List StmtExprMd)
-    (inputParams : List Parameter) (src : Option FileRange)
+    (inputParams : List Parameter) (src : FileRange)
     : ContractM (List StmtExprMd × List StmtExprMd) := do
   let mut decls : List StmtExprMd := []
   let mut refs : List StmtExprMd := []
@@ -219,10 +219,10 @@ private def mkTempAssignments (args : List StmtExprMd)
     let tempName ← freshTemp
     let paramType := match inputParams[i]? with
       | some p => p.type
-      | none => { val := .Unknown, source := none }
+      | none => { val := .Unknown, source := src }
     let param : Parameter := { name := mkId tempName, type := paramType }
-    decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param)] arg, src⟩]
-    refs := refs ++ [mkMd (.Var (.Local (mkId tempName)))]
+    decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
+    refs := refs ++ [mkMd (.Var (.Local (mkId tempName))) src]
   return (decls, refs)
 
 /-- Transform a procedure body to add assume/assert for its own contracts.
@@ -243,14 +243,15 @@ private def mkTempAssignments (args : List StmtExprMd)
     frame to a trivially-true `old($heap) == $heap`. This mirrors the call-site
     lowering, which snapshots arguments before the call. -/
 private def transformProcBody (proc : Procedure) (info : ContractInfo) : ContractM Body := do
-  let inputArgs := paramsToArgs proc.inputs
-  let outputArgs := paramsToArgs proc.outputs
+  let src := proc.name.source
+  let inputArgs := paramsToArgs proc.inputs src
+  let outputArgs := paramsToArgs proc.outputs src
   let postconds := getPostconditions proc.body
   -- A precondition is assumed in the body unless it is assert-only (mode `Assert`).
   let preAssumes : List StmtExprMd :=
     proc.preconditions.zip info.preNames |>.filterMap fun (pc, name, _) =>
       if pc.mode.doesAssume then
-        some ⟨.Assume (mkCall name inputArgs), pc.condition.source⟩
+        some ⟨.Assume (mkCall name inputArgs pc.condition.source), pc.condition.source⟩
       else none
   -- A postcondition is asserted at the end of the body unless it is assume-only
   -- (mode `Assume`, i.e. a free postcondition). Snapshot the inputs at entry so
@@ -258,10 +259,10 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Contrac
   let postcondsToAssert := postconds.zip info.postNames |>.filter fun (pc, _) => pc.mode.doesAssert
   let (snapshotDecls, snapshotRefs) ←
     if postcondsToAssert.isEmpty then pure ([], [])
-    else mkTempAssignments inputArgs proc.inputs proc.name.source
+    else mkTempAssignments inputArgs proc.inputs src
   let postAsserts : List StmtExprMd :=
     postcondsToAssert.map fun (pc, name, _) =>
-      ⟨.Assert (mkCall name (snapshotRefs ++ outputArgs)) (some (pc.summary.getD "postcondition")),
+      ⟨.Assert (mkCall name (snapshotRefs ++ outputArgs) pc.condition.source) (some (pc.summary.getD "postcondition")),
        pc.condition.source⟩
   match proc.body with
   | .Transparent body =>
@@ -289,23 +290,23 @@ private def transformProcBody (proc : Procedure) (info : ContractInfo) : Contrac
     A precondition is checked at the call site unless it is assume-only
     (mode `Assume`, i.e. a free precondition). -/
 private def mkPreChecks (info : ContractInfo)
-    (tempRefs : List StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
+    (tempRefs : List StmtExprMd) (src : FileRange) : List StmtExprMd :=
   if !info.hasPreCondition then []
   else info.preNames.filterMap fun (name, summary, mode) =>
     if !mode.doesAssert then none
     else
-      let call := mkCall name tempRefs
+      let call := mkCall name tempRefs src
       some ⟨.Assert call (some (summary.getD "precondition")), src⟩
 
 /-- Generate postcondition assumes (one per postcondition) for a call site.
     A postcondition is assumed after the call unless it is assert-only
     (mode `Assert`). -/
 private def mkPostAssumes (info : ContractInfo)
-    (tempRefs : List StmtExprMd) (outputArgs : List StmtExprMd) (src : Option FileRange) : List StmtExprMd :=
+    (tempRefs : List StmtExprMd) (outputArgs : List StmtExprMd) (src : FileRange) : List StmtExprMd :=
   if !info.hasPostCondition then []
   else info.postNames.filterMap fun (name, _, mode) =>
     if mode.doesAssume then
-      some ⟨.Assume (mkCall name (tempRefs ++ outputArgs)), src⟩
+      some ⟨.Assume (mkCall name (tempRefs ++ outputArgs) src), src⟩
     else none
 
 /-- Names of the callee's inout parameters: those appearing in both the input and
@@ -336,7 +337,7 @@ private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprM
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
     (expr : StmtExprMd) : ContractM StmtExprMd := do
   let rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
-      (info : ContractInfo) (src : Option FileRange)
+      (info : ContractInfo) (src : FileRange)
       : ContractM (List StmtExprMd) := do
     let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
     let preCheck := mkPreChecks info tempRefs src
@@ -346,8 +347,8 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
         let mut outputRefs : List StmtExprMd := []
         for p in info.outputParams do
           let tempName ← freshTemp
-          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := p.type })]
-          outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName)))]
+          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := p.type }) src]
+          outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
         let callWithOutputs : StmtExprMd :=
           ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
         let assume := mkPostAssumes info tempRefs outputRefs src
@@ -383,8 +384,8 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
             let preCheck := mkPreChecks info tempRefs src
             let outputArgs := targets.filterMap fun t =>
               match t.val with
-              | .Local name => some (mkMd (.Var (.Local name)))
-              | .Declare param => some (mkMd (.Var (.Local param.name)))
+              | .Local name => some (mkMd (.Var (.Local name)) src)
+              | .Declare param => some (mkMd (.Var (.Local param.name)) src)
               | _ => none
             let postAssume := mkPostAssumes info tempRefs outputArgs src
             return some (tempDecls ++ preCheck ++ [callWithTemps] ++ postAssume)
@@ -418,25 +419,26 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
   | _ => return proc
 
 /-- Conjoin a list of conditions into a single expression with `&&`. -/
-private def conjoin (conds : List Condition) : Option StmtExprMd :=
+private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=
   match conds.map (·.condition) with
   | [] => none
-  | e :: rest => some (rest.foldl (fun acc x => mkMd (.PrimitiveOp .And [acc, x])) e)
+  | e :: rest => some (rest.foldl (fun acc x => mkMd (.PrimitiveOp .And [acc, x]) source) e)
 
 /-- Build an axiom expression from `invokeOn` trigger and ensures clauses.
     Produces `∀ p1, ∀ p2, ..., ∀ pn :: { trigger } (preconds => ensures)`.
     The trigger controls when the SMT solver instantiates the axiom. -/
 private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
     (preconds : List Condition) (postconds : List Condition) : StmtExprMd :=
-  let ensures := (conjoin postconds).getD (mkMd (.LiteralBool true))
-  let body := match conjoin preconds with
-    | some pre => mkMd (.PrimitiveOp .Implies [pre, ensures])
+  let src := trigger.source
+  let ensures := (conjoin postconds src).getD (mkMd (.LiteralBool true) src)
+  let body := match conjoin preconds src with
+    | some pre => mkMd (.PrimitiveOp .Implies [pre, ensures]) src
     | none => ensures
   -- Wrap in nested Forall from last param (innermost) to first (outermost).
   -- The trigger is placed on the innermost quantifier.
   params.foldr (init := (body, true)) (fun p (acc, isInnermost) =>
     let trig := if isInnermost then some trigger else none
-    (mkMd (.Quantifier .Forall p trig acc), false)) |>.1
+    (mkMd (.Quantifier .Forall p trig acc) src, false)) |>.1
 
 /-- Run the contract pass on a Laurel program.
     All procedures with contracts are transformed. -/

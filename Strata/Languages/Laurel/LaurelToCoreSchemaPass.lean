@@ -93,7 +93,7 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
 
-private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
+private def invalidCoreType (source : FileRange) (reason : String) : TranslateM LMonoTy := do
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
@@ -245,7 +245,8 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
-  let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
+
+  let disallowed (source : FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
       emitExprDiagnostic $ diagnosticFromSource source msg
 
   match h: expr.val with

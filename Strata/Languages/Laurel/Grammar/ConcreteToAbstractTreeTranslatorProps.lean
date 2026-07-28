@@ -63,40 +63,33 @@ def HighType.grammarRepresentable : HighType → Bool
 concrete-constructor reductions the round-trip proof needs; their left-hand
 sides carry concrete constructors, so `simp` terminates. -/
 
-@[local simp] private theorem highEq_TInt (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TInt (sa sb : FileRange) :
     highEq ⟨.TInt, sa⟩ ⟨.TInt, sb⟩ = true := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_TBool (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TBool (sa sb : FileRange) :
     highEq ⟨.TBool, sa⟩ ⟨.TBool, sb⟩ = true := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_TFloat64 (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TFloat64 (sa sb : FileRange) :
     highEq ⟨.TFloat64, sa⟩ ⟨.TFloat64, sb⟩ = true := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_TReal (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TReal (sa sb : FileRange) :
     highEq ⟨.TReal, sa⟩ ⟨.TReal, sb⟩ = true := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_TString (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TString (sa sb : FileRange) :
     highEq ⟨.TString, sa⟩ ⟨.TString, sb⟩ = true := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_TBv (w₁ w₂ : Nat) (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TBv (w₁ w₂ : Nat) (sa sb : FileRange) :
     highEq ⟨.TBv w₁, sa⟩ ⟨.TBv w₂, sb⟩ = (w₁ == w₂) := by rw [highEq.eq_def]
-@[local simp] private theorem highEq_UserDefined (r₁ r₂ : Identifier) (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_UserDefined (r₁ r₂ : Identifier) (sa sb : FileRange) :
     highEq ⟨.UserDefined r₁, sa⟩ ⟨.UserDefined r₂, sb⟩ = (r₁.text == r₂.text) := by
   rw [highEq.eq_def]
-@[local simp] private theorem highEq_TMap (k₁ v₁ k₂ v₂ : HighTypeMd) (sa sb : Option FileRange) :
+@[local simp] private theorem highEq_TMap (k₁ v₁ k₂ v₂ : HighTypeMd) (sa sb : FileRange) :
     highEq ⟨.TMap k₁ v₁, sa⟩ ⟨.TMap k₂ v₂, sb⟩ = (highEq k₁ k₂ && highEq v₁ v₂) := by
   rw [highEq.eq_def]
 
-/-- `getArgFileRange` always succeeds, returning `s` unchanged: on the printer's
-    `SourceRange.none` sentinel it returns `none`, and otherwise a range
-    assembled from the state's `uri`. Stated as a plain success/shape fact so
-    the round-trip proof can rewrite through the monadic `if` without unfolding
-    `isNone` (whose body is not exposed across the module boundary). -/
+/-- `getArgFileRange` always succeeds, returning `s` unchanged and the argument's
+    range paired with the state's `uri`. Stated as a plain success/shape fact so
+    the round-trip proof can rewrite through the monadic bind. -/
 private theorem getArgFileRange_ok (arg : StrataDDM.Arg) (s : TransState) :
-    getArgFileRange arg s =
-      .ok (if arg.ann.isNone then none
-           else match s.uri with
-                | some uri => some ⟨uri, arg.ann⟩
-                | none => none, s) := by
+    getArgFileRange arg s = .ok (⟨s.uri, arg.ann⟩, s) := by
   rw [getArgFileRange]
-  split <;> cases huri : s.uri <;>
-    simp_all [SourceRange.toFileRange, pure, StateT.pure, Except.pure, bind, StateT.bind,
-              Except.bind, get, getThe, MonadStateOf.get, StateT.get]
+  simp_all [SourceRange.toFileRange, pure, StateT.pure, Except.pure, bind,
+            StateT.bind, Except.bind, get, getThe, MonadStateOf.get, StateT.get]
 
 /-- **Round-trip**: printing a grammar-representable `HighType` and parsing it
     back yields the same type modulo source metadata (`highEq`). Every golden
@@ -105,11 +98,11 @@ private theorem getArgFileRange_ok (arg : StrataDDM.Arg) (s : TransState) :
 theorem translateHighType_highTypeValToArg_roundtrip
     (t : HighType) (h : t.grammarRepresentable = true) (s : TransState) :
     ∃ t' s', translateHighType (highTypeValToArg t) s = .ok (t', s')
-      ∧ highEq t' ⟨t, none⟩ = true := by
+      ∧ highEq t' ⟨t, default⟩ = true := by
   suffices h_all : ∀ n (t : HighType), sizeOf t ≤ n →
       t.grammarRepresentable = true → ∀ s,
       ∃ t' s', translateHighType (highTypeValToArg t) s = .ok (t', s')
-        ∧ highEq t' ⟨t, none⟩ = true from h_all (sizeOf t) t (Nat.le_refl _) h s
+        ∧ highEq t' ⟨t, default⟩ = true from h_all (sizeOf t) t (Nat.le_refl _) h s
   intro n
   induction n with
   | zero => intro t hsz; cases t <;> simp at hsz
@@ -137,8 +130,8 @@ theorem translateHighType_highTypeValToArg_roundtrip
       have hszv : sizeOf v.val ≤ n := by cases v; simp at hsz ⊢; omega
       obtain ⟨k', s1, hk_eq, hk_hi⟩ := ih k.val hszk hrep.1 s
       obtain ⟨v', _, hv_eq, hv_hi⟩ := ih v.val hszv hrep.2 s1
-      have hk' : highEq k' k = true := highEq_source_irrel k' k k'.source none ▸ hk_hi
-      have hv' : highEq v' v = true := highEq_source_irrel v' v v'.source none ▸ hv_hi
+      have hk' : highEq k' k = true := highEq_source_irrel k' k k'.source default ▸ hk_hi
+      have hv' : highEq v' v = true := highEq_source_irrel v' v v'.source default ▸ hv_hi
       simp only [highTypeValToArg, highTypeToArg]
       rw [translateHighType.eq_def]
       simp [laurelOp, getArgFileRange_ok, bind, StateT.bind, pure, StateT.pure, Except.pure,
@@ -161,7 +154,7 @@ the fragment). -/
 
 #guard HighType.TInt.grammarRepresentable                 -- `x: int`, `: int`
 #guard (HighType.UserDefined (mkId "Point")).grammarRepresentable  -- `var p: Point`
-#guard (HighType.TMap ⟨.TInt, none⟩ ⟨.TMap ⟨.TBool, none⟩ ⟨.TString, none⟩, none⟩).grammarRepresentable
+#guard (HighType.TMap ⟨.TInt, default⟩ ⟨.TMap ⟨.TBool, default⟩ ⟨.TString, default⟩, default⟩).grammarRepresentable
 #guard !HighType.TVoid.grammarRepresentable  -- lossy: prints as the identifier `void`
 
 end -- public section
