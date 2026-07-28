@@ -1005,20 +1005,32 @@ class SwarmLeanTools:
                 timeout=120,
             )
             output = result.stdout + "\n" + result.stderr
-            has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
+            # The sorry diagnostic is EXACTLY "declaration uses 'sorry'" (emitted as a
+            # warning, or as an `error:` line when the project sets warningAsError=true).
+            # It is the ONLY signal for has_sorry — a bare "sorry" substring would also
+            # match comments, identifiers, and file paths.
+            has_sorry = "declaration uses 'sorry'" in output
 
             if result.returncode == 0:
                 return CompileResult(success=True, has_sorry=has_sorry, has_error=False)
 
-            # Non-zero return code — check if it's just sorry warnings or real errors
-            error_lines = [l for l in output.splitlines()
-                           if "error" in l.lower() or "unknown" in l.lower() or "failed" in l.lower()]
-            # If only sorry-related, treat as success with sorry
-            if not error_lines or all("sorry" in l for l in error_lines):
-                if has_sorry:
-                    return CompileResult(success=True, has_sorry=True, has_error=False)
+            # Non-zero return code — separate the benign sorry diagnostic from real errors.
+            # Match the specific sorry diagnostic, NOT a bare "sorry" substring: a genuine
+            # error line that merely mentions a sorry-named identifier must NOT be swallowed.
+            def _is_sorry_diag(line: str) -> bool:
+                return "declaration uses 'sorry'" in line
 
-            error_detail = "\n".join(error_lines[:10]) if error_lines else output.strip()[-300:]
+            error_lines = [l for l in output.splitlines()
+                           if ("error" in l.lower() or "unknown" in l.lower()
+                               or "failed" in l.lower())
+                           and not _is_sorry_diag(l)]
+            # No REAL error lines left after excluding the sorry diagnostic → it compiles
+            # (with sorry, if present). This is the warningAsError=true case: the only
+            # `error:` line was "declaration uses 'sorry'".
+            if not error_lines:
+                return CompileResult(success=True, has_sorry=has_sorry, has_error=False)
+
+            error_detail = "\n".join(error_lines[:10])
             return CompileResult(success=False, has_sorry=has_sorry, has_error=True, error=error_detail)
         except subprocess.TimeoutExpired:
             return CompileResult(error="compilation timed out (120s)")

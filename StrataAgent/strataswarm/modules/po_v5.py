@@ -48,6 +48,18 @@ MIN_CHUNK_TURNS = 50
 MAX_CHUNK_TURNS = 100
 CHUNK_TURNS = MIN_CHUNK_TURNS
 GRACE_TURNS = 20
+# Runaway backstop for a single lemma's guide-driven prove loop. The guide remains
+# the decision-maker; this is only a safety net against an unbounded `continue`
+# spin (a leaf that neither proves, decomposes, nor gets given up). On breach we
+# stop asking the guide to `continue` and force the terminal path
+# (decompose → give_up → propagate). These are deliberately HIGH — a normal proof
+# should never approach them.
+MAX_CHUNKS_PER_LEMMA = 40          # ~40 chunks × up to 100 turns = a lot of room
+MAX_MINUTES_PER_LEMMA = 90         # wall-clock cap per lemma attempt loop
+# When a child gives up, its parent is re-activated to re-decompose differently.
+# Bound how many times a single parent may be re-activated before we stop and
+# propagate the failure further up (prevents the give_up ↔ re-decompose churn).
+MAX_REACTIVATIONS = 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +141,10 @@ class LemmaContext:
     failure_context: str = ""
     needs_fresh_guide: bool = False
     needs_fresh_writer: bool = False
+    # How many times this lemma has been re-activated because a child gave up.
+    # Bounds the re-decompose loop (Bug #3): after MAX_REACTIVATIONS we stop
+    # re-decomposing and propagate the failure further up instead.
+    reactivations: int = 0
 
 
 @dataclass
@@ -262,18 +278,55 @@ def _register_lemma(state: PO5State, ledger: LemmaLedger, **kwargs) -> LemmaEntr
 
 def _propagate_failure_to_parent(state: PO5State, ledger: LemmaLedger,
                                   entry: LemmaEntry, message: str):
-    """Set failure_context on the parent so its guide sees it on next activation."""
+    """A child gave up — route the failure to the parent AND re-activate it so its
+    guide can re-decompose differently, instead of leaving a dead child that gets
+    the same give-up re-derived forever (Bug #3).
+
+    Steps:
+      1. Record the failure text on the parent's context (guide sees it next turn).
+      2. Prune the failed child's subtree so its dead siblings/imports don't linger.
+      3. Reset the parent to PENDING (priority-boosted) so SELECT re-picks it and
+         its guide is asked for a DIFFERENT decomposition — bounded by
+         MAX_REACTIVATIONS. Once exhausted, we stop re-activating and let the
+         failure bubble further up (the parent itself will hit its own give-up).
+    """
+    from .lemma_ledger import LemmaStatus
+
     parent = ledger.get_parent(entry.id)
-    if parent:
-        parent_ctx = state.lemma_ctx.get(parent.id)
-        if parent_ctx:
-            # Append — parent might have multiple failed children
-            if parent_ctx.failure_context:
-                parent_ctx.failure_context += f"\n{message}"
-            else:
-                parent_ctx.failure_context = message
-        else:
-            state.lemma_ctx[parent.id] = LemmaContext(failure_context=message)
+    if not parent:
+        return
+
+    parent_ctx = state.lemma_ctx.get(parent.id)
+    if parent_ctx is None:
+        parent_ctx = LemmaContext()
+        state.lemma_ctx[parent.id] = parent_ctx
+
+    # 1. Record failure text (append — parent may have multiple failed children).
+    if parent_ctx.failure_context:
+        parent_ctx.failure_context += f"\n{message}"
+    else:
+        parent_ctx.failure_context = message
+
+    # 2. Prune the dead child's subtree (mark_failed already set the child FAILED;
+    #    prune_branch skips PROVED/FAILED roots, so prune its children explicitly).
+    for cid in list(entry.children):
+        ledger.prune_branch(cid, f"parent child '{entry.name}' gave up")
+
+    # 3. Re-activate the parent for a different decomposition, if budget remains.
+    if parent_ctx.reactivations >= MAX_REACTIVATIONS:
+        # Exhausted: don't churn. Leave the parent as-is; when SELECT finds no
+        # pending work under it, _phase_check escalates (and the parent's own
+        # give-up will propagate one level further up).
+        return
+    parent_ctx.reactivations += 1
+    parent_ctx.needs_fresh_guide = True
+    parent_ctx.needs_fresh_writer = True
+    parent_ctx.current_task = (
+        f"A previous decomposition failed: {message}\n"
+        f"Re-decompose '{parent.name}' DIFFERENTLY — the earlier split recreated an "
+        f"unprovable/false obligation. Do NOT reproduce the same child."
+    )
+    ledger.mark_pending(parent.id, priority_boost=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -668,12 +721,39 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     # ── Step 2: Main loop ──
     total_turns = 0
     prev_sorry_count = None
+    chunks_this_call = 0
+    loop_start = _time.time()
     # Extract initial turns from guide's advice
     turns_match = re.search(r'TURNS:\s*(\d+)', advice)
     chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1)))) if turns_match else CHUNK_TURNS
 
     while True:
         ledger.increment_attempts(entry.id)
+        chunks_this_call += 1
+        # ── Runaway backstop ──────────────────────────────────────────────────
+        # The guide drives strategy, but it must not spin forever on a target it
+        # can neither close nor abandon. If we blow past the chunk/wall-clock cap,
+        # stop consulting for `continue` and take the terminal path: try one last
+        # decomposition, else give up and propagate to the parent (Bug #1 residual).
+        loop_minutes = (_time.time() - loop_start) / 60.0
+        if chunks_this_call > MAX_CHUNKS_PER_LEMMA or loop_minutes > MAX_MINUTES_PER_LEMMA:
+            reason = (f"runaway backstop: {chunks_this_call} chunks / "
+                      f"{loop_minutes:.0f}min on '{entry.name}' with no resolution")
+            await agent._emit("message", f"[PO5] ⛔ {reason}")
+            # Last resort: if a decomposition is possible, take it (a fresh subtree
+            # may crack what inline attempts could not). Otherwise give up cleanly.
+            if entry.depth < MAX_DEPTH:
+                decompose_ok = await _validate_decompose(
+                    agent, state, ledger, entry, cwd, tools, stub_rel, protected_names)
+                if decompose_ok is True:
+                    await agent._emit("message", "[PO5] Backstop → forced decompose")
+                    break
+            ctx.failure_context = f"Backstop give-up: {reason}"
+            ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
+            _record_give_up(state, entry, f"Backstop give-up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Backstop give-up: {reason}")
+            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' hit backstop: {reason}")
+            return "failed"
         elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
         writer_pct = await writer.get_context_percentage()
         # _get_guide handles rotation internally if >= 75%
@@ -2283,8 +2363,14 @@ def _is_top_level(ledger, state, entry) -> bool:
 
 
 def _record_give_up(state, entry, reason: str):
-    """Accumulate a give-up reason on state so it propagates to the TM → user."""
+    """Accumulate a give-up reason on state so it propagates to the TM → user.
+
+    De-duplicates: the same lemma re-deriving the same give-up must not append the
+    identical line hundreds of times (Bug #3 symptom)."""
     line = f"'{entry.name}': {reason}"
+    existing = state.give_up_reason.split("\n") if state.give_up_reason else []
+    if line in existing:
+        return
     if state.give_up_reason:
         state.give_up_reason += f"\n{line}"
     else:

@@ -239,6 +239,10 @@ class SwarmAgent:
                 return True
             except (ConnectionError, OSError, RuntimeError) as e:
                 logger.warning(f"[DISCONNECT] {self.spec.name}: {e}")
+                # Feed the auth breaker: an expired-credential disconnect trips it
+                # so every agent pauses instead of hot-looping reconnects (Bug #4).
+                from ._circuit_breaker import get_breaker
+                await get_breaker().record_failure(e)
                 try:
                     if await self.backend.reconnect():
                         return True
@@ -300,6 +304,11 @@ class SwarmAgent:
 
             # Result message
             if message.type == "result":
+                # A clean result proves the credentials are valid — close the
+                # auth breaker if it was tripped/probing (Bug #4). Cheap no-op
+                # on the healthy hot path.
+                from ._circuit_breaker import get_breaker
+                await get_breaker().record_success()
                 result.raw_result = message.raw_result
                 result.structured_output = message.structured_output
                 result.cost_usd = message.cost_usd
@@ -375,6 +384,10 @@ class SwarmAgent:
     # ─── Crash recovery (stateful only) ──────────────────────────────────
 
     async def _attempt_recovery(self, result: AgentResult[T], config: BackendConfig) -> bool:
+        from ._circuit_breaker import get_breaker
+        _breaker = get_breaker()
+        # If creds are down, don't hot-loop reconnects — wait for the breaker to recover.
+        await _breaker.wait_if_tripped()
         try:
             if await self.backend.reconnect():
                 history = await self.backend.get_message_history()
@@ -385,10 +398,12 @@ class SwarmAgent:
                     if message.type == "text" and message.content:
                         await self._emit("message", message.content)
                     elif message.type == "result":
+                        await _breaker.record_success()
                         result.raw_result = message.raw_result
                         result.cost_usd = message.cost_usd
                 return True
         except Exception as e:
+            await _breaker.record_failure(e)
             logger.error(f"[RETRY] {self.spec.name}: reconnect failed: {e}")
         return False
 
@@ -526,6 +541,13 @@ class SwarmAgent:
             return result
 
         await self.pause.wait_if_paused()
+        # Process-global auth breaker: if credentials have expired, block here
+        # until the poller confirms they've recovered (Bug #4).
+        from ._circuit_breaker import get_breaker
+        _breaker = get_breaker()
+        if _breaker.is_tripped:
+            await self._emit("message", "[AUTH-BREAKER] Credentials unavailable — pausing until they recover.")
+        await _breaker.wait_if_tripped()
         result.status = AgentStatus.RUNNING
         await self._emit("status_change", AgentStatus.RUNNING.value)
 
@@ -544,6 +566,9 @@ class SwarmAgent:
                 if history:
                     self.backend._messages = history
         except Exception as e:
+            # A connect failure caused by expired credentials feeds the breaker;
+            # if it trips, sibling agents will pause on their next call (Bug #4).
+            await _breaker.record_failure(e)
             result.halted_by = "failed"
             result.status = AgentStatus.FAILED
             await self._emit("status_change", AgentStatus.FAILED.value)
@@ -617,6 +642,10 @@ class SwarmAgent:
         except Exception as e:
             logger.error(f"[ERROR] {self.spec.name}: crashed: {e}")
             await self._emit("message", f"[ERROR] Agent crashed: {e}")
+            # Classify against the auth breaker before recovery so an
+            # expired-creds crash pauses the swarm rather than hot-looping (Bug #4).
+            from ._circuit_breaker import get_breaker
+            await get_breaker().record_failure(e)
             if not self.spec.stateless:
                 recovered = await self._attempt_recovery(result, config)
                 if not recovered:

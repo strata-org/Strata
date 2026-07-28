@@ -31,10 +31,24 @@ def _cheat_sheet_defaults() -> tuple[bool, str]:
     return use, path
 
 MAX_STAGE_RETRIES = 5
-PROVER_TIMEOUT = 86400
 MONITOR_INTERVAL = 600
 THINKING_MAX_TURNS = 20
 ROUTER_MAX_TURNS = 3
+
+# ─── Prover watchdog / escalation ladder (Bug #2) ──────────────────────────────
+# The TM monitor ticks every MONITOR_INTERVAL. During PROVING it escalates on
+# wall-clock elapsed since the current prover instance started (state.prover_start,
+# which resets on each (re)dispatch):
+#   warn      → nudge the prover once it has been running a while
+#   redispatch→ a fresh prover on top of a likely-wedged one (bounded by MAX_REDISPATCHES)
+#   terminate → give up: kill the prover, salvage via VALIDATE, then REPORT
+# Before every redispatch/terminate we run the authoritative verify_no_sorry oracle
+# on the REAL target — a spinning-but-actually-done prover is escalated to
+# PROVER_DONE (success) instead of being killed.
+PROVER_WARN = 7200          # 2h on one instance → nudge
+PROVER_REDISPATCH = 21600   # 6h on one instance → restart a wedged prover
+PROVER_TIMEOUT = 86400      # 24h absolute per instance → hard give-up backstop
+MAX_REDISPATCHES = 2
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -156,6 +170,13 @@ class WorkflowState:
     active_handler: Handler = Handler.CLARIFIER
     history: list[str] = field(default_factory=list)
     validation: dict = field(default_factory=dict)
+    # Prover watchdog (Bug #2): escalation bookkeeping. warned flips once we've
+    # nudged the current instance; redispatches counts fresh provers spun on top
+    # of a wedged one; force_terminate is set by the watchdog to route the next
+    # PROVER_DONE straight through the hard gate (bypass) into salvage-validate.
+    prover_warned: bool = False
+    redispatches: int = 0
+    force_terminate: bool = False
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -270,6 +291,10 @@ async def _state_idle(state: WorkflowState, agent) -> Transition:
                 state.sender = "system"
                 await agent._emit("message", "[TM] Prover task done — moving to validation.")
                 return Transition.PROVER_DONE
+            # Prover still running: run the watchdog / escalation ladder (Bug #2).
+            watchdog = await _prover_watchdog(state, agent)
+            if watchdog is not None:
+                return watchdog
         return Transition.MONITOR_TICK
 
     summary = messages_ch.peek_summary()
@@ -281,6 +306,105 @@ async def _state_idle(state: WorkflowState, agent) -> Transition:
         await agent._emit("message", f"[{sender}]: {payload_preview}")
 
     return Transition.MESSAGE_RECEIVED
+
+
+async def _target_proven(state: WorkflowState, agent) -> bool | None:
+    """Authoritative check: are the target theorems actually sorry-free NOW?
+
+    Runs the build-then-#print-axioms oracle (verify_no_sorry) directly on the
+    file the prover writes into (Sandbox/Stub.lean). Returns:
+      True  → all named targets are proven (no transitive sorry) — the prover is
+              spinning but its job is already done; escalate to PROVER_DONE.
+      False → at least one target still has a sorry / doesn't build.
+      None  → couldn't decide (no explicit theorem_names to enumerate, or the
+              oracle errored) — caller should fall back to time-based escalation.
+    """
+    import asyncio
+    names = list(state.task.get("theorem_names") or [])
+    if not names:
+        # "prove ALL sorries" mode — we can't enumerate the target set cheaply
+        # here, so defer to the time-based ladder and let VALIDATE be the judge.
+        return None
+    target_file = "StrataAgent/Sandbox/Stub.lean"
+    try:
+        from .po_lean import get_lean_tools
+        tools = get_lean_tools()
+        result = await asyncio.to_thread(tools.axioms_by_theorem, target_file, names)
+        if not result.build_ok:
+            return False
+        return all(result.is_proven(n) for n in names)
+    except Exception as e:
+        await agent._emit("message", f"[TM watchdog] oracle check failed ({e}) — deferring to time-based escalation.")
+        return None
+
+
+async def _prover_watchdog(state: WorkflowState, agent) -> Transition | None:
+    """Escalation ladder for a still-running prover (Bug #2).
+
+    Called on each idle MONITOR_TICK while PROVING. Escalates on wall-clock
+    elapsed since the CURRENT prover instance started (state.prover_start resets
+    on every (re)dispatch):
+        < WARN         → keep monitoring
+        WARN..REDISP   → nudge once, keep monitoring
+        REDISP..TIMEOUT→ verify target; if done→PROVER_DONE, else redispatch a
+                         fresh prover (up to MAX_REDISPATCHES), else terminate
+        >= TIMEOUT     → verify target; if done→PROVER_DONE, else terminate
+    Terminate = kill the prover, then route to VALIDATE (which salvages whatever
+    the prover left in Stub.lean and reports honestly). Returns a Transition to
+    force, or None to keep monitoring.
+    """
+    if state.prover_start <= 0:
+        return None
+    elapsed = time.monotonic() - state.prover_start
+
+    if elapsed < PROVER_WARN:
+        return None
+
+    # Warn tier — one nudge, then keep waiting.
+    if elapsed < PROVER_REDISPATCH:
+        if not state.prover_warned:
+            state.prover_warned = True
+            mins = int(elapsed // 60)
+            await agent._emit("message",
+                f"[TM watchdog] Prover {state.prover_agent_name or '?'} has run {mins}m "
+                f"with no completion — will restart it at {PROVER_REDISPATCH // 3600}h if still stuck.")
+        return None
+
+    # Redispatch/terminate tiers — first ask the oracle whether the prover is
+    # secretly already done (spinning past success).
+    proven = await _target_proven(state, agent)
+    if proven is True:
+        state.prover_done = True
+        state.raw_input = "Watchdog: target verified sorry-free while prover still running."
+        state.sender = "system"
+        await agent._emit("message", "[TM watchdog] Target is already proven — escalating to validation.")
+        return Transition.PROVER_DONE
+
+    # Redispatch tier: restart a wedged prover a bounded number of times.
+    if elapsed < PROVER_TIMEOUT and state.redispatches < MAX_REDISPATCHES:
+        state.redispatches += 1
+        mins = int(elapsed // 60)
+        await agent._emit("message",
+            f"[TM watchdog] Prover wedged after {mins}m (restart "
+            f"{state.redispatches}/{MAX_REDISPATCHES}) — killing and re-dispatching a fresh prover.")
+        await _cleanup_prover(agent)
+        # _dispatch_prover resets prover_start; clear the warn flag for the new instance.
+        state.prover_warned = False
+        await _dispatch_prover(state, agent, resume=True)
+        return Transition.MONITOR_TICK
+
+    # Terminate tier: out of restarts or past the absolute timeout. Kill the
+    # prover and salvage-validate whatever it produced.
+    mins = int(elapsed // 60)
+    await agent._emit("message",
+        f"[TM watchdog] Prover exhausted watchdog budget after {mins}m "
+        f"({state.redispatches} restart(s)) — terminating and validating salvage.")
+    state.force_terminate = True
+    state.prover_done = True
+    state.raw_input = "Watchdog: prover terminated after exceeding time/restart budget."
+    state.sender = "system"
+    await _cleanup_prover(agent)
+    return Transition.PROVER_DONE
 
 
 async def _state_thinking(state: WorkflowState, agent) -> Transition:
@@ -392,6 +516,14 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
             f"[TM] Prover {state.prover_agent_name or '?'} already running — "
             f"ignoring re-dispatch (only one prover at a time).")
         return
+
+    # Don't dispatch into dead credentials — wait for the auth breaker to recover
+    # so we don't spawn a prover that can't authenticate (Bug #4).
+    from .._circuit_breaker import get_breaker
+    _breaker = get_breaker()
+    if _breaker.is_tripped:
+        await agent._emit("message", "[TM] Auth breaker tripped — waiting for credentials before dispatching prover.")
+        await _breaker.wait_if_tripped()
 
     task = UserIntent(**{k: v for k, v in state.task.items() if k in UserIntent.__dataclass_fields__})
 
@@ -552,6 +684,9 @@ async def _state_report(state: WorkflowState, agent) -> Transition:
     state.prover_start = 0.0
     state.prover_done = False
     state.prover_agent_name = None
+    state.prover_warned = False
+    state.redispatches = 0
+    state.force_terminate = False
     state.validation = {}
     state.mode = WorkflowMode.NO_TASK
     state.active_handler = Handler.CLARIFIER

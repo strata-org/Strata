@@ -459,6 +459,15 @@ class LemmaLedger:
                 entry.status = LemmaStatus.CONTINGENT
                 entry.priority_boost = False
 
+    def mark_pending(self, entry_id: str, priority_boost: bool = False):
+        """Re-activate an entry to PENDING so SELECT re-picks it. Used to re-decompose
+        a parent whose child gave up (priority_boost=True makes it jump the queue)."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if entry:
+                entry.status = LemmaStatus.PENDING
+                entry.priority_boost = priority_boost
+
     def mark_proved(self, entry_id: str, import_path: str, proved_by: str = "direct"):
         with self._lock:
             entry = self._entries.get(entry_id)
