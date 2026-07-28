@@ -9,6 +9,9 @@ import all Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Semantics
 import all Strata.DL.Lambda.TypeFactoryWF
 import all Strata.DL.Lambda.FactoryWF
+public import Strata.DL.Lambda.LExpr
+public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.Factory
 
 /-!
 ## Typing Assumptions
@@ -84,7 +87,7 @@ def OpsConsistent (F : @Factory T) : LExpr T.mono → Prop := fun e =>
 /-- Declarative form of `OpsConsistent` as an inductive relation. The `.op` case
 requires that *some* type substitution turns the function's generic type into the
 node's annotation; operators not in the factory are unconstrained. -/
-inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
+public inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
   | const {m c} : OpsConsistentR F (.const m c)
   | bvar {m i} : OpsConsistentR F (.bvar m i)
   | fvar {m name ty} : OpsConsistentR F (.fvar m name ty)
