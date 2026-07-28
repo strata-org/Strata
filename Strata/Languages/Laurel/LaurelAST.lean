@@ -952,6 +952,15 @@ structure TypeLattice where
   /-- Type names that are treated as the gradual/dynamic top type (consistent with everything).
       Set by language frontends (e.g. Python pipeline registers `"Any"` here). -/
   gradualTypes : Std.HashSet String := {}
+  /-- Names RESERVED by the frontend's coercion machinery: the box/unbox bridge procedures
+      and datatype constructors/accessors the `realizeCoercion` realizer synthesizes calls to
+      (e.g. the Python pipeline's `from_int`, `Any_sets!`, `Any..as_Dict!`, `int_to_real`,
+      `exception`). The realizer inserts calls to these by bare name and assumes they always
+      resolve to their prelude declarations; a user binding that shadowed one would break that
+      assumption (the synthesized call would re-resolve to the local). So a local/parameter/
+      quantifier binding whose name is reserved is rejected at its binding site with a user
+      diagnostic, exactly as a keyword would be. Empty for native Laurel (no reservations). -/
+  reservedNames : Std.HashSet String := {}
   /-- Caller-supplied REALIZER for an abstract `Coercion` verdict: maps the verdict
       plus the term being coerced to a rewritten term carrying the concrete runtime
       coercion call. `none` (the default, for native Laurel) means "identity" — no

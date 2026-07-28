@@ -205,6 +205,21 @@ private def freshId : ResolveM Nat := do
     `defineNameCheckDup` for the checked variant. -/
 private def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
   let resolutionName := overrideResolutionName.getD iden.text
+  -- A value binding (local/parameter/quantifier var) may not shadow a name RESERVED by the
+  -- frontend's coercion machinery (see `TypeLattice.reservedNames`): the realizer synthesizes
+  -- calls to those names by bare identifier and assumes they resolve to their prelude
+  -- declarations, so a shadowing binding would silently break coercion insertion (the
+  -- synthesized call would re-resolve to the local on a later pass). Reject at the binding
+  -- site with a user diagnostic, like a keyword. Only value bindings are gated; the reserved
+  -- names' own top-level declarations (static procedures / datatype constructors+destructors)
+  -- are exempt so the prelude can define them.
+  let isValueBinding := match node with
+    | .var .. | .parameter .. | .quantifierVar .. => true
+    | _ => false
+  if isValueBinding && ((← get).typeLattice.reservedNames.contains resolutionName) then
+    let diag := diagnosticFromSource iden.source
+      s!"'{resolutionName}' is a reserved name and cannot be used as a local variable, parameter, or bound variable"
+    modify fun s => { s with errors := s.errors.push diag }
   let (name', uniqueId) ← match iden.uniqueId with
     | some uid => pure (iden, uid)
     | none =>
@@ -641,6 +656,31 @@ private def checkSubtype (source : FileRange) (expected : HighTypeMd) (actual : 
     `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
     as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
     position) inserts no coercion. -/
+-- Stamp `uniqueId`s onto the `StaticCall` callees of a realizer-synthesized coercion
+-- term, using ids already registered in `scope`. Only fills a callee whose `uniqueId`
+-- is `none` and whose scope entry is a callable target (static procedure or datatype
+-- constructor/destructor) — the kinds the realizer's bridge calls resolve to. A scope
+-- miss, or a hit of any other kind (a user local/parameter/quantifier-var that happens
+-- to share a bridge name), is left untouched (no diagnostic), so a genuinely-unresolved
+-- synthesized name still fails loud in `heapParameterizationPass`. This mirrors the kind
+-- gate `resolveRef` applies to user-written references. Recurses into arguments. Pure
+-- (does not touch resolver state or push errors).
+private partial def stampSynthesizedCallIds (scope : Scope) (e : StmtExprMd) : StmtExprMd :=
+  match e.val with
+  | .StaticCall callee args =>
+    let callee' :=
+      match callee.uniqueId with
+      | some _ => callee
+      | none => match scope.get? callee.text with
+        | some (uid, node) =>
+          if #[ResolvedNodeKind.staticProcedure, .datatypeConstructor, .datatypeDestructor].contains node.kind
+          then { callee with uniqueId := some uid }
+          else callee
+        | none => callee
+    let args' := args.map (stampSynthesizedCallIds scope)
+    { e with val := .StaticCall callee' args' }
+  | _ => e
+
 private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
     (e : StmtExprMd) : ResolveM StmtExprMd := do
   let ctx := (← get).typeLattice
@@ -651,7 +691,16 @@ private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : High
   else match coerce ctx actual' expected' with
     | some verdict =>
       match ctx.realizeCoercion with
-      | some realize => pure (realize verdict e)
+      | some realize =>
+        -- The realizer synthesizes box/unbox bridge calls (e.g. `from_int`,
+        -- `Any..as_Dict!`, `Any_sets!`) with `uniqueId = none`. Stamp each such call's
+        -- callee with the uniqueId already registered in scope (they are declared prelude
+        -- procedures / `Any` datatype constructors+accessors), so downstream passes —
+        -- notably `heapParameterizationPass` — see resolved names and need no name-list
+        -- allowlist. A scope miss leaves `uniqueId = none` untouched (no diagnostic pushed):
+        -- a genuinely-unresolved synthesized name then fails loud in the heap pass, as intended.
+        let s ← get
+        pure (stampSynthesizedCallIds s.scope (realize verdict e))
       | none => pure e
     | none =>
       typeMismatch source none s!"expected '{formatType expected}'" actual
@@ -794,7 +843,10 @@ the unique match or reports an ambiguous / unresolved call. -/
     `overloadAccepts` uses to select an overload, so "overlapping parameters"
     and "a single call both overloads accept" stay in agreement. -/
 private def typesOverlap (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
-  isConsistentSubtype ctx a b || isConsistentSubtype ctx b a
+  -- Realizer-independent: clear the realizer so numeric widening (int→real) does not make
+  -- the built-in `$add(int,int)`/`$add(real,real)` pairs register as conflicting overloads.
+  let ctxNoWiden := { ctx with realizeCoercion := none }
+  isConsistentSubtype ctxNoWiden a b || isConsistentSubtype ctxNoWiden b a
 
 /-- Two static-procedure signatures conflict — i.e. cannot coexist as overloads —
     when they have the same arity and every parameter pair's types overlap
@@ -842,7 +894,11 @@ private def overloadAccepts (ctx : TypeLattice) (proc : Procedure)
     picking the first declaration. -/
 private def selectOverloads (ctx : TypeLattice) (candidates : List (Nat × Procedure))
     (argTys : List HighTypeMd) : List (Nat × Procedure) :=
-  candidates.filter (fun (_, p) => overloadAccepts ctx p argTys)
+  -- Prefer overloads matching without numeric widening (an exact int match beats a
+  -- widened int→real one); fall back to widened matches only when none match exactly.
+  let accepted := candidates.filter (fun (_, p) => overloadAccepts ctx p argTys)
+  let exact := accepted.filter (fun (_, p) => overloadAccepts { ctx with realizeCoercion := none } p argTys)
+  if exact.isEmpty then accepted else exact
 
 /-- Recover the uniqueId that `preRegisterStaticProcedure` assigned to *this*
     overload. The flat `scope` only remembers the last overload per name, so for
@@ -5535,7 +5591,8 @@ private def validateInvokeOnGlobalWrites (program : Program)
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
-    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none) : ResolutionResult :=
+    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
+    (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
     preRegisterTopLevel program
@@ -5547,7 +5604,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
   let typeLattice := { TypeLattice.ofTypes program.types with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
+    reservedNames := reservedNames }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
@@ -5673,6 +5731,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
+    (reservedNames : Std.HashSet String := {})
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array Message :=
   -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
@@ -5723,7 +5782,8 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
   -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
   -- differ between passes, producing spurious "resolution introduced this diagnostic".
   let typeLattice := { TypeLattice.ofTypes (uc.datatypes.map .Datatype ++ additionalTypes) with
-    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
+    reservedNames := reservedNames }
   let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
 
   -- Phase 2: build refToDef from the resolved unordered core

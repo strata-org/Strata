@@ -160,6 +160,7 @@ private def runLaurelPasses
   -- Initial resolution
   let result := resolve program (gradualTypes := options.gradualTypes)
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+                  (reservedNames := options.reservedNames)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
@@ -180,6 +181,7 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model) (gradualTypes := options.gradualTypes)
                       (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+                      (reservedNames := options.reservedNames)
       let newErrors := newPostPassResolutionErrors resolutionErrors allDiags result.errors
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
@@ -265,7 +267,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     -- and a well-formed gradually-typed program is rejected here. See the note on
     -- `resolveUnorderedCore` in `Resolution.lean`.
     let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
-                              options.gradualTypes options.realizeCoercion options.toBool
+                              options.gradualTypes options.realizeCoercion options.toBool options.reservedNames
     if !errors.isEmpty then
       let newDiags := errors.toList.map fun d =>
         { d with
@@ -282,7 +284,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     ucDiags := ucDiags ++ passPassDiags
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes options.gradualTypes options.realizeCoercion options.toBool
+      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes options.gradualTypes options.realizeCoercion options.toBool options.reservedNames
       if !errors.isEmpty then
         let newDiags := errors.toList.map fun d =>
           { d with message :=

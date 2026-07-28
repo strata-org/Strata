@@ -59,6 +59,10 @@ structure LaurelTranslateOptions where
   realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
   /-- Caller truthiness hook (Python str_to_bool/etc.); threaded to TypeLattice.toBool. -/
   toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
+  /-- Names reserved by the frontend's coercion machinery (the realizer's box/unbox bridge
+      procedures + datatype constructors/accessors). A value binding may not shadow one; see
+      `TypeLattice.reservedNames`. Threaded onto `TypeLattice`. Empty for native Laurel. -/
+  reservedNames : Std.HashSet String := {}
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}
