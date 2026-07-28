@@ -41,6 +41,19 @@ theorem RComp.mono {A : Type} {R₁ R₁' R₂ R₂' : Relation A}
   obtain ⟨b, hr₁, hr₂⟩ := h
   exact ⟨b, h₁ _ _ hr₁, h₂ _ _ hr₂⟩
 
+/-- `r` is *dense* when every related pair has an interpolating midpoint:
+    `r a c` splits into `r a b` and `r b c`.  This is exactly `r ⊆ RComp r r`,
+    the dual of `RComp.collapse`'s `RComp r r ⊆ r` (transitivity): density lets a
+    single relatedness fact be re-expressed as the two-step form that a composed
+    relation consumes. -/
+@[expose] def Dense (r : Relation A) : Prop := ∀ a c, r a c → ∃ b, r a b ∧ r b c
+
+/-- Any reflexive relation is dense: split `r a c` at the endpoint `a` using
+    `r a a`.  In particular equality is dense, which is why the shared-start
+    (`· = ·`) composition combinators need no separate density hypothesis. -/
+theorem Reflexive.dense {A : Type} {r : Relation A} (h : Reflexive r) : Dense r :=
+  fun a _c hac => ⟨a, h a, hac⟩
+
 inductive ReflTrans {A: Type} (r: Relation A) : Relation A where
   | refl : ∀ x, ReflTrans r x x
   | step: ∀ x y z, r x y → ReflTrans r y z → ReflTrans r x z
