@@ -151,13 +151,14 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       The block is non-empty and contains no `inline` functions. `Γ` is unchanged.
       The stub/full factories add the *same* set of names, so `Cstub` and `C'`
       have the same function-name domain. -/
-  | recFuncBlock : ∀ C Cstub C' Γ funcs md,
+  | recFuncBlock : ∀ C Cstub C' Γ funcs md stubs fullFuncs,
       funcs ≠ [] →
       (∀ f ∈ funcs, ∀ a ∈ f.attr, a ≠ .inline) →
-      FactoryExtendedBy C Cstub
-        (funcs.map (fun f => { name := f.name, typeArgs := f.typeArgs,
-                               inputs := f.inputs, output := f.output })) →
-      FactoryExtendedBy C C' (funcs.map (·.toLFunc)) →
+      stubs = funcs.map (fun f => { name := f.name, typeArgs := f.typeArgs,
+                                    inputs := f.inputs, output := f.output }) →
+      fullFuncs = funcs.map (·.toLFunc) →
+      FactoryExtendedBy C Cstub stubs →
+      FactoryExtendedBy C C' fullFuncs →
       (∀ f ∈ funcs, FuncHasType' τ Cstub Γ f) →
       DeclHasType' τ P C Γ (.recFuncBlock funcs md) C' Γ
 
