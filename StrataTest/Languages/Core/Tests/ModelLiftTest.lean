@@ -179,7 +179,7 @@ def quantModelPgm : Program :=
 program Core;
 procedure P(x : int)
 spec {
-  ensures [bad]: (forall q : int :: q < x);
+  ensures [bad]: (forall q : int :: int.lt(q, x));
 }
 {
 };

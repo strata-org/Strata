@@ -20,13 +20,13 @@ program Core;
 const x : real;
 const y : real;
 
-axiom [real_x_ge_1]: x >= 1.0;
-axiom [real_y_ge_2]: y >= 2.0;
+axiom [real_x_ge_1]: real.ge(x, 1.0);
+axiom [real_y_ge_2]: real.ge(y, 2.0);
 
 procedure P()
 {
-  assert [real_add_ge_good]: x + y >= 3.0;
-  assert [real_add_ge_bad]: x + y >= 4.0;
+  assert [real_add_ge_good]: real.ge(real.add(x, y), 3.0);
+  assert [real_add_ge_bad]: real.ge(real.add(x, y), 4.0);
 };
 #end
 
@@ -40,12 +40,12 @@ info: program Core;
 
 function x () : real;
 function y () : real;
-axiom [real_x_ge_1]: x >= 1.0;
-axiom [real_y_ge_2]: y >= 2.0;
+axiom [real_x_ge_1]: real.ge(x, 1.0);
+axiom [real_y_ge_2]: real.ge(y, 2.0);
 procedure P ()
 {
-  assert [real_add_ge_good]: x + y >= 3.0;
-  assert [real_add_ge_bad]: x + y >= 4.0;
+  assert [real_add_ge_good]: real.ge(real.add(x, y), 3.0);
+  assert [real_add_ge_bad]: real.ge(real.add(x, y), 4.0);
 };
 -/
 #guard_msgs in
@@ -59,18 +59,18 @@ VCs:
 Label: real_add_ge_good
 Property: assert
 Assumptions:
-real_x_ge_1: x >= 1.0
-real_y_ge_2: y >= 2.0
+real_x_ge_1: real.ge(x, 1.0)
+real_y_ge_2: real.ge(y, 2.0)
 Obligation:
-x + y >= 3.0
+real.ge(real.add(x, y), 3.0)
 
 Label: real_add_ge_bad
 Property: assert
 Assumptions:
-real_x_ge_1: x >= 1.0
-real_y_ge_2: y >= 2.0
+real_x_ge_1: real.ge(x, 1.0)
+real_y_ge_2: real.ge(y, 2.0)
 Obligation:
-x + y >= 4.0
+real.ge(real.add(x, y), 4.0)
 
 ---
 info:
@@ -91,22 +91,22 @@ def bvPgm : Program :=
 #strata
 program Core;
 
-const x : bv8;
-const y : bv8;
+const x : bv W8;
+const y : bv W8;
 
-axiom [bv_x_ge_1]: bv{8}(1) <= x;
-axiom [bv_y_ge_2]: bv{8}(2) <= y;
+axiom [bv_x_ge_1]: bv8.uLe(bv{8}(1), x);
+axiom [bv_y_ge_2]: bv8.uLe(bv{8}(2), y);
 
 procedure P()
 {
-  assert [bv_add_ge]: x + y == y + x;
+  assert [bv_add_ge]: bv8.add(x, y) == bv8.add(y, x);
 };
 
-procedure Q(x: bv1, out r: bv1)
+procedure Q(x: bv W1, out r: bv W1)
 spec {
-  ensures r == x - x;
+  ensures r == bv1.sub(x, x);
 } {
-  r := x + x;
+  r := bv1.add(x, x);
 };
 #end
 
@@ -118,19 +118,19 @@ spec {
 /--
 info: program Core;
 
-function x () : bv8;
-function y () : bv8;
-axiom [bv_x_ge_1]: bv{8}(1) <= x;
-axiom [bv_y_ge_2]: bv{8}(2) <= y;
+function x () : bv W8;
+function y () : bv W8;
+axiom [bv_x_ge_1]: bv8.uLe(bv{8}(1), x);
+axiom [bv_y_ge_2]: bv8.uLe(bv{8}(2), y);
 procedure P ()
 {
-  assert [bv_add_ge]: x + y == y + x;
+  assert [bv_add_ge]: bv8.add(x, y) == bv8.add(y, x);
 };
-procedure Q (x : bv1, out r : bv1)
+procedure Q (x : bv W1, out r : bv W1)
 spec {
-  ensures [Q_ensures_0]: r == x - x;
+  ensures [Q_ensures_0]: r == bv1.sub(x, x);
   } {
-  r := x + x;
+  r := bv1.add(x, x);
 };
 -/
 #guard_msgs in
@@ -144,18 +144,18 @@ VCs:
 Label: bv_add_ge
 Property: assert
 Assumptions:
-bv_x_ge_1: bv{8}(1) <= x
-bv_y_ge_2: bv{8}(2) <= y
+bv_x_ge_1: bv8.uLe(bv{8}(1), x)
+bv_y_ge_2: bv8.uLe(bv{8}(2), y)
 Obligation:
-x + y == y + x
+bv8.add(x, y) == bv8.add(y, x)
 
 Label: Q_ensures_0
 Property: assert
 Assumptions:
-bv_x_ge_1: bv{8}(1) <= x
-bv_y_ge_2: bv{8}(2) <= y
+bv_x_ge_1: bv8.uLe(bv{8}(1), x)
+bv_y_ge_2: bv8.uLe(bv{8}(2), y)
 Obligation:
-x@1 + x@1 == x@1 - x@1
+bv1.add(x@1, x@1) == bv1.sub(x@1, x@1)
 
 ---
 info:
@@ -174,17 +174,17 @@ def bvMoreOpsPgm : Program :=
 #strata
 program Core;
 
-procedure P(x: bv8, y: bv8, z: bv8) {
-  assert [add_comm]: x + y == y + x;
-  assert [xor_cancel]: x ^ x == bv{8}(0);
-  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
-  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
-  assert [demorgan]: ~(x & y) == ~x | ~y;
-  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
-  assert [bad_shift]: x >> y == x << y;
-  var xy : bv16 := bvconcat{8}{8}(x, y);
-  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
+procedure P(x: bv W8, y: bv W8, z: bv W8) {
+  assert [add_comm]: bv8.add(x, y) == bv8.add(y, x);
+  assert [xor_cancel]: bv8.xor(x, x) == bv{8}(0);
+  assert [div_shift]: bv8.uDiv(x, bv{8}(2)) == bv8.uShr(x, bv{8}(1));
+  assert [mul_shift]: bv8.mul(x, bv{8}(2)) == bv8.shl(x, bv{8}(1));
+  assert [demorgan]: bv8.not(bv8.and(x, y)) == bv8.or(bv8.not(x), bv8.not(y));
+  assert [mod_and]: bv8.uMod(x, bv{8}(2)) == bv8.and(x, bv{8}(1));
+  assert [bad_shift]: bv8.uShr(x, y) == bv8.shl(x, y);
+  var xy : bv W16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv W32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv W64 := bvconcat{32}{32}(xy2, xy2);
 };
 #end
 

@@ -32,15 +32,15 @@ const x : int;
 axiom [a1]: x == 5;
 
 function f(a: int): int;
-axiom [f1]: (forall y : int :: f(y) > y);
+axiom [f1]: (forall y : int :: int.gt(f(y), y));
 
 procedure P(out ret : int)
   spec {
-    ensures [use_f1]: ret > 7;
+    ensures [use_f1]: int.gt(ret, 7);
   }
 {
   var t : int;
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     t := f(x);
   } else {
     t := 0;
@@ -59,15 +59,15 @@ const x : int;
 axiom [a1]: x == 5;
 
 function f(a: int): int;
-axiom [f1]: (forall y : int :: f(y) > y);
+axiom [f1]: (forall y : int :: int.gt(f(y), y));
 
 procedure P(out ret : int)
   spec {
-    ensures [use_f1]: ret > 7;
+    ensures [use_f1]: int.gt(ret, 7);
   }
 {
   var t : int;
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     t := f(x);
   } else {
     t := 0;

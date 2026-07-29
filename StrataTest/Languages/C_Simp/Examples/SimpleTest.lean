@@ -89,17 +89,17 @@ VCs:
 Label: test_assert
 Property: assert
 Assumptions:
-pre: y@1 > 0
+pre: int.gt(y@1, 0)
 Obligation:
-x@1 + y@1 > x@1
+int.gt(int.add(x@1, y@1), x@1)
 
 Label: post
 Property: assert
 Assumptions:
-pre: y@1 > 0
-<label_ite_cond_true: z > 10>: if x@1 + y@1 > 10 then x@1 + y@1 > 10 else true
-<label_ite_cond_false: !(z > 10)>: if if x@1 + y@1 > 10 then false else true then if x@1 + y@1 > 10 then false else true else true
-test_assume: (if x@1 + y@1 > 10 then x@1 + y@1 - 1 else x@1 + y@1 + 1) > 0
+pre: int.gt(y@1, 0)
+<label_ite_cond_true: int.gt(z, 10)>: if int.gt(int.add(x@1, y@1), 10) then int.gt(int.add(x@1, y@1), 10) else true
+<label_ite_cond_false: !(int.gt(z, 10))>: if if int.gt(int.add(x@1, y@1), 10) then false else true then if int.gt(int.add(x@1, y@1), 10) then false else true else true
+test_assume: int.gt(if int.gt(int.add(x@1, y@1), 10) then int.sub(int.add(x@1, y@1), 1) else int.add(int.add(x@1, y@1), 1), 0)
 Obligation:
 true
 

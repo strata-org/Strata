@@ -17,15 +17,15 @@ namespace Strata
 protected def simpleAdd : Program :=
 #strata
 program Core;
-procedure simpleAdd (x : bv32, y : bv32) {
+procedure simpleAdd (x : bv W32, y : bv W32) {
 
-  assume (x < bv{32}(0xFFFF0000));
-  assume (y < bv{32}(0x00001111));
+  assume (bv32.uLt(x, bv{32}(0xFFFF0000)));
+  assume (bv32.uLt(y, bv{32}(0x00001111)));
 
-  var z : bv32 := bv{32}(0);
-  z := x + y;
+  var z : bv W32 := bv{32}(0);
+  z := bv32.add(x, y);
 
-  assert [z_assertion]: (z < bv{32}(0xFFFF1110));
+  assert [z_assertion]: (bv32.uLt(z, bv{32}(0xFFFF1110)));
 
 };
 #end

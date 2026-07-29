@@ -21,14 +21,14 @@ open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.S
 /--
 info: ok: (procedure P (x : int, out y : int)
  spec {
-   requires [|0_lt_x|]: 0 < x;
-   ensures [ret_y_lt_0]: y < 0;
+   requires [|0_lt_x|]: int.lt(0, x);
+   ensures [ret_y_lt_0]: int.lt(y, 0);
    } {
-   y := 0 - x;
+   y := int.sub(0, x);
  };
  ,
  context:
- types:   ⏎
+ types:   
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in

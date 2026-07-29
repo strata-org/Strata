@@ -23,13 +23,13 @@ program Core;
 
 procedure Double(n : int, out result : int)
 spec {
-  ensures [double_correct]: (result == n * 2);
+  ensures [double_correct]: (result == int.mul(n, 2));
 }
 {
-  assume [test]: (n >= 2);
-  assume [test]: (n >= 0);
-  result := n + n;
-  assert [after_double_internal]: (result >= 4);
+  assume [test]: int.ge(n, 2);
+  assume [test]: int.ge(n, 0);
+  result := int.add(n, n);
+  assert [after_double_internal]: int.ge(result, 4);
 };
 #end
 
@@ -43,18 +43,18 @@ VCs:
 Label: after_double_internal
 Property: assert
 Assumptions:
-test: n@1 >= 2
-test_1: n@1 >= 0
+test: int.ge(n@1, 2)
+test_1: int.ge(n@1, 0)
 Obligation:
-n@1 + n@1 >= 4
+int.ge(int.add(n@1, n@1), 4)
 
 Label: double_correct
 Property: assert
 Assumptions:
-test: n@1 >= 2
-test_1: n@1 >= 0
+test: int.ge(n@1, 2)
+test_1: int.ge(n@1, 0)
 Obligation:
-n@1 + n@1 == n@1 * 2
+int.add(n@1, n@1) == int.mul(n@1, 2)
 
 ---
 info:

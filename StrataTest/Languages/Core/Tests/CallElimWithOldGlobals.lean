@@ -89,8 +89,8 @@ private def oldInoutRenamedPgm :=
 program Core;
 
 procedure inc(inout x : int)
-spec { ensures (x == old x + 1); }
-{ x := x + 1; };
+spec { ensures (x == int.add(old x, 1)); }
+{ x := int.add(x, 1); };
 
 procedure caller(out r : int)
 spec { ensures (r == 1); }
@@ -126,13 +126,13 @@ program Core;
 
 procedure shift(inout x : int, inout y : int)
 spec {
-  ensures (x == old y + 1);
-  ensures (y == old x + 2);
+  ensures (x == int.add(old y, 1));
+  ensures (y == int.add(old x, 2));
 }
 {
   var tx : int := x;
-  x := y + 1;
-  y := tx + 2;
+  x := int.add(y, 1);
+  y := int.add(tx, 2);
 };
 
 procedure caller2(out r1 : int, out r2 : int)
@@ -182,13 +182,13 @@ program Core;
 
 procedure shift(inout x : int, inout y : int)
 spec {
-  ensures (x == old y + 1);
-  ensures (y == old x + 2);
+  ensures (x == int.add(old y, 1));
+  ensures (y == int.add(old x, 2));
 }
 {
   var tx : int := x;
-  x := y + 1;
-  y := tx + 2;
+  x := int.add(y, 1);
+  y := int.add(tx, 2);
 };
 
 procedure callerSwap(out r1 : int, out r2 : int)

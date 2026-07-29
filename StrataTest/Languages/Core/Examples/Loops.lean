@@ -39,17 +39,17 @@ program Core;
 
 procedure countUp(n : int, out i : int)
 spec {
-  requires (n >= 0);
+  requires (int.ge(n, 0));
   ensures (i == n);
 }
 {
   i := 0;
-  while (i < n)
+  while (int.lt(i, n))
     decreases n // WRONG
-    invariant 0 <= i
-    invariant i <= n
+    invariant int.le(0, i)
+    invariant int.le(i, n)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -61,17 +61,17 @@ before_loop$_7:
   i := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5]: 0 <= i;
-  assert [inv$_6]: i <= n;
+  assert [inv$_5]: int.le(0, i);
+  assert [inv$_6]: int.le(i, n);
   var loop_measure$_2 : int;
   assume [assume_loop_measure$_2]: loop_measure$_2 == n;
-  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
+  condGoto int.lt(i, n) l$_4 end$_0
 l$_4:
-  i := i + 1;
+  i := int.add(i, 1);
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: n < loop_measure$_2;
+  assert [measure_decrease_loop_measure$_2]: int.lt(n, loop_measure$_2);
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -120,21 +120,21 @@ program Core;
 
 procedure sum(n : int, out s : int)
 spec {
-  requires (n >= 0);
-  ensures (s == ((n * (n + 1)) / 2));
+  requires (int.ge(n, 0));
+  ensures (s == int.safeDiv(int.mul(n, int.add(n, 1)), 2));
 }
 {
   var i : int;
   i := 0;
   s := 0;
-  while (i < n)
-    decreases n - i
-    invariant 0 <= i
-    invariant i <= n
-    invariant s == (i * (i + 1)) / 2
+  while (int.lt(i, n))
+    decreases int.sub(n, i)
+    invariant int.le(0, i)
+    invariant int.le(i, n)
+    invariant s == int.safeDiv(int.mul(i, int.add(i, 1)), 2)
   {
-    i := (i + 1);
-    s := (s + i);
+    i := int.add(i, 1);
+    s := int.add(s, i);
   }
 };
 #end
@@ -148,19 +148,19 @@ before_loop$_8:
   s := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_5]: 0 <= i;
-  assert [inv$_6]: i <= n;
-  assert [inv$_7]: s == i * (i + 1) / 2;
+  assert [inv$_5]: int.le(0, i);
+  assert [inv$_6]: int.le(i, n);
+  assert [inv$_7]: s == int.safeDiv(int.mul(i, int.add(i, 1)), 2);
   var loop_measure$_2 : int;
-  assume [assume_loop_measure$_2]: loop_measure$_2 == n - i;
-  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto i < n l$_4 end$_0
+  assume [assume_loop_measure$_2]: loop_measure$_2 == int.sub(n, i);
+  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
+  condGoto int.lt(i, n) l$_4 end$_0
 l$_4:
-  i := i + 1;
-  s := s + i;
+  i := int.add(i, 1);
+  s := int.add(s, i);
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: n - i < loop_measure$_2;
+  assert [measure_decrease_loop_measure$_2]: int.lt(int.sub(n, i), loop_measure$_2);
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -176,127 +176,127 @@ VCs:
 Label: sum_post_sum_ensures_1_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n@1 >= 0
+sum_requires_0: int.ge(n@1, 0)
 Obligation:
 true
 
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-sum_requires_0: n@2 >= 0
+sum_requires_0: int.ge(n@2, 0)
 Obligation:
 true
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Assumptions:
-sum_requires_0: n@2 >= 0
+sum_requires_0: int.ge(n@2, 0)
 Obligation:
 true
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_1
 Property: assert
 Assumptions:
-sum_requires_0: n@2 >= 0
+sum_requires_0: int.ge(n@2, 0)
 Obligation:
-0 <= n@2
+int.le(0, n@2)
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_2
 Property: assert
 Assumptions:
-sum_requires_0: n@2 >= 0
+sum_requires_0: int.ge(n@2, 0)
 Obligation:
 true
 
 Label: insertLoopInvAssert_measure_lb_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
+insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-!($__loop_measure_loop_0 < 0)
+!(int.lt($__loop_measure_loop_0, 0))
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
+insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-0 <= i@1 + 1
+int.le(0, int.add(i@1, 1))
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
+insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-i@1 + 1 <= n@2
+int.le(int.add(i@1, 1), n@2)
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
+insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-s@3 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
+int.add(s@3, int.add(i@1, 1)) == int.safeDiv(int.mul(int.add(i@1, 1), int.add(int.add(i@1, 1), 1)), 2)
 
 Label: insertLoopInvAssert_measure_decrease_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: int.lt(i, n)>: int.lt(0, n@2)
+loopElimAssume_guard_loop_1: int.lt(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_0: int.le(0, i@1)
+insertLoopInvAssume_invariant_loop_0_1: int.le(i@1, n@2)
+insertLoopInvAssume_invariant_loop_0_2: s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2)
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == int.sub(n@2, i@1)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
 Obligation:
-n@2 - (i@1 + 1) < $__loop_measure_loop_0
+int.lt(int.sub(n@2, int.add(i@1, 1)), $__loop_measure_loop_0)
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
-sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
-<label_ite_cond_true: i < n>: if 0 < n@2 then 0 < n@2 else true
-loopElimAssume_guard_loop_1: if 0 < n@2 then i@1 < n@2 else true
-insertLoopInvAssume_invariant_loop_0_0: if 0 < n@2 then 0 <= i@1 else true
-insertLoopInvAssume_invariant_loop_0_1: if 0 < n@2 then i@1 <= n@2 else true
-insertLoopInvAssume_invariant_loop_0_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
-insertLoopInvAssume_measure_loop_0: if 0 < n@2 then $__loop_measure_loop_0 == n@2 - i@1 else true
-loopElimAssume_not_guard_loop_1: if 0 < n@2 then !(i@2 < n@2) else true
-<label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
-insertLoopInvAssume_exit_invariant_loop_0_0: 0 <= (if 0 < n@2 then i@2 else 0)
-insertLoopInvAssume_exit_invariant_loop_0_1: (if 0 < n@2 then i@2 else 0) <= n@2
-insertLoopInvAssume_exit_invariant_loop_0_2: (if 0 < n@2 then s@4 else 0) == (if 0 < n@2 then i@2 else 0) * ((if 0 < n@2 then i@2 else 0) + 1) / 2
-insertLoopInvAssume_exit_not_guard_loop_0: !((if 0 < n@2 then i@2 else 0) < n@2)
+sum_requires_0: int.ge(n@2, 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: int.le(0, n@2)
+<label_ite_cond_true: int.lt(i, n)>: if int.lt(0, n@2) then int.lt(0, n@2) else true
+loopElimAssume_guard_loop_1: if int.lt(0, n@2) then int.lt(i@1, n@2) else true
+insertLoopInvAssume_invariant_loop_0_0: if int.lt(0, n@2) then int.le(0, i@1) else true
+insertLoopInvAssume_invariant_loop_0_1: if int.lt(0, n@2) then int.le(i@1, n@2) else true
+insertLoopInvAssume_invariant_loop_0_2: if int.lt(0, n@2) then s@3 == int.safeDiv(int.mul(i@1, int.add(i@1, 1)), 2) else true
+insertLoopInvAssume_measure_loop_0: if int.lt(0, n@2) then $__loop_measure_loop_0 == int.sub(n@2, i@1) else true
+loopElimAssume_not_guard_loop_1: if int.lt(0, n@2) then !(int.lt(i@2, n@2)) else true
+<label_ite_cond_false: !(int.lt(i, n))>: if if int.lt(0, n@2) then false else true then if int.lt(0, n@2) then false else true else true
+insertLoopInvAssume_exit_invariant_loop_0_0: int.le(0, if int.lt(0, n@2) then i@2 else 0)
+insertLoopInvAssume_exit_invariant_loop_0_1: int.le(if int.lt(0, n@2) then i@2 else 0, n@2)
+insertLoopInvAssume_exit_invariant_loop_0_2: (if int.lt(0, n@2) then s@4 else 0) == int.safeDiv(int.mul(if int.lt(0, n@2) then i@2 else 0, int.add(if int.lt(0, n@2) then i@2 else 0, 1)), 2)
+insertLoopInvAssume_exit_not_guard_loop_0: !(int.lt(if int.lt(0, n@2) then i@2 else 0, n@2))
 Obligation:
-(if 0 < n@2 then s@4 else 0) == n@2 * (n@2 + 1) / 2
+(if int.lt(0, n@2) then s@4 else 0) == int.safeDiv(int.mul(n@2, int.add(n@2, 1)), 2)
 
 ---
 info:
@@ -362,27 +362,27 @@ axiom [top100]: top == 100;
 
 procedure nested(n : int, out s : int)
 spec {
-  requires [n_pos]: n > 0;
-  requires [n_lt_top]: n < top;
+  requires [n_pos]: int.gt(n, 0);
+  requires [n_lt_top]: int.lt(n, top);
 } {
   var x: int;
   var y: int;
   x := 0;
-  while (x < n)
-    decreases (n - x)
-    invariant x >= 0
-    invariant x <= n
-    invariant n < top
+  while (int.lt(x, n))
+    decreases int.sub(n, x)
+    invariant int.ge(x, 0)
+    invariant int.le(x, n)
+    invariant int.lt(n, top)
   {
     y := 0;
-    while (y < x)
-      decreases (x - y)
-      invariant y >= 0
-      invariant y <= x
+    while (int.lt(y, x))
+      decreases int.sub(x, y)
+      invariant int.ge(y, 0)
+      invariant int.le(y, x)
     {
-      y := y + 1;
+      y := int.add(y, 1);
     }
-    x := x + 1;
+    x := int.add(x, 1);
   }
 };
 #end
@@ -396,39 +396,39 @@ before_loop$_15:
   x := 0;
   condGoto true loop_entry$_1 loop_entry$_1
 loop_entry$_1:
-  assert [inv$_12]: x >= 0;
-  assert [inv$_13]: x <= n;
-  assert [inv$_14]: n < re.none();
+  assert [inv$_12]: int.ge(x, 0);
+  assert [inv$_13]: int.le(x, n);
+  assert [inv$_14]: int.lt(n, re.none());
 
 -- Errors encountered during conversion:
 Unsupported construct in lopToExpr: 0-ary op not found: top
 Context: Global scope:
   freeVars: [n]
   var loop_measure$_2 : int;
-  assume [assume_loop_measure$_2]: loop_measure$_2 == n - x;
-  assert [measure_lb_loop_measure$_2]: !(loop_measure$_2 < 0);
-  condGoto x < n before_loop$_11 end$_0
+  assume [assume_loop_measure$_2]: loop_measure$_2 == int.sub(n, x);
+  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
+  condGoto int.lt(x, n) before_loop$_11 end$_0
 before_loop$_11:
   y := 0;
   condGoto true loop_entry$_5 loop_entry$_5
 loop_entry$_5:
-  assert [inv$_9]: y >= 0;
-  assert [inv$_10]: y <= x;
+  assert [inv$_9]: int.ge(y, 0);
+  assert [inv$_10]: int.le(y, x);
   var loop_measure$_6 : int;
-  assume [assume_loop_measure$_6]: loop_measure$_6 == x - y;
-  assert [measure_lb_loop_measure$_6]: !(loop_measure$_6 < 0);
-  condGoto y < x l$_8 l$_4
+  assume [assume_loop_measure$_6]: loop_measure$_6 == int.sub(x, y);
+  assert [measure_lb_loop_measure$_6]: !(int.lt(loop_measure$_6, 0));
+  condGoto int.lt(y, x) l$_8 l$_4
 l$_8:
-  y := y + 1;
+  y := int.add(y, 1);
   condGoto true measure_decrease$_7 measure_decrease$_7
 measure_decrease$_7:
-  assert [measure_decrease_loop_measure$_6]: x - y < loop_measure$_6;
+  assert [measure_decrease_loop_measure$_6]: int.lt(int.sub(x, y), loop_measure$_6);
   condGoto true loop_entry$_5 loop_entry$_5
 l$_4:
-  x := x + 1;
+  x := int.add(x, 1);
   condGoto true measure_decrease$_3 measure_decrease$_3
 measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: n - x < loop_measure$_2;
+  assert [measure_decrease_loop_measure$_2]: int.lt(int.sub(n, x), loop_measure$_2);
   condGoto true loop_entry$_1 loop_entry$_1
 end$_0:
   finish
@@ -514,18 +514,18 @@ program Core;
 
 procedure countdownByD(n : int, d : int, out i : int)
 spec {
-  requires (n >= 0);
-  requires (d > 0);
-  ensures (i >= 0);
-  ensures (i < d);
+  requires (int.ge(n, 0));
+  requires (int.gt(d, 0));
+  ensures (int.ge(i, 0));
+  ensures (int.lt(i, d));
 }
 {
   i := n;
-  while (i >= d)
-    decreases i / d
-    invariant i >= 0
+  while (int.ge(i, d))
+    decreases int.safeDiv(i, d)
+    invariant int.ge(i, 0)
   {
-    i := (i - d);
+    i := int.sub(i, d);
   }
 };
 #end
@@ -594,18 +594,18 @@ def precondElimInMeasureBadPgm :=
 program Core;
 procedure countdownByDBad(n : int, d : int, out i : int)
 spec {
-  requires (n >= 0);
+  requires (int.ge(n, 0));
   // requires (d > 0); NEED THIS
-  ensures (i >= 0);
-  ensures (i < d);
+  ensures (int.ge(i, 0));
+  ensures (int.lt(i, d));
 }
 {
   i := n;
-  while (i >= d)
-    decreases i / d
-    invariant i >= 0
+  while (int.ge(i, d))
+    decreases int.safeDiv(i, d)
+    invariant int.ge(i, 0)
   {
-    i := (i - d);
+    i := int.sub(i, d);
   }
 };
 #end
@@ -662,20 +662,20 @@ program Core;
 
 procedure countdownMutateD(n : int, d : int, out i : int)
 spec {
-  requires (n >= 0);
-  requires (d > 0);
-  ensures (i >= 0);
+  requires (int.ge(n, 0));
+  requires (int.gt(d, 0));
+  ensures (int.ge(i, 0));
 }
 {
   var k : int;
   i := n;
   k := d;
-  while (i >= 1)
-    decreases i / k
-    invariant i >= 0
+  while (int.ge(i, 1))
+    decreases int.safeDiv(i, k)
+    invariant int.ge(i, 0)
   {
-    k := (k - 1);   // mutates the divisor; may reach 0 after first iteration
-    i := (i - 1);
+    k := int.sub(k, 1);   // mutates the divisor; may reach 0 after first iteration
+    i := int.sub(i, 1);
   }
 };
 #end

@@ -46,7 +46,7 @@ program Core;
 
 procedure test(a : int)
 {
-  var z : int := 10 / a;
+  var z : int := int.safeDiv(10, a);
 };
 
 #end
@@ -60,7 +60,7 @@ info: program Core;
 procedure test (a : int)
 {
   assert [init_calls_Int.SafeDiv_0]: !(a == 0);
-  var z : int := 10 / a;
+  var z : int := int.safeDiv(10, a);
 };
 -/
 #guard_msgs in
@@ -74,11 +74,11 @@ program Core;
 
 function safeMod(x : int, y : int) : int
   requires y != 0;
-{ x % y }
+{ int.safeMod(x, y) }
 
 function foo(x : int, y : int) : int
-  requires safeMod(x, y) > 0;
-{ x + y }
+  requires int.gt(safeMod(x, y), 0);
+{ int.add(x, y) }
 
 #end
 
@@ -94,15 +94,15 @@ procedure safeMod$$wf (x : int, y : int)
   assert [safeMod_body_calls_Int.SafeMod_0]: !(y == 0);
 };
 function safeMod (x : int, y : int) : int {
-  x % y
+  int.safeMod(x, y)
 }
 procedure foo$$wf (x : int, y : int)
 {
   assert [foo_precond_calls_safeMod_0]: !(y == 0);
-  assume [precond_foo_0]: safeMod(x, y) > 0;
+  assume [precond_foo_0]: int.gt(safeMod(x, y), 0);
 };
 function foo (x : int, y : int) : int {
-  x + y
+  int.add(x, y)
 }
 -/
 #guard_msgs in
@@ -119,7 +119,7 @@ datatype List { Nil(), Cons(head : int, tail : List) };
 procedure test(xs : List)
 spec {
   requires List..isCons(xs);
-  requires List..head(xs) > 0;
+  requires int.gt(List..head(xs), 0);
 }
 {
 };
@@ -140,14 +140,14 @@ procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_pre_test_requires_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_requires_1]: List..head(xs) > 0;
+  assume [test_requires_1]: int.gt(List..head(xs), 0);
 };
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
-  requires [test_requires_1]: List..head(xs) > 0;
+  requires [test_requires_1]: int.gt(List..head(xs), 0);
   } {
-  ⏎
+  
 };
 -/
 #guard_msgs in
@@ -164,8 +164,8 @@ datatype List { Nil(), Cons(head : int, tail : List) };
 procedure test(xs : List)
 spec {
   requires List..isCons(xs);
-  ensures List..head(xs) > 0;
-  ensures List..head(List..tail(xs)) > 0;
+  ensures int.gt(List..head(xs), 0);
+  ensures int.gt(List..head(List..tail(xs)), 0);
 }
 {
 };
@@ -186,18 +186,18 @@ procedure test$$wf (xs : List)
 {
   assume [test_requires_0]: List..isCons(xs);
   assert [test_post_test_ensures_1_calls_List..head_0]: List..isCons(xs);
-  assume [test_ensures_1]: List..head(xs) > 0;
+  assume [test_ensures_1]: int.gt(List..head(xs), 0);
   assert [test_post_test_ensures_2_calls_List..tail_0]: List..isCons(xs);
   assert [test_post_test_ensures_2_calls_List..head_1]: List..isCons(List..tail(xs));
-  assume [test_ensures_2]: List..head(List..tail(xs)) > 0;
+  assume [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
 };
 procedure test (xs : List)
 spec {
   requires [test_requires_0]: List..isCons(xs);
-  ensures [test_ensures_1]: List..head(xs) > 0;
-  ensures [test_ensures_2]: List..head(List..tail(xs)) > 0;
+  ensures [test_ensures_1]: int.gt(List..head(xs), 0);
+  ensures [test_ensures_2]: int.gt(List..head(List..tail(xs)), 0);
   } {
-  ⏎
+  
 };
 -/
 #guard_msgs in
@@ -213,8 +213,8 @@ procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
-    requires y / x > 0;
-    { y / x }
+    requires int.gt(int.safeDiv(y, x), 0);
+    { int.safeDiv(y, x) }
   var z : int := safeDiv(5);
 };
 
@@ -232,11 +232,11 @@ procedure test ()
   safeDiv$$wf: {
     var y : int;
     assert [safeDiv_precond_calls_Int.SafeDiv_0]: !(x == 0);
-    assume [precond_safeDiv_0]: y / x > 0;
+    assume [precond_safeDiv_0]: int.gt(int.safeDiv(y, x), 0);
     assert [safeDiv_body_calls_Int.SafeDiv_0]: !(x == 0);
   }
-  function safeDiv (y : int) : int { y / x }
-  assert [init_calls_safeDiv_0]: 5 / x > 0;
+  function safeDiv (y : int) : int { int.safeDiv(y, x) }
+  assert [init_calls_safeDiv_0]: int.gt(int.safeDiv(5, x), 0);
   var z : int := safeDiv(5);
 };
 -/
@@ -254,12 +254,12 @@ procedure test(cond : bool, x : int, y : int)
   if (cond) {
     function f(a : int) : int
       requires x != 0;
-      { a / x }
+      { int.safeDiv(a, x) }
     var r1 : int := f(10);
   } else {
     function f(a : int) : int
       requires y != 0;
-      { a / y }
+      { int.safeDiv(a, y) }
     var r2 : int := f(20);
   }
 };
@@ -280,7 +280,7 @@ procedure test (cond : bool, x : int, y : int)
       assume [precond_f_0]: !(x == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
     }
-    function f (a : int) : int { a / x }
+    function f (a : int) : int { int.safeDiv(a, x) }
     assert [init_calls_f_0]: !(x == 0);
     var r1 : int := f(10);
   } else {
@@ -289,7 +289,7 @@ procedure test (cond : bool, x : int, y : int)
       assume [precond_f_0]: !(y == 0);
       assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
     }
-    function f (a : int) : int { a / y }
+    function f (a : int) : int { int.safeDiv(a, y) }
     assert [init_calls_f_0]: !(y == 0);
     var r2 : int := f(20);
   }
@@ -308,7 +308,7 @@ procedure proc1(x : int)
 {
   function f(a : int) : int
     requires x != 0;
-    { a / x }
+    { int.safeDiv(a, x) }
   var r : int := f(10);
 };
 
@@ -316,7 +316,7 @@ procedure proc2(y : int)
 {
   function f(a : int) : int
     requires y != 0;
-    { a / y }
+    { int.safeDiv(a, y) }
   var r : int := f(20);
 };
 
@@ -335,7 +335,7 @@ procedure proc1 (x : int)
     assume [precond_f_0]: !(x == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(x == 0);
   }
-  function f (a : int) : int { a / x }
+  function f (a : int) : int { int.safeDiv(a, x) }
   assert [init_calls_f_0]: !(x == 0);
   var r : int := f(10);
 };
@@ -346,7 +346,7 @@ procedure proc2 (y : int)
     assume [precond_f_0]: !(y == 0);
     assert [f_body_calls_Int.SafeDiv_0]: !(y == 0);
   }
-  function f (a : int) : int { a / y }
+  function f (a : int) : int { int.safeDiv(a, y) }
   assert [init_calls_f_0]: !(y == 0);
   var r : int := f(20);
 };
@@ -362,7 +362,7 @@ program Core;
 
 procedure test(x : int, y : int)
 {
-  if (x / y > 0) {
+  if (int.gt(int.safeDiv(x, y), 0)) {
     var z : int := 1;
   } else {
     var z : int := 2;
@@ -379,7 +379,7 @@ info: program Core;
 procedure test (x : int, y : int)
 {
   assert [ite_cond_calls_Int.SafeDiv_0]: !(y == 0);
-  if (x / y > 0) {
+  if (int.gt(int.safeDiv(x, y), 0)) {
     var z : int := 1;
   } else {
     var z : int := 2;
@@ -396,7 +396,7 @@ def loopGuardPrecondPgm :=
 program Core;
 procedure test(inout g : int, y : int)
 {
-  while (y / (y / g) > 0) { g := g - 1; }
+  while (int.gt(int.safeDiv(y, int.safeDiv(y, g)), 0)) { g := int.sub(g, 1); }
 };
 #end
 
@@ -409,12 +409,12 @@ info: program Core;
 procedure test (inout g : int, y : int)
 {
   assert [loop_guard_calls_Int.SafeDiv_0]: !(g == 0);
-  assert [loop_guard_calls_Int.SafeDiv_1]: !(y / g == 0);
-  while (y / (y / g) > 0)
+  assert [loop_guard_calls_Int.SafeDiv_1]: !(int.safeDiv(y, g) == 0);
+  while (int.gt(int.safeDiv(y, int.safeDiv(y, g)), 0))
   {
-    g := g - 1;
+    g := int.sub(g, 1);
     assert [loop_guard_end_calls_Int.SafeDiv_0]: !(g == 0);
-    assert [loop_guard_end_calls_Int.SafeDiv_1]: !(y / g == 0);
+    assert [loop_guard_end_calls_Int.SafeDiv_1]: !(int.safeDiv(y, g) == 0);
   }
 };
 -/
@@ -479,19 +479,19 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
   | some (Statement.assert _ e _) => IO.println s!"{Std.format e}"
   | _ => IO.println "<unexpected>"
 
-/-- info: 0 <= i && i < Sequence.length(s) -/
+/-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqSelectOp [fxS, fxI])
 
-/-- info: 0 <= i && i < Sequence.length(s) -/
+/-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV])
 
-/-- info: 0 <= n && n <= Sequence.length(s) -/
+/-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqTakeOp [fxS, fxN])
 
-/-- info: 0 <= n && n <= Sequence.length(s) -/
+/-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
 #eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
 

@@ -97,15 +97,15 @@ func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
 func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
 func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
-  requires 0 <= i && i < Sequence.length(s);
+  requires int.le(0, i) && int.lt(i, Sequence.length(s));
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
 func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
-  requires 0 <= i && i < Sequence.length(s);
+  requires int.le(0, i) && int.lt(i, Sequence.length(s));
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
 func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
-  requires 0 <= n && n <= Sequence.length(s);
+  requires int.le(0, n) && int.le(n, Sequence.length(s));
 func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
-  requires 0 <= n && n <= Sequence.length(s);
+  requires int.le(0, n) && int.le(n, Sequence.length(s));
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;
@@ -301,115 +301,115 @@ func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv1.sAddOverflow(x, y));
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv1.sSubOverflow(x, y));
 func Bv1.SafeMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv1.sMulOverflow(x, y));
 func Bv1.SafeNeg :  ((x : bv1)) → bv1
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv1.sNegOverflow(x));
 func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv1.uAddOverflow(x, y));
 func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv1.uSubOverflow(x, y));
 func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv1.uMulOverflow(x, y));
 func Bv1.SafeUNeg :  ((x : bv1)) → bv1
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv1.uNegOverflow(x));
 func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv8.sAddOverflow(x, y));
 func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv8.sSubOverflow(x, y));
 func Bv8.SafeMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv8.sMulOverflow(x, y));
 func Bv8.SafeNeg :  ((x : bv8)) → bv8
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv8.sNegOverflow(x));
 func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv8.uAddOverflow(x, y));
 func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv8.uSubOverflow(x, y));
 func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv8.uMulOverflow(x, y));
 func Bv8.SafeUNeg :  ((x : bv8)) → bv8
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv8.uNegOverflow(x));
 func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv16.sAddOverflow(x, y));
 func Bv16.SafeSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv16.sSubOverflow(x, y));
 func Bv16.SafeMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv16.sMulOverflow(x, y));
 func Bv16.SafeNeg :  ((x : bv16)) → bv16
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv16.sNegOverflow(x));
 func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv16.uAddOverflow(x, y));
 func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv16.uSubOverflow(x, y));
 func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv16.uMulOverflow(x, y));
 func Bv16.SafeUNeg :  ((x : bv16)) → bv16
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv16.uNegOverflow(x));
 func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv32.sAddOverflow(x, y));
 func Bv32.SafeSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv32.sSubOverflow(x, y));
 func Bv32.SafeMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv32.sMulOverflow(x, y));
 func Bv32.SafeNeg :  ((x : bv32)) → bv32
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv32.sNegOverflow(x));
 func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv32.uAddOverflow(x, y));
 func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv32.uSubOverflow(x, y));
 func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv32.uMulOverflow(x, y));
 func Bv32.SafeUNeg :  ((x : bv32)) → bv32
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv32.uNegOverflow(x));
 func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv64.sAddOverflow(x, y));
 func Bv64.SafeSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv64.sSubOverflow(x, y));
 func Bv64.SafeMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv64.sMulOverflow(x, y));
 func Bv64.SafeNeg :  ((x : bv64)) → bv64
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv64.sNegOverflow(x));
 func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv64.uAddOverflow(x, y));
 func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv64.uSubOverflow(x, y));
 func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv64.uMulOverflow(x, y));
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv64.uNegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv1.sDivOverflow(x, y));
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv1.sDivOverflow(x, y));
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv8.sDivOverflow(x, y));
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv8.sDivOverflow(x, y));
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv16.sDivOverflow(x, y));
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv16.sDivOverflow(x, y));
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv32.sDivOverflow(x, y));
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv32.sDivOverflow(x, y));
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv64.sDivOverflow(x, y));
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv64.sDivOverflow(x, y));
 
 
 Datatypes:
@@ -423,9 +423,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, 0 < x@1)
+(0_lt_x, int.lt(0, x@1))
 Proof Obligation:
--x@1 < 0
+int.lt(int.neg(x@1), 0)
 -/
 #guard_msgs in
 #eval do let E := Env.init
@@ -503,7 +503,7 @@ private def arithPgm : StrataDDM.Program :=
 program Core;
 procedure Test(x : int, out y : int)
 {
-  y := x + x;
+  y := int.add(x, x);
 };
 #end
 
@@ -517,10 +517,10 @@ private def itePgm : StrataDDM.Program :=
 program Core;
 procedure Test(x : int, out y : int)
 {
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     y := x;
   } else {
-    y := 0 - x;
+    y := int.sub(0, x);
   }
 };
 #end
@@ -539,7 +539,7 @@ private def callPgm : StrataDDM.Program :=
 program Core;
 procedure Double(n : int, out result : int)
 {
-  result := n + n;
+  result := int.add(n, n);
 };
 procedure Test(x : int, out y : int)
 {
@@ -557,7 +557,7 @@ private def chainedCallPgm : StrataDDM.Program :=
 program Core;
 procedure Double(n : int, out result : int)
 {
-  result := n + n;
+  result := int.add(n, n);
 };
 procedure Test(x : int, out output : int)
 {
@@ -579,10 +579,10 @@ procedure Test(n : int, out sum : int)
   var i : int;
   sum := 0;
   i := 0;
-  while (i <= n)
+  while (int.le(i, n))
   {
-    sum := sum + i;
-    i := i + 1;
+    sum := int.add(sum, i);
+    i := int.add(i, 1);
   }
 };
 #end

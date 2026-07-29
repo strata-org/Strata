@@ -53,6 +53,19 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
     | Decl.op od => (extractStrLiterals od.syntaxDef).filter
         (fun s => (strip s).length > 0 && (strip s).all Char.isAlpha) |>.map strip |>.toArray
     | _ => #[]
+  -- Grouped type-specific operators are `op` members of wrapper categories whose
+  -- token is a dotted name (`int.add`, `bv8.uLt`, `bv8.toUInt`). These are neither
+  -- all-alpha keywords nor `function` builtins, so collect them here and highlight
+  -- them as builtin functions alongside `Sequence.length` etc. Require an
+  -- alphanumeric on both sides of a dot so bare-punctuation tokens (e.g. the
+  -- `dialect "." name` separator) are not misclassified as operators.
+  let isDottedName (s : String) : Bool :=
+    match s.splitOn "." with
+    | [] => false
+    | parts => parts.length ≥ 2 && parts.all (fun p => p.length > 0 && p.all Char.isAlphanum)
+  let dottedOpTokens := d.declarations.flatMap fun
+    | Decl.op od => (extractStrLiterals od.syntaxDef).map strip |>.filter isDottedName |>.toArray
+    | _ => #[]
   let fnEntries := d.declarations.filterMap fun
     | Decl.function fd => some (fd.name, extractStrLiterals fd.syntaxDef |>.map strip |>.filter (·.length > 0))
     | _ => none
@@ -125,7 +138,7 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
     keywords := keywords
     wordOperators := wordOps.eraseDups
     constants := (constants ++ ["null"]).eraseDups
-    builtinFunctions := builtins.eraseDups
+    builtinFunctions := (builtins ++ dottedOpTokens.toList).eraseDups
     symbolOperators := symbolOps.eraseDups }
 
 /-! ## TextMate JSON generator (VSCode) -/
@@ -151,6 +164,14 @@ def generateTextMate (info : SyntaxInfo) : String :=
   let q := "\""
   let ob := "{"  -- open brace
   let cb := "}"  -- close brace
+  -- Omit the word-operator pattern entirely when there are no word operators:
+  -- an empty `\b()\b` alternation matches the empty string at every word boundary.
+  let wordOpEntry : List String :=
+    if info.wordOperators.isEmpty then [] else [
+      s!"        {ob}",
+      s!"          {q}name{q}: {q}keyword.operator.word.core-st{q},",
+      s!"          {q}match{q}: {q}{wordOpPattern}{q}",
+      s!"        {cb},"]
   let lines : List String := [
     ob,
     s!"  {q}$schema{q}: {q}https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json{q},",
@@ -226,11 +247,8 @@ def generateTextMate (info : SyntaxInfo) : String :=
     s!"        {ob}",
     s!"          {q}name{q}: {q}keyword.operator.assignment.core-st{q},",
     s!"          {q}match{q}: {q}:={q}",
-    s!"        {cb},",
-    s!"        {ob}",
-    s!"          {q}name{q}: {q}keyword.operator.word.core-st{q},",
-    s!"          {q}match{q}: {q}{wordOpPattern}{q}",
-    s!"        {cb},",
+    s!"        {cb},"
+  ] ++ wordOpEntry ++ [
     s!"        {ob}",
     s!"          {q}name{q}: {q}keyword.operator.symbol.core-st{q},",
     s!"          {q}match{q}: {q}{symOpPattern}{q}",
