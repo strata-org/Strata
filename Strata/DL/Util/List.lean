@@ -643,6 +643,31 @@ theorem partition_length (l : List α) (p : α → Bool) :
     (l.partition p).1.length + (l.partition p).2.length = l.length := by
   simp [partition_eq_filter_filter, filter_compl_length]
 
+/-- If a list of pairs has unique keys (Nodup), then membership implies
+the key can be looked up to find the corresponding value. -/
+theorem lookup_of_mem_nodup
+    {α β : Type} [BEq α] [LawfulBEq α] (l : List (α × β))
+    (h_nodup : (l.map Prod.fst).Nodup)
+    (k : α) (v : β)
+    (h_mem : (k, v) ∈ l) :
+    l.lookup k = some v := by
+  induction l with
+  | nil => cases h_mem
+  | cons hd tl ih =>
+    obtain ⟨k', v'⟩ := hd
+    rw [List.mem_cons] at h_mem
+    rcases h_mem with h_eq | h_tl
+    · simp [List.lookup]; injection h_eq with h1 h2; subst h1; subst h2; simp
+    · simp at h_nodup
+      obtain ⟨h_not_in, h_nodup_tl⟩ := h_nodup
+      have h_neq : ¬(k == k') = true := by
+        intro h_eq
+        rw [beq_iff_eq] at h_eq
+        subst h_eq
+        exact h_not_in v h_tl
+      simp [List.lookup, h_neq]
+      exact ih h_nodup_tl h_tl
+
 end List
 
 /-! ### List.Forall₂ -/
@@ -708,5 +733,19 @@ theorem zip_find_mem_snd [BEq α] (l1 : List α) (l2 : List β)
     p.2 ∈ l2 := by
   have h_mem := List.mem_of_find?_eq_some h
   exact (List.of_mem_zip h_mem).2
+
+/-- `(a ++ b) ++ (c ++ d)` is a permutation of `(a ++ c) ++ (b ++ d)`. -/
+theorem perm_append_swap_middle {α : Type _} (a b c d : List α) :
+    List.Perm ((a ++ b) ++ (c ++ d)) ((a ++ c) ++ (b ++ d)) := by
+  have h1 : List.Perm ((a ++ b) ++ (c ++ d)) (a ++ (b ++ (c ++ d))) := by
+    simp [List.append_assoc]
+  have h2 : List.Perm (a ++ (b ++ (c ++ d))) (a ++ (c ++ (b ++ d))) := by
+    refine List.Perm.append_left a ?_
+    have e1 : List.Perm (b ++ (c ++ d)) ((b ++ c) ++ d) := by simp [List.append_assoc]
+    have e2 : List.Perm ((b ++ c) ++ d) ((c ++ b) ++ d) := List.Perm.append_right d List.perm_append_comm
+    have e3 : List.Perm ((c ++ b) ++ d) (c ++ (b ++ d)) := by simp [List.append_assoc]
+    exact (e1.trans e2).trans e3
+  have h3 : List.Perm (a ++ (c ++ (b ++ d))) ((a ++ c) ++ (b ++ d)) := by simp [List.append_assoc]
+  exact (h1.trans h2).trans h3
 
 end

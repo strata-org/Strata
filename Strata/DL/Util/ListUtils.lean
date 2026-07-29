@@ -104,6 +104,31 @@ Taken from https://github.com/leanprover-community/batteries/blob/3613427d66262c
 @[expose] def List.Disjoint (l₁ l₂ : List α) : Prop :=
   ∀ ⦃a⦄, a ∈ l₁ → a ∈ l₂ → False
 
+/-- The empty list is disjoint from anything. -/
+theorem List.Disjoint_nil_left (l : List α) : List.Disjoint [] l := by
+  intro a ha _; simp at ha
+
+/-- A singleton is disjoint from `l` iff its element is not in `l`. -/
+theorem List.Disjoint_singleton_left {a : α} {l : List α} :
+    List.Disjoint [a] l ↔ a ∉ l := by
+  constructor
+  · intro h hmem; exact h (by simp) hmem
+  · intro h b hb hbl
+    rw [List.mem_singleton] at hb; exact h (hb ▸ hbl)
+
+/-- Disjointness on a `cons` splits into head-membership and tail-disjointness. -/
+theorem List.Disjoint_cons_left {a : α} {l₁ l₂ : List α} :
+    List.Disjoint (a :: l₁) l₂ ↔ a ∉ l₂ ∧ List.Disjoint l₁ l₂ := by
+  constructor
+  · intro h
+    refine ⟨fun hmem => h (List.mem_cons_self ..) hmem, ?_⟩
+    intro b hb hbl; exact h (List.mem_cons_of_mem _ hb) hbl
+  · intro h b hb hbl
+    rw [List.mem_cons] at hb
+    cases hb with
+    | inl he => exact h.1 (he ▸ hbl)
+    | inr hm => exact h.2 hm hbl
+
 end -- public section
 
 theorem List.removeAll_Sublist [BEq α] {xs ys : List α}:
