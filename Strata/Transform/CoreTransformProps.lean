@@ -9,7 +9,6 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.Transform.CoreTransform
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen
-import all Strata.DL.Util.Maps
 
 public section
 
@@ -88,14 +87,6 @@ namespace Core
 namespace Transform
 
 variable (prefixStr : String)
-
-/-- `Map.values` is `map Prod.snd` (used to reason about the substitution
-    range below; file-local — promote to a `Map` properties file if needed
-    more widely). -/
-private theorem map_values_eq_map_snd (m : Map α β) : m.values = m.map Prod.snd := by
-  induction m with
-  | nil => rfl
-  | cons p m ih => cases p; simp [Map.values, ih]
 
 /-- `genTyVarName` is `CoreGenState.gen` at the fresh type-var prefix, with the
     generated string reified back into the `CoreIdent`. -/
@@ -232,7 +223,8 @@ private theorem freshenTypeArgsSubst_nonempty {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      S = [(typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2))] := by
+      S = [Strata.Util.HMap.ofList
+        ((typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2)))] := by
   unfold freshenTypeArgsSubst at h
   rw [if_neg (by simp [hne])] at h
   simp only [bind, StateT.bind, pure, StateT.pure] at h
@@ -247,13 +239,16 @@ private theorem freshenTypeArgsSubst_range {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      ∀ v ∈ Maps.values S, ∃ f ∈ fresh, v = Lambda.LMonoTy.ftvar f := by
+      ∀ v ∈ S.values, ∃ f ∈ fresh, v = Lambda.LMonoTy.ftvar f := by
   obtain ⟨fresh, hgen, hS⟩ := freshenTypeArgsSubst_nonempty prefixStr typeArgs γ γ' hne h
   refine ⟨fresh, hgen, ?_⟩
   intro v hv
   subst hS
-  simp only [Maps.values, List.append_nil, map_values_eq_map_snd, List.map_map, List.mem_map] at hv
-  obtain ⟨tf, htf, hveq⟩ := hv
+  obtain ⟨m, hm, hvm⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
+  simp only [List.mem_singleton] at hm; subst hm
+  have hv' := Strata.Util.HMap.mem_values_ofList _ v hvm
+  simp only [List.map_map, List.mem_map] at hv'
+  obtain ⟨tf, htf, hveq⟩ := hv'
   exact ⟨tf.2, (List.of_mem_zip htf).2, hveq.symm⟩
 
 /-- Freshness: for a polymorphic callee, every type in the range of the
@@ -266,14 +261,16 @@ theorem freshenTypeArgsSubst_fresh {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
     (hwf : γ.WF) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
     γ'.WF ∧
-    ∀ v ∈ Maps.values S, ∃ f, v = Lambda.LMonoTy.ftvar f ∧
+    ∀ v ∈ S.values, ∃ f, v = Lambda.LMonoTy.ftvar f ∧
       (∃ n : Nat, f = prefixStr ++ "_" ++ toString n) ∧
       (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated ∧ (⟨f, ()⟩ : CoreIdent) ∉ γ.generated := by
   by_cases hne : typeArgs = []
   · subst hne
     have := freshenTypeArgsSubst_empty prefixStr γ
     rw [h] at this; injection this with hS hγ; subst hS hγ
-    exact ⟨hwf, by simp [Maps.values]⟩
+    refine ⟨hwf, fun v hv => ?_⟩
+    obtain ⟨m, hm, _⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
+    simp at hm
   obtain ⟨fresh, hgen, hrange⟩ := freshenTypeArgsSubst_range prefixStr typeArgs γ γ' hne h
   refine ⟨genTyVarNames_wf prefixStr _ γ γ' fresh hwf hgen, ?_⟩
   intro v hv
@@ -294,7 +291,7 @@ theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
     (hwf : γ.WF)
     (h1 : freshenTypeArgsSubst prefixStr ta1 γ = (S1, γ1))
     (h2 : freshenTypeArgsSubst prefixStr ta2 γ1 = (S2, γ2)) :
-    ∀ v ∈ Maps.values S1, v ∉ Maps.values S2 := by
+    ∀ v ∈ S1.values, v ∉ S2.values := by
   have hwf1 : γ1.WF := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).1
   intro v hv1 hv2
   obtain ⟨g, hveq, _, hg_in1, _⟩ := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).2 v hv1

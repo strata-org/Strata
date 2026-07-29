@@ -20,7 +20,7 @@ open LTy.Syntax
 /--
 info: ok: Ans: (Foo p (BarAlias p p))
 Subst:
-
+[]
 -/
 #guard_msgs in
 #eval do let (ans, Env) ← LMonoTy.aliasDef?
@@ -94,7 +94,7 @@ Subst:
 /--
 info: ok: De-aliased type: (Foo p (Bar p p))
 Subst:
-
+[]
 -/
 #guard_msgs in
 #eval do let (ty, Env) ← LMonoTy.resolveAliases
@@ -138,17 +138,17 @@ info: error: Type (arrow int Foo) is not an instance of a previously registered 
 Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 -/
 #guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → Foo].instantiateWithCheck (LContext.default (T := TTyDefault)) (TEnv.default : TEnv TyIdentifier)
          return format ans
 
 /-- info: ok: (arrow int bool) -/
 #guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (LContext.default (T := TTyDefault)) (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → bool].instantiateWithCheck (LContext.default (T := TTyDefault)) (TEnv.default : TEnv TyIdentifier)
          return format ans.fst
 
 /-- info: ok: (arrow $__ty0 b) -/
 #guard_msgs in
-#eval do let ans ← LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)
+#eval do let ans ← LTy.instantiate t[∀a. %a → %b] (TGenEnv.default : TGenEnv String)
          return format ans.fst
 
 /--

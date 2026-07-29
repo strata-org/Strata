@@ -126,4 +126,33 @@ Result: ✅ pass
 
 end Strata.PolymorphicPostconditionTest
 
+---------------------------------------------------------------------
+
+namespace Strata.PolymorphicInoutPrecondTest
+
+-- An in-out parameter's precondition constrains its type variable, so a body
+-- that assigns an incompatible value must be rejected. `requires (x == 5)`
+-- forces `a = int`, while `x := true` needs `a = bool`.
+def polyInoutPgm : Program :=
+#strata
+program Core;
+procedure P<a>(inout x : a)
+spec {
+  requires (x == 5);
+}
+{
+  x := true;
+};
+#end
+
+/--
+error: ❌ Type checking error.
+Impossible to unify $__ty0 with bool.
+First mismatch: int with bool.
+-/
+#guard_msgs in
+#eval Core.verify polyInoutPgm
+
+end Strata.PolymorphicInoutPrecondTest
+
 end

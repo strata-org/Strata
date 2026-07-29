@@ -27,6 +27,18 @@ structure Identifier (IDMeta : Type) : Type where
   metadata : IDMeta
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+/-- `BEq` for identifiers, derived from `DecidableEq`. Provided explicitly (rather
+    than relying on `instBEqOfDecidableEq`) so that the `LawfulBEq` instance below
+    is about a named `BEq`, which in turn gives `LawfulHashable` for free. This is
+    what makes `Identifier` usable as a `HMap`/`HMaps` key. -/
+instance instBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] : BEq (Identifier IDMeta) :=
+  ⟨fun a b => decide (a = b)⟩
+
+instance instLawfulBEqIdentifier {IDMeta : Type} [DecidableEq IDMeta] :
+    LawfulBEq (Identifier IDMeta) where
+  eq_of_beq {a b} h := by simp only [BEq.beq, decide_eq_true_eq] at h; exact h
+  rfl {a} := by simp [BEq.beq]
+
 instance : ToFormat (Identifier IDMeta) where
   format i := i.name
 

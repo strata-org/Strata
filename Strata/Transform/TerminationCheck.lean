@@ -176,13 +176,13 @@ where
 private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
   match concreteTy with
   | .tcons adtName concreteArgs =>
-    if concreteArgs.isEmpty then []
+    if concreteArgs.isEmpty then Subst.empty
     else match tf.getType adtName with
       | some dt =>
-        if dt.typeArgs.length != concreteArgs.length then []
-        else [dt.typeArgs.zip concreteArgs]
-      | none => []
-  | _ => [] -- unreachable: termCheck Step 1 rejects non-.tcons types
+        if dt.typeArgs.length != concreteArgs.length then Subst.empty
+        else Strata.Util.HMaps.ofScopes [dt.typeArgs.zip concreteArgs]
+      | none => Subst.empty
+  | _ => Subst.empty -- unreachable: termCheck Step 1 rejects non-.tcons types
 
 /-- Compute the call-site measure expression. For structural, wraps the
     decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/

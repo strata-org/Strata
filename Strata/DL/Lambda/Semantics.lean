@@ -2466,39 +2466,6 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
         rw [typeOf_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
       | hd₂ :: tl₂, [] => simp [List.zip]
       | [], _ => simp at h_eM
-
-  let opTyField (e : LExpr T.mono) : Option LMonoTy :=
-    match e with | .op _ _ ty => ty | _ => none
-
-  have h_opTyField : opTyField op₁ = opTyField op₂ := by
-    simp only [opTyField]
-    cases op₁ <;> cases op₂ <;>
-      simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_op ⊢ <;>
-      exact h_op.2
-
-  have h_opFactor : ∀ (e : LExpr T.mono),
-    (match e with
-      | .op _ _ (some instTy) => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-      | _ => ([] : List (LMonoTy × LMonoTy))) =
-    (match opTyField e with
-      | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-      | none => []) := by
-    intro e; cases e with
-    | op m o ty => cases ty <;> simp [opTyField]
-    | _ => simp [opTyField]
-
-  let computePure (opTy : Option LMonoTy)
-      (argCs : List (LMonoTy × LMonoTy)) : Option Subst :=
-    if fn.typeArgs.isEmpty then some Subst.empty
-    else
-      let opCs := match opTy with
-        | some instTy => [(instTy, LMonoTy.mkArrow' fn.output fn.inputs.values)]
-        | none => []
-      let allCs := opCs ++ argCs
-      if allCs.isEmpty then none
-      else match Constraints.unify allCs SubstInfo.empty with
-        | .ok s => some s.subst
-        | .error _ => none
   -- opTypeSubst only depends on the type annotation of the callee
   have h_opTS : fn.opTypeSubst op₁ = fn.opTypeSubst op₂ := by
     simp only [LFunc.opTypeSubst]

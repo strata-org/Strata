@@ -110,7 +110,7 @@ def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifi
   else
     let fresh ← genTyVarNames prefixStr typeArgs.length
     let scope : Lambda.SubstOne :=
-      (typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f))
+      Strata.Util.HMap.ofList ((typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f)))
     return [scope]
 
 /-- Cached results of program analyses that are helpful for program
