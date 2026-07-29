@@ -27,7 +27,7 @@ public section
 A model derived from an SMT solver is a map from an identifier
 to an `SMT.Term`.
 -/
-@[expose] abbrev Model (Ident : Type) := Map Ident Strata.SMT.Term
+abbrev Model (Ident : Type) := Map Ident Strata.SMT.Term
 
 /-- Backward-compatible alias. -/
 @[deprecated Model (since := "2026-04-03")] abbrev CounterEx := @Model
@@ -487,7 +487,7 @@ instance [ToFormat (SMT.Result P.Ident)] [ToFormat (SMT.Model P.Ident)]
 /--
 An array of `VCResult`s.
 -/
-@[expose] abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
+abbrev VCResults (P : Imperative.PureExpr) := Array (VCResult P)
 
 def VCResults.format [ToFormat (VCResult P)] (rs : VCResults P) : Format :=
   let rsf := rs.map (fun r => f!"{Format.line}{r}")

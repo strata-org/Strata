@@ -148,7 +148,7 @@ def ProofObligations.createAssertions
 /--
 A substitution map from variable identifiers to expressions.
 -/
-@[expose] abbrev SubstMap := Map Expression.Ident Expression.Expr
+abbrev SubstMap := Map Expression.Ident Expression.Expr
 
 structure Env where
   error : Option (Imperative.EvalError Expression)

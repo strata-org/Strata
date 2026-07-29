@@ -52,8 +52,8 @@ instance {IDMeta} [Inhabited IDMeta] : Coe String (Identifier IDMeta) where
 /--
 Identifiers, optionally with their inferred type.
 -/
-@[expose] abbrev IdentT (ITy IDMeta: Type) := (Identifier IDMeta) × Option ITy
-@[expose] abbrev IdentTs (ITy IDMeta: Type) := List (IdentT ITy IDMeta)
+abbrev IdentT (ITy IDMeta: Type) := (Identifier IDMeta) × Option ITy
+abbrev IdentTs (ITy IDMeta: Type) := List (IdentT ITy IDMeta)
 
 instance {IDMeta ITy: Type} [ToFormat ITy]: ToFormat (IdentT ITy IDMeta) where
   format i := match i.snd with
@@ -72,7 +72,7 @@ def IdentTs.idents (xs : (IdentTs ITy IDMeta)) : List (Identifier IDMeta) :=
 def IdentTs.tys? (xs : (IdentTs ITy IDMeta)) : List (Option ITy) :=
   xs.map Prod.snd
 
-@[expose] abbrev Identifiers IDMeta := Std.HashMap String IDMeta
+abbrev Identifiers IDMeta := Std.HashMap String IDMeta
 
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 

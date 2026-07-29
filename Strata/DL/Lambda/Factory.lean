@@ -44,7 +44,7 @@ section Factory
 /--
 A signature is a map from variable identifiers to types.
 -/
-@[expose] abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
+abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
 
 def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with
@@ -53,9 +53,9 @@ def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :
   | (k, v) :: rest =>
     f!"({k} : {v}) " ++ Signature.format rest
 
-@[expose] abbrev LMonoTySignature {IDMeta : Type} := Signature IDMeta LMonoTy
+abbrev LMonoTySignature {IDMeta : Type} := Signature IDMeta LMonoTy
 
-@[expose] abbrev LTySignature {IDMeta : Type} := Signature IDMeta LTy
+abbrev LTySignature {IDMeta : Type} := Signature IDMeta LTy
 
 -- Re-export Func from Util for backward compatibility
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
@@ -69,7 +69,7 @@ Lambda expressions. It is used for functions that appear in the Strata AST
 Universally quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
 -/
-@[expose] abbrev LFuncDefined (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
+abbrev LFuncDefined (T : LExprParams) := Func (T.Identifier) (LExpr T.mono) LMonoTy T.Metadata
 
 /--
 A Lambda factory function - the full, evaluator/factory-facing function

@@ -33,7 +33,7 @@ These are intended to be as generic as possible, not using any specific
 data structure. They'll probably usually be instantiated with map
 lookups.
 -/
-@[expose] abbrev SemanticStore := P.Ident → Option P.Expr
+abbrev SemanticStore := P.Ident → Option P.Expr
 
 /-! ### Event traces
 
@@ -71,7 +71,7 @@ inductive Event (P : PureExpr) where
 
 /-- An Imperative event trace is a chronological list of assertion and
 assumption observations. -/
-@[expose] abbrev Trace (P : PureExpr) := List (Event P)
+abbrev Trace (P : PureExpr) := List (Event P)
 
 end
 

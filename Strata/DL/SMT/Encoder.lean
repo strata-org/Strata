@@ -132,7 +132,7 @@ def EncoderState.initWithNames (names : Std.HashSet String) : EncoderState where
   isFunUninterp := {}
   usedNames := names.union smtReservedKeywordsSet
 
-@[expose] abbrev EncoderM (α) := StateT EncoderState SolverM α
+abbrev EncoderM (α) := StateT EncoderState SolverM α
 
 
 namespace Encoder

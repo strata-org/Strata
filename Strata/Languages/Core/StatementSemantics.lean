@@ -67,7 +67,7 @@ inductive EvalChecks (fac : Expression.Factory) (σ : CoreStore) :
 /-- Every assumption in a failure-flag contract call is syntactically defined
 and evaluates to true. A false assumption admits no execution. Event semantics
 records the assumptions with `assumeEvents` instead. -/
-@[expose] abbrev AssumeExprs (fac : Expression.Factory) (σ : CoreStore)
+abbrev AssumeExprs (fac : Expression.Factory) (σ : CoreStore)
     (es : List Expression.Expr) : Prop :=
   Forall (fun e =>
     isDefined σ (HasFvars.getFvars e) ∧
@@ -251,7 +251,7 @@ closure (without the store, since closure capture is handled here).
     φ fac capturedDecl
 
 /-- Core-level small-step configuration. -/
-@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+abbrev CoreConfig := Imperative.Config Expression Command
 
 /-- Shared prologue of every call rule: evaluate the input and inout arguments,
     read the caller's `out` variables, and build the collision-free callee frame. -/
@@ -405,29 +405,29 @@ end
     `CoreBodyExecE.structured` must spell this closure out rather than use this
     abbreviation, because the abbreviation is declared after its own mutual
     block. -/
-@[expose] abbrev CoreStepStarE
+abbrev CoreStepStarE
     (π : String → Option Procedure)
     (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
   ReflTransTrace
     (Imperative.StepStmtE Expression (EvalCommandE π φ) (EvalPureFunc φ))
 
 /-- Core-level event-producing single-step relation. -/
-@[expose] abbrev CoreStepE
+abbrev CoreStepE
     (π : String → Option Procedure)
     (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
   Imperative.StepStmtE Expression (EvalCommandE π φ) (EvalPureFunc φ)
 
 /-- Core-level single-step relation. -/
-@[expose] abbrev CoreStep
+abbrev CoreStep
     (π : String → Option Procedure)
     (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :=
   Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
 
-@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatement (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
-@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatements (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
 
@@ -504,11 +504,11 @@ inductive EvalCommandContractE (π : String → Option Procedure) :
         (defaultAssertEvents fac σAO p.spec.preconditions ++
           assumeEvents fac σO p.spec.postconditions)
 
-@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatementContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 
-@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
+abbrev EvalStatementsContract (π : String → Option Procedure) (φ : Expression.Factory → PureFunc Expression → Expression.Factory) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
   Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
 

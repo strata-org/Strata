@@ -8,7 +8,7 @@ meta import Strata.Backends.CBMC.CollectSymbols
 meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.DDMTransform.Translate
-import Lean.Server.Utils
+meta import Lean.Server.Utils
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 

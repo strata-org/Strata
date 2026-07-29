@@ -269,8 +269,8 @@ def extractCallsFromProcedure (proc : Procedure) : List String :=
   | .structured ss => extractCallsFromStatements ss
   | .cfg c => extractCallsFromDetCFG c
 
-@[expose] abbrev ProcedureCG := CallGraph
-@[expose] abbrev FunctionCG := CallGraph
+abbrev ProcedureCG := CallGraph
+abbrev FunctionCG := CallGraph
 
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>

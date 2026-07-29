@@ -373,7 +373,7 @@ procedure $havocHeap()
 /--
 The core map operation definitions as a `Laurel.Program`, parsed at compile time.
 -/
-def coreDefinitionsForLaurel : Program :=
+public def coreDefinitionsForLaurel : Program :=
   match TransM.run
       (.file "StrataLaurel/Implementation/CoreDefinitionsForLaurel.lean")
       (parseProgram coreDefinitionsForLaurelDDM) (synthesized := true) with

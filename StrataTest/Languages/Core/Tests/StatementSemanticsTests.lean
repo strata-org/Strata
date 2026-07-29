@@ -630,7 +630,7 @@ example
         "old" oldYIs7] := by
   have hframe : InitCallFrame oneInoutOldProc [intVal 7] []
       (inoutFrame (intVal 7)) := by
-    simpa [oneInoutOldProc] using initCallFrame_oneInout (intVal 7)
+    simpa [oneInoutOldProc, InitCallFrame] using initCallFrame_oneInout (intVal 7)
   have hentry : CallEntry fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] (inoutFrame (intVal 7)) := by
     unfold CallEntry
@@ -644,7 +644,7 @@ example
   have hexit : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] (inoutFrame (intVal 7)) (calleeFrame (intVal 7)) := by
     refine ⟨[intVal 7], ?_, updateStates_id_single hcaller⟩
-    simpa [oneInoutOldProc, oneInoutProc] using hread
+    simpa [oneInoutOldProc, oneInoutProc, ListMap.keys] using hread
   let σO := updatedState (inoutFrame (intVal 7)) calleeY (intVal 9)
   have hupd : UpdateState Expression (inoutFrame (intVal 7)) calleeY
       (intVal 9) σO := updatedStateUpdate inoutFrame_current
@@ -666,7 +666,7 @@ example
   have hexitO : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
       [.inoutArg calleeY] σO inoutResultStore := by
     refine ⟨[intVal 9], ?_, hcallerUpdate⟩
-    simpa [oneInoutOldProc, oneInoutProc] using hreadO
+    simpa [oneInoutOldProc, oneInoutProc, ListMap.keys] using hreadO
   have hassume : AssumeExprs fac σO [oldYIs7] := by
     exact ⟨oldYIs7_defined σO holdO, oldYIs7_eval fac σO holdO⟩
   refine ⟨?_, ?_, ?_, ?_⟩
@@ -676,12 +676,12 @@ example
         (oldYIs7_defined _ inoutFrame_old)
         (oldYIs7_eval fac _ inoutFrame_old) .eval_none) hexit
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, assertEvent, oneInoutOldProc] using
+    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInoutOldProc] using
       EvalCommandE.call_sem (calleeEnv_callee _) hentry
         (emptyBodyExecE _ _ _ _) hexit
   · exact EvalCommandContract.call_sem (calleeEnv_callee _) hentry
       .eval_none hhavoc hassume hexitO
-  · simpa [defaultAssertEvents, assumeEvents, assumeEvent, oneInoutOldProc,
+  · simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assumeEvent, oneInoutOldProc,
       σO] using
       EvalCommandContractE.call_sem (calleeEnv_callee _) hentry hhavoc hexitO
 
@@ -843,7 +843,7 @@ example
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [passingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
-    simpa [defaultAssertEvents, assertEvent, oneInputContractBodyProc,
+    simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, assertEvent, oneInputContractBodyProc,
       oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
@@ -854,7 +854,7 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
+    simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
       oneInputContractBodyProc,
       oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
@@ -918,7 +918,7 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none)
       ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, assertEvent, oneInputContractProc] using
+    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _ _) ⟨_, .read_none, .update_none⟩
@@ -936,7 +936,7 @@ example
         Option.some.inj ((eval_boolConst fac _ false).symm.trans hassume.2)
       simp [Lambda.LExpr.boolConst] at hff
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
+    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
@@ -1007,7 +1007,7 @@ example
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [failingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
-    simpa [defaultAssertEvents, assertEvent, failingBodyProc, oneInputContractBodyProc,
+    simpa [MetaData.empty, defaultAssertEvents, assertEvent, failingBodyProc, oneInputContractBodyProc,
       oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
@@ -1018,7 +1018,7 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, assertEvent, assumeEvent, failingBodyProc,
+    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent, failingBodyProc,
       oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
@@ -1079,7 +1079,7 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none)
       ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, assertEvent, oneInputContractProc] using
+    simpa [MetaData.empty, defaultAssertEvents, assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _ _) ⟨_, .read_none, .update_none⟩
@@ -1089,7 +1089,7 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨_, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
+    simpa [MetaData.empty, defaultAssertEvents, assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
@@ -1185,8 +1185,7 @@ example
       refine ReflTrans_Transitive _ _ _ _
         (block_inner_star Expression (EvalCommand nestedProcEnv φ) (EvalPureFunc φ)
           _ _ (some "") emptyStore fac hmiddleStmts) ?_
-      simpa [ρ, projectStore, emptyStore] using
-        (ReflTrans.step _ _ _ StepStmt.step_block_done (ReflTrans.refl _))
+      exact ReflTrans.step _ _ _ StepStmt.step_block_done (ReflTrans.refl _)
     exact CoreBodyExec.structured (ss := [.cmd (.call "leaf" [] .empty)])
       (σ := emptyStore) (fac := fac) (ρ' := ρ) hcore
   -- Event analogue of `hmiddleBody`, modelled on `assertBodyExecE`: middle's body

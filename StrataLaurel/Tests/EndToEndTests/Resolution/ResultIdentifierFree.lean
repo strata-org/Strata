@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Resolution tests that `result` is free as a user identifier.
 
@@ -29,7 +29,7 @@ cases. Until then, covering `result` guards against regressing the specific
 collision this change fixed.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

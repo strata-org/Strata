@@ -222,7 +222,6 @@ theorem eraseDups_Nodup : ∀ α {l : List α} [BEq α] [LawfulBEq α], l.eraseD
   induction l
   case nil => simp_all
   case cons h t t_ih =>
-    simp at *
     induction t
     case nil =>
       simp [List.eraseDupsBy, List.eraseDupsBy.loop] at *
@@ -275,12 +274,12 @@ theorem eraseDupsBy.loop_mem_as {α : Type u} [BEq α] [LawfulBEq α] {h : α} {
 
 theorem eraseDupsBy.sound {α : Type u} [BEq α] [LawfulBEq α] {a : α} {as : List α}:
 a ∈ as → a ∈ as.eraseDups := by
-intros Hin
-simp [List.eraseDups]
-generalize Hbs : ([] : List α) = bs
-induction as
-case nil => cases Hin
-case cons h t ih =>
+  intros Hin
+  simp [List.eraseDups]
+  generalize Hbs : ([] : List α) = bs
+  induction as
+  case nil => cases Hin
+  case cons h t ih =>
   simp [List.eraseDupsBy] at *
   unfold List.eraseDupsBy.loop
   split <;> simp_all

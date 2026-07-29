@@ -14,14 +14,10 @@ public section
 
 open Std
 
-@[expose]
 abbrev CoreIdent := Lambda.Identifier Unit
 
-@[expose]
 abbrev CoreExprMetadata := Unit
-@[expose]
 abbrev CoreLParams: Lambda.LExprParams := {Metadata := CoreExprMetadata, IDMeta := Unit}
-@[expose]
 abbrev CoreLabel := String
 
 def CoreIdentDec : DecidableEq CoreIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -55,9 +51,7 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
     a = b := by
   have h_name := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
-  have h1 := congrArg String.toList h_name
-  simp at h1
-  exact String.ext h1
+  exact h_name
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
 def CoreIdent.isOldIdent (ident : CoreIdent) : Bool :=

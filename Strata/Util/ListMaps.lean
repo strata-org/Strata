@@ -13,7 +13,7 @@ open Std (ToFormat Format format)
 public section
 
 
-@[expose] abbrev Maps (α : Type u) (β : Type v) := List (Map α β)
+abbrev Maps (α : Type u) (β : Type v) := List (Map α β)
 
 instance : Inhabited (Maps α β) where
   default := []

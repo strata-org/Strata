@@ -71,7 +71,7 @@ structure TransformState where
   /-- Box constructors used during transformation, collected for datatype generation -/
   usedBoxConstructors : List DatatypeConstructor := []
 
-@[expose] abbrev TransformM := ExceptT String (StateM TransformState)
+abbrev TransformM := ExceptT String (StateM TransformState)
 
 /-- The `Heap` type as a `HighTypeMd`, at the given source. -/
 private def heapType (source : FileRange) : HighTypeMd := ⟨.UserDefined heapTypeName, source⟩

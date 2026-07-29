@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Increment/decrement (`++`/`--`) is only lowered for `int` and int-based
 constrained types (e.g. `nat`). Applying it to `bv`, `real`, or `float64`
@@ -14,7 +14,7 @@ This file also pins the positive case: `++`/`--` on an int-based constrained
 type verifies end-to-end.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

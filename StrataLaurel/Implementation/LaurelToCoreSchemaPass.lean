@@ -42,7 +42,7 @@ private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (.synthesized .laurelToCore)
 
 /-- Set of names that are translated to Core functions (not procedures) -/
-@[expose] abbrev FunctionNames := List Identifier
+abbrev FunctionNames := List Identifier
 
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
@@ -85,7 +85,7 @@ structure TranslateState where
   procedureNames : Std.HashSet String := {}
 
 /-- The translation monad: state with string-error abort for internal failures. -/
-@[expose] abbrev TranslateM := ExceptT String (StateM TranslateState)
+abbrev TranslateM := ExceptT String (StateM TranslateState)
 
 def isFieldName (fieldNames : List Identifier) (name : Identifier) : TranslateM Bool :=
   fieldNames.anyM (fun f => liftM (m := Except String) (name.sameId f))

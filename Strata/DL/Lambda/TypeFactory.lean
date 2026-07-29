@@ -94,7 +94,7 @@ The default type application for a datatype. E.g. for datatype
   data d (d.typeArgs.map .ftvar)
 
 /-- A group of mutually recursive datatypes. -/
-@[expose] abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
+abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
 
 instance [DecidableEq IDMeta] : DecidableEq (MutualDatatype IDMeta) :=
   inferInstance
@@ -683,7 +683,7 @@ memoizing the results.
 -/
 
 /-- Stores whether a type is known to be inhabited -/
-@[expose] abbrev inhabMap : Type := Map String Bool
+abbrev inhabMap : Type := Map String Bool
 
 /-
 The termination argument follows from the fact that each time a type symbol

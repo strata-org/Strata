@@ -73,7 +73,7 @@ trace. -/
 
 /-- Worker for validity of every assertion, with assumptions accumulated before
 the remaining trace. -/
-@[expose] abbrev AssertionsValidFrom (I : ConditionInterp P) :
+abbrev AssertionsValidFrom (I : ConditionInterp P) :
     Trace P → Trace P → Prop :=
   AssertionsValidFromP P I (fun _ => True)
 
@@ -133,7 +133,7 @@ predicate is false when the identifier does not occur in the trace. -/
   CoverSatisfiableFrom P I cid [] trace
 
 /-- Worker for validity of occurrences matching one assertion identifier. -/
-@[expose] abbrev AssertionValidFrom
+abbrev AssertionValidFrom
     (I : ConditionInterp P) (aid : AssertId P) : Trace P → Trace P → Prop :=
   AssertionsValidFromP P I
     (fun condition => condition.label = aid.label ∧ condition.expr = aid.expr)

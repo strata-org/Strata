@@ -211,7 +211,8 @@ theorem collect_eq_of_emits {β : Type} (g : StmtExprMd → List β) (e : StmtEx
     (h : Emits (foldStmtExprM (m := StateM (List β)) (collectVisitor g) e) out) :
     collectStmtExprList g e = out := by
   have := h []
-  simpa [collectStmtExprList, foldStmtExpr, collectVisitor, StateT.run] using this
+  unfold collectVisitor at this
+  simpa [collectStmtExprList, foldStmtExpr, StateT.run] using this
 
 /-- The fold emits exactly the collected list. -/
 theorem fold_emits {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) :
@@ -519,7 +520,7 @@ theorem clean_var_field (target : StmtExprMd) (f : Identifier)
     (src : Strata.FileRange) (h : Clean target) :
     Clean { val := .Var (.Field target f), source := src } := by
   rw [clean_iff]
-  exact ⟨by simp [unannotatedDeclares], by simpa [childCollect] using h⟩
+  exact ⟨by simp [unannotatedDeclares], by simpa [childCollect, Clean] using h⟩
 
 include masterSynth in
 /-- resolveModifiesEntry yields Clean (when it yields anything). -/

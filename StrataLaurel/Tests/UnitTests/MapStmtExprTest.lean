@@ -48,7 +48,7 @@ private def testMapStmtExprId (program : StrataDDM.Program) : IO Unit := do
 info: ok: mapStmtExpr id ≡ id
 -/
 #guard_msgs in
-#eval! testMapStmtExprId <|
+#eval testMapStmtExprId <|
 #strata
 program Laurel;
 procedure test(x: int, b: bool) returns (r: int)

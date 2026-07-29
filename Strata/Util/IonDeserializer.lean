@@ -261,7 +261,7 @@ private meta def getCtorFieldTypes (env : Environment) (ctorName : Name)
   for i in List.range ci.numParams do
     match ty with
     | .forallE _ _ b _ =>
-      let sub := if h : i < typeArgs.size then typeArgs[i] else mkSort levelZero
+      let sub := if h : i < typeArgs.size then typeArgs[i] else mkSort Level.zero
       ty := b.instantiate1 sub
     | _ => throwError "getIonDeserializer%: unexpected type shape"
   let mut result := #[]
@@ -269,7 +269,7 @@ private meta def getCtorFieldTypes (env : Environment) (ctorName : Name)
     match ty with
     | .forallE _ t b _ =>
       result := result.push t
-      ty := b.instantiate1 (mkSort levelZero)
+      ty := b.instantiate1 (mkSort Level.zero)
     | _ => throwError "getIonDeserializer%: unexpected type shape"
   return (ci.numParams, ci.numFields, result)
 
@@ -417,7 +417,7 @@ private meta def collectNestedTypeExprs (env : Environment) (rootExpr : Expr) :
       for i in List.range ci.numParams do
         match ty with
         | .forallE _ _ b _ =>
-          let sub := if h2 : i < typeArgs.size then typeArgs[i] else mkSort levelZero
+          let sub := if h2 : i < typeArgs.size then typeArgs[i] else mkSort Level.zero
           ty := b.instantiate1 sub
         | _ => break
       for _ in List.range ci.numFields do
@@ -426,7 +426,7 @@ private meta def collectNestedTypeExprs (env : Environment) (rootExpr : Expr) :
           for texpr in ← extractCompoundExprs env t do
             let tkey := typeKey texpr
             if !visited.contains tkey then queue := queue.push texpr
-          ty := b.instantiate1 (mkSort levelZero)
+          ty := b.instantiate1 (mkSort Level.zero)
         | _ => break
   return result
 
@@ -500,13 +500,13 @@ meta def getIonDeserializerElab : TermElab := fun stx _expectedType? => do
         if let some (.ctorInfo ci) := env.find? ctorName then
           let mut ty := ci.type
           for _ in List.range ci.numParams do
-            match ty with | .forallE _ _ b _ => ty := b.instantiate1 (mkSort levelZero) | _ => break
+            match ty with | .forallE _ _ b _ => ty := b.instantiate1 (mkSort Level.zero) | _ => break
           for _ in List.range ci.numFields do
             match ty with
             | .forallE _ t b _ =>
               if let some n := t.getAppFn.constName? then
                 if isCompoundType env n then hasCompoundFields := true
-              ty := b.instantiate1 (mkSort levelZero)
+              ty := b.instantiate1 (mkSort Level.zero)
             | _ => break
       if !hasCompoundFields then
         let readerBody ← mkReaderBody env rootExpr

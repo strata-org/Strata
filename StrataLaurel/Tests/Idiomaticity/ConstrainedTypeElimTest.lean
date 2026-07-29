@@ -3,27 +3,27 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests that the constrained type elimination pass correctly transforms
 Laurel programs by comparing the output against expected results.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.ConstrainedTypeElim
-import StrataLaurel.Implementation.Resolution
+meta import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseLaurelAndElim (program : StrataDDM.Program) : IO Program := do
+private meta def parseLaurelAndElim (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   pure (constrainedTypeElim result.model result.program).1
 
-private def printElim (program : StrataDDM.Program) : IO Unit := do
+private meta def printElim (program : StrataDDM.Program) : IO Unit := do
   let result ← parseLaurelAndElim program
   for proc in result.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
@@ -50,7 +50,7 @@ procedure $witness_nat()
 };
 -/
 #guard_msgs in
-#eval! printElim <|
+#eval printElim <|
 #strata
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
@@ -86,7 +86,7 @@ procedure $witness_pos()
 };
 -/
 #guard_msgs in
-#eval! printElim <|
+#eval printElim <|
 #strata
 program Laurel;
 constrained pos = v: int where v > 0 witness 1
@@ -121,7 +121,7 @@ procedure $witness_posint()
 };
 -/
 #guard_msgs in
-#eval! printElim <|
+#eval printElim <|
 #strata
 program Laurel;
 constrained posint = x: int where x > 0 witness 1

@@ -39,7 +39,7 @@ structure Env (P : PureExpr) where
   hasFailure : Bool := false
 
 /-- Type of a function that extends the factory with a new function definition. -/
-@[expose] abbrev ExtendFactory (P : PureExpr) := P.Factory → SemanticStore P → PureFunc P → P.Factory
+abbrev ExtendFactory (P : PureExpr) := P.Factory → SemanticStore P → PureFunc P → P.Factory
 
 /-- A factory `f` is reachable from `f_parent` by a chain of `extendFactory`
     extensions.  Since `step_funcDecl` is the only rule that mutates
@@ -94,7 +94,7 @@ kind of label a pass generates), `ρ`'s store maps `HasIdent.ident s` to `none`.
 It captures the "generated names start undefined" precondition shared by the
 pipeline passes, parameterised by the kind each pass generates so a single
 initial store can satisfy several passes' obligations at disjoint kinds. -/
-@[expose] abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
+abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
     (Q : String → Prop) (ρ : Env P) : Prop :=
   ρ.store.varsUndefined (fun y => ∃ s : String, Q s ∧ y = HasIdent.ident (P := P) s)
 
@@ -325,7 +325,7 @@ threaded through a run to track store contents across the execution stack:
   | .seq inner _ => Config.varsDefined Q inner
 
 /-- Single-identifier specialisation of `Config.varsDefined`. -/
-@[expose] abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
+abbrev Config.varDefined {P : PureExpr} {CmdT : Type} (y : P.Ident) :
     Config P CmdT → Prop :=
   Config.varsDefined (· = y)
 
@@ -624,7 +624,7 @@ inductive StepStmtE
 `ReflTransTrace` concatenates the event list from each successive step as
 `emitted ++ rest`; this closure, not `StepStmtE`, performs trace
 concatenation. -/
-@[expose] abbrev StepStmtStarE
+abbrev StepStmtStarE
     {EventT : Type}
     (EvalCmd : EvalCmdParamE P CmdT EventT)
     (extendFactory : ExtendFactory P) :

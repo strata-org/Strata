@@ -313,7 +313,7 @@ instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-@[expose] abbrev KnownTypes := Identifiers Nat
+abbrev KnownTypes := Identifiers Nat
 
 def makeKnownTypes (l: List KnownType) : KnownTypes :=
   Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))

@@ -135,7 +135,7 @@ instance : Inhabited (MetaDataElem P) :=
   ⟨{ fld := .label "", value := .switch false }⟩
 
 /-- Metadata is an array of tagged elements. -/
-@[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
+abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
 @[expose]
 def MetaData.empty {P : PureExpr} : MetaData P := #[]

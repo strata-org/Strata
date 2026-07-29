@@ -172,7 +172,7 @@ private theorem head_eq_iff_mem {a : F} {as l : List F}
   · intro hmem
     cases h with
     | cons _ h' => exact absurd (h'.mem hmem) (List.nodup_cons.mp hnd).1
-    | cons₂ _ _ => simp
+    | cons_cons _ _ => simp
 
 /-- A stepped cursor is a cursor into the rest of the vocabulary. -/
 private theorem stepCursor_sublist {a : F} {as l : List F}
@@ -187,7 +187,7 @@ private theorem stepCursor_sublist {a : F} {as l : List F}
         exact (List.nodup_cons.mp hnd).1 (heq ▸ h'.mem List.mem_cons_self)
       simp only [stepCursor, if_neg hne]
       exact h'
-  | cons₂ _ h' => simpa [stepCursor] using h'
+  | cons_cons _ h' => simpa [stepCursor] using h'
 
 /-- Stepping past `a` cannot lose a fact of `as`, since `a` occurs once in the
     vocabulary. -/
@@ -429,7 +429,7 @@ class FactAlgebra (F : Type) [FactVocabulary F] where
     fun _ _ => inferInstance
 
 /-- The set type of the ambient algebra. -/
-@[expose] abbrev FactSet (F : Type) [FactVocabulary F] [FactAlgebra F] : Type :=
+abbrev FactSet (F : Type) [FactVocabulary F] [FactAlgebra F] : Type :=
   FactAlgebra.Set (F := F)
 
 /-- Static construction: the canonicity obligation is discharged when the

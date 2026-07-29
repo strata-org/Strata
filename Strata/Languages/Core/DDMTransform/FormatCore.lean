@@ -236,7 +236,7 @@ end ToCSTContext
 ---------------------------------------------------------------------
 
 /-- Monad for AST->CST conversion with context and error collection -/
-@[expose] abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
+abbrev ToCSTM (M : Type) := StateM (ToCSTContext M)
 
 /-- Log an error in `ToCSTM` without throwing -/
 def ToCSTM.logError {M} [Inhabited M] (fn : String) (desc : String) (detail : String) : ToCSTM M Unit := do

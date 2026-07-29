@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Under `--use-array-theory`, the `ModifiesClauses` pass emits a quantifier-free
 heap-equation frame —
@@ -13,7 +13,7 @@ form. The same procedures must verify under either encoding; this pins the
 array-theory path. Mirrors `T2_ModifiesClauses` but with `useArrayTheory := true`.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

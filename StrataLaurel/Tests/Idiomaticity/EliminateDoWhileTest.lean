@@ -67,7 +67,7 @@ info: procedure basic()
 };
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let program ← parseEliminateDoWhile basicProgram
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
@@ -121,7 +121,7 @@ info: procedure nested()
 };
 -/
 #guard_msgs in
-#eval! do
+#eval do
   let program ← parseEliminateDoWhile nestedProgram
   for proc in program.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))

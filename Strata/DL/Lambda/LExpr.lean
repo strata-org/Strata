@@ -65,20 +65,20 @@ structure LExprParamsT : Type 1 where
 /--
 Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoTy.
 -/
-@[expose] abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
+abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
-@[expose] abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
+abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
 
 structure Typed (T: Type) where
   underlying: T
   type: LMonoTy
 
 -- Metadata annotated with a type
-@[expose] abbrev LExprParams.typed (T: LExprParams): LExprParams :=
+abbrev LExprParams.typed (T: LExprParams): LExprParams :=
   ⟨ Typed T.Metadata, T.IDMeta ⟩
 
-@[expose] abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
+abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
   ⟨T.base.typed, LMonoTy⟩
 
 /--

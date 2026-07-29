@@ -70,7 +70,7 @@ instance : WFLabelGen String StringGenState where
     . exact StringGenState.contains Hgen
     . exact StringGenState.subset Hgen
 
-@[expose] abbrev StringGenM := StateM StringGenState
+abbrev StringGenM := StateM StringGenState
 
 end
 

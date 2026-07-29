@@ -35,14 +35,14 @@ public section
 /-! ### Type Substitution -/
 
 /-- Substitution mapping type variables to `LMonoTy`. -/
-@[expose] abbrev SubstOne := HMap TyIdentifier LMonoTy
+abbrev SubstOne := HMap TyIdentifier LMonoTy
 
 /--
 Substitution mapping type variables to `LMonoTy`, taking scopes into
 account (newest-first).
 -/
-@[expose] abbrev Subst := HMaps TyIdentifier LMonoTy
-@[expose] abbrev Subst.empty : Subst := []
+abbrev Subst := HMaps TyIdentifier LMonoTy
+abbrev Subst.empty : Subst := []
 
 instance : ToFormat Subst where
   format s := format (s.map (fun m => m.toList.mergeSort (fun a b => a.1 ≤ b.1)))
@@ -777,11 +777,11 @@ theorem LMonoTy.subst_idempotent
 A type constraint `(ty1, ty2)` that records that `ty1` and `ty2` must
 have a common substitution instance.
 -/
-@[expose] abbrev Constraint := (LMonoTy × LMonoTy)
+abbrev Constraint := (LMonoTy × LMonoTy)
 /--
 A list of type constraints. These should really be viewed as a set.
 -/
-@[expose] abbrev Constraints := List Constraint
+abbrev Constraints := List Constraint
 
 /--
 Get the free type variables in the type constraint `c`.

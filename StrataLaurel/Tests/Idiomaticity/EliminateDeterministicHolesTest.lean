@@ -50,7 +50,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -69,7 +69,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -88,7 +88,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -107,7 +107,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -126,7 +126,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -148,7 +148,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -169,7 +169,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -190,7 +190,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -212,7 +212,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -233,7 +233,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -252,7 +252,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -270,7 +270,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -292,7 +292,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -314,7 +314,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -338,7 +338,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -361,7 +361,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -380,7 +380,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -401,7 +401,7 @@ procedure test(n: int)
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test(n: int)
@@ -421,7 +421,7 @@ procedure test(x: int): int
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test(x: int): int
@@ -439,7 +439,7 @@ info: procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -459,7 +459,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 procedure test()
@@ -486,7 +486,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
@@ -503,7 +503,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }
@@ -520,7 +520,7 @@ procedure test()
 };
 -/
 #guard_msgs in
-#eval! parseElimAndPrint <|
+#eval parseElimAndPrint <|
 #strata
 program Laurel;
 datatype IntList { Nil(), Cons(head: int, tail: IntList) }

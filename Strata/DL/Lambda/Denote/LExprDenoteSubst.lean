@@ -804,7 +804,8 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
       (fvarVal := fvarVal) (vt := vt)
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes
       (Δ_body := []) .nil h_body h_annot (by simp [h_subst])
-    simpa using h_go
+    simp only [HList.append, List.length_nil] at h_go
+    exact h_go
 
 /-! ## `substFvars` denotation (via locally closed replacements) -/
 

@@ -83,7 +83,7 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-@[expose] abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
+abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and

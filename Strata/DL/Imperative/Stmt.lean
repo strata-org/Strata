@@ -57,7 +57,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
-@[expose] abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
+abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
   match s with

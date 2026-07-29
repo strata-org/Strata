@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests for the `obj#method(args)` syntax for calling instance procedures.
 
@@ -15,7 +15,7 @@ name without colliding. `c#m(args)` parses as `InstanceCall c m args` and
 the lifting pass rewrites it to `StaticCall Counter$m (c :: args)`.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

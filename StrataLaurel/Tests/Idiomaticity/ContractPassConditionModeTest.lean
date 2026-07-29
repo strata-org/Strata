@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests that the contract pass (`lowerContracts`) respects the lowering mode of
 each pre/postcondition, controlled by the `free` and `checked` clause keywords:
@@ -32,21 +32,21 @@ the conditions that precede it: `$pre_i` assumes `requires` clauses `0 … i-1`,
 `$post_i` assumes all the preconditions plus `ensures` clauses `0 … i-1`.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.ContractPass
-import StrataLaurel.Implementation.Resolution
+meta import StrataLaurel.Implementation.Resolution
 
 open Strata
 open StrataTest.Util
 
 namespace Strata.Laurel
 
-private def parseAndLower (program : StrataDDM.Program) : IO Program := do
+private meta def parseAndLower (program : StrataDDM.Program) : IO Program := do
   let laurelProgram ← translateLaurel program
   let result := resolve laurelProgram
   pure (lowerContracts result.model result.program)
 
-private def printLowered (program : StrataDDM.Program) : IO Unit := do
+private meta def printLowered (program : StrataDDM.Program) : IO Unit := do
   let lowered ← parseAndLower program
   for proc in lowered.staticProcedures do
     IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))

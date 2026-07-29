@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Perf / regression: the array-theory frame is not merely faster, it is more
 complete on heap-heavy code.
@@ -26,7 +26,7 @@ The two blocks are identical apart from `useArrayTheory`. Both now succeed;
 the array-theory variant remains the recommended path for performance.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata

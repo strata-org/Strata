@@ -1903,11 +1903,14 @@ theorem stmtsT_append_terminal
   | cons s' rest' ih =>
     have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal hstar
     have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
+    have hle : h_rest.len ≤ hstar.len := by
+      have hb : h_rest.len ≤ h_s'.len + h_rest.len + 2 := by omega
+      exact Nat.le_trans hb hlen₁
     exact ⟨ρ₂,
       ReflTrans_Transitive _ _ _ _
         (stmts_cons_step P EvalCmd extendFactory s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
         h_rest',
-      h_s, by grind⟩
+      h_s, Nat.lt_of_lt_of_le hlen₂ hle⟩
 
 /-! ## Failing-state decomposition helpers -/
 
@@ -3525,7 +3528,7 @@ theorem stmts_prefix_failing_append (P : PureExpr) [HasFvar P] [HasFvars P] [Has
           rw [this]; rfl
     have hρ : ρ.hasFailure = true := by rw [h_c_env] at hc; simpa [Config.getEnv] using hc
     refine ⟨Config.stmts sfx ρ, ?_, by simpa [Config.getEnv] using hρ⟩
-    simpa using ReflTrans.refl (Config.stmts ([] ++ sfx) ρ)
+    exact .refl _
   | cons s rest ih =>
     rcases stmts_cons_reaches_failing' P extendFactory (reflTrans_to_T h) hc with
       ⟨d, h_head, hd⟩ | ⟨ρ₁, d, h_head_term, h_rest_run, hd⟩

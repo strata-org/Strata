@@ -43,8 +43,8 @@ structure PureExpr : Type 1 where
       expression, and returns an optional evaluated expression. -/
   eval : Factory → (Ident → Option Expr) → Expr → Option Expr
 
-@[expose] abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
-@[expose] abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
+abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
+abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
 /-! ## Type Classes for Expressions -/
 
@@ -140,7 +140,7 @@ class HasSubstFvar (P : PureExpr) where
 A function declaration for use with `PureExpr` - instantiation of `Func` for
 any expression system that implements the `PureExpr` interface.
 -/
-@[expose] abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
+abbrev PureFunc (P : PureExpr) := Func P.Ident P.Expr P.Ty P.ExprMetadata
 
 end -- public section
 end Imperative

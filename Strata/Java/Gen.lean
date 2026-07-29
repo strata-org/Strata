@@ -252,7 +252,7 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
       let placeholder := if dom.isSort then
         mkSort (mkLevelParam (Name.mkStr .anonymous s!"__javaTypeParam_{jName}"))
       else
-        mkSort levelZero
+        mkSort Level.zero
       ty := b.instantiate1 placeholder
     | _ => break
   let mut fields := #[]
@@ -266,7 +266,7 @@ private meta def extractCtorFields (env : Environment) (ctorName : Name)
           let s := n.toString (escape := false)
           if s.startsWith "_" && s.length > 1 then s!"field{i}" else s
       fields := fields.push { name, typeInfo }
-      ty := b.instantiate1 (mkSort levelZero)
+      ty := b.instantiate1 (mkSort Level.zero)
     | _ => break
   return (paramNames, fields)
 
@@ -333,14 +333,14 @@ private meta def collectNestedTypes (env : Environment) (rootName : Name) : Meta
       let mut ty := ci.type
       for _ in List.range ci.numParams do
         match ty with
-        | .forallE _ _ b _ => ty := b.instantiate1 (mkSort levelZero)
+        | .forallE _ _ b _ => ty := b.instantiate1 (mkSort Level.zero)
         | _ => break
       for _ in List.range ci.numFields do
         match ty with
         | .forallE _ t b _ =>
           for n in ← extractCompoundNamesFromExpr env t do
             if !visited.contains n then queue := queue.push n
-          ty := b.instantiate1 (mkSort levelZero)
+          ty := b.instantiate1 (mkSort Level.zero)
         | _ => break
   return result
 

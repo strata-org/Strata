@@ -3,13 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 /-
 Tests that the resolution pass detects kind mismatches — e.g. using a variable
 where a type is expected, or calling a type as if it were a procedure.
 -/
 
-import StrataLaurel.Tests.Util.TestLaurel
+meta import StrataLaurel.Tests.Util.TestLaurel
 
 open StrataTest.Util
 open Strata
