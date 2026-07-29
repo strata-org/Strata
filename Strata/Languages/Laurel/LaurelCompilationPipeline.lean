@@ -292,7 +292,9 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
     `.error` case. -/
 private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
     : IO (Except DiagnosticModel VCResults) := do
-  let verifyOptions := { options.verifyOptions with removeIrrelevantAxioms := .Precise }
+  let verifyOptions := { options.verifyOptions with
+    removeIrrelevantAxioms := .Precise
+    keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
   let runner tempDir : IO (Except DiagnosticModel VCResults) :=
     (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
   match verifyOptions.vcDirectory with

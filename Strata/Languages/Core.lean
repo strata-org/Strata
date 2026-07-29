@@ -226,7 +226,6 @@ def Core.verifyProgram
     (proceduresToVerify : Option (List String) := none)
     (externalPhases : List Core.AbstractedPhase := [])
     (prefixPhases : List Core.PipelinePhase := [])
-    (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     (fileMap : Option Lean.FileMap := none)
@@ -234,7 +233,6 @@ def Core.verifyProgram
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (Core.verify program tempDir proceduresToVerify options moreFns externalPhases prefixPhases
-        (keepAllFilesPrefix := keepAllFilesPrefix)
         (mkDischarge := mkDischarge)
         (pipelineCtx := pipelineCtx))
   let ioAction := match options.vcDirectory with
@@ -255,7 +253,6 @@ def Core.verify
     (options : Core.VerifyOptions := .default)
     (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     (externalPhases : List Core.AbstractedPhase := [])
-    (keepAllFilesPrefix : Option String := none)
     (mkDischarge : Core.MkDischargeFn := Core.mkDischargeFn)
     (pipelineCtx : Option Pipeline.PipelineContext := none)
     : IO Core.VCResults := do
@@ -270,7 +267,6 @@ def Core.verify
   Core.verifyProgram program options moreFns
     (proceduresToVerify := proceduresToVerify)
     (externalPhases := externalPhases)
-    (keepAllFilesPrefix := keepAllFilesPrefix)
     (mkDischarge := mkDischarge)
     (pipelineCtx := pipelineCtx)
     (fileMap := some ictx.fileMap)
