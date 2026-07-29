@@ -10,7 +10,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution { skipCoreInterpreter := false } <|
+#eval testLaurelExecution { skipCoreInterpreter := false, skipLaurelInterpreter := false } <|
 #strata
 program Laurel;
 procedure testStringKO()
