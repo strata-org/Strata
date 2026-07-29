@@ -141,16 +141,23 @@ def evalCore (oldStore : Option Store) (σ : Store) (e : Expr) :
     typeCast v e.type
 
   -- Binary arithmetic (integer-only; bitvector operands rejected pending width
-  -- normalization). `Div`/`Mod` reject a zero divisor with `none`: CBMC treats
-  -- division by zero as undefined behavior, whereas Lean's `Int.div`/`Int.mod`
-  -- are total and would silently yield `0`, masking the UB.
+  -- normalization). `Div`/`Mod` truncate toward zero (`Int.tdiv`/`Int.tmod`):
+  -- GOTO inherits C99 semantics, where integer `/` and `%` round toward zero,
+  -- and the Core→GOTO translator relies on this — `Int.DivT`/`Int.ModT`
+  -- (truncating) map to bare `.Div`/`.Mod`, and `mkEuclideanDiv`/
+  -- `mkEuclideanMod` reconstruct Core's Euclidean `Int.Div`/`Int.Mod` from
+  -- truncating `.Div`/`.Mod`. Lean's `/`/`%` on `Int` are Euclidean and
+  -- disagree with truncation whenever the dividend is negative.
+  -- A zero divisor is rejected with `none`: CBMC treats division by zero as
+  -- undefined behavior, whereas Lean's division operators are total and would
+  -- silently yield `0`, masking the UB.
   | .binary .Div, [l, r] => do
     match ← evalCore oldStore σ l, ← evalCore oldStore σ r with
-    | .int a, .int b => if b == 0 then none else some (.int (a / b))
+    | .int a, .int b => if b == 0 then none else some (.int (a.tdiv b))
     | _, _ => none
   | .binary .Mod, [l, r] => do
     match ← evalCore oldStore σ l, ← evalCore oldStore σ r with
-    | .int a, .int b => if b == 0 then none else some (.int (a % b))
+    | .int a, .int b => if b == 0 then none else some (.int (a.tmod b))
     | _, _ => none
   | .binary .Minus, [l, r] => do
     match ← evalCore oldStore σ l, ← evalCore oldStore σ r with

@@ -328,6 +328,65 @@ private def modE (a b : Int) : Expr :=
 #eval concreteEval divModStore (modE 7 2) == some (.int 1)
 
 
+/-! ### `Div`/`Mod` truncate toward zero
+
+GOTO `.Div`/`.Mod` follow C99: round toward zero (`Int.tdiv`/`Int.tmod`).
+This differs from Lean's Euclidean `/`/`%` whenever the dividend is negative,
+and the Core→GOTO translator depends on truncation both for Core
+`Int.DivT`/`Int.ModT` (mapped to bare `.Div`/`.Mod`) and for
+`mkEuclideanDiv`/`mkEuclideanMod` (which reconstruct Euclidean division *from*
+truncating `.Div`/`.Mod`). The full mixed-sign grid, plus the C99 invariant
+`(a/b)*b + a%b == a`, is pinned here; agreement of the translated Core
+operators is tested end-to-end in
+`StrataTest/Languages/GOTO/LambdaToCProverGOTO.lean`. -/
+
+-- Negative dividend: the quotient rounds toward zero and the remainder takes
+-- the dividend's sign.
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (divE (-7) 2) == some (.int (-3))
+
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (modE (-7) 2) == some (.int (-1))
+
+-- Small negative dividend: |a| < |b| truncates to zero.
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (divE (-1) 3) == some (.int 0)
+
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (modE (-1) 3) == some (.int (-1))
+
+-- Negative divisor: the quotient rounds toward zero and the remainder takes
+-- the (positive) dividend's sign.
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (divE 7 (-2)) == some (.int (-3))
+
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (modE 7 (-2)) == some (.int 1)
+
+-- Both negative: positive quotient, negative remainder.
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (divE (-7) (-2)) == some (.int 3)
+
+/-- info: true -/
+#guard_msgs in
+#eval concreteEval divModStore (modE (-7) (-2)) == some (.int (-1))
+
+-- C99 invariant (a/b)*b + a%b == a across the sign grid.
+/-- info: true -/
+#guard_msgs in
+#eval [(7, 2), (-7, 2), (7, -2), (-7, -2), (-1, 3), (0, 5)].all fun (a, b) =>
+  match concreteEval divModStore (divE a b), concreteEval divModStore (modE a b) with
+  | some (.int q), some (.int r) => q * b + r == a
+  | _, _ => false
+
+
 /-! ### Boundary: empty multiary `Plus`/`Mult` are the additive/multiplicative identity
 
 An empty operand list is the degenerate boundary of the multiary `Plus`/`Mult`

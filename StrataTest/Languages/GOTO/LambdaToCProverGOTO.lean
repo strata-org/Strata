@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.GOTO.LambdaToCProverGOTO
+meta import Strata.Languages.GOTO.SemanticsEval
 meta import Lean.Server.Utils
 
 meta section
@@ -188,6 +189,58 @@ open LTy.Syntax in
   -- Second operand should be the index constant (0)
   let idx := r.operands[1]!
   assert! idx.id == CProverGOTO.Expr.Identifier.nullary (.constant "0")
+
+/-! ### Translated division: explicit expected outputs
+
+Translate each Core integer division/modulo operator applied to constants,
+evaluate the resulting GOTO expression with `concreteEval`, and compare
+against the explicitly expected value. `Int.Div`/`Int.Mod` are Euclidean
+(the remainder is always non-negative; via the `mkEuclideanDiv`/
+`mkEuclideanMod` expansions), `Int.DivT`/`Int.ModT` truncate toward zero
+(the remainder takes the dividend's sign; via bare GOTO `.Div`/`.Mod`).
+The mixed-sign rows are the ones where the two rounding modes disagree, so
+they pin the rounding of every link in the chain. -/
+open LTy.Syntax in
+/-- Translate `opName a b` to a GOTO expression and concretely evaluate it. -/
+private def evalGotoIntOp (opName : String) (a b : Int) : Option Int :=
+  let op : LExpr TestParams.mono :=
+    .op () (Lambda.Identifier.mk opName ()) (some mty[int → int → int])
+  let e := .app () (.app () op (.const () (.intConst a))) (.const () (.intConst b))
+  match LExpr.toGotoExprCtx (TBase := TestParams) [] e with
+  | .error _ => none
+  | .ok g =>
+    match CProverGOTO.Semantics.concreteEval CProverGOTO.Semantics.Store.empty g with
+    | some (.int v) => some v
+    | _ => none
+
+-- Euclidean division: the remainder is always non-negative.
+#guard evalGotoIntOp "Int.Div" 7 2 == some 3
+#guard evalGotoIntOp "Int.Div" (-7) 2 == some (-4)
+#guard evalGotoIntOp "Int.Div" 7 (-2) == some (-3)
+#guard evalGotoIntOp "Int.Div" (-7) (-2) == some 4
+#guard evalGotoIntOp "Int.Div" (-1) 3 == some (-1)
+#guard evalGotoIntOp "Int.Div" 0 5 == some 0
+#guard evalGotoIntOp "Int.Mod" 7 2 == some 1
+#guard evalGotoIntOp "Int.Mod" (-7) 2 == some 1
+#guard evalGotoIntOp "Int.Mod" 7 (-2) == some 1
+#guard evalGotoIntOp "Int.Mod" (-7) (-2) == some 1
+#guard evalGotoIntOp "Int.Mod" (-1) 3 == some 2
+#guard evalGotoIntOp "Int.Mod" 0 5 == some 0
+
+-- Truncating division: the quotient rounds toward zero, the remainder takes
+-- the dividend's sign (C99 semantics; `(a/b)*b + a%b == a`).
+#guard evalGotoIntOp "Int.DivT" 7 2 == some 3
+#guard evalGotoIntOp "Int.DivT" (-7) 2 == some (-3)
+#guard evalGotoIntOp "Int.DivT" 7 (-2) == some (-3)
+#guard evalGotoIntOp "Int.DivT" (-7) (-2) == some 3
+#guard evalGotoIntOp "Int.DivT" (-1) 3 == some 0
+#guard evalGotoIntOp "Int.DivT" 0 5 == some 0
+#guard evalGotoIntOp "Int.ModT" 7 2 == some 1
+#guard evalGotoIntOp "Int.ModT" (-7) 2 == some (-1)
+#guard evalGotoIntOp "Int.ModT" 7 (-2) == some 1
+#guard evalGotoIntOp "Int.ModT" (-7) (-2) == some (-1)
+#guard evalGotoIntOp "Int.ModT" (-1) 3 == some (-1)
+#guard evalGotoIntOp "Int.ModT" 0 5 == some 0
 
 end Lambda
 end
