@@ -115,7 +115,9 @@ trap cleanup EXIT INT TERM
 
 # ─── Wait for the server to come up ────────────────────────────────────────────
 echo "[WAIT] Waiting for dashboard on $BASE_URL ..."
-for _ in $(seq 1 60); do
+# 120 * 0.5s = 60s — generous enough for a cold start (first import/compile of
+# run_dashboard.py) so the first launch in a batch run isn't flaked out.
+for _ in $(seq 1 120); do
     if curl -sf -o /dev/null "$BASE_URL/api/state" 2>/dev/null; then
         break
     fi
@@ -127,7 +129,7 @@ for _ in $(seq 1 60); do
 done
 
 if ! curl -sf -o /dev/null "$BASE_URL/api/state" 2>/dev/null; then
-    echo "ERROR: dashboard did not become ready within 30s." >&2
+    echo "ERROR: dashboard did not become ready within 60s." >&2
     exit 1
 fi
 echo "[READY] Dashboard is up."

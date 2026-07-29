@@ -60,6 +60,31 @@ MAX_MINUTES_PER_LEMMA = 90         # wall-clock cap per lemma attempt loop
 # Bound how many times a single parent may be re-activated before we stop and
 # propagate the failure further up (prevents the give_up ↔ re-decompose churn).
 MAX_REACTIVATIONS = 2
+# An agent's context window is rotated (swapped for a fresh instance) once usage
+# crosses this. NOTE: the figure everywhere in this module is context *USED* —
+# a LOW number means the agent has lots of runway left, NOT that it is exhausted.
+CONTEXT_ROTATION_THRESHOLD = 75.0  # percent USED
+
+
+def _runway_note(pct: float | None) -> str:
+    """Render a writer's context-usage % as an unambiguous runway phrase for the
+    guide's prompt.
+
+    This exists because a bare "Writer context: 5%" was repeatedly misread by the
+    guide as "5% left → exhausted" and triggered a premature `decompose` on turn 1
+    (the number is context USED, so 5% means 95% free). We spell out both the
+    number and its meaning so the signal cannot be inverted.
+    """
+    used = pct or 0.0
+    free = 100.0 - used
+    if used < CONTEXT_ROTATION_THRESHOLD * 0.6:        # < ~45% used
+        band = "HEALTHY — plenty of runway, keep the writer working"
+    elif used < CONTEXT_ROTATION_THRESHOLD:            # ~45–75% used
+        band = "GETTING FULL — rotation approaching, wrap up soon"
+    else:                                              # ≥ 75% used
+        band = "FULL — will rotate to a fresh writer"
+    return (f"Writer runway: {band} "
+            f"({used:.0f}% of context USED, {free:.0f}% free)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -805,6 +830,10 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
 
         # Check: proved? (TARGET-SCOPED — a shared file may hold sibling theorems
         # whose sorry is not ours to close, so we gate on the protected block only.)
+        # If the protected block is locally sorry-free but transitively unproven,
+        # this collects the inline helper sorries responsible so we can SHOW them to
+        # the guide (otherwise it sees an empty sorry set and loops `continue`).
+        transitive_inline_sorry_info: dict = {}
         cr = tools.check_compiles(stub_rel)
         if cr.success:
             # 1. Cheap local check: is the protected block free of literal sorry?
@@ -835,8 +864,20 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                     ledger.mark_contingent(entry.id)
                     return "contingent"
                 # No sibling/child sorry explains it — transitive sorry from an
-                # untracked dep or a fresh inline helper. Fall through to extraction
-                # (discovers/registers it).
+                # untracked dep or a fresh inline helper. The writer factored its
+                # goal into inline `sorry` helpers, so its OWN block reads clean
+                # while the target is still transitively unproven. Surface those
+                # inline helper sorries to the guide (below) — it must see the real
+                # state, not an empty protected-sorry set, or it will loop `continue`
+                # forever thinking the branch is done. The guide then decides
+                # (typically `decompose` → extraction discovers/registers them).
+                split = tools.split_theorems(stub_rel)
+                if split and not split.error:
+                    transitive_inline_sorry_info = {
+                        b.name: [b.start] for b in split.blocks
+                        if b.has_sorry and b.name not in protected_names
+                        and b.name not in siblings
+                    }
 
         # Gather state. Progress is measured over the PROTECTED block only — a
         # shared multi-theorem file may hold sibling sorries the writer is
@@ -858,6 +899,19 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         sibling_note = (
             f"\nNOT YOUR TASK — sibling sorries owned by other branches (ignore): {sibling_sorry_info}\n"
             if sibling_sorry_info else "")
+        # The writer factored the target into inline `sorry` helpers, so its own
+        # protected block reads clean while the target is still TRANSITIVELY
+        # unproven. Make this explicit — otherwise the guide sees an empty sorry
+        # set, believes the branch is done, and loops `continue` forever. These
+        # inline helpers are YOURS: either close them inline or `decompose` to
+        # extract them into their own files.
+        transitive_note = (
+            f"\n⚠️ TARGET NOT DONE — your block has NO literal sorry, but it is "
+            f"TRANSITIVELY UNPROVEN: the writer left `sorry` in inline helpers it "
+            f"created, which your goal depends on. These ARE your obligation — "
+            f"close them inline or `decompose` to extract them: "
+            f"{transitive_inline_sorry_info}\n"
+            if transitive_inline_sorry_info else "")
         from .._snapshot_mcp import snapshot_summary
         snap_summary = snapshot_summary(cwd, entry.workspace)
         snap_note = f"\n{snap_summary}\n" if snap_summary else ""
@@ -865,9 +919,10 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk {entry.attempts} ({total_turns} total turns).\n"
-                f"Writer context: {writer_pct or 0:.0f}%\n"
+                f"{_runway_note(writer_pct)}\n"
                 f"{progress}\nFile: {stub_rel}\n"
                 f"YOUR sorries (the ones to close): {protected_sorry_info}\n"
+                f"{transitive_note}"
                 f"{sibling_note}"
                 f"{snap_note}"
                 f"{compile_note}"
@@ -895,10 +950,17 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 out["snapshot_tag"] = tm.group(1).strip() if tm else "guide-checkpoint"
             return out
 
-        # Track consecutive no-reduction chunks
+        # Track consecutive no-reduction chunks. "No progress" is EITHER the
+        # protected block failing to shed sorry OR the target sitting transitively
+        # unproven via inline helpers (protected sorry_count == 0 but not done) —
+        # the latter is the loop that used to spin `continue` unchecked, so it must
+        # count toward stuck-ness even though sorry_count is 0.
         if not hasattr(entry, '_stuck_count'):
             entry._stuck_count = 0
-        if sorry_count > 0 and prev_sorry_count is not None and sorry_count >= prev_sorry_count:
+        no_protected_progress = (
+            sorry_count > 0 and prev_sorry_count is not None
+            and sorry_count >= prev_sorry_count)
+        if no_protected_progress or transitive_inline_sorry_info:
             entry._stuck_count = getattr(entry, '_stuck_count', 0) + 1
         else:
             entry._stuck_count = 0
@@ -907,8 +969,15 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         if entry._stuck_count >= 3:
             stuck_hint = (
                 f"\n⚠️ STUCK: {entry._stuck_count} consecutive chunks with no sorry reduction. "
-                f"Consider decompose even if context is low — the writer may be unable to close "
-                f"these obligations in the current file.\n"
+                f"Consider decompose even if the writer still has runway — after this many "
+                f"idle chunks the writer may simply be unable to close these obligations in "
+                f"the current file.\n"
+            )
+        if transitive_inline_sorry_info:
+            stuck_hint += (
+                f"\n⚠️ Your block is locally sorry-free but TRANSITIVELY UNPROVEN via inline "
+                f"helpers ({sorted(transitive_inline_sorry_info)}). `continue` only helps if the "
+                f"writer will close them inline; otherwise choose `decompose` to extract them.\n"
             )
 
         snapshot_prompt = ""
@@ -924,9 +993,13 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             agent, state, ledger, entry, cwd,
             options=["continue", "decompose", "fresh_start", "give_up"],
             task=(
-                f"Writer context: {writer_pct or 0:.0f}%\n"
-                f"- continue: Keep trying in this file.\n"
-                f"- decompose: Needs helpers in separate files.\n"
+                f"{_runway_note(writer_pct)}\n"
+                f"(Runway is a USAGE figure: a LOW % means the writer has LOTS of room "
+                f"left — NOT that it is exhausted. Do NOT decompose while runway is HEALTHY.)\n"
+                f"- continue: Keep trying in this file (the default while runway is HEALTHY).\n"
+                f"- decompose: Split into helper files — ONLY when the writer is genuinely "
+                f"stuck AND runway is GETTING FULL/FULL. Never split a mutually-recursive "
+                f"goal into separate files (keep it in one `mutual` block).\n"
                 f"- fresh_start: Current approach exhausted, start over.\n"
                 f"- give_up: Statement is false."
                 f"{stuck_hint}"
@@ -1116,7 +1189,7 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk ({total_turns} total turns).\n"
-                f"Writer context: {writer_pct or 0:.0f}%\n"
+                f"{_runway_note(writer_pct)}\n"
                 f"{progress}\nFile: {stub_rel}\nSorries: {sorry_info}\n"
                 f"Remember: NO decomposition. Everything in one file.\n"
                 f"Diagnose and advise what to try next."
@@ -1131,7 +1204,9 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             agent, state, ledger, entry, cwd,
             options=["continue", "fresh_start", "give_up"],
             task=(
-                f"Writer context: {writer_pct or 0:.0f}%\n"
+                f"{_runway_note(writer_pct)}\n"
+                f"(Runway is a USAGE figure: a LOW % means the writer has LOTS of room "
+                f"left — NOT that it is exhausted. Prefer continue while runway is HEALTHY.)\n"
                 f"- continue: Keep trying.\n"
                 f"- fresh_start: Current approach exhausted, try new strategy.\n"
                 f"- give_up: Cannot be proved."
@@ -1672,8 +1747,6 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers — agent management
 # ═══════════════════════════════════════════════════════════════════════════════
-
-CONTEXT_ROTATION_THRESHOLD = 75.0  # percent
 
 async def _get_guide(agent, entry: LemmaEntry, state: PO5State, ledger: LemmaLedger) -> SwarmAgent:
     """Get or create persistent guide. Rotates automatically at 75% context or when needs_fresh_guide is set."""

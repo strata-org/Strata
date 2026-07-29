@@ -643,7 +643,8 @@ theorem name : statement := by
 | Anti-pattern | Why it fails | What to do instead |
 |--------------|--------------|-------------------|
 | `induction st` on Stmt | "nested inductive type" error | Use `cases` + mutual theorem pattern |
-| `lean_build` for verification | Takes forever | Use `lean_verify` per file |
+| `lean_build` for verification | Takes forever | `lean_diagnostic_messages` per file (compiles?), `verify_no_sorry` for the sorry-free verdict |
+| `lean_verify` on this repo | Fails on `module` files ("cannot use #print axioms in a module") | `lean_diagnostic_messages` (errors) + `verify_no_sorry` (transitive sorry-free) |
 | `axiom` keyword | Unsound | Use `theorem ... := by sorry` for stubs |
 | Importing from parent workspace | Circular dependencies | Keep imports within the library |
 | Multi-theorem files in decomposed/ | File organization constraint | One theorem per file |

@@ -5,4 +5,8 @@ __pycache__/
 .repl/
 temp/
 tests/Lean/*
+# Committed Lean proof-target corpus the E2E harness builds against (not a
+# generated artifact). Oracle-regression fixtures are NOT committed — the tests
+# generate them on the fly under tests/Lean/oracle_fixtures_tmp/ and clean up.
+!tests/Lean/StrataCapabilityTests/
 Sandbox/*

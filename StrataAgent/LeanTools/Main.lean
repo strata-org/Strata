@@ -118,6 +118,16 @@ private def stripComments (content : String) : String := Id.run do
 private def strContains (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1
 
+-- Drop a leading `public ` visibility modifier (Lean module system). Declarations
+-- in a `module` file must be marked `public` to be visible to importers, so a
+-- module file's theorems read `public theorem foo …` / `public def bar …`. The
+-- declaration parsers below key on the bare keyword (`theorem `/`def `/…), so we
+-- normalize the modifier away first — otherwise every decl in a module file is
+-- invisible to list_theorems / count_sorries / split_theorems.
+private def stripPublic (trimmed : String) : String :=
+  if trimmed.startsWith "public " then (trimmed.drop 7).trimAsciiStart.toString
+  else trimmed
+
 private def jsonEscape (s : String) : String :=
   s.replace "\\" "\\\\" |>.replace "\"" "\\\"" |>.replace "\n" "\\n"
 
@@ -131,7 +141,7 @@ private def countSorries (content : String) : (Nat × Array String) := Id.run do
   let mut sorryDecls : Array String := #[]
 
   for line in lines do
-    let trimmed := line.trimAsciiStart.toString
+    let trimmed := stripPublic line.trimAsciiStart.toString
     if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " then
       if currentThm != "" && thmHasSorry then
         sorryDecls := sorryDecls.push currentThm
@@ -162,7 +172,7 @@ private def listTheorems (content : String) : Array (String × String) := Id.run
   let mut currentBlock : String := ""
 
   for line in lines do
-    let trimmed := line.trimAsciiStart.toString
+    let trimmed := stripPublic line.trimAsciiStart.toString
     if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " then
       if currentThm != "" then
         let status := if strContains currentBlock "sorry" then "sorry" else "proved"
@@ -232,7 +242,7 @@ private def handleSplitTheorems (filePath : String) : IO String := do
 
     for i in [:lines.length] do
       let line := lines[i]!
-      let trimmed := line.trimAsciiStart.toString
+      let trimmed := stripPublic line.trimAsciiStart.toString
       if trimmed.startsWith "theorem " || trimmed.startsWith "private theorem " ||
          trimmed.startsWith "def " || trimmed.startsWith "private def " ||
          trimmed.startsWith "noncomputable def " || trimmed.startsWith "private noncomputable def " then

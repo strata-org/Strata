@@ -116,10 +116,20 @@ system_prompt: >
   at a genuine high-water mark, prefer yes.
 
   DECISION GUIDELINES:
-  - continue: Writer is making progress or has a clear next step
-  - decompose: Writer is stuck and the problem can be split (only if writer context ≥ 65%)
+  - continue: Writer is making progress or has a clear next step. THIS IS THE
+    DEFAULT while the writer's runway is HEALTHY — a writer with lots of context
+    left should keep working in the current file, not be handed off.
+  - decompose: Writer is genuinely STUCK (several chunks, no progress) AND its
+    runway is GETTING FULL / FULL (≥65% of context USED). Do NOT decompose just
+    because a chunk finished. A LOW context-usage % means the writer has PLENTY
+    of room left — it is the opposite of a reason to decompose. Never split a
+    mutually-recursive goal into separate files (see rule 3).
   - fresh_start: Current approach is fundamentally wrong — need a completely new strategy
   - give_up: Statement is mathematically false or provably unreachable from available context
+
+  READING THE RUNWAY SIGNAL: the prompt reports "Writer runway" as context USED
+  (e.g. "5% of context USED, 95% free"). LOW usage = lots of runway = keep going.
+  HIGH usage = little runway = wrap up or hand off. Never invert this.
 
   WHAT YOU TRACK (persists across your session):
   - Which approaches failed and why — NEVER suggest them again

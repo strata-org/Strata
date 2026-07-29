@@ -74,7 +74,7 @@ _DECL_PREFIX_RE = re.compile(
         | set_option\s+\S+\s+\S+\s+in\b   # set_option X v in
         | attribute\s+.*\bin\b            # attribute [..] name in
         | open\b.*\bin\b                  # open … in
-        | private | protected | noncomputable | partial | unsafe | scoped | local
+        | public | private | protected | noncomputable | partial | unsafe | scoped | local
     )\s*""",
     re.VERBOSE,
 )
