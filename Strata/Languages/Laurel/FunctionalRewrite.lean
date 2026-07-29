@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Laurel.LaurelPass
-public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.UnorderedCore
 import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.LaurelTypes
@@ -31,7 +30,8 @@ in the `UnorderedCoreWithLaurelTypes` representation. It runs after the
 transparency pass which creates those functions.
 
 Functions with early exits (multiple `Exit "$return"` paths) are left
-untransformed in this version.
+untransformed in this version, as are bodies that assign to an input
+parameter (a destructive assignment the Core translator must keep rejecting).
 
 ## Follow-up: Multi-variable if-lifting with Tuples
 
@@ -64,8 +64,13 @@ public section
     - If-then-else statements
     - A single Exit "$return" at the end
     Returns `false` if the body contains early exits, loops, calls in statement
-    position, or other constructs that can't be converted to functional style. -/
-private partial def isFunctionalizableBody (body : StmtExprMd) : Bool :=
+    position, or other constructs that can't be converted to functional style.
+
+    `inputNames` are the function's input parameters. Assigning to an input is
+    a destructive assignment that the Core translator rejects with a
+    user-facing error; rewriting it into a shadowing declaration would silently
+    accept the program, so such a body is not functionalizable. -/
+private partial def isFunctionalizableBody (inputNames : List String) (body : StmtExprMd) : Bool :=
   checkStmts (getTopStmts body)
 where
   getTopStmts (e : StmtExprMd) : List StmtExprMd :=
@@ -75,7 +80,7 @@ where
 
   checkStmt (s : StmtExprMd) : Bool :=
     match s.val with
-    | .Assign [⟨.Local _, _⟩] _ => true
+    | .Assign [⟨.Local name, _⟩] _ => !inputNames.contains name.text
     | .Assign [⟨.Declare _, _⟩] _ => true
     | .Var (.Declare _) => true
     | .Exit "$return" => true
@@ -89,16 +94,26 @@ where
   checkStmts (stmts : List StmtExprMd) : Bool :=
     stmts.all checkStmt
 
-private def rewriteAssignToFunctional (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
-  mapStmtExpr (fun e =>
-    match e.val with
-    | .Assign [target] value =>
-      match target.val with
-      | .Local varName =>
-        let varType := (model.get varName).getType
-        ⟨.Assign [⟨.Declare ⟨varName, varType⟩, target.source⟩] value, e.source⟩
-      | _ => e
-    | _ => e) expr
+/-- Rewrite statement-position assignments `x := e` into functional
+    declarations `var x : T := e`.
+
+    Only statement positions are rewritten. An assignment nested inside an
+    expression (e.g. the `x := 2` of `requires (x := 2) == 2`) is a destructive
+    assignment that the Core translator must keep rejecting; turning it into a
+    declaration would silently accept the program. So neither an if-condition
+    nor an assigned value is descended into. -/
+private partial def rewriteAssignToFunctional (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
+  rewriteStmt expr
+where
+  rewriteStmt (s : StmtExprMd) : StmtExprMd :=
+    match s.val with
+    | .Assign [⟨.Local varName, targetSource⟩] value =>
+      let varType := (model.get varName).getType
+      ⟨.Assign [⟨.Declare ⟨varName, varType⟩, targetSource⟩] value, s.source⟩
+    | .Block stmts label => ⟨.Block (stmts.map rewriteStmt) label, s.source⟩
+    | .IfThenElse cond thenBranch elseBranch =>
+      ⟨.IfThenElse cond (rewriteStmt thenBranch) (elseBranch.map rewriteStmt), s.source⟩
+    | _ => s
 
 /-- Collect the names of variables assigned (via `Assign [Local name] _`) in the
     top level of a block or single statement. Does not recurse into nested
@@ -190,7 +205,8 @@ private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure) : Pro
   | [output] =>
     match proc.body with
     | .Transparent body =>
-      if !isFunctionalizableBody body then proc
+      let inputNames := proc.inputs.map (·.name.text)
+      if !isFunctionalizableBody inputNames body then proc
       else
         let body' := rewriteAssignToFunctional model body
         let stmts := match body'.val with
