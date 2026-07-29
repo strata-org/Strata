@@ -14,6 +14,7 @@ public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapAnalysis
 import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Languages.Laurel.PushOldInward
 
 /-!
 # Name Resolution Pass
@@ -177,6 +178,16 @@ structure ResolveState where
       chains) used by the subtyping/consistency checks. Built once from
       `program.types` at the start of `resolve`. -/
   typeLattice : TypeLattice := {}
+  /-- Overload table for static procedures: each name maps to the list of
+      registered overloads as `(uniqueId, procedure)` pairs, in declaration
+      order. A name with more than one entry is overloaded. The flat `scope`
+      map only retains the *last* overload per name, so this table is what
+      `defIdForProcedure` uses to recover each overload's own id and what
+      `Synth.staticCall` uses to select the overload matching a call's
+      argument types. Populated by `preRegisterStaticProcedure`. -/
+  overloads : Std.HashMap String (List (Nat × Procedure)) := {}
+  /-- UniqueIds of static procedures rejected as conflicting duplicates. -/
+  conflictingOverloads : Std.HashSet Nat := {}
 
 abbrev ResolveM := StateM ResolveState
 
@@ -186,6 +197,22 @@ private def freshId : ResolveM Nat := do
   let id := s.nextId
   set { s with nextId := id + 1 }
   return id
+
+/-- Insert a definition into the current scope, allocating a fresh unique ID when
+    the identifier doesn't already carry one. Does NOT check for duplicates — use
+    `defineNameCheckDup` for the checked variant. -/
+private def defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
+  let resolutionName := overrideResolutionName.getD iden.text
+  let (name', uniqueId) ← match iden.uniqueId with
+    | some uid => pure (iden, uid)
+    | none =>
+      let id ← freshId
+      pure ({ iden with uniqueId := some (id) }, id)
+  modify fun s => { s with
+    scope := s.scope.insert resolutionName (uniqueId, node),
+    idToNode := s.idToNode.insert uniqueId node,
+    currentScopeNames := s.currentScopeNames.insert resolutionName }
+  return name'
 
 /-- Like `defineName`, but reports a diagnostic if the name already exists in the current scope.
     Inserts an `.unresolved` node so subsequent references still resolve without cascading errors. -/
@@ -197,20 +224,6 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
     defineName iden (.unresolved iden.source) overrideResolutionName
   else
     defineName iden node overrideResolutionName
-  where
-  defineName (iden : Identifier) (node : ResolvedNode) (overrideResolutionName: Option String := none) : ResolveM Identifier := do
-    let resolutionName := overrideResolutionName.getD iden.text
-    let (name', uniqueId) ← match iden.uniqueId with
-      | some uid => pure (iden, uid)
-      | none =>
-        let id ← freshId
-        pure ({ iden with uniqueId := some (id) }, id)
-
-    modify fun s => { s with
-      scope := s.scope.insert resolutionName (uniqueId, node),
-      idToNode := s.idToNode.insert uniqueId node,
-      currentScopeNames := s.currentScopeNames.insert resolutionName }
-    return name'
 
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
@@ -328,27 +341,177 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
 /-! ## AST traversal (Phase 1) -/
 
 
+/-- Reject a constrained (subset) type used as a generic datatype *type argument*
+    (e.g. `Option<int32>`), in *any* position — a variable / parameter / return
+    type or a datatype constructor field type. Such a type is currently
+    over-approximated away: the constrained type is reduced to its base and its
+    refinement predicate is not enforced on the datatype's contents. Rather than
+    silently accept a value outside the subset, we reject it at resolution time
+    until subset types are properly supported under polymorphism.
+
+    A type parameter of the enclosing datatype resolves to a `.typeParameter` (a
+    type variable), not a `.constrainedType`, so it is naturally not flagged — no
+    name-list bookkeeping is needed, and a parameter that shadows a constrained
+    type is handled by ordinary scoping. Only the direct argument is inspected;
+    nesting (e.g. `Box<Option<int32>>`) is covered by the caller recursing into
+    each argument. -/
+private def checkTypeArgNotConstrained (arg : HighTypeMd) : ResolveM Unit := do
+  match _h : arg.val with
+  | .UserDefined name =>
+    match (← get).scope.get? name.text with
+    | some (_, node) =>
+      if node.kind == .constrainedType then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource arg.source
+          s!"constrained (subset) type '{name.text}' is not yet supported as a generic datatype type argument") }
+    | none => pure ()
+  -- Recurse through compound types: a constrained type carried *inside* a type
+  -- argument (`Option<Map int int32>`) reaches the same refinement-dropping
+  -- outcome this check exists to prevent — `resolveBaseType` over-approximates it
+  -- and `ConstrainedTypeElim` never sees an enforcement point for it — so the
+  -- whole argument has to be inspected, not just its head.
+  | .TSet et => checkTypeArgNotConstrained et
+  | .TMap kt vt => do
+    checkTypeArgNotConstrained kt
+    checkTypeArgNotConstrained vt
+  | .Applied base args => do
+    checkTypeArgNotConstrained base
+    args.attach.forM fun ⟨a, _⟩ => checkTypeArgNotConstrained a
+  | .Intersection tys => tys.attach.forM fun ⟨t, _⟩ => checkTypeArgNotConstrained t
+  | _ => pure ()
+  termination_by sizeOf arg
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt arg; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- Whether `ty` mentions one of `typeParams` anywhere, not just at its head.
+
+    Used to decide whether a datatype constructor's declared field type is a
+    *polymorphic slot*. A field typed exactly `T` is the obvious case, but a
+    container over a parameter (`Map int T`, `Set T`, `Option<T>`) is equally
+    polymorphic: the parameter is erased, so checking an argument against the
+    declared type would compare a concrete instantiation (`Map int int`) with the
+    phantom parameter and fail at every construction site.
+
+    Each name is tested raw *and* unfolded: `unfold` is keyed on type-name text
+    through the global constrained/alias map, so a global `constrained T` would
+    rewrite a same-named parameter to its base and hide the slot. -/
+private def mentionsTypeParam (ctx : TypeLattice) (typeParams : List String)
+    (ty : HighTypeMd) : Bool :=
+  match _h : ty.val with
+  | .UserDefined name =>
+    typeParams.contains name.text ||
+      (match (ctx.unfold ty).val with
+       | .UserDefined u => typeParams.contains u.text
+       | _ => false)
+  | .TSet et => mentionsTypeParam ctx typeParams et
+  | .TMap kt vt =>
+    mentionsTypeParam ctx typeParams kt || mentionsTypeParam ctx typeParams vt
+  | .Applied base args =>
+    mentionsTypeParam ctx typeParams base ||
+      args.attach.any (fun ⟨a, _⟩ => mentionsTypeParam ctx typeParams a)
+  | .Intersection tys => tys.attach.any (fun ⟨t, _⟩ => mentionsTypeParam ctx typeParams t)
+  | _ => false
+  termination_by sizeOf ty
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt ty; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+/-- The declared type-parameter count of `name` when it resolves to a datatype
+    definition; `none` when `name` is not a datatype (so the type-application /
+    bare-reference checks below do not apply to it). -/
+private def datatypeTypeArgArity (name : String) : ResolveM (Option Nat) := do
+  match (← get).scope.get? name with
+  | some (_, .datatypeDefinition dt) => pure (some dt.typeArgs.length)
+  | _ => pure none
+
+/-- The declared type-parameter *names* of `name` when it resolves to a datatype
+    definition; `[]` otherwise. Used to tell an erased (polymorphic) slot from a
+    concrete one. -/
+private def datatypeTypeParamNames (name : String) : ResolveM (List String) := do
+  match (← get).scope.get? name with
+  | some (_, .datatypeDefinition dt) => pure (dt.typeArgs.map (·.text))
+  | _ => pure []
+
+/-- Reject a bare (unapplied) reference to a *generic* datatype in a user type
+    position (e.g. `var w: Option` where `Option<T>` is declared). Left unapplied
+    its type arguments would be inferred by first use elsewhere in the program —
+    order-dependent and surprising — so we require the arguments to be written
+    explicitly (`Option<int>`). A non-generic datatype, composite, alias, or
+    constrained type is unaffected. (The erased constructor-result-type reference,
+    e.g. `Nothing() : Option`, is produced internally via `getCallInfo` and never
+    reaches here.) -/
+private def checkBareGenericDatatype (name : Identifier) (source : Option FileRange) : ResolveM Unit := do
+  match ← datatypeTypeArgArity name.text with
+  | some n =>
+    if n > 0 then
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+        s!"generic datatype '{name.text}' must be applied to {n} type argument(s)") }
+  | none => pure ()
+
+/-- Validate the base of a generic type application `base<args>`, keyed off what
+    `base` resolves to:
+    - a type *parameter* cannot be applied to arguments (`T<int>`);
+    - a datatype must be applied at its declared arity — a non-generic datatype
+      applied to arguments (`Plain<int>`) or an arity mismatch
+      (`Option<int, string>`) is rejected here rather than deferred to Core;
+    - a composite, constrained (subset), or alias type is not generic, so
+      applying it to arguments (`C<int>`) is rejected here too — otherwise it
+      reaches Core / `translateType` and surfaces as an internal-error
+      `strata-bug` instead of a clean *type 'X' is not generic* diagnostic.
+    An unresolved base is left alone (`resolveRef` already reported it). -/
+private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : Option FileRange) : ResolveM Unit := do
+  match (← get).scope.get? base.text with
+  | some (_, .typeParameter _) =>
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+      s!"type parameter '{base.text}' cannot be applied to type arguments") }
+  | some (_, .datatypeDefinition dt) =>
+    let n := dt.typeArgs.length
+    if n != numArgs then
+      let msg := if n == 0 then
+          s!"type '{base.text}' is not generic and cannot be applied to type arguments"
+        else
+          s!"generic datatype '{base.text}' expects {n} type argument(s) but {numArgs} were provided"
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
+  | some (_, .compositeType _) | some (_, .constrainedType _) | some (_, .typeAlias _) =>
+    -- A composite, constrained, or alias type is not generic: applying it to
+    -- type arguments is rejected here so the user gets a clean diagnostic rather
+    -- than a downstream Core `strata-bug` (the `appliedType` grammar op accepts
+    -- any identifier as a base).
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+      s!"type '{base.text}' is not generic and cannot be applied to type arguments") }
+  | _ => pure ()
+
+/-- Resolve a `.UserDefined` type reference to `.UserDefined ref'` (resolved) or
+    `.Unknown` (on failure / wrong kind — the diagnostic was already emitted by
+    `resolveRef`). Collapsing a dangling reference to `Unknown` keeps later uses
+    from being type-checked against a phantom type. Shared by the bare
+    `.UserDefined` arm and an `.Applied` base; the bare-generic-reference
+    rejection is applied only by the former (an `.Applied` base is not bare). -/
+private def resolveTypeRef (ref : Identifier) (source : Option FileRange) : ResolveM HighType := do
+  let ref' ← resolveRef ref source
+    (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter])
+  let s ← get
+  let kindOk : Bool := match s.scope.get? ref.text with
+    | some (_, node) => node.kind == .unresolved ||
+        (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter].contains node.kind)
+    | none => false  -- name not defined: resolveRef already reported it
+  if kindOk then pure (HighType.UserDefined ref') else pure HighType.Unknown
+
 def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
   match ty with
   | AstNode.mk val _ =>
   let val' ← match val with
   | .UserDefined ref =>
-    let ref' ← resolveRef ref ty.source
-      (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias])
-    -- If the reference failed to resolve (name not defined) or resolved to the
-    -- wrong kind, treat the type as Unknown to avoid cascading errors. The single
-    -- "is not defined" / "wrong kind" diagnostic was already emitted by `resolveRef`;
-    -- collapsing the dangling `UserDefined` to `Unknown` keeps the variable's later
-    -- uses from being type-checked against a phantom type. A name that genuinely
-    -- resolves to a composite/datatype/alias/constrained type stays `UserDefined`
-    -- so real subtype checking still works.
-    let s ← get
-    let kindOk : Bool := match s.scope.get? ref.text with
-      | some (_, node) => node.kind == .unresolved ||
-          (#[ResolvedNodeKind.compositeType, .constrainedType, .datatypeDefinition, .typeAlias].contains node.kind)
-      | none => false  -- name not defined: resolveRef already reported it
-    if kindOk then pure (HighType.UserDefined ref')
-    else pure HighType.Unknown
+    -- Resolve the reference (collapsing a failed/wrong-kind resolution to
+    -- `Unknown`), then reject a *bare* reference to a generic datatype: its type
+    -- arguments must be written explicitly.
+    let resolved ← resolveTypeRef ref ty.source
+    checkBareGenericDatatype ref ty.source
+    pure resolved
   | .TSet et =>
     let et' ← resolveHighType et
     pure (.TSet et')
@@ -357,8 +520,17 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let vt' ← resolveHighType vt
     pure (.TMap kt' vt')
   | .Applied base args =>
-    let base' ← resolveHighType base
+    -- Resolve the base as an *applied* (not bare) type reference and validate the
+    -- type-argument arity here in Laurel rather than deferring to Core. `base` is
+    -- a `.UserDefined` name by grammar; resolving it via `resolveTypeRef` skips
+    -- the bare-generic rejection (which applies only to unapplied references).
+    let base' ← match base.val with
+      | .UserDefined name =>
+        checkTypeApplication name args.length base.source
+        pure { val := (← resolveTypeRef name base.source), source := base.source }
+      | _ => resolveHighType base
     let args' ← args.mapM resolveHighType
+    args'.forM checkTypeArgNotConstrained
     pure (.Applied base' args')
   | .Intersection tys =>
     let tys' ← tys.mapM resolveHighType
@@ -458,22 +630,42 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
     | some (_, node) => pure node.getType
     | none => pure { val := .Unknown, source := ref.source }
 
+/-- The declared return type of a call to `proc`, tagged with `callee`'s source.
+    Zero outputs synthesize `TVoid`, a single output its type, and multiple
+    outputs a `MultiValuedExpr`. Shared by `getCallInfo` and overload selection. -/
+private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd :=
+  match proc.outputs with
+  | [] => { val := .TVoid, source := callee.source }
+  | [singleOutput] => singleOutput.type
+  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
   let s ← get
   match s.scope.get? callee.text with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
-    let retTy := match proc.outputs with
-      | [] => { val := .TVoid, source := callee.source }
-      | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
-    pure (retTy, proc.inputs.map (·.type))
+    pure (procReturnType callee proc, proc.inputs.map (·.type))
   | some (_, .datatypeConstructor t _) =>
     -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
       pure ({ val := .UserDefined t, source := callee.source }, [])
+  | some (_, .datatypeDestructor dtName p) =>
+    -- A destructor's result is its field's declared type — except on a *generic*
+    -- datatype, where that type may mention the datatype's erased type
+    -- parameters: `Option..value(o)` is declared `T`, and the instantiation is not
+    -- known here (the type argument is carried, not substituted). Reporting `T`
+    -- would make every use of the result fail against a concrete type, e.g.
+    -- `Option..value(o) == 42` -> "cannot compare 'T' with 'int'". Such a slot is
+    -- gradual (`Unknown`); a field type with no parameter in it is precise as-is.
+    let params ← datatypeTypeParamNames dtName.text
+    let ctx := (← get).typeLattice
+    if mentionsTypeParam ctx params p.type then
+      pure ({ val := .Unknown, source := callee.source },
+            [{ val := .Unknown, source := callee.source }])
+    else
+      pure (p.type, [{ val := .Unknown, source := callee.source }])
   | some (_, .parameter p) => pure (p.type, [])
   | some (_, .constant c) => pure (c.type, [])
   | _ => pure ({ val := .Unknown, source := callee.source }, [])
@@ -498,6 +690,151 @@ private def procArity (callee : Identifier) (dropSelf : Bool) : ResolveM (Option
   | some (_, .instanceProcedure _ proc) =>
     pure (some (if dropSelf then proc.inputs.length - 1 else proc.inputs.length))
   | _ => pure none
+
+/-! ## Overloaded static procedures
+
+Multiple static procedures may share a name as long as no two have *conflicting*
+signatures. Overloads are tracked in `ResolveState.overloads`; the flat `scope`
+map only retains the last overload per name, so these helpers recover each
+overload's own id (`defIdForProcedure`) and collect the overloads matching a
+call's argument types (`selectOverloads`), from which `Synth.staticCall` picks
+the unique match or reports an ambiguous / unresolved call. -/
+
+/-- Two types *overlap* when some argument could satisfy both as a parameter —
+    i.e. one is a consistent subtype of the other in either direction. This is
+    exactly the negation of "no call can be ambiguous between them": `Unknown`
+    (the dynamic type) overlaps everything, and a subtype overlaps its
+    supertype. Built from `isConsistentSubtype`, the same relation
+    `overloadAccepts` uses to select an overload, so "overlapping parameters"
+    and "a single call both overloads accept" stay in agreement. -/
+private def typesOverlap (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  isConsistentSubtype ctx a b || isConsistentSubtype ctx b a
+
+/-- Two static-procedure signatures conflict — i.e. cannot coexist as overloads —
+    when they have the same arity and every parameter pair's types overlap
+    (`typesOverlap`). This is deliberately more aggressive than structural
+    equality: if two overloads' parameters merely overlap (e.g. one takes a
+    subtype of the other's, or either takes `Unknown`) then *every* call that
+    matches one matches the other, so the pair is rejected at declaration time.
+    This rules out the always-ambiguous pairs up front but is not a completeness
+    guarantee: pairwise non-overlap does not preclude a common descendant in the
+    lattice (the `Top1`/`Top2`/`C` diamond), so a specific call can still match
+    two accepted overloads. That residual ambiguity is caught per call site by
+    `selectOverloads` / `Synth.staticCall` rather than at declaration. -/
+private def signaturesConflict (ctx : TypeLattice) (a b : Procedure) : Bool :=
+  a.inputs.length == b.inputs.length &&
+    (a.inputs.zip b.inputs).all (fun (pa, pb) => typesOverlap ctx pa.type pb.type)
+
+/-- Structural (arity + per-parameter `highEq`) signature equality. Unlike
+    `signaturesConflict` this does not consult the type lattice; it is used only
+    to recover an overload's own id from the (already conflict-free) overload
+    table, where an exact structural match is unique. -/
+private def sameSignature (a b : Procedure) : Bool :=
+  a.inputs.length == b.inputs.length &&
+    (a.inputs.zip b.inputs).all (fun (pa, pb) => highEq pa.type pb.type)
+
+/-- Whether `proc` accepts a call with the given argument types: the arity
+    matches and every argument is a consistent subtype of the corresponding
+    parameter. Uses the same relation (`isConsistentSubtype`) as ordinary
+    argument checking, so overload selection agrees with type checking. -/
+private def overloadAccepts (ctx : TypeLattice) (proc : Procedure)
+    (argTys : List HighTypeMd) : Bool :=
+  proc.inputs.length == argTys.length &&
+    (proc.inputs.zip argTys).all (fun (p, argTy) => isConsistentSubtype ctx argTy p.type)
+
+/-- All overloads that accept a call's argument types. Registration only rejects
+    *pairwise* parameter overlap (`signaturesConflict`), which is not enough to
+    guarantee a unique match: with multiple inheritance a single argument type
+    can be a consistent subtype of two otherwise non-overlapping parameter types
+    (the diamond `C extends Top1, Top2` accepted by both `f(Top1)` and
+    `f(Top2)`), and a gradual `Unknown` argument is a consistent subtype of every
+    parameter. Both are genuine call-site ambiguities, so this returns *every*
+    matching candidate and lets the caller decide: no match is an
+    unresolved-overload error, exactly one is the resolved callee, and two or
+    more is an ambiguous-call error. Returning a list (rather than the first
+    match) is what lets `Synth.staticCall` report ambiguity instead of silently
+    picking the first declaration. -/
+private def selectOverloads (ctx : TypeLattice) (candidates : List (Nat × Procedure))
+    (argTys : List HighTypeMd) : List (Nat × Procedure) :=
+  candidates.filter (fun (_, p) => overloadAccepts ctx p argTys)
+
+/-- Recover the uniqueId that `preRegisterStaticProcedure` assigned to *this*
+    overload. The flat `scope` only remembers the last overload per name, so for
+    an overloaded name we match on the structural signature (`sameSignature`),
+    which is unique within the conflict-free overload table; for a non-overloaded
+    name the single scope entry is used. -/
+private def defIdForProcedure (proc : Procedure) : ResolveM (Option Nat) := do
+  if let some uid := proc.name.uniqueId then return some uid
+  let s ← get
+  match s.overloads.get? proc.name.text with
+  | some cands =>
+    match cands.find? (fun (_, p) => sameSignature p proc) with
+    | some (id, _) => pure (some id)
+    | none => pure ((s.scope.get? proc.name.text).map (·.1))
+  | none => pure ((s.scope.get? proc.name.text).map (·.1))
+
+/-- Pre-register a static procedure, allowing overloads. A procedure may share
+    its name with previously-registered overloads as long as none has a
+    conflicting signature (`signaturesConflict`). A conflicting redeclaration —
+    or a clash with a non-procedure definition already bound to the name — is
+    reported as a duplicate (matching `defineNameCheckDup`) and an `unresolved`
+    placeholder is bound so later references don't cascade. Otherwise the
+    procedure is registered, appended to the overload table, and made the
+    current scope entry for its name.
+
+    The definition-site id is reused across resolution passes: if the
+    procedure's name already carries a `uniqueId` (from an earlier `resolve`,
+    e.g. a re-resolution triggered by `needsResolves`) that id is kept, exactly
+    as `defineNameCheckDup.defineName` does for every other definition kind.
+    Only a first-time (unstamped) declaration allocates a `freshId`. Keeping the
+    id stable across passes preserves debuggability — a consumer holding a
+    static procedure's id across `resolve` calls sees the same id — and stops
+    `nextId` from growing every pass. -/
+private def preRegisterStaticProcedure (proc : Procedure) : ResolveM Unit := do
+  let name := proc.name.text
+  let s ← get
+  let ctx := s.typeLattice
+  let existing := s.overloads.getD name []
+  let nameTaken := s.currentScopeNames.contains name
+  -- Reuse the already-stamped definition-site id when re-resolving; only a
+  -- first-time declaration needs a fresh id.
+  let id ← match proc.name.uniqueId with
+    | some uid => pure uid
+    | none => freshId
+  -- External procedures cannot be overloaded.
+  let allOverloads := existing ++ [(id, proc)]
+  let externalConflict := allOverloads.length > 1 && allOverloads.any (fun (_, p) => p.body matches .External)
+  if externalConflict then
+    let diag := diagnosticFromSource proc.name.source
+      s!"A set of procedure overloads must not have any external procedures"
+    let existingIds := existing.map (·.1)
+    modify fun s => { s with
+      errors := s.errors.push diag,
+      scope := s.scope.insert name (id, .unresolved proc.name.source),
+      idToNode := s.idToNode.insert id (.unresolved proc.name.source),
+      currentScopeNames := s.currentScopeNames.insert name,
+      conflictingOverloads := existingIds.foldl (·.insert ·) (s.conflictingOverloads.insert id) }
+    return
+  -- A clash with a non-procedure definition (name taken but not by an overload
+  -- set), or with an existing overload whose signature conflicts (parameters
+  -- overlap), is a duplicate.
+  if (nameTaken && existing.isEmpty) || existing.any (fun (_, p) => signaturesConflict ctx p proc) then
+    let diag := diagnosticFromSource proc.name.source
+      s!"Duplicate definition '{name}' is already defined in this scope"
+    let conflictIds := existing.filter (fun (_, p) => signaturesConflict ctx p proc)
+      |>.map (·.1)
+    modify fun s => { s with
+      errors := s.errors.push diag,
+      scope := s.scope.insert name (id, .unresolved proc.name.source),
+      idToNode := s.idToNode.insert id (.unresolved proc.name.source),
+      currentScopeNames := s.currentScopeNames.insert name,
+      conflictingOverloads := conflictIds.foldl (·.insert ·) (s.conflictingOverloads.insert id) }
+  else
+    modify fun s => { s with
+      scope := s.scope.insert name (id, .staticProcedure proc),
+      idToNode := s.idToNode.insert id (.staticProcedure proc),
+      currentScopeNames := s.currentScopeNames.insert name,
+      overloads := s.overloads.insert name (existing ++ [(id, proc)]) }
 
 /-- Unfold any constrained types down to their underlying base type
     (e.g. `nat` ⇒ `int`). `fuel` keeps the function total; chains longer than
@@ -1745,6 +2082,16 @@ def Synth.staticCall (exprMd : StmtExprMd)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
+  -- Overload-failure marker: `UniqueOverloadNames` rewrites failed call sites to
+  -- this reserved prefix. Resolve arguments (so errors inside them still surface),
+  -- then return Unknown silently — the real diagnostic was already emitted.
+  if callee.text.startsWith overloadFailurePrefix then
+    let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Prod.fst <$> Synth.resolveStmtExpr a)
+    return (.StaticCall { callee with uniqueId := none } args',
+            { val := .Unknown, source := callee.source })
+
   -- Hack because we use these polymorphic map primitives but Laurel does not
   -- support polymorphism yet, so they cannot be type-checked against their
   -- placeholder `int` signatures. Instead we resolve the arguments and infer the
@@ -1771,9 +2118,105 @@ def Synth.staticCall (exprMd : StmtExprMd)
       | _, _ => pure ⟨ .Unknown, source ⟩
     return (.StaticCall callee' args', resultTy)
 
+  -- Overloaded static procedure: more than one procedure is registered under
+  -- this name. The flat `scope` only remembers the last one, so the normal
+  -- single-definition path below can't pick the right one. Instead synthesize
+  -- the argument types once and collect every overload whose parameters accept
+  -- them (`selectOverloads`):
+  --   * exactly one match  → the resolved callee, stamped with its own id;
+  --   * no match           → "no overload matches" error;
+  --   * two or more matches → an ambiguous call. Registration only rejects
+  --     pairwise-overlapping signatures, which does not preclude a call that
+  --     matches two non-overlapping overloads (a common descendant under
+  --     multiple inheritance, or a gradual `Unknown` argument that matches
+  --     all). Rather than silently pick the first declaration, this is
+  --     reported so the ambiguity is visible at the call site.
+  -- A non-overloaded name has at most one candidate and falls through.
+  let candidates := (← get).overloads.getD callee.text []
+  if candidates.length > 1 then
+    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Synth.resolveStmtExpr a)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
+    -- If any argument synthesizes to `.Unknown` (an untyped hole `<?>`, an
+    -- undefined identifier, an `if`-`then`-`else` whose branches are Unknown,
+    -- …), overload selection is meaningless: `.Unknown` is a consistent subtype
+    -- of every parameter type, so `overloadAccepts` would accept every
+    -- candidate and report a spurious *ambiguous call*, stacked on top of (or
+    -- masking) the argument's real error. Treat the result as `Unknown` and
+    -- leave the callee unresolved, matching how the single-definition path
+    -- degrades gracefully on Unknown arguments.
+    if argTys.any (·.val matches .Unknown) then
+      return (.StaticCall { callee with uniqueId := none } args',
+              { val := .Unknown, source := callee.source })
+    let ctx := (← get).typeLattice
+    match selectOverloads ctx candidates argTys with
+    | [(id, proc)] =>
+      let callee' := { callee with uniqueId := some id }
+      return (.StaticCall callee' args', procReturnType callee proc)
+    | [] =>
+      let diag := diagnosticFromSource source
+        s!"no overload of '{callee}' matches the argument types"
+      modify fun s => { s with errors := s.errors.push diag }
+      return (.StaticCall { callee with uniqueId := none } args',
+              { val := .Unknown, source := callee.source })
+    | _ =>
+      let diag := diagnosticFromSource source
+        s!"ambiguous call to '{callee}': the argument types match more than one overload"
+      modify fun s => { s with errors := s.errors.push diag }
+      return (.StaticCall { callee with uniqueId := none } args',
+              { val := .Unknown, source := callee.source })
+
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
   let (retTy, paramTypes) ← getCallInfo callee
+  -- A datatype constructor call is type-checked here, at resolution time, rather
+  -- than deferred to Core: each argument is checked against its declared field
+  -- type. `getCallInfo` reports no parameter types for a constructor (its result
+  -- is the datatype itself), so the field types are read off the constructor's
+  -- own node. The one slot that cannot be checked is a field whose type is one of
+  -- the datatype's type parameters: that is a genuine (erased) type variable,
+  -- satisfied by an argument of any type, so there is nothing to check against at
+  -- the call site — the argument is synthesized but left unconstrained. Argument
+  -- arity is checked in full. (A tester like `Foo..isBar` resolves to a
+  -- `.staticProcedure`, never a `.datatypeConstructor`, so it takes the ordinary
+  -- procedure path below.)
+  let ctorNode? := (← get).scope.get? callee.text
+  if let some (_, .datatypeConstructor typeName ctor) := ctorNode? then
+    -- The datatype's own type parameters (empty for a non-generic datatype).
+    let typeParams : List String := match (← get).scope.get? typeName.text with
+      | some (_, .datatypeDefinition dt) => dt.typeArgs.map (·.text)
+      | _ => []
+    if args.length != ctor.args.length then
+      let diag := diagnosticFromSource source
+        s!"constructor '{callee}' expects {ctor.args.length} argument(s) but {args.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
+    let ctx := (← get).typeLattice
+    let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+    -- Pad with `Unknown` so a surplus argument (arity already reported) is still
+    -- resolved — surfacing any error inside it; a missing one is dropped by `zip`.
+    let fieldTys : List HighTypeMd :=
+      ctor.args.map (·.type) ++ List.replicate (args.length - ctor.args.length) unknownTy
+    let args' ← (args.attach.zip fieldTys).mapM (fun (⟨a, hMem⟩, fieldTy) => do
+      have := hMem
+      -- A field is a *polymorphic slot* when its declared type mentions one of the
+      -- datatype's own type parameters anywhere — `T`, but equally `Map int T` or
+      -- `Option<T>`. The parameter is erased, so checking the argument against the
+      -- declared type would compare a concrete instantiation against a phantom
+      -- parameter and fail at every construction site; instead the argument is
+      -- synthesized and the deep check is Core's. A field type with no parameter in
+      -- it (a concrete primitive, constrained, composite, or closed generic
+      -- application) is checked here as usual. See `mentionsTypeParam` for why the
+      -- datatype's own `typeParams` list is the reliable source rather than a
+      -- scope lookup at this call site.
+      let isTypeParamSlot : Bool := mentionsTypeParam ctx typeParams fieldTy
+      if isTypeParamSlot then
+        let (a', _) ← Synth.resolveStmtExpr a
+        pure a'
+      else
+        Check.resolveStmtExpr a fieldTy)
+    return (.StaticCall callee' args', retTy)
   let unknownTy : HighTypeMd := { val := .Unknown, source := none }
   let expectedTys : List HighTypeMd :=
     paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
@@ -2764,7 +3207,14 @@ def resolveBody (body : Body) : ResolveM Body := do
     assignment. The procedure's declared output list `T_o-bar` is stored
     on `ResolveState.answerType`, set on entry and restored on exit. -/
 def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
-  let procName' ← resolveRef proc.name
+  -- Recover this overload's own id. `resolveRef` reads the flat `scope`, which
+  -- for an overloaded name only remembers the last overload; `defIdForProcedure`
+  -- matches on the signature to find the id `preRegisterStaticProcedure`
+  -- assigned to *this* procedure. Falls back to `resolveRef` for names with no
+  -- overload entry (e.g. datatype testers registered via `defineNameCheckDup`).
+  let procName' ← match ← defIdForProcedure proc with
+    | some id => pure { proc.name with uniqueId := some id }
+    | none => resolveRef proc.name
   withScope do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
@@ -2792,6 +3242,21 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
 /-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
 def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   let ty' ← resolveHighType field.type
+  -- Heap parameterization boxes every composite field value into the generated
+  -- `Box` datatype, which has one variant per field type and no variant for a
+  -- generic datatype instantiation: a field typed `Option<int>` reaches
+  -- `boxConstructorName` and aborts with an internal error. Reject it here with a
+  -- real diagnostic instead. (Keying the box variant on the base name alone does
+  -- not work — two instantiations in one program, `Option<int>` and
+  -- `Option<bool>`, would claim the same variant with different payload types —
+  -- so supporting this needs per-instantiation box variants, deliberately left
+  -- out of scope here.)
+  match ty'.val with
+  | .Applied base _ =>
+    let baseName := match base.val with | .UserDefined n => n.text | _ => "?"
+    modify fun s => { s with errors := s.errors.push (diagnosticFromSource field.type.source
+      s!"a generic datatype instantiation ('{baseName}<…>') is not yet supported as a composite field type") }
+  | _ => pure ()
   let qualifiedName := ownerName.text ++ "." ++ field.name.text
   let resolved ← resolveRef qualifiedName
   -- Keep the original field name text; only take the uniqueId from resolution.
@@ -2868,22 +3333,40 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
                           constraint := constraint', witness := witness' }
   | .Datatype dt =>
     let dtName' ← resolveRef dt.name
-    let ctors' ← dt.constructors.mapM fun ctor => do
-      let ctorName' ← resolveRef ctor.name
-      let args' ← ctor.args.mapM fun (p: Parameter) => do
-        let ty' ← resolveHighType p.type
-        let resolved ← resolveRef (dt.destructorName p)
-        -- Keep the original parameter name; only take the uniqueId from resolution.
-        -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
-        -- parameter's own name should stay unqualified.
-        let destructorId := { p.name with uniqueId := resolved.uniqueId }
-        return ⟨ destructorId, ty' ⟩
-      -- Resolve the tester name so its uniqueId is set.
-      let testerResolved ← resolveRef (dt.testerName ctor)
-      let testerName' := { ctor.testerName with
-        text := testerResolved.text
-        uniqueId := testerResolved.uniqueId }
-      return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
+    let typeParamNames := dt.typeArgs.map (·.text)
+    -- Reject duplicate type parameters (e.g. `datatype Foo<T, T>`): both would
+    -- otherwise enter the translation scope and Core would receive a repeated
+    -- type variable.
+    let dupParams := (typeParamNames.filter (fun n => typeParamNames.count n > 1)).eraseDups
+    unless dupParams.isEmpty do
+      let diag := diagnosticFromSource dt.name.source
+        s!"duplicate type parameter(s): {", ".intercalate dupParams}"
+      modify fun s => { s with errors := s.errors.push diag }
+    -- Resolve the constructors with the datatype's type parameters registered in
+    -- a fresh scope, so a reference to a parameter in a field type resolves to a
+    -- `.typeParameter` (a type variable) through the normal path — like any other
+    -- type name — instead of being reported "not defined". The scope is discarded
+    -- afterwards, so parameters don't leak to sibling declarations, and a
+    -- parameter shadows a same-named outer type while inside this datatype.
+    let ctors' ← withScope do
+      for tp in dt.typeArgs do
+        let _ ← defineName tp (.typeParameter tp)
+      dt.constructors.mapM fun ctor => do
+        let ctorName' ← resolveRef ctor.name
+        let args' ← ctor.args.mapM fun (p: Parameter) => do
+          let ty' ← resolveHighType p.type
+          let resolved ← resolveRef (dt.destructorName p)
+          -- Keep the original parameter name; only take the uniqueId from resolution.
+          -- resolveRef returns text = "DtName..field" (the qualified lookup key), but the
+          -- parameter's own name should stay unqualified.
+          let destructorId := { p.name with uniqueId := resolved.uniqueId }
+          return ⟨ destructorId, ty' ⟩
+        -- Resolve the tester name so its uniqueId is set.
+        let testerResolved ← resolveRef (dt.testerName ctor)
+        let testerName' := { ctor.testerName with
+          text := testerResolved.text
+          uniqueId := testerResolved.uniqueId }
+        return { name := ctorName', args := args', testerName := testerName' : DatatypeConstructor }
     return .Datatype { name := dtName', typeArgs := dt.typeArgs, constructors := ctors' }
   | .Alias ta =>
     let target' ← resolveHighType ta.target
@@ -3010,8 +3493,9 @@ private def collectTypeDefinition (map : Std.HashMap Nat ResolvedNode) (td : Typ
     let map := register map dt.name (.datatypeDefinition dt)
     dt.constructors.foldl (fun map ctor =>
       let map := register map ctor.name (.datatypeConstructor dt.name ctor)
-      -- Register the tester function in the refToDef map.
-      let testerProc := mkTesterProcedure dt ctor
+      -- Register the tester function in the refToDef map. Use `ctor.testerName`
+      -- (which carries its resolution-assigned uniqueId) as the procedure name.
+      let testerProc := { mkTesterProcedure dt ctor with name := ctor.testerName }
       let map := register map ctor.testerName (.staticProcedure testerProc)
       ctor.args.foldl (fun map p =>
         -- The constructor parameter's `uniqueId` (set by `resolveTypeDefinition`)
@@ -3153,9 +3637,9 @@ private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoi
     - Type names (composite, constrained, datatype) and their constructors/destructors/fields
     - Constant names
     - Static procedure names -/
-private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
-  -- Pre-register type definitions
-  for td in program.types do
+private def preRegisterDefinitions (types : List TypeDefinition)
+    (constants : List Constant) (procs : List Procedure) : ResolveM Unit := do
+  for td in types do
     match td with
     | .Composite ct =>
       let _ ← defineNameCheckDup ct.name (.compositeType ct)
@@ -3172,24 +3656,21 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit := do
       let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
       for ctor in dt.constructors do
         let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
-        -- Register the tester function (e.g. `IntList..isNil`) as a static procedure.
         let testerProc := mkTesterProcedure dt ctor
         let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
           (.staticProcedure testerProc) (some (dt.testerName ctor))
         for p in ctor.args do
-          -- Same chaining trick for the safe and unsafe destructor names: both
-          -- point to the same uniqueId so `IntList..head` and `IntList..head!`
-          -- resolve to the same `.datatypeDestructor` model entry.
           let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
           let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
     | .Alias ta =>
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
-  -- Pre-register constants
-  for c in program.constants do
+  for c in constants do
     let _ ← defineNameCheckDup c.name (.constant c)
-  -- Pre-register static procedures
-  for proc in program.staticProcedures do
-    let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
+  for proc in procs do
+    preRegisterStaticProcedure proc
+
+private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
+  preRegisterDefinitions program.types program.constants program.staticProcedures
 
 /-! ## Entry point -/
 
@@ -3214,19 +3695,11 @@ private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
     e.g. `old(f(x))` is recognized as meaningful when `f` reads the heap. -/
 private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
   let result := ((collectExprMd e).run {}).2
-  result.readsHeapDirectly || result.callees.any (fun c =>
+  result.readsHeapDirectly || result.callees.any fun c =>
     match c.uniqueId with
-    | some uid => heapReaders.contains uid
-    | none => dbg_trace s!"WARNING: containsHeapRead: callee '{c.text}' missing uniqueId"; false)
+    | some id => heapReaders.contains id
+    | none => false
 
-/-- Names of a procedure's inout parameters: those appearing in both the inputs
-    and the outputs. The pre- and post-state of an inout parameter differ, so
-    `old(...)` over such a parameter is meaningful even when the procedure does
-    not touch the heap. Mirrors `PushOldInward.procInoutNames`. -/
-private def procInoutNames (proc : Procedure) : Except String (List String) :=
-  proc.inputs.foldlM (init := []) fun result inp => do
-    let isInout ← proc.outputs.anyM (fun out => inp.name.sameId out.name)
-    pure (if isInout then result ++ [inp.name.text] else result)
 
 /-- True when `e` references one of `inoutNames` (an inout parameter), in which
     case `old(e)` captures the parameter's distinct pre-state and is not a no-op. -/
@@ -3292,8 +3765,8 @@ def validateOldUsage (model : SemanticModel) (program : Program) : List Diagnost
   let allProcs := program.staticProcedures ++ instanceProcs
   allProcs.flatMap fun proc =>
     let writesHeap := match proc.name.uniqueId with
-      | some uid => model.heapWriters.contains uid
-      | none => dbg_trace s!"WARNING: validateOldUsage: proc '{proc.name.text}' missing uniqueId"; false
+      | some id => model.heapWriters.contains id
+      | none => false
     oldWarningsForProc model.heapReaders writesHeap proc
 
 /-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
@@ -3314,6 +3787,112 @@ def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
         s!"'invokeOn' procedure '{proc.name.text}' may not have output parameters; the auto-invocation axiom is quantified over inputs only."
         DiagnosticType.UserError)
     else none
+
+/-- Effective output count of a procedure, counting the implicit heap output a
+    heap-writing procedure gains during heap parameterization: a writer has
+    `$heap` prepended to its outputs (`HeapParameterization`:
+    `outputs' := heapParam :: proc.outputs`), so its effective output count is
+    one more than declared. A procedure is "multi-output" when this count is
+    ≥ 2 — which is exactly when it cannot be lowered to a single-output Core
+    *function* and so cannot (yet) be called from a transparent body or a
+    contract.
+
+    `heapWriters` is keyed by resolution `uniqueId` (from `SemanticModel`),
+    not name text, so a heap-writing `A.foo` does not contaminate a same-named
+    pure `B.foo` in another composite. -/
+private def effectiveOutputCount (heapWriters : Std.HashSet Nat)
+    (proc : Procedure) : Except String Nat := do
+  let id ← Identifier.getUniqueId proc.name
+  let writesHeap := heapWriters.contains id
+  pure (proc.outputs.length + (if writesHeap then 1 else 0))
+
+/-- Every callee referenced by a `StaticCall`/`InstanceCall` anywhere in `e`,
+    in pre-order, paired with the source range of the whole call node (so a
+    diagnostic points at the call site). Both call forms carry the callee's
+    resolved `uniqueId` (an `InstanceCall`'s is stamped from the container-scoped
+    lookup — see `Synth.instanceCall`), which `validateMultiOutputCallContexts`
+    uses to resolve the callee to its correctly-scoped procedure. -/
+private def calleesOf (e : StmtExprMd) : List (Identifier × Option FileRange) :=
+  collectStmtExprList (fun n => match n.val with
+    | .StaticCall callee _ => [(callee, n.source)]
+    | .InstanceCall _ callee _ => [(callee, n.source)]
+    | _ => []) e
+
+/-- The expressions of a procedure that end up in a transparent body or a
+    contract — the two contexts a multi-output call may not (yet) appear in.
+
+    - A `.Transparent` body's whole implementation is transparent (the
+      `TransparencyPass` derives a pure `$asFunction` copy of it).
+    - Preconditions, postconditions, the `decreases` measure, and the `invokeOn`
+      trigger are contract expressions (the `ContractPass` translates
+      pre/postconditions into `$pre`/`$post` helpers, and calls inside them are
+      redirected to pure `$asFunction` twins).
+
+    An `.Opaque` body's *implementation* is deliberately excluded: it is ordinary
+    imperative code (verified as a procedure), so it may call multi-output
+    procedures via multi-assignment. Its postconditions are still contracts and
+    are included.
+
+    `.Abstract` bodies have no implementation, only postconditions — those are
+    contracts and are included. `.External` bodies have neither implementation
+    nor postconditions, so nothing is collected. -/
+private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
+  let contractExprs :=
+    proc.preconditions.map (·.condition)
+    ++ proc.decreases.toList
+    ++ proc.invokeOn.toList
+  let bodyExprs := match proc.body with
+    | .Transparent b => [b]
+    | .Opaque posts _impl _mods => posts.map (·.condition)
+    | .Abstract posts => posts.map (·.condition)
+    | .External => []
+  contractExprs ++ bodyExprs
+
+/-- Reject calling a multi-output procedure from a transparent procedure or a
+    contract. A Core *function* has exactly one output, so a multi-output
+    procedure (one declaring ≥ 2 outputs, or a heap writer, which gains an
+    implicit `$heap` output — see `effectiveOutputCount`) cannot be lowered to
+    the pure `$asFunction` twin that transparent bodies and contracts are
+    translated against. Until that is supported, such a call is a user error.
+
+    Only calls in a transparent body or a contract expression are flagged (see
+    `restrictedContextExprs`); calls from ordinary opaque implementations are
+    fine. Composite instance procedures are included because this runs at
+    initial resolution, before `LiftInstanceProcedures` moves them into the
+    static list.
+
+    Callees are resolved through the `SemanticModel`'s `refToDef` map by their
+    `uniqueId`, so `self#foo()` resolves to the `foo` of the receiver's
+    composite — not whichever same-named `foo` a text keying happened to pick.
+    Combined with the `uniqueId`-keyed heap-writer set (`model.heapWriters`),
+    this makes the check composite-scope correct: no false positive from another
+    composite's multi-output `foo`, and no false negative from another
+    composite's single-output `foo`. -/
+private def validateMultiOutputCallContexts (model : SemanticModel)
+    (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let allProcs := program.staticProcedures ++ instanceProcs
+  let heapWriters := model.heapWriters
+  allProcs.flatMap fun proc =>
+    (restrictedContextExprs proc).flatMap fun e =>
+      (calleesOf e).filterMap fun (callee, callSource) =>
+        -- Resolve the callee to its scoped procedure via `refToDef` (keyed by
+        -- the `uniqueId` the resolved call site carries), not by name text.
+        match model.get? callee with
+        | some (.staticProcedure callee')
+        | some (.instanceProcedure _ callee') =>
+          match effectiveOutputCount heapWriters callee' with
+          | .error e => some (DiagnosticModel.fromMessage
+              s!"Internal error: effectiveOutputCount: {e}" .StrataBug)
+          | .ok count =>
+            if count ≥ 2 then
+              some (diagnosticFromSource callSource
+                s!"calling multi-output procedure '{callee.text}' is not (yet) supported from a transparent procedure or contract"
+                DiagnosticType.UserError)
+            else none
+        | _ => none
 
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
@@ -3347,6 +3926,7 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     nextId := finalState.nextId,
     heapReaders := heapReaders
     heapWriters := heapWriters
+    conflictingOverloads := finalState.conflictingOverloads
   }
   let heapAnalysisErrors : Array DiagnosticModel :=
     (match heapReadersResult with
@@ -3365,9 +3945,20 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
   let invokeOnErrors :=
     if existingModel.isNone then validateInvokeOnOutputRefs program' else []
+  -- Multi-output procedures cannot (yet) be called from a transparent body or a
+  -- contract (see `validateMultiOutputCallContexts`). This is a property of the
+  -- user's *source* program, phrased against the pre-lowering shape (transparent
+  -- bodies, contracts, and pre-heap-parameterization output arity augmented by
+  -- the heap-writer set), so it runs only on the initial resolution — later
+  -- passes rewrite these constructs into forms this check is not phrased against.
+  let multiOutputCallErrors :=
+    if existingModel.isNone then
+      validateMultiOutputCallContexts semanticModel program'
+    else []
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
+             ++ multiOutputCallErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
@@ -3388,52 +3979,10 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
   -- Phase 1: pre-register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
-    -- Pre-register additional types (e.g. composite types from the original Laurel program)
-    for td in additionalTypes do
-      match td with
-      | .Composite ct =>
-        let _ ← defineNameCheckDup ct.name (.compositeType ct)
-        for field in ct.fields do
-          let qualifiedName := ct.name.text ++ "." ++ field.name.text
-          let _ ← defineNameCheckDup field.name (.field ct.name field) (some qualifiedName)
-        for proc in ct.instanceProcedures do
-          let _ ← defineNameCheckDup proc.name (.instanceProcedure ct.name proc)
-      | .Constrained ct =>
-        let _ ← defineNameCheckDup ct.name (.constrainedType ct)
-      | .Datatype dt =>
-        let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
-        for ctor in dt.constructors do
-          let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
-          let testerProc := mkTesterProcedure dt ctor
-          let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
-            (.staticProcedure testerProc) (some (dt.testerName ctor))
-          for p in ctor.args do
-            let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
-            let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
-      | .Alias ta =>
-        let _ ← defineNameCheckDup ta.name (.typeAlias ta)
-
-    -- Pre-register datatypes from the unordered core
-    for dt in uc.datatypes do
-      let _ ← defineNameCheckDup dt.name (.datatypeDefinition dt)
-      for ctor in dt.constructors do
-        let _ ← defineNameCheckDup ctor.name (.datatypeConstructor dt.name ctor)
-        let testerProc := mkTesterProcedure dt ctor
-        let _ ← defineNameCheckDup (mkId (dt.testerName ctor))
-          (.staticProcedure testerProc) (some (dt.testerName ctor))
-        for p in ctor.args do
-          let pName ← defineNameCheckDup p.name (.datatypeDestructor dt.name p) (some (dt.destructorName p))
-          let _ ← defineNameCheckDup pName (.datatypeDestructor dt.name p) (some (dt.unsafeDestructorName p))
-
-    -- Pre-register constants
-    for c in uc.constants do
-      let _ ← defineNameCheckDup c.name (.constant c)
-
-    -- Pre-register functions and core procedures
-    for proc in uc.functions do
-      let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
-    for proc in uc.coreProcedures do
-      let _ ← defineNameCheckDup proc.name (.staticProcedure proc)
+    preRegisterDefinitions
+      (additionalTypes ++ uc.datatypes.map .Datatype)
+      uc.constants
+      (uc.functions ++ uc.coreProcedures)
 
     -- Build type scopes for additional composite types (for field resolution)
     for td in additionalTypes do

@@ -77,6 +77,41 @@ def genOldExprIdents (idents : List Expression.Ident)
   : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
+/-- Generate one fresh type-variable name (`TyIdentifier = String`) from the
+    shared `CoreGenState` counter — the same monotonic counter that backs the
+    term-temp generators — so names are deterministic, resume-safe, and unique
+    across call sites without adding any new state. Mirrors `genIdent`.
+
+    NOTE: `CoreGenState.gen` records every generated name in `γ.generated`,
+    including freshened type variables, which — unlike term temps — never get a
+    store binding. Any proof relying on
+    `∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ CoreIdent.isTemp v)`
+    (e.g. `callElimStatementCorrect`) needs `generated` split by kind
+    (term-temp vs. type-var) so that invariant ranges only over term temps. -/
+def genTyVarName (prefixStr : String) : CoreGenM Lambda.TyIdentifier := do
+  let id ← CoreGenState.gen prefixStr
+  return id.name
+
+def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdentifier) :=
+  List.mapM (fun _ => genTyVarName prefixStr) (List.replicate n ())
+
+/-- Build a one-scope type substitution mapping each declared type variable of a
+    polymorphic callee to a globally-fresh type variable drawn at `prefixStr`
+    (the caller supplies its reserved prefix, e.g. `freshTyVarPrefix` in
+    `CallElim.lean`), for per-call-site contract instantiation in call
+    elimination. Returns the empty substitution (a verified identity for
+    `LMonoTy.subst`/`LExpr.applySubst`, which short-circuit on
+    `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
+    exact no-op for monomorphic procedures. -/
+def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)
+  : CoreGenM Lambda.Subst := do
+  if typeArgs.isEmpty then
+    return Lambda.Subst.empty
+  else
+    let fresh ← genTyVarNames prefixStr typeArgs.length
+    let scope : Lambda.SubstOne :=
+      (typeArgs.zip fresh).map (fun (t, f) => (t, Lambda.LMonoTy.ftvar f))
+    return [scope]
 
 /-- Cached results of program analyses that are helpful for program
     transformation.

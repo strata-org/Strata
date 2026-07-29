@@ -8,10 +8,11 @@ module
 -- Laurel dialect definition, loaded from LaurelGrammar.st
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: added compound assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`).
+-- Last grammar change: generic type application/params (`Option<T>`, datatype type parameters) and `parenType`, so parenthesized/applied types round-trip.
+-- (prior: added compound assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`).)
 -- (prior: added optional `entry` clause on procedure (producer-set entry point for interpretation).)
 -- (prior: added `free`/`checked` modifiers to requires/ensures clauses.)
--- Rebuild trigger: refresh stale grammar cache for compound-assignment operator tokens.
+-- Rebuild trigger: bump this line (change-agnostic) to force a grammar-cache refresh.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

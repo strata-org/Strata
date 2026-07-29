@@ -11,6 +11,7 @@ import all Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Util.Func
+import Strata.Util.ListProps
 import Std.Data.HashMap.Lemmas
 
 /-!
@@ -224,35 +225,6 @@ structure Factory (T : LExprParams) where
 
 namespace Factory
 
-private theorem List_inj_implies_nodup {α} (l : List α)
-  (p : ∀(i j : Nat) (p : i < l.length) (q : j < l.length), l[i] = l[j] → i = j)  :
-     l.Nodup := by
-  induction l with
-  | nil => exact List.nodup_nil
-  | cons h l ind =>
-    rw [List.nodup_cons]
-    constructor
-    · intro hmem
-      rw [List.mem_iff_getElem] at hmem
-      obtain ⟨k, hk, hval⟩ := hmem
-      have := p 0 (k + 1) (by simp) (by simp [hk]) (by simp [hval])
-      omega
-    · exact ind (fun i j hi hj heq => by
-        have := p (i + 1) (j + 1) (by simp [hi]) (by simp[hj]) (by simpa using heq)
-        omega)
-
-/-- The function names in a factory are unique. -/
-theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
-  match f with
-  | { toArray := ⟨l⟩, nameMap, toArrayDefined, nameMapValid, nameMapConsistent } =>
-    apply List_inj_implies_nodup
-    intro i j hi hj heq
-    simp only [List.length_map] at hi hj
-    -- toArrayDefined gives us injectivity via the nameMap
-    have hdi : nameMap[l[i].name.name]? = some i := toArrayDefined ⟨i, hi⟩
-    have hdj : nameMap[l[j].name.name]? = some j := toArrayDefined ⟨j, hj⟩
-    grind
-
 protected def mem {T} (f : Factory T) (name : String) := name ∈ f.nameMap
 
 def instMemDecidable {T} (f : Factory T) (name : String) : Decidable (f.mem name) :=
@@ -334,128 +306,11 @@ def pushIfNew {T} (f : Factory T) (fn : LFunc T) : Factory T :=
   else
     f.push fn p
 
-private theorem mem_pushIfNew {T} {f : Factory T} {g h : LFunc T}
-    (p : g ∈ (f.pushIfNew h).toArray) : g ∈ f.toArray ∨ g = h := by
-  revert p
-  simp [pushIfNew, push]
-  grind
-
 def append {T} (F : Factory T) (a : Array (LFunc T)) : Factory T :=
   a.foldl (init := F) pushIfNew
 
-private theorem ofArray_mem_take {T} {f : Factory T} {as : Array (LFunc T)} {fn : LFunc T}
-    (p : fn ∈ (f.append as).toArray) : fn ∈ f.toArray ∨ fn ∈ (as.take as.size) := by
-  simp only [append] at p
-  revert p
-  intro p2
-  apply Array.foldl_induction (init := f) (f := pushIfNew)
-    (motive := fun i m => fn ∈ m.toArray → fn ∈ f.toArray ∨ fn ∈ as.take i)
-  case h0 =>
-    grind
-  case hf =>
-    intro ⟨i, ilt⟩ f2 p p2
-    simp_all only [Array.mem_extract_iff_getElem]
-    match mem_pushIfNew p2 with
-    | Or.inl q =>
-      grind
-    | Or.inr q =>
-      grind
-  case a =>
-    exact p2
-
 def ofArray {T} (a : Array (LFunc T)) : Factory T :=
   .default |>.append a
-
-theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
-    (p : fn ∈ (Factory.ofArray a).toArray) : fn ∈ a := by
-  have q := ofArray_mem_take p
-  simp [Factory.default] at q
-  exact q
-
-@[simp] theorem toArray_default {T} : (Factory.default (T := T)).toArray = #[] := by
-  unfold Factory.default; rfl
-
-@[simp]
-theorem default_mem_is_false (T) (name : String) : name ∈ Factory.default (T := T) ↔ False := by
-  simp +instances[Factory.default, Factory.instMem, Factory.mem]
-
-theorem push_mem_iff {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
-    name ∈ f.push fn h ↔ name = fn.name.name ∨ name ∈ f := by
-  simp +instances only [instMem, Factory.mem, push]
-  simp only [Std.HashMap.mem_insert]
-  constructor <;> intro hm <;> grind
-
-theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
-    s ∈ f ↔ s ∈ f.toArray.map (·.name.name) := by
-  constructor
-  · intro hs
-    have hvalid := f.nameMapValid hs
-    have hcons := f.nameMapConsistent hs
-    rw [Array.mem_iff_getElem]
-    exact ⟨f.nameMap[s], by simp [Array.size_map]; exact hvalid, by simp [Array.getElem_map]; exact hcons⟩
-  · intro hs
-    rw [Array.mem_iff_getElem] at hs
-    obtain ⟨i, hi, hname⟩ := hs
-    simp [Array.size_map] at hi
-    simp [Array.getElem_map] at hname
-    have := f.toArrayDefined ⟨i, hi⟩
-    simp +instances [instMem, Factory.mem]
-    rw [← hname]
-    grind
-
-theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
-  (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
-  simp +instances [push, instGetElem?, Factory.get?]
-  grind
-
-theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
- (eq : f[name]? = some fn) : fn ∈ f.toArray := by
-  change Factory.get? f name = some fn at eq
-  unfold Factory.get? at eq
-  split at eq
-  · contradiction
-  · rename_i idx h_idx
-    injection eq with h_eq
-    subst h_eq
-    have idx_lt : idx < f.toArray.size := by
-      simp only [Std.HashMap.getElem?_eq_some_iff] at h_idx
-      obtain ⟨h_mem, h_val⟩ := h_idx
-      rw [←h_val]
-      exact f.nameMapValid h_mem
-    exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
-
-theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
-    (eq : f[name]? = some fn) : name ∈ f := by
-  simp +instances [instGetElem?, Factory.get?, instMem, Factory.mem] at eq ⊢
-  grind
-
-theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
-    (eq : f[name]? = some fn) : f[name]'(getElem?_some_implies_mem eq) = fn := by
-  simp +instances [instGetElem?, Factory.get?, Factory.get] at eq ⊢
-  split at eq
-  · contradiction
-  · rename_i idx h_idx; simp at eq; grind
-
-/-- If `fn ∈ F.toArray` and `fn.name.name = s`, then `s ∈ F` and `F[s] = fn`. -/
-theorem mem_name_eq_getElem {T} {F : Factory T} {fn : LFunc T} {s : String}
-    (hmem : fn ∈ F.toArray) (hname : fn.name.name = s) :
-    ∃ (hs : s ∈ F), F[s]'hs = fn := by
-  rw [Array.mem_def] at hmem
-  rw [List.mem_iff_getElem] at hmem
-  obtain ⟨i, hi, hval⟩ := hmem
-  have hi' : i < F.toArray.size := by grind
-  have hval' : F.toArray[i]'hi' = fn := by simpa using hval
-  have hdef : F.nameMap[s]? = some i := by
-    have hdef := F.toArrayDefined ⟨i, hi'⟩
-    simp at hdef
-    grind
-  have hs : s ∈ F := by
-    simp +instances only [instMem, Factory.mem]
-    grind
-  refine ⟨hs, ?_⟩
-  simp +instances only [instGetElem?, Factory.get]
-  have hidx : F.nameMap[s] = i := (Std.HashMap.getElem?_eq_some_iff.mp hdef).2
-  grind
 
 def getFunctionNames {T} (F : Factory T) : Array T.Identifier :=
   F.toArray.map (fun f => f.name)
@@ -528,122 +383,7 @@ def Factory.callOfLFunc {GenericTy} (F : Factory T) (e : LExpr ⟨T, GenericTy�
       | true => (op, args, func) | false => none
   | _ => none
 
-theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
-    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : ∃ m name ty, callee = .op m name ty ∧
-      F[name.name]? = some fn ∧ args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
-theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
-    {e callee : LExpr ⟨T, GenericTy⟩} {args : List (LExpr ⟨T, GenericTy⟩)} {fn : LFunc T}
-    {aPA : Bool}
-    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
-    : getLFuncCall e = (callee, args) := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
-  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; exact Prod.ext ‹_› rfl)
-
 end Factory
-
-theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
-op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LExpr.sizeOf) := by
-  fun_induction go generalizing op args
-  case case1 acc e' arg1 arg2 IH =>
-    intros Hgo; specialize (IH Hgo); simp_all; omega
-  case case2 acc fn fnty arg1 =>
-    simp_all; intros op_eq args_eq; subst op args; simp; omega
-  case case3 op' args' _ _ => intros Hop; cases Hop; omega
-
-theorem LExpr.sizeOf_pos {T} (e: LExpr T): 0 < sizeOf e := by
-  cases e<;> simp <;> omega
-
-theorem List.sum_size_le (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
-  induction l; simp_all; grind
-
-theorem getLFuncCall_smaller {T} {e: LExpr T} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.go_size Hgo);
-  simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
-  have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
-
-theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op args F'}
-    {allowPartialMatch}
-    : Factory.callOfLFunc F e (allowPartialApp := allowPartialMatch) = some (op, args, F') →
-  (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
-  simp; cases op <;> simp
-  rename_i o ty; cases F[o.name]? <;> simp
-  rename_i F'
-  cases allowPartialMatch
-  · cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq
-    subst op args F'; exact (getLFuncCall_smaller Hfunc)
-  · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
-    intros op_eq args_eq F_eq
-    subst op args F'; exact (getLFuncCall_smaller Hfunc)
-
-/-- If `F[s]?` finds a function, its name matches the query. -/
-theorem Factory.getElem?_name {T} {F : Factory T} {s : String} {fn : LFunc T}
-    (h : F[s]? = some fn) : fn.name.name = s := by
-  simp +instances [instGetElem?, Factory.get?] at h
-  split at h
-  · contradiction
-  · rename_i idx h_idx; simp at h
-    have h_mem : s ∈ F.nameMap := by grind
-    have h_idx_val : F.nameMap[s] = idx :=
-      (Std.HashMap.getElem?_eq_some_iff.mp h_idx).2
-    have h_cons := F.nameMapConsistent h_mem
-    grind
-
-/-- `callOfLFunc` ensures the number of args equals the number of inputs. -/
-theorem Factory.callOfLFunc_arity {T} {F : Factory T} {e callee : LExpr T.mono}
-    {args : List (LExpr T.mono)} {fn : LFunc T}
-    (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
-    : args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  split at hcall <;> try contradiction
-  cases hcall
-  grind
-
-/-- The callee of `callOfLFunc` is an `.op` whose name resolves to `fn` via `F[_]?`. -/
-theorem Factory.callOfLFunc_getElem?
-    {T} {F : Factory T} {e callee : LExpr T.mono}
-    {args : List (LExpr T.mono)} {fn : LFunc T}
-    {aPA : Bool}
-    (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
-    : ∃ m name ty, callee = .op m name ty ∧ F[name.name]? = some fn := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
-  split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
-  all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
-
-/-- If `callOfLFunc` returns a triple, the function is a member of the factory array. -/
-theorem callOfLFunc_func_mem
-    {T : LExprParams} (F : @Factory T) (e : LExpr T.mono)
-    (op : LExpr T.mono) (args : List (LExpr T.mono)) (func : LFunc T)
-    (aPA : Bool)
-    (h : F.callOfLFunc e (allowPartialApp := aPA) = some (op, args, func)) :
-    func ∈ F.toArray := by
-  simp only [Factory.callOfLFunc] at h
-  cases h_lfc : getLFuncCall e with | mk op' args' =>
-  simp only [h_lfc] at h
-  cases op' <;> simp at h
-  rename_i m_op name_op ty_op
-  cases h_gf : F[name_op.name]? with
-  | none => simp [h_gf] at h
-  | some func' =>
-    simp only [h_gf] at h
-    cases aPA <;> simp at h <;> split at h <;> simp at h
-    all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
 
 /--
 Apply type substitution `S` to all type annotations in an `LExpr`.
@@ -652,17 +392,6 @@ If e is an LExprT whose metadata contains type information, use applySubstT.
 -/
 def LExpr.applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
-
-theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
-    (e : LExpr T.mono) (S : Subst) :
-    e.applySubst S = replaceUserProvidedType e (LMonoTy.subst S) := by
-  unfold applySubst
-  split
-  case isTrue h_empty =>
-    have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS h_empty)
-    rw [h_id]
-    induction e <;> unfold replaceUserProvidedType <;> grind
-  case isFalse => rfl
 
 /--
 Best-effort type extraction from an `LExpr` without a typing context.
@@ -727,14 +456,6 @@ Returns `none` if the type substitution cannot be derived.
       else match Constraints.unify argConstraints SubstInfo.empty with
         | .ok substInfo => some substInfo.subst
         | .error _ => none
-
-/-- When `opTypeSubst` succeeds, `computeTypeSubst` agrees with it. -/
-theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
-    {fn : LFunc T} {callee : LExpr T.mono} {args : List (LExpr T.mono)} {s : Subst}
-    (h : fn.opTypeSubst callee = some s)
-    : fn.computeTypeSubst callee args = some s := by
-  unfold LFunc.computeTypeSubst
-  rw [h]
 
 end -- public section
 end Lambda

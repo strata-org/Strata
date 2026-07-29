@@ -9,7 +9,7 @@ public section
 section Relation
 
 @[expose] def Relation (A: Type) := A → A → Prop
-def Reflexive (r: Relation A) : Prop := ∀ x, r x x
+@[expose] def Reflexive (r: Relation A) : Prop := ∀ x, r x x
 abbrev Transitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
 
 /-- Composition of two relations: `RComp R₁ R₂ a c` holds when some intermediate

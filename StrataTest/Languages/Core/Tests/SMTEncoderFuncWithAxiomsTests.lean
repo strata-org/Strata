@@ -90,8 +90,8 @@ def encodeFuncsToSMT (es : List (LExpr CoreLParams.mono))
   let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
     (fun msg => f!"Error adding functions: {msg}")
   let factory := env.factory
-  -- Seed the encoding context's `typeFactory` from the env's datatypes.
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  -- Seed the encoding context's `datatypes` from the env's datatypes.
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
 
   -- 2. Encode the terms, then resolve/commit the deferred function definitions.
   let (terms, ctx, pending) ← toSMTTerms factory es ctx {}
@@ -382,7 +382,7 @@ private def testAllCommitted : Except Format String := do
   let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
     (fun msg => f!"Error adding functions: {msg}")
   let factory := env.factory
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   let (_, ctx, pending) ← toSMTTerms factory
     [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))] ctx {}
   let ctx' ← processPendingFnDefs factory ctx pending
@@ -408,7 +408,7 @@ private def testScheduleDedup : Except Format String := do
   let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
     (fun msg => f!"Error adding functions: {msg}")
   let factory := env.factory
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   -- Each of f, g, h is referenced twice; the six references share three `UF`s.
   let (_, _, pending) ← toSMTTerms factory
     [(.eq () (appI "f" (.intConst () 0)) (appI "f" (.intConst () 1))),

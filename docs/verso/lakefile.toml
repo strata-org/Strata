@@ -1,5 +1,5 @@
 name = "StrataDoc"
-defaultTargets = ["ddm", "langdef", "laurel", "transforms", "irtranslation"]
+defaultTargets = ["ddm", "langdef", "laureldesign", "laurelimpl", "laurelguide", "transforms", "irtranslation"]
 
 [[require]]
 name = "Strata"
@@ -25,11 +25,25 @@ name = "langdef"
 root = "LangDefDocMain"
 
 [[lean_lib]]
-name = "LaurelDoc"
+name = "LaurelDesignerGuide"
 
 [[lean_exe]]
-name = "laurel"
-root = "LaurelDocMain"
+name = "laureldesign"
+root = "LaurelDesignerGuideMain"
+
+[[lean_lib]]
+name = "LaurelImplementorGuide"
+
+[[lean_exe]]
+name = "laurelimpl"
+root = "LaurelImplementorGuideMain"
+
+[[lean_lib]]
+name = "LaurelUserGuide"
+
+[[lean_exe]]
+name = "laurelguide"
+root = "LaurelUserGuideMain"
 
 [[lean_lib]]
 name = "TransformsDoc"

@@ -52,6 +52,11 @@ structure TranslateState where
       Used by the `.Old (Var (Local n))` arm to defensively check `n` against
       the procedure's inout list. Empty when not translating a procedure body. -/
   currentProcInouts : List String := []
+  /-- Type-parameter names in scope while translating a generic datatype's
+      constructor argument types (e.g. `Val`/`Err` of `Result<Val, Err>`). A
+      `UserDefined` name matching one of these lowers to a Core free type
+      variable rather than a nullary type constructor. -/
+  typeParams : List String := []
   /-- Diagnostics that indicate the Core program should not be processed further.
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
@@ -89,12 +94,27 @@ private def invalidCoreType (source : Option FileRange) (reason : String) : Tran
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
+/-- Allocate a fresh unique ID. -/
+private def freshId : TranslateM Nat := do
+  let s ← get
+  let id := s.nextId
+  set { s with nextId := id + 1 }
+  return id
+
+/-- Allocate a fresh Core type variable. Used to fill in a datatype reference's
+    (erased) type arguments so the emitted `tcons` matches the arity Core
+    registered for that datatype; Core unification binds it to the real arg. -/
+private def freshTVar : TranslateM LMonoTy := do
+  return .ftvar s!"_t{← freshId}"
+
 /-
 Translate Laurel HighType to Core Type
 -/
 def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   let model := (← get).model
-  match _h : ty.val with
+  match ty with
+  | AstNode.mk val _ =>
+  match val with
   | .TInt => return LMonoTy.int
   | .TBool => return LMonoTy.bool
   | .TString => return LMonoTy.string
@@ -103,20 +123,50 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
-    match model.get? name with
-    | some (.datatypeDefinition dt) => return .tcons dt.name.text []
-    | some (.datatypeConstructor typeName _) => return .tcons typeName.text []
-    | _ => do -- resolution should have already emitted a diagnostic
-      emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
-      return .tcons name.text []
+    -- Check type parameters FIRST (matching how resolution scopes them): a
+    -- datatype's own type parameter (e.g. `Val`/`Err` of `Result<Val, Err>`)
+    -- lowers to a Core free type variable. Checking `model.get?` first would
+    -- mis-lower a parameter whose name collides with an in-scope type.
+    if (← get).typeParams.contains name.text then
+      return .ftvar name.text
+    else match model.get? name with
+      -- A bare datatype reference (e.g. a constructor's erased result type,
+      -- `Nothing() : Option`) must still carry one Core type argument per declared
+      -- parameter, or Core's arity check rejects the `tcons`. Emit fresh type
+      -- variables; Core unification binds them to the real argument types.
+      | some (.datatypeDefinition dt) =>
+        let args ← dt.typeArgs.mapM (fun _ => freshTVar)
+        return .tcons dt.name.text args
+      | some (.datatypeConstructor typeName _) =>
+        let args ← match model.get? typeName with
+          | some (.datatypeDefinition dt) => dt.typeArgs.mapM (fun _ => freshTVar)
+          | _ => pure []
+        return .tcons typeName.text args
+      | _ => do -- resolution should have already emitted a diagnostic
+        emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
+        return .tcons name.text []
+  -- Generic type application, e.g. `Option<int>` → `.tcons "Option" [int]`.
+  -- Core has real polymorphic datatypes, so the type arguments are forwarded.
+  -- Produced by user-written generic type application (the grammar `appliedType`
+  -- op) — see StrataTest/Languages/Laurel/EndToEndTests/Verification/Objects/GenericDatatype.lean.
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined n =>
+      -- A type *parameter* cannot itself be applied to arguments (`C<int>` where
+      -- `C` is a parameter): guard it like the plain `.UserDefined` arm so the
+      -- invalid program is suppressed via a diagnostic rather than leaking a
+      -- bogus `tcons`.
+      if (← get).typeParams.contains n.text then
+        invalidCoreType ty.source s!"type parameter '{n.text}' cannot be applied to type arguments"
+      else
+        let coreArgs ← args.mapM translateType
+        return .tcons n.text coreArgs
+    | _ => invalidCoreType ty.source "generic type application with a non-named base is not supported"
   | .TReal => return LMonoTy.real
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
   | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
   | _ => do
     invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
-
-termination_by ty.val
-decreasing_by all_goals (first | (cases elementType; term_by_mem) | (cases keyType; term_by_mem) | (cases valueType; term_by_mem))
 
 def lookupType (name : Identifier) : TranslateM LMonoTy := do
   translateType ((← get).model.get name).getType
@@ -137,15 +187,8 @@ private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : T
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
 
-/-- Allocate a fresh unique ID. -/
-private def freshId : TranslateM Nat := do
-  let s ← get
-  let id := s.nextId
-  set { s with nextId := id + 1 }
-  return id
-
-/-- Throw a hard diagnostic error, aborting the current translation -/
-def throwExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
+/-- Emit a diagnostic and continue with a default expression (does not abort). -/
+def emitExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return default
@@ -170,7 +213,7 @@ def translateExpr (expr : StmtExprMd)
   let model := s.model
   let md := astNodeToCoreMd expr
   let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
-      throwExprDiagnostic $ diagnosticFromSource source msg
+      emitExprDiagnostic $ diagnosticFromSource source msg
 
   match h: expr.val with
   | .LiteralBool b => return .const () (.boolConst b)
@@ -192,7 +235,7 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f => return .op () ⟨f.name.text, ()⟩ none
         | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
-      throwExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
+      emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
   | .PrimitiveOp op [e] _ =>
     match op with
     | .Not =>
@@ -204,7 +247,7 @@ def translateExpr (expr : StmtExprMd)
         | .TReal => true | _ => false
       return .app () (if isReal then realNegOp else intNegOp) re
     | _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
   | .PrimitiveOp op [e1, e2] skipProof =>
     let re1 ← translateExpr e1 boundVars isPureContext
     let re2 ← translateExpr e2 boundVars isPureContext
@@ -234,15 +277,15 @@ def translateExpr (expr : StmtExprMd)
     | .Geq => return binOp (if isReal then realGeOp else intGeOp)
     | .StrConcat => return binOp strConcatOp
     | _ =>
-        throwExprDiagnostic $ diagnosticFromSource expr.source s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
+        emitExprDiagnostic $ diagnosticFromSource expr.source s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
   | .PrimitiveOp op args _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
         | none =>
-            throwExprDiagnostic $ diagnosticFromSource expr.source s!"if-then without else expression" DiagnosticType.NotYetImplemented
+            emitExprDiagnostic $ diagnosticFromSource expr.source s!"if-then without else expression" DiagnosticType.NotYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := AstNode.sizeOf_val_lt expr
@@ -297,10 +340,10 @@ def translateExpr (expr : StmtExprMd)
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .IncrDecr _ _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source
+      emitExprDiagnostic $ diagnosticFromSource expr.source
         "IncrDecr should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
   | .CompoundAssign _ _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source
+      emitExprDiagnostic $ diagnosticFromSource expr.source
         "CompoundAssign should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
   | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in transparent bodies or contracts"
@@ -335,21 +378,21 @@ def translateExpr (expr : StmtExprMd)
   | .Var (.Field target fieldId) =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      throwExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
   | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ =>
       disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
   | .Block [] _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
-  | .Return _ => throwExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
+  | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" DiagnosticType.StrataBug
   | .IsType _ _ =>
-      throwExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
-  | .New _ => throwExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
-  | .AsType target _ => throwExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
-  | .Assigned _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
+      emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
+  | .New _ => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
+  | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
+  | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
   | .Old value =>
       -- `pushOldInward` is expected to leave every `Old` wrapping `Var (Local n)`
       -- with `n` an inout parameter of the enclosing procedure. We do not rely on
@@ -361,7 +404,7 @@ def translateExpr (expr : StmtExprMd)
       | .Var (.Local name) =>
           let inouts := s.currentProcInouts
           if !inouts.contains name.text then
-            throwExprDiagnostic $ diagnosticFromSource expr.source
+            emitExprDiagnostic $ diagnosticFromSource expr.source
               s!"old({name.text}) refers to a name that is not an inout parameter \
                  of the enclosing procedure (inouts: {inouts}). This violates the \
                  pushOldInward normalization invariant."
@@ -370,20 +413,20 @@ def translateExpr (expr : StmtExprMd)
             let coreTy ← translateType (model.get name).getType
             return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
       | _ =>
-          throwExprDiagnostic $ diagnosticFromSource expr.source
+          emitExprDiagnostic $ diagnosticFromSource expr.source
             "old(...) should have been pushed inward to a variable reference. \
              This violates the pushOldInward normalization invariant."
             DiagnosticType.StrataBug
-  | .Fresh _ => throwExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
-  | .Assert .. => throwExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
-  | .Assume _ => throwExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
-  | .ProveBy value _ => throwExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
-  | .ContractOf _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
-  | .Abstract => throwExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" DiagnosticType.NotYetImplemented
-  | .All => throwExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" DiagnosticType.NotYetImplemented
-  | .InstanceCall target callee args => throwExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" DiagnosticType.NotYetImplemented
-  | .PureFieldUpdate _ _ _ => throwExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" DiagnosticType.NotYetImplemented
-  | .This => throwExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" DiagnosticType.NotYetImplemented
+  | .Fresh _ => emitExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
+  | .Assert .. => emitExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
+  | .Assume _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
+  | .ProveBy value _ => emitExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
+  | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
+  | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" DiagnosticType.NotYetImplemented
+  | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" DiagnosticType.NotYetImplemented
+  | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" DiagnosticType.NotYetImplemented
+  | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" DiagnosticType.NotYetImplemented
+  | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" DiagnosticType.NotYetImplemented
   termination_by expr
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
@@ -816,12 +859,17 @@ Translate a Laurel DatatypeDefinition to an `LDatatype Unit`.
 -/
 def translateDatatypeDefinition (dt : DatatypeDefinition)
     : TranslateM (Lambda.LDatatype Unit) := do
+  -- Bring the datatype's type parameters into scope so their occurrences in
+  -- constructor argument types lower to Core free type variables (`.ftvar`).
+  let savedTypeParams := (← get).typeParams
+  modify fun s => { s with typeParams := dt.typeArgs.map (·.text) }
   let constrs ← dt.constructors.mapM fun c => do
     let args ← c.args.mapM fun ⟨ n, ty ⟩ => do
       return (⟨n.text, ()⟩, ← translateType ty)
     return { name := ⟨c.name.text, ()⟩
              args := args
              testerName := s!"{dt.name}..is{c.name}" : Lambda.LConstr Unit }
+  modify fun s => { s with typeParams := savedTypeParams }
   -- Zero-constructor datatypes (e.g. TypeTag with no composite types) get a synthetic
   -- unit constructor so the type is valid and can be referenced by other datatypes.
   let constrs := if constrs.isEmpty then

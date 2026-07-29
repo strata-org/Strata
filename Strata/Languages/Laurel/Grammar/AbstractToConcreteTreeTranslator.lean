@@ -9,6 +9,7 @@ public import StrataDDM.AST
 public import Strata.Languages.Laurel.LaurelAST
 import StrataDDM.Format
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Util.Tactics
 
 namespace Strata
 namespace Laurel
@@ -33,12 +34,14 @@ private def semicolonSep (args : Array Arg) : Arg := .seq sr .semicolonNewline a
 
 private def seqArg (args : Array Arg) : Arg := .seq sr .none args
 
--- Internal-only: these are public because `mutual`/`partial` prevents `private`
+-- Internal-only: these are public because `mutual` prevents `private`
 mutual
 
-partial def highTypeToArg (t : HighTypeMd) : Arg := highTypeValToArg t.val
+def highTypeToArg (t : HighTypeMd) : Arg := highTypeValToArg t.val
+  termination_by sizeOf t
+  decreasing_by cases t; simp; omega
 
-partial def highTypeValToArg : HighType → Arg
+def highTypeValToArg : HighType → Arg
   | .TInt => laurelOp "intType"
   | .TBool => laurelOp "boolType"
   | .TFloat64 => laurelOp "float64Type"
@@ -50,16 +53,30 @@ partial def highTypeValToArg : HighType → Arg
   | .TVoid => laurelOp "compositeType" #[ident "void"]
   -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
-  | .Applied base _args =>
-    -- Applied types are not directly representable in the grammar;
-    -- emit the base type as a best-effort approximation
-    highTypeToArg base
+  | .Applied base args =>
+    -- Generic type application, e.g. `Option<int>`. Representable only when the
+    -- base is a named type (which is the only form the grammar produces).
+    match base.val with
+    | .UserDefined name =>
+      laurelOp "appliedType" #[ident name.text, commaSep (args.map highTypeToArg |>.toArray)]
+    -- The base is always `.UserDefined` by construction (the grammar's
+    -- `appliedType` op only ever builds a named base). Emit a non-reparsing
+    -- sentinel rather than silently dropping the args, so a round-trip test
+    -- fails loudly if that invariant is ever violated (mirrors BUG_MultiValuedExpr).
+    | _ => laurelOp "compositeType" #[ident "BUG_AppliedNonNamedBase"]
   | .Intersection types =>
     match types with
     | [] => laurelOp "compositeType" #[ident "Unknown"]
     | t :: _ => highTypeToArg t
   | .Unknown => laurelOp "compositeType" #[ident "Unknown"]
   | .MultiValuedExpr _ => laurelOp "compositeType" #[ident "BUG_MultiValuedExpr"]
+  termination_by t => sizeOf t
+  decreasing_by
+    -- The `.Applied` arm maps over the type-argument *list*, so its goal comes
+    -- with an `x ∈ args` hypothesis; `term_by_mem` turns that into the size
+    -- lemma. The remaining arms recurse into direct subterms.
+    all_goals (try term_by_mem)
+    all_goals (simp; try omega)
 
 end
 
@@ -328,10 +345,12 @@ private def datatypeConstructorToArg (c : DatatypeConstructor) : Arg :=
 private def datatypeToOp (dt : DatatypeDefinition) : StrataDDM.Operation :=
   let ctors := dt.constructors.map datatypeConstructorToArg |>.toArray
   let ctorList := laurelOp "datatypeConstructorList" #[commaSep ctors]
+  let typeParamsArg := optionArg (if dt.typeArgs.isEmpty then none
+    else some (laurelOp "typeParams" #[commaSep (dt.typeArgs.map (fun p => ident p.text) |>.toArray)]))
   let datatypeOp : StrataDDM.Operation :=
     { ann := sr
       name := { dialect := "Laurel", name := "datatype" }
-      args := #[ident dt.name.text, ctorList] }
+      args := #[ident dt.name.text, typeParamsArg, ctorList] }
   { ann := sr
     name := { dialect := "Laurel", name := "datatypeCommand" }
     args := #[.op datatypeOp] }

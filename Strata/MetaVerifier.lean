@@ -60,7 +60,7 @@ def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
     ifs := .ofArrayUnchecked ctx.ifs
     axms := .ofArrayUnchecked ctx.axms
     tySubst := ctx.tySubst
-    typeFactory := #[]
+    datatypes := .empty
     seenDatatypes := {}
     datatypeFuns := {} }
 
@@ -158,7 +158,7 @@ Remove solver-side caches that destabilize definitional equality in metaprograms
 
 At the moment this is semantically harmless for denotation because
 `Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`typeFactory`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx
@@ -168,7 +168,7 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
   Option SMT.SMTVC := do
     -- Seed the encoding context with the env's datatypes and the array-theory flag.
     let smtCtx := { Core.SMT.Context.default with
-      typeFactory := E.datatypes, useArrayTheory := options.useArrayTheory }
+      datatypes := .ofFactory E.datatypes, useArrayTheory := options.useArrayTheory }
     let maybeTerms := Core.ProofObligation.toSMTTerms E.factory ob smtCtx
     match maybeTerms with
     | .error _ => none

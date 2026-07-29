@@ -120,7 +120,7 @@ shortTitle := "Laurel Implementor Guide"
 
 # Language definition
 The Laurel language definition consists of its types, its grammar and its semantics. Currently the
-semantics is split into a static part, called the resolver, and a yet to be built dynamic part.
+semantics is split into a static part, called the resolver, and a yet-to-be-built operational part.
 
 The parts of the language definition map onto the implementation files as follows:
 
@@ -136,18 +136,19 @@ The parts of the language definition map onto the implementation files as follow
 - *Static semantics (resolver)* — `Resolution.lean` resolves references and type checks the
   program, producing diagnostics and a `SemanticModel` (defined in `SemanticModel.lean`) that links
   references to their definitions.
-- *Dynamic semantics* — Laurel does not yet have a standalone interpreter; its runtime meaning is
+- *Operational semantics* — Laurel does not yet have a standalone interpreter; its runtime meaning is
   given operationally by the compilation to Core described below. The pass files under
   `Strata/Languages/Laurel/` and the pipeline in `LaurelCompilationPipeline.lean` therefore
-  constitute the dynamic semantics, delegating to Core's own execution and verification semantics.
+  constitute the operational semantics, delegating to Core's own execution and verification semantics.
 
 *Laurel program type definition*
 The Laurel type definition allows many more programs than are required for the language as it is
-documented for the user. The reason for this is the compilation of Laurel to different languages.
-However, despite being wide, the Laurel language type is kept as precise as possible given the
-flexibility that it needs.
+documented for the user. The Laurel AST has some constructs that are only used by the compilation
+passes, but not by the source languages, to enable gradual compilation to Core. Because of these
+extra constructs we call the Laurel AST wide.
 
-In the Laurel type, constructors are combined when this does not reduce precision. For example,
+If two Laurel language constructs share semantic properties, we try to capture that sharing in the
+AST by having a shared constructor. For example,
 instead of having a separate constructor for `StmtExpr.Forall` and for `StmtExpr.Exists`, there is a
 single `StmtExpr.Quantifier` with a boolean field to determine its type. A more complicated example:
 calls to statically defined user procedures, to datatype constructors, and to datatype destructors
@@ -171,7 +172,7 @@ refers to a definition is given the unique identifier of the definition it refer
 `SemanticModel` uses these unique identifiers to provide navigation features.
 
 Right now, Laurel reserves identifier names that start with `$` for use in its compilation passes.
-In the future we may improve the passes so they never generate names that collide with user provided
+In the future we may improve the passes so they never generate names that collide with user-provided
 names.
 
 # Testing strategy
@@ -192,7 +193,7 @@ during resolution (`resolve`, which the pipeline re-runs after passes that set `
 never by a pass — there are no exceptions to this rule. Every diagnostic emitted by a pass is a bug
 report (`DiagnosticType.StrataBug`), where a "bug" includes features that are planned but not yet
 supported: for example, `InlineLocalVariables` reporting an assignment to a variable it has inlined.
-A compilation pass may only refer to AST nodes that relates to its business
+A compilation pass may only refer to AST nodes that relate to its business
 logic: it may not define AST traversals without using helper methods, to allow adding new AST nodes
 without breaking existing compilation passes. The generic traversal helpers live in
 `MapStmtExpr.lean`: `mapStmtExprM` (bottom-up monadic rewrite of a `StmtExpr` tree),

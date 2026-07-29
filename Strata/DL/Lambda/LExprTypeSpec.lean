@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprWF
@@ -21,6 +22,7 @@ import all Strata.DL.Util.List
 public import Strata.DL.Lambda.LExprT
 import all Strata.DL.Lambda.LExprT
 public import Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.FactoryProps
 public meta import Init.Grind.Cases
 
 /-! ## Typing Relation for Lambda Expressions

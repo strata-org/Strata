@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryProps
 
 /-!
 ## Well-formedness of LFunc and Factory

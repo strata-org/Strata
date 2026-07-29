@@ -389,7 +389,7 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
     match termCache with
     | some ref => do let m ← ref.get; pure { termStrings := m }
     | none => pure {}
-  let ((_ids, estate), solverState) ← pctx.withPhase "encodeSMT" do
+  let ((_ids, estate), solverState) ← pctx.withPhase "writeSMTLib" do
     encodeSMT.run solver initState
   -- Persist newly produced strings back to the shared ref.
   match termCache with
@@ -403,7 +403,10 @@ def dischargeObligation {P : PureExpr} [ToFormat P.Ident] [BEq P.Ident]
 
   let solver_output ← pctx.withPhase "runSolver" do
     runSolver smtsolver (#[filename] ++ solver_options)
-  match ← solverResult typedVarToSMTFn vars solver_output estate smtsolver satisfiabilityCheck validityCheck with
+  let parsed ← pctx.withPhase "parseResult" do
+    solverResult typedVarToSMTFn vars solver_output estate smtsolver
+      satisfiabilityCheck validityCheck
+  match parsed with
   | .error e => return .error e
   | .ok (satResult, validityResult) => return .ok (satResult, validityResult, estate)
 

@@ -124,7 +124,7 @@ diagnostic that only `testLaurel` surfaces may originate from a later pass,
 not the verifier. The major passes are described in the **Translation
 Pipeline** section of the Laurel language implementor guide — published at
 [strata-org.github.io/Strata](https://strata-org.github.io/Strata/laurelimpl/html-multi/),
-source in [`docs/verso/LaurelImplementationGuide.lean`](verso/LaurelImplementationGuide.lean) — and the full
+source in [`docs/verso/LaurelImplementorGuide.lean`](verso/LaurelImplementorGuide.lean) — and the full
 pass list and exact ordering live in
 [`Strata/Languages/Laurel/LaurelCompilationPipeline.lean`](../Strata/Languages/Laurel/LaurelCompilationPipeline.lean)
 (`laurelPipeline`).

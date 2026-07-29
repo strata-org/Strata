@@ -466,12 +466,12 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
   (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
     (.fvar () "s2" (.some .string)))
 
-/-! ## `ProofObligation.toSMTTerms` preserves the input `typeFactory`
+/-! ## `ProofObligation.toSMTTerms` preserves the input datatype factory
 
-`SMT.Context.typeFactory` is seeded by the caller from the env's datatype
+`SMT.Context.datatypes` is seeded by the caller from the env's datatype
 TypeFactory and is never modified during encoding (encoding a datatype marks it
-`seen` and registers its function maps, but never extends `typeFactory`). These
-checks pin that invariant: the output context's `typeFactory` equals the
+`seen` and registers its function maps, but never extends `datatypes`). These
+checks pin that invariant: the output context's datatype factory equals the
 datatype factory the caller seeded it with. -/
 
 private def intListDatatypeRT : Lambda.LDatatype Unit :=
@@ -489,14 +489,14 @@ private def assertOb (obligation : LExpr CoreLParams.mono) :
     obligation := obligation, metadata := {} }
 
 /-- Build an env from the given datatype blocks, encode `ob` with its
-    `typeFactory` seeded from the env's datatypes, and return whether the output
-    context's `typeFactory` still equals that input datatype factory. -/
+    `datatypes` seeded from the env's datatypes, and return whether the output
+    context's datatype factory still equals that input datatype factory. -/
 private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
     (ob : Imperative.ProofObligation Expression) : Except Std.Format Bool := do
   let env ← (Env.init.addDatatypes blocks).mapError (f!"{·}")
-  let ctx := { SMT.Context.default with typeFactory := env.datatypes }
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   let (_, _, _, _, ctx', _) ← ProofObligation.toSMTTerms env.factory ob ctx
-  .ok (ctx'.typeFactory == env.datatypes)
+  .ok (ctx'.datatypes.factory == env.datatypes)
 
 -- Obligation referencing the `IntList` datatype (via its `Nil` constructor).
 /-- info: ok: true -/

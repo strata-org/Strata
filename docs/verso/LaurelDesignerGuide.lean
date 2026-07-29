@@ -79,7 +79,7 @@ protects execution behavior, and ignorability protects each analysis from the co
 not need.
 
 ## Property-based testing
-To be designed..
+Feature described in the Planned features section.
 
 ## Verification
 To achieve goal 1.2, enable proving properties through verification, Laurel has the following
@@ -184,6 +184,8 @@ reports a failure against its own source range, so a diagnostic points at the sp
 that does not hold rather than at the whole loop.
 
 ## Hybrid PBT and verification
+To be designed..
+
 Laurel allows bypassing the symbolic checking of properties in various ways:
 - Assumptions
 - Bodyless procedures
@@ -193,8 +195,7 @@ exactly Laurel will guarantee a correct hand-off between concrete and symbolic p
 yet to be designed.
 
 ## Data-flow analysis
-
-To be designed..
+Feature described in the Planned features section.
 
 # Prevent duplicate work
 To achieve goal (2), reduce code duplication in the analysis of popular languages, Laurel contains
@@ -533,7 +534,8 @@ can only contain information that can also be inferred from the body, and redund
 bad for verification performance.
 
 For proving properties on top of a procedure's body or postconditions, define a separate procedure
-that calls the target one.
+that calls the target one. Such a separate 'lemma' procedure can be invoked automatically using an
+invokeOn clause, discussed later in this guide.
 
 Since modifies clauses are a type of postcondition, they are also only allowed on opaque procedures.
 
@@ -563,22 +565,7 @@ procedure increment(counter: Counter)
 ```
 
 ## Heap mutation in contracts
-A contract in Laurel may not modify any object that exists outside of that contract, as if the
-contract has an empty modifies clause. However, new objects may be created and modified inside the
-contract.
-
-A common design choice in verification-aware programming languages is not to allow creating or
-modifying objects in contracts. A good reason for this is that objects are more complex to reason
-about than immutable data, and contracts are intended to contain easy to reason about code. Laurel
-still allows creating and modifying new objects inside contracts because code might be declared to
-operate specifically through the use of reference types, and Laurel does not want to restrict users
-from using such code even in contracts.
-
-A second reason for not allowing any heap modification inside contracts is that this is prone to
-soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge
-of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does
-not allow assigning to a variable defined outside the contract, from inside the contract, no
-modification can escape the contract. The heap used inside a contract is a separate heap variable.
+Feature described in the Planned features section.
 
 ## Aliasing helpers
 
@@ -631,13 +618,9 @@ procedure store(container: Container, item: Node)
 
 
 ## Invoke on
-The postcondition of an opaque procedure is exposed to callers as an axiom: the ensures clause,
-universally quantified over the procedure's inputs. Left unrestricted, the solver may instantiate
-such an axiom on any matching term, which is a common cause of slow and unpredictable verification.
-
-An `invokeOn` clause names the SMT trigger for that axiom. It takes an expression over the
-procedure's inputs, and the axiom is only instantiated when a term matching that expression appears
-in the proof context.
+An `invokeOn` clause on a procedure specifies a pattern over the procedure's inputs. When the
+pattern matches any known facts in the proof context, the procedure is automatically invoked. This
+reduces the need for manually calling lemma procedures for verification purposes.
 
 ```
 procedure PAndQ(x: int)
@@ -646,67 +629,28 @@ procedure PAndQ(x: int)
   ensures P(x) && Q(x);
 ```
 
-This emits the axiom `forall x. {P(x)} P(x) && Q(x)`, triggered on `P(x)`. An obligation that
-mentions `P(x)` pulls in `P(x) && Q(x)`, so it can establish both `P(x)` and `Q(x)`. An
-obligation that mentions only `Q(x)` does not match the trigger, so the axiom stays dormant and
-`Q(x)` is not proved. The trigger controls *when* the fact is instantiated, but not *where*: the
-axiom is emitted at the top level of the program, so once a matching term appears the fact becomes
-available to every proof obligation in the program, not just to a particular caller or region.
+Whenever `P(x)` is a known fact, the procedure `PAndQ` is automatically invoked, making its
+postcondition `P(x) && Q(x)` available without an explicit call. An obligation that mentions only
+`Q(x)` does not match the pattern, so the procedure stays dormant and its postcondition is not made
+available.
 
-This global availability is a deliberate simplification for the first version of the feature. It is
-enough to make an opaque procedure's postcondition usable, but it gives no control over scope: a
-fact intended for one caller is visible everywhere its trigger matches, which can slow down or
-perturb unrelated proofs. `invokeOn` is expected to evolve toward finer-grained control over where
-facts are made available — for example scoping a fact to specific callers, modules, or call sites —
-so that authors can expose a postcondition exactly where it is useful rather than program-wide.
+Note that preconditions act as an antecedent, not as a runtime check: if the preconditions are not
+provable at the match site, the postcondition simply remains unavailable rather than causing a
+failure. Additionally, the fact is program-wide — once a term matches the pattern anywhere, the
+postcondition is available to every proof obligation in the program, not just to a particular caller
+or region. Finer-grained scoping (e.g. per-caller or per-module) is planned as future work.
 
 # Automated proof search
 Goal 5 was enabling the finding of proofs through automated search.
 
 ## Proof By
-To be designed..
-
-The proof by construct allows helping the verifier prove a particular goal through specifying
-intermediate goals and through revealing useful facts and hiding important ones.
+Feature described in the Planned features section.
 
 ## Reads clauses
-Reads clauses are useful to improve verification performance. The facts they provide work well
-together with the facts provided by modifies clauses, making it easier to prove which procedure
-values have remained unchanged after objects were modified.
+Feature described in the Planned features section.
 
 ## Frozen types
-Frozen types (To be designed). A reads clause specifies that a procedure always returns the same
-value, if the reads references have the same values and if the explicit input arguments, which
-excludes the heap, are the same. A procedure that returns a newly created object, which has a
-reference counter that depends on the counter of the input heap, can thus never satisfy a reads
-clause. For this purpose Laurel allows erasing the counter from a reference value. A Laurel
-`Frozen` type takes a regular reference type, and produces a type that is the same except that it
-does not support reference equality or mutation of its fields. Record types are composite types that
-are frozen by default.
-
-The following sketch (syntax illustrative — reads clauses, records, and `Frozen` are still being
-designed) shows why the erasure matters. Each procedure declares an empty reads clause, claiming its
-result depends on nothing in the heap:
-
-```
-record Tuple { var fst: int; var snd: int }
-composite MutableTuple { var fst: int; var snd: int }
-
-procedure makeRecord() reads {} returns (r: Tuple)
-{ return Tuple(1, 2) };                  // ok: records are frozen, no reference identity
-
-procedure makeFrozen() reads {} returns (r: Frozen<MutableTuple>)
-{ ... };                                 // ok: the counter is erased, so the result is heap-independent
-
-procedure makeMutable() reads {} returns (r: MutableTuple)
-//                      ^^^^^^^^ fails: the new object's identity depends on the heap counter
-{ return new MutableTuple(1, 2) };
-```
-
-`makeRecord` and `makeFrozen` satisfy the empty reads clause because neither result carries a
-heap-dependent reference counter, so calling either twice with the same inputs yields equal results.
-`makeMutable` returns a fresh `MutableTuple` whose reference identity is drawn from the heap's
-allocation counter, so its result differs between calls and cannot satisfy an empty reads clause.
+Feature described in the Planned features section.
 
 # Use complete algorithms to reduce workload
 To achieve goal 6, to reduce the verification work through the use of complete algorithms, Laurel
@@ -746,8 +690,94 @@ available everywhere the constrained value flows, even through procedures that a
 to the constraint.
 
 ## Type inference
+Feature described in the Planned features section.
 
-To be designed.. but here is some subject to change content.
+## Inference of composite types
+Feature described in the Planned features section.
+
+# Verification code must be erasable
+
+To support goal 7, for verification code not to affect the outcome of executing the program, Laurel
+has rules for code that exists only for verification purposes.
+
+Rules for contracts:
+- Contract code may not modify variables defined outside the contract scope.
+- Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
+- Contract code must terminate, so removing it does not affect whether execution code is reachable
+  or not.
+
+For example, the body of the procedure below changes `p`, and that effect is declared with
+`modifies p`; `old(p#x)` in the ensures clause refers to the pre-state:
+
+```
+procedure shift(p: Point, dx: int)
+  opaque
+  ensures p#x == old(p#x) + dx
+  modifies p
+{
+  p#x := p#x + dx
+};
+```
+
+The ensures expression may read the heap and build temporary values while it is evaluated, but it
+cannot assign to `p`, to `dx`, or to any variable declared outside it, and it contributes no
+modifies effect of its own. Even if the postcondition called a helper that allocated and mutated a
+scratch object, that would run against a copy of the heap and remain invisible to callers, which
+still see every pre-existing object unchanged across the evaluation of the contract. As a result,
+adding, strengthening, or removing the ensures clause never changes how the program executes.
+
+## Decreases clauses
+Feature described in the Planned features section.
+
+# Great user experience
+
+## Parameter lists
+In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined
+by repeating the parameter name in both lists. In Core, there is a single parameter list where each
+parameter defines its kind (in/out/inout).
+
+At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment,
+like this:
+`assign x, y := multiOutCall(a, b)`
+Core uses the argument list to assign the output parameters, like this:
+`multiOutCall(a, b, out x, out y)`
+
+In Laurel, an inout parameter only influences the callee's code, since it means there is a single
+variable that is used as input and output. On the calling side however, there is no concept of inout
+parameters. This is different from Core, where inout variables affect the calling side. Example of
+an inout being called in Core, `hasInout(inout x)`.
+
+## Assignments to fresh and existing declarations
+In Laurel, assignments can have multiple targets. Each target can be either an existing variable or
+a local declaration. Example:
+```
+var x: int;
+var z: int;
+assign x, var y: int, z := hasThreeOutputs()
+```
+In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to
+an existing local variable. Example:
+```
+var x: int;
+var y: int;
+var z: int;
+hasThreeOutputs(out x, out y, out z);
+```
+
+# Planned features
+Everything in this section is liable to change.
+
+## Dynamic type
+To improve support for dynamic languages, we expect to add a `dynamic` type whose values can be
+assigned to any variable, and whose variables accept values of any type. At the implicit cast
+boundaries, values will be wrapped or unwrapped as required. Passing a dynamic value as an argument
+to a procedure invocation, will cause a matching overload of the procedure to be selected at
+runtime, from the overloads that could match given the non dynamic arguments.
+
+## Type inference
+We will allow inferring types for local variables, but possibly also procedure signatures. Possibly
+based on configuration, we will enable inferring the dynamic type for variables, which may cause
+fewer type errors to be emitted. We might also infer composite type definitions based on usage.
 
 Laurel can statically infer the types of variables, which, when the inferred types were otherwise
 not available in the source program, can enable emitting code that can be verified more efficiently.
@@ -814,98 +844,6 @@ foo_2 := null;
 as_notNull(foo_2)#x := 2;
 ```
 
-## Inference of composite types
-
-To be designed..
-
-Useful for dynamic languages. Infers composite types based on fields assigned to values.
-Composite types perform better than maps because reading from them incurs no domain check.
-
-# Verification code must be erasable
-
-To support goal 7, for verification code not to affect the outcome of executing the program, Laurel
-has rules for code that exists only for verification purposes.
-
-Rules for contracts:
-- Contract code may not modify variables defined outside the contract scope.
-- Contract code has an empty modifies clause. Contract code operates on a copy of the heap.
-- Contract code must terminate, so removing it does not affect whether execution code is reachable
-  or not.
-
-For example, the body of the procedure below changes `p`, and that effect is declared with
-`modifies p`; `old(p#x)` in the ensures clause refers to the pre-state:
-
-```
-procedure shift(p: Point, dx: int)
-  opaque
-  ensures p#x == old(p#x) + dx
-  modifies p
-{
-  p#x := p#x + dx
-};
-```
-
-The ensures expression may read the heap and build temporary values while it is evaluated, but it
-cannot assign to `p`, to `dx`, or to any variable declared outside it, and it contributes no
-modifies effect of its own. Even if the postcondition called a helper that allocated and mutated a
-scratch object, that would run against a copy of the heap and remain invisible to callers, which
-still see every pre-existing object unchanged across the evaluation of the contract. As a result,
-adding, strengthening, or removing the ensures clause never changes how the program executes.
-
-## Decreases clauses
-To enable proving that contracts terminate, Laurel uses decreases clauses to enable proving the
-termination of procedure calls.
-
-# Great user experience
-
-## Parameter lists
-In Laurel, input and output parameters are defined in a separate list. Inout parameters are defined
-by repeating the parameter name in both lists. In Core, there is a single parameter list where each
-parameter defines its kind (in/out/inout).
-
-At the call-site, Laurel requires calls with multiple out parameters to occur inside an assignment,
-like this:
-`assign x, y := multiOutCall(a, b)`
-Core uses the argument list to assign the output parameters, like this:
-`multiOutCall(a, b, out x, out y)`
-
-In Laurel, an inout parameter only influences the callee's code, since it means there is a single
-variable that is used as input and output. On the calling side however, there is no concept of inout
-parameters. This is different from Core, where inout variables affect the calling side. Example of
-an inout being called in Core, `hasInout(inout x)`.
-
-## Assignments to fresh and existing declarations
-In Laurel, assignments can have multiple targets. Each target can be either an existing variable or
-a local declaration. Example:
-```
-var x: int;
-var z: int;
-assign x, var y: int, z := hasThreeOutputs()
-```
-In Core, when calling a procedure with multiple outputs, each output parameter must be assigned to
-an existing local variable. Example:
-```
-var x: int;
-var y: int;
-var z: int;
-hasThreeOutputs(out x, out y, out z);
-```
-
-# Planned features
-Everything in this section is liable to change.
-
-## Dynamic type
-To improve support for dynamic languages, we expect to add a `dynamic` type whose values can be
-assigned to any variable, and whose variables accept values of any type. At the implicit cast
-boundaries, values will be wrapped or unwrapped as required. Passing a dynamic value as an argument
-to a procedure invocation, will cause a matching overload of the procedure to be selected at
-runtime, from the overloads that could match given the non dynamic arguments.
-
-## Type inference
-We will allow inferring types for local variables, but possibly also procedure signatures. Possibly
-based on configuration, we will enable inferring the dynamic type for variables, which may cause
-fewer type errors to be emitted. We might also infer composite type definitions based on usage.
-
 ## Global variables
 Laurel will allow specifying mutable global variables. Laurel procedures will get an extra set of
 global input and output parameters, but these parameters may be left out causing them to be inferred
@@ -929,11 +867,47 @@ the output of a deterministic procedure does not change. These particular reads 
 conjunction with modifies clauses to prove that particular procedure outputs have remained the same
 after the heap has been modified.
 
+Reads clauses are useful to improve verification performance. The facts they provide work well
+together with the facts provided by modifies clauses, making it easier to prove which procedure
+values have remained unchanged after objects were modified.
+
 ## Frozen types
 (Also mentioned above under automated proof search.) A frozen type wraps a composite type. A value
 of a frozen type can not have its fields be modified, and can not be compared by reference. Frozen
 types can be used to make a procedure appear deterministic to callers, even when it allocates
 mutable objects that survive the call.
+
+A reads clause specifies that a procedure always returns the same value, if the read references have
+the same values and if the explicit input arguments, which excludes the heap, are the same. A
+procedure that returns a newly created object, which has a reference counter that depends on the
+counter of the input heap, can thus never satisfy a reads clause. For this purpose Laurel allows
+erasing the counter from a reference value. A Laurel `Frozen` type takes a regular reference type,
+and produces a type that is the same except that it does not support reference equality or mutation
+of its fields. Record types are composite types that are frozen by default.
+
+The following sketch (syntax illustrative — reads clauses, records, and `Frozen` are still being
+designed) shows why the erasure matters. Each procedure declares an empty reads clause, claiming its
+result depends on nothing in the heap:
+
+```
+record Tuple { var fst: int; var snd: int }
+composite MutableTuple { var fst: int; var snd: int }
+
+procedure makeRecord() reads {} returns (r: Tuple)
+{ return Tuple(1, 2) };                  // ok: records are frozen, no reference identity
+
+procedure makeFrozen() reads {} returns (r: Frozen<MutableTuple>)
+{ ... };                                 // ok: the counter is erased, so the result is heap-independent
+
+procedure makeMutable() reads {} returns (r: MutableTuple)
+//                      ^^^^^^^^ fails: the new object's identity depends on the heap counter
+{ return new MutableTuple(1, 2) };
+```
+
+`makeRecord` and `makeFrozen` satisfy the empty reads clause because neither result carries a
+heap-dependent reference counter, so calling either twice with the same inputs yields equal results.
+`makeMutable` returns a fresh `MutableTuple` whose reference identity is drawn from the heap's
+allocation counter, so its result differs between calls and cannot satisfy an empty reads clause.
 
 ## Enhance support for transparent procedures
 Transparent procedures will support:
@@ -944,3 +918,39 @@ Transparent procedures will support:
 ## Enhance support for quantifiers
 - Support assumptions in quantifiers
 - Support checking the wellformedness of quantifiers
+
+## Property-based testing
+To be designed..
+
+## Data-flow analysis
+To be designed..
+
+## Heap mutation in contracts
+A contract in Laurel may not modify any object that exists outside of that contract, as if the
+contract has an empty modifies clause. However, new objects may be created and modified inside the
+contract.
+
+A common design choice in verification-aware programming languages is not to allow creating or
+modifying objects in contracts. A good reason for this is that objects are more complex to reason
+about than immutable data, and contracts are intended to contain easy to reason about code. Laurel
+still allows creating and modifying new objects inside contracts because code might be declared to
+operate specifically through the use of reference types, and Laurel does not want to restrict users
+from using such code even in contracts.
+
+A second reason for not allowing any heap modification inside contracts is that this is prone to
+soundness issues. From outside the contract the heap is assumed not to be modified, so if knowledge
+of an inside modification escapes the contract, this leads to an inconsistency. Because Laurel does
+not allow assigning to a variable defined outside the contract, from inside the contract, no
+modification can escape the contract. The heap used inside a contract is a separate heap variable.
+
+## Proof By
+The proof by construct allows helping the verifier prove a particular goal through specifying
+intermediate goals and through revealing useful facts and hiding important ones.
+
+## Inference of composite types
+Useful for dynamic languages. Infers composite types based on fields assigned to values.
+Composite types perform better than maps because reading from them incurs no domain check.
+
+## Decreases clauses
+To enable proving that contracts terminate, Laurel uses decreases clauses to enable proving the
+termination of procedure calls.

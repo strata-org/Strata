@@ -437,3 +437,296 @@ procedure switchStmtNonExhaustive(i: int) opaque {
   assert num == 10 || num == 20 || num == 30 || num == -1
 };
 #end
+
+/-! ## Multi-output procedure calls in transparent bodies and contracts
+
+A Core *function* has exactly one output, so a multi-output procedure — one
+declaring ≥ 2 outputs, or a heap-writing procedure, which gains an implicit
+`$heap` output during heap parameterization — cannot be lowered to the pure
+`$asFunction` twin that transparent bodies and contracts are translated
+against. Until that is supported, such a call is rejected at resolution. -/
+
+-- A procedure declaring two outputs, called from a transparent procedure body.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure multi() returns (a: int, b: int) opaque;
+procedure callsMultiFromTransparent(): int {
+  assign var x: int, var y: int := multi();
+//                                 ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
+  x
+};
+#end
+
+-- Same procedure called from a `requires` contract expression.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure multi() returns (a: int, b: int) opaque;
+procedure callsMultiFromContract()
+  requires { assign var x: int, var y: int := multi(); x == y }
+//                                            ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
+  opaque
+{
+};
+#end
+
+-- Same procedure called from an `ensures` (postcondition) contract expression.
+-- Postconditions are a distinct branch of `restrictedContextExprs` (collected
+-- from the opaque body's `posts`), separate from the precondition path above.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure multi() returns (a: int, b: int) opaque;
+procedure callsMultiFromPostcondition()
+  opaque
+  ensures { assign var x: int, var y: int := multi(); x == y }
+//                                           ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
+{
+};
+#end
+
+-- A heap-writing procedure with a single declared output has *two* effective
+-- outputs after heap parameterization ($heap plus its result), so calling it
+-- from a contract is rejected too.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C {
+  var value: int
+}
+procedure bumpAndGet(c: C) returns (r: int)
+  opaque
+  modifies c
+{
+  c#value := c#value + 1;
+  c#value
+};
+procedure callsHeapWriterFromContract(c: C)
+  requires { var r: int := bumpAndGet(c); r > 0 }
+//                         ^^^^^^^^^^^^^ error: calling multi-output procedure 'bumpAndGet' is not (yet) supported from a transparent procedure or contract
+  opaque
+{
+};
+#end
+
+-- Negative: a single-output procedure called from a transparent body is fine.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure single(x: int) returns (r: int) opaque;
+procedure callsSingleFromTransparent(): int {
+  var r: int := single(1);
+  r
+};
+#end
+
+-- Negative: a multi-output call from an ordinary opaque implementation is
+-- allowed (opaque bodies are verified as procedures, not lowered to functions).
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure multi() returns (a: int, b: int) opaque;
+procedure callsMultiFromOpaque() opaque {
+  assign var x: int, var y: int := multi();
+  assert x == x
+};
+#end
+
+-- Negative: a void heap-writing procedure has exactly one effective output
+-- ($heap only), so it lowers to a single-output function and may be called
+-- from a contract.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C {
+  var value: int
+}
+procedure bump(c: C)
+  opaque
+  modifies c
+{
+  c#value := c#value + 1
+};
+procedure callsVoidHeapWriterFromContract(c: C)
+  requires { bump(c); true }
+  opaque
+{
+};
+#end
+
+-- A multi-output *instance* method called via `self#...` from a transparent
+-- instance body. This exercises the `.InstanceCall` arm of `calleesOf` and the
+-- container-scoped `refToDef` lookup — a static-call test can't reach either.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite D {
+  var value: int
+  procedure pair(self: D) returns (a: int, b: int) opaque;
+  procedure callsPair(self: D): int {
+    assign var x: int, var y: int := self#pair();
+//                                   ^^^^^^^^^^^ error: calling multi-output procedure 'pair' is not (yet) supported from a transparent procedure or contract
+    x
+  };
+}
+#end
+
+-- Cross-composite collision — false positive guard. `A.foo` is multi-output and
+-- `B.foo` is single-output; the transparent call `self#foo()` in `B` must
+-- resolve to *B's* `foo` (single-output) and NOT be flagged. A name-text keying
+-- would resolve to whichever `foo` won the insertion race and could reject this
+-- legitimate call. Declaration order A-before-B is the arrangement most likely
+-- to trigger a false positive under a name-text keying scheme.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A {
+  var w: int
+  procedure foo(self: A) returns (a: int, b: int) opaque;
+}
+composite B {
+  var v: int
+  procedure foo(self: B) returns (r: int) opaque;
+  procedure callerB(self: B): int {
+    var r: int := self#foo();
+    r
+  };
+}
+#end
+
+-- Cross-composite collision — false negative guard. Mirror of the above with
+-- the roles swapped: `A.foo` is multi-output and is genuinely called from A's
+-- own transparent body, so the diagnostic MUST fire. `B.foo` (single-output,
+-- declared after) must not mask it. A name-text keying with B winning the race
+-- would silently accept this call.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A {
+  var w: int
+  procedure foo(self: A) returns (a: int, b: int) opaque;
+  procedure callerA(self: A): int {
+    assign var x: int, var y: int := self#foo();
+//                                   ^^^^^^^^^^ error: calling multi-output procedure 'foo' is not (yet) supported from a transparent procedure or contract
+    x
+  };
+}
+composite B {
+  var v: int
+  procedure foo(self: B) returns (r: int) opaque;
+}
+#end
+
+-- Cross-composite collision on the *heap-writer* set. `A.foo` is a heap writer
+-- (one declared output + implicit `$heap` = two effective outputs); `B.foo` is
+-- pure with one output. The transparent call `self#foo()` in `B` resolves to
+-- B's pure `foo` and must not be flagged: keying the heap-writer set by
+-- `uniqueId` keeps A's write effect from contaminating B's same-named method.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A {
+  var w: int
+  procedure foo(self: A) returns (r: int)
+    opaque
+    modifies self
+  {
+    self#w := self#w + 1;
+    self#w
+  };
+}
+composite B {
+  var v: int
+  procedure foo(self: B) returns (r: int) opaque;
+  procedure callerB(self: B): int {
+    var r: int := self#foo();
+    r
+  };
+}
+#end
+
+/-! ## Datatype constructor argument type checks
+
+A datatype constructor call is type-checked against its declared field types at
+resolution time (rather than deferred to Core): an argument whose type is
+inconsistent with a *concrete* declared field type is rejected here. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box {
+  Wrap(value: int)
+}
+procedure foo() opaque {
+  var b: Box := Wrap(true)
+//                   ^^^^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! The success side of the same dispatch: a concrete declared field type accepts
+an argument of that type. Pinned separately from the error case because the two
+share one code path — the polymorphic-slot test — and a change that widened that
+test too far would silently stop checking concrete slots without failing the
+negative above. -/
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box {
+  Wrap(value: int)
+}
+procedure fooOk() opaque {
+  var b: Box := Wrap(5)
+};
+#end
+
+/-! A field whose declared type is one of the datatype's own type parameters is a
+polymorphic (erased) slot: it accepts an argument of any type, so a generic
+constructor call resolves cleanly regardless of the argument's concrete type —
+there is nothing to check against the type variable at the call site. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Option<T> {
+  Nothing(),
+  Some(value: T)
+}
+procedure foo() opaque {
+  var a: Option<int> := Some(42);
+  var b: Option<bool> := Some(true)
+};
+#end
+
+/-! A constructor may mix polymorphic and concrete slots, and the two are decided
+per *field*, not per datatype: `value: T` is erased (any argument is accepted)
+while `count: int` is still checked. So the same call can pass on one argument and
+be rejected on the next. -/
+
+-- The concrete slot rejects a bad argument even though the constructor also has a
+-- polymorphic one.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box2<T> {
+  Wrap(value: T, count: int)
+}
+procedure mixedSlotsBad() opaque {
+  var b: Box2<int> := Wrap(42, "oops")
+//                             ^^^^^^ error: expected 'int', got 'string'
+};
+#end
+
+-- And the polymorphic slot stays unchecked in the same constructor: an argument
+-- whose type has nothing to do with the instantiation is accepted for `value`,
+-- while `count` still takes an `int`.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Box2<T> {
+  Wrap(value: T, count: int)
+}
+procedure mixedSlotsOk() opaque {
+  var b: Box2<int> := Wrap(true, 7)
+};
+#end

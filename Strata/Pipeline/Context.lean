@@ -71,6 +71,8 @@ def addRepeatedEntry (arr : Array (String × RepeatedPhaseData))
 structure PhaseState where
   repeatedPhases : Array (String × RepeatedPhaseData) := #[]
   messageCounts : Std.HashMap String Nat := {}
+  /-- Summed elapsed time of this phase's direct mode-N children. -/
+  elapsedModeNChildrenNs : Nat := 0
   deriving Inhabited
 
 /-- Pipeline context carrying immutable config and mutable state as individual IORefs.
@@ -170,9 +172,31 @@ def enterPhase (ctx : PipelineContext) (name : String)
   ctx.currentPhaseRef.modify (·.subphase name)
   ctx.phaseStateRef.modifyGet fun ps => (ps, {})
 
+/-- Print and record the `unattributed` residual of `phase`: the part of its
+    elapsed time that its children do not account for. -/
+private def emitUnattributed (ctx : PipelineContext) (phase : Phase)
+    (elapsedNs childrenNs : Nat) : BaseIO Unit := do
+  let residualNs := elapsedNs - childrenNs
+  if ctx.outputMode.showsProfiling then
+    -- Printed as a bare `unattributed` leaf, indented one level under `phase`.
+    let indent := String.replicate (phase.depth * 2) ' '
+    let timeSuffix :=
+      if ctx.profilePipeline then s!" (total: {nsToMs residualNs}ms)" else ""
+    printlnFlush s!"{indent}[profile] unattributed{timeSuffix}"
+  ctx.emitMetric (Lean.Json.mkObj [
+    ("type", .str "timing"),
+    ("phase", .str (phase.subphase "unattributed").display),
+    ("start_ms", .num 0), ("end_ms", .num (nsToMs residualNs))])
+
+/-- Summed duration of a set of aggregated child entries. -/
+private def childrenTotalNs (entries : Array (String × RepeatedPhaseData)) : Nat :=
+  entries.foldl (init := 0) fun acc (_, data) => acc + data.totalNs
+
 /-- Recursively print `[profile]` lines and emit JSONL metrics for aggregated
     repeated phases. `parentPhase` is the phase under which these entries
-    are nested. -/
+    are nested.
+
+    Any entry that has children of its own also gets an `unattributed` residual. -/
 partial def flushRepeatedEntries (ctx : PipelineContext)
     (parentPhase : Phase) (entries : Array (String × RepeatedPhaseData))
     : BaseIO Unit := do
@@ -193,6 +217,8 @@ partial def flushRepeatedEntries (ctx : PipelineContext)
       ("start_ms", .num 0), ("end_ms", .num (nsToMs data.totalNs)),
       ("count", .num data.count)])
     flushRepeatedEntries ctx subphase data.children
+    unless data.children.isEmpty do
+      ctx.emitUnattributed subphase data.totalNs (childrenTotalNs data.children)
 
 /-- Mode-N entry: print [start] and return the start time. -/
 def enterPhaseNormal (ctx : PipelineContext) : BaseIO Nat := do
@@ -204,14 +230,25 @@ def enterPhaseNormal (ctx : PipelineContext) : BaseIO Nat := do
     printlnFlush s!"{indent}[start] {phase.leaf}{timeSuffix}"
   return startNs
 
-/-- End the current phase in mode N: flush aggregated repeated subphases,
-    emit timing metric, print [end]/[warnings], then pop phase and restore state. -/
+/-- End the current phase in mode N: pop the phase, restore the parent state,
+    flush aggregated repeated subphases, credit this phase's elapsed time,
+    emit this phase's `unattributed` residual, then emit the timing metric
+    and print `[end]`/`[warnings]`. -/
 def exitPhaseNormal (ctx : PipelineContext)
     (saved : PhaseState) (startNs : Nat) : BaseIO Unit := do
   let currentPhase ← ctx.currentPhaseRef.modifyGet fun p => (p, p.pop)
   let ps ← ctx.phaseStateRef.modifyGet fun ps => (ps, saved)
   flushRepeatedEntries ctx currentPhase ps.repeatedPhases
   let now ← ctx.elapsedNs
+  let elapsedNs := now - startNs
+  -- Credit this phase's duration to the parent state we just restored, so the
+  -- parent's residual subtracts its mode-N children too.
+  ctx.phaseStateRef.modify fun parent =>
+    { parent with elapsedModeNChildrenNs := parent.elapsedModeNChildrenNs + elapsedNs }
+  -- Top-level phases with children report what their children don't cover.
+  let childrenNs := ps.elapsedModeNChildrenNs + childrenTotalNs ps.repeatedPhases
+  if childrenNs > 0 then
+    ctx.emitUnattributed currentPhase elapsedNs childrenNs
   ctx.emitMetric (Lean.Json.mkObj [
     ("type", .str "timing"),
     ("phase", .str currentPhase.display),
@@ -289,6 +326,23 @@ public def withRepeatedPhase {m α} [Monad m] [MonadLiftT BaseIO m] [MonadFinall
   finally
     ctx.repeatedDepthRef.modify (m := BaseIO) (· - 1)
     ctx.exitPhaseRepeated saved startNs
+
+/-! ### Timing pure work
+
+Never write `withPhase "name" do pure (f x)`.
+
+The compiler evaluates `f x` before the phase is entered, so the phase
+records ~0ms. The `@[noinline]` on the helpers keeps the closure body a separate
+function that only runs once applied. Therefore, it stays inside the timing window.
+-/
+
+/-- Time a pure expression as a phase. The `@[noinline]` attribute prevents the
+    compiler from hoisting `expr` outside the timing window. Use this instead of
+    `withPhase` when the work being timed is a pure (non-monadic) expression. -/
+@[noinline]
+public def withPhasePure {α} (ctx : PipelineContext) (name : String)
+    (expr : Unit → α) : BaseIO α := do
+  ctx.withPhase (m := ReaderT Unit BaseIO) name (pure ∘ expr) ()
 
 /-- Time a pure expression as a repeated subphase. The `@[noinline]`
     attribute prevents the compiler from hoisting `expr` outside the

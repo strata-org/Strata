@@ -34,7 +34,10 @@ import Strata.Languages.Laurel.LaurelCompilationPipeline
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
+import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.LoopInitHoist
+import Strata.Transform.NondetElim
 import Strata.Transform.ProcBodyVerifyCorrect
 
 /- Strata Languages — additional -/
@@ -47,6 +50,7 @@ import Strata.Languages.Dyn.Dyn
 import Strata.Languages.Dyn.Verify
 import Strata.Languages.GOTO
 import Strata.Languages.Laurel.FilterPrelude
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslatorProps
 
 /- DDM -/
 import StrataDDM
@@ -90,7 +94,6 @@ import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
 import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.MetaData
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactoryWF

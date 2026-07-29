@@ -13,8 +13,8 @@ public import Strata.Util.FileRange
 open StrataDDM
 
 /-
-Documentation for Laurel can be found in docs/verso/LaurelDesignGuide.lean
-(language definition) and docs/verso/LaurelImplementationGuide.lean
+Documentation for Laurel can be found in docs/verso/LaurelDesignerGuide.lean
+(language definition) and docs/verso/LaurelImplementorGuide.lean
 (translation to Core).
 
 This module contains the Laurel AST. The high-level Laurel API is in
@@ -643,6 +643,15 @@ partial def TypeLattice.unfold (ctx : TypeLattice) (ty : HighTypeMd)
     else match ctx.unfoldMap.get? name.text with
       | some target => ctx.unfold target (visited.insert name.text)
       | none => ty
+  -- Generic type application is *erased* to its base in Laurel's consistency /
+  -- subtype relation: `Option<int>` relates as `Option`. (Resolution still
+  -- checks the application's arity and well-formedness; only the deep
+  -- type-argument check against instantiated parameters is left to Core, which
+  -- has real polymorphic datatypes.) The args are preserved in the AST and
+  -- dropped only here, in the type-relation layer — never in the Laurel→Core
+  -- translation of a named-base application (`translateType` forwards them to
+  -- the Core `.tcons`).
+  | .Applied base _ => ctx.unfold base visited
   | _ => ty
 
 /-- All ancestors of a composite type (including itself), reachable via
@@ -985,6 +994,17 @@ structure Program where
     `result` never collide with the return value. To refer to the return value
     explicitly, use the named-return form `returns (r: T)`. -/
 def resultOutputName : String := "$result"
+
+/-- Reserved prefix stamped onto a call site whose overload resolution failed
+    (no overload matched, or the call was ambiguous). The `UniqueOverloadNames`
+    pass renames every overloaded definition away, so an unrewritten call site
+    would otherwise re-resolve to a spurious *'<name>' is not defined* error.
+    The marker lets re-resolution recognize the site and stay silent. -/
+def overloadFailurePrefix : String := "$ovFail$"
+
+/-- Rename a call site to the reserved overload-failure marker. -/
+def overloadFailureName (name : Identifier) : Identifier :=
+  { name with text := overloadFailurePrefix ++ name.text }
 
 end -- public section
 

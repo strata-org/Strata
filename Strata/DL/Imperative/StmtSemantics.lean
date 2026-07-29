@@ -81,6 +81,18 @@ structure WFFactoryExtension (P : PureExpr) [HasFvar P] [HasFvars P]
     P.eval (extendFactory f σ decl) σ' e = some v →
     P.eval f σ' e = some v
 
+/-- `NoGenStore Q ρ` says the environment `ρ` leaves every `Q`-kind slot
+undefined: for each string `s` satisfying the label-kind predicate `Q` (the
+kind of label a pass generates), `ρ`'s store maps `HasIdent.ident s` to `none`.
+
+This is the store-level analogue of the syntactic `NoGenSuffix` freshness
+condition: it captures the "generated names start undefined" precondition shared
+by the pipeline passes, parameterised by the kind each pass generates so a single
+initial store can satisfy several passes' obligations at disjoint kinds. -/
+@[expose] abbrev NoGenStore {P : PureExpr} [HasIdent P]
+    (Q : String → Prop) (ρ : Env P) : Prop :=
+  AbsentAtGen (P := P) Q (fun i => ρ.store i = none)
+
 /-! ## Small-Step Operational Semantics for Statements
 
 This module defines small-step operational semantics for the Imperative
@@ -228,6 +240,21 @@ def Config.noFuncDecl : Config P CmdT → Prop
     not defined in the parent (i.e., init'd inside the block) become `none`. -/
 @[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
   fun x => if (σ_parent x).isSome then σ_inner x else none
+
+/-- The projected inner store agrees with the unprojected inner store on
+`σ_parent`'s domain. Variables present in the parent are unchanged by
+projection; variables absent from the parent become `none` in the projection,
+but those don't satisfy `isDefined (projectStore _ _) [x]`, so
+`StoreAgreement` doesn't constrain them. -/
+theorem StoreAgreement.of_projectStore {P : PureExpr}
+    (σ_parent σ_inner : SemanticStore P) :
+    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
+  intro x h_def
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  unfold projectStore at h ⊢
+  by_cases hp : (σ_parent x).isSome
+  · simp [hp]
+  · simp [hp] at h
 
 /-! ## Single-step relation -/
 
