@@ -27,6 +27,11 @@ Includes:
 
 Since Laurel doesn't have polymorphic types, `int` is used as a placeholder type
 for map parameters — the actual types are inferred during Core translation.
+
+The generic `Result` datatype that the exceptional-channel lowering targets is
+*not* part of this always-on prelude: it is injected by `EliminateExceptions`
+only when a program actually uses exceptions (see `resultDefinitions`), so a
+program that never throws does not carry it.
 -/
 def coreDefinitionsForLaurelDDM :=
 #strata
@@ -269,6 +274,81 @@ def coreDefinitionsForLaurel : Program :=
       (parseProgram coreDefinitionsForLaurelDDM) (synthesized := true) with
   | .ok program => program
   | .error e => dbg_trace s!"BUG: CoreDefinitionsForLaurel parse error: {e}"; default
+
+/--
+The generic `Result<Val, Err>` datatype that the exceptional-channel lowering
+targets. `EliminateExceptions` injects it into a program's types *only* when the
+program uses exceptions (a `throws` procedure, a `throw`, or a call to a throwing
+procedure), so a program that never throws does not carry it. It is a plain
+datatype (free for SMT), so it does not perturb heap reasoning.
+-/
+def resultDefinitionsDDM :=
+#strata
+program Laurel;
+
+datatype Result<Val, Err> {
+  Good(value: Val),
+  Bad(err: Err)
+}
+
+#end
+
+/-- The `Result` datatype definition as a `Laurel.Program`, parsed at compile time. -/
+def resultDefinitions : Program :=
+  match TransM.run
+      (.file "Strata/Languages/Laurel/CoreDefinitionsForLaurel.lean")
+      (parseProgram resultDefinitionsDDM) (synthesized := true) with
+  | .ok program => program
+  | .error e => dbg_trace s!"BUG: resultDefinitions parse error: {e}"; default
+
+/-- Whether the shared names in `LaurelAST` (`exnResultDatatypeName` and friends)
+    still describe the datatype defined above.
+
+    The definition is DDM source, so it cannot be built from those names; this
+    checks the other direction instead. `EliminateExceptions` builds the encoding
+    and `ModifiesClauses` consumes it, both through the shared names, so a rename
+    in the source above that is not mirrored there would desync them — with no
+    build failure, since every spelling is just a string.
+
+    Pinned by a `#guard` in `StrataTest/.../UnitTests/ExceptionResultNamesTest.lean`
+    rather than here: this module cannot evaluate it at elaboration time, because
+    `resultDefinitions` runs the DDM parser, whose IR is not available to the
+    interpreter while this library is still being compiled. -/
+def resultDefinitionsMatchSharedNames : Bool :=
+  match resultDefinitions.types.filterMap
+      (fun t => match t with | .Datatype dt => some dt | _ => none) with
+  | [dt] =>
+      dt.name.text == exnResultDatatypeName
+        && dt.constructors.map (fun c => c.name.text)
+             == [exnResultGoodCtor, exnResultBadCtor]
+        && dt.constructors.flatMap (fun c => c.args.map (fun a => a.name.text))
+             == [exnResultValueField, exnResultErrField]
+        -- The member names the passes use must be the ones resolution will
+        -- generate for this datatype's own constructors and fields.
+        && dt.constructors.map dt.testerName == [exnResultIsGood, exnResultIsBad]
+        && dt.constructors.flatMap (fun c => c.args.map dt.destructorName)
+             == [exnResultValue, exnResultErr]
+  | _ => false
+
+/-- The datatype's *own* names, labelled and in the order
+    `resultDefinitionsMatchSharedNames` compares them.
+
+    Exposed so a test can pin the concrete strings rather than only a single boolean.
+    When a rename desyncs the DDM source above from the shared names in `LaurelAST`,
+    a golden over this list names the aspect that moved; `#guard` on the boolean can
+    only report that something did. -/
+def resultDefinitionNames : List (String × String) :=
+  match resultDefinitions.types.filterMap
+      (fun t => match t with | .Datatype dt => some dt | _ => none) with
+  | [dt] =>
+      [ ("datatype",     dt.name.text),
+        ("constructors", ", ".intercalate (dt.constructors.map (fun c => c.name.text))),
+        ("fields",       ", ".intercalate
+                           (dt.constructors.flatMap (fun c => c.args.map (fun a => a.name.text)))),
+        ("testers",      ", ".intercalate (dt.constructors.map dt.testerName)),
+        ("destructors",  ", ".intercalate
+                           (dt.constructors.flatMap (fun c => c.args.map dt.destructorName))) ]
+  | _ => [("error", "expected exactly one datatype in resultDefinitions")]
 
 end -- public section
 

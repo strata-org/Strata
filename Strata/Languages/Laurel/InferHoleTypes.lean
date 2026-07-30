@@ -277,6 +277,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       return ⟨.Assert (← inferExpr condExpr ⟨ .TBool, source ⟩ outputType) summary, source⟩
   | .Assume cond =>
       return ⟨.Assume (← inferExpr cond ⟨ .TBool, source ⟩ outputType), source⟩
+  | .Throw v =>
+      return ⟨.Throw (← inferExpr v ⟨ .Unknown, source ⟩ outputType), source⟩
+  -- `Try` is returned unchanged rather than recursed into: descending through the
+  -- catch-clause list would force this mutual block from structural onto well-founded
+  -- recursion. Consequence: holes inside `try`/`catch`/`finally` arms are not
+  -- type-inferred yet. Revisit if holes in those positions need inference.
+  | .Try .. => return expr
   | .Return (some retExpr) =>
       return ⟨.Return (some (← inferExpr retExpr outputType outputType)), source⟩
   | .Old v => return ⟨.Old (← inferExpr v expectedType outputType), source⟩

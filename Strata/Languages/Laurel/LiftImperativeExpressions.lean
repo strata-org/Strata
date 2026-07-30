@@ -700,11 +700,17 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       let prepends ← takePrepends
       return prepends ++ [⟨.Return (some seqRet), source⟩]
 
+  -- No `.Throw` / `.Try` arms: `EliminateExceptions` runs earlier in the
+  -- pipeline, so by the time expression-lifting runs the exceptional channel has
+  -- already been lowered to ordinary control flow and those constructors can no
+  -- longer occur. They fall through to the identity case below.
   | _ =>
       return [stmt]
   termination_by (sizeOf stmt, 0)
   decreasing_by
     all_goals try (apply Prod.Lex.right; omega)
+    all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+    all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
     all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end

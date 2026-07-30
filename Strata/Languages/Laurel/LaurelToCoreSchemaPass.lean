@@ -618,6 +618,11 @@ def translateExpr (expr : StmtExprMd)
   | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" MessageKind.notYetImplemented
   | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
   | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
+  -- The exceptional channel is lowered to ordinary Laurel by the
+  -- `EliminateExceptions` pass before translation, so no `Throw`/`Try` should
+  -- reach here (and they type as `TVoid`, never appearing in value position).
+  | .Throw _ => emitExprDiagnostic $ diagnosticFromSource expr.source "throw should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
+  | .Try _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "try/catch should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
   termination_by expr
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
@@ -847,6 +852,16 @@ def translateStmt (stmt : StmtExprMd)
       return ([])
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
+      emitCoreDiagnostic d
+      return default
+  | .Throw _ =>
+      -- The exceptional channel (throw/try/catch/finally) is lowered to ordinary
+      -- Laurel control flow by the `EliminateExceptions` pass before translation.
+      let d := md.toDiagnostic "throw should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
+      emitCoreDiagnostic d
+      return default
+  | .Try _ _ _ =>
+      let d := md.toDiagnostic "try/catch should have been eliminated by the EliminateExceptions pass" MessageKind.strataBug
       emitCoreDiagnostic d
       return default
   | .While cond invariants decreasesExpr body postTest =>

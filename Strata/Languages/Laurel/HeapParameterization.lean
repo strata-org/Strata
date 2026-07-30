@@ -55,7 +55,9 @@ namespace Strata.Laurel
 -- Heap-effect analysis (`AnalysisResult`, `analyzeProc`, `computeReadsHeap`,
 -- `computeWritesHeap`) now lives in `Strata.Languages.Laurel.HeapAnalysis`, so
 -- it can be shared with `Resolution` (which uses it to diagnose no-op `old(...)`)
--- without an import cycle.
+-- without an import cycle. The exceptional-contract heap effects (a case's guard,
+-- postconditions and frame) and the `Throw`/`Try` expression cases are
+-- handled there.
 
 structure TransformState where
   heapReaders : Std.HashSet Nat
@@ -70,6 +72,16 @@ structure TransformState where
 private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   match model.get name with
   | .datatypeDefinition _ => true
+  | _ => false
+
+/-- Check whether a UserDefined type name refers to a composite (heap object)
+    type in the model. Unlike `!isDatatype`, this is `false` for a type
+    *parameter* (e.g. the `Val` of `Result<Val, Err>`, the field type reported
+    for `Result..value!`) or any name not resolved to a composite, so reference
+    equality is only applied to genuine heap references. -/
+private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
+  match model.get name with
+  | .compositeType _ => true
   | _ => false
 
 /-- Get the `$Box` destructor name for a given Laurel HighType.
@@ -208,20 +220,26 @@ where
         -- For `==` and `!=` on Composite types, compare refs instead. These are
         -- calls to the built-in `$eq`/`$neq` wrappers (see `Operation.procName`);
         -- neither is overloaded, so `UniqueOverloadNames` leaves the names alone
-        -- and matching on the text is safe. Note `.UserDefined` covers BOTH
-        -- composites (heap references — `ref!` is correct) and datatypes (values
-        -- — `ref!` is wrong and would unify a datatype value against
-        -- `Composite`). Only ref-compare composites; datatype equality falls
-        -- through to structural comparison.
+        -- and matching on the text is safe.
+        --
+        -- The guard is `isComposite`, not `!isDatatype`. `.UserDefined` covers three
+        -- things, not two: composites (heap references, where `ref!` is right),
+        -- datatype values (where it is wrong), and type *parameters* — the `Val` of
+        -- `Result<Val, Err>`, which is the type reported for `Result..value!(…)` and
+        -- is an ordinary value, often an `int`. A parameter is not a datatype either,
+        -- so excluding only datatypes would wrap it in `Composite..ref!` and fail to
+        -- unify `(arrow Composite int)` against `(arrow int _)`. Ref-compare genuine
+        -- composites and let everything else compare structurally.
         if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
           match args, args' with
           | [e1, _], [a1, a2] =>
             match (computeExprType model e1).val with
             | .UserDefined name =>
-              if isDatatype model name then return [⟨ .StaticCall callee args', source ⟩]
-              let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
-              let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
-              return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
+              if isComposite model name then
+                let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
+                let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
+                return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
+              return [⟨ .StaticCall callee args', source ⟩]
             | _ => return [⟨ .StaticCall callee args', source ⟩]
           | _, _ => return [⟨ .StaticCall callee args', source ⟩]
         else
@@ -370,6 +388,8 @@ where
     | .Assume c => return [⟨ .Assume (← recurseOne c), source ⟩]
     | .ProveBy v p => return [⟨ .ProveBy (← recurseOne v) (← recurseOne p), source ⟩]
     | .ContractOf ty f => return [⟨ .ContractOf ty (← recurseOne f), source ⟩]
+    -- `Throw`/`Try` are lowered away by `EliminateExceptions` (which runs before
+    -- this pass), so they never reach here (no arms needed).
     | _ => return [exprMd]
   termination_by (sizeOf exprMd, 0)
   decreasing_by
@@ -410,6 +430,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   let uid ← Identifier.getUniqueId proc.name
   let readsHeap := (← get).heapReaders.contains uid
   let writesHeap := (← get).heapWriters.contains uid
+  -- Kept before the generic specification pass because a `throwsOn` case's frame
+  -- targets need a modifies-specific transform rather than the uniform one; the
+  -- writes-heap branch below rebuilds the cases from these.
+  let originalThrowsOn := proc.throwsOn
   let proc ← if readsHeap || writesHeap then
     mapProcedureSpecificationsM (heapTransformSpecificationExpr heapName model) proc
   else
@@ -442,9 +466,31 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Abstract postconds')
       | .External => pure .External
 
+    -- `EliminateExceptions` runs before this pass, so each `throwsOn` case's
+    -- postconditions are already lowered into ordinary ones and cleared. Only the
+    -- cases' guards and frames survive — kept for `ModifiesClauses`, which builds
+    -- the exceptional frames after this pass.
+    --
+    -- A guard is an ordinary pre-state predicate, so it transforms like a
+    -- precondition. A frame target is a Composite reference, so it transforms like
+    -- a normal modifies entry — via `heapTransformModifiesEntry`, which keeps a
+    -- field target `o#f` symbolic so `ModifiesClauses` can still match it
+    -- structurally and build a field-granular exceptional frame.
+    -- Transformed from the *original* cases, not from the ones the generic
+    -- specification pass above already rewrote: it applies the specification
+    -- transform uniformly, which is right for a guard but wrong for a frame target.
+    -- A target has to stay structurally matchable — `heapTransformModifiesEntry`
+    -- keeps `o#f` symbolic so `ModifiesClauses` can still build a field-granular
+    -- exceptional frame — exactly as the body's own `modifies` is handled above.
+    let throwsOn' ← originalThrowsOn.mapM fun blk => do
+      let guard' ← heapTransformSpecificationExpr heapName model blk.guard
+      let modifies' ← blk.modifies.mapM (heapTransformModifiesEntry heapName model ·)
+      pure { blk with guard := guard', modifies := modifies' }
+
     return { proc with
       inputs := inputs',
       outputs := outputs',
+      throwsOn := throwsOn',
       body := body' }
 
   else if readsHeap then
@@ -468,6 +514,9 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           pure (.Abstract postconds')
       | .External => pure .External
 
+    -- A read-only procedure has no exceptional frame (that implies writing the
+    -- heap), and `EliminateExceptions` (before this pass) already cleared
+    -- a `throwsOn` case's guard and postconditions, so there is no exceptional contract to transform here.
     return { proc with
       inputs := inputs',
       body := body' }

@@ -21,6 +21,7 @@ import Strata.Languages.Laurel.EliminateDeterministicHoles
 import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.CoreGroupingAndOrdering
 import Strata.Languages.Laurel.TransparencyPass
+import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.InlineLocalVariables
 import Strata.Languages.Laurel.ConstrainedTypeElim
@@ -29,6 +30,7 @@ import Strata.Languages.Laurel.UniqueOverloadNames
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
 import Strata.Languages.Laurel.TypeAliasElim
+import Strata.Languages.Laurel.EliminateExceptions
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -107,7 +109,32 @@ def laurelPipeline : Array LoweringPass := #[
   constrainedTypeElimPass,
   mergeAndLiftReturnsPass,
   liftInstanceProceduresPass,
+  -- Note: the exception contract checks (catch-or-declare, plus the
+  -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
+  -- properties of the authored program, so `resolve` runs them on the initial
+  -- resolution only — see `validateExceptionEscapes` /
+  -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateValueInReturnsPass,
+  -- Lower the exceptional channel (throw/try/catch/finally, and the
+  -- throws + throwsOn contract) into ordinary
+  -- Laurel (labeled blocks, exits, Result construction, and
+  -- postconditions over `$result`). Placed *before* heap parameterization so the
+  -- in-flight exception local `$exc_<i>` can be typed at each `try`'s
+  -- least-common-ancestor exception type (read from the resolved `catch`
+  -- binding) rather than the erased heap `Composite`; a `catch` handler's
+  -- `e#field` then type-checks against that supertype without a downcast.
+  -- Runs after `eliminateValueInReturns` (so `return` payloads are
+  -- already gone). Because it erases the
+  -- exceptional-channel constructs (`throw`/`try`, `throwsOn`), those never
+  -- reach heap parameterization; the heap `modifies` frames — the normal
+  -- `Result..isGood`-guarded frame and the exceptional `Result..isBad`-guarded
+  -- ones (a case's `modifies`) — are built later by `ModifiesClauses`, which runs
+  -- after heap parameterization where `$heap` exists. Its remaining ordering
+  -- constraints — after `eliminateValueInReturns`, before `eliminateReturnStatements`
+  -- and `contractPass` — are declared on the pass itself and enforced by
+  -- `orderingRespected`, so they are not restated here. Needs a re-resolve so the
+  -- synthesized `$thrown`/`$exc_<i>`/`$result` locals get uniqueIds.
+  eliminateExceptionsPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -132,6 +159,11 @@ private def runLaurelPasses
     (options: LaurelTranslateOptions)
     (pctx : Strata.Pipeline.PipelineContext) (program : Program)
     : PipelineM (Program × SemanticModel × List Message × Statistics) := do
+  -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
+  -- `Result` datatype that the exceptional-channel lowering targets is *not*
+  -- part of it: `EliminateExceptions` injects `resultDefinitions` itself, and
+  -- only when the program actually uses exceptions, so a program that never
+  -- throws does not carry it.
   let program := { program with
     staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := coreDefinitionsForLaurel.types ++ program.types
@@ -160,7 +192,15 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model) (gradualTypes := options.gradualTypes)
                       (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-      let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
+      -- Only treat *new* post-pass resolution errors as an internal bug when the
+      -- program was well-formed to begin with. If initial resolution already
+      -- failed, or an earlier pass reported a real diagnostic (e.g.
+      -- `EliminateExceptions` rejecting a `throws` procedure with two value
+      -- outputs), the program is invalid and translation is skipped regardless —
+      -- so a lowering pass rewriting the ill-typed fragment must not cascade a
+      -- confusing `StrataBug` on top of the actual message.
+      let hadErrors := !resolutionErrors.isEmpty || allDiags.any (fun d => d.kind != .warning)
+      let newErrors := if hadErrors then #[] else result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
           { d with
