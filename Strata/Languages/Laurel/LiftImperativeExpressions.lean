@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
@@ -768,6 +769,6 @@ public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTyp
   run := fun _ p m =>
     match liftImperativeExpressionsInCore p m with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in LiftImperativeExpressions: {e}" .StrataBug], {})
+    | .error e => (p, [Message.fromString s!"Internal error in LiftImperativeExpressions: {e}" .strataBug], {})
 
 end Laurel

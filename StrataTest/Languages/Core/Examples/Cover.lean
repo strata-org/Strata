@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core
@@ -238,7 +239,7 @@ Result: ❌ fail
 
 -- Test: Diagnostic messages for unreachable outcomes
 --
--- Verify that `toDiagnosticModel` produces the expected messages for
+-- Verify that `toMessage` produces the expected messages for
 -- both assert and cover when they are unreachable.
 def reachCheckDiagnosticsPgm :=
 #strata
@@ -260,8 +261,8 @@ info: #["unreach_assert_diag holds vacuously (unreachable in this context)", "co
 #guard_msgs in
 #eval do
   let results ← Core.verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
-  let diagnostics := results.filterMap toDiagnosticModel
-  return diagnostics.map DiagnosticModel.message
+  let diagnostics := results.filterMap toMessage
+  return diagnostics.map Message.message
 
 ---------------------------------------------------------------------
 

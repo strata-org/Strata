@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.LaurelAST
 public import Strata.Languages.Laurel.UnorderedCore
@@ -126,7 +127,7 @@ public structure ResolutionResult where
   /-- Map from reference node ID to the definition it resolves to. -/
   model : SemanticModel
   /-- Diagnostics collected during resolution (e.g. unresolved references). -/
-  errors : Array DiagnosticModel := #[]
+  errors : Array Message := #[]
 
 /-! ## Phase 1: ID assignment and reference resolution -/
 
@@ -161,7 +162,7 @@ structure ResolveState where
       string, not by `uniqueId`. -/
   labelScope : Std.HashSet String := {}
   /-- Diagnostics collected during resolution. -/
-  errors : Array DiagnosticModel := #[]
+  errors : Array Message := #[]
   /-- When resolving inside an instance procedure, the owning composite type name.
       Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
   instanceTypeName : Option String := none
@@ -3707,23 +3708,23 @@ Check whether accessing `fieldName` on `target` is a diamond-inherited field acc
 and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
-    (fieldName : Identifier) (source : FileRange) : List DiagnosticModel :=
+    (fieldName : Identifier) (source : FileRange) : List Message :=
   match (computeExprType model target).val with
   | .UserDefined typeName =>
     match isDiamondInheritedField model typeName fieldName with
     | .ok true =>
-      [DiagnosticModel.withRange source s!"fields that are inherited multiple times can not be accessed."]
+      [Message.withRange source s!"fields that are inherited multiple times can not be accessed."]
     | .ok false => []
-    | .error e => [DiagnosticModel.fromMessage e .StrataBug]
+    | .error e => [Message.fromString e .strataBug]
   | _ => []
 
 /--
-Walk a StmtExpr AST and collect DiagnosticModel errors for diamond-inherited field accesses.
+Walk a StmtExpr AST and collect Message errors for diamond-inherited field accesses.
 Recursion into child nodes is handled by `collectStmtExprList`; the visitor only
 checks the constructors that access a field (`x#f` reads and field assignment/incr-decr targets).
 -/
 def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
-    (expr : StmtExprMd) : List DiagnosticModel :=
+    (expr : StmtExprMd) : List Message :=
   collectStmtExprList (fun e =>
     match e.val with
     | .Var (.Field target fieldName) =>
@@ -3747,9 +3748,9 @@ def validateDiamondFieldAccessesForStmtExpr (model : SemanticModel)
 
 /--
 Validate a Laurel program for diamond-inherited field accesses.
-Returns an array of DiagnosticModel errors.
+Returns an array of Message errors.
 -/
-def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List DiagnosticModel :=
+def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : List Message :=
   let errors := program.staticProcedures.foldl (fun acc proc =>
     let bodyErrors := match proc.body with
       | .Transparent bodyExpr => validateDiamondFieldAccessesForStmtExpr model bodyExpr
@@ -3818,12 +3819,12 @@ private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
 /-- Collect a "nested `old(...)` has no effect" warning for every `Old` node
     inside `operand` (the operand of an enclosing `old`). An `old` nested
     directly inside another `old` is always redundant. -/
-private def nestedOldWarnings (operand : StmtExprMd) : List DiagnosticModel :=
-  (mapStmtExprM (m := StateM (List DiagnosticModel))
+private def nestedOldWarnings (operand : StmtExprMd) : List Message :=
+  (mapStmtExprM (m := StateM (List Message))
     (fun n => do
       match n.val with
       | .Old _ =>
-        modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .Warning])
+        modify (· ++ [diagnosticFromSource n.source "nested `old(...)` has no effect" .warning])
         pure n
       | _ => pure n)
     operand |>.run []).2
@@ -3869,11 +3870,11 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     because both classify "writes the heap" / "reads the heap" via the shared
     `HeapAnalysis` and inout membership via the same input/output name match. -/
 private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Bool)
-    (proc : Procedure) : List DiagnosticModel :=
+    (proc : Procedure) : List Message :=
   match procInoutNames proc with
-  | .error e => [DiagnosticModel.fromMessage e .StrataBug]
+  | .error e => [Message.fromString e .strataBug]
   | .ok inoutNames =>
-  let visit (n : StmtExprMd) : StateM (List DiagnosticModel) (Option StmtExprMd) := do
+  let visit (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     match n.val with
     | .Old inner =>
       -- Warn on any `old` nested within this one's operand.
@@ -3881,15 +3882,15 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
       let refsInout := mentionsInout inoutNames inner
       if !writesHeap && !refsInout then
         modify (· ++ [diagnosticFromSource n.source
-          "`old(...)` has no effect: the enclosing procedure does not modify the heap" .Warning])
+          "`old(...)` has no effect: the enclosing procedure does not modify the heap" .warning])
       else if !containsHeapRead heapReaders inner && !refsInout then
         modify (· ++ [diagnosticFromSource n.source
-          "`old(...)` has no effect: expression contains no heap reads" .Warning])
+          "`old(...)` has no effect: expression contains no heap reads" .warning])
       -- Return the node unchanged and stop further descent (nested olds were
       -- already handled above), matching `PushOldInward`'s pre-order handling.
       pure (some n)
     | _ => pure none
-  (mapProcedureM (m := StateM (List DiagnosticModel))
+  (mapProcedureM (m := StateM (List Message))
     (fun e => mapStmtExprPrePostM visit pure e) proc |>.run []).2
 
 /-- Diagnose no-op `old(...)` usage across a program. This is a property of the
@@ -3899,7 +3900,7 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
     computed over all procedures (static plus composite instance procedures) so
     the call-graph analysis matches `HeapParameterization`, which runs after
     instance procedures have been lifted into the static list. -/
-def validateOldUsage (model : SemanticModel) (program : Program) : List DiagnosticModel :=
+def validateOldUsage (model : SemanticModel) (program : Program) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -3918,7 +3919,7 @@ def validateOldUsage (model : SemanticModel) (program : Program) : List Diagnost
     moves them into the static list — the old post-lift `ContractPass` check saw
     them, so scanning static procedures only would miss an instance `invokeOn`
     procedure with an output. -/
-def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
+def validateInvokeOnOutputRefs (program : Program) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -3926,7 +3927,7 @@ def validateInvokeOnOutputRefs (program : Program) : List DiagnosticModel :=
     if proc.invokeOn.isSome && !proc.outputs.isEmpty then
       some (diagnosticFromSource proc.name.source
         s!"'invokeOn' procedure '{proc.name.text}' may not have output parameters; the auto-invocation axiom is quantified over inputs only."
-        DiagnosticType.UserError)
+        MessageKind.userError)
     else none
 
 /-- Effective output count of a procedure, counting the implicit heap output a
@@ -4006,7 +4007,7 @@ private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
     composite's multi-output `foo`, and no false negative from another
     composite's single-output `foo`. -/
 private def validateMultiOutputCallContexts (model : SemanticModel)
-    (program : Program) : List DiagnosticModel :=
+    (program : Program) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
@@ -4021,13 +4022,13 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
         | some (.staticProcedure callee')
         | some (.instanceProcedure _ callee') =>
           match effectiveOutputCount heapWriters callee' with
-          | .error e => some (DiagnosticModel.fromMessage
-              s!"Internal error: effectiveOutputCount: {e}" .StrataBug)
+          | .error e => some (Message.fromString
+              s!"Internal error: effectiveOutputCount: {e}" .strataBug)
           | .ok count =>
             if count ≥ 2 then
               some (diagnosticFromSource callSource
                 s!"calling multi-output procedure '{callee.text}' is not (yet) supported from a transparent procedure or contract"
-                DiagnosticType.UserError)
+                MessageKind.userError)
             else none
         | _ => none
 
@@ -4036,11 +4037,11 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
     statement, as an `Assign` target, and (per the AST, though not the
     surface syntax) as an `IncrDecr` or `CompoundAssign` target.
     Public so `ResolutionProps` can state per-node cleanliness lemmas. -/
-def unannotatedDeclares (n : StmtExprMd) : List DiagnosticModel :=
-  let bug (source : FileRange) (name : Identifier) : DiagnosticModel :=
+def unannotatedDeclares (n : StmtExprMd) : List Message :=
+  let bug (source : FileRange) (name : Identifier) : Message :=
     diagnosticFromSource source
       s!"declaration of '{name.text}' left resolution without a type annotation; resolution rewrites every declaration to carry an explicit type"
-      DiagnosticType.StrataBug
+      .strataBug
   match n.val with
   | .Var (.Declare ⟨name, none⟩) => [bug n.source name]
   | .Assign targets _ => targets.filterMap fun
@@ -4060,14 +4061,14 @@ def unannotatedDeclares (n : StmtExprMd) : List DiagnosticModel :=
     silently skip an unannotated declaration. Runs on every resolution, so
     the pipeline's re-resolves after each lowering pass also catch a pass
     that constructs an unannotated declaration. -/
-def validateFullyAnnotated (program : Program) : List DiagnosticModel :=
+def validateFullyAnnotated (program : Program) : List Message :=
   let instanceProcs := program.types.flatMap fun
     | .Composite ct => ct.instanceProcedures
     | _ => []
   -- `mapProcedureM` enumerates every expression tree in a procedure
   -- (preconditions, decreases, body, invokeOn, axioms).
-  let procDiags (proc : Procedure) : List DiagnosticModel :=
-    (mapProcedureM (m := StateM (List DiagnosticModel))
+  let procDiags (proc : Procedure) : List Message :=
+    (mapProcedureM (m := StateM (List Message))
       (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
       proc |>.run []).2
   let typeDiags := program.types.flatMap fun
@@ -4118,12 +4119,12 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     heapWriters := heapWriters
     conflictingOverloads := finalState.conflictingOverloads
   }
-  let heapAnalysisErrors : Array DiagnosticModel :=
+  let heapAnalysisErrors : Array Message :=
     (match heapReadersResult with
-      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeReadsHeap: {e}" .StrataBug]
+      | .error e => #[Message.fromString s!"Internal error: computeReadsHeap: {e}" .strataBug]
       | .ok _ => #[]) ++
     (match heapWritersResult with
-      | .error e => #[DiagnosticModel.fromMessage s!"Internal error: computeWritesHeap: {e}" .StrataBug]
+      | .error e => #[Message.fromString s!"Internal error: computeWritesHeap: {e}" .strataBug]
       | .ok _ => #[])
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
   -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
@@ -4176,7 +4177,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
-    : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
+    : UnorderedCoreWithLaurelTypes × SemanticModel × Array Message :=
   -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions

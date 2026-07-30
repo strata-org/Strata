@@ -67,7 +67,7 @@ private def printLiftPassDiagnosticsUnresolved (program : StrataDDM.Program) : I
   let (result, diags, _) := liftImperativeExpressionsPass.run {} uc model
   IO.println s!"procedures unchanged: {result.coreProcedures.length == uc.coreProcedures.length}"
   for d in diags do
-    IO.println s!"{repr d.type}: {d.message}"
+    IO.println s!"{repr d.kind}: {d.message}"
 
 /-! ## Heap-updating assignments in non-last positions of a block expression -/
 
@@ -595,7 +595,7 @@ procedure test() {
 
 /--
 info: procedures unchanged: true
-Strata.DiagnosticType.StrataBug: Internal error in LiftImperativeExpressions: Var (.Declare x) has no uniqueId
+{ category := "error", impact := Strata.Pipeline.MessageImpact.internalError }: Internal error in LiftImperativeExpressions: Var (.Declare x) has no uniqueId
 -/
 #guard_msgs in
 #eval printLiftPassDiagnosticsUnresolved

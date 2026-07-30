@@ -52,7 +52,7 @@ private def unannotatedVar : Program := mkProgram [
 ]
 
 #guard (validateFullyAnnotated unannotatedVar).map (·.message) == [expectedBug "x"]
-#guard (validateFullyAnnotated unannotatedVar).all (·.type == .StrataBug)
+#guard (validateFullyAnnotated unannotatedVar).all (·.kind == .strataBug)
 
 -- ============================================================
 -- 2. An unannotated `Declare` among the targets of a (multi-)assignment
@@ -69,7 +69,7 @@ private def unannotatedAssignTarget : Program := mkProgram [
 ]
 
 #guard (validateFullyAnnotated unannotatedAssignTarget).map (·.message) == [expectedBug "y"]
-#guard (validateFullyAnnotated unannotatedAssignTarget).all (·.type == .StrataBug)
+#guard (validateFullyAnnotated unannotatedAssignTarget).all (·.kind == .strataBug)
 
 -- ============================================================
 -- 3. Spec positions are covered: a declaration inside a precondition.
@@ -97,7 +97,7 @@ private def unannotatedIncrDecr : Program := mkProgram [
 ]
 
 #guard (validateFullyAnnotated unannotatedIncrDecr).map (·.message) == [expectedBug "x"]
-#guard (validateFullyAnnotated unannotatedIncrDecr).all (·.type == .StrataBug)
+#guard (validateFullyAnnotated unannotatedIncrDecr).all (·.kind == .strataBug)
 
 -- ============================================================
 -- 5. An unannotated `Declare` as a compound-assignment target is
@@ -112,7 +112,7 @@ private def unannotatedCompoundAssign : Program := mkProgram [
 ]
 
 #guard (validateFullyAnnotated unannotatedCompoundAssign).map (·.message) == [expectedBug "y"]
-#guard (validateFullyAnnotated unannotatedCompoundAssign).all (·.type == .StrataBug)
+#guard (validateFullyAnnotated unannotatedCompoundAssign).all (·.kind == .strataBug)
 
 -- ============================================================
 -- 6. Annotated declarations pass clean, in both positions.

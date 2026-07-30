@@ -399,7 +399,7 @@ theorem clean_declare_annotated (name : Identifier) (ty : HighTypeMd)
   have h1 : unannotatedDeclares { val := .Var (.Declare ⟨name, some ty⟩), source := src } = [] := by
     simp [unannotatedDeclares]
   simp only [collectVisitor, h1]
-  simpa using emits_seq (emits_modify (β := Strata.DiagnosticModel) []) emits_pure
+  simpa using emits_seq (emits_modify (β := Strata.Message) []) emits_pure
 
 theorem varDeclare_clean (param : Parameter?) (source : Strata.FileRange) :
     PostM (Check.varDeclare param source) Clean := by
@@ -440,7 +440,7 @@ theorem validate_decompose (program : Program) :
       (program.staticProcedures ++ program.types.flatMap fun
         | .Composite ct => ct.instanceProcedures
         | _ => []).flatMap (fun proc =>
-          (mapProcedureM (m := StateM (List DiagnosticModel))
+          (mapProcedureM (m := StateM (List Message))
             (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
             proc |>.run []).2)
       ++ (program.types.flatMap fun
@@ -600,13 +600,13 @@ theorem resolveProcedure_clean (proc : Procedure) :
     exact ⟨hpres, hdec, hbody, hinv, hax⟩
 
 /-! Bridge: `CleanProcFields proc` implies the validator's per-procedure walk
-    emits nothing. The walk is `mapProcedureM` in `StateM (List DiagnosticModel)`
+    emits nothing. The walk is `mapProcedureM` in `StateM (List Message)`
     with visitor `fun e => do modify (· ++ collect e); pure e`. -/
 
 open CollectEmits in
 /-- The validator's per-procedure walk, as used in `validateFullyAnnotated`. -/
-def procWalk (proc : Procedure) : List DiagnosticModel :=
-  (mapProcedureM (m := StateM (List DiagnosticModel))
+def procWalk (proc : Procedure) : List Message :=
+  (mapProcedureM (m := StateM (List Message))
     (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
     proc |>.run []).2
 
@@ -685,8 +685,8 @@ theorem keeps_bind_post {δ α β : Type} {a : StateM (List δ) α} {f : α → 
 
 /-- `mapProcedureBodiesM` with the validator's visitor preserves the spec fields. -/
 theorem bodiesM_spec_fields (proc : Procedure) :
-    PostS (δ := DiagnosticModel)
-      (mapProcedureBodiesM (m := StateM (List DiagnosticModel))
+    PostS (δ := Message)
+      (mapProcedureBodiesM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
         proc)
       (fun p1 => p1.preconditions = proc.preconditions ∧
@@ -703,7 +703,7 @@ theorem bodiesM_spec_fields (proc : Procedure) :
 open CollectEmits in
 /-- The validator's visitor keeps the state exactly when the tree is Clean. -/
 theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
-    KeepsState (δ := DiagnosticModel)
+    KeepsState (δ := Message)
       (do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) := by
   intro acc
   simp only [bind, StateT.bind, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet,
@@ -715,8 +715,8 @@ open CollectEmits in
 theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
     procWalk proc = [] := by
   obtain ⟨hpre, hdec, hbody, hinv, hax⟩ := h
-  have hwalk : KeepsState (δ := DiagnosticModel)
-      (mapProcedureM (m := StateM (List DiagnosticModel))
+  have hwalk : KeepsState (δ := Message)
+      (mapProcedureM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) proc) := by
     unfold mapProcedureM mapProcedureBodiesM
     -- Body first (mapProcedureBodiesM), then the four spec fields.

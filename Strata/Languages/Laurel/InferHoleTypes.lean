@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Util.Statistics
 public import Strata.Languages.Laurel.LaurelPass
@@ -130,7 +131,7 @@ inductive InferHoleTypesStats where
 structure InferHoleState where
   model : SemanticModel
   statistics : Statistics := {}
-  diagnostics : List DiagnosticModel := []
+  diagnostics : List Message := []
 
 private abbrev InferHoleM := StateM InferHoleState
 
@@ -329,7 +330,7 @@ private def inferProcedure (proc : Procedure) : InferHoleM Procedure := do
 Annotate every `.Hole` in the program with a type inferred from context.
 Returns the updated program and any diagnostics (e.g. holes whose type could not be inferred).
 -/
-def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List DiagnosticModel × Statistics :=
+def inferHoleTypes (model : SemanticModel) (program : Program) : Program × List Message × Statistics :=
   let initState : InferHoleState := { model := model }
   let (program, finalState) := (mapProgramProceduresM inferProcedure program).run initState
   (program, finalState.diagnostics, finalState.statistics)

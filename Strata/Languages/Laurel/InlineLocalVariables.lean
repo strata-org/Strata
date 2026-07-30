@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.UnorderedCore
@@ -53,11 +54,11 @@ private structure InlineState where
       so that bindings introduced inside a block/quantifier do not leak out. -/
   saved : List InlineSubst := []
   /-- Diagnostics accumulated so far. -/
-  diags : Array DiagnosticModel := #[]
+  diags : Array Message := #[]
 
 private abbrev InlineM := ExceptT String (StateM InlineState)
 
-private def emitDiag (d : DiagnosticModel) : InlineM Unit :=
+private def emitDiag (d : Message) : InlineM Unit :=
   modify fun s => { s with diags := s.diags.push d }
 
 /-- Enter a new scope: snapshot `subst` so it can be restored on exit. When
@@ -137,12 +138,12 @@ public section
 
 /-- Inline local variables in a single function, returning the rewritten
     procedure and any diagnostics. -/
-def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array DiagnosticModel :=
-  let runBody (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
+def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Message :=
+  let runBody (body : StmtExprMd) : StmtExprMd × Array Message :=
     let (result, st) := (inlineExpr body).run.run {}
     match result with
     | .ok body' => (body', st.diags)
-    | .error e => (body, st.diags.push (diagnosticFromSource proc.name.source s!"inline pass error: {e}" .StrataBug))
+    | .error e => (body, st.diags.push (diagnosticFromSource proc.name.source s!"inline pass error: {e}" .strataBug))
   match proc.body with
   | .Transparent body =>
     let (body', diags) := runBody body
@@ -171,27 +172,27 @@ def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Diagn
     `var $cp_1 := 2 * i; … $div$asFunction($cp_1, 2)` becomes
     `$div$asFunction(2 * i, 2)` — re-evaluated every iteration, as written. -/
 def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
-    : Procedure × Array DiagnosticModel :=
+    : Procedure × Array Message :=
   -- Each invariant is inlined in its own fresh scope: they are independent
   -- expressions, so a binding in one must not leak into the next.
-  let inlineSpec (s : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd := do
+  let inlineSpec (s : StmtExprMd) : StateM (Array Message) StmtExprMd := do
     let (result, st) := (inlineExpr s).run.run {}
     modify (· ++ st.diags)
     match result with
     | .ok s' => return s'
     | .error e =>
       modify (·.push (diagnosticFromSource proc.name.source
-        s!"inline pass error in loop invariant: {e}" .StrataBug))
+        s!"inline pass error in loop invariant: {e}" .strataBug))
       return s
-  let rewrite (body : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd :=
-    mapStmtExprM (m := StateM (Array DiagnosticModel)) (fun e => do
+  let rewrite (body : StmtExprMd) : StateM (Array Message) StmtExprMd :=
+    mapStmtExprM (m := StateM (Array Message)) (fun e => do
       match e.val with
       | .While cond invs dec whileBody postTest =>
         let invs' ← invs.mapM inlineSpec
         let dec' ← dec.mapM inlineSpec
         return ⟨.While cond invs' dec' whileBody postTest, e.source⟩
       | _ => return e) body
-  let runRewrite (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
+  let runRewrite (body : StmtExprMd) : StmtExprMd × Array Message :=
     (rewrite body).run #[]
   match proc.body with
   | .Transparent body =>
@@ -208,7 +209,7 @@ def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
 /-- Inline local variables in every function of an `UnorderedCoreWithLaurelTypes`,
     and in the loop invariants of every `coreProcedure`. -/
 def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
-    : UnorderedCoreWithLaurelTypes × List DiagnosticModel :=
+    : UnorderedCoreWithLaurelTypes × List Message :=
   let results := uc.functions.map inlineLocalVariablesInFunction
   let functions' := results.map (·.1)
   let procResults := uc.coreProcedures.map inlineLocalVariablesInProcedureSpecs

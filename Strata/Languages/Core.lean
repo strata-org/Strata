@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import StrataDDM
 public import Strata.Languages.Core.Verifier
@@ -85,11 +86,11 @@ def Core.defaultFactory : Lambda.Factory Core.CoreLParams := Core.Factory
 
 /--
 Type-check a Core program. Returns the annotated program on success, or a
-`DiagnosticModel` describing the error on failure.
+`Message` describing the error on failure.
 -/
 def Core.typeCheck (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel Core.Program :=
+    Except Message Core.Program :=
   _root_.Core.typeCheck options program moreFns
 
 /--
@@ -98,7 +99,7 @@ post-evaluation environments and accumulated statistics.
 -/
 def Core.typeCheckAndEval (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel ((List Core.Env) × Statistics) :=
+    Except Message ((List Core.Env) × Statistics) :=
   _root_.Core.typeCheckAndEval options program moreFns
 
 /--
@@ -108,7 +109,7 @@ downstream phases (Common subexpression elimination, SMT encoding).
 def Core.typeCheckAndBuildObligationProgram
     (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except DiagnosticModel (Core.Program × Statistics) :=
+    Except Message (Core.Program × Statistics) :=
   _root_.Core.typeCheckAndBuildObligationProgram options program moreFns
 
 /-! ### Transformation of Core programs
@@ -277,7 +278,7 @@ diagnostic, looking up the file map for the obligation's source range. Returns
 `none` for results that should not be surfaced (e.g. successful obligations). -/
 def Core.VCResult.toDiagnostic (files : Map Strata.Uri Lean.FileMap) (vcr : Core.VCResult)
     (phases : List Core.AbstractedPhase := []) : Option Diagnostic := do
-  let modelOption := toDiagnosticModel vcr phases
+  let modelOption := toMessage vcr phases
   modelOption.map (fun dm => dm.toDiagnostic files)
 
 end Strata

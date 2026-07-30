@@ -191,7 +191,7 @@ To enable its verification analyses, Laurel compiles to Core. Compilation happen
 A compilation pass may not change the semantics of the program. User errors may only be reported
 during resolution (`resolve`, which the pipeline re-runs after passes that set `needsResolves`),
 never by a pass — there are no exceptions to this rule. Every diagnostic emitted by a pass is a bug
-report (`DiagnosticType.StrataBug`), where a "bug" includes features that are planned but not yet
+report (`MessageKind.strataBug`), where a "bug" includes features that are planned but not yet
 supported: for example, `InlineLocalVariables` reporting an assignment to a variable it has inlined.
 A compilation pass may only refer to AST nodes that relate to its business
 logic: it may not define AST traversals without using helper methods, to allow adding new AST nodes

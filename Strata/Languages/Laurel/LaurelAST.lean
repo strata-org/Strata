@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.MetaData
 public import Strata.Languages.Core.Expressions
@@ -615,9 +616,9 @@ def astNodeToCoreMd (node : AstNode α) : Imperative.MetaData Core.Expression :=
 def identifierToCoreMd (id : Identifier) : Imperative.MetaData Core.Expression :=
   fileRangeToCoreMd id.source
 
-/-- Create a DiagnosticModel from a source location and a message. -/
-def diagnosticFromSource (source : FileRange) (msg : String) (type : DiagnosticType := .UserError) : DiagnosticModel :=
-  DiagnosticModel.withRange source msg type
+/-- Create a Message from a source location and a message. -/
+def diagnosticFromSource (source : FileRange) (msg : String) (type : MessageKind := .userError) : Message :=
+  Message.withRange source msg type
 
 instance : Inhabited StmtExpr where
   default := .Hole
