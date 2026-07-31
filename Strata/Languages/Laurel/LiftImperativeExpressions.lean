@@ -73,7 +73,20 @@ structure LiftState where
   prependedStmts : List StmtExprMd := []
   /-- Counter for generating unique temp names per variable -/
   varCounters : List (String × Nat) := []
-  /-- Substitution map: variable name → name to use -/
+  /-- Substitution map: variable name → name to use.
+
+      Mutable state on purpose: a mutation must stay visible to the
+      *following, sequential* computations. Arguments are walked in reverse
+      evaluation order, so `setSubst` in a later argument is read by
+      `getSubst` while traversing the earlier ones — a sideways flow that
+      Reader-style `local` scoping cannot express.
+
+      Lifetime: entries are statement-local (`withStatementScope` clears at
+      statement boundaries); regions evaluated at a different time, like loop
+      invariants and `decreases`, hide and restore the map
+      (`withFreshSubst`); statements lifted out of expression position keep
+      the enclosing expression's substitutions (save/restore in `asLifted`
+      and friends). -/
   private subst : SubstMap := {}
   /-- Type environment -/
   model : SemanticModel
@@ -140,6 +153,42 @@ private def getSubst (varName : Identifier) : LiftM Identifier := do
 private def setSubst (varName : Identifier) (value : Identifier) : LiftM Unit := do
   let uid ← Identifier.getUniqueId varName
   modify fun s => { s with subst := s.subst.insert uid value }
+
+/-- Run `body` in a fresh statement-local substitution scope.
+
+A snapshot substitution only stands in for occurrences evaluated *before* the
+assignment it was taken for, within the same statement. Once the statement ends
+every remaining occurrence must read the live variable again — including
+occurrences in a nested statement the current one guards, such as a branch body.
+Clearing on entry is what enforces that; clearing on exit is redundant given the
+entry clear, and is kept so the property still holds for any arm added later.
+
+Sub-regions within a single statement are not scoped here. They are traversed in
+reverse evaluation order, or use `withFreshSubst` where that is not possible.
+
+Statements lifted out of expression position keep the enclosing expression's
+substitutions: `asLifted`, `transformLiftedExpr` and `transformLiftedStmt` save
+and restore them around the call. -/
+private def withStatementScope { t : Type } (body : LiftM t) : LiftM t := do
+  modify fun s => { s with subst := {} }
+  let result ← body
+  modify fun s => { s with subst := {} }
+  return result
+
+/-- Run `body` in a fresh substitution scope, restoring the caller's on exit.
+
+For a sub-region of a statement that is evaluated *after* a region already
+processed, and so cannot simply be visited in reverse evaluation order: a loop
+invariant or `decreases` clause, which is evaluated at the loop head, after any
+assignment hoisted out of the condition. Such a region reads live variables, so
+it must not inherit the condition's snapshots. Neither can it publish its own to
+the regions around it, since an assignment lifted out of it is hoisted with it. -/
+private def withFreshSubst { t : Type } (body : LiftM t) : LiftM t := do
+  let saved := (← get).subst
+  modify fun s => { s with subst := {} }
+  let result ← body
+  modify fun s => { s with subst := saved }
+  return result
 
 private def computeType (expr : StmtExprMd) : LiftM HighTypeMd := do
   let s ← get
@@ -342,12 +391,16 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
           -- Unused value
           return ⟨ .Hole, expr.source ⟩
       else
-        -- No liftable statements in branches — recurse normally.
-        let seqCond ← transformExpr cond
+        -- No liftable statements in branches — recurse normally, but in reverse
+        -- evaluation order, as elsewhere in this traversal: the branches run
+        -- after the condition, so they must read live variables rather than a
+        -- snapshot the condition took. Visiting the condition last also keeps its
+        -- substitutions available to occurrences evaluated before it.
         let seqThen ← transformExpr thenBranch
         let seqElse ← match elseBranch with
           | some e => pure (some (← transformExpr e))
           | none => pure none
+        let seqCond ← transformExpr cond
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
   | .Block stmts labelOption =>
@@ -409,11 +462,14 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
-      let seqInvs ← invs.mapM transformExpr
+      -- As in `transformStmt`'s `.While` arm: invariants, `decreases` and the
+      -- body all run after the condition, so none of them may inherit a snapshot
+      -- the condition took.
+      let seqInvs ← invs.mapM (fun i => withFreshSubst (transformExpr i))
       let seqDec ← match dec with
-        | some d => pure (some (← transformExpr d))
+        | some d => pure (some (← withFreshSubst (transformExpr d)))
         | none => pure none
-      let seqBody ← transformExpr body
+      let seqBody ← withFreshSubst (transformExpr body)
       return ⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩
 
   | .PureFieldUpdate target fieldName newValue =>
@@ -483,7 +539,6 @@ def transformStmtAssignImperativeCall
     (callSource: FileRange): LiftM (List StmtExprMd) := do
   let seqArgs ← args.reverse.mapM transformExpr
   let argPrepends ← takePrepends
-  modify fun s => { s with subst := {} }
   return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse, callSource⟩, source⟩]
   termination_by (sizeOf args, 0)
   decreasing_by
@@ -494,8 +549,11 @@ def transformStmtAssignImperativeCall
 /--
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original may expand into multiple).
+
+Runs in a fresh `withStatementScope`, so it neither inherits snapshot
+substitutions from the preceding statement nor leaks its own to the next one.
 -/
-def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
+def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatementScope do
   match stmt with
   | AstNode.mk val source =>
   match val with
@@ -505,7 +563,6 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- if containsNondetHole cond.condition && !containsAssignmentOrImperativeCall (← get).model cond.condition then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
-        modify fun s => { s with subst := {} }
         return prepends ++ [⟨.Assert seqCond summary, source⟩]
       -- else
       --   return [stmt]
@@ -514,7 +571,6 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- if containsNondetHole cond && !containsAssignmentOrImperativeCall (← get).model cond then
         let seqCond ← transformExpr cond
         let prepends ← takePrepends
-        modify fun s => { s with subst := {} }
         return prepends ++ [⟨.Assume seqCond, source⟩]
       -- else
       --   return [stmt]
@@ -539,12 +595,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
           else
             let seqValue ← transformExpr valueMd
             let prepends ← takePrepends
-            modify fun s => { s with subst := {} }
             return prepends ++ [⟨.Assign targets seqValue, source⟩]
       | _ =>
           let seqValue ← transformExpr valueMd
           let prepends ← takePrepends
-          modify fun s => { s with subst := {} }
           return prepends ++ [⟨.Assign targets seqValue, source⟩]
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -563,11 +617,14 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
   | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
-      -- Process invariants and decreases through transformExpr for nondet holes
-      let seqInvs ← invs.mapM transformExpr
+      -- Invariants and `decreases` are evaluated at the loop head, after any
+      -- assignment hoisted out of the condition, so they read live variables and
+      -- must not inherit the condition's snapshots. Each is isolated from the
+      -- others for the same reason.
+      let seqInvs ← invs.mapM (fun i => withFreshSubst (transformExpr i))
       let invPrepends ← takePrepends
       let seqDec ← match dec with
-        | some d => pure (some (← transformExpr d))
+        | some d => pure (some (← withFreshSubst (transformExpr d)))
         | none => pure none
       let decPrepends ← takePrepends
       let seqBody ← do
@@ -577,20 +634,18 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := do
         [⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩]
 
   | .StaticCall name args =>
-      let seqArgs ← args.mapM transformExpr
+      let seqArgs ← args.reverse.mapM transformExpr
       let prepends ← takePrepends
-      return prepends ++ [⟨.StaticCall name seqArgs, source⟩]
+      return prepends ++ [⟨.StaticCall name seqArgs.reverse, source⟩]
 
   | .PrimitiveOp op args _ =>
       let seqArgs ← args.reverse.mapM transformExpr
       let prepends ← takePrepends
-      modify fun s => { s with subst := {} }
       return prepends ++ [⟨.PrimitiveOp op seqArgs.reverse, source⟩]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
       let prepends ← takePrepends
-      modify fun s => { s with subst := {} }
       return prepends ++ [⟨.Return (some seqRet), source⟩]
 
   | _ =>
