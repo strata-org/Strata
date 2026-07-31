@@ -54,13 +54,13 @@ GRACE_TURNS = 20
 # stop asking the guide to `continue` and force the terminal path
 # (decompose → give_up → propagate). These are deliberately HIGH — a normal proof
 # should never approach them.
-MAX_CHUNKS_PER_LEMMA = 40          # ~40 chunks × up to 100 turns = a lot of room
+MAX_CHUNKS_PER_LEMMA = 80          # ~80 chunks × up to 100 turns = a lot of room
 # TIER 1 — FLEXIBLE per-lemma backstop. This is a NO-PROGRESS budget, not raw
 # wall-clock: the clock is measured from the last chunk that STRICTLY reduced the
 # transitive open-sorry count (entry._last_progress_time). A proof that keeps
 # shedding sorries never trips it — only genuine stalling does. The guide can also
 # grant bounded extensions (EXTEND_MINUTES) when it judges the lemma is close.
-LEMMA_IDLE_MINUTES = 90            # minutes WITHOUT progress before the backstop fires
+LEMMA_IDLE_MINUTES = 180           # minutes WITHOUT progress before the backstop fires
 MAX_GUIDE_EXTEND_MINUTES = 30      # max minutes the guide may add per grant
 # TIER 2 — HARD run-level ceiling (absolute wall-clock for the WHOLE run). Set via
 # `start_dashboard.sh --max-run-minutes`. None ⇒ NO stopping time (run until proved
@@ -1437,8 +1437,53 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
     if new_decomp_dir.exists():
         shutil.rmtree(new_decomp_dir)
 
+    split = tools.split_theorems(stub_rel)
+    protected_names = _get_protected_names(tools, stub_rel, entry)
+    # Sibling obligations sharing this file must not be extracted as helpers.
+    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
+    extractable = [b for b in split.blocks
+                   if b.name not in protected_names and b.mutual_group is None
+                   and b.name not in siblings]
+
+    # Fix A: nothing to extract. A forced decompose (e.g. from the backstop) can land
+    # here when every declaration is a protected/sibling obligation. Spawning an
+    # extractor is pointless — it can only no-op or, worse, move protected siblings
+    # (the IMO2026 corruption). Skip the extractor entirely and let the guide decide
+    # (retry with a different tack, or give up) instead of spinning.
+    if not extractable:
+        await agent._emit("message",
+            f"[PO5] Nothing extractable from {stub_rel} "
+            f"(all {len(split.blocks)} decls protected/sibling) — skipping extractor")
+        decision, reason, _extras = await _consult_guide_decide(
+            agent, state, ledger, entry, cwd,
+            options=["retry", "give_up"],
+            task=(
+                f"Cannot decompose: every declaration in {stub_rel} is a protected "
+                f"target or sibling obligation ({sorted(protected_names | siblings)}), "
+                f"so there is nothing to extract into a helper.\n"
+                f"The remaining difficulty is in the protected block(s) themselves or "
+                f"in already-extracted children.\n"
+                f"Options: retry proving inline (different tactic/approach), or give up."
+            ))
+        if decision == "give_up":
+            ctx.failure_context = f"Nothing extractable, gave up: {reason}"
+            ledger.mark_failed(entry.id, f"Nothing extractable, gave up: {reason}")
+            _record_give_up(state, entry, f"Nothing extractable, gave up: {reason}")
+            await _ask_guide_user_fix(agent, state, ledger, entry, cwd,
+                                      f"Nothing extractable, gave up: {reason}")
+            _propagate_failure_to_parent(state, ledger, entry,
+                                         f"Child '{entry.name}' cannot be decomposed: {reason}")
+            return Trans.CONTRADICTORY
+        ctx.failure_context = "Nothing extractable — must prove inline."
+        ctx.current_task = (
+            f"Decomposition is not possible (all declarations are protected/sibling "
+            f"obligations). Guide decided: {reason}\n"
+            f"Prove the remaining sorry inline.")
+        return Trans.RETRY
+
     session = MoveSession(tools, stub_rel, entry.name, entry.workspace,
-                          output_subdir="new_decomposition")
+                          output_subdir="new_decomposition",
+                          protected_names=(protected_names | siblings))
     # Proof-DAG ancestors (dotted workspace paths) so add_import_safely can refuse
     # cycle-forming imports — same source as the writer's import server.
     ancestor_modules = []
@@ -1447,14 +1492,6 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
         if anc:
             ancestor_modules.append(anc.workspace.replace("/", "."))
     extractor_mcp = create_extractor_mcp_server(session, ancestor_modules=ancestor_modules)
-
-    split = tools.split_theorems(stub_rel)
-    protected_names = _get_protected_names(tools, stub_rel, entry)
-    # Sibling obligations sharing this file must not be extracted as helpers.
-    siblings = _sibling_target_names(ledger, entry, cwd, stub_rel)
-    extractable = [b for b in split.blocks
-                   if b.name not in protected_names and b.mutual_group is None
-                   and b.name not in siblings]
 
     do_not_move_names = sorted(protected_names | siblings)
     do_not_move = ""

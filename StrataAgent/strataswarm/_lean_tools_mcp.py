@@ -503,10 +503,12 @@ def create_extractor_mcp_server(session: "MoveSession", ancestor_modules: list[s
     )
     async def verify_build_tool(input: dict[str, Any]) -> dict[str, Any]:
         import subprocess
+        from .modules.po_lean import LEAN_BUILD_TIMEOUT
         root = session._tools._root
         stub_module = session._file_path.replace("/", ".").removesuffix(".lean")
         result = subprocess.run(["lake", "build", stub_module],
-                                cwd=str(root), capture_output=True, text=True, timeout=300)
+                                cwd=str(root), capture_output=True, text=True,
+                                timeout=LEAN_BUILD_TIMEOUT)
         output = result.stdout + "\n" + result.stderr
         errors = [l for l in output.splitlines() if ": error:" in l]
         if errors:

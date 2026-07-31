@@ -38,6 +38,26 @@ logger = logging.getLogger("strataswarm.lean_tools")
 
 COMMAND_PAD = 15  # must match Lean side
 
+
+def _env_int(name: str, default: int) -> int:
+    """Read a positive int from the environment, falling back to `default`."""
+    try:
+        v = int(os.environ.get(name, "").strip())
+        return v if v > 0 else default
+    except (ValueError, AttributeError):
+        return default
+
+
+# Lean subprocess timeouts (seconds). Defaults are generous enough for a project
+# that does `import Mathlib` — where a single `lake env lean` invocation spends
+# 3+ minutes just loading oleans before it runs a line of the file — yet still
+# finite so a genuinely-hung build/probe is eventually reaped. Override per
+# project via the env vars (e.g. export STRATA_LEAN_PROBE_TIMEOUT=900 for a very
+# heavy Mathlib workspace).
+LEAN_COMPILE_TIMEOUT = _env_int("STRATA_LEAN_COMPILE_TIMEOUT", 600)  # check_compiles
+LEAN_BUILD_TIMEOUT = _env_int("STRATA_LEAN_BUILD_TIMEOUT", 900)      # lake build (oracle)
+LEAN_PROBE_TIMEOUT = _env_int("STRATA_LEAN_PROBE_TIMEOUT", 900)      # #print axioms probe
+
 # Soundness-adjacent source patterns invisible to `#print axioms` (a decl can be
 # sorryAx-free yet compromised by `@[implemented_by]`, `opaque`, etc.). Ported
 # verbatim from lean-lsp-mcp's verify.py so the oracle is a strict superset of
@@ -422,13 +442,21 @@ class CompileResult:
 
 @dataclass
 class TheoremBlock:
-    name: str = ""
+    name: str = ""  # LOCAL name (no namespace), e.g. "pieceLengths_length"
     start: int = 0  # line number (1-indexed, from itp_interface)
     end: int = 0
     has_sorry: bool = False
     decl_type: str = ""  # "theorem", "def", "unknown", "end"
     text: str = ""  # full declaration text (clean, no trailing comments)
     mutual_group: int | None = None  # index of mutual group, or None
+    namespace: str = ""  # enclosing namespace, e.g. "LiuBangXiangYu" ("" if top-level)
+
+    @property
+    def qualified_name(self) -> str:
+        """Fully-qualified name (``namespace.name``) — what ``#print axioms`` and
+        Lean's name resolution actually need. A short name fails to resolve inside
+        a namespaced file, so callers that hand names to Lean MUST use this."""
+        return f"{self.namespace}.{self.name}" if self.namespace else self.name
 
 
 @dataclass
@@ -508,12 +536,19 @@ class MoveSession:
     """
 
     def __init__(self, tools: "SwarmLeanTools", file_path: str, main_theorem: str, workspace: str,
-                 output_subdir: str = "decomposed"):
+                 output_subdir: str = "decomposed",
+                 protected_names: "set[str] | None" = None):
         self._tools = tools
         self._file_path = file_path
         self._main_theorem = main_theorem
         self._workspace = workspace
         self._output_subdir = output_subdir
+        # Declarations that MUST NOT be extracted (sibling obligations / protected
+        # targets sharing this file). Enforced server-side in move_decl — the prompt
+        # alone was ignored by an extractor that moved 5 protected siblings and then
+        # left the file with dangling imports (IMO2026 run). main_theorem is always
+        # protected regardless of this set.
+        self._protected_names: set[str] = set(protected_names or set())
         self._moves: list[MoveIntent] = []
         self._split: SplitResult | None = None
         self._backup: str | None = None  # original file content
@@ -552,6 +587,12 @@ class MoveSession:
             return f"Error: declaration '{decl_name}' not found in file"
         if decl_name == self._main_theorem:
             return f"Error: cannot move main theorem '{decl_name}'"
+        # Protected/sibling obligation — refuse at the tool layer (not just in the
+        # prompt). Moving these leaves the file importing helpers for declarations
+        # that are owned by other branches and must stay in place.
+        if decl_name in self._protected_names:
+            return (f"Error: cannot move '{decl_name}' — it is a protected sibling "
+                    f"obligation and must stay in this file.")
 
         # If part of a mutual group, all members must be moved together
         if block.mutual_group is not None:
@@ -559,6 +600,11 @@ class MoveSession:
             # If the main theorem is in this mutual group, NONE of them can be moved
             if self._main_theorem in group_names:
                 return f"Error: cannot move '{decl_name}' — it is in a mutual block with main theorem '{self._main_theorem}'"
+            # If any member is protected, the whole group is pinned in place
+            protected_hit = [n for n in group_names if n in self._protected_names]
+            if protected_hit:
+                return (f"Error: cannot move '{decl_name}' — its mutual group contains "
+                        f"protected obligation(s) {protected_hit} that must stay in this file.")
             # Check if any group member is already registered
             already = [m for m in self._moves if m.decl_name in group_names]
             if already:
@@ -734,20 +780,41 @@ class MoveSession:
 
         source.write_text("\n".join(cleaned))
 
-        # Verify: build Stub.lean (which transitively builds all imported helpers)
+        # Verify: build Stub.lean (which transitively builds all imported helpers).
+        # This step mutated the file (imports added, blocks removed) and wrote helper
+        # files BEFORE verifying. If verification fails for ANY reason — a build error
+        # OR a timeout — we MUST restore the pre-extraction state; otherwise Stub.lean
+        # is left importing helper modules under new_decomposition/ that will be wiped
+        # on the next extract, leaving dangling `import` lines that never compile.
+        # (This is the non-atomic-commit bug from the IMO2026 run: `import Mathlib`
+        # blew past the old hardcoded 300s timeout, which raised uncaught and skipped
+        # the revert.) Use the env-configurable LEAN_BUILD_TIMEOUT (default 900s) so a
+        # cold Mathlib build has room, and treat a timeout as a failed verification.
         stub_module = self._file_path.replace("/", ".").removesuffix(".lean")
-        result = subprocess.run(["lake", "build", stub_module],
-                                cwd=str(root), capture_output=True, text=True, timeout=300)
+        try:
+            result = subprocess.run(["lake", "build", stub_module],
+                                    cwd=str(root), capture_output=True, text=True,
+                                    timeout=LEAN_BUILD_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self.revert()
+            return ExtractResult(
+                error=(f"Build timed out ({LEAN_BUILD_TIMEOUT}s) after extraction. "
+                       f"Reverted to pre-extraction state — no files were changed. "
+                       f"Try extracting fewer declarations at once."),
+                created_files=[])
         output = result.stdout + "\n" + result.stderr
         errors = [l for l in output.splitlines()
                   if ": error:" in l or l.strip().startswith("error:")]
 
         if errors:
-            # Categorize errors by file
+            # Build failed with real errors. Restore the pre-extraction state so the
+            # file is not left half-written with dangling helper imports.
+            self.revert()
             error_summary = "\n".join(errors[:10])
             return ExtractResult(
-                error=f"Build failed after extraction:\n{error_summary}",
-                created_files=created_files)
+                error=(f"Build failed after extraction (reverted to pre-extraction "
+                       f"state):\n{error_summary}"),
+                created_files=[])
 
         self._committed = True
         self._created_files = created_files
@@ -1232,7 +1299,7 @@ class SwarmLeanTools:
                 cwd=str(self._root),
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=LEAN_COMPILE_TIMEOUT,
             )
             output = result.stdout + "\n" + result.stderr
             # The sorry diagnostic is EXACTLY "declaration uses 'sorry'" (emitted as a
@@ -1263,7 +1330,7 @@ class SwarmLeanTools:
             error_detail = "\n".join(error_lines[:10])
             return CompileResult(success=False, has_sorry=has_sorry, has_error=True, error=error_detail)
         except subprocess.TimeoutExpired:
-            return CompileResult(error="compilation timed out (120s)")
+            return CompileResult(error=f"compilation timed out ({LEAN_COMPILE_TIMEOUT}s)")
         except Exception as e:
             return CompileResult(error=str(e))
 
@@ -1332,12 +1399,13 @@ class SwarmLeanTools:
                 cwd=str(self._root),
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=LEAN_BUILD_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
+            _msg = f"build timed out ({LEAN_BUILD_TIMEOUT}s)"
             return AxiomSorryResult(
-                build_ok=False, build_error="build timed out (600s)",
-                warnings=warnings, error="build timed out (600s)",
+                build_ok=False, build_error=_msg,
+                warnings=warnings, error=_msg,
             )
         except Exception as e:
             return AxiomSorryResult(
@@ -1356,8 +1424,43 @@ class SwarmLeanTools:
             )
 
         # 2. Probe from a throwaway NON-module scratch file that imports the olean.
-        print_cmds = "\n".join(f"#print axioms {n}" for n in names)
-        scratch_content = f"import {module_name}\n\n{print_cmds}\n"
+        #
+        # NAME RESOLUTION (critical for namespaced files): `#print axioms <short>`
+        # raises "unknown constant" when the theorem lives inside a `namespace`
+        # (e.g. `pieceLengths_length` inside `namespace LiuBangXiangYu`). An
+        # unknown constant produces NO verdict line → the parser below defaults to
+        # sorry_by_name[n]=True → a genuinely-proved theorem is falsely reported
+        # "transitively depends on sorry". Nearly every real Lean/Mathlib file is
+        # namespaced, so we MUST resolve each requested (usually short) name to its
+        # fully-qualified form before emitting `#print axioms`. We ALSO `open` every
+        # namespace in the file as belt-and-suspenders for any name we can't map.
+        split = self.split_theorems(file_path)
+        qualified_by_name: dict[str, str] = {}
+        namespaces: set[str] = set()
+        if not split.error:
+            local_to_qual: dict[str, str] = {}
+            qual_set: set[str] = set()
+            for b in split.blocks:
+                if b.namespace:
+                    namespaces.add(b.namespace)
+                local_to_qual[b.name] = b.qualified_name
+                qual_set.add(b.qualified_name)
+            for n in names:
+                # Already fully-qualified (matches a known qualified name) → keep.
+                if n in qual_set:
+                    qualified_by_name[n] = n
+                # Short local name we can resolve → qualify it.
+                elif n in local_to_qual:
+                    qualified_by_name[n] = local_to_qual[n]
+                # Unknown → probe as-is (honest: likely yields found=False).
+                else:
+                    qualified_by_name[n] = n
+        else:
+            qualified_by_name = {n: n for n in names}
+
+        open_lines = "".join(f"open {ns}\n" for ns in sorted(namespaces))
+        print_cmds = "\n".join(f"#print axioms {qualified_by_name[n]}" for n in names)
+        scratch_content = f"import {module_name}\n{open_lines}\n{print_cmds}\n"
         scratch_rel = f"_mcp_axprobe_{os.getpid()}_{int(time.time() * 1000) % 100000}.lean"
         scratch_abs = self._root / scratch_rel
         try:
@@ -1371,11 +1474,13 @@ class SwarmLeanTools:
                 cwd=str(self._root),
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=LEAN_PROBE_TIMEOUT,
             )
             output = probe.stdout + "\n" + probe.stderr
         except subprocess.TimeoutExpired:
-            return AxiomSorryResult(warnings=warnings, error="axiom probe timed out (300s)")
+            return AxiomSorryResult(
+                warnings=warnings,
+                error=f"axiom probe timed out ({LEAN_PROBE_TIMEOUT}s)")
         except Exception as e:
             return AxiomSorryResult(warnings=warnings, error=str(e))
         finally:
@@ -1394,24 +1499,45 @@ class SwarmLeanTools:
         axioms_by_name: dict[str, list[str]] = {}
         # Collapse to single line per verdict; messages can wrap.
         flat = output.replace("\n", " ")
+        # Only the VERDICT tail is ASCII and safe to regex; the declaration name is
+        # NOT (Lean names carry Greek letters, subscripts like ₁, primes, `«»`
+        # guillemets — none reliably matched by `\w`). So we locate each verdict by
+        # a LITERAL search for the exact fully-qualified name we probed (from the
+        # parser), then regex only the ASCII remainder after it.
+        _verdict_re = re.compile(
+            r"\s+(depends on axioms:\s*\[(?P<ax>[^\]]*)\]|does not depend on any axioms)"
+        )
         for n in names:
-            short = n.rsplit(".", 1)[-1]
-            # Match the verdict line for this name (fully-qualified or trailing segment).
-            m = re.search(
-                rf"'(?:[\w.]*\.)?{re.escape(short)}'\s+"
-                rf"(depends on axioms:\s*\[(?P<ax>[^\]]*)\]|does not depend on any axioms)",
-                flat,
-            )
-            if not m:
+            # The EXACT name we emitted `#print axioms` for (`qualified_by_name[n]`),
+            # which is what Lean echoes back verbatim inside single quotes. Matching
+            # the exact qualified string also stops two theorems that share a local
+            # name across namespaces (A.foo vs B.foo) from colliding.
+            probed = qualified_by_name.get(n, n)
+            key = f"'{probed}'"
+            found = False
+            search_from = 0
+            while True:
+                idx = flat.find(key, search_from)
+                if idx == -1:
+                    break
+                # Require the verdict clause to follow immediately. This guards the
+                # `foo` vs `foo'` case: searching `'foo'` would prefix-match inside
+                # `'foo''`, but there the next char is `'`, not whitespace → reject
+                # and keep scanning for `foo`'s own line.
+                m = _verdict_re.match(flat, idx + len(key))
+                if m:
+                    ax_group = m.group("ax")
+                    axioms = [a.strip() for a in ax_group.split(",")] if ax_group else []
+                    ok_by_name[n] = True
+                    axioms_by_name[n] = axioms
+                    sorry_by_name[n] = any("sorryAx" in a for a in axioms)
+                    found = True
+                    break
+                search_from = idx + len(key)
+            if not found:
                 ok_by_name[n] = False
                 sorry_by_name[n] = True
                 axioms_by_name[n] = []
-                continue
-            ok_by_name[n] = True
-            ax_group = m.group("ax")
-            axioms = [a.strip() for a in ax_group.split(",")] if ax_group else []
-            axioms_by_name[n] = axioms
-            sorry_by_name[n] = any("sorryAx" in a for a in axioms)
 
         return AxiomSorryResult(
             sorry_by_name=sorry_by_name,
@@ -1492,6 +1618,7 @@ class SwarmLeanTools:
                 has_sorry=has_sorry,
                 decl_type=decl_type,
                 text=r.text,
+                namespace=(r.namespace or ""),
             ))
 
         # Extend block boundaries to include termination_by/decreasing_by clauses

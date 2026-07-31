@@ -28,7 +28,16 @@ logger = logging.getLogger("strataswarm.agent")
 
 EventCallback = Callable[[AgentEvent], Awaitable[None]]
 
-STALL_TIMEOUT = 300  # 5 minutes — if no message for this long, agent is likely dead
+STALL_TIMEOUT = 600  # 10 minutes — if no message for this long (and no tool is
+                     # in flight), the agent's session is likely dead.
+# A long-running TOOL call (e.g. `verify_no_sorry` / axiom probe on a Mathlib
+# project, where a single `import Mathlib` costs ~3+ min just to load oleans)
+# legitimately emits NOTHING between its `tool_use` and `tool_result`. Applying
+# the normal stall timeout there kills the session mid-call and discards the
+# result. While a tool is in flight we use this much larger ceiling instead — big
+# enough for heavy Lean builds/probes, but still finite so a truly-hung
+# subprocess is eventually reaped rather than hanging forever.
+TOOL_STALL_TIMEOUT = 1800  # 30 minutes — watchdog ceiling while a tool is running
 
 
 def parse_checkpoint_state(checkpoint_md: str) -> dict | None:
@@ -200,14 +209,30 @@ class SwarmAgent:
         """Inner consume logic (called under lock)."""
         await self._emit("message", "[Waiting for backend response...]")
         self._last_message_time = time.monotonic()  # watchdog timestamp
+        self._tool_in_flight = False  # a tool_use with no matching tool_result yet
         msg_iter = self.backend.receive_messages().__aiter__()
 
         while True:
             try:
-                stall_timeout = None if self.spec.ignore_stall else STALL_TIMEOUT
+                # While a tool is in flight, allow the much larger TOOL_STALL_TIMEOUT:
+                # a heavy Lean build/probe (Mathlib) can legitimately be silent for
+                # minutes between tool_use and tool_result. Otherwise use the normal
+                # session-liveness timeout.
+                if self.spec.ignore_stall:
+                    stall_timeout = None
+                elif self._tool_in_flight:
+                    stall_timeout = TOOL_STALL_TIMEOUT
+                else:
+                    stall_timeout = STALL_TIMEOUT
                 await self._emit_heartbeat_if_needed()
                 await self._emit("message", "[Waiting for backend response...]")
                 message = await asyncio.wait_for(msg_iter.__anext__(), timeout=stall_timeout)
+                # Track tool-in-flight so the watchdog doesn't kill a session that is
+                # legitimately blocked inside a long-running tool call.
+                if message.type == "tool_use":
+                    self._tool_in_flight = True
+                elif message.type == "tool_result":
+                    self._tool_in_flight = False
                 # Only reset watchdog on substantive messages (not heartbeats)
                 if message.type != "heartbeat":
                     self._last_message_time = time.monotonic()
@@ -219,9 +244,12 @@ class SwarmAgent:
             except StopAsyncIteration:
                 return True
             except asyncio.TimeoutError:
-                logger.warning(f"[STALL] {self.spec.name}: no message in {STALL_TIMEOUT}s")
-                await self._emit("message", f"[STALL DETECTED] No response for {STALL_TIMEOUT}s — reconnecting session")
-                await self._emit("stall", f"stalled_for_{STALL_TIMEOUT}s")
+                fired = TOOL_STALL_TIMEOUT if self._tool_in_flight else STALL_TIMEOUT
+                logger.warning(f"[STALL] {self.spec.name}: no message in {fired}s "
+                               f"(tool_in_flight={self._tool_in_flight})")
+                await self._emit("message", f"[STALL DETECTED] No response for {fired}s — reconnecting session")
+                await self._emit("stall", f"stalled_for_{fired}s")
+                self._tool_in_flight = False
                 # Kill dead subprocess, then reconnect with same session_id
                 try:
                     await self.backend.disconnect()
