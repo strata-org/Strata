@@ -73,6 +73,11 @@ def _parse_args() -> argparse.Namespace:
                    help="Use a custom cheat-sheet/playbook file instead of the "
                         "bundled one. Resolved to an absolute path (relative to "
                         "the current directory); errors if the file is missing.")
+    p.add_argument("--max-run-minutes", type=float, default=None, metavar="MINUTES",
+                   help="TIER-2 hard upper bound (minutes) on the ENTIRE run "
+                        "wall-clock. Omit ⇒ no hard stop (run until proved or "
+                        "terminated). The flexible per-lemma no-progress backstop "
+                        "applies regardless.")
     return p.parse_args()
 
 
@@ -99,8 +104,20 @@ def _apply_cheat_sheet_env(args: argparse.Namespace) -> None:
         print(f"[CONFIG] Default cheat sheet: {resolved}")
 
 
+def _apply_max_run_minutes_env(args: argparse.Namespace) -> None:
+    """Publish the TIER-2 hard run-level ceiling via env for the task manager."""
+    if getattr(args, "max_run_minutes", None):
+        os.environ["STRATA_MAX_RUN_MINUTES"] = str(args.max_run_minutes)
+        print(f"[CONFIG] Hard run ceiling: {args.max_run_minutes:g} min "
+              f"(--max-run-minutes)")
+    else:
+        os.environ.pop("STRATA_MAX_RUN_MINUTES", None)
+        print("[CONFIG] No hard run ceiling (runs until proved or terminated)")
+
+
 async def main(args: argparse.Namespace) -> None:
     _apply_cheat_sheet_env(args)
+    _apply_max_run_minutes_env(args)
     kill_stale_process(args.port)
 
     pid = os.getpid()

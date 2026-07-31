@@ -55,7 +55,16 @@ GRACE_TURNS = 20
 # (decompose → give_up → propagate). These are deliberately HIGH — a normal proof
 # should never approach them.
 MAX_CHUNKS_PER_LEMMA = 40          # ~40 chunks × up to 100 turns = a lot of room
-MAX_MINUTES_PER_LEMMA = 90         # wall-clock cap per lemma attempt loop
+# TIER 1 — FLEXIBLE per-lemma backstop. This is a NO-PROGRESS budget, not raw
+# wall-clock: the clock is measured from the last chunk that STRICTLY reduced the
+# transitive open-sorry count (entry._last_progress_time). A proof that keeps
+# shedding sorries never trips it — only genuine stalling does. The guide can also
+# grant bounded extensions (EXTEND_MINUTES) when it judges the lemma is close.
+LEMMA_IDLE_MINUTES = 90            # minutes WITHOUT progress before the backstop fires
+MAX_GUIDE_EXTEND_MINUTES = 30      # max minutes the guide may add per grant
+# TIER 2 — HARD run-level ceiling (absolute wall-clock for the WHOLE run). Set via
+# `start_dashboard.sh --max-run-minutes`. None ⇒ NO stopping time (run until proved
+# or otherwise terminated). This is the only unconditional stop.
 # When a child gives up, its parent is re-activated to re-decompose differently.
 # Bound how many times a single parent may be re-activated before we stop and
 # propagate the failure further up (prevents the give_up ↔ re-decompose churn).
@@ -187,6 +196,9 @@ class PO5State:
     # disables it entirely; cheat_sheet_path="" uses the bundled default.
     use_cheat_sheet: bool = True
     cheat_sheet_path: str = ""
+    # TIER 2 backstop: hard upper bound (minutes) on the ENTIRE run wall-clock.
+    # None ⇒ no hard stop (run until proved or the run is killed externally).
+    max_run_minutes: float | None = None
     agent_registry: dict = field(default_factory=dict)
     lemma_ctx: dict = field(default_factory=dict)  # lemma_id → LemmaContext
     total_attempts: int = 0
@@ -381,12 +393,14 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         skip_soundness = inp.get("skip_soundness", False)
         use_cheat_sheet = inp.get("use_cheat_sheet", True)
         cheat_sheet_path = inp.get("cheat_sheet_path", "") or ""
+        max_run_minutes = inp.get("max_run_minutes", None)
     else:
         workspace_rel = str(inp) if inp else ""
         theorem_names, theorem_file = [], ""
         skip_soundness = False
         use_cheat_sheet = True
         cheat_sheet_path = ""
+        max_run_minutes = None
 
     if not workspace_rel:
         return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
@@ -401,6 +415,7 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
             skip_soundness=skip_soundness,
             use_cheat_sheet=use_cheat_sheet,
             cheat_sheet_path=cheat_sheet_path,
+            max_run_minutes=(float(max_run_minutes) if max_run_minutes else None),
         )
 
     ledger = LemmaLedger(cwd / workspace_rel / "lemma_ledger.json")
@@ -755,15 +770,43 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     while True:
         ledger.increment_attempts(entry.id)
         chunks_this_call += 1
-        # ── Runaway backstop ──────────────────────────────────────────────────
+        # ── Backstops ─────────────────────────────────────────────────────────
         # The guide drives strategy, but it must not spin forever on a target it
-        # can neither close nor abandon. If we blow past the chunk/wall-clock cap,
-        # stop consulting for `continue` and take the terminal path: try one last
-        # decomposition, else give up and propagate to the parent (Bug #1 residual).
-        loop_minutes = (_time.time() - loop_start) / 60.0
-        if chunks_this_call > MAX_CHUNKS_PER_LEMMA or loop_minutes > MAX_MINUTES_PER_LEMMA:
+        # can neither close nor abandon. Two independent tiers plus a hard chunk cap:
+        #   TIER 1 (flexible): NO-PROGRESS budget — minutes since the last chunk that
+        #     STRICTLY reduced the transitive open-sorry count. A proof that keeps
+        #     shedding sorries never trips it; only genuine stalling does. The guide
+        #     may grant bounded extensions (EXTEND_MINUTES) that add to this budget.
+        #   TIER 2 (hard): absolute run wall-clock vs state.max_run_minutes. None ⇒
+        #     no stop. This is unconditional — no decompose escape hatch.
+        #   MAX_CHUNKS_PER_LEMMA: fixed runaway guard (independent of the clocks).
+        now = _time.time()
+        # First iteration: no progress recorded yet — anchor the idle clock to loop start.
+        if not hasattr(entry, '_last_progress_time'):
+            entry._last_progress_time = loop_start
+        idle_minutes = (now - entry._last_progress_time) / 60.0
+        idle_budget = LEMMA_IDLE_MINUTES + getattr(entry, '_idle_extension_minutes', 0.0)
+        run_minutes = (now - getattr(agent, '_po4_start_time', now)) / 60.0
+        hard_stop = (state.max_run_minutes is not None
+                     and run_minutes > state.max_run_minutes)
+        tier1_stop = idle_minutes > idle_budget
+        chunk_stop = chunks_this_call > MAX_CHUNKS_PER_LEMMA
+        if hard_stop:
+            # TIER 2: unconditional — the whole RUN has blown its user-set ceiling.
+            # Do not attempt decompose; stop and propagate immediately.
+            reason = (f"hard run-level backstop: {run_minutes:.0f}min ≥ "
+                      f"max_run_minutes={state.max_run_minutes:.0f} (set via "
+                      f"--max-run-minutes); stopping on '{entry.name}'")
+            await agent._emit("message", f"[PO5] ⛔ {reason}")
+            ctx.failure_context = f"Backstop give-up: {reason}"
+            ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
+            _record_give_up(state, entry, f"Backstop give-up: {reason}")
+            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' hit run cap: {reason}")
+            return "failed"
+        if tier1_stop or chunk_stop:
             reason = (f"runaway backstop: {chunks_this_call} chunks / "
-                      f"{loop_minutes:.0f}min on '{entry.name}' with no resolution")
+                      f"{idle_minutes:.0f}min idle (budget {idle_budget:.0f}min) "
+                      f"on '{entry.name}' with no resolution")
             await agent._emit("message", f"[PO5] ⛔ {reason}")
             # Last resort: if a decomposition is possible, take it (a fresh subtree
             # may crack what inline attempts could not). Otherwise give up cleanly.
@@ -783,6 +826,11 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         writer_pct = await writer.get_context_percentage()
         # _get_guide handles rotation internally if >= 75%
         guide = await _get_guide(agent, entry, state, ledger)
+        # Open the live writer↔guide channel for THIS chunk. Re-established every
+        # iteration because either instance may have rotated (new name). The guide
+        # is about to park in run_while_listening_to_messages, so the writer can
+        # report to it mid-chunk and receive a reply on the same channel.
+        guide_name = _link_writer_guide(agent, writer, guide)
         guide_pct = await guide.get_context_percentage()
         await agent._emit("message",
             f"[PO5] Chunk {entry.attempts} ({chunk_budget}t, total={total_turns}) "
@@ -803,7 +851,14 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 agent_ctx=writer,
                 initial_input=(
                     f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-                    f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}"
+                    f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}\n\n"
+                    f"Your proof guide '{guide_name}' is available RIGHT NOW while you work. "
+                    f"If you hit something strategic — the goal looks false or mis-stated, "
+                    f"the signature seems unprovable as written, a lemma you need is missing, "
+                    f"or you're stuck in a way tactics alone won't fix — report it with "
+                    f"send_message(to=\"{guide_name}\", message=\"...\") and then "
+                    f"check_messages(timeout=60) for the reply. Do NOT message for routine "
+                    f"compile errors — fix those yourself."
                 ),
                 verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
             )
@@ -828,67 +883,64 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         # )
         total_turns += chunk
 
-        # Check: proved? (TARGET-SCOPED — a shared file may hold sibling theorems
-        # whose sorry is not ours to close, so we gate on the protected block only.)
-        # If the protected block is locally sorry-free but transitively unproven,
-        # this collects the inline helper sorries responsible so we can SHOW them to
-        # the guide (otherwise it sees an empty sorry set and loops `continue`).
-        transitive_inline_sorry_info: dict = {}
+        # Build the AUTHORITATIVE dependency+sorry overview ONCE. This single
+        # source of truth drives (a) the proved/contingent gate, (b) the guide's
+        # progress metric, and (c) the guide-facing overview. It joins in-file
+        # dependency edges (comment-stripped, word-boundary, transitively closed)
+        # + the module-SAFE `#print axioms` verdict (build + non-module scratch;
+        # never run in-place inside a `module`) + sorry positions. The guide no
+        # longer reasons from stale memory or snapshot line numbers.
+        tsm = tools.transitive_sorry_map(stub_rel, sorted(protected_names))
         cr = tools.check_compiles(stub_rel)
-        if cr.success:
-            # 1. Cheap local check: is the protected block free of literal sorry?
-            local_sorry = tools.get_sorries_by_theorem(stub_rel)
-            protected_local_sorry = sum(len(local_sorry.get(n, [])) for n in protected_names)
-            if protected_local_sorry == 0:
-                # 2. Authoritative transitive check via `#print axioms`: the protected
-                #    block is proven iff NONE of its members depend on sorryAx.
-                ax = tools.axioms_by_theorem(stub_rel, sorted(protected_names))
-                if all(ax.is_proven(n) for n in protected_names):
-                    ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
-                    return "proved"
-                # Protected block is locally sorry-free but transitively depends on
-                # a sorry. Identify the source so we don't re-run the writer on an
-                # already-finished target:
-                #   (a) an unproven SIBLING obligation in this same shared file
-                #       (another target, proved in its own turn) → wait for it, and
-                #   (b) a registered CHILD helper still being proved → wait for it.
-                # In both cases _propagate_proved promotes this entry once the shared
-                # file / subtree is sorry-free. `siblings` is the set of genuine
-                # sibling obligations (registered targets + original-snapshot decls),
-                # which EXCLUDES writer-created inline helpers — those still need
-                # extraction, so they must fall through, not be parked as contingent.
-                sibling_sorry = any(
-                    n in siblings and positions
-                    for n, positions in local_sorry.items())
-                if sibling_sorry or entry.children:
-                    ledger.mark_contingent(entry.id)
-                    return "contingent"
-                # No sibling/child sorry explains it — transitive sorry from an
-                # untracked dep or a fresh inline helper. The writer factored its
-                # goal into inline `sorry` helpers, so its OWN block reads clean
-                # while the target is still transitively unproven. Surface those
-                # inline helper sorries to the guide (below) — it must see the real
-                # state, not an empty protected-sorry set, or it will loop `continue`
-                # forever thinking the branch is done. The guide then decides
-                # (typically `decompose` → extraction discovers/registers them).
-                split = tools.split_theorems(stub_rel)
-                if split and not split.error:
-                    transitive_inline_sorry_info = {
-                        b.name: [b.start] for b in split.blocks
-                        if b.has_sorry and b.name not in protected_names
-                        and b.name not in siblings
-                    }
 
-        # Gather state. Progress is measured over the PROTECTED block only — a
-        # shared multi-theorem file may hold sibling sorries the writer is
-        # forbidden to touch, so counting them would falsely report "no progress"
-        # the moment the writer finishes its own target.
-        sorry_info = tools.get_sorries_by_theorem(stub_rel)
+        # Check: proved? (TARGET-SCOPED — a shared file may hold sibling theorems
+        # whose sorry is not ours to close, so we gate on the protected targets.)
+        if cr.success and tsm.build_ok and protected_names and all(
+                tsm.targets[n].done for n in protected_names if n in tsm.targets):
+            ledger.mark_proved(entry.id, stub_rel.replace("/", ".").removesuffix(".lean"))
+            return "proved"
+
+        # Not (yet) proved. If the writer's OWN block is locally sorry-free but the
+        # target is transitively unproven, decide whether it is (a)/(b) someone
+        # else's job — a sibling obligation proved separately, or a registered
+        # child still being proved → park as contingent, _propagate_proved promotes
+        # us later — or whether the target depends on writer-created INLINE helpers
+        # that still need work. `siblings` EXCLUDES inline helpers.
+        local_sorry = tools.get_sorries_by_theorem(stub_rel)
+        protected_local_sorry = sum(len(local_sorry.get(n, [])) for n in protected_names)
+        if cr.success and tsm.build_ok and protected_local_sorry == 0:
+            sibling_sorry = any(
+                n in siblings and positions
+                for n, positions in local_sorry.items())
+            if sibling_sorry or entry.children:
+                ledger.mark_contingent(entry.id)
+                return "contingent"
+
+        # Reachable in-file helpers the TARGET depends on that still carry a
+        # transitive sorry, excluding the protected targets themselves and genuine
+        # siblings. These are the writer's real pending obligations even when its
+        # own block reads clean (it factored the goal into inline `sorry` helpers).
+        open_deps_all: set[str] = set()
+        for t in protected_names:
+            if t in tsm.targets:
+                open_deps_all |= set(tsm.targets[t].open_deps)
+        transitive_inline_sorry_info = {
+            n: [tsm.decls[n].start] for n in sorted(open_deps_all)
+            if n not in protected_names and n not in siblings and n in tsm.decls
+        }
+
+        # Progress metric: total DISTINCT in-file decls reachable from our targets
+        # that are still transitively unproven (replaces the protected-only literal
+        # count, which read 0 the moment the writer delegated to inline helpers and
+        # made the guide blind to real 5→1 progress).
+        sorry_count = tsm.open_sorry_count()
+        # For display: literal-sorry positions, partitioned protected vs sibling.
+        sorry_info = local_sorry
         protected_sorry_info = {n: sorry_info.get(n, []) for n in protected_names if sorry_info.get(n)}
         sibling_sorry_info = {n: v for n, v in sorry_info.items()
                               if n not in protected_names and v}
-        sorry_count = sum(len(sorry_info.get(n, [])) for n in protected_names)
         progress = _format_progress(prev_sorry_count, sorry_count)
+        prior_sorry_count = prev_sorry_count  # snapshot BEFORE overwrite (stuck check)
         prev_sorry_count = sorry_count
         writer_pct = await writer.get_context_percentage()
 
@@ -915,13 +967,14 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         from .._snapshot_mcp import snapshot_summary
         snap_summary = snapshot_summary(cwd, entry.workspace)
         snap_note = f"\n{snap_summary}\n" if snap_summary else ""
+        sorry_map = _format_sorry_map(tsm, set(protected_names), siblings)
         await agent._emit("message", f"[PO5] Guide reviews: {progress}{' (NOT COMPILING)' if compile_note else ''}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk {entry.attempts} ({total_turns} total turns).\n"
                 f"{_runway_note(writer_pct)}\n"
                 f"{progress}\nFile: {stub_rel}\n"
-                f"YOUR sorries (the ones to close): {protected_sorry_info}\n"
+                f"{sorry_map}"
                 f"{transitive_note}"
                 f"{sibling_note}"
                 f"{snap_note}"
@@ -948,22 +1001,30 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 out["snapshot"] = True
                 tm = re.search(r'SNAPSHOT_TAG:\s*(.+)', raw)
                 out["snapshot_tag"] = tm.group(1).strip() if tm else "guide-checkpoint"
+            em = re.search(r'EXTEND_MINUTES:\s*(\d+)', raw)
+            if em:
+                out["extend_minutes"] = int(em.group(1))
             return out
 
-        # Track consecutive no-reduction chunks. "No progress" is EITHER the
-        # protected block failing to shed sorry OR the target sitting transitively
-        # unproven via inline helpers (protected sorry_count == 0 but not done) —
-        # the latter is the loop that used to spin `continue` unchecked, so it must
-        # count toward stuck-ness even though sorry_count is 0.
+        # Track consecutive no-reduction chunks. Progress = the transitive
+        # open-sorry count STRICTLY decreased this chunk. A chunk that closes an
+        # inline helper now correctly counts as progress (the old protected-only
+        # count read 0 the whole run and made this misfire). Compare against the
+        # value captured BEFORE we overwrote prev_sorry_count above.
         if not hasattr(entry, '_stuck_count'):
             entry._stuck_count = 0
-        no_protected_progress = (
-            sorry_count > 0 and prev_sorry_count is not None
-            and sorry_count >= prev_sorry_count)
-        if no_protected_progress or transitive_inline_sorry_info:
+        made_progress = (
+            prior_sorry_count is not None and sorry_count < prior_sorry_count)
+        still_open = sorry_count > 0
+        if still_open and not made_progress:
             entry._stuck_count = getattr(entry, '_stuck_count', 0) + 1
         else:
             entry._stuck_count = 0
+        # Record the moment of last real progress so the flexible per-lemma
+        # backstop (Fix B) measures time-SINCE-PROGRESS, not raw wall-clock — a
+        # proof that is still shedding sorries must not be killed by the timer.
+        if made_progress or prior_sorry_count is None:
+            entry._last_progress_time = _time.time()
 
         stuck_hint = ""
         if entry._stuck_count >= 3:
@@ -978,6 +1039,25 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"\n⚠️ Your block is locally sorry-free but TRANSITIVELY UNPROVEN via inline "
                 f"helpers ({sorted(transitive_inline_sorry_info)}). `continue` only helps if the "
                 f"writer will close them inline; otherwise choose `decompose` to extract them.\n"
+            )
+
+        # Flexible TIER-1 backstop status for the guide. The idle clock is measured
+        # from the last chunk that reduced the transitive sorry count; if it is
+        # getting close to the budget but the lemma looks close, the guide can add
+        # bounded minutes with EXTEND_MINUTES rather than being force-stopped.
+        _idle_min = (_time.time() - getattr(entry, '_last_progress_time', loop_start)) / 60.0
+        _idle_budget = LEMMA_IDLE_MINUTES + getattr(entry, '_idle_extension_minutes', 0.0)
+        extend_prompt = ""
+        if _idle_min > 0.5 * _idle_budget:
+            stuck_hint += (
+                f"\n⏳ IDLE BUDGET: {_idle_min:.0f}/{_idle_budget:.0f} min without a sorry "
+                f"reduction. At {_idle_budget:.0f} min the flexible backstop fires. If you "
+                f"judge this lemma is CLOSE, you may grant more time with EXTEND_MINUTES "
+                f"(≤{MAX_GUIDE_EXTEND_MINUTES} per grant).\n"
+            )
+            extend_prompt = (
+                f"\nEXTEND_MINUTES: <0-{MAX_GUIDE_EXTEND_MINUTES}> (extra idle minutes to "
+                f"grant if you believe the lemma is close; 0 or omit for none)"
             )
 
         snapshot_prompt = ""
@@ -1007,9 +1087,23 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             post_prompt=(
                 f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)"
                 f"{snapshot_prompt}"
+                f"{extend_prompt}"
             ),
             post_prompt_parser=_parse_turns,
         )
+
+        # Apply a guide-granted flexible-backstop extension (Fix B, Tier 1). Bounded
+        # per grant; there is no total cap — the guide keeps ownership of the clock
+        # while it judges the lemma close. The hard run-level ceiling (Tier 2) still
+        # applies unconditionally.
+        if extras.get("extend_minutes"):
+            grant = min(MAX_GUIDE_EXTEND_MINUTES, max(0, int(extras["extend_minutes"])))
+            if grant > 0:
+                entry._idle_extension_minutes = (
+                    getattr(entry, '_idle_extension_minutes', 0.0) + grant)
+                await agent._emit("message",
+                    f"[PO5] Guide extended idle budget by {grant}min "
+                    f"(total extension {entry._idle_extension_minutes:.0f}min)")
 
         # Guide-driven snapshot: an independent strategic checkpoint, in addition
         # to any the writer took on its own. save_snapshot re-checks compilation
@@ -1914,6 +2008,28 @@ def _remove_guide_from_visibility(agent, entry: LemmaEntry, writer_agent):
         visible.discard(g)
 
 
+def _link_writer_guide(agent, writer_agent, guide_agent) -> str:
+    """Open a live, bidirectional message channel between THIS writer and THIS
+    guide instance and return the guide's current name.
+
+    The writer proves a chunk while the guide is parked in
+    ``run_while_listening_to_messages``, so a writer→guide message lands in real
+    time and the guide can reply on the same channel. `send_message` enforces a
+    DIRECTED visibility check (recipient ∈ visibility_graph[sender]), so BOTH
+    directions need an edge: writer→guide (to report) and guide→writer (to
+    reply). Instance names change on rotation, so we (re)establish the edge each
+    chunk with the current names rather than relying on spawn-time wiring.
+    Idempotent — adding to a set is a no-op if the edge already exists.
+    """
+    registry = agent.swarm._registry
+    graph = registry.visibility_graph
+    writer_name = writer_agent.spec.name
+    guide_name = guide_agent.spec.name
+    graph.setdefault(writer_name, set()).add(guide_name)
+    graph.setdefault(guide_name, set()).add(writer_name)
+    return guide_name
+
+
 async def _rotate_agent(agent, entry: LemmaEntry, cwd: Path, role: str, instance):
     """Dump agent state to disk and destroy the instance so a fresh one is created."""
     # Ask agent to dump its state
@@ -2507,12 +2623,69 @@ def _get_protected_names(tools, stub_rel, entry) -> set[str]:
 
 def _format_progress(prev: int | None, current: int) -> str:
     if prev is None:
-        return f"Sorry count: {current}."
+        return f"Transitive open-sorry count: {current}."
     if current < prev:
-        return f"PROGRESS: sorry {prev} → {current}."
+        return f"PROGRESS: transitive open sorries {prev} → {current}."
     elif current == prev:
-        return f"NO REDUCTION: still {current} sorry."
-    return f"Sorry count: {current} (was {prev})."
+        return f"NO REDUCTION: still {current} transitive open sorries."
+    return f"Transitive open-sorry count: {current} (was {prev})."
+
+
+def _format_sorry_map(tsm, protected_names: set, siblings: set) -> str:
+    """Render the AUTHORITATIVE dependency+sorry overview for the guide.
+
+    ONE consolidated picture, recomputed this chunk from ground truth — it
+    supersedes anything the guide remembers or reads from snapshot notes. For each
+    protected target: is it done, and exactly which in-file lemmas it transitively
+    depends on that still carry a `sorry` (with fresh line numbers)."""
+    if tsm.error:
+        return f"AUTHORITATIVE SORRY MAP: unavailable (parse error: {tsm.error})\n"
+    if not tsm.build_ok:
+        return (
+            "AUTHORITATIVE SORRY MAP: build FAILED — cannot confirm anything "
+            f"(treat all as unproven): {tsm.build_error}\n")
+
+    def _line(n: str) -> str:
+        d = tsm.decls.get(n)
+        if not d:
+            return f"    • {n}  (not found in file)"
+        pos = ""
+        if d.sorry_positions:
+            ls = ", ".join(str(p.get("line", "?") + 1) for p in d.sorry_positions)
+            pos = f"  sorry @ line {ls}"
+        elif d.start:
+            pos = f"  (decl @ line {d.start}, transitive sorry via a dep)"
+        return f"    • {n}{pos}"
+
+    out = [
+        "AUTHORITATIVE SORRY MAP (recomputed NOW from ground truth — this "
+        "SUPERSEDES any line numbers you remember or that appear in snapshot notes):"
+    ]
+    for t in sorted(protected_names):
+        info = tsm.targets.get(t)
+        if info is None:
+            out.append(f"  TARGET {t}: (not found in file)")
+            continue
+        if info.done:
+            out.append(f"  TARGET {t}: ✅ DONE (transitively sorry-free)")
+            continue
+        # open deps that are OURS (not the target itself, not siblings)
+        ours = [n for n in info.open_deps
+                if n != t and n not in siblings]
+        out.append(f"  TARGET {t}: ❌ NOT DONE (transitively depends on sorry)")
+        if t in info.open_deps and (tsm.decls.get(t) and tsm.decls[t].sorry_positions):
+            out.append("    (its own body still has a literal sorry)")
+            out.append(_line(t))
+        if ours:
+            out.append("    In-file lemmas it uses that are still UNPROVEN (yours to close):")
+            for n in ours:
+                out.append(_line(n))
+        sib_open = [n for n in info.open_deps if n in siblings]
+        if sib_open:
+            out.append(f"    (NOT yours — sibling obligations still open: {sib_open})")
+    out.append(f"  Transitive OPEN-sorry count reachable from your targets: "
+               f"{tsm.open_sorry_count()}")
+    return "\n".join(out) + "\n"
 
 
 def _verify_extraction(tools, stub_rel: str, entry: LemmaEntry, output_dir: Path) -> str | None:

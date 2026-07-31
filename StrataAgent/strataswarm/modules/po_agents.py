@@ -150,11 +150,20 @@ async def run_splitter(agent, workspace: str, file: str,
                        verify: Callable[[], str | None] | None = None) -> LoopOutcome:
     """Spawn po_splitter with optional verification loop."""
     from .po_verify import verify_file_exists, verify_stub_imports_def
+    from .po_lean import get_lean_tools
 
     cwd = Path(agent._cwd) if agent._cwd else Path.cwd()
 
+    # Snapshot the ORIGINAL local-sorry count BEFORE the splitter runs. The
+    # splitter must only MOVE text between files — it must never close a goal.
+    # If the combined post-split sorry count drops below this, the splitter
+    # proved (or dropped) a theorem, which is a hard role violation: the whole
+    # decompose→prove→assemble pipeline assumes the Stub still carries its
+    # obligations. We revert and fail rather than let a splitter-written proof
+    # (or, worse, a silently dropped goal) propagate into Stub.clean.lean.
+    _orig_sorries = get_lean_tools().count_sorries(file).total
+
     def _default_verify() -> str | None:
-        from .po_lean import get_lean_tools
         tools = get_lean_tools()
         def_rel = f"{workspace}/Stub/Def.lean"
         stub_rel = f"{workspace}/Stub.lean"
@@ -177,10 +186,26 @@ async def run_splitter(agent, workspace: str, file: str,
         if cr_stub.has_error:
             return f"Stub.lean has compilation errors (not sorry). Fix them."
 
-        # 4. Structural check LAST: Stub.lean must import Stub.Def. Now that the
+        # 4. Structural check: Stub.lean must import Stub.Def. Now that the
         #    oleans are built this reads cleanly instead of hitting a stale cache.
         if not verify_stub_imports_def(cwd, workspace):
             return "Stub.lean must import Stub.Def (the split-out definitions)."
+
+        # 5. Sorry-preservation check LAST — the anti-cheat guard. The splitter
+        #    is a text mover, not a prover: every `sorry` in the original file
+        #    must survive across the two output files (defs never carry sorry, so
+        #    Stub.lean carries all of them). A drop means the splitter closed a
+        #    goal (wrote a proof) or dropped a theorem — reject and revert.
+        post_sorries = (tools.count_sorries(def_rel).total
+                        + tools.count_sorries(stub_rel).total)
+        if post_sorries < _orig_sorries:
+            return (
+                f"You PROVED or DROPPED a theorem — forbidden. The input had "
+                f"{_orig_sorries} `sorry`(s); after the split only {post_sorries} "
+                f"remain. Your ONLY job is to MOVE text between files. Every "
+                f"`sorry` must stay a `sorry` (proving is the proof_writer's job). "
+                f"Restore each theorem body to exactly `:= by\\n  sorry` and split again."
+            )
         return None
 
     async with swarm_agent("po_splitter", swarm=agent.swarm, cwd=agent._cwd, workspace=workspace) as splitter:

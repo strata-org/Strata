@@ -5,6 +5,7 @@
 #   ./start_dashboard.sh                         # start on default port 8421, no cheat sheet
 #   ./start_dashboard.sh --port 9000             # start on a custom port
 #   ./start_dashboard.sh --cheat-sheet PATH      # start with a cheat sheet (relative to repo root)
+#   ./start_dashboard.sh --max-run-minutes N     # hard upper bound (min) on the whole run; omit ⇒ no stop
 #   ./start_dashboard.sh --prompt "Please prove the theorem foo in Bar.lean ..."
 #
 # By default the cheat sheet is DISABLED. Pass --cheat-sheet PATH to enable one.
@@ -25,17 +26,19 @@ SESSIONS_DIR="$STRATA_AGENT/strataswarm/temp/sessions"
 PORT=8421
 CHEAT_SHEET=""       # empty → --no-cheat-sheet
 PROMPT=""
+MAX_RUN_MINUTES=""   # empty → no hard run-level stop
 SWARM_NAME="swarm"   # agent_specs/swarm.yaml → LeanSwarm (manager: TaskManager)
 MANAGER="TaskManager"
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --port)         PORT="$2";        shift 2 ;;
-        --cheat-sheet)  CHEAT_SHEET="$2"; shift 2 ;;
-        --prompt)       PROMPT="$2";      shift 2 ;;
-        --swarm)        SWARM_NAME="$2";  shift 2 ;;
-        --manager)      MANAGER="$2";     shift 2 ;;
+        --port)            PORT="$2";            shift 2 ;;
+        --cheat-sheet)     CHEAT_SHEET="$2";     shift 2 ;;
+        --max-run-minutes) MAX_RUN_MINUTES="$2"; shift 2 ;;
+        --prompt)          PROMPT="$2";          shift 2 ;;
+        --swarm)           SWARM_NAME="$2";      shift 2 ;;
+        --manager)         MANAGER="$2";         shift 2 ;;
         -h|--help)
             # Print the leading doc comment block only (up to the first blank line).
             sed -n '2,/^$/ s/^# \{0,1\}//p' "$0"
@@ -95,6 +98,12 @@ if [[ -n "$CHEAT_SHEET" ]]; then
 else
     DASH_ARGS+=(--no-cheat-sheet)
     echo "[CONFIG] Cheat sheet DISABLED (default)"
+fi
+if [[ -n "$MAX_RUN_MINUTES" ]]; then
+    DASH_ARGS+=(--max-run-minutes "$MAX_RUN_MINUTES")
+    echo "[CONFIG] Hard run ceiling: ${MAX_RUN_MINUTES} min"
+else
+    echo "[CONFIG] No hard run ceiling (runs until proved or terminated)"
 fi
 
 BASE_URL="http://localhost:$PORT"

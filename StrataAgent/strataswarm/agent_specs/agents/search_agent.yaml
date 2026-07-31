@@ -8,8 +8,8 @@ routing: round_robin
 module: null
 hooks: search_agent_hooks
 
-max_inbound_length: 725
-max_inbound_response: "Too long. Ask a specific question in under 725 chars."
+max_inbound_length: 1000
+max_inbound_response: "Too long. Ask a specific question in under 1000 chars."
 
 system_prompt: >
   You are a Lean 4 codebase search agent. Find information and report it. Fast.

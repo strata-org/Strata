@@ -65,6 +65,141 @@ def _ascii_escape(name: str) -> str:
     return "".join(c if c.isalnum() or c == "_" else "_" for c in name)[:60]
 
 
+def strip_comments(content: str) -> str:
+    """Remove Lean comments, returning only code — a faithful Python port of
+    ``LeanTools/Main.lean``'s ``stripComments``/``trimComment``.
+
+    Handles NESTED block comments ``/- ... -/`` and line comments ``--``. This is
+    needed before any syntactic dependency scan: a lemma name mentioned only
+    inside a comment must NOT register as a real dependency edge. A naive
+    ``str.replace``/single-level regex mishandles nesting; this mirrors the Lean
+    depth-counting state machine exactly so the two implementations agree.
+
+    Note: like the Lean original, this is a lexical stripper — it does not treat
+    ``--``/``/-`` inside string literals specially. Lean proof bodies effectively
+    never contain those tokens inside strings, and the Lean tool has shipped with
+    the same limitation, so we preserve identical behavior rather than diverge.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(content)
+    depth = 0  # block-comment nesting depth; depth == 0 means "in code"
+    while i < n:
+        if depth == 0:
+            if content.startswith("--", i):
+                # Line comment: skip the comment text but PRESERVE the newline
+                # (mirrors the Lean stripper, which keeps line structure). Unlike
+                # the Lean original this also strips INLINE `--` comments, not just
+                # line-leading ones — a trailing `-- uses foo_lemma` must not
+                # register foo_lemma as a dependency edge.
+                nl = content.find("\n", i)
+                if nl == -1:
+                    break
+                out.append("\n")
+                i = nl + 1
+            elif content.startswith("/-", i):
+                depth = 1
+                i += 2
+            else:
+                out.append(content[i])
+                i += 1
+        else:
+            if content.startswith("-/", i):
+                depth -= 1
+                i += 2
+            elif content.startswith("/-", i):
+                depth += 1
+                i += 2
+            else:
+                i += 1
+    return "".join(out)
+
+
+def blank_comments(content: str) -> str:
+    """Replace every comment character with a space, PRESERVING byte and line
+    offsets exactly (newlines kept as-is, comment bytes overwritten with spaces).
+
+    This is the position-preserving sibling of :func:`strip_comments`. Where
+    ``strip_comments`` *deletes* comment text (collapsing line numbers — which
+    silently shifts every subsequent line up), this keeps the file the same shape
+    so a scan over the result reports the SAME line/column as the original source.
+
+    It is the foundation of the single local-sorry source of truth
+    (:func:`local_sorry_positions`): a text scan for the ``sorry`` token that must
+    (a) ignore ``sorry`` appearing in comments/docstrings and (b) report the token
+    at its true position. The Lean-side ``handleSorryPositions`` used the deleting
+    stripper and therefore mislocated every sorry that sat below a block comment.
+
+    Handles NESTED block comments ``/- ... -/`` and line comments ``--``, matching
+    ``strip_comments``'s state machine. Like it, this is lexical — it does not treat
+    ``--``/``/-`` inside string literals specially (Lean proof bodies effectively
+    never contain those tokens inside strings).
+    """
+    out = list(content)
+    i = 0
+    n = len(content)
+    depth = 0  # block-comment nesting depth; depth == 0 means "in code"
+    while i < n:
+        if depth == 0:
+            if content.startswith("--", i):
+                # Blank the line comment to end-of-line, keeping the newline.
+                while i < n and content[i] != "\n":
+                    out[i] = " "
+                    i += 1
+            elif content.startswith("/-", i):
+                depth = 1
+                out[i] = out[i + 1] = " "
+                i += 2
+            else:
+                i += 1
+        else:
+            if content.startswith("-/", i):
+                depth -= 1
+                out[i] = out[i + 1] = " "
+                i += 2
+            elif content.startswith("/-", i):
+                depth += 1
+                out[i] = out[i + 1] = " "
+                i += 2
+            else:
+                # Blank comment interior but keep newlines so line numbers hold.
+                if content[i] != "\n":
+                    out[i] = " "
+                i += 1
+    return "".join(out)
+
+
+# Word-boundary match for the bare `sorry` tactic/term token. Excludes identifiers
+# like `sorryAx`, `my_sorry`, `sorry_free` — only the standalone keyword counts.
+_SORRY_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])sorry(?![A-Za-z0-9_])")
+
+
+def local_sorry_positions(content: str) -> list[dict]:
+    """THE single source of truth for LOCAL sorry detection in file text.
+
+    Returns every real ``sorry`` token as ``{"line": int, "col": int}``, 0-indexed,
+    comment-aware and position-accurate. Every other local-sorry query
+    (count, has-sorry boolean, per-theorem grouping, per-block ``has_sorry``) is a
+    thin view over this one function — so the counts, positions, and per-theorem
+    breakdown can never contradict each other (the bug that made ``show_file_state``
+    report a theorem "proved" while the file still had a ``sorry``).
+
+    Why a text scan rather than compiler ``hasSorry`` diagnostics: the compiler
+    emits NO ``hasSorry`` warning when elaboration aborts on a real error, so a
+    file that is both broken AND has a sorry would read as sorry-free — exactly the
+    mid-proof state the guide sees most. A comment-blanked token scan is robust to
+    non-compiling files and also catches ``decreasing_by => sorry`` / positions the
+    per-declaration diagnostic can't localize. Transitive sorry (through imports)
+    is a DIFFERENT question, answered authoritatively by the axioms oracle.
+    """
+    code = blank_comments(content)
+    positions: list[dict] = []
+    for line_idx, line in enumerate(code.split("\n")):
+        for m in _SORRY_TOKEN_RE.finditer(line):
+            positions.append({"line": line_idx, "col": m.start()})
+    return positions
+
+
 # Lines that PREFIX a declaration but are not the declaration itself. The Lean
 # parser lumps these into the following decl's block and can mis-name the block
 # after them (e.g. `set_option warn.sorry false in` → block named `warn.sorry`).
@@ -301,6 +436,42 @@ class SplitResult:
     blocks: list[TheoremBlock] = field(default_factory=list)
     mutual_groups: dict[int, list[str]] = field(default_factory=dict)
     error: str | None = None
+
+
+@dataclass
+class DeclSorryInfo:
+    """Per-declaration sorry status for the guide's authoritative overview."""
+    name: str = ""
+    start: int = 0                       # 1-indexed decl start line (0 if unknown)
+    end: int = 0
+    has_local_sorry: bool = False        # literal `sorry` token in this block
+    has_transitive_sorry: bool = True    # reaches sorryAx (authoritative, module-safe)
+    sorry_positions: list[dict] = field(default_factory=list)  # [{line,col},...]
+
+
+@dataclass
+class TargetSorryInfo:
+    """Per-target roll-up: is it done, and which reachable decls are still open."""
+    name: str = ""
+    done: bool = False                   # build-ok AND transitively sorry-free
+    open_deps: list[str] = field(default_factory=list)   # reachable decls w/ sorry
+    reachable: list[str] = field(default_factory=list)   # all in-file reachable decls
+
+
+@dataclass
+class TransitiveSorryMap:
+    """Joined dependency + sorry overview across a set of target theorems."""
+    file_path: str = ""
+    build_ok: bool = True
+    build_error: str | None = None
+    error: str | None = None
+    decls: dict[str, DeclSorryInfo] = field(default_factory=dict)
+    targets: dict[str, TargetSorryInfo] = field(default_factory=dict)
+
+    def open_sorry_count(self) -> int:
+        """Total DISTINCT in-file decls (across all targets) still transitively
+        carrying a sorry — the guide's progress metric (replaces protected-only)."""
+        return sum(1 for d in self.decls.values() if d.has_transitive_sorry)
 
 
 @dataclass
@@ -962,14 +1133,73 @@ class SwarmLeanTools:
 
     # ─── Public API ──────────────────────────────────────────────────────
 
+    def _read_source(self, file_path: str) -> str | None:
+        """Read a repo-relative (or absolute) Lean source file. None on failure."""
+        try:
+            p = Path(file_path)
+            if not p.is_absolute():
+                p = self._root / file_path
+            return p.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _local_sorry_report(self, file_path: str) -> dict:
+        """THE single per-file local-sorry computation. All local-sorry queries
+        (count_sorries, get_sorry_positions, get_sorries_by_theorem, has_sorry)
+        are thin views over this — so their answers can never disagree.
+
+        Reads the file once, finds every real `sorry` token via the comment-aware
+        position-preserving :func:`local_sorry_positions`, then groups those
+        positions into declaration blocks from :meth:`split_theorems`.
+
+        Returns a dict:
+            positions:  [{"line","col"}, ...]   0-indexed, whole file
+            total:      int                     count of real sorry tokens
+            by_theorem: {name: [positions]}     positions grouped by decl block
+            sorry_decls:[name, ...]             decls carrying >=1 sorry
+            error:      str | None              set if the source can't be read
+        """
+        content = self._read_source(file_path)
+        if content is None:
+            return {"positions": [], "total": 0, "by_theorem": {},
+                    "sorry_decls": [], "error": f"cannot read {file_path}"}
+
+        positions = local_sorry_positions(content)
+
+        # Group into declaration blocks. split_theorems is the source of RANGES;
+        # positions are 0-indexed, block.start/end are 1-indexed.
+        by_theorem: dict[str, list[dict]] = {}
+        split = self.split_theorems(file_path)
+        if not split.error:
+            for block in split.blocks:
+                block_sorries = [
+                    pos for pos in positions
+                    if block.start <= pos["line"] + 1 <= block.end
+                ]
+                if block_sorries:
+                    by_theorem[block.name] = block_sorries
+
+        return {
+            "positions": positions,
+            "total": len(positions),
+            "by_theorem": by_theorem,
+            "sorry_decls": list(by_theorem.keys()),
+            "error": None,
+        }
+
     def count_sorries(self, file_path: str) -> SorryInfo:
-        """Count sorries in a file. Returns per-declaration breakdown."""
-        result = self._send("count__sorries_", file_path)
-        if "error" in result:
-            return SorryInfo(error=result["error"])
+        """Count sorries in a file. Returns per-declaration breakdown.
+
+        View over :meth:`_local_sorry_report` (the single local-sorry source) —
+        a comment-aware token scan, NOT the old text/RPC count that mis-counted
+        `sorry` appearing in doc-comments and compiler echoes.
+        """
+        report = self._local_sorry_report(file_path)
+        if report["error"]:
+            return SorryInfo(error=report["error"])
         return SorryInfo(
-            total=result.get("total", 0),
-            sorry_decls=result.get("sorry_decls", []),
+            total=report["total"],
+            sorry_decls=report["sorry_decls"],
         )
 
     def list_theorems(self, file_path: str) -> TheoremsResult:
@@ -1220,8 +1450,6 @@ class SwarmLeanTools:
                 continue
             if r.decl_type not in decl_types:
                 continue
-            if r.name in ("[anonymous]", ""):
-                continue
             # Skip open/variable declarations (no text or trivial)
             if not r.text or r.text.strip().startswith("open ") or r.text.strip().startswith("variable "):
                 continue
@@ -1233,7 +1461,17 @@ class SwarmLeanTools:
             # the modifier (e.g. `warn.sorry`) instead of the theorem. Without
             # this, `set_option warn.sorry false in` would register a phantom
             # sorry-target literally named `warn.sorry`.
+            #
+            # Some modifier+keyword combos (notably `protected lemma` /
+            # `private lemma`) make the parser emit an ANONYMOUS `unknown` block
+            # whose text still starts with the real declaration. Recover the name
+            # from the text FIRST, and only skip the anonymous block if recovery
+            # also fails — otherwise those decls silently vanish from every
+            # dependency/target scan (the user asked for full access-modifier
+            # coverage, so this must not depend on which modifier is present).
             real_name, real_kind = _real_decl_name(r.text)
+            if r.name in ("[anonymous]", "") and not real_name:
+                continue
             name = real_name or r.name
             decl_type = real_kind or r.decl_type
             if real_kind is None and not real_name:
@@ -1245,7 +1483,8 @@ class SwarmLeanTools:
                     r"(theorem|lemma|def|instance|abbrev|example)\b", stripped):
                     continue
 
-            has_sorry = "sorry" in r.text
+            # Comment-aware: a real `sorry` token, not the word in a doc-comment.
+            has_sorry = bool(local_sorry_positions(r.text))
             blocks.append(TheoremBlock(
                 name=name,
                 start=r.line,
@@ -1270,9 +1509,9 @@ class SwarmLeanTools:
                     idx += 1  # skip blank/comment lines between them
                 else:
                     break
-            # Re-derive text and has_sorry with extended boundaries
+            # Re-derive text and has_sorry with extended boundaries (comment-aware)
             block.text = "\n".join(file_lines[block.start - 1:block.end])
-            block.has_sorry = "sorry" in block.text
+            block.has_sorry = bool(local_sorry_positions(block.text))
 
         # Detect mutual groups by finding mutual...end ranges in the source
         file_lines = content.splitlines()
@@ -1319,7 +1558,27 @@ class SwarmLeanTools:
         """
         import subprocess
         split = self.split_theorems(file_path)
-        sorry_info = self.count_sorries(file_path)
+
+        # ── Single local-sorry source: count, flat positions, per-theorem grouping
+        # all come from ONE computation, so they cannot contradict each other. ──
+        report = self._local_sorry_report(file_path)
+        # A file we cannot read must NEVER read as "sorry-free / compiles" — that is
+        # the exact false-negative this consolidation exists to prevent. Surface the
+        # error explicitly instead of returning a clean-looking empty state.
+        if report["error"]:
+            return {
+                "theorems": [],
+                "sorry_count_local": 0,
+                "has_sorry_local": False,
+                "has_sorry_transitive": False,
+                "compiles": False,
+                "has_error": True,
+                "errors": [report["error"]],
+                "main_theorem": None,
+                "main_theorem_sorry_free": False,
+            }
+        sorry_by_thm = report["by_theorem"]
+        local_sorry_count = report["total"]
 
         # Get full compile output for diagnostics
         errors = []
@@ -1330,7 +1589,9 @@ class SwarmLeanTools:
                 capture_output=True, text=True, timeout=120,
             )
             output = result.stdout + "\n" + result.stderr
-            has_sorry = "sorry" in output or "declaration uses 'sorry'" in output
+            # transitive sorry: rely on the specific diagnostic, not a bare "sorry"
+            # substring (which would also match file paths / identifiers in output).
+            has_sorry = "declaration uses 'sorry'" in output or local_sorry_count > 0
             for line in output.splitlines():
                 if ": error:" in line:
                     errors.append(line.strip())
@@ -1342,11 +1603,9 @@ class SwarmLeanTools:
             success, has_error, has_sorry = False, True, False
             errors = [str(e)]
 
-        # Get sorry positions grouped by theorem
-        sorry_by_thm = self.get_sorries_by_theorem(file_path)
-
-        # Detect mutual blocks
-        content = (self._root / file_path).read_text() if not errors else ""
+        # Detect mutual blocks. Read source unconditionally (a compile error must
+        # NOT blank out the structural view — that used to drop mutual groups).
+        content = self._read_source(file_path) or ""
         file_lines = content.splitlines() if content else []
         mutual_ranges = []
         i = 0
@@ -1369,15 +1628,18 @@ class SwarmLeanTools:
 
         theorems = []
         for b in (split.blocks if not split.error else []):
-            # Use get_sorries_by_theorem as ground truth (not parser's has_sorry)
-            thm_has_sorry = len(sorry_by_thm.get(b.name, [])) > 0
+            # Per-theorem has_sorry comes from the SINGLE local-sorry report — the
+            # same computation that produced the count and flat positions, so a
+            # theorem can never read "proved" while the file reports a local sorry.
+            thm_positions = sorry_by_thm.get(b.name, [])
+            thm_has_sorry = len(thm_positions) > 0
             entry = {
                 "name": b.name,
                 "status": "sorry" if thm_has_sorry else "proved",
                 "start_line": b.start,
                 "end_line": b.end,
                 "has_sorry": thm_has_sorry,
-                "sorry_positions": sorry_by_thm.get(b.name, []),
+                "sorry_positions": thm_positions,
             }
             mid = get_mutual_id(b)
             if mid is not None:
@@ -1393,26 +1655,19 @@ class SwarmLeanTools:
             if mg is not None:
                 mutual_groups.setdefault(mg, []).append(t["name"])
 
-        # Text-based local sorry check (catches decreasing_by sorry)
-        local_has_sorry = "sorry" in content if content else False
+        # Local sorry facts — straight from the single report, comment-aware.
+        local_has_sorry = local_sorry_count > 0
 
-        # main_theorem_sorry_free: check if "sorry" appears anywhere from the main
-        # theorem's start line onwards (catches decreasing_by, termination_by, etc.)
-        main_sorry_free = True
-        if main_thm and content:
-            main_start = main_thm.get("start_line", 1) - 1  # 0-indexed
-            main_and_below = "\n".join(file_lines[main_start:])
-            if "sorry" in main_and_below:
-                main_sorry_free = False
-                main_thm["has_sorry"] = True
-                main_thm["status"] = "sorry"
-        elif main_thm:
-            main_sorry_free = not main_thm["has_sorry"]
+        # main_theorem_sorry_free reflects the main theorem's OWN block only. It is
+        # explicitly a LOCAL check: `factLoopM_correct` can be locally sorry-free
+        # while still depending on a helper that has a sorry — that transitive fact
+        # lives in `has_sorry_transitive` / the axioms oracle, not here. Deriving it
+        # from the single per-theorem report keeps it consistent with `theorems`.
+        main_sorry_free = (not main_thm["has_sorry"]) if main_thm else True
 
         result = {
             "theorems": theorems,
-            "sorry_count_diagnostic": sorry_info.total,
-            "sorry_count_local": int(local_has_sorry),
+            "sorry_count_local": local_sorry_count,
             "has_sorry_local": local_has_sorry,
             "has_sorry_transitive": has_sorry,
             "compiles": success,
@@ -1429,18 +1684,21 @@ class SwarmLeanTools:
         """Get all sorry positions in a file (comment-aware).
 
         Returns list of {"line": int, "col": int} (0-indexed).
-        Uses the Lean RPC which strips comments before scanning.
+
+        View over :meth:`_local_sorry_report` (the single local-sorry source): a
+        position-preserving, comment-blanked token scan. This replaces the old Lean
+        `sorry_positions` RPC, whose deleting comment-stripper collapsed line
+        numbers and mislocated any sorry sitting below a block comment.
         """
-        result = self._send("sorry_positions", file_path)
-        if "error" in result:
-            return []
-        return result.get("positions", [])
+        return self._local_sorry_report(file_path)["positions"]
 
     def get_sorries_by_theorem(self, file_path: str, filter_names: list[str] | None = None) -> dict:
         """Get sorry positions grouped by theorem name.
 
-        Combines split_theorems_ (for block boundaries) with sorry_positions
-        (for exact coordinates) to produce a per-theorem breakdown.
+        View over :meth:`_local_sorry_report` (the single local-sorry source),
+        which already groups positions into declaration blocks. Because the count,
+        the flat positions, and this per-theorem breakdown all come from that one
+        computation, they can never contradict each other.
 
         Args:
             file_path: Relative path from project root.
@@ -1453,32 +1711,11 @@ class SwarmLeanTools:
                 ...
             }
         """
-        split = self.split_theorems(file_path)
-        if split.error:
-            return {}
-
-        positions = self.get_sorry_positions(file_path)
-        if not positions:
-            return {}
-
-        # Group sorry positions by which theorem block they fall in
-        # sorry_positions from SwarmAgentTools are 0-indexed
-        # block.start/end from itp_interface TacticParser are 1-indexed
-        result = {}
-        for block in split.blocks:
-            if filter_names and block.name not in filter_names:
-                continue
-
-            block_sorries = []
-            for pos in positions:
-                pos_1indexed = pos["line"] + 1
-                if block.start <= pos_1indexed <= block.end:
-                    block_sorries.append(pos)
-
-            if block_sorries:
-                result[block.name] = block_sorries
-
-        return result
+        by_theorem = self._local_sorry_report(file_path)["by_theorem"]
+        if filter_names:
+            allow = set(filter_names)
+            return {k: v for k, v in by_theorem.items() if k in allow}
+        return by_theorem
 
     def thm_depends_on(self, file_path: str, theorem_name: str) -> list[str]:
         """Get which other declarations in the same file are referenced by this one.
@@ -1495,8 +1732,10 @@ class SwarmLeanTools:
         if not target or not target.text:
             return []
 
-        # Get the proof body (after := or := by) to avoid matching the signature
-        text = target.text
+        # Get the proof body (after := or := by) to avoid matching the signature.
+        # Strip comments FIRST so a name mentioned only in a comment is not counted
+        # as a dependency edge (parity with Lean's handleThmDependsOn).
+        text = strip_comments(target.text)
         body_start = text.find(":= by")
         if body_start == -1:
             body_start = text.find(":=")
@@ -1531,8 +1770,9 @@ class SwarmLeanTools:
             if not block.text:
                 deps_map[block.name] = []
                 continue
-            # Extract proof body
-            text = block.text
+            # Extract proof body. Strip comments FIRST (parity with Lean's
+            # handleThmDependsOn) so commented-out names don't create false edges.
+            text = strip_comments(block.text)
             body_start = text.find(":= by")
             if body_start == -1:
                 body_start = text.find(":=")
@@ -1560,21 +1800,102 @@ class SwarmLeanTools:
                     queue.append(dep)
         return reachable
 
-    def has_sorry(self, file_path: str) -> bool:
-        """Check if file has LOCAL sorry (in its own text, including decreasing_by sorry).
+    def transitive_sorry_map(
+        self, file_path: str, target_names: list[str]
+    ) -> "TransitiveSorryMap":
+        """Build the AUTHORITATIVE per-target dependency+sorry overview for the guide.
 
-        Uses both LSP diagnostics AND text grep.
-        Does NOT check transitive sorry from imports — use has_sorry_transitive() for that.
+        Joins three sources into ONE picture so the guide never has to piece it
+        together itself (and never reasons from stale memory / snapshot notes):
+
+          1. EDGES  — ``get_reachable_theorems`` gives every in-file declaration
+             transitively reachable from each target (syntactic, comment-stripped,
+             word-boundary; in-file only, so no dependency-graph memory blowup).
+          2. VERDICT — ``axioms_by_theorem`` (`#print axioms` via build + non-module
+             scratch import) gives the module-SAFE ``has_transitive_sorry`` per
+             declaration. This is the ONLY sound "is it really proven" signal; we
+             never run `#print axioms` in-place (illegal inside a `module`).
+          3. POSITION — ``get_sorries_by_theorem`` gives literal sorry line/cols
+             (from the single comment-aware local-sorry source).
+
+        A target is DONE iff it is build-ok and transitively sorry-free. Otherwise
+        the map lists exactly which reachable in-file lemmas still carry a sorry
+        (transitively), with their positions — the real pending set.
         """
-        info = self.count_sorries(file_path)
-        if info.total > 0:
-            return True
-        # Fallback: text check for sorry that Lean diagnostics miss (decreasing_by)
-        try:
-            content = (self._root / file_path).read_text()
-            return "sorry" in content
-        except OSError:
-            return False
+        result = TransitiveSorryMap(file_path=file_path)
+
+        split = self.split_theorems(file_path)
+        if split.error:
+            result.error = split.error
+            return result
+        block_by_name = {b.name: b for b in split.blocks}
+        all_names = set(block_by_name)
+
+        # 1. EDGES: reachable in-file decls per target (union for the verdict batch).
+        reachable_by_target: dict[str, set[str]] = {}
+        names_to_check: set[str] = set()
+        for t in target_names:
+            reach = self.get_reachable_theorems(file_path, t)
+            # keep only decls that actually exist in this file (defensive)
+            reach = {n for n in reach if n in all_names} | {t}
+            reachable_by_target[t] = reach
+            names_to_check |= reach
+
+        # 3. POSITIONS: literal sorry coordinates per theorem (whole file once).
+        positions = self.get_sorries_by_theorem(file_path)
+
+        # 2. VERDICT: authoritative transitive-sorry check, batched in ONE build +
+        #    one scratch probe over every reachable name.
+        ax = self.axioms_by_theorem(file_path, sorted(names_to_check))
+        result.build_ok = ax.build_ok
+        result.build_error = ax.build_error
+
+        def _transitive_sorry(name: str) -> bool:
+            # Authoritative: not proven (has_sorry) per the axioms oracle. If the
+            # build failed we can't confirm anything → treat as "unknown/unproven".
+            if not ax.build_ok:
+                return True
+            return ax.sorry_by_name.get(name, True)
+
+        for name in sorted(names_to_check):
+            blk = block_by_name.get(name)
+            # has_local_sorry from the SINGLE source (comment-aware positions),
+            # not the parser's naive substring — so it agrees with sorry_positions.
+            result.decls[name] = DeclSorryInfo(
+                name=name,
+                start=blk.start if blk else 0,
+                end=blk.end if blk else 0,
+                has_local_sorry=len(positions.get(name, [])) > 0,
+                has_transitive_sorry=_transitive_sorry(name),
+                sorry_positions=positions.get(name, []),
+            )
+
+        for t in target_names:
+            reach = reachable_by_target.get(t, {t})
+            # Open = reachable decls (INCLUDING the target itself) still carrying a
+            # transitive sorry. This count is the guide's progress metric.
+            open_deps = sorted(
+                n for n in reach
+                if result.decls.get(n) and result.decls[n].has_transitive_sorry
+            )
+            done = ax.build_ok and not _transitive_sorry(t)
+            result.targets[t] = TargetSorryInfo(
+                name=t,
+                done=done,
+                open_deps=open_deps,
+                reachable=sorted(reach),
+            )
+
+        return result
+
+    def has_sorry(self, file_path: str) -> bool:
+        """Check if file has a LOCAL sorry (in its own text, incl. decreasing_by sorry).
+
+        View over :meth:`_local_sorry_report` (the single local-sorry source): a
+        comment-aware token scan. Does NOT check transitive sorry from imports —
+        use :meth:`has_sorry_transitive` for that.
+        """
+        return self._local_sorry_report(file_path)["total"] > 0
 
     def has_sorry_transitive(self, file_path: str) -> bool:
         """Check if file or ANY of its imports has sorry (transitive).

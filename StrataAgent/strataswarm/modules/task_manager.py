@@ -30,6 +30,19 @@ def _cheat_sheet_defaults() -> tuple[bool, str]:
     path = os.environ.get("STRATA_CHEAT_SHEET_PATH", "") or ""
     return use, path
 
+
+def _max_run_minutes_default() -> float | None:
+    """TIER-2 hard run-level ceiling (minutes) from env, or None if unset.
+
+    Set by run_dashboard.py's --max-run-minutes flag. None ⇒ no hard stop.
+    """
+    raw = os.environ.get("STRATA_MAX_RUN_MINUTES", "") or ""
+    try:
+        val = float(raw)
+        return val if val > 0 else None
+    except ValueError:
+        return None
+
 MAX_STAGE_RETRIES = 5
 MONITOR_INTERVAL = 600
 THINKING_MAX_TURNS = 20
@@ -546,6 +559,9 @@ async def _dispatch_prover(state: WorkflowState, agent, resume: bool = False):
         "skip_soundness": task.skip_soundness,
         "use_cheat_sheet": task.use_cheat_sheet,
         "cheat_sheet_path": task.cheat_sheet_path,
+        # TIER-2 hard run-level ceiling (minutes). Launch-time run setting from
+        # `--max-run-minutes`; unset ⇒ no hard stop.
+        "max_run_minutes": _max_run_minutes_default(),
         "parent_agent": agent.spec.name,
     }
 

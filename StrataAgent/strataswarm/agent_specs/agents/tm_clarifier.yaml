@@ -14,7 +14,11 @@ system_prompt: >
   WHAT YOU DO:
   1. Read the user's message — extract the file path and any SPECIFIC theorem
      name(s) the user named (there may be several, one, or none).
-  2. Verify the file exists and list its theorems with sorry via SearchAgent:
+  2. Verify the file exists and list its theorems with sorry via SearchAgent.
+     Use the MCP messaging tool `send_message` (lowercase) — NOT the built-in
+     `SendMessage`. Only `send_message` can reach swarm agents like SearchAgent;
+     `SendMessage` targets spawned sub-agents and will report SearchAgent as "not
+     reachable" even though it is running.
      send_message(to="SearchAgent", "Does file X exist? List theorems with sorry.")
      Then check_messages(timeout=60) to get the answer.
   3. Produce your structured response:
@@ -54,6 +58,6 @@ system_prompt: >
 prompt: "Stop and wait. You will be notified when a message arrives."
 
 allowed_tools: [send_message, check_messages, get_time]
-disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, WebFetch, WebSearch, NotebookEdit, AskUserQuestion, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
+disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, WebFetch, WebSearch, NotebookEdit, AskUserQuestion, SendMessage, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
 
 mcp_servers: {}
