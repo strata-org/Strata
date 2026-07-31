@@ -183,6 +183,9 @@ true
 Label: loop_invariant_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
+<label_ite_cond_true: $__nondet_cond_2>: $__nondet_cond_2
+assume_wf_loop_invariant_0: 0 <= i@1
+assume_wf_loop_invariant_1: i@1 <= n@2
 sum_requires_0: n@2 >= 0
 Obligation:
 true
@@ -191,112 +194,178 @@ Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
 Obligation:
-true
+0 <= (if $__nondet_cond_2 then i@1 else 0)
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_1
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
 Obligation:
-0 <= n@2
+(if $__nondet_cond_2 then i@1 else 0) <= n@2
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_2
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
 Obligation:
-true
+(if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 
 Label: insertLoopInvAssert_measure_lb_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
+<label_ite_cond_true: i < n>: (if $__nondet_cond_2 then i@1 else 0) < n@2
+loopElimAssume_guard_loop_1: i@2 < n@2
+insertLoopInvAssume_invariant_loop_0_0: 0 <= i@2
+insertLoopInvAssume_invariant_loop_0_1: i@2 <= n@2
+insertLoopInvAssume_invariant_loop_0_2: s@4 == i@2 * (i@2 + 1) / 2
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@2
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 Obligation:
 !($__loop_measure_loop_0 < 0)
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
+<label_ite_cond_true: i < n>: (if $__nondet_cond_2 then i@1 else 0) < n@2
+loopElimAssume_guard_loop_1: i@2 < n@2
+insertLoopInvAssume_invariant_loop_0_0: 0 <= i@2
+insertLoopInvAssume_invariant_loop_0_1: i@2 <= n@2
+insertLoopInvAssume_invariant_loop_0_2: s@4 == i@2 * (i@2 + 1) / 2
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@2
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 Obligation:
-0 <= i@1 + 1
+0 <= i@2 + 1
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
+<label_ite_cond_true: i < n>: (if $__nondet_cond_2 then i@1 else 0) < n@2
+loopElimAssume_guard_loop_1: i@2 < n@2
+insertLoopInvAssume_invariant_loop_0_0: 0 <= i@2
+insertLoopInvAssume_invariant_loop_0_1: i@2 <= n@2
+insertLoopInvAssume_invariant_loop_0_2: s@4 == i@2 * (i@2 + 1) / 2
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@2
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 Obligation:
-i@1 + 1 <= n@2
+i@2 + 1 <= n@2
 
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_2
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
+<label_ite_cond_true: i < n>: (if $__nondet_cond_2 then i@1 else 0) < n@2
+loopElimAssume_guard_loop_1: i@2 < n@2
+insertLoopInvAssume_invariant_loop_0_0: 0 <= i@2
+insertLoopInvAssume_invariant_loop_0_1: i@2 <= n@2
+insertLoopInvAssume_invariant_loop_0_2: s@4 == i@2 * (i@2 + 1) / 2
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@2
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 Obligation:
-s@3 + (i@1 + 1) == (i@1 + 1) * (i@1 + 1 + 1) / 2
+s@4 + (i@2 + 1) == (i@2 + 1) * (i@2 + 1 + 1) / 2
 
 Label: insertLoopInvAssert_measure_decrease_loop_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i < n>: 0 < n@2
-loopElimAssume_guard_loop_1: i@1 < n@2
-insertLoopInvAssume_invariant_loop_0_0: 0 <= i@1
-insertLoopInvAssume_invariant_loop_0_1: i@1 <= n@2
-insertLoopInvAssume_invariant_loop_0_2: s@3 == i@1 * (i@1 + 1) / 2
-insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@1
+<label_ite_cond_true: i < n>: (if $__nondet_cond_2 then i@1 else 0) < n@2
+loopElimAssume_guard_loop_1: i@2 < n@2
+insertLoopInvAssume_invariant_loop_0_0: 0 <= i@2
+insertLoopInvAssume_invariant_loop_0_1: i@2 <= n@2
+insertLoopInvAssume_invariant_loop_0_2: s@4 == i@2 * (i@2 + 1) / 2
+insertLoopInvAssume_measure_loop_0: $__loop_measure_loop_0 == n@2 - i@2
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
 Obligation:
-n@2 - (i@1 + 1) < $__loop_measure_loop_0
+n@2 - (i@2 + 1) < $__loop_measure_loop_0
 
 Label: sum_ensures_1
 Property: assert
 Assumptions:
 sum_requires_0: n@2 >= 0
-insertLoopInvAssume_entry_invariant_loop_0_1: 0 <= n@2
-<label_ite_cond_true: i < n>: if 0 < n@2 then 0 < n@2 else true
-loopElimAssume_guard_loop_1: if 0 < n@2 then i@1 < n@2 else true
-insertLoopInvAssume_invariant_loop_0_0: if 0 < n@2 then 0 <= i@1 else true
-insertLoopInvAssume_invariant_loop_0_1: if 0 < n@2 then i@1 <= n@2 else true
-insertLoopInvAssume_invariant_loop_0_2: if 0 < n@2 then s@3 == i@1 * (i@1 + 1) / 2 else true
-insertLoopInvAssume_measure_loop_0: if 0 < n@2 then $__loop_measure_loop_0 == n@2 - i@1 else true
-loopElimAssume_not_guard_loop_1: if 0 < n@2 then !(i@2 < n@2) else true
-<label_ite_cond_false: !(i < n)>: if if 0 < n@2 then false else true then if 0 < n@2 then false else true else true
-insertLoopInvAssume_exit_invariant_loop_0_0: 0 <= (if 0 < n@2 then i@2 else 0)
-insertLoopInvAssume_exit_invariant_loop_0_1: (if 0 < n@2 then i@2 else 0) <= n@2
-insertLoopInvAssume_exit_invariant_loop_0_2: (if 0 < n@2 then s@4 else 0) == (if 0 < n@2 then i@2 else 0) * ((if 0 < n@2 then i@2 else 0) + 1) / 2
-insertLoopInvAssume_exit_not_guard_loop_0: !((if 0 < n@2 then i@2 else 0) < n@2)
+<label_ite_cond_true: $__nondet_cond_2>: if $__nondet_cond_2 then $__nondet_cond_2 else true
+assume_wf_loop_invariant_0: if $__nondet_cond_2 then 0 <= i@1 else true
+assume_wf_loop_invariant_1: if $__nondet_cond_2 then i@1 <= n@2 else true
+assume_wf_loop_invariant_2: if $__nondet_cond_2 then s@3 == i@1 * (i@1 + 1) / 2 else true
+loop_invariant_wf_sever: if $__nondet_cond_2 then false else true
+<label_ite_cond_false: !($__nondet_cond_2)>: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true
+insertLoopInvAssume_entry_invariant_loop_0_0: 0 <= (if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_entry_invariant_loop_0_1: (if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_entry_invariant_loop_0_2: (if $__nondet_cond_2 then s@3 else 0) == (if $__nondet_cond_2 then i@1 else 0) * ((if $__nondet_cond_2 then i@1 else 0) + 1) / 2
+<label_ite_cond_true: i < n>: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then (if $__nondet_cond_2 then i@1 else 0) < n@2 else true
+loopElimAssume_guard_loop_1: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@2 < n@2 else true
+insertLoopInvAssume_invariant_loop_0_0: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then 0 <= i@2 else true
+insertLoopInvAssume_invariant_loop_0_1: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@2 <= n@2 else true
+insertLoopInvAssume_invariant_loop_0_2: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then s@4 == i@2 * (i@2 + 1) / 2 else true
+insertLoopInvAssume_measure_loop_0: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then $__loop_measure_loop_0 == n@2 - i@2 else true
+loopElimAssume_not_guard_loop_1: if (if $__nondet_cond_2 then i@1 else 0) < n@2 then !(i@3 < n@2) else true
+<label_ite_cond_false: !(i < n)>: if if (if $__nondet_cond_2 then i@1 else 0) < n@2 then false else true then if (if $__nondet_cond_2 then i@1 else 0) < n@2 then false else true else true
+insertLoopInvAssume_exit_invariant_loop_0_0: 0 <= (if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@3 else if $__nondet_cond_2 then i@1 else 0)
+insertLoopInvAssume_exit_invariant_loop_0_1: (if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@3 else if $__nondet_cond_2 then i@1 else 0) <= n@2
+insertLoopInvAssume_exit_invariant_loop_0_2: (if (if $__nondet_cond_2 then i@1 else 0) < n@2 then s@5 else if $__nondet_cond_2 then s@3 else 0) == (if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@3 else if $__nondet_cond_2 then i@1 else 0) * ((if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@3 else if $__nondet_cond_2 then i@1 else 0) + 1) / 2
+insertLoopInvAssume_exit_not_guard_loop_0: !((if (if $__nondet_cond_2 then i@1 else 0) < n@2 then i@3 else if $__nondet_cond_2 then i@1 else 0) < n@2)
 Obligation:
-(if 0 < n@2 then s@4 else 0) == n@2 * (n@2 + 1) / 2
+(if (if $__nondet_cond_2 then i@1 else 0) < n@2 then s@5 else if $__nondet_cond_2 then s@3 else 0) == n@2 * (n@2 + 1) / 2
 
 ---
 info:

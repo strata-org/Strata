@@ -154,6 +154,85 @@ def processCondition (F : @Lambda.Factory CoreLParams)
 private def hasAssert (stmts : List Statement) : Bool :=
   stmts.any (fun s => match s with | .assert _ _ _ => true | _ => false)
 
+/-! ## Loop invariant well-formedness
+
+A loop invariant is *assumed* and re-asserted at the arbitrary mid-loop state,
+over the havoc'd loop-carried variables. Checking its well-formedness in the
+loop's pre-state is therefore checking the wrong state: the pre-state knows
+strictly more, so a definedness obligation can be vacuously discharged there
+and never checked where the invariant is actually used.
+
+Core has no program point meaning "at the loop head, before the invariant is
+assumed", so we synthesize one: a *severed proof block* placed immediately
+before the loop.
+
+```
+if * {
+  havoc(M);            -- M = loop-carried write-set: the loop-head state
+  assert WF(I_0);      -- checked at the loop head, not the pre-state
+  assume I_0;          -- chained: I_1's WF may rely on I_0
+  assert WF(I_1);
+  assume I_1;
+  ...
+  assume false;        -- sever: this path contributes nothing downstream
+} else { }
+```
+
+The `havoc(M)` reaches the same state the invariant is assumed at, and the
+asserts precede every `assume I_k`, so no invariant is assumed before its own
+definedness is established. `assume false` severs the branch: the havoc cannot
+leak into the pre-state and the block cannot make downstream obligations
+vacuous (it is one arm of a nondeterministic `ite`, so the other arm carries
+the real path). The chaining mirrors `processCondition`, which already gives
+procedure contracts this discipline.
+
+See `docs/CoreLoopInvariantWFBlock.md`. A native loop `proving` block would
+avoid the `assume false`; this pass builds the same program point out of the
+statement forms Core has today.
+-/
+
+/-- Label of the `assume false` that severs the invariant-WF proof block. -/
+def loopInvWFSeverLabel : String := "loop_invariant_wf_sever"
+
+/-- Block label prefix for a loop's invariant-WF proof block. -/
+def loopInvWFBlockPrefix : String := "loop_invariant_wf"
+
+/--
+Build the severed pre-invariant-proof block for a loop's invariants.
+
+`targets` is the loop-carried write-set to havoc (the loop body's modified
+variables, minus those declared inside the body, which are block-local and not
+part of the loop-head state).
+
+Returns `none` when no invariant yields a well-formedness obligation, so that
+loops with total invariants are left untouched. Otherwise returns the block and
+the number of WF asserts it contains (for statistics).
+-/
+def mkLoopInvariantWFBlock (F : @Lambda.Factory CoreLParams)
+    (invariants : List (String × Expression.Expr))
+    (targets : List Expression.Ident)
+    (md : Imperative.MetaData Expression) : Option (Statement × Nat) :=
+  -- Per-invariant WF asserts, each followed by an assume of that invariant so a
+  -- later invariant's WF may rely on the earlier ones (as contracts do).
+  -- The index keeps the assume labels distinct when source labels are absent or
+  -- coincide, matching the `invSuffix` convention in the loop VC passes.
+  let chained := (invariants.mapIdx fun i (lbl, inv) =>
+    let suffix := if lbl.isEmpty then toString i else s!"{i}_{lbl}"
+    let prefix' := if lbl.isEmpty then "loop_invariant" else s!"loop_invariant_{lbl}"
+    processCondition F inv prefix' s!"assume_wf_loop_invariant_{suffix}" md).flatten
+  -- Nothing to check: leave the loop alone rather than emitting a dead block.
+  if !hasAssert chained then
+    none
+  else
+    let havocs := targets.map (fun v => Statement.havoc v md)
+    let sever := Statement.assume loopInvWFSeverLabel Core.false md
+    let body := havocs ++ chained ++ [sever]
+    -- A nondeterministic `ite` whose else-branch is empty: the then-branch is
+    -- severed by `assume false`, so this adds a proof context without adding a
+    -- feasible path.
+    let numAsserts := chained.countP (fun s => match s with | .assert _ _ _ => true | _ => false)
+    some (.ite .nondet [.block loopInvWFBlockPrefix body md] [] md, numAsserts)
+
 /-! ## Contract well-formedness procedures -/
 
 /--
@@ -291,11 +370,18 @@ def transformStmt (s : Statement)
     let measureAssertsEnd := match measure with
       | none => []
       | some m => collectPrecondAsserts F m "loop_measure_end" md
-    -- Preserve the per-invariant label in the generated preconditions' prefix.
-    -- For unlabeled invariants, fall back to the plain "loop_invariant" prefix.
-    let invAsserts := invariant.flatMap (fun (lbl, inv) =>
-      let prefix' := if lbl.isEmpty then "loop_invariant" else s!"loop_invariant_{lbl}"
-      collectPrecondAsserts F inv prefix' md)
+    -- Invariant well-formedness is checked at the loop head, not in the
+    -- pre-state: see `mkLoopInvariantWFBlock`. The loop-carried write-set is
+    -- the body's modified variables minus its block-local declarations, matching
+    -- what `LoopElim` havocs for the mid-loop state.
+    let localDefs := Imperative.Block.definedVars body false
+    let loopTargets :=
+      (Imperative.Block.modifiedVars body).filter (fun v => v ∉ localDefs)
+    -- `invWFStmts` is the proof block (a single statement) when any invariant
+    -- has a WF obligation; `invWFAsserts` counts the asserts inside it.
+    let (invWFStmts, invWFAsserts) := match mkLoopInvariantWFBlock F invariant loopTargets md with
+      | some (blk, n) => ([blk], n)
+      | none => ([], 0)
     let guardAsserts := match guard with
       | .det g => collectPrecondAsserts F g "loop_guard" md
       | .nondet => []
@@ -305,13 +391,13 @@ def transformStmt (s : Statement)
 
     incrementStat s!"{Stats.callSiteAssertsEmitted}"
       (measureAsserts.length + measureAssertsEnd.length +
-       invAsserts.length + guardAsserts.length + guardAssertsEnd.length)
+       invWFAsserts + guardAsserts.length + guardAssertsEnd.length)
 
     let savedF ← getFactory
     let (changed, body') ← transformStmts body
     setFactory savedF
-    return (changed || !invAsserts.isEmpty || !guardAsserts.isEmpty || !measureAsserts.isEmpty,
-      guardAsserts ++ invAsserts ++ measureAsserts ++
+    return (changed || !invWFStmts.isEmpty || !guardAsserts.isEmpty || !measureAsserts.isEmpty,
+      guardAsserts ++ invWFStmts ++ measureAsserts ++
       [.loop guard measure invariant (body' ++ measureAssertsEnd ++ guardAssertsEnd) md])
   | .exit lbl md =>
     return (false, [.exit lbl md])

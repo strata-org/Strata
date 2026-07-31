@@ -1,6 +1,37 @@
 # Feature Request: a pre-invariant-proof block on Core loops
 
-*Status: proposal. Measured against `be0fa64db` (`origin/main`).*
+*Status: partially implemented. The behavior described here — invariant WF
+checked at the loop head, chained across invariants — now ships in
+`PrecondElim.mkLoopInvariantWFBlock`, which synthesizes the program point out
+of the statement forms Core has today (`if * { havoc(M); ...; assume false }`).
+The remaining request is the **native loop `proving` block** of the Proposal
+section, which would replace that encoding. Measured against `be0fa64db`
+(`origin/main`); the "Evidence" section records the behavior before the fix.*
+
+## What shipped, and what is still requested
+
+Implemented (see `Strata/Transform/PrecondElim.lean`,
+`StrataTest/Transform/LoopInvariantWF.lean`):
+
+- Invariant WF obligations are emitted at the **loop head**, over the havoc'd
+  loop-carried write-set, instead of in the pre-state. This closes the
+  unsoundness in Defect 1 below.
+- They are **chained**: each invariant is asserted-WF then assumed, so invariant
+  *k* may rely on *0..k-1*, matching what contracts already did. This closes
+  Defect 2.
+- The block is severed with `assume false` so the havoc cannot leak into the
+  pre-state and the block cannot make downstream obligations vacuous.
+
+Still requested — a native `proving` block on the loop, which would:
+
+- drop the `assume false` (a proof region that cannot write `M` needs no
+  severing, and soundness would rest on a typing restriction rather than on
+  every IR consumer understanding a severed branch);
+- avoid the nondeterministic `ite`, whose join weakens *downstream* obligations
+  to `if $__nondet_cond then x@1 else <pre-state>` — see "Known limitation of
+  the current encoding" below;
+- give producers a place to put *user-written* loop-head proof hints, which the
+  generated-obligation fix does not address.
 
 ## Summary
 
@@ -487,18 +518,56 @@ covering `loop_invariant_*_calls_*` will need updating —
 pass today will start failing correctly (Defect 1); some that fail today will
 start passing (Defect 2).
 
+## Known limitation of the current encoding
+
+The shipped block is one arm of a nondeterministic `ite`. Symbolic evaluation
+joins the two arms, so a variable the block havocs appears in *downstream*
+obligations as a conditional:
+
+```
+Label: insertLoopInvAssert_entry_invariant_loop_0_0_usesdiv
+Obligation:
+n@1 / (if $__nondet_cond_2 then d@1 else 1) >= 0     -- was: n@1 / 1 >= 0
+```
+
+The obligation is still *valid* — the `else` arm carries the real pre-state, and
+`$__nondet_cond_2` is unconstrained, so proving it entails proving the pre-state
+case. Measured effect: no obligation in the test suite changed result, and a
+realistic provable loop with a partial invariant still discharges every VC
+(`provableLoopPgm` / the `Sum` case in `StrataTest/Transform/LoopInvariantWF.lean`,
+and `gaussPgm` in `StrataTest/Languages/Core/Examples/Loops.lean`). But it makes
+VC dumps and counterexample models harder to read, and it is extra work for the
+solver on every loop with a partial invariant.
+
+A native `proving` block placed inside the loop-head region — after `havoc(M)`,
+before `mid_assumes`, with no surrounding `ite` — would not join, because it
+would not be a branch. That is the main practical argument for the grammar
+change beyond the user-written-hints one.
+
+Two further notes on the current encoding:
+
+- **Zero-iteration loops.** The block runs unconditionally before the loop, so
+  unlike a block placed in the body it is not skipped when the guard is false at
+  entry. This is the stronger placement of the two discussed under "Semantics".
+- **Guard WF is unchanged.** It is still checked in the pre-state and at the end
+  of the body (`loop_guard` / `loop_guard_end`). The guard is evaluated at the
+  loop head too, so it arguably belongs in the block; the existing checks are
+  state-correct, so this is a follow-up.
+
 ## Alternative considered: fix the passes without touching the grammar
 
-Move invariant-WF generation out of `PrecondElim` and into
-`InsertLoopInvariantAsserts`, which does synthesize the loop-head state and could
-emit chained WF asserts directly ahead of `mid_assumes`.
+This is what shipped, in the form described at the top: `PrecondElim` builds a
+severed proof block out of existing statement forms. It fixed both defects
+without a grammar change. Recorded here is what that approach does *not* buy,
+which is the residual case for the native block:
 
-This would fix both defects without a grammar change, and is the smaller patch.
-It is worth doing if the grammar change is judged too invasive. But it buys less:
-
-- It puts expression-level WF knowledge (the `Factory`, `collectWFObligations`)
-  into a pass whose job is the VC recipe, and duplicates it into
-  `C_Simp/Verify.lean`, which synthesizes the same state independently.
+- The nondeterministic `ite` join weakens downstream obligations (see "Known
+  limitation of the current encoding"). A native block would not branch.
+- Soundness rests on `assume false`: every IR consumer must understand that the
+  branch is severed. A `proving` block that cannot write `M` would be safe by
+  typing instead.
+- `C_Simp/Verify.lean` synthesizes the loop-head state independently and does
+  not get the fix.
 - It gives *Core-generated* obligations a home but not *user-written* ones. A
   producer that wants to prove a lemma at the loop head — a
   quantifier-instantiation hint, a frame fact, a bitvector identity — still has
