@@ -503,16 +503,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | _ => pure none
       let body ← translateStmtExpr bodyArg
       return mkStmtExprMd (.Quantifier .Exists { name := name, type := ty } trigger body) src
+    -- Operators are calls to the built-in `$`-prefixed wrapper procedures
+    -- (see `Operation.procName`), so there is no dedicated operator node.
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
-        return mkStmtExprMd (.PrimitiveOp primOp [inner]) src
+        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [inner]) src
       | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
         let rhs ← translateStmtExpr arg1
-        return mkStmtExprMd (.PrimitiveOp primOp [lhs, rhs]) src
+        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [lhs, rhs]) src
       | none => TransM.error s!"Unknown operation: {op.name}"
     | _, _ => TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"

@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.TransparencyPass
+import Strata.Languages.Laurel.ModifiesClauses
 
 /-!
 # Unique Overload Names
@@ -77,5 +78,7 @@ public def uniqueOverloadNamesPass : LoweringPass where
   comesBefore := [
     ⟨ contractPass.meta, "ContractPass derives helper names ($pre/$post) from the procedure's text name, so overloaded names must be made unique first." ⟩,
     ⟨ transparencyPass.meta, "TransparencyPass derives $asFunction twins from the procedure's text name, so overloaded names must be made unique first." ⟩]
+  comesAfter := [
+    ⟨ modifiesClausesTransformPass.meta, "This pass renames the overloaded operator wrappers ($add, $lt, …), so every pass that builds operator calls must run first — otherwise those calls name a procedure that no longer exists. ModifiesClauses is the last such pass; HeapParameterization also injects a prelude whose body uses `+`." ⟩]
 
 end Strata.Laurel

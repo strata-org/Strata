@@ -174,17 +174,15 @@ where
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
       laurelOp opName #[targetArg, stmtExprToArg rhs]
     | .StaticCall callee args =>
-      let calleeArg := laurelOp "identifier" #[ident callee.text]
-      let argsArr := args.map stmtExprToArg |>.toArray
-      laurelOp "call" #[calleeArg, commaSep argsArr]
-    | .PrimitiveOp op [a] _skipProof =>
-      laurelOp (operationName op) #[stmtExprToArg a]
-    | .PrimitiveOp op [a, b] _skipProof =>
-      laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
-    | .PrimitiveOp op args _skipProof =>
-      -- Fallback for unusual arities
-      let argsArr := args.map stmtExprToArg |>.toArray
-      laurelOp (operationName op) argsArr
+      -- A call to a built-in operator wrapper (`$add`, `$lt`, …) came from
+      -- operator syntax, so print it back as an operator to round-trip.
+      match Operation.ofProcName? callee.text, args with
+      | some op, [a] => laurelOp (operationName op) #[stmtExprToArg a]
+      | some op, [a, b] => laurelOp (operationName op) #[stmtExprToArg a, stmtExprToArg b]
+      | _, _ =>
+        let calleeArg := laurelOp "identifier" #[ident callee.text]
+        let argsArr := args.map stmtExprToArg |>.toArray
+        laurelOp "call" #[calleeArg, commaSep argsArr]
     | .IfThenElse cond thenBr elseBr =>
       let elseOpt := optionArg (elseBr.map fun e => laurelOp "elseBranch" #[stmtExprToArg e])
       laurelOp "ifThenElse" #[stmtExprToArg cond, stmtExprToArg thenBr, elseOpt]

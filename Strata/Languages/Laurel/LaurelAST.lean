@@ -130,6 +130,50 @@ instance : ToString Operation where
     | .StrConcat => "++"
 
 /--
+Name of the built-in wrapper procedure implementing an `Operation`.
+
+Operators are not a distinct kind of expression: `x + y` is a `StaticCall` to
+the overloaded procedure `$add`, declared in `CoreDefinitionsForLaurel` and
+prepended to every program. The `$` prefix puts these in Laurel's reserved
+namespace so they cannot collide with a user-defined `add`.
+
+Each wrapper is a thin transparent procedure delegating to a type-specific
+external (`intAdd`, `realAdd`, …) that `LaurelToCoreSchemaPass` recognizes and
+lowers to the corresponding Core operator. Overload resolution picks the
+wrapper matching the argument types, which is why the wrappers must share one
+name per operator while the externals they call do not.
+-/
+def Operation.procName : Operation → String
+  | .Eq => "$eq"                | .Neq => "$neq"
+  | .And => "$and"              | .Or => "$or"
+  | .Not => "$not"              | .Implies => "$implies"
+  | .AndThen => "$andThen"      | .OrElse => "$orElse"
+  | .Neg => "$neg"              | .Add => "$add"
+  | .Sub => "$sub"              | .Mul => "$mul"
+  | .Div => "$div"              | .Mod => "$mod"
+  | .DivT => "$divT"            | .ModT => "$modT"
+  | .Lt => "$lt"                | .Leq => "$le"
+  | .Gt => "$gt"                | .Geq => "$ge"
+  | .StrConcat => "$strConcat"
+
+/-- Inverse of `Operation.procName`: recognize a built-in operator wrapper by
+    name. Used by the pretty-printer to print `$add(x, y)` back as `x + y`, so
+    that a parsed program round-trips. -/
+def Operation.ofProcName? : String → Option Operation
+  | "$eq" => some .Eq                | "$neq" => some .Neq
+  | "$and" => some .And              | "$or" => some .Or
+  | "$not" => some .Not              | "$implies" => some .Implies
+  | "$andThen" => some .AndThen      | "$orElse" => some .OrElse
+  | "$neg" => some .Neg              | "$add" => some .Add
+  | "$sub" => some .Sub              | "$mul" => some .Mul
+  | "$div" => some .Div              | "$mod" => some .Mod
+  | "$divT" => some .DivT            | "$modT" => some .ModT
+  | "$lt" => some .Lt                | "$le" => some .Leq
+  | "$gt" => some .Gt                | "$ge" => some .Geq
+  | "$strConcat" => some .StrConcat
+  | _ => none
+
+/--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
 `AstNode` so that error messages and verification conditions can
@@ -403,13 +447,10 @@ inductive StmtExpr : Type where
   | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
-  /-- Call a static procedure by name with the given arguments. -/
+  /-- Call a static procedure by name with the given arguments.
+      Primitive operators are calls too: `x + y` is a `StaticCall` to the
+      built-in wrapper `$add`. See `Operation.procName`. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Apply a primitive operation to the given arguments.
-      The skipProof property is used internally.
-      It means that any precondition of the operator, such as division has, should be ignored. -/
-  | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
-    (skipProof: Bool := false)
   /-- Create new object (`new`). -/
   | New (ref : Identifier)
   /-- Reference to the current object (`this`/`self`). -/
@@ -479,7 +520,6 @@ def StmtExpr.constrName : StmtExpr → String
   | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
-  | .PrimitiveOp op ..   => toString op
   | .New ..              => "new"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
@@ -929,7 +969,6 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
   | .StaticCall .. => "StaticCall"
-  | .PrimitiveOp .. => "PrimitiveOp"
   | .New .. => "New"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"

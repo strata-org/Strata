@@ -42,7 +42,7 @@ private def testMapStmtExprId (program : StrataDDM.Program) : IO Unit := do
     IO.println s!"MISMATCH\nbefore:\n{before}\nafter:\n{after}"
 
 -- Exercises: IfThenElse, Block, Var Declare, While, Return, Assign,
--- PrimitiveOp, Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
+-- Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
 
 /--
 info: ok: mapStmtExpr id ≡ id

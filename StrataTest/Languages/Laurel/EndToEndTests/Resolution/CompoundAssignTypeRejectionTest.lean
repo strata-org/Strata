@@ -143,8 +143,9 @@ procedure modConstrainedReal() opaque {
 
 /-! ## `/= 0` and `%= 0` retain the division-by-zero proof obligation (`skipProof := false`)
 
-`x /= d` / `x %= d` lower to `x := x / d` / `x := x % d`, which carry the divisor≠0 VC.
-With an unconstrained divisor the assertion-that-it-succeeds cannot be proved. -/
+`x /= d` / `x %= d` lower to `x := x / d` / `x := x % d`, i.e. calls to the `$div`
+/ `$mod` built-in wrappers, which declare `requires y != 0`. With an
+unconstrained divisor that precondition cannot be discharged. -/
 
 #eval testLaurel <|
 #strata
@@ -152,11 +153,11 @@ program Laurel;
 procedure divByZero(d: int) opaque {
   var x: int := 10;
   x /= d
-//^^^^^^ error: assertion does not hold
+//^^^^^^ error: precondition does not hold
 };
 procedure modByZero(d: int) opaque {
   var x: int := 10;
   x %= d
-//^^^^^^ error: assertion does not hold
+//^^^^^^ error: precondition does not hold
 };
 #end

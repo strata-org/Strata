@@ -21,6 +21,13 @@ import Strata.Languages.Laurel.LaurelTypes
 open Core (VerifyOptions)
 open Core (intAddOp intSubOp intMulOp intDivOp intSafeDivOp intModOp intSafeModOp intDivTOp intSafeDivTOp intModTOp intSafeModTOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp boolImpliesOp strConcatOp)
 open Core (realAddOp realSubOp realMulOp realDivOp realNegOp realLtOp realLeOp realGtOp realGeOp)
+-- Signed bitvector comparisons, generated per width by `Factory.lean`'s
+-- `DefBVOpFuncExprs [1, 8, 16, 32, 64]`.
+open Core (bv1SLtOp bv1SLeOp bv1SGtOp bv1SGeOp)
+open Core (bv8SLtOp bv8SLeOp bv8SGtOp bv8SGeOp)
+open Core (bv16SLtOp bv16SLeOp bv16SGtOp bv16SGeOp)
+open Core (bv32SLtOp bv32SLeOp bv32SGtOp bv32SGeOp)
+open Core (bv64SLtOp bv64SLeOp bv64SGtOp bv64SGeOp)
 
 namespace Strata.Laurel
 
@@ -226,6 +233,123 @@ def emitExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr :=
   emitCoreDiagnostic d
   return default
 
+/-- The bitvector widths for which Core defines its bitvector operators
+    (`Factory.lean`'s `DefBVOpFuncExprs [1, 8, 16, 32, 64]`). The comparison
+    wrappers in `CoreDefinitionsForLaurel` are declared for exactly these
+    widths, so the two lists must agree. -/
+private def bvOperatorWidths : List Nat := [1, 8, 16, 32, 64]
+
+/-- Signed bitvector comparisons, as `(externalProcSuffix, Core op)` pairs
+    parameterized by width. Signed to match the pre-`StaticCall` lowering, which
+    sent bitvector comparisons through the *integer* operators. -/
+private def bvComparisonOp (width : Nat) (suffix : String) : Option Core.Expression.Expr :=
+  match width, suffix with
+  | 1, "SLt" => some bv1SLtOp   | 1, "SLe" => some bv1SLeOp
+  | 1, "SGt" => some bv1SGtOp   | 1, "SGe" => some bv1SGeOp
+  | 8, "SLt" => some bv8SLtOp   | 8, "SLe" => some bv8SLeOp
+  | 8, "SGt" => some bv8SGtOp   | 8, "SGe" => some bv8SGeOp
+  | 16, "SLt" => some bv16SLtOp | 16, "SLe" => some bv16SLeOp
+  | 16, "SGt" => some bv16SGtOp | 16, "SGe" => some bv16SGeOp
+  | 32, "SLt" => some bv32SLtOp | 32, "SLe" => some bv32SLeOp
+  | 32, "SGt" => some bv32SGtOp | 32, "SGe" => some bv32SGeOp
+  | 64, "SLt" => some bv64SLtOp | 64, "SLe" => some bv64SLeOp
+  | 64, "SGt" => some bv64SGtOp | 64, "SGe" => some bv64SGeOp
+  | _, _ => none
+
+/-- Decode a bitvector comparison external's name (`bv32SLt`) into its Core
+    operator, or `none` if `name` is not one.
+
+    Widths are tried until one decodes rather than until one merely prefix-matches:
+    `"1"` is a prefix of `"16SLt"`, so stopping at the first prefix match would
+    reject every 16-bit name. -/
+private def bvOperatorNamed (name : String) : Option Core.Expression.Expr := do
+  guard (name.startsWith "bv")
+  let rest := name.drop 2 |>.toString
+  bvOperatorWidths.findSome? fun w =>
+    let digits := toString w
+    if rest.startsWith digits then
+      bvComparisonOp w (rest.drop digits.length |>.toString)
+    else none
+
+/-- Strip the reserved `$` prefix from a prelude procedure name, or fail if it is
+    absent.
+
+    Every procedure `CoreDefinitionsForLaurel` declares lives in Laurel's reserved
+    namespace, so that a user program declaring its own `intAdd`, `eq` or `select`
+    does not collide with the prelude (the prelude is prepended to every program,
+    and mixing a user procedure with an `external` overload of the same name is
+    rejected outright). The matching below is written against the bare names, so
+    the prefix is stripped once here rather than spelled into every arm.
+
+    The prefix is *required*, not merely tolerated: an unprefixed `intAdd` is a
+    user-declared procedure that happens to share a built-in's bare name, and
+    lowering it to the Core operator would discard the user's body silently. So a
+    name without the prefix is not an operator name at all. -/
+private def dropReservedPrefix (name : String) : Option String :=
+  if name.startsWith "$" then some (name.drop 1 |>.toString) else none
+
+/-- Names of built-in operator procedures that `translateExpr` handles specially.
+    Only `$`-prefixed names qualify — see `dropReservedPrefix`. -/
+private def isOperatorProcName (name : String) : Bool :=
+  match dropReservedPrefix name with
+  | none => false
+  | some name =>
+  (bvOperatorNamed name).isSome ||
+  name == "boolNot" || name == "intNeg" || name == "realNeg" ||
+  -- `$eq`/`$neq` are external (polymorphic equality has no monomorphic Laurel
+  -- signature), so unlike the other operators they reach here under their
+  -- wrapper names as well as the underlying `$eq`/`$neq` delegates — which,
+  -- after stripping the prefix, is the same spelling either way.
+  name == "eq" || name == "neq" ||
+  name == "andThen" || name == "orElse" ||
+  name == "boolAnd" || name == "boolOr" || name == "boolImplies" ||
+  name == "intAdd" || name == "intSub" || name == "intMul" ||
+  name == "intDiv" || name == "intSafeDiv" ||
+  name == "intMod" || name == "intSafeMod" ||
+  name == "intDivT" || name == "intSafeDivT" ||
+  name == "intModT" || name == "intSafeModT" ||
+  name == "intLt" || name == "intLe" || name == "intGt" || name == "intGe" ||
+  name == "realAdd" || name == "realSub" || name == "realMul" || name == "realDiv" ||
+  name == "realLt" || name == "realLe" || name == "realGt" || name == "realGe" ||
+  name == "strConcat"
+
+/-- Map a binary operator procedure name to its Core operator expression.
+    Only reached for `$`-prefixed names — see `dropReservedPrefix`. -/
+private def binaryOperatorOp (name : String) : Core.Expression.Expr :=
+  let name := (dropReservedPrefix name).getD name
+  match bvOperatorNamed name with
+  | some op => op
+  | none =>
+  match name with
+  | "boolAnd" => boolAndOp
+  | "boolOr" => boolOrOp
+  | "boolImplies" => boolImpliesOp
+  | "intAdd" => intAddOp
+  | "intSub" => intSubOp
+  | "intMul" => intMulOp
+  | "intDiv" => intDivOp
+  | "intSafeDiv" => intSafeDivOp
+  | "intMod" => intModOp
+  | "intSafeMod" => intSafeModOp
+  | "intDivT" => intDivTOp
+  | "intSafeDivT" => intSafeDivTOp
+  | "intModT" => intModTOp
+  | "intSafeModT" => intSafeModTOp
+  | "intLt" => intLtOp
+  | "intLe" => intLeOp
+  | "intGt" => intGtOp
+  | "intGe" => intGeOp
+  | "realAdd" => realAddOp
+  | "realSub" => realSubOp
+  | "realMul" => realMulOp
+  | "realDiv" => realDivOp
+  | "realLt" => realLtOp
+  | "realLe" => realLeOp
+  | "realGt" => realGtOp
+  | "realGe" => realGeOp
+  | "strConcat" => strConcatOp
+  | _ => panic! s!"binaryOperatorOp: unexpected operator name '{name}'"
+
 /--
 Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
 Diagnostics for disallowed constructs are emitted into the monad state.
@@ -270,50 +394,6 @@ def translateExpr (expr : StmtExprMd)
         | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e] _ =>
-    match op with
-    | .Not =>
-      let re ← translateExpr e boundVars isPureContext
-      return .app () boolNotOp re
-    | .Neg =>
-      let re ← translateExpr e boundVars isPureContext
-      let isReal := match (computeExprType model e).val with
-        | .TReal => true | _ => false
-      return .app () (if isReal then realNegOp else intNegOp) re
-    | _ =>
-      emitExprDiagnostic $ diagnosticFromSource expr.source s!"translateExpr: Invalid unary op: {repr op}" DiagnosticType.StrataBug
-  | .PrimitiveOp op [e1, e2] skipProof =>
-    let re1 ← translateExpr e1 boundVars isPureContext
-    let re2 ← translateExpr e2 boundVars isPureContext
-    let binOp (bop : Core.Expression.Expr) : Core.Expression.Expr :=
-      LExpr.mkApp () bop [re1, re2]
-    let isReal := match (computeExprType model e1).val, (computeExprType model e2).val with
-      | .TReal, _ | _, .TReal => true
-      | _, _ => false
-    match op with
-    | .Eq => return .eq () re1 re2
-    | .Neq => return .app () boolNotOp (.eq () re1 re2)
-    | .And => return binOp boolAndOp
-    | .Or => return binOp boolOrOp
-    | .AndThen => return .ite () re1 re2 (.boolConst () false)
-    | .OrElse => return .ite () re1 (.boolConst () true) re2
-    | .Implies => return .ite () re1 re2 (.boolConst () true)
-    | .Add => return binOp (if isReal then realAddOp else intAddOp)
-    | .Sub => return binOp (if isReal then realSubOp else intSubOp)
-    | .Mul => return binOp (if isReal then realMulOp else intMulOp)
-    | .Div => return binOp (if isReal then realDivOp else if skipProof then intDivOp else intSafeDivOp )
-    | .Mod => return binOp (if skipProof then intModOp else intSafeModOp)
-    | .DivT => return binOp (if skipProof then intDivTOp else intSafeDivTOp)
-    | .ModT => return binOp (if skipProof then intModTOp else intSafeModTOp)
-    | .Lt => return binOp (if isReal then realLtOp else intLtOp)
-    | .Leq => return binOp (if isReal then realLeOp else intLeOp)
-    | .Gt => return binOp (if isReal then realGtOp else intGtOp)
-    | .Geq => return binOp (if isReal then realGeOp else intGeOp)
-    | .StrConcat => return binOp strConcatOp
-    | _ =>
-        emitExprDiagnostic $ diagnosticFromSource expr.source s!"Invalid binary op: {repr op}" DiagnosticType.NotYetImplemented
-  | .PrimitiveOp op args _ =>
-      emitExprDiagnostic $ diagnosticFromSource expr.source s!"PrimitiveOp {repr op} with {args.length} args is not supported" DiagnosticType.UserError
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
@@ -327,6 +407,82 @@ def translateExpr (expr : StmtExprMd)
             translateExpr e boundVars isPureContext
       return .ite () bcond bthen belse
   | .StaticCall callee args =>
+      if isOperatorProcName callee.text then
+        -- Match on the bare name: every prelude procedure carries the reserved `$`
+        -- prefix, and `$eq`/`$neq` additionally reach here under their wrapper
+        -- names, which strip to the same spelling.
+        match _h: (dropReservedPrefix callee.text).getD callee.text, args with
+        | "boolNot", [e] =>
+          have h_e : sizeOf e < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re ← translateExpr e boundVars isPureContext
+          return .app () boolNotOp re
+        | "intNeg", [e] =>
+          have h_e : sizeOf e < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re ← translateExpr e boundVars isPureContext
+          return .app () intNegOp re
+        | "realNeg", [e] =>
+          have h_e : sizeOf e < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re ← translateExpr e boundVars isPureContext
+          return .app () realNegOp re
+        | "eq", [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return .eq () re1 re2
+        | "neq", [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return .app () boolNotOp (.eq () re1 re2)
+        | "andThen", [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return .ite () re1 re2 (.boolConst () false)
+        | "orElse", [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return .ite () re1 (.boolConst () true) re2
+        -- `==>` short-circuits: its right operand must not be evaluated when the
+        -- left one is `false`, or a guarded partial destructor such as
+        -- `isfrom_int(v) ==> as_int!(v) != 0` would get stuck on a wrong-variant
+        -- value. Lower to an `ite` rather than the strict `boolImpliesOp`.
+        | "boolImplies", [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return .ite () re1 re2 (.boolConst () true)
+        | _, [e1, e2] =>
+          have h_e1 : sizeOf e1 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          have h_e2 : sizeOf e2 < sizeOf expr := by
+            have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
+          let re1 ← translateExpr e1 boundVars isPureContext
+          let re2 ← translateExpr e2 boundVars isPureContext
+          return LExpr.mkApp () (binaryOperatorOp callee.text) [re1, re2]
+        | _, _ =>
+          emitExprDiagnostic $ diagnosticFromSource expr.source
+            s!"operator procedure '{callee.text}' called with wrong number of arguments" DiagnosticType.UserError
+      else
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && (← containsProcedure callee) then
         disallowed expr.source s!"calls to procedures are not supported in functions or contracts"

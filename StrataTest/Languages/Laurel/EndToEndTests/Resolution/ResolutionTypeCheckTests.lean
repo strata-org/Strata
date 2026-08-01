@@ -85,7 +85,7 @@ procedure foo(x: int, y: bool): bool {
 program Laurel;
 procedure cmp(x: string, y: int): bool {
   x < y
-//^ error: '<' expected a numeric type, got 'string'
+//^^^^^ error: no overload of '$lt' matches the argument types
 };
 #end
 
@@ -271,7 +271,7 @@ errored.) -/
 program Laurel;
 procedure foo(c: bool): bool {
   (if c then <?> else "x") < 1
-// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: no overload of '$lt' matches the argument types
 };
 #end
 
@@ -280,7 +280,7 @@ procedure foo(c: bool): bool {
 program Laurel;
 procedure foo(c: bool): bool {
   (if c then "x" else <?>) < 1
-// ^^^^^^^^^^^^^^^^^^^^^^ error: '<' expected a numeric type, got 'string'
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: no overload of '$lt' matches the argument types
 };
 #end
 

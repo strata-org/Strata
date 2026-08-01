@@ -57,20 +57,6 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   -- Calls — return the declared output type when available, fall back to Unknown otherwise
   | .StaticCall callee _ => getCallType source model callee
   | .InstanceCall _ callee _ => getCallType source model callee
-  -- Operators
-  | .PrimitiveOp op args _ =>
-      match args with
-      | head :: tail =>
-        match op with
-        | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies | .Lt | .Leq | .Gt | .Geq => ⟨ .TBool, source ⟩
-        | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-          match (computeExprType model head).val with
-            | .TFloat64  => ⟨ .TFloat64, source ⟩
-            | .TReal => ⟨ .TReal, source ⟩
-            | .TInt => ⟨ .TInt, source ⟩
-            | _ => ⟨ .Unknown, source ⟩
-        | .StrConcat => ⟨ .TString, source ⟩
-      | _ => ⟨ .Unknown, source ⟩
   -- Control flow
   | .IfThenElse _ thenBranch _ => computeExprType model thenBranch
   | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with

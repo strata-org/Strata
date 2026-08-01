@@ -29,6 +29,22 @@ def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
 
+/-- Prepend Laurel's built-in definitions to a program, exactly as the real
+    pipeline does (`runLaurelPasses`).
+
+    Operators are calls to the `$`-prefixed wrapper procedures declared in
+    `CoreDefinitionsForLaurel` (`$add`, `$eq`, `$lt`, …), so a test that resolves
+    a snippet without these would see every `+`, `==`, `<`, … as an undefined
+    name — and any pass keying off the callee's declaration (e.g.
+    `InferHoleTypes` reading its parameter types to type a hole operand) would
+    silently get nothing. Any test driving `resolve` on a bare snippet needs
+    this. -/
+def withBuiltins (program : Laurel.Program) : Laurel.Program :=
+  { program with
+    staticProcedures :=
+      Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
+    types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
+
 /-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
     subtracting `basePos` and looking up in a snippet `FileMap`. -/
@@ -65,7 +81,7 @@ private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let result := Laurel.resolve laurelProgram (gradualTypes := gradualTypes)
+    let result := Laurel.resolve (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).

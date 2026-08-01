@@ -1077,8 +1077,8 @@ rules* index in `LaurelUserGuide.lean`:
   `Check.block`, `Check.ifThenElse`
 - Verification statements — `Check.assert`, `Check.assume`
 - Assignment — `Synth.assign`, `Check.assign`
-- Calls — `Synth.staticCall`, `Synth.instanceCall`
-- Primitive operations — `Synth.primitiveOp`, `Check.primitiveOp`
+- Calls — `Synth.staticCall`, `Synth.instanceCall` (operators included: `x + y`
+  is a call to the built-in `$add` wrapper, so it resolves as an overload)
 - Object forms — `Synth.new`, `Synth.asType`, `Synth.isType`, `Synth.refEq`,
   `Synth.pureFieldUpdate`
 - Verification expressions — `Synth.quantifier`, `Synth.assigned`,
@@ -1142,8 +1142,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node])
   | .StaticCall callee args =>
     Synth.staticCall exprMd callee args source (by rw [h_node])
-  | .PrimitiveOp op args skipProof =>
-    Synth.primitiveOp exprMd expr op args skipProof source h_expr (by rw [h_node])
   | .New ref => Synth.new ref source
   | .This => Synth.this source
   | .ReferenceEquals lhs rhs =>
@@ -1220,9 +1218,6 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     - control flow — `Block`, `IfThenElse`, `While`, `Exit`, `Return`
     - verification — `Assert`, `Assume`, `Old`, `ProveBy`
     - holes — `Hole` (typed and untyped)
-    - primitive operations — `PrimitiveOp` (arithmetic and boolean
-      families only; comparison/equality/string-concat fall through to
-      the synth-then-subsume wildcard)
 
     Everything else falls back to subsumption — synthesize, then verify
     `isConsistentSubtype actual expected`.
@@ -1253,46 +1248,6 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.old exprMd val expected source (by rw [h_node])
   | .ProveBy val proof =>
     Check.proveBy exprMd val proof expected source (by rw [h_node])
-  -- Only the arithmetic (`Neg`/`Add`/…/`ModT`) and boolean
-  -- (`And`/`Or`/…/`Implies`) families get a dedicated check arm: these push
-  -- `expected` inward through `Check.primitiveOp`. The remaining operators —
-  -- comparison/equality (`Eq`/`Neq`/`Lt`/…) and `StrConcat` — have no inward
-  -- push, so they are deliberately omitted here and fall through to the
-  -- synth-then-subsume wildcard at the bottom of this match.
-  --
-  -- The arms are written out one operator per line rather than collapsed: an
-  -- inner `match op` would duplicate the wildcard's subsumption body, and a
-  -- binder distributed across an or-pattern (`.PrimitiveOp (op@.Neg) …`)
-  -- defeats the `by rw [h_node]` dependent-match proof, so the explicit
-  -- enumeration is the form that actually typechecks.
-  | .PrimitiveOp .Neg args skipProof =>
-    Check.primitiveOp exprMd .Neg args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Add args skipProof =>
-    Check.primitiveOp exprMd .Add args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Sub args skipProof =>
-    Check.primitiveOp exprMd .Sub args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Mul args skipProof =>
-    Check.primitiveOp exprMd .Mul args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Div args skipProof =>
-    Check.primitiveOp exprMd .Div args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Mod args skipProof =>
-    Check.primitiveOp exprMd .Mod args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .DivT args skipProof =>
-    Check.primitiveOp exprMd .DivT args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .ModT args skipProof =>
-    Check.primitiveOp exprMd .ModT args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .And args skipProof =>
-    Check.primitiveOp exprMd .And args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Or args skipProof =>
-    Check.primitiveOp exprMd .Or args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .AndThen args skipProof =>
-    Check.primitiveOp exprMd .AndThen args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .OrElse args skipProof =>
-    Check.primitiveOp exprMd .OrElse args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Not args skipProof =>
-    Check.primitiveOp exprMd .Not args skipProof expected source (by rw [h_node])
-  | .PrimitiveOp .Implies args skipProof =>
-    Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
     -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
     -- realize the coercion witness onto the term. This chokepoint covers call
@@ -2212,6 +2167,48 @@ def Synth.staticCall (exprMd : StmtExprMd)
     return (.StaticCall { callee with uniqueId := none } args',
             { val := .Unknown, source := callee.source })
 
+  -- Equality is polymorphic, but Laurel has no polymorphic types, so the `$eq` /
+  -- `$neq` wrappers are declared over placeholder `int` parameters. Checking
+  -- arguments against that signature would reject every comparison of anything
+  -- but an int — including the `Box` / `Composite` / `Field` / `Map` comparisons
+  -- that `ModifiesClauses` builds. So instead of the usual argument check,
+  -- require only that the two operand types are *consistent* (`~`, the symmetric
+  -- gradual relation, under which `Unknown` matches anything), and give the call
+  -- type `TBool`. Equality therefore has no privileged operand direction.
+  if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
+    -- Report as the operator the user wrote (`==` / `!=`), not the wrapper name.
+    let opName := if callee.text == Operation.Eq.procName then "==" else "!="
+    let callee' ← resolveRef callee source
+    let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
+      have := hMem
+      Synth.resolveStmtExpr a)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
+    let boolTy : HighTypeMd := { val := .TBool, source := source }
+    -- A `MultiValuedExpr` operand is a multi-output call used in value position.
+    -- It is an internal pseudo-type with no Core lowering, so it must never
+    -- reach an operand slot — letting it through crashes a later pass as a
+    -- `StrataBug`. Report it per operand and skip the consistency check, whose
+    -- diagnostic would only cascade.
+    let mut hasMulti := false
+    for (a, aTy) in args'.zip argTys do
+      if aTy.val matches .MultiValuedExpr _ then
+        let diag := diagnosticFromSource a.source
+          "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
+        modify fun s => { s with errors := s.errors.push diag }
+        hasMulti := true
+    if hasMulti then
+      return (.StaticCall callee' args', boolTy)
+    match argTys with
+    | [lhsTy, rhsTy] =>
+      let ctx := (← get).typeLattice
+      unless isConsistent ctx lhsTy rhsTy do
+        let diag := diagnosticFromSource source
+          s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{opName}'"
+        modify fun s => { s with errors := s.errors.push diag }
+    | _ => pure ()
+    return (.StaticCall callee' args', boolTy)
+
   -- Hack because we use these polymorphic map primitives but Laurel does not
   -- support polymorphism yet, so they cannot be type-checked against their
   -- placeholder `int` signatures. Instead we resolve the arguments and infer the
@@ -2259,32 +2256,61 @@ def Synth.staticCall (exprMd : StmtExprMd)
       Synth.resolveStmtExpr a)
     let args' := resolved.map (·.1)
     let argTys := resolved.map (·.2)
-    -- If any argument synthesizes to `.Unknown` (an untyped hole `<?>`, an
-    -- undefined identifier, an `if`-`then`-`else` whose branches are Unknown,
-    -- …), overload selection is meaningless: `.Unknown` is a consistent subtype
-    -- of every parameter type, so `overloadAccepts` would accept every
-    -- candidate and report a spurious *ambiguous call*, stacked on top of (or
-    -- masking) the argument's real error. Treat the result as `Unknown` and
-    -- leave the callee unresolved, matching how the single-definition path
-    -- degrades gracefully on Unknown arguments.
-    if argTys.any (·.val matches .Unknown) then
-      return (.StaticCall { callee with uniqueId := none } args',
-              { val := .Unknown, source := callee.source })
     let ctx := (← get).typeLattice
+    -- An argument may synthesize to `.Unknown` (an untyped hole `<?>`, an
+    -- undefined identifier, an `if`-`then`-`else` whose branches are Unknown,
+    -- …). `.Unknown` is a consistent subtype of every parameter type, so it
+    -- cannot *discriminate* between overloads — but the other arguments still
+    -- can. So we always run the selection and only treat an unresolved result as
+    -- benign when an `Unknown` argument is what made it unresolved: reporting
+    -- "no overload matches" / "ambiguous call" there would be a spurious error
+    -- stacked on top of (or masking) the argument's own real error.
+    --
+    -- Selecting on the informative arguments alone is what lets `1 + <?>` still
+    -- resolve to the `int` overload of `$add` — which in turn lets
+    -- `InferHoleTypes` read that overload's parameter types and give the hole a
+    -- type instead of leaving it `Unknown`.
+    --
+    -- Suppression has to ask whether the `Unknown` is *why* selection failed, not
+    -- merely whether one is present. A concrete argument that no candidate accepts
+    -- rules out every overload on its own, and it does so whether or not a hole
+    -- sits beside it: blaming the hole there hides the operand that is actually
+    -- wrong. `1 + <?>` stays silent because `1` is accepted by the `int` overload,
+    -- so no argument is individually to blame; `<?> + "hello"` reports, because
+    -- `"hello"` is rejected by every overload of `$add`.
+    let hasUnknownArg := argTys.any (·.val matches .Unknown)
+    let culpritArg : Bool :=
+      (argTys.zipIdx.any fun (argTy, i) =>
+        !(argTy.val matches .Unknown) &&
+        candidates.all fun (_, proc) =>
+          match proc.inputs[i]? with
+          | some p => !isConsistentSubtype ctx argTy p.type
+          -- An arity mismatch is not this argument's fault; leave the blame to
+          -- another position (or to `hasUnknownArg` if there is none).
+          | none => false)
+    -- Stay quiet only when a hole is present *and* no concrete argument is to
+    -- blame — then the argument's own diagnostic already covers the failure.
+    let suppressDiagnostic := hasUnknownArg && !culpritArg
     match selectOverloads ctx candidates argTys with
     | [(id, proc)] =>
       let callee' := { callee with uniqueId := some id }
       return (.StaticCall callee' args', procReturnType callee proc)
     | [] =>
-      let diag := diagnosticFromSource source
-        s!"no overload of '{callee}' matches the argument types"
-      modify fun s => { s with errors := s.errors.push diag }
+      unless suppressDiagnostic do
+        let diag := diagnosticFromSource source
+          s!"no overload of '{callee}' matches the argument types"
+        modify fun s => { s with errors := s.errors.push diag }
       return (.StaticCall { callee with uniqueId := none } args',
               { val := .Unknown, source := callee.source })
     | _ =>
-      let diag := diagnosticFromSource source
-        s!"ambiguous call to '{callee}': the argument types match more than one overload"
-      modify fun s => { s with errors := s.errors.push diag }
+      -- Genuinely ambiguous. When an `Unknown` argument is the reason several
+      -- overloads still match, that is not a user-visible ambiguity — it is
+      -- missing information — so report nothing and degrade to `Unknown`, as
+      -- the single-definition path does.
+      unless suppressDiagnostic do
+        let diag := diagnosticFromSource source
+          s!"ambiguous call to '{callee}': the argument types match more than one overload"
+        modify fun s => { s with errors := s.errors.push diag }
       return (.StaticCall { callee with uniqueId := none } args',
               { val := .Unknown, source := callee.source })
 
@@ -2459,243 +2485,6 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       rw [h] at hsz
       term_by_mem
 
--- ### Primitive operations
-
-/-- Cases on the operator family.
-    ```
-    Γ ⊢ args_i ⇒ U_i                                            (Op-Bool)
-    U_i <: TBool
-    op ∈ {And, Or, AndThen, OrElse, Not, Implies}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇒ TBool
-
-    Γ ⊢ args_i ⇒ U_i                                            (Op-Cmp)
-    Numeric U_i
-    op ∈ {Lt, Leq, Gt, Geq}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇒ TBool
-
-    Γ ⊢ lhs ⇒ T_l                                               (Op-Eq)
-    Γ ⊢ rhs ⇒ T_r
-    T_l ~ T_r
-    op ∈ {Eq, Neq}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op [lhs; rhs] ⇒ TBool
-
-    Γ ⊢ args_i ⇒ U_i                                            (Op-Arith)
-    Numeric U_i
-    T = ⨆ U_i (consistency join)
-    op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇒ T
-
-    Γ ⊢ args_i ⇒ U_i                                            (Op-Concat)
-    U_i <: TString
-    op = StrConcat
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇒ TString
-    ```
-    `Numeric T` is the predicate "T unfolds to TInt / TReal / TFloat64 / TBv
-    (or Unknown via the gradual escape hatch)" — not a single type, so it
-    cannot serve as an `expected` for `Check.resolveStmtExpr`. `~` is
-    symmetric consistency under the gradual relation, so equality has no
-    privileged operand direction.
-
-    The result type is `TBool` for booleans/comparisons/equality, and
-    `TString` for concatenation. Boolean / Cmp / Eq / Concat all
-    synthesize operands first, then run a per-family check
-    (`checkSubtype` for boolean and concat, `isNumeric` for cmp,
-    `isConsistent` for equality).
-
-    Arithmetic follows the same shape as `Op-Eq` but for n operands:
-    synthesize each operand's type, require it to be `Numeric`, and
-    fold the operand types under `join` (the join on the
-    flat consistency lattice — `Unknown ⊔ T = T`, `T ⊔ T = T`,
-    everything else inconsistent). The fold's result is the
-    synthesized type. If any pair is inconsistent the rule emits a
-    `cannot apply '<op>' to operands of types …` diagnostic and
-    falls back to `Unknown`.
-
-    The boolean family additionally has a check-mode rule
-    (`Check.primitiveOp`) preferred when an `expected` type is
-    available; it pushes `TBool` into operands via
-    `Check.resolveStmtExpr` instead of synth-then-`checkSubtype`,
-    surfacing operand-shaped errors at their natural location. -/
-def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
-    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : FileRange)
-    (h_expr : expr = .PrimitiveOp op args skipProof)
-    (h : exprMd.val = .PrimitiveOp op args skipProof) :
-    ResolveM (StmtExpr × HighTypeMd) := do
-  let _ := h_expr  -- carries the constructor identity for `expr` in diagnostics
-  -- Guard (all operator families): a `MultiValuedExpr` operand is a
-  -- multi-output call (`multi(x)` declared `returns (a, b)`) used in value
-  -- position. It is an internal pseudo-type with no Core lowering, so it must
-  -- never reach an operator slot — letting it through crashes a later pass.
-  -- Emit the position-oriented diagnostic per offending operand
-  -- and return `true` so the caller short-circuits to the operator's natural
-  -- result type, suppressing the per-family check (and its cascading error)
-  -- on that operand.
-  let reportMultiValued (a : StmtExprMd) (aTy : HighTypeMd) : ResolveM Bool := do
-    match aTy.val with
-    | .MultiValuedExpr _ =>
-      let diag := diagnosticFromSource a.source
-        "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
-      modify fun s => { s with errors := s.errors.push diag }
-      pure true
-    | _ => pure false
-  match op with
-  -- Arithmetic: synth each operand's type, then take the join under
-  -- the consistency relation. This is the same discipline as
-  -- `Op-Eq`: operands must be pairwise consistent (with `Unknown`
-  -- promoting to whichever side is more informative). Each operand
-  -- is also required to be numeric.
-  | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-    let results ← args.attach.mapM (fun a => have := a.property; do
-      Synth.resolveStmtExpr a.val)
-    let args' := results.map (·.1)
-    let argTypes := results.map (·.2)
-    let unknownTy : HighTypeMd := { val := .Unknown, source := source }
-    -- Multi-output operand guard: short-circuit to `Unknown` (arithmetic's
-    -- natural cascade-suppression type) once any operand is multi-valued.
-    let mut hasMulti := false
-    for (a, aTy) in args'.zip argTypes do
-      if (← reportMultiValued a aTy) then hasMulti := true
-    if hasMulti then
-      return (.PrimitiveOp op args' skipProof, unknownTy)
-    let ctx := (← get).typeLattice
-    -- Per-operand numeric check: surface the bad operand directly.
-    for (a, aTy) in args'.zip argTypes do
-      unless isNumeric ctx aTy do
-        typeMismatch a.source (some expr) "expected a numeric type" aTy
-    -- Fold operands by join, starting from `Unknown` so the
-    -- empty list (impossible for these ops, but kept for totality)
-    -- yields `Unknown` and a single-operand fold (`Neg`) yields the
-    -- operand's type.
-    let resultTy := argTypes.foldl
-      (fun acc aTy =>
-        match acc with
-        | some acc => join ctx acc aTy
-        | none => none)
-      (some unknownTy)
-    match resultTy with
-    | some ty => pure (.PrimitiveOp op args' skipProof, ty)
-    | none =>
-      let formatted := ", ".intercalate (argTypes.map (fun t => s!"'{formatType t}'"))
-      let diag := diagnosticFromSource source
-        s!"cannot apply '{op}' to operands of types {formatted}"
-      modify fun s => { s with errors := s.errors.push diag }
-      pure (.PrimitiveOp op args' skipProof, unknownTy)
-  | _ =>
-    let results ← args.attach.mapM (fun a => have := a.property; do
-      Synth.resolveStmtExpr a.val)
-    let args' := results.map (·.1)
-    let argTypes := results.map (·.2)
-    let resultTy := match op with
-      | .Eq | .Neq | .And | .Or | .AndThen | .OrElse | .Not | .Implies
-      | .Lt | .Leq | .Gt | .Geq => HighType.TBool
-      | .StrConcat => HighType.TString
-      -- Unreachable: filtered above.
-      | _ => HighType.Unknown
-    -- Multi-output operand guard: short-circuit to the operator's natural
-    -- result type (`TBool` for bool/cmp/eq, `TString` for concat) once any
-    -- operand is multi-valued, suppressing the per-family check below.
-    let mut hasMulti := false
-    for (a, aTy) in args'.zip argTypes do
-      if (← reportMultiValued a aTy) then hasMulti := true
-    if hasMulti then
-      return (.PrimitiveOp op args' skipProof, { val := resultTy, source := source })
-    match op with
-    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      for (a, aTy) in args'.zip argTypes do
-        checkSubtype a.source { val := .TBool, source := a.source } aTy
-    | .Lt | .Leq | .Gt | .Geq =>
-      let ctx := (← get).typeLattice
-      for (a, aTy) in args'.zip argTypes do
-        unless isNumeric ctx aTy do
-          typeMismatch a.source (some expr) "expected a numeric type" aTy
-    | .Eq | .Neq =>
-      match argTypes with
-      | [lhsTy, rhsTy] =>
-        let ctx := (← get).typeLattice
-        unless isConsistent ctx lhsTy rhsTy do
-          let diag := diagnosticFromSource source
-            s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{op}'"
-          modify fun s => { s with errors := s.errors.push diag }
-      | _ => pure ()
-    | .StrConcat =>
-      for (a, aTy) in args'.zip argTypes do
-        checkSubtype a.source { val := .TString, source := a.source } aTy
-    | _ => pure ()  -- unreachable
-    pure (.PrimitiveOp op args' skipProof, { val := resultTy, source := source })
-  termination_by (exprMd, 1)
-  decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      rw [h] at hsz
-      term_by_mem
-
-/-- Cases on the operator family.
-    ```
-    Numeric T                                                   (Op-Arith)
-    Γ ⊢ args_i ⇐ T
-    op ∈ {Neg, Add, Sub, Mul, Div, Mod, DivT, ModT}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇐ T
-
-    TBool <: T                                                  (Op-Bool)
-    Γ ⊢ args_i ⇐ TBool
-    op ∈ {And, Or, AndThen, OrElse, Not, Implies}
-    ─────────────────────────────────────────────
-    Γ ⊢ PrimitiveOp op args ⇐ T
-    ```
-    Both families run in check mode: the surrounding `expected` must
-    admit the family's natural result type (numeric for arithmetic,
-    `TBool` for boolean), and that operand type is pushed into every
-    operand via `Check.resolveStmtExpr`. Pushing `expected` (or `TBool`)
-    into operands replaces the synth-then-`checkSubtype` discipline of
-    `Synth.primitiveOp`, with two consequences: (a) control-flow
-    operands like `(if c then 1 else 2) + 3` or `(if c then a else b) && z`
-    are resolved correctly via `Check.ifThenElse` instead of hitting the
-    synth wildcard, and (b) `int + real` errors at the second operand
-    instead of being silently accepted under gradual mixing — the rule
-    now requires every operand to subtype the pushed type.
-
-    The remaining operator families (comparison, equality, string
-    concatenation) stay in `Synth.primitiveOp`: their result types are
-    fixed (`TBool` / `TString`) and their operand constraints can't be
-    expressed as a single pushable type (Numeric is a predicate;
-    equality is symmetric). The dispatcher routes those to the wildcard
-    `_ =>` arm of `Check.resolveStmtExpr`. -/
-def Check.primitiveOp (exprMd : StmtExprMd)
-    (op : Operation) (args : List StmtExprMd) (skipProof : Bool)
-    (expected : HighTypeMd) (source : FileRange)
-    (h : exprMd.val = .PrimitiveOp op args skipProof) :
-    ResolveM StmtExprMd := do
-  let operandTy : HighTypeMd ← match op with
-    | .Neg | .Add | .Sub | .Mul | .Div | .Mod | .DivT | .ModT =>
-      let ctx := (← get).typeLattice
-      unless isNumeric ctx expected do
-        typeMismatch source none "expected a numeric type" expected
-      pure expected
-    | .And | .Or | .AndThen | .OrElse | .Not | .Implies =>
-      let boolTy : HighTypeMd := { val := .TBool, source := source }
-      checkSubtype source expected boolTy
-      pure boolTy
-    | _ =>
-      -- Unreachable: dispatcher routes only the arithmetic and boolean
-      -- families to this rule. `Unknown` keeps the function total in
-      -- case the dispatcher's pattern list ever drifts.
-      pure { val := .Unknown, source := source }
-  let args' ← args.attach.mapM (fun a => have := a.property; do
-    Check.resolveStmtExpr a.val operandTy)
-  pure { val := .PrimitiveOp op args' skipProof, source := source }
-  termination_by (exprMd, 0)
-  decreasing_by
-    apply Prod.Lex.left
-    have hsz := exprMd.sizeOf_val_lt
-    rw [h] at hsz
-    term_by_mem
 
 -- ### Object forms
 

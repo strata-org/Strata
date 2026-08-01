@@ -60,6 +60,25 @@ private def adjustSelectorName (name : Identifier) : Identifier :=
     else { text := name.text ++ Lambda.unsafeDestructorSuffix, source := name.source }
   else name
 
+/-- Replace a checked arithmetic operator with its unchecked counterpart.
+    The checked operators (`intSafeDiv` and friends) carry a `y != 0`
+    precondition that Core turns into a proof obligation at every call site.
+    Inside a function body that obligation is neither provable nor needed: the
+    `$asFunction` twin is a pure mirror of a procedure whose own `requires`
+    already discharges the check on the imperative side. So the twin calls the
+    unchecked operator. -/
+private def adjustSafeOperatorName (name : Identifier) : Identifier :=
+  -- The names carry Laurel's reserved `$` prefix, as every prelude procedure does.
+  let unchecked := match name.text with
+    | "$intSafeDiv" => some "$intDiv"
+    | "$intSafeMod" => some "$intMod"
+    | "$intSafeDivT" => some "$intDivT"
+    | "$intSafeModT" => some "$intModT"
+    | _ => none
+  match unchecked with
+  | some text => { name with text }
+  | none => name
+
 /-- Rewrite StaticCall callees to their `$asFunction` versions,
     but only for procedures whose names appear in `nonExternalNames`. -/
 private def rewriteCallsToFunctional (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
@@ -70,16 +89,15 @@ private def rewriteCallsToFunctional (asFunctionNames : Std.HashSet String) (exp
         let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
         ⟨.StaticCall funcCallee args, e.source⟩
       else
-        let newName := adjustSelectorName callee
+        let newName := adjustSafeOperatorName (adjustSelectorName callee)
         ⟨ .StaticCall newName args, e.source⟩
-    | .PrimitiveOp operator arguments _ => ⟨ .PrimitiveOp operator arguments true, e.source⟩
     | _ => e) expr
 
 /-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
     to their `$asFunction` versions, leaving everything else (selectors,
-    primitive ops, non-redirected calls) untouched. Unlike
-    `rewriteCallsToFunctional`, this does not adjust selector names or mark
-    primitive ops as proof terms, so it is safe to apply to imperative
+    operator calls, non-redirected calls) untouched. Unlike
+    `rewriteCallsToFunctional`, this does not adjust selector names or swap
+    checked operators for unchecked ones, so it is safe to apply to imperative
     procedure bodies.
 
     The callee's `uniqueId` is preserved: it still resolves (via the semantic
@@ -114,10 +132,23 @@ private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Pro
     { proc with body := .Abstract (postconds.map fun c => { c with condition := r c.condition }) }
   | .External => proc
 
-/-- Rewrite quantifier bodies like function bodies: strip assert/assume and
-    rewrite calls to their `$asFunction` variants. This ensures that calls
-    inside quantifiers (e.g. in modifies frame conditions) reference the
-    pure functional version and are not treated as imperative by later passes. -/
+/-- Rewrite quantifier bodies and loop invariants like function bodies: strip
+    assert/assume and rewrite calls to their `$asFunction` variants.
+
+    For quantifiers this ensures that calls inside them (e.g. in modifies frame
+    conditions) reference the pure functional version and are not treated as
+    imperative by later passes.
+
+    Loop invariants (and `decreases`) need the same treatment for a stronger
+    reason: they are spec positions evaluated at the loop head, so nothing may be
+    hoisted out of them — `LiftImperativeExpressions` leaves them untransformed. A
+    procedure call left in an invariant would therefore stay there, where later
+    passes cannot represent it. Rewriting it to the pure `$asFunction` twin keeps the
+    invariant a pure expression that can stay in place. Without this, a
+    `requires`-bearing callee — including the `$div` wrapper behind `/` — makes the
+    contract pass inject an `assert` into the invariant, which `stripAssertAssume`
+    removes here: the precondition is checked at the call sites that matter, not at
+    the loop head. -/
 private def rewriteQuantifierBodies (nonExternalNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
@@ -125,6 +156,12 @@ private def rewriteQuantifierBodies (nonExternalNames : Std.HashSet String) (exp
       let body' := rewriteCallsToFunctional nonExternalNames (stripAssertAssume body)
       let trigger' := trigger.map (rewriteCallsToFunctional nonExternalNames)
       ⟨.Quantifier mode param trigger' body', e.source⟩
+    | .While cond invs dec body postTest =>
+      let rewriteSpec := fun (s : StmtExprMd) =>
+        rewriteCallsToFunctional nonExternalNames (stripAssertAssume s)
+      -- Only the invariants and `decreases` are spec positions; `cond` and `body`
+      -- are ordinary imperative code and must keep their procedure calls.
+      ⟨.While cond (invs.map rewriteSpec) (dec.map rewriteSpec) body postTest, e.source⟩
     | _ => e) expr
 
 /-- Apply quantifier body rewriting to all postconditions and the implementation
@@ -152,7 +189,7 @@ private def mkFreePostcondition (proc : Procedure) : StmtExprMd :=
   let inputArgs := proc.inputs.map fun p => (⟨ .Var (.Local p.name), source ⟩ : StmtExprMd)
   let funcCall: StmtExprMd := ⟨ .StaticCall funcName inputArgs, source ⟩
   match proc.outputs with
-  | [out] => ⟨ .PrimitiveOp .Eq [⟨ .Var (.Local out.name), source⟩, funcCall], source ⟩
+  | [out] => ⟨ .StaticCall (mkId Operation.Eq.procName) [⟨ .Var (.Local out.name), source⟩, funcCall], source ⟩
   | _ => ⟨ .LiteralBool true, source ⟩
 
 /-- Create the function copy of a procedure (suffixed `$asFunction`).

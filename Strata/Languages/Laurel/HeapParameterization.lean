@@ -22,8 +22,8 @@ import Strata.Languages.Laurel.EliminateReturnStatements
 Heap Parameterization Pass
 
 Transforms procedures that interact with the heap by adding explicit heap parameters.
-The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field Box)` map
-and a `nextReference: int` for allocating new objects. Box is a sum type with constructors for each
+The heap is modeled as a `Heap` datatype containing a `data: Map Composite (Map Field $Box)` map
+and a `nextReference: int` for allocating new objects. `$Box` is a sum type with constructors for each
 primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type synonym for int.
 
 1. Procedures that write the heap get an inout heap parameter
@@ -33,7 +33,7 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 
 2. Procedures that only read the heap get an in heap parameter
    - Input: `heap : Heap`
-   - Field reads become: `Box..tVal(readField(heap, obj, field))`
+   - Field reads become: `$Box..tVal(readField(heap, obj, field))`
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
@@ -71,9 +71,9 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
   | .datatypeDefinition _ => true
   | _ => false
 
-/-- Get the Box destructor name for a given Laurel HighType.
-    For UserDefined datatypes, uses "Box..<datatypeName>Val!";
-    for Composite types, uses "Box..compositeVal!".
+/-- Get the `$Box` destructor name for a given Laurel HighType.
+    For UserDefined datatypes, uses "$Box..<datatypeName>Val!";
+    for Composite types, uses "$Box..compositeVal!".
 
     Constrained types do not need resolving here: `ConstrainedTypeElim` runs
     before this pass and has already lowered every constrained type to its base
@@ -81,15 +81,15 @@ private def isDatatype (model : SemanticModel) (name : Identifier) : Bool :=
     constrained-type reference. -/
 def boxDestructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   match ty with
-  | .TInt => "Box..intVal!"
-  | .TBool => "Box..boolVal!"
-  | .TFloat64 => "Box..float64Val!"
-  | .TReal => "Box..realVal!"
-  | .TString => "Box..stringVal!"
+  | .TInt => "$Box..intVal!"
+  | .TBool => "$Box..boolVal!"
+  | .TFloat64 => "$Box..float64Val!"
+  | .TReal => "$Box..realVal!"
+  | .TString => "$Box..stringVal!"
   | .UserDefined name =>
-      if isDatatype model name then s!"Box..{name.text}Val!"
-      else "Box..compositeVal!"
-  | .TBv n => s!"Box..bv{n}Val!"
+      if isDatatype model name then s!"$Box..{name.text}Val!"
+      else "$Box..compositeVal!"
+  | .TBv n => s!"$Box..bv{n}Val!"
   | _ => dbg_trace f!"BUG, boxDestructorName bad type {ty}"; "boxDestructorNameError"
 
 /-- Get the Box constructor name for a given Laurel HighType.
@@ -204,6 +204,26 @@ where
         return [mkMd (.StaticCall (boxDestructorName model valTy.val) [readExpr]) source]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurseOne ·)
+        -- For `==` and `!=` on Composite types, compare refs instead. These are
+        -- calls to the built-in `$eq`/`$neq` wrappers (see `Operation.procName`);
+        -- neither is overloaded, so `UniqueOverloadNames` leaves the names alone
+        -- and matching on the text is safe. Note `.UserDefined` covers BOTH
+        -- composites (heap references — `ref!` is correct) and datatypes (values
+        -- — `ref!` is wrong and would unify a datatype value against
+        -- `Composite`). Only ref-compare composites; datatype equality falls
+        -- through to structural comparison.
+        if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
+          match args, args' with
+          | [e1, _], [a1, a2] =>
+            match (computeExprType model e1).val with
+            | .UserDefined name =>
+              if isDatatype model name then return [⟨ .StaticCall callee args', source ⟩]
+              let ref1 := mkMd (.StaticCall "Composite..ref!" [a1]) source
+              let ref2 := mkMd (.StaticCall "Composite..ref!" [a2]) source
+              return [⟨ .StaticCall callee [ref1, ref2], source ⟩]
+            | _ => return [⟨ .StaticCall callee args', source ⟩]
+          | _, _ => return [⟨ .StaticCall callee args', source ⟩]
+        else
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
@@ -330,31 +350,6 @@ where
       return newAssign :: suffixes
 
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
-    | .PrimitiveOp op args _ =>
-      let args' ← args.mapM (recurseOne ·)
-      -- For == and != on Composite types, compare refs instead. Note
-      -- `.UserDefined` covers BOTH composites (heap references — `ref!` is
-      -- correct) and datatypes (values — `ref!` is wrong and would unify a
-      -- datatype value against `Composite`). Only ref-compare composites;
-      -- datatype equality falls through to structural comparison.
-      match op, args with
-      | .Eq, [e1, _e2] =>
-        match (computeExprType model e1).val with
-        | .UserDefined name =>
-          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
-          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!]) source
-          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!]) source
-          return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
-        | _ => return [⟨ .PrimitiveOp op args', source ⟩]
-      | .Neq, [e1, _e2] =>
-        match (computeExprType model e1).val with
-        | .UserDefined name =>
-          if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
-          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!]) source
-          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!]) source
-          return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
-        | _ => return [⟨ .PrimitiveOp op args', source ⟩]
-      | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
     | .New _ => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
     | .AsType t ty =>
@@ -502,15 +497,21 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
     match td with
     | .Composite ct => .Composite { ct with fields := [] }
     | other => other
-  -- Generate Box datatype from all constructors used during transformation
+  -- Generate the `$Box` datatype from all constructors used during transformation.
+  -- It replaces the `$Box` placeholder from CoreDefinitionsForLaurel.lean, so it
+  -- must carry the same name: `select`/`update`/`mapConst` are declared to return
+  -- `$Box`, and those references are re-resolved after this pass. The reserved `$`
+  -- prefix keeps it distinct from a user-declared `Box`.
   let boxDatatype : TypeDefinition :=
-    .Datatype { name := "Box", typeArgs := [], constructors := state1.usedBoxConstructors }
+    .Datatype { name := "$Box", typeArgs := [], constructors := state1.usedBoxConstructors }
 
   let types := fieldDatatype :: boxDatatype :: heapConstants.types ++
     -- The filter is a hack to deal with another hack,
-    -- the box that was added in CoreDefinitionsForLaurel.lean
-    -- because Laurel does not support polymorphism yet
-    types'.filter (fun td => td.name.text != "Box")
+    -- the `$Box` placeholder that was added in CoreDefinitionsForLaurel.lean
+    -- because Laurel does not support polymorphism yet. The `$Box` generated
+    -- just above replaces it; a user-declared `Box` is a distinct type and
+    -- must not be dropped here.
+    types'.filter (fun td => td.name.text != "$Box")
   pure { program with
     staticProcedures := heapConstants.staticProcedures ++ procs',
     types }
@@ -518,7 +519,7 @@ def heapParameterization (model: SemanticModel) (program : Program) : Except Str
 /-- Pipeline pass: heap parameterization. -/
 public def heapParameterizationPass : LoweringPass where
   name := "HeapParameterization"
-  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
+  documentation := "Transforms procedures that interact with the heap by adding explicit heap parameters. The heap is modeled as `Map Composite (Map Field $Box)`. Procedures that write the heap receive both an input and output heap parameter; procedures that only read the heap receive an input heap parameter. Field reads and writes are rewritten to use `readField` and `updateField` functions."
   needsResolves := false -- Only resolve again after completing HeapParam, ModifiesClauses and TypeHierarchy. These are logically one pass.
   run := fun _ p m =>
     match heapParameterization m p with

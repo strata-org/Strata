@@ -83,7 +83,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
           { val := .Var (.Local paramId), source := src }
         let parentCall : StmtExprMd :=
           { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := src }
-        { val := .PrimitiveOp .And [ct.constraint, parentCall], source := src }
+        { val := .StaticCall (mkId Operation.And.procName) [ct.constraint, parentCall], source := src }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
@@ -111,12 +111,12 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   | .Quantifier mode param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
-    -- created `PrimitiveOp` won't be visited again, which is safe because
+    -- created operator call won't be visited again, which is safe because
     -- `c` (from `constraintCallFor`) is a StaticCall with Identifier leaves
     -- that don't need further resolution.
     let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.And
     let injected := match constraintCallFor ptMap param.type.val param.name (src := source) with
-      | some c => ⟨.PrimitiveOp combiner [c, body], source⟩
+      | some c => ⟨.StaticCall (mkId combiner.procName) [c, body], source⟩
       | none => body
     ⟨.Quantifier mode param' trigger injected, source⟩
   | .AsType t ty => ⟨.AsType t (resolveType ptMap ty), source⟩
