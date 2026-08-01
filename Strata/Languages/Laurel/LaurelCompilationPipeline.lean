@@ -26,6 +26,7 @@ import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.InlineLocalVariables
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
+import Strata.Languages.Laurel.LoopInvariantWellFormedness
 import Strata.Languages.Laurel.UniqueOverloadNames
 import Strata.Languages.Laurel.PushOldInward
 import Strata.Languages.Laurel.LiftInstanceProcedures
@@ -144,6 +145,7 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateDeterministicHolesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
+  loopInvariantWellFormednessPass,
   contractPass
 ]
 
