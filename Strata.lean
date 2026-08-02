@@ -37,10 +37,13 @@ import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
+import Strata.Transform.FunctionInlining
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.NondetElim
+import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
+import Strata.Transform.StructuredToUnstructured
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
@@ -64,10 +67,6 @@ import Strata.Backends.CBMC
 import Strata.DL.SMT.Denote
 import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
-
-/- Code Transforms — additional -/
-import Strata.Transform.StructuredToUnstructured
-import Strata.Transform.FunctionInlining
 
 /- Other -/
 import Strata.MetaVerifier
