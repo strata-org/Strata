@@ -47,10 +47,20 @@ abbrev IncrementalSolverM := StateT IncrementalSolverState IO
 
 namespace IncrementalSolver
 
+/-- Write `str` followed by a newline to the solver input stream. -/
 def emitln (str : String) : IncrementalSolverM Unit := do
   let st ← get
-  st.solver.smtLibInput.putStr s!"{str}\n"
-  st.solver.smtLibInput.flush
+  st.solver.smtLibInput.putStr str
+  -- The newline is written as its own segment: appending it to `str` first
+  -- would heap-copy the whole string.
+  st.solver.smtLibInput.putStr "\n"
+
+/-- Flush the solver input stream. Rarely needed: the output stream built by
+    `Solver.spawn` flushes the input stream before every read, so commands
+    are always delivered before a reply is awaited. Call this only after a
+    command that gets no reply but must still reach the solver process. -/
+def flush : IncrementalSolverM Unit := do
+  (← get).solver.smtLibInput.flush
 
 def readln : IncrementalSolverM String := do
   let st ← get
@@ -356,7 +366,11 @@ def mkIncrementalSolver : AbstractSolver Term TermType IncrementalSolverM where
 
   reset := emitln "(reset)"
 
-  close := emitln "(exit)"
+  close := do
+    emitln "(exit)"
+    -- flush so it actually receives the command rather than
+    -- lingering until pipe EOF.
+    flush
 
 end IncrementalSolver
 
