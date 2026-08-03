@@ -458,9 +458,15 @@ def create_messaging_server(
         version="1.0.0",
         tools=tools_list,
     )
-    # Expose pending_replies for framework injection path to push senders
-    # Wrap in a simple namespace since sdk server is a dict
-    server["_pending_replies"] = pending_replies
-    # Expose raw tool handlers (name -> async fn) for in-process testing.
-    server["_tool_handlers"] = {t.name: t.handler for t in tools_list}
+    # Stash our own side-channels on the SDK server's `instance` object rather
+    # than as top-level dict keys. The subprocess transport JSON-serializes every
+    # key of an sdk-server dict EXCEPT `instance` (which it strips first), so any
+    # top-level key holding non-JSON values (e.g. function objects) crashes connect
+    # with "Object of type function is not JSON serializable". Hanging them off
+    # `instance` keeps them reachable in-process but out of the serialized payload.
+    inst = server["instance"]
+    # pending_replies for the framework injection path to push senders (reply_only FIFO).
+    inst._pending_replies = pending_replies
+    # Raw tool handlers (name -> async fn) for in-process testing.
+    inst._tool_handlers = {t.name: t.handler for t in tools_list}
     return server

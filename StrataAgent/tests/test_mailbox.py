@@ -21,8 +21,13 @@ from strataswarm._messaging import create_messaging_server, render_mail, render_
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _tools(server):
-    """Map tool name -> handler callable for a messaging sdk server."""
-    return dict(server.get("_tool_handlers", {}))
+    """Map tool name -> handler callable for a messaging sdk server.
+
+    Handlers live on the server's `instance` object (not a top-level dict key)
+    so they never reach the subprocess transport's json.dumps of mcp_servers.
+    """
+    inst = server.get("instance")
+    return dict(getattr(inst, "_tool_handlers", {}))
 
 
 async def _text(handler, **kwargs):

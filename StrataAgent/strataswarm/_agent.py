@@ -421,8 +421,10 @@ class SwarmAgent:
             # reply_only FIFO: record the sender of the message we just surfaced.
             if self.spec.reply_only and self._mcp_servers_override and entry.sender != "TipAgent":
                 ms = self._mcp_servers_override.get("agent_messaging")
-                if ms and isinstance(ms, dict) and "_pending_replies" in ms:
-                    ms["_pending_replies"].append(entry.sender)
+                inst = ms.get("instance") if isinstance(ms, dict) else None
+                pending = getattr(inst, "_pending_replies", None)
+                if pending is not None:
+                    pending.append(entry.sender)
             return prefix + render_mail(entry, mailbox)
 
         if count == 1 or self.spec.reply_only:
