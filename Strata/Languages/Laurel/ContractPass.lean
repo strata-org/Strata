@@ -65,11 +65,11 @@ private def mkConditionProc (name : String) (typeArgs : List Identifier)
   -- Give the pre/post helper procedure a shape the current lowering can turn
   -- into a Core function: assign the condition to the `$result` output and exit
   -- via `returnLabel`, rather than emitting the condition directly as a
-  -- transparent expression body. This matches the `{ $result := …; exit }`
-  -- pattern that `unwrapReturnBlock` (LaurelToCoreSchemaPass) recognizes when
-  -- converting a transparent body to a Core function application. Once a
-  -- dedicated "functionalize" pass exists, helpers could be emitted as
-  -- functions directly and this block wrapping would no longer be needed.
+  -- transparent expression body. `transparencyPass` makes the `$asFunction` copy
+  -- and `functionalRewritePass` then turns `{ $result := …; exit $return }` into
+  -- the pure expression `$result`, so this shape reaches Core as a function.
+  -- Helpers could be emitted as expression bodies directly, which would make
+  -- this block wrapping unnecessary; that simplification is not attempted here.
   let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condition.condition, src⟩
   let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
   let body : StmtExprMd := ⟨.Block [assign, exit] (some returnLabel), src⟩
@@ -156,12 +156,13 @@ private def mkPostConditionProc (name : String) (typeArgs : List Identifier)
   let assignResult : StmtExprMd :=
     ⟨.Assign [⟨.Local resultName, postExpr.source⟩] postExpr, postExpr.source⟩
   -- Emit the assignment followed by `exit $return` inside a `$return`-labelled
-  -- block: this is the exact shape `unwrapReturnBlock` (in the schema pass)
-  -- recognises as a pure return. After TransparencyPass strips the leading
-  -- assumes from the `$asFunction` twin, the remaining `{ $result := post; exit
-  -- $return }$return` block matches that pattern and translates to a function
-  -- body. Without the `exit $return`, the twin's bare assignment would instead
-  -- fall through to `translateExpr` and be rejected as a destructive assignment.
+  -- block: this is the shape `functionalRewritePass` turns into a pure return.
+  -- After TransparencyPass strips the leading assumes from the `$asFunction` twin,
+  -- the remaining `{ $result := post; exit $return }$return` block becomes the
+  -- expression `$result` (the assignment becomes a declaration, the exit becomes a
+  -- reference to it), so the twin translates to a function body. Without the
+  -- `exit $return`, the twin's bare assignment would instead be reported as a
+  -- destructive assignment.
   let exitReturn : StmtExprMd := ⟨.Exit "$return", postExpr.source⟩
   let body : StmtExprMd :=
     ⟨.Block (preAssumes ++ [assignResult, exitReturn]) (some "$return"), postExpr.source⟩

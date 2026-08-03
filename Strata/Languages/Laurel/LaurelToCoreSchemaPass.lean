@@ -626,7 +626,7 @@ def translateExpr (expr : StmtExprMd)
       else
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && (← containsProcedure callee) then
-        disallowed expr.source s!"calls to procedures are not supported in functions or contracts"
+        disallowed expr.source s!"calls to procedures are not supported in transparent bodies or contracts"
       else
       -- `mapContains` is the one map operation whose result mentions neither `K` nor `V`, so a
       -- map argument with an unbound value type can never be pinned down from here. Reject it
@@ -734,10 +734,10 @@ def translateExpr (expr : StmtExprMd)
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
 
   | .Block (⟨ .Assert .., innerSrc⟩ :: rest) label => do
-    _ ← disallowed innerSrc "asserts are not YET supported in functions or contracts"
+    _ ← disallowed innerSrc "asserts are not YET supported in transparent bodies or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .Assume _, innerSrc⟩ :: rest) label =>
-    _ ← disallowed innerSrc "assumes are not YET supported in functions or contracts"
+    _ ← disallowed innerSrc "assumes are not YET supported in transparent bodies or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .Assign [⟨ .Declare ⟨name, some ty⟩, _source⟩] initializer, innerSrc⟩ :: rest) label => do
       -- These translations are not used yet (see below), but are kept for their
@@ -754,7 +754,7 @@ def translateExpr (expr : StmtExprMd)
       -- This doesn't work because of a limitation in Core.
       -- return .app () (.abs () (some _coreMonoType) _bodyExpr) _valueExpr
   | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
-    _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts "
+    _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
   | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label =>
     disallowed innerSrc "if-then-else only supported as the last statement in a block"
@@ -766,7 +766,7 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
   | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ =>
-      disallowed whileSource "loops are not supported in functions or contracts"
+      disallowed whileSource "loops are not supported in transparent bodies or contracts"
   | .Block (head :: tail) _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" MessageKind.strataBug
   | .Block [] _ =>
@@ -1246,18 +1246,6 @@ structure LaurelVerifyOptions where
 instance : Inhabited LaurelVerifyOptions where
   default := {}
 
-/-- Unwrap the pattern produced by EliminateValuesInReturns + EliminateReturnStatements:
-    `{ result := <expr>; exit "$return" } $return` → `<expr>`
-    Also handles an extra wrapping layer from the contract pass:
-    `{ { result := <expr>; exit "$return" } $return } none` → `<expr>`
-    Support for transparent multi-out procedures is not yet available.
--/
-private def unwrapReturnBlock (b : StmtExprMd) : StmtExprMd :=
-  match b.val with
-  | .Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel) => value
-  | .Block [⟨.Block [⟨.Assign [⟨.Local _, _⟩] value, _⟩, ⟨.Exit returnLabel, _⟩] (some returnLabel), _⟩] _ => value
-  | _ => b
-
 /--
 Translate a Laurel Procedure to a Core Function (when applicable) using `TranslateM`.
 Diagnostics for disallowed constructs in the function body are emitted into the monad state.
@@ -1297,10 +1285,10 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
 
   let body ← match proc.body with
     | .Transparent bodyExpr =>
-      some <$> translateExpr (unwrapReturnBlock bodyExpr) [] (isPureContext := true)
+      some <$> translateExpr bodyExpr [] (isPureContext := true)
     | .Opaque _ (some bodyExpr) _ =>
       emitDiagnostic (diagnosticFromSource proc.name.source "functions with postconditions are not yet supported")
-      some <$> translateExpr (unwrapReturnBlock bodyExpr) [] (isPureContext := true)
+      some <$> translateExpr bodyExpr [] (isPureContext := true)
     | _ => pure none
   let f : Core.Function := {
     name := ⟨proc.name.text, ()⟩

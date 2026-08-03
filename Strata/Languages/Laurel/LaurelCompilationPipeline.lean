@@ -11,7 +11,6 @@ import Strata.Languages.Laurel.DesugarShortCircuit
 import Strata.Languages.Laurel.EliminateReturnStatements
 import Strata.Languages.Laurel.EliminateDoWhile
 import Strata.Languages.Laurel.EliminateIncrDecrAndCompoundAssign
-import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.HeapParameterization
@@ -25,6 +24,7 @@ import Strata.Languages.Laurel.TransparencyPass
 import Strata.Languages.Laurel.FilterPrelude
 import Strata.Languages.Laurel.LiftImperativeExpressions
 import Strata.Languages.Laurel.InlineLocalVariables
+import Strata.Languages.Laurel.FunctionalRewrite
 import Strata.Languages.Laurel.ConstrainedTypeElim
 import Strata.Languages.Laurel.ContractPass
 import Strata.Languages.Laurel.LoopInvariantWellFormedness
@@ -132,7 +132,6 @@ def laurelPipeline : Array LoweringPass := #[
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
   constrainedTypeElimPass,
-  mergeAndLiftReturnsPass,
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
@@ -339,6 +338,7 @@ private def runLaurelPasses
 
 /-- The ordered sequence of passes on the unordered Core representation. -/
 private def unorderedCorePipeline : Array (LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes) := #[
+  functionalRewritePass,
   liftImperativeExpressionsPass,
   inlineLocalVariablesPass
 ]

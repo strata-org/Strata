@@ -2568,17 +2568,25 @@ def Synth.assign (exprMd : StmtExprMd)
   -- is the synth result of resolving its receiver (`Synth.resolveStmtExpr`, the
   -- authoritative synthesizer), so the field type is concretized against it directly
   -- rather than re-derived by a separate, weaker pass.
-  let targetsWithTy ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
+  --
+  -- A `Declare` target yields its type but is *not* bound yet — the name enters
+  -- scope only after the value is resolved. Binding first would put the declared
+  -- name in scope for its own initializer, which makes resolution non-idempotent: a
+  -- second resolve of an already-resolved `var x : T := <expr mentioning x>` rebinds
+  -- that `x` to the declaration itself instead of the outer binding it named. Passes
+  -- that re-resolve (`needsResolves`) then silently change the program's meaning.
+  let pending ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
     have := hv
     let ⟨vv, vs⟩ := v
     match vv with
     | .Local ref =>
       let ref' ← resolveRef ref source
-      pure ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref)
+      pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
     | .Field target fieldName =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
       let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
-      pure ((⟨.Field target' fieldName', vs⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
+      pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
+        ← concretizeFieldType holderTy fieldName'))
     | .Declare param =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
@@ -2591,24 +2599,32 @@ def Synth.assign (exprMd : StmtExprMd)
           match compTy with
           | some t => declInferValueType param.name vs t
           | none => pure { val := .Unknown, source := vs }
-      let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure ((⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd), ty')
-  let targets' := targetsWithTy.map (·.1)
-  let targetTys := targetsWithTy.map (·.2)
+      pure (Sum.inr ((param, ty', vs) : Parameter? × HighTypeMd × FileRange))
+  let targetTys := pending.map fun p =>
+    match p with
+    | .inl (_, ty) => ty
+    | .inr (_, ty', _) => ty'
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  match inferInfo with
-  | some (value', valueTy) =>
-    -- RHS already synthesized for inference; enforce the boundary tuple-wise
-    -- (unless `componentTypes` already reported an arity mismatch, which the
-    -- tuple check would only restate against the `Unknown` fallback bindings).
-    unless arityError do
-      checkSubtype value'.source expectedTy valueTy
-    pure (.Assign targets' value', expectedTy)
-  | none =>
-    let value' ← Check.resolveStmtExpr value expectedTy
-    pure (.Assign targets' value', expectedTy)
+  -- The value is resolved while the declared names are still out of scope.
+  let value' ← match inferInfo with
+    | some (value', valueTy) =>
+      -- RHS already synthesized for inference; enforce the boundary tuple-wise
+      -- (unless `componentTypes` already reported an arity mismatch, which the
+      -- tuple check would only restate against the `Unknown` fallback bindings).
+      unless arityError do
+        checkSubtype value'.source expectedTy valueTy
+      pure value'
+    | none => Check.resolveStmtExpr value expectedTy
+  -- Only now do the declarations enter scope.
+  let targets' ← pending.mapM fun p => do
+    match p with
+    | .inl (t, _) => pure t
+    | .inr (param, ty', vs) =>
+      let name' ← defineNameCheckDup param.name (.var param.name ty')
+      pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
+  pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -2635,6 +2651,9 @@ def Check.assign (exprMd : StmtExprMd)
   -- Reuse `Synth.assign` for the target/value/expectedTy work (identical), then add the
   -- [⇐] Sub boundary check. The call is on the SAME `exprMd`, so termination is by the
   -- lexicographic tag (2 > 1 = Synth.assign's), not a subterm decrease.
+  --
+  -- Delegating also means the deferred-binding rule in `Synth.assign` (declared names
+  -- enter scope only after the value is resolved) applies here with no duplication.
   let (synthExpr, expectedTy) ← Synth.assign exprMd targets value source h
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
@@ -2661,10 +2680,19 @@ def Check.assign (exprMd : StmtExprMd)
     Scoping: the initializer is synthesized *before* `defineNameCheckDup`
     introduces the binding, so `e` cannot see the `x` being declared — a
     self-referential `var x := x + 1` reports "'x' is not defined" (or reads
-    an outer `x` if one is in scope). This is asymmetric with the *annotated*
-    path, which resolves targets first: `var x : int := x + 1` accepts the
-    self-reference, reading the fresh (uninitialized) binding. Pinned by
-    `selfRefNoOuter`/`selfRefOuterShadow` in `ResolutionTypeCheckTests`. -/
+    an outer `x` if one is in scope).
+
+    `Synth.assign`/`Check.assign` follow the *same* scoping for annotated declarations
+    (`var x : int := x + 1`): they resolve the value while the declared names are still
+    out of scope, and bind them afterwards. That symmetry is what keeps resolution
+    idempotent — this function rewrites `var x := e` into the annotated form, so
+    re-resolving an already-resolved declaration still binds its initializer in the
+    enclosing scope rather than to the declaration itself. See the comment on
+    `Synth.assign`.
+
+    Pinned by `selfRefNoOuter`/`selfRefOuterShadow` for the unannotated form and
+    `annotatedSelfRefOuterShadow` for the annotated form, in
+    `ResolutionTypeCheckTests`. -/
 def Synth.declInfer (exprMd : StmtExprMd)
     (name : Identifier) (vs : FileRange) (value : StmtExprMd)
     (source : FileRange)

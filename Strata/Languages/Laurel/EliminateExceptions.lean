@@ -820,6 +820,24 @@ private def bodyHasExn (model : SemanticModel) (proc : Procedure) : Bool :=
   | some b => stmtUsesExn model b
   | none => false
 
+/-- Whether the body can raise an exception *out of* the procedure: it contains a
+    `throw` that no enclosing `try` in the same body catches, or a call that may
+    propagate. Distinct from `bodyHasExn`, which is also true for a `try`/`catch`
+    that handles everything locally.
+
+    Used only to reject a transparent body that throws (see `lowerProc`), so it is
+    deliberately coarse: any `Throw` counts, without checking whether a surrounding
+    `try` would catch it. A transparent body cannot express `try` either, so the
+    distinction cannot arise for a body this pass would otherwise accept. -/
+private def bodyThrows (proc : Procedure) : Bool :=
+  match proc.body.implementation with
+  | some b =>
+    foldStmtExpr (fun n acc =>
+      match n.val with
+      | .Throw _ => true
+      | _ => acc) false b
+  | none => false
+
 /-! ### Procedure lowering -/
 
 -- `bodyPostconditions` / `bodyModifies` (the body-contract accessors used by `lowerProc`
@@ -852,6 +870,35 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
     -- downstream. Returning it unlowered leaves the program as authored.
     modify (fun s => { s with rejected := proc.name.text :: s.rejected })
     return proc
+  -- A transparent body must become a single pure expression, and an exception is
+  -- control flow no expression can express. Reject it before lowering rather than
+  -- after: lowering rewrites the body to return `Result<value, exn>`, which no
+  -- longer matches the transparent body's declared type, so the user would get
+  -- `expected 'int', got 'Result'` reported against this pass instead of being told
+  -- the real problem. Returning the procedure unlowered leaves it as authored.
+  --
+  -- Checked after the multi-value-output case above so that a transparent body which
+  -- also has several value outputs still gets that more specific diagnostic.
+  --
+  -- Gated on the body containing an actual `throw`. A `throws` clause on a body that
+  -- never throws is harmless here (the clause only shapes the contract), and a
+  -- `try`/`catch` that handles everything locally does not raise out of the
+  -- procedure. Using `bodyHasExn` instead would also reject the scaffolding bodies
+  -- that the carrier-freshness and postcondition-lowering unit tests build.
+  -- Not gated on `procThrows`: a transparent body that throws is unsupported whether or
+  -- not it declares `throws`, and without this check the real problem is obscured by
+  -- downstream diagnostics from the `Result` lowering.
+  if bodyThrows proc then
+    match proc.body with
+    | .Transparent _ =>
+      let clause :=
+        if procThrows then "cannot declare `throws`" else "cannot `throw`"
+      emitDiag (diagnosticFromSource proc.name.source
+        s!"transparent procedure '{proc.name.text}' {clause}: a transparent body is translated to a function, and throwing is not expressible as an expression. Mark it `opaque`."
+        MessageKind.userError)
+      modify (fun s => { s with rejected := proc.name.text :: s.rejected })
+      return proc
+    | _ => pure ()
   -- Lower the implementation statements (if any).
   let loweredBody? ← match proc.body.implementation with
     | some b => do pure (some (fillSrcs b.source (← lowerStmt ctx b)))

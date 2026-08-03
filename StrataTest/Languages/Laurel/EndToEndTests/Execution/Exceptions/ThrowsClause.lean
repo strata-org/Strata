@@ -198,18 +198,21 @@ bodies gain a wider statement language, this test is where the change shows up. 
 then the throwing-call combinations are covered with an opaque callee, in
 `ThrowsOnClause.lean`. -/
 
--- A transparent (no `opaque`) procedure that throws: rejected, at the `throw`.
+-- A transparent (no `opaque`) procedure that throws: rejected at the declaration,
+-- because a transparent body becomes a function and throwing is not expressible as
+-- an expression. Reported by `EliminateExceptions` before it rewrites the body to
+-- return `Result`, so the user sees this rather than a downstream type mismatch.
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Err {}
 procedure thrower(x: int): int
+//        ^^^^^^^ error: transparent procedure 'thrower' cannot declare `throws`: a transparent body is translated to a function, and throwing is not expressible as an expression. Mark it `opaque`.
   throws (e: Err)
 {
   if x < 0 then {
     var e: Err := new Err;
     throw e
-//  ^^^^^^^ error: ending a transparent body with a Throw statement is not supported
   };
   return x
 };
@@ -222,6 +225,24 @@ procedure catchesTransparent(x: int) returns (out: int)
   } catch e when e is Err {
     out := -1
   }
+};
+#end
+
+-- The same rejection without a `throws` clause: an inline `try`/`catch` whose body
+-- throws is still not expressible as an expression. Reported once, at the procedure,
+-- rather than letting the lowering proceed — which would synthesize a `Result`
+-- carrier and surface as a misleading "2 output parameters" error plus leaked
+-- `$thrown`/`$returning` assignments that do not point at the `throw`.
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Err {}
+procedure inlineTryCatchNoThrows(x: int): int {
+//        ^^^^^^^^^^^^^^^^^^^^^^ error: transparent procedure 'inlineTryCatchNoThrows' cannot `throw`: a transparent body is translated to a function, and throwing is not expressible as an expression. Mark it `opaque`.
+  try { var e: Err := new Err; throw e }
+  catch e when e is Err { return 0 - 1 };
+  return x
 };
 #end
 

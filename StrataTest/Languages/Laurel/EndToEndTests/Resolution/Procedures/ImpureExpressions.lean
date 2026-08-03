@@ -44,7 +44,18 @@ procedure impureContractIsLegal1(x: int)
 {
   assert hasMutatingAssignment() == 1
 };
+#end
 
+/-! ## Destructive assignment in a contract
+
+A destructive assignment in a *contract* is reported by the Core schema
+translation, which runs after `FunctionalRewrite`. Since a transparent-body
+error there stops the pipeline before the schema pass, this case lives in its own
+`#eval` block so it is not masked by the transparent-body diagnostics above. -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
 procedure impureContractIsNotLegal2(x: int)
   requires (x := 2) == 2
 //          ^^^^^^ error: destructive assignments are not supported in transparent bodies or contracts
@@ -66,7 +77,7 @@ program Laurel;
 procedure functionWithWhile(x: int): int
 {
   while(false) {};
-//^^^^^^^^^^^^^^^ error: loops are not supported in transparent bodies or contracts
+//^^^^^^^^^^^^^^^ error: loops are not YET supported in transparent bodies or contracts
   return 3
 };
 #end
