@@ -170,6 +170,78 @@ def entryProcedures (prog : Program) : List Procedure :=
       | _ => none
     | none => none
 
+/--
+Everything an entry-point interpretation run observed that a caller may want to
+report. Split by how much the interpreter knows about each failure, because the
+callers differ in how they surface them: the CLI prints all three and reserves
+the exit code for `errors`, while the test harness turns `diagnostics` into
+expected output and throws on the other two.
+-/
+structure InterpretOutcome where
+  /-- Assertion failures that mapped back to a source range, deduplicated,
+      in discovery order. -/
+  diagnostics : Array Strata.DiagnosticModel
+  /-- Assertion failures whose label carried no source range, as
+      `(procedure name, assert label)`. -/
+  unmapped : Array (String × String)
+  /-- Non-assertion evaluation errors (out of fuel, `Misc`, …), paired with the
+      entry procedure that raised them. -/
+  errors : Array (String × Imperative.EvalError Core.Expression)
+
+/--
+Concretely interpret `entries` — the entry points of the type-checked program
+`prog` — and collect every failure they produce.
+
+This is the single implementation of the concrete-interpretation path, shared by
+the `laurelInterpret` CLI command and the Laurel execute tests, so the two
+cannot drift on the evaluator configuration below.
+
+Two `Env` flags define what "interpret" means here:
+
+* `collectAllAssertFailures` — an assertion failure records itself and execution
+  continues, so one run reports every independent violation instead of halting
+  on the first. Assertions don't mutate the store, so the rest of the procedure
+  still executes faithfully.
+* `ignoreAssumes` — `assume`s are no-ops, matching Laurel's language-level
+  semantics: an assume constrains the verifier's symbolic state but has no
+  runtime effect. Callers reach here having translated with
+  `analysisMode := .Execute`, which leaves contract-inserted assumes (e.g. a
+  callee's `requires`, assumed in its own body) in place; enforcing them would
+  halt this assertion-oracle run on a spec the interpreter cannot decide
+  concretely, rather than on the assertion under test.
+
+Bodied functions are inlined first (see `inlineBodiedFunctions`) so concrete
+execution can reduce them. Failures are mapped back to source through the
+metadata each failure carries, reproducing the verifier's wording for the same
+property.
+-/
+def interpretEntries (prog : Program) (entries : List Procedure) (fuel : Nat)
+    : Except DiagnosticModel InterpretOutcome := do
+  let prog := inlineBodiedFunctions prog
+  let E ← prog.run
+  let E := { E with collectAllAssertFailures := true, ignoreAssumes := true }
+  let mut diagnostics : Array Strata.DiagnosticModel := #[]
+  let mut seen : Std.HashSet Strata.DiagnosticModel := {}
+  let mut unmapped : Array (String × String) := #[]
+  let mut errors : Array (String × Imperative.EvalError Core.Expression) := #[]
+  for p in entries do
+    let procName := p.header.name.name
+    -- Each entry runs from the same freshly-initialized environment, so entries
+    -- neither observe nor clobber each other's state.
+    let resultEnv := runEntry E p fuel
+    for (label, _e, md) in resultEnv.assertFailures.reverse do
+      match Imperative.getFileRange md with
+      | some fr =>
+        let summary := md.getPropertySummary.getD "assertion"
+        let dm := Strata.DiagnosticModel.withRange fr s!"{summary} does not hold"
+        unless seen.contains dm do
+          diagnostics := diagnostics.push dm
+          seen := seen.insert dm
+      | none => unmapped := unmapped.push (procName, label)
+    if let some e := resultEnv.error then
+      errors := errors.push (procName, e)
+  return { diagnostics, unmapped, errors }
+
 end -- public section
 
 end Program
