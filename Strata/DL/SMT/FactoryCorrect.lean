@@ -1152,3 +1152,230 @@ theorem Factory.someOf_correct (ctx : Context) (t : Term) :
 theorem Factory.option_get_some_correct (ctx : Context) (t : Term) :
     denoteTerm ctx (Factory.option.get (.some t)) = denoteTerm ctx t :=
   rfl
+
+/-! ## Quantifier coalescing correctness -/
+
+/-- `isSome` of a cons `denoteFunSort` iff the head sort and the tail fun-sort are both `isSome`. -/
+private theorem denoteFunSort_cons_isSome_iff {sctx : SortContext} {a : TermType} {as : List TermType}
+    {out : TermType} :
+    (denoteFunSort sctx (a :: as) out).isSome
+      ↔ (denoteSort sctx a).isSome ∧ (denoteFunSort sctx as out).isSome := by
+  constructor
+  · exact denoteFunSortCons_isSome
+  · rintro ⟨ha, has⟩
+    simp only [denoteFunSort, Option.pure_def, Option.bind_eq_bind, Option.isSome_bind,
+      Option.isSome_some, Option.any_true]
+    rw [Option.any_eq_true_iff_get]
+    exact ⟨ha, has⟩
+
+/-- The empty-argument `denoteFunSort` is just the output-sort denotation. -/
+private theorem denoteFunSort_nil {sctx : SortContext} {out : TermType} :
+    denoteFunSort sctx [] out = denoteSort sctx out := rfl
+
+/-- `bool` is always denotable. -/
+private theorem denoteSort_bool_isSome {sctx : SortContext} :
+    (denoteSort sctx (.prim .bool)).isSome = true := rfl
+
+/-- A single-argument `denoteFunSort` is `isSome` iff its (sole) argument sort is — the output is
+    `bool`, always denotable. -/
+private theorem denoteFunSort_singleton_bool_isSome_iff {sctx : SortContext} {a : TermType} :
+    (denoteFunSort sctx [a] (.prim .bool)).isSome ↔ (denoteSort sctx a).isSome := by
+  rw [denoteFunSort_cons_isSome_iff, denoteFunSort_nil]
+  simp [denoteSort_bool_isSome]
+
+/-- A dependently-typed function applied at equal arguments gives equal (up to transport) results:
+    `f a₁ = h ▸ f a₂` when `h : a₁ = a₂`. Used to relate the merged- vs. nested-context body
+    denotations across the `.tctx.vs` reassociation quantifier coalescing introduces. -/
+private theorem congr_dep_fun {α : Sort _} {β : α → Sort _} (f : (a : α) → β a)
+    {a₁ a₂ : α} (h : a₁ = a₂) :
+    f a₁ = h ▸ f a₂ := by
+  cases h; rfl
+
+/-- Transport of `none` across an index equality is `none` (any type family). -/
+private theorem eqrec_option_none {α : Sort _} {F : α → Type _} {a₁ a₂ : α} (h : a₁ = a₂) :
+    (h ▸ (none : Option (F a₂))) = (none : Option (F a₁)) := by
+  cases h; rfl
+
+/-- Transport of `some r` across an index equality is `some` of the transported value. -/
+private theorem eqrec_option_some {α : Sort _} {F : α → Type _} {a₁ a₂ : α} (h : a₁ = a₂) (r : F a₂) :
+    (h ▸ (some r : Option (F a₂))) = some (h ▸ r) := by
+  cases h; rfl
+
+/-- Transport of a `TermDenoteResult` record across a context equality is the record with
+    transported fields. -/
+private theorem eqrec_result {c₁ c₂ : Context} (h : c₁ = c₂)
+    (t : TermType) (rh : (denoteSort c₂.sctx t).isSome = true)
+    (rres : (tdi : TermDenoteInput c₂) → (denoteSort c₂.sctx t).get rh { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ }) :
+    (h ▸ ({ ty := t, h := rh, res := rres } : TermDenoteResult c₂) : TermDenoteResult c₁)
+      = { ty := t, h := h ▸ rh, res := h ▸ rres } := by
+  cases h; rfl
+
+/-- Transport of a bool-typed `TermDenoteResult` record: the `.res` field lands in the simple
+    `TermDenoteInput → Prop` motive (since `(denoteSort _ (.prim .bool)).get _ _` is `Prop`). -/
+private theorem eqrec_result_bool {c₁ c₂ : Context} (h : c₁ = c₂)
+    (rh : (denoteSort c₂.sctx (.prim .bool)).isSome = true)
+    (rres : (tdi : TermDenoteInput c₂) → (denoteSort c₂.sctx (.prim .bool)).get rh { sΓ := tdi.sΓ, hsΓ := tdi.hsΓ }) :
+    (h ▸ ({ ty := .prim .bool, h := rh, res := rres } : TermDenoteResult c₂) : TermDenoteResult c₁)
+      = { ty := .prim .bool, h := h ▸ rh,
+          res := (h ▸ (rres : TermDenoteInput c₂ → Prop) : TermDenoteInput c₁ → Prop) } := by
+  cases h; rfl
+
+/-- The pure `buildQuant` cons-step reassociation: a merged binder over `v :: vs` equals the
+    nested `[v]`-then-`vs` binders, modulo the body-context transport `hctx`. This isolates the
+    dependently-typed reassociation (via `buildQuant`'s own cons/nil equations + HEq transport)
+    away from the monadic `denoteTerm` layer. -/
+private theorem buildQuant_cons_reassoc (bindVar : QuantVarBinder) (ctx : Context) (v : TermVar) (vs : List TermVar)
+    (h : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) (v :: vs)) (.prim .bool)).isSome = true)
+    (h₁ : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) [v]) (.prim .bool)).isSome = true)
+    (h₂ : (denoteFunSort ({ sctx := ctx.sctx, tctx := { vs := v :: ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context).sctx (List.map (fun x => x.ty) vs) (.prim .bool)).isSome = true)
+    (body : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
+    (hctx : ({ sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context)
+        = { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ([v].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } })
+    (tdi : TermDenoteInput ctx) :
+    buildQuant bindVar ctx (v :: vs) h body tdi
+      = buildQuant bindVar ctx [v] h₁
+          (buildQuant bindVar { sctx := ctx.sctx, tctx := { vs := [v].reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } vs h₂ (hctx ▸ body)) tdi := by
+  simp only [buildQuant]
+  congr 1
+  funext tdi'
+  congr 1
+  apply eq_of_heq
+  refine HEq.trans
+    (eqRec_heq (φ := fun x => TermDenoteInput { sctx := ctx.sctx, tctx := { vs := x, ufs := ctx.tctx.ufs } } → Prop) _ body)
+    (HEq.symm (eqRec_heq (φ := fun x => TermDenoteInput x → Prop) hctx body))
+
+/-- Funext form of `buildQuant_cons_reassoc` (as an equality of `buildQuant`s, not applied). -/
+private theorem buildQuant_cons_reassoc' (bindVar : QuantVarBinder) (ctx : Context) (v : TermVar) (vs : List TermVar)
+    (h : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) (v :: vs)) (.prim .bool)).isSome = true)
+    (h₁ : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) [v]) (.prim .bool)).isSome = true)
+    (h₂ : (denoteFunSort ({ sctx := ctx.sctx, tctx := { vs := v :: ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context).sctx (List.map (fun x => x.ty) vs) (.prim .bool)).isSome = true)
+    (body : TermDenoteInput { sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } → Prop)
+    (hctx : ({ sctx := ctx.sctx, tctx := { vs := (v :: vs).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context)
+        = { sctx := ctx.sctx, tctx := { vs := vs.reverse ++ ([v].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } }) :
+    buildQuant bindVar ctx (v :: vs) h body
+      = buildQuant bindVar ctx [v] h₁
+          (buildQuant bindVar { sctx := ctx.sctx, tctx := { vs := [v].reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } vs h₂ (hctx ▸ body)) := by
+  funext tdi
+  apply buildQuant_cons_reassoc
+
+/-- The bool-case `some`-branch equality: the merged `buildQuant bindVar (v :: args2)` over the
+    transported body `hctx ▸ rres` equals the nested `buildQuant bindVar [v]`-then-`args2`, discharging the
+    residual double-transport via `buildQuant_cons_reassoc'` + HEq peeling. -/
+private theorem buildQuant_some_branch_eq (bindVar : QuantVarBinder) (ctx : Context) (v : TermVar) (args2 : List TermVar)
+    (hm : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) (v :: args2)) (.prim .bool)).isSome = true)
+    (h₁ : (denoteFunSort ctx.sctx (List.map (fun x => x.ty) [v]) (.prim .bool)).isSome = true)
+    (h₂ : (denoteFunSort ({ sctx := ctx.sctx, tctx := { vs := v :: ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context).sctx (List.map (fun x => x.ty) args2) (.prim .bool)).isSome = true)
+    (hctx : ({ sctx := ctx.sctx, tctx := { vs := (v :: args2).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context)
+        = { sctx := ctx.sctx, tctx := { vs := args2.reverse ++ ([v].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } })
+    (rres : TermDenoteInput ({ sctx := ctx.sctx, tctx := { vs := args2.reverse ++ ([v].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } } : Context) → Prop) :
+    buildQuant bindVar ctx (v :: args2) hm (hctx ▸ rres)
+      = buildQuant bindVar ctx [v] h₁ (buildQuant bindVar { sctx := ctx.sctx, tctx := { vs := [v].reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } args2 h₂ rres) := by
+  rw [buildQuant_cons_reassoc' bindVar ctx v args2 hm h₁ h₂ _ hctx]
+  apply congrArg
+  apply congrArg
+  apply eq_of_heq
+  refine HEq.trans (eqRec_heq (φ := fun x => TermDenoteInput x → Prop) hctx _) ?_
+  exact eqRec_heq (φ := fun x => TermDenoteInput x → Prop) _ rres
+
+/-- One-step quantifier coalescing at the denotation level: a merged binder over
+    `⟨x,ty⟩ :: args2` denotes exactly like the nested `⟨x,ty⟩`-then-`args2` binders.
+
+    Stated generically over `qk`: `cases qk` reduces `denoteTerm` to its `buildForall` / `buildExists`
+    arm. -/
+private theorem denoteTerm_quant_coalesce (qk : QuantifierKind) (ctx : Context) (x : String) (ty : TermType)
+    (tr trM tr2 : Term) (args2 : List TermVar) (e2 : Term) :
+    denoteTerm ctx (.quant qk ([⟨x, ty⟩] ++ args2) trM e2)
+      = denoteTerm ctx (.quant qk [⟨x, ty⟩] tr (.quant qk args2 tr2 e2)) := by
+  cases qk <;>
+  · simp only [denoteTerm, List.map_cons, List.map_nil, List.singleton_append]
+    -- Align the three `dite` guards. The merged head guard `(ty :: map args2)` holds iff BOTH the
+    -- head-sort `(denoteSort ty)` and the tail guard `(map args2)` hold; the nested-outer guard
+    -- `[ty]` reduces to `(denoteSort ty)` since the output `bool` is always denotable.
+    by_cases hhd : (denoteSort ctx.sctx ty).isSome = true
+    · have hhd' : (denoteFunSort ctx.sctx [ty] (.prim .bool)).isSome = true :=
+        denoteFunSort_singleton_bool_isSome_iff.mpr hhd
+      by_cases htl : (denoteFunSort ctx.sctx (args2.map (·.ty)) (.prim .bool)).isSome = true
+      · -- both hold ⇒ merged guard holds too; every `dite` takes its `then` branch
+        have hmerged : (denoteFunSort ctx.sctx (ty :: args2.map (·.ty)) (.prim .bool)).isSome = true :=
+          denoteFunSort_cons_isSome_iff.mpr ⟨hhd, htl⟩
+        rw [dif_pos hmerged, dif_pos hhd', dif_pos htl]
+        have hctx : ({ sctx := ctx.sctx, tctx := { vs := ({ id := x, ty := ty } :: args2).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } : Context)
+            = { sctx := ctx.sctx, tctx := { vs := args2.reverse ++ ([{ id := x, ty := ty }].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } } := by
+          simp [List.reverse_cons]
+        -- The merged-context and nested-inner-context body denotations are equal up to `hctx`.
+        -- Generalize both and relate via the context-congruence helper, then case-split the option.
+        generalize hmd : denoteTerm { sctx := ctx.sctx, tctx := { vs := ({ id := x, ty := ty } :: args2).reverse ++ ctx.tctx.vs, ufs := ctx.tctx.ufs } } e2 = md
+        generalize hid : denoteTerm { sctx := ctx.sctx, tctx := { vs := args2.reverse ++ ([{ id := x, ty := ty }].reverse ++ ctx.tctx.vs), ufs := ctx.tctx.ufs } } e2 = idn
+        have hrel : md = hctx ▸ idn := by
+          rw [← hmd, ← hid]
+          exact congr_dep_fun (fun c => denoteTerm c e2) hctx
+        subst hrel
+        cases idn with
+        | none =>
+          -- both sides fail on `none`
+          rw [eqrec_option_none hctx]
+          rfl
+        | some r =>
+          rw [eqrec_option_some hctx r]
+          obtain ⟨rty, rh, rres⟩ := r
+          -- Only the `bool`-typed result survives the `denoteTerm` quantifier pattern; all other
+          -- result types make both binds short-circuit to `none` (closed after `eqrec_result`).
+          cases rty with
+          | prim p =>
+            cases p with
+            | bool =>
+              -- Transport the bool record (simple `→ Prop` motive), fire the match, then reassociate.
+              -- The `_` binder is inferred: `bindForallVar` in the `.all` arm, `bindExistsVar` in `.exist`.
+              rw [eqrec_result_bool hctx rh rres]
+              show some _ = some _
+              apply congrArg
+              congr 1
+              -- The goal's `buildForall`/`buildExists` is definitionally `buildQuant bindForallVar` /
+              -- `buildQuant bindExistsVar`; supply the concrete binder for the current arm (a bare `_`
+              -- can't unify through the wrapper). `first` picks the right one per `cases qk` branch.
+              first
+              | exact buildQuant_some_branch_eq bindForallVar ctx ⟨x, ty⟩ args2 hmerged hhd' htl hctx rres
+              | exact buildQuant_some_branch_eq bindExistsVar ctx ⟨x, ty⟩ args2 hmerged hhd' htl hctx rres
+            | _ => rw [eqrec_result hctx]; rfl
+          | _ => rw [eqrec_result hctx]; rfl
+      · -- tail guard fails ⇒ merged guard fails, and the nested inner produces `none`; both sides `none`
+        rw [dif_neg (fun h => htl (denoteFunSort_cons_isSome_iff.mp h).2),
+            dif_pos hhd', dif_neg htl]
+        rfl
+    · -- head guard fails ⇒ both the merged guard and the nested-outer `[ty]` guard fail; both `none`
+      rw [dif_neg (fun h => hhd (denoteFunSort_cons_isSome_iff.mp h).1),
+          dif_neg (fun h => hhd (denoteFunSort_singleton_bool_isSome_iff.mp h))]
+
+/-- **Coalescing preserves denotation.** `Factory.quant qk x ty tr e` wraps `e` in a
+    single-variable quantifier, but when `e` is itself a same-kind quantifier and the outer
+    trigger is simple, it COALESCES the two into one multi-variable binder
+    (`.quant qk (⟨x,ty⟩ :: args2) …`). This theorem states that the coalesced term denotes
+    exactly like the naive, un-coalesced single-binder wrapping `.quant qk [⟨x,ty⟩] tr e`. -/
+theorem Factory.quant_correct (ctx : Context) (qk : QuantifierKind)
+    (x : String) (ty : TermType) (tr : Term) (e : Term) :
+    denoteTerm ctx (Factory.quant qk x ty tr e)
+      = denoteTerm ctx (.quant qk [⟨x, ty⟩] tr e) := by
+  -- Only `e = .quant qk2 args2 tr2 e2` can differ from the naive wrapper; every other shape of
+  -- `e` returns `.quant qk [⟨x,ty⟩] tr e` verbatim, so those cases are definitional.
+  cases e with
+  | quant qk2 args2 tr2 e2 =>
+    -- The coalescing guard: same kind + simple outer trigger.
+    simp only [Factory.quant]
+    by_cases hg : (decide (qk = qk2) && Factory.isSimpleTrigger tr) = true
+    · rw [if_pos hg]
+      -- coalescing fires: merged multi-var binder vs nested single-var binders.
+      -- From the guard, the two quantifier kinds coincide.
+      obtain ⟨hqk, _⟩ := Bool.and_eq_true .. ▸ hg
+      have hqk : qk = qk2 := of_decide_eq_true hqk
+      subst hqk
+      -- Triggers are ignored by `denoteTerm`, so the goal is a pure `buildQuant` reassociation.
+      -- After unfolding `denoteTerm`, both sides denote the SAME body `e2`, but the merged binder
+      -- denotes it at body context `(⟨x,ty⟩ :: args2).reverse ++ vs` while the nested binder denotes
+      -- it at `args2.reverse ++ (⟨x,ty⟩ :: vs)`. These `.tctx.vs` lists are PROPOSITIONALLY equal
+      -- (`List.reverse_cons` + `append_assoc`) but not definitionally, and `denoteTerm`'s result
+      -- TYPE `Option (TermDenoteResult ctx)` depends on `ctx`.
+      -- Given that, the outer `buildForall`/`buildExists` collapses by its
+      -- own `buildQuant` cons-step (nil tail on the naive side), modulo the `▸` transport.
+      exact denoteTerm_quant_coalesce qk ctx x ty tr _ tr2 args2 e2
+    · rw [if_neg hg]
+  | _ => rfl
