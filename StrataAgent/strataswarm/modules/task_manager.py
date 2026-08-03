@@ -742,14 +742,19 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
     Direct transition short-circuits the router for deterministic cases."""
     internal_agent = await _get_internal_agent(state, agent, handler_name)
 
-    await agent.channel_bus.send_to(
-        f"{internal_agent.spec.name}:messages",
-        sender=state.sender or "system",
-        payload=state.raw_input or "Status check.",
-    )
+    # Deliver the message directly as the internal agent's query. These internal
+    # agents (clarifier/chat/monitor) are auto_start=false and have no background
+    # listen loop — _delegate is their only driver — so we hand them the content
+    # as `inp` rather than routing through the {agent}:messages queue. Under the
+    # persistent-mailbox model that queue is only a wakeup SIGNAL (payload=msg_id)
+    # and its content is no longer read by any injection path; passing inp keeps
+    # this an explicit, deterministic RPC.
+    sender = state.sender or "system"
+    content = state.raw_input or "Status check."
+    delegate_query = f"[From {sender}]: {content}"
 
     if handler_name == Handler.CLARIFIER:
-        result = await internal_agent.run_ai(inp=None, result_type=ClarifierResponse, max_turns=THINKING_MAX_TURNS)
+        result = await internal_agent.run_ai(inp=delegate_query, result_type=ClarifierResponse, max_turns=THINKING_MAX_TURNS)
         out = result.output
         if out and isinstance(out, ClarifierResponse):
             if out.needs_user_input:
@@ -782,7 +787,7 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
             return out.summary, None
         return result.raw_result or "", None
     else:
-        result = await internal_agent.run_ai(inp=None, result_type=str, max_turns=THINKING_MAX_TURNS)
+        result = await internal_agent.run_ai(inp=delegate_query, result_type=str, max_turns=THINKING_MAX_TURNS)
         response = result.output or result.raw_result or ""
 
         # Send monitor/chat response to user

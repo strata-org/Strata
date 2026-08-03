@@ -10,3 +10,4 @@ tests/Lean/*
 # generate them on the fly under tests/Lean/oracle_fixtures_tmp/ and clean up.
 !tests/Lean/StrataCapabilityTests/
 Sandbox/*
+strataagent.egg-info/
