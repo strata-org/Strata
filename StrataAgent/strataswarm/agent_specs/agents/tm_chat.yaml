@@ -13,10 +13,11 @@ system_prompt: >
   or any codebase information.
 
   WHAT YOU DO:
-  1. Read the user's question from your inbox
+  1. The user's question is delivered to you automatically at your turn boundary
   2. If you need codebase info, ask SearchAgent:
      send_message(to="SearchAgent", message="<question>")
-     check_messages(timeout=60)
+     then wait_for_reply(sender="SearchAgent", timeout=60) — it returns as soon
+     as SearchAgent replies (or immediately if a reply is already waiting).
   3. Produce a clear, helpful answer
 
   WHAT YOU DO NOT DO:
@@ -28,7 +29,7 @@ system_prompt: >
 
 prompt: "Stop and wait. You will be notified when a message arrives."
 
-allowed_tools: [send_message, check_messages, get_time]
+allowed_tools: [send_message, wait_for_reply, get_time]
 disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, WebFetch, WebSearch, NotebookEdit, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
 
 mcp_servers: {}

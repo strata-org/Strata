@@ -857,15 +857,18 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                     f"the signature seems unprovable as written, a lemma you need is missing, "
                     f"or you're stuck in a way tactics alone won't fix — report it with "
                     f"send_message(to=\"{guide_name}\", message=\"...\") and then "
-                    f"check_messages(timeout=60) for the reply. Do NOT message for routine "
-                    f"compile errors — fix those yourself."
+                    f"wait_for_reply(sender=\"{guide_name}\", timeout=60) for the reply. Do "
+                    f"NOT message for routine compile errors — fix those yourself."
                 ),
                 verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
             )
-            await agent._emit("message", f"[PO5] Writer finished chunk {entry.attempts} ({total_turns} total turns)")
+            # Graceful stop: the guide finishes any in-flight reply (never truncated
+            # mid-turn — the `01:33:34` desync) and stops at its next loop boundary.
+            # cancel() sets the flag; the guide's listen loop polls the channel with
+            # a short timeout (_agent._listen_messages), so it re-checks cancellation
+            # within ~1s without needing an explicit wakeup nudge.
             cancellation_token.cancel()
-            await agent._emit("message", "[PO5] Cancelled guide listening to messages")
-            await asyncio.sleep(2)  # give guide a moment to stop listening
+            await agent._emit("message", "[PO5] Signalled guide to stop after its current turn")
             return result
 
         outcome, _ = await asyncio.gather(
@@ -873,15 +876,8 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             _run_guide_while_listening_to_messages(),
         )
 
-        # outcome = await verified_loop(
-        #     agent_ctx=writer,
-        #     initial_input=(
-        #         f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-        #         f"You have {chunk} turns. File MUST compile (sorry allowed)."
-        #     ),
-        #     verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
-        # )
         total_turns += chunk
+        await agent._emit("message", f"[PO5] Writer finished chunk {entry.attempts} ({total_turns} total turns)")
 
         # Build the AUTHORITATIVE dependency+sorry overview ONCE. This single
         # source of truth drives (a) the proved/contingent gate, (b) the guide's

@@ -66,16 +66,20 @@ system_prompt: >
   - Give concrete, decisive advice: what tactic/approach, what to avoid, what to import
 
   ANSWERING THE WRITER MID-PROOF (live messages):
-  While the writer works a chunk, you are listening for messages and it may
-  message you directly (via send_message) to report a problem or ask for a
-  decision — e.g. the goal looks false/mis-stated, the signature seems
-  unprovable, a needed lemma is missing, or the advised approach hit a dead end.
-  When you receive such a message, REPLY to the writer promptly and concretely
-  with send_message(to="<the writer's name>", message="..."): give the next
-  tactic/approach, the lemma to import, or a clear yes/no. Use your tools
-  (show_file_state, lean_goal, ledger_search) first if you need to see the state.
-  This is real-time collaboration — a fast, specific reply keeps the writer
-  unblocked instead of burning turns.
+  While the writer works a chunk, you run at the same time and its messages are
+  delivered to you automatically at each turn boundary — one message inline, or
+  a header nudge if several are waiting (then use see_last_unread_mail() /
+  list_all_unread_mail() to read them). The writer messages you to report a
+  problem or ask for a decision — e.g. the goal looks false/mis-stated, the
+  signature seems unprovable, a needed lemma is missing, or the advised approach
+  hit a dead end. When you receive such a message, REPLY to the writer promptly
+  and concretely with send_message(to="<the writer's name>", message="..."):
+  give the next tactic/approach, the lemma to import, or a clear yes/no. Use your
+  tools (show_file_state, lean_goal, ledger_search) first if you need to see the
+  state. This is real-time collaboration — a fast, specific reply keeps the
+  writer unblocked instead of burning turns. If you need an answer back from the
+  writer or SearchAgent before continuing, use wait_for_reply(sender="...",
+  timeout=...) — it returns as soon as they answer.
 
   WHEN REVIEWING WRITER OUTPUT:
   - Focus on STRATEGY and overall progress, NOT on compilation-error nitpicking.
@@ -175,7 +179,12 @@ allowed_tools:
   - mcp__snapshots__list_snapshots
   - mcp__snapshots__read_snapshot
   - send_message
-  - check_messages
+  - wait_for_reply
+  - list_recent_messages
+  - list_all_unread_mail
+  - see_last_unread_mail
+  - get_messages_by_sender
+  - get_thread
   - get_time
 disallowed_tools: [Write, Edit, Bash, Grep, Glob, Agent, Skill, Explore, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_local_search, mcp__lean_lsp__lean_declaration_file, mcp__lean_lsp__lean_run_code, mcp__lean_lsp__lean_multi_attempt, mcp__lean_lsp__lean_verify, mcp__lean_lsp__lean_diagnostic_messages, mcp__lean_lsp__lean_file_outline]
 mcp_servers:

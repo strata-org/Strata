@@ -12,6 +12,16 @@ dependencies = [
     "uvicorn[standard]>=0.30",
 ]
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Only these are Python packages. Without this, setuptools' flat-layout
+# autodiscovery trips over the sibling non-package dirs (temp, Sandbox,
+# LeanTools) and refuses to build.
+include = ["strataswarm*", "swarm_nudges*"]
+
 [tool.uv]
 # itp-interface installed with --no-deps (numpy build fails on GCC 7.3)
 # Install manually: uv pip install itp-interface==1.9.0 --no-deps

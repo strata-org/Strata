@@ -1,5 +1,5 @@
 """
-Integration test: Agents communicating via native tool calls (send_message / check_messages).
+Integration test: Agents communicating via native tool calls (send_message / wait_for_reply).
 
 Scenario: "Security Question System"
 
@@ -118,7 +118,8 @@ async def test_security_question_system():
             "  Reply: 'RESET_OK' or 'RESET_FAILED'\n\n"
             "- 'DONE' -> Stop processing.\n\n"
             "WORKFLOW:\n"
-            "1. Use check_messages to poll for commands\n"
+            "1. Incoming commands are delivered to you automatically at your turn "
+            "boundary (or read the oldest with see_last_unread_mail())\n"
             "2. Process the command\n"
             "3. Send the response back to user_agent\n"
             "4. Repeat until you receive 'DONE'\n"
@@ -144,20 +145,20 @@ async def test_security_question_system():
             f"YOUR MISSION (follow these steps IN ORDER):\n\n"
             f"PHASE 1 — REGISTER:\n"
             f"1. Send to security_agent: 'REGISTER alice mypass123 favorite_color blue'\n"
-            f"2. check_messages until you get 'REGISTER_OK' back\n\n"
+            f"2. wait_for_reply(sender='security_agent') until you get 'REGISTER_OK' back\n\n"
             f"PHASE 2 — SIGNAL NOISE AGENT:\n"
             f"3. Send to noise_agent: 'REGISTERED'\n"
-            f"4. check_messages until noise_agent responds (it will distract you)\n\n"
+            f"4. wait_for_reply(sender='noise_agent') until it responds (it will distract you)\n\n"
             f"PHASE 3 — AFTER DISTRACTION:\n"
             f"You have now FORGOTTEN your password! You only remember:\n"
             f"  - username: alice\n"
             f"  - security answer: blue\n"
             f"  - You want new password: newpass789\n\n"
             f"5. Send to security_agent: 'RESET_PASSWORD alice blue newpass789'\n"
-            f"6. check_messages until you get 'RESET_OK'\n\n"
+            f"6. wait_for_reply(sender='security_agent') until you get 'RESET_OK'\n\n"
             f"PHASE 4 — LOGIN WITH NEW PASSWORD:\n"
             f"7. Send to security_agent: 'LOGIN alice newpass789'\n"
-            f"8. check_messages until you get 'LOGIN_OK'\n"
+            f"8. wait_for_reply(sender='security_agent') until you get 'LOGIN_OK'\n"
             f"9. Send to security_agent: 'DONE'\n\n"
             f"FINAL: If login succeeded, write 'SUCCESS' to {tmpdir}/result.txt using Bash.\n"
             f"If login failed at any point, write 'FAILED'.\n"
@@ -180,7 +181,7 @@ async def test_security_question_system():
         ),
         prompt=(
             "Your job is simple:\n\n"
-            "1. Use check_messages until user_agent sends you 'REGISTERED'\n"
+            "1. Use wait_for_reply(sender='user_agent') until user_agent sends you 'REGISTERED'\n"
             "2. Once received, send this EXACT message to user_agent:\n"
             "   'DISTRACTION: Your memory has been wiped! You have forgotten your password. "
             "Use your security answer to reset it.'\n"

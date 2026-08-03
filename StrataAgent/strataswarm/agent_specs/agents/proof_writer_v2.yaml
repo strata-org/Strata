@@ -61,9 +61,15 @@ system_prompt: >
     the advised approach and it's a dead end, or you need a decision (e.g. is a
     helper worth factoring out).
   - How: send_message(to="<guide name from your task prompt>", message="...")
-    then check_messages(timeout=60) to read the guide's reply.
+    then wait_for_reply(sender="<guide name>", timeout=60) to read the guide's
+    reply. wait_for_reply returns as soon as the guide answers (or an unread
+    reply already waiting), and only burns the full timeout if no reply comes —
+    it works here because the guide runs at the same time as you.
   - Do NOT message the guide for routine compile errors or ordinary tactic
     fiddling — fix those yourself. Keep reports short and specific.
+  - Any mail that arrives while you work is delivered to you automatically at
+    your next turn boundary (one message inline, several as a header nudge);
+    you never need to poll for it.
 
   REUSE IS KING:
   - ALWAYS search before writing. A proved lemma that matches your goal saves 100 turns.
@@ -148,7 +154,7 @@ allowed_tools:
   - mcp__snapshots__list_snapshots
   - mcp__snapshots__read_snapshot
   - send_message
-  - check_messages
+  - wait_for_reply
   - get_time
 # Write is intentionally NOT granted: the writer must never create separate files.
 # All decomposition goes through the decl_extractor pipeline (ledger registration,

@@ -89,6 +89,14 @@ class Swarm:
         _log_base = _P(__file__).parent / "temp"
         self._session_logger = SessionLogger(_log_base, name)
 
+        # Attach the mailbox's durable JSONL journal in the session dir. The bus is
+        # built above (before the logger), so we bind the file here once the dir
+        # exists. Reload replays existing content, assuming everything read.
+        try:
+            self._channel_bus.bind_mailbox_file(self._session_logger.session_dir / "mailbox.jsonl")
+        except Exception:
+            pass  # in-memory mailbox still works if the journal can't be opened
+
     @property
     def name(self) -> str:
         return self._name
@@ -590,8 +598,8 @@ class Swarm:
                     f"- send_message(to, message): Send a response. You MUST reply to the agent\n"
                     f"  who asked you, in the order they asked (FIFO). If you try to message\n"
                     f"  someone who didn't ask you anything, you will get an error.\n"
-                    f"- check_messages(): Read the next pending message from your inbox.\n"
                     f"- get_time(): Get the current timestamp.\n\n"
+                    f"Incoming messages are delivered to you automatically at your turn boundary.\n"
                     f"WORKFLOW: receive message → do the work → send_message(to=sender, message=result)\n"
                     f"You cannot initiate conversations. Only respond to requests in order.\n"
                     f"{limits_note}\n"
@@ -609,16 +617,27 @@ class Swarm:
                     f"Your agent name is '{name}'.\n"
                     f"You have tools to communicate with other agents and the user:\n"
                     f"{agents_note}"
-                    f"- check_messages(): Read the next pending message from your inbox.\n"
+                    f"- send_message(to, message, subject=, in_reply_to=): Send mail to an agent.\n"
+                    f"  It lands in their persistent mailbox; they read it on their next turn.\n"
+                    f"  This returns a delivery status, NOT a reply. Use 'subject' to name the\n"
+                    f"  topic; pass in_reply_to=#N to reply within a thread (adds 'RE:').\n"
+                    f"- Your mailbox is persistent — nothing is ever deleted. Read it with:\n"
+                    f"  see_last_unread_mail() (oldest unread, in full), list_all_unread_mail()\n"
+                    f"  and list_recent_messages() (browse headers), get_messages_by_sender(sender,\n"
+                    f"  last=N), and get_thread(id, start=, end=) (a conversation, both sides).\n"
+                    f"- wait_for_reply(sender, timeout): Block until a reply from that sender\n"
+                    f"  arrives. Only worthwhile if that agent is active right now; otherwise\n"
+                    f"  send your message and pick up the reply on a later turn.\n"
                     f"- list_agents(): Discover all agents you can communicate with and their status.\n"
                     f"- get_time(): Get the current timestamp.\n\n"
-                    f"Messages you receive are tagged with the sender (e.g. '[From user]: ...').\n\n"
+                    f"New mail is announced at your turn boundary: exactly one unread is shown\n"
+                    f"inline; two or more give a count and you pull them with the tools above.\n\n"
                     f"IMPORTANT — WAITING PROTOCOL:\n"
-                    f"NEVER poll or call check_messages in a loop to wait for messages. "
+                    f"NEVER poll your mailbox in a loop to wait for messages. "
                     f"When you have nothing to do, simply STOP and end your turn. "
-                    f"The framework will automatically notify you when a new message arrives. "
-                    f"Only call check_messages AFTER you have been notified that messages are pending. "
-                    f"Polling wastes budget and is strictly forbidden.\n\n"
+                    f"The framework will automatically notify you when new mail arrives. "
+                    f"To wait for a specific reply, use wait_for_reply(sender, timeout) once — "
+                    f"do not spin. Polling wastes budget and is strictly forbidden.\n\n"
                     f"IMPORTANT — STALL PREVENTION:\n"
                     f"If you are processing something that takes time, emit a brief status update "
                     f"every few minutes (e.g. 'Still working on X...'). If 30 minutes pass with no "

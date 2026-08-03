@@ -373,22 +373,22 @@ def create_spawn_server(
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
 
+        # Message content lives in the persistent mailbox; the channel is only a
+        # wakeup signal. Report unread count and point to the pull tools.
+        unread = channel_bus.mailbox.unread_count(parent_name)
         if msg:
-            # Woke early because a message arrived — put it back for check_messages
-            await messages_ch.send(msg)
             return {"content": [{"type": "text", "text": (
                 f"[{ts}] Woke up after {elapsed:.0f}s (message arrived). "
-                f"You have {messages_ch.pending_count} pending message(s). "
-                f"Use check_messages to read them."
+                f"You have {unread} unread message(s). "
+                f"Use see_last_unread_mail() / list_all_unread_mail() to read them."
             )}]}
 
         # Timeout expired, check if anything arrived in the meantime
-        pending = messages_ch.pending_count
-        if pending > 0:
+        if unread > 0:
             return {"content": [{"type": "text", "text": (
                 f"[{ts}] Woke up after {seconds}s. "
-                f"You have {pending} pending message{'s' if pending > 1 else ''}. "
-                f"Use check_messages to read them."
+                f"You have {unread} unread message{'s' if unread > 1 else ''}. "
+                f"Use see_last_unread_mail() / list_all_unread_mail() to read them."
             )}]}
         return {"content": [{"type": "text", "text": (
             f"[{ts}] Woke up after {seconds}s. No new messages."

@@ -33,7 +33,7 @@ allowed_tools:
   - Read(StrataAgent/Sandbox/**)
   - mcp__lean_tools__collect_progress
   - send_message
-  - check_messages
+  - wait_for_reply
   - get_time
 disallowed_tools: [Edit, Write, Bash, Grep, Glob, Agent, Skill, Explore, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
 

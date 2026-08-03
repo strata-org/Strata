@@ -88,7 +88,7 @@ allowed_tools:
   - mcp__ledger__ledger_get
   - mcp__writer_imports__add_import_safely
   - send_message
-  - check_messages
+  - wait_for_reply
   - get_time
 # Write is intentionally NOT granted: no file creation. Only Edits to the assigned file.
 disallowed_tools: [Bash, Grep, Glob, Agent, Skill, Explore, Write, SendMessage, "mcp__builder-mcp__*", "mcp__plugin_*", mcp__lean_lsp__lean_build, mcp__lean_lsp__lean_verify, mcp__lean_tools__write_decomposed_lemma, mcp__lean_tools__write_helper_lemma, TaskCreate, TaskUpdate, TaskGet, TaskList]

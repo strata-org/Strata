@@ -18,7 +18,12 @@ from claude_agent_sdk.types import HookMatcher
 _PASSTHROUGH_TOOLS = frozenset([
     "StructuredOutput",
     "mcp__agent_messaging__send_message",
-    "mcp__agent_messaging__check_messages",
+    "mcp__agent_messaging__list_recent_messages",
+    "mcp__agent_messaging__list_all_unread_mail",
+    "mcp__agent_messaging__see_last_unread_mail",
+    "mcp__agent_messaging__get_messages_by_sender",
+    "mcp__agent_messaging__get_thread",
+    "mcp__agent_messaging__wait_for_reply",
     "mcp__agent_messaging__get_time",
     "mcp__agent_directory__list_agents",
     "mcp__agent_spawn__sleep",

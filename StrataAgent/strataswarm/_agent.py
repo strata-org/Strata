@@ -13,7 +13,6 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any, Generic, TypeVar
 
 from ._backend import AgentBackend, BackendConfig, BackendMessage
@@ -161,7 +160,14 @@ class SwarmAgent:
         if mcp_servers and "agent_messaging" in mcp_servers:
             messaging_tools = ["mcp__agent_messaging__send_message", "mcp__agent_messaging__get_time"]
             if not self.spec.reply_only:
-                messaging_tools.append("mcp__agent_messaging__check_messages")
+                messaging_tools += [
+                    "mcp__agent_messaging__list_recent_messages",
+                    "mcp__agent_messaging__list_all_unread_mail",
+                    "mcp__agent_messaging__see_last_unread_mail",
+                    "mcp__agent_messaging__get_messages_by_sender",
+                    "mcp__agent_messaging__get_thread",
+                    "mcp__agent_messaging__wait_for_reply",
+                ]
             allowed_tools = allowed_tools + messaging_tools
         if mcp_servers and "agent_directory" in mcp_servers:
             allowed_tools = allowed_tools + [
@@ -381,6 +387,55 @@ class SwarmAgent:
 
         return True  # pragma: no cover
 
+    # ─── Mailbox push notification ───────────────────────────────────────
+
+    def _mailbox_push(self) -> str | None:
+        """Build the turn-boundary push notification from unread mailbox state.
+
+        - 0 unread → None (nothing to inject).
+        - exactly 1 unread → inline the full email and MARK IT READ.
+        - ≥2 unread → a header nudge only; marks nothing read (agent pulls the rest
+          via see_last_unread_mail() / list_all_unread_mail()).
+
+        reply_only agents have no pull tools — they are purely reactive — so they
+        always get the oldest unread inlined one at a time (they loop back for the
+        next), preserving the sequential request→reply model.
+
+        Registers the inlined message's sender in the reply_only FIFO so the agent
+        can reply to whoever it just read.
+
+        See strataswarm/modules/messaging_overhaul.md §6.
+        """
+        from ._messaging import render_mail
+        mailbox = self.channel_bus.mailbox
+        name = self.spec.name
+        count = mailbox.unread_count(name)
+        if count == 0:
+            return None
+
+        def _inline_oldest(prefix: str) -> str | None:
+            entry = mailbox.oldest_unread(name)
+            if entry is None:
+                return None
+            mailbox.mark_read(name, entry.msg_id)
+            # reply_only FIFO: record the sender of the message we just surfaced.
+            if self.spec.reply_only and self._mcp_servers_override and entry.sender != "TipAgent":
+                ms = self._mcp_servers_override.get("agent_messaging")
+                if ms and isinstance(ms, dict) and "_pending_replies" in ms:
+                    ms["_pending_replies"].append(entry.sender)
+            return prefix + render_mail(entry, mailbox)
+
+        if count == 1 or self.spec.reply_only:
+            return _inline_oldest("📬 1 new message:\n" if count == 1 else "📬 New message:\n")
+        # ≥2 (non-reply_only): header nudge only, marks nothing read.
+        latest = mailbox.unread_entries(name)[-1]
+        subj = ("RE: " + latest.subject) if latest.in_reply_to is not None else latest.subject
+        return (
+            f"📬 You have {count} unread messages. "
+            f'Latest: {latest.sender} — "{subj}". '
+            f"Use see_last_unread_mail() to read the oldest, or list_all_unread_mail() to browse."
+        )
+
     # ─── Wait for wakeup (stateful only) ─────────────────────────────────
 
     async def _wait_for_wakeup(self, result: AgentResult[T]) -> str | None:
@@ -395,12 +450,14 @@ class SwarmAgent:
             if msg:
                 result.status = AgentStatus.RUNNING
                 await self._emit("status_change", AgentStatus.RUNNING.value)
-                ts = datetime.now().strftime("%H:%M:%S")
-                if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
-                    ms = self._mcp_servers_override.get("agent_messaging")
-                    if ms and isinstance(ms, dict) and "_pending_replies" in ms:
-                        ms["_pending_replies"].append(msg.sender)
-                injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
+                # Drain any other queued wakeup signals — content is in the mailbox.
+                while await messages_ch.receive(timeout=0) is not None:
+                    pass
+                # _mailbox_push registers the inlined sender in the reply_only FIFO.
+                injection = self._mailbox_push()
+                if injection is None:
+                    # Signal fired but nothing unread (already read via a pull tool).
+                    continue
                 logger.info(f"[WAKE] {self.spec.name}: from '{msg.sender}'")
                 await self._emit("message", injection)
                 return injection
@@ -644,16 +701,16 @@ class SwarmAgent:
                     messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
                     msg = await messages_ch.receive(timeout=0.1)
                     if msg:
-                        if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
-                            ms = self._mcp_servers_override.get("agent_messaging")
-                            if ms and isinstance(ms, dict) and "_pending_replies" in ms:
-                                ms["_pending_replies"].append(msg.sender)
+                        # Drain other queued signals — content is in the mailbox.
+                        while await messages_ch.receive(timeout=0) is not None:
+                            pass
                         await self._emit("message_received", f"from:{msg.sender}")
-                        ts = datetime.now().strftime("%H:%M:%S")
-                        injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                        await self._emit("message", injection)
-                        # Send + consume under lock
-                        should_continue = await self._consume_response(result, start_time, query=injection)
+                        # _mailbox_push registers the inlined sender in the reply_only FIFO.
+                        injection = self._mailbox_push()
+                        if injection is not None:
+                            await self._emit("message", injection)
+                            # Send + consume under lock
+                            should_continue = await self._consume_response(result, start_time, query=injection)
                         continue
 
                 # Stateless: exit after first response cycle
@@ -721,15 +778,19 @@ class SwarmAgent:
                 messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
                 msg = await messages_ch.receive(timeout=0.1)
                 if msg:
-                    if self.spec.reply_only and self._mcp_servers_override and msg.sender != "TipAgent":
-                        ms = self._mcp_servers_override.get("agent_messaging")
-                        if ms and isinstance(ms, dict) and "_pending_replies" in ms:
-                            ms["_pending_replies"].append(msg.sender)
+                    # Drain other queued signals — content is in the mailbox.
+                    while await messages_ch.receive(timeout=0) is not None:
+                        pass
                     await self._emit("message_received", f"from:{msg.sender}")
-                    ts = datetime.now().strftime("%H:%M:%S")
-                    injection = f"[{ts}] [From {msg.sender}]: {msg.payload}"
-                    await self._emit("message", injection)
-                    # Send + consume under lock
-                    should_continue = await self._consume_response(result, start_time, query=injection, cancellation_token=cancellation_token)
+                    # _mailbox_push registers the inlined sender in the reply_only FIFO.
+                    injection = self._mailbox_push()
+                    if injection is not None:
+                        await self._emit("message", injection)
+                        # Send + consume WITHOUT the cancellation token: an in-flight
+                        # reply must always finish (never truncated mid-turn — the
+                        # `01:33:34` "our messages crossed" bug). Cancellation is a
+                        # graceful "stop after this turn", observed only at the loop
+                        # boundary below.
+                        should_continue = await self._consume_response(result, start_time, query=injection)
                 should_continue = should_continue and not cancellation_token.is_cancelled
         return result

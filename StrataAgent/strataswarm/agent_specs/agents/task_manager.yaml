@@ -56,6 +56,6 @@ system_prompt: >
 prompt: "Stop and wait. You will be notified when a message arrives."
 
 allowed_tools: []
-disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, send_message, check_messages, "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
+disallowed_tools: [Edit, Bash, Read, Write, Grep, Glob, Agent, Skill, Explore, send_message, wait_for_reply, "mcp__agent_messaging__*", "mcp__builder-mcp__*", "mcp__lean_lsp__*"]
 
 mcp_servers: {}
