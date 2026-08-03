@@ -146,7 +146,8 @@ theorem LExpr.applySubst_eq_replaceUserProvidedType {T : LExprParams}
   unfold applySubst
   split
   case isTrue h_empty =>
-    have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS h_empty)
+    have h_id : LMonoTy.subst S = id :=
+      funext (fun ty => LMonoTy.subst_of_hasEmptyScopes h_empty ty)
     rw [h_id]
     induction e <;> unfold replaceUserProvidedType <;> grind
   case isFalse => rfl

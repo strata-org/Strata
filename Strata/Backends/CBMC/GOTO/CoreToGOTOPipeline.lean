@@ -327,7 +327,7 @@ def procedureToGotoCtx
       (((n : Core.CoreIdent)), .forAll [] ty)
   let Env' : Core.Expression.TyEnv :=
     Lambda.TEnv.addInNewestContext (T := ⟨Core.ExpressionMetadata, Unit⟩)
-      Env (inputEntries ++ outputEntries)
+      Env (Strata.Util.HMap.ofList (inputEntries ++ outputEntries))
   -- Emit axioms as ASSUME instructions at the start of the body
   let mut axiomInsts : Array CProverGOTO.Instruction := #[]
   let mut axiomLoc : Nat := 0

@@ -27,7 +27,7 @@ open Std (ToFormat Format format)
     disjoint from these (enforced by `typeCheck`). -/
 def ambientTyVars (Env : Core.Expression.TyEnv) : List Lambda.TyIdentifier :=
   Lambda.TContext.knownTypeVars Env.context ++
-  Maps.keys Env.stateSubstInfo.subst ++
+  Strata.Util.HMaps.keys Env.stateSubstInfo.subst ++
   Lambda.Subst.freeVars Env.stateSubstInfo.subst
 
 /-- `true` iff some `typeArg` of `func` collides with an ambient type variable of `Env`. -/
@@ -89,7 +89,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
   -- Only pairs where the fresh name actually survived alias resolution are included.
   let userTypeArgs := func.typeArgs.zip origTypeArgs
   let userSubst : Subst :=
-    [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
+    Strata.Util.HMaps.ofScopes [userTypeArgs.map (fun (fresh, orig) => (fresh, .ftvar orig))]
   match func.body with
   | none =>
     -- A measure (decreases clause) is only meaningful for a function with a
@@ -111,7 +111,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 {strayVars.toList} (not in typeArgs {origTypeArgs})"
     -- Add formals with monomorphic types (type parameters are fixed in the body).
     let Env := Env.pushEmptyContext
-    let Env := Env.addInNewestContext func.inputMonoSignature
+    let Env := Env.addInNewestContext (Strata.Util.HMap.ofList func.inputMonoSignature)
     -- Save this initial context (formals pushed, before the body's unification)
     -- so the measure can be type-checked independently against the same context.
     let measureBaseEnv := Env
@@ -160,8 +160,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
                 '{inferred}' by the body"
     | none => pure ()
     -- Generalization side condition: may only generalize over `ftv(τ) \ ftv(Γ)`.
-    let ambientFreeVars := Lambda.TContext.types.knownTypeVars
-      (Lambda.TContext.types.subst ambientTypes Sb)
+    let ambientFreeVars := (Lambda.TContext.types.subst ambientTypes Sb).values.flatMap LTy.freeVars
     let genVars := (LMonoTy.subst Sb monoty).freeVars
     match genVars.find? (fun v => ambientFreeVars.contains v) with
     | some v =>
@@ -176,7 +175,7 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
     -- Building it from `monoty.freeVars.eraseDups` makes the inverse definitional.
     let bodya := LExpr.applySubstT bodya S.subst
     let renameSubst : Subst :=
-      [monoty.freeVars.eraseDups.filterMap (fun x =>
+      Strata.Util.HMaps.ofScopes [monoty.freeVars.eraseDups.filterMap (fun x =>
         match LMonoTy.subst S.subst (.ftvar x) with
         | .ftvar y => if x == y then none else some (y, .ftvar x)
         | _ => none)]

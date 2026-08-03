@@ -23,7 +23,7 @@ namespace Procedure
 
 /-- Rewrite fresh instantiation-variable names back to user names in an error message. -/
 private def renameTypeVars (userSubst : Lambda.Subst) (msg : String) : String :=
-  userSubst.flatten.foldl (fun acc (fresh, v) =>
+  (userSubst.flatMap Strata.Util.HMap.toList).foldl (fun acc (fresh, v) =>
     match v with
     | .ftvar orig => acc.replace (toString fresh) (toString orig)
     | _ => acc) msg
@@ -88,7 +88,7 @@ private def setupInputEnv (C : Core.Expression.TyContext) (Env : Core.Expression
   let (inp_mty_sig, Env, tyArgSubst) ← Lambda.LMonoTySignature.instantiateWithSubst C Env proc.header.typeArgs
                             proc.header.inputs |>.mapError (fun e => DiagnosticModel.withRange sourceLoc e)
   let inp_lty_sig := Lambda.LMonoTySignature.toTrivialLTy inp_mty_sig
-  let Env := Env.addInNewestContext inp_lty_sig
+  let Env := Env.addInNewestContext (Strata.Util.HMap.ofList inp_lty_sig)
   return (inp_mty_sig, Env, tyArgSubst)
 
 -- Error message prefix for errors in processing procedure pre/post conditions.
@@ -145,7 +145,8 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
     |>.mapError (fun e => DiagnosticModel.withRange fileRange e)
   let out_mty_sig : @Lambda.LMonoTySignature Unit := proc.header.outputs.keys.zip out_mtys
   let out_lty_sig := Lambda.LMonoTySignature.toTrivialLTy out_mty_sig
-  let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds out_lty_sig
+  let envWithOutputs := Lambda.TEnv.addInNewestContext (T := CoreLParams) envAfterPreconds
+    (Strata.Util.HMap.ofList out_lty_sig)
 
   -- Add "old" variables for in-out parameters (those in both inputs and outputs) so
   -- postconditions and body can reference `old x`. Use the *instantiated* input signature
@@ -154,7 +155,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let oldInoutBindings : List (CoreIdent × Lambda.LTy) :=
     (inp_mty_sig.filter fun (id, _) => (ListMap.keys proc.header.outputs).contains id).map
       fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)
-  let envWithOldVars := envWithOutputs.addInNewestContext oldInoutBindings
+  let envWithOldVars := envWithOutputs.addInNewestContext (Strata.Util.HMap.ofList oldInoutBindings)
 
   -- Type check postconditions.
   let (postconditions, envAfterPostconds) ← typeCheckConditions C envWithOldVars
@@ -170,13 +171,14 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
         f!"[{proc.header.name}]: CFG procedures not supported yet")
   -- Add the typeArg substitution (e.g. [a → $__ty0]) so that body type annotations
   -- referencing the original names get normalized to the fresh vars by `preprocess`.
-  let tyArgConstraints : Lambda.Constraints := tyArgSubst.flatten.map fun (k, v) => (.ftvar k, v)
+  let tyArgConstraints : Lambda.Constraints :=
+    (tyArgSubst.flatMap Strata.Util.HMap.toList).map fun (k, v) => (.ftvar k, v)
   let S ← Lambda.Constraints.unify tyArgConstraints envAfterPostconds.stateSubstInfo
           |>.mapError (fun e => DiagnosticModel.withRange fileRange (format e))
   let envForBody := envAfterPostconds.updateSubst S
   -- The rigid type variables are the fresh vars representing the procedure's type
   -- parameters. These must not be refined by unification in the body.
-  let rigidVars := tyArgSubst.flatten.filterMap fun (_, v) =>
+  let rigidVars := (tyArgSubst.flatMap Strata.Util.HMap.toList).filterMap fun (_, v) =>
     match v with | .ftvar id => some id | _ => none
   let C := { C with rigidTypeVars := rigidVars }
   -- The fresh instantiation vars must remain abstract in the body env: a pre/postcondition
@@ -194,7 +196,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   | none => pure ()
   -- Substitution to rename fresh type variables back to user-supplied names.
   let userSubst : Lambda.Subst :=
-    [tyArgSubst.flatten.filterMap fun (orig, v) =>
+    Strata.Util.HMaps.ofScopes [(tyArgSubst.flatMap Strata.Util.HMap.toList).filterMap fun (orig, v) =>
       match v with | .ftvar fresh => some (fresh, .ftvar orig) | _ => none]
   let (annotated_body, finalEnv) ← (Statement.typeCheck C envForBody p (.some proc) bodyStmts)
     |>.mapError (fun e => { e with message := renameTypeVars userSubst e.message })

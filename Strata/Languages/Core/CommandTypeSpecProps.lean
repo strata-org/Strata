@@ -15,6 +15,7 @@ import all Strata.Languages.Core.CmdType
 import all Strata.DL.Lambda.LExprTypeEnv
 
 set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
 
 /-! ## Soundness of Command (CmdExt) Typechecker
 
@@ -37,6 +38,7 @@ namespace Core
 namespace TypeSpec
 
 open Lambda LExpr Imperative
+open Strata.Util (HMap HMaps)
 
 /-! ### Well-formedness conditions on procedures -/
 
@@ -72,43 +74,28 @@ theorem zip_getElem_mem {α β : Type} (as : List α) (bs : List β) (i : Nat)
   have h : (as.zip bs)[i]'hlt = (as[i], bs[i]) := List.getElem_zip
   exact h ▸ List.getElem_mem hlt
 
-/-- Mapping the values of a zipped map commutes with a successful `find?`. -/
-private theorem map_find?_zip_map_of_find [DecidableEq α]
-    (keys : List α) (vals : List β) (f : β → γ) (x : α) (v : β)
-    (h_find : Map.find? (keys.zip vals) x = some v) :
-    Map.find? (keys.zip (vals.map f)) x = some (f v) := by
-  induction keys generalizing vals with
-  | nil => simp [List.zip, Map.find?] at h_find
-  | cons k ks ih =>
-    cases vals with
-    | nil => simp [List.zip, Map.find?] at h_find
-    | cons vl vls =>
-      simp only [List.zip, List.zipWith, List.map, Map.find?] at h_find ⊢
-      split at h_find <;> split <;> try grind
-      · exact ih vls h_find
-
-/-- `find?` over a single-scope `Maps` reduces to `find?` over that scope. -/
-private theorem maps_find?_singleton [DecidableEq α] (m : Map α β) (x : α) :
-    Maps.find? [m] x = Map.find? m x := by
-  unfold Maps.find?
-  cases Map.find? m x with
-  | none => simp [Maps.find?]
-  | some v => rfl
-
-/-- The diagonal zip `ids.zip ids` maps each `x ∈ ids` to itself. -/
-private theorem find_zip_diag {α : Type} [DecidableEq α] (ids : List α) (x : α)
-    (h : x ∈ ids) : Map.find? (ids.zip ids) x = some x := by
-  induction ids with
+/-- In a diagonal zip `keys.zip (keys.map g)`, any member pairs a key with its
+    image under `g`. -/
+private theorem zip_map_diag_mem {α β : Type} (keys : List α) (g : α → β) (a : α) (b : β)
+    (h : (a, b) ∈ keys.zip (keys.map g)) : b = g a := by
+  induction keys with
   | nil => simp at h
   | cons k ks ih =>
-    simp only [List.zip, List.zipWith, Map.find?]
-    split
-    · rename_i h_eq; rw [h_eq]
-    · rename_i h_ne
-      simp only [List.mem_cons] at h
-      rcases h with h | h
-      · exact absurd h.symm h_ne
-      · exact ih h
+    simp only [List.map_cons, List.zip_cons_cons, List.mem_cons] at h
+    rcases h with h | h
+    · injection h with h1 h2; subst h1; exact h2
+    · exact ih h
+
+/-- Looking up a present key in a diagonal-zip `HMap` returns its image under `g`. -/
+private theorem find?_zip_map_diag (keys : List TyIdentifier) (g : TyIdentifier → LMonoTy)
+    (x : TyIdentifier) (hx : x ∈ keys) :
+    HMap.find? (HMap.ofList (keys.zip (keys.map g))) x = some (g x) := by
+  have hlen : keys.length ≤ (keys.map g).length := by rw [List.length_map]; exact Nat.le_refl _
+  have hk : x ∈ (keys.zip (keys.map g)).map Prod.fst := by
+    rw [List.map_fst_zip hlen]; exact hx
+  obtain ⟨v, hv⟩ := HMap.find?_ofList_of_mem_keys _ x hk
+  have hmem := HMap.find?_ofList_mem _ x v hv
+  rw [hv, zip_map_diag_mem keys g x v hmem]
 
 /-! ### Diagonal substitution bridge -/
 
@@ -119,27 +106,19 @@ private theorem find_zip_diag {α : Type} [DecidableEq α] (ids : List α) (x : 
 theorem subst_diag_eq (typeArgs : List TyIdentifier) (S_final tyArgSubst : Subst)
     (t : LMonoTy) (h_closed : ∀ a, a ∈ LMonoTy.freeVars t → a ∈ typeArgs) :
     LMonoTy.subst
-      [typeArgs.zip (typeArgs.map (fun a =>
-        LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))] t =
+      (HMaps.ofScopes [typeArgs.zip (typeArgs.map (fun a =>
+        LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))]) t =
       LMonoTy.subst S_final (LMonoTy.subst tyArgSubst t) := by
   induction t with
   | ftvar x =>
     have hx : x ∈ typeArgs := h_closed x (by simp [LMonoTy.freeVars])
-    have h_find := map_find?_zip_map_of_find typeArgs typeArgs
-      (fun a => LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))) x x
-      (find_zip_diag typeArgs x hx)
-    have h_maps : Maps.find?
-        [typeArgs.zip (typeArgs.map (fun a =>
-          LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))] x =
+    have h_maps : HMaps.find?
+        (HMaps.ofScopes [typeArgs.zip (typeArgs.map (fun a =>
+          LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))]) x =
         some (LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar x))) := by
-      rw [maps_find?_singleton]; exact h_find
-    have h_ne : Subst.hasEmptyScopes
-        [typeArgs.zip (typeArgs.map (fun a =>
-          LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))] = false := by
-      cases typeArgs with
-      | nil => simp at hx
-      | cons k ks => simp [Subst.hasEmptyScopes, List.zip, Map.isEmpty]
-    exact LMonoTy.subst_ftvar_eq _ x _ h_ne h_maps
+      simp only [HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.find?_single_scope]
+      exact find?_zip_map_diag typeArgs _ x hx
+    exact LMonoTy.subst_ftvar_eq _ x _ h_maps
   | bitvec n => simp [LMonoTy.subst_bitvec]
   | tcons name args ih =>
     rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTy.subst_tcons]
@@ -155,17 +134,16 @@ theorem subst_diag_eq (typeArgs : List TyIdentifier) (S_final tyArgSubst : Subst
           simp only [LMonoTy.freeVars] at hx ⊢
           simp only [LMonoTys.freeVars, List.mem_append]
           right; exact hx)
-      rw [LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq, LMonoTys.subst_cons_eq]
+      simp only [LMonoTys.subst_eq_map, List.map_cons]
       congr 1
       · exact ih a (List.Mem.head as) h_a_closed
-      · exact ih_list (fun ty hty hcl => ih ty (List.Mem.tail a hty) hcl) h_as_closed
+      · have h_ih_list := ih_list (fun ty hty hcl => ih ty (List.Mem.tail a hty) hcl) h_as_closed
+        simpa only [LMonoTys.subst_eq_map] using h_ih_list
 
 /-- `LMonoTys.subst` is pointwise `LMonoTy.subst`. -/
 theorem LMonoTys_subst_eq_map (S : Subst) (xs : LMonoTys) :
-    LMonoTys.subst S xs = xs.map (LMonoTy.subst S) := by
-  induction xs with
-  | nil => simp [LMonoTys.subst_nil]
-  | cons h t ih => rw [LMonoTys.subst_cons_eq, ih, List.map_cons]
+    LMonoTys.subst S xs = xs.map (LMonoTy.subst S) :=
+  LMonoTys.subst_eq_map S xs
 
 /-- Shared kernel for the call input/output type lemmas: from a unify-derived
     equality `subst S_final a = subst S_final b` and an `AliasEquiv` relating
@@ -180,8 +158,8 @@ theorem call_type_bridge (aliases : List TypeAlias)
               (LMonoTy.subst S_final (LMonoTy.subst tyArgSubst formal))) :
     AliasEquiv aliases (LMonoTy.subst S_final a)
       (LMonoTy.subst
-        [typeArgs.zip (typeArgs.map (fun a =>
-          LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))]
+        (HMaps.ofScopes [typeArgs.zip (typeArgs.map (fun a =>
+          LMonoTy.subst S_final (LMonoTy.subst tyArgSubst (.ftvar a))))])
         formal) := by
   rw [subst_diag_eq typeArgs S_final tyArgSubst formal h_closed]
   rw [h_eq]; exact h_ae
@@ -768,7 +746,7 @@ theorem freeVarChecks_implies_WellScoped (Env : TEnv Unit)
   induction es with
   | nil => intro e he; simp at he
   | cons hd tl ih =>
-    simp only [TEnv.freeVarChecks, Bind.bind, Except.bind] at h
+    simp only [TEnv.freeVarChecks, List.forM, Bind.bind, Except.bind] at h
     elim_err h with v1 h_hd
     intro e he
     simp only [List.mem_cons] at he
@@ -817,7 +795,7 @@ theorem resolve_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h
@@ -830,7 +808,7 @@ theorem resolve_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     have h_ne0 : Env0.context.types ≠ [] := by
       subst h_init; split
       · exact List.cons_ne_nil _ _
-      · rename_i h_not_empty; intro h_abs; simp_all [Maps.isEmpty]
+      · rename_i h_not_empty; intro h_abs; simp_all [Strata.Util.HMaps.isEmpty]
     have h_props := resolveAux_properties e et0 C Env0 Env_out h_res h_ne0
       h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
       h_envwf0.boundVarsFresh
@@ -855,7 +833,7 @@ theorem resolve_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h
@@ -868,7 +846,7 @@ theorem resolve_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     have h_ne0 : Env0.context.types ≠ [] := by
       subst h_init; split
       · exact List.cons_ne_nil _ _
-      · rename_i h_not_empty; intro h_abs; simp_all [Maps.isEmpty]
+      · rename_i h_not_empty; intro h_abs; simp_all [Strata.Util.HMaps.isEmpty]
     have h_props := resolveAux_properties e et0 C Env0 Env_out h_res h_ne0
       h_envwf0.aliasesWF h_fwf h_envwf0.substFreshForGen h_envwf0.ctxFreshForGen
       h_envwf0.boundVarsFresh
@@ -999,8 +977,8 @@ private theorem instantiateEnvWithSubst_decompose
     (h : LMonoTys.instantiateEnvWithSubst ids mtys Env = .ok result) :
     ∃ freshtvs genEnv',
       TGenEnv.genTyVars ids.length Env.genEnv = .ok (freshtvs, genEnv') ∧
-      result.1 = LMonoTys.subst [ids.zip (freshtvs.map LMonoTy.ftvar)] mtys ∧
-      result.2.2 = [ids.zip (freshtvs.map LMonoTy.ftvar)] ∧
+      result.1 = LMonoTys.subst (HMaps.ofScopes [ids.zip (freshtvs.map LMonoTy.ftvar)]) mtys ∧
+      result.2.2 = HMaps.ofScopes [ids.zip (freshtvs.map LMonoTy.ftvar)] ∧
       result.2.1.context = Env.context ∧
       result.2.1.genEnv = genEnv' := by
   simp only [LMonoTys.instantiateEnvWithSubst, Bind.bind, Except.bind] at h
@@ -1137,7 +1115,7 @@ theorem instantiateWithSubst_elem_aliasEquiv (C : LContext CoreLParams)
     (h_aw : TContext.AliasesWF Env₁.context) :
     ∃ (freshVars : List TyIdentifier) (hi2 : i < (ListMap.values v2.fst).length),
       freshVars.length = typeArgs.length ∧
-      v2.2.snd = [typeArgs.zip (freshVars.map LMonoTy.ftvar)] ∧
+      v2.2.snd = HMaps.ofScopes [typeArgs.zip (freshVars.map LMonoTy.ftvar)] ∧
       AliasEquiv Env₁.context.aliases
         (LMonoTy.subst v2.2.snd ((ListMap.values sig).get ⟨i, hj⟩))
         ((ListMap.values v2.fst).get ⟨i, hi2⟩) := by
@@ -1194,13 +1172,12 @@ theorem instantiateWithSubst_elem_aliasEquiv (C : LContext CoreLParams)
     have h_subst_i : LMonoTy.subst S ((ListMap.values sig)[i]'hj) =
         mtys[i]'hi_mtys := by
       subst h_S h_mtys
-      have h_map : LMonoTys.subst [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)]
+      have h_map : LMonoTys.subst (HMaps.ofScopes [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)])
           (ListMap.values sig) =
           (ListMap.values sig).map
-            (LMonoTy.subst [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)]) :=
+            (LMonoTy.subst (HMaps.ofScopes [typeArgs.zip (List.map LMonoTy.ftvar freshtvs)])) :=
         LMonoTys_subst_eq_map _ _
       rw [List.getElem_of_eq h_map, List.getElem_map]
-      rfl
     rw [h_subst_i]
     exact h_ae
 
@@ -1231,9 +1208,9 @@ theorem call_input_type_eq (C : LContext CoreLParams) (Env_lhs : TEnv Unit)
       (LMonoTy.subst S
         ((v3.fst.get ⟨i, h_len ▸ hi⟩).toLMonoTy))
       (LMonoTy.subst
-        [proc.header.typeArgs.zip
+        (HMaps.ofScopes [proc.header.typeArgs.zip
           (proc.header.typeArgs.map (fun a => LMonoTy.subst S
-            (LMonoTy.subst v2.2.snd (.ftvar a))))]
+            (LMonoTy.subst v2.2.snd (.ftvar a))))])
         ((ListMap.values proc.header.inputs).get ⟨i, hj⟩)) := by
   -- i-th input formal via the elem decomposition of instantiateWithSubst.
   obtain ⟨freshVars, hi2, h_fv_len, h_tyArgSubst, h_elem_ae⟩ :=
@@ -1396,9 +1373,9 @@ theorem call_output_type_eq (C : LContext CoreLParams) (Env Env_lhs : TEnv Unit)
     (S : Subst) (h_absorbs_S : Subst.absorbs S v4.subst) :
     ∃ mty, AliasEquiv Env.context.aliases mty
         (LMonoTy.subst
-          [proc.header.typeArgs.zip
+          (HMaps.ofScopes [proc.header.typeArgs.zip
             (proc.header.typeArgs.map (fun a => LMonoTy.subst S
-              (LMonoTy.subst v2.2.snd (.ftvar a))))]
+              (LMonoTy.subst v2.2.snd (.ftvar a))))])
           ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) ∧
       (Env.context.subst S).types.find?
         (CallArg.getLhs callArgs)[i] = some (LTy.forAll [] mty) := by
@@ -1455,9 +1432,9 @@ theorem call_output_type_eq (C : LContext CoreLParams) (Env Env_lhs : TEnv Unit)
     -- (7) Rewrite h_eq_S into h_ae_S's RHS, then subst_diag_eq for the σ-form.
     rw [h_eq_S] at h_ae_S
     rw [show LMonoTy.subst
-        [proc.header.typeArgs.zip
+        (HMaps.ofScopes [proc.header.typeArgs.zip
           (proc.header.typeArgs.map (fun a => LMonoTy.subst S
-            (LMonoTy.subst v2.2.snd (.ftvar a))))]
+            (LMonoTy.subst v2.2.snd (.ftvar a))))])
         ((ListMap.values proc.header.outputs).get ⟨i, hj⟩) =
         LMonoTy.subst S (LMonoTy.subst v2.2.snd
           ((ListMap.values proc.header.outputs).get ⟨i, hj⟩)) from
@@ -1523,7 +1500,7 @@ private theorem resolves_go_HasType_core (C : LContext CoreLParams)
       Env.context.types ≠ [] →
       (∀ e, e ∈ es → WellScoped e Env.context) →
       TEnvWF (T := CoreLParams) Env' ∧
-      Env'.context = Env.context ∧
+      TContext.Equiv (T := CoreLParams) Env'.context Env.context ∧
       Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst ∧
       ∃ (res : List (LExprT CoreLParams.mono)) (h_rlen : res.length = es.length),
         ets = acc.reverse ++ res ∧
@@ -1538,7 +1515,7 @@ private theorem resolves_go_HasType_core (C : LContext CoreLParams)
     simp only [LExpr.resolves.go, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, h2⟩ := h
     subst h1; subst h2
-    refine ⟨h_wf, rfl, Subst.absorbs_refl _ Env.stateSubstInfo.isWF,
+    refine ⟨h_wf, TContext.Equiv.refl _, Subst.absorbs_refl _ Env.stateSubstInfo.isWF,
       [], rfl, by simp, ?_⟩
     intro i hi; exact absurd hi (Nat.not_lt_zero i)
   | cons e erest ih =>
@@ -1548,20 +1525,21 @@ private theorem resolves_go_HasType_core (C : LContext CoreLParams)
     obtain ⟨et, Env_mid⟩ := v_step
     -- `h` is now the recursive `go` equation; `h_step` is the per-step `resolve`.
     -- Per-step facts for `e`.
-    have h_ctx_mid : Env_mid.context = Env.context :=
+    have h_ctx_mid : TContext.Equiv (T := CoreLParams) Env_mid.context Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_abs_mid : Subst.absorbs Env_mid.stateSubstInfo.subst Env.stateSubstInfo.subst :=
       resolve_absorbs e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_ws_e : WellScoped e Env.context := h_ws e List.mem_cons_self
     have h_core := resolve_HasType_core e et C Env Env_mid h_step h_wf h_fwf h_ws_e
     have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid := h_core.2.2
-    have h_ne_mid : Env_mid.context.types ≠ [] := by rw [h_ctx_mid]; exact h_ne
+    have h_ne_mid : Env_mid.context.types ≠ [] := h_ctx_mid.symm.types_ne_nil h_ne
     have h_ws_rest : ∀ e', e' ∈ erest → WellScoped e' Env_mid.context := by
-      rw [h_ctx_mid]; exact fun e' he' => h_ws e' (List.mem_cons_of_mem e he')
+      exact fun e' he' => WellScoped_Equiv_knownVars h_ctx_mid.symm
+        (h_ws e' (List.mem_cons_of_mem e he'))
     -- Apply the IH to the tail.
     obtain ⟨h_wf', h_ctx', h_abs', res', h_rlen', h_ets', h_typ'⟩ :=
       ih Env_mid Env' (et :: acc) ets h h_wf_mid h_fwf h_ne_mid h_ws_rest
-    refine ⟨h_wf', by rw [h_ctx', h_ctx_mid], ?_, et :: res', ?_, ?_, ?_⟩
+    refine ⟨h_wf', h_ctx'.trans h_ctx_mid, ?_, et :: res', ?_, ?_, ?_⟩
     · exact Subst.absorbs_trans _ _ _ h_abs_mid h_abs'
     · simp only [List.length_cons, h_rlen']
     · simp only [List.reverse_cons] at h_ets'; simpa using h_ets'
@@ -1575,11 +1553,11 @@ private theorem resolves_go_HasType_core (C : LContext CoreLParams)
       | k + 1 =>
         have h_k : k < erest.length := by
           simp only [List.length_cons] at hi; omega
-        have h_pkf_mid : Subst.polyKeysFresh (T := CoreLParams) S Env_mid.context := by
-          rw [h_ctx_mid]; exact h_pkf
+        have h_pkf_mid : Subst.polyKeysFresh (T := CoreLParams) S Env_mid.context :=
+          polyKeysFresh_Equiv h_ctx_mid.symm h_pkf
         have h_ty := h_typ' k h_k S h_abs_S h_swf h_pkf_mid
-        rw [h_ctx_mid] at h_ty
-        simpa only [List.get_eq_getElem, List.getElem_cons_succ] using h_ty
+        have h_ty' := HasType_Equiv h_ty (TContext.Equiv.subst h_ctx_mid S)
+        simpa only [List.get_eq_getElem, List.getElem_cons_succ] using h_ty'
 
 /-- Accumulator-generalized alias-equivalence core for `resolves.go`, threading
     `ContextMono`. For each bare input free variable (`fvar m x none`, as emitted
@@ -1617,17 +1595,18 @@ private theorem resolves_go_fvar_aliasEquiv_core (C : LContext CoreLParams)
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
     elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
-    have h_ctx_mid : Env_mid.context = Env.context :=
+    have h_ctx_mid : TContext.Equiv (T := CoreLParams) Env_mid.context Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_abs_mid : Subst.absorbs Env_mid.stateSubstInfo.subst Env.stateSubstInfo.subst :=
       resolve_absorbs e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid :=
       (resolve_HasType_core e et C Env Env_mid h_step h_wf h_fwf
         (h_ws e List.mem_cons_self)).2.2
-    have h_ne_mid : Env_mid.context.types ≠ [] := by rw [h_ctx_mid]; exact h_ne
-    have h_mono_mid : ContextMono Env_mid.context := by rw [h_ctx_mid]; exact h_mono
+    have h_ne_mid : Env_mid.context.types ≠ [] := h_ctx_mid.symm.types_ne_nil h_ne
+    have h_mono_mid : ContextMono Env_mid.context := ContextMono.of_equiv h_ctx_mid.symm h_mono
     have h_ws_rest : ∀ e', e' ∈ erest → WellScoped e' Env_mid.context := by
-      rw [h_ctx_mid]; exact fun e' he' => h_ws e' (List.mem_cons_of_mem e he')
+      exact fun e' he' => WellScoped_Equiv_knownVars h_ctx_mid.symm
+        (h_ws e' (List.mem_cons_of_mem e he'))
     -- `Env'` absorbs `Env_mid` (from the tail `go`); needed to transfer the
     -- absorption condition on the head element's alias-equivalence.
     have h_abs_tail : Subst.absorbs Env'.stateSubstInfo.subst Env_mid.stateSubstInfo.subst :=
@@ -1658,11 +1637,11 @@ private theorem resolves_go_fvar_aliasEquiv_core (C : LContext CoreLParams)
         simp only [List.get_eq_getElem, List.getElem_cons_succ] at h_fvar
         obtain ⟨mty_ctx, h_find, h_ae_S⟩ :=
           h_ae' k h_k m x (by simp only [List.get_eq_getElem]; exact h_fvar)
-        rw [h_ctx_mid] at h_find
+        rw [h_ctx_mid.find? x] at h_find
         refine ⟨mty_ctx, h_find, ?_⟩
         intro S h_abs_S
         have h_ae := h_ae_S S h_abs_S
-        rw [h_ctx_mid] at h_ae
+        rw [h_ctx_mid.2] at h_ae
         simpa only [List.get_eq_getElem, List.getElem_cons_succ] using h_ae
 
 /-- If `resolves` succeeds, each element satisfies `HasType` under any absorbing
@@ -1676,7 +1655,7 @@ theorem resolves_HasType_core (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (h_ws : ∀ e, e ∈ es → WellScoped e Env.context)
     (h_len : ets.length = es.length) :
     TEnvWF (T := CoreLParams) Env' ∧
-    Env'.context = Env.context ∧
+    TContext.Equiv (T := CoreLParams) Env'.context Env.context ∧
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst ∧
     (∀ i (hi : i < es.length),
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
@@ -1725,13 +1704,13 @@ private theorem resolves_go_HasTypeA_core (C : LContext CoreLParams)
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
     elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
-    have h_ctx_mid : Env_mid.context = Env.context :=
+    have h_ctx_mid : TContext.Equiv (T := CoreLParams) Env_mid.context Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid :=
       resolve_TEnvWF e et C Env Env_mid h_step h_wf h_fwf
-    have h_ne_mid : Env_mid.context.types ≠ [] := by rw [h_ctx_mid]; exact h_ne
+    have h_ne_mid : Env_mid.context.types ≠ [] := h_ctx_mid.symm.types_ne_nil h_ne
     have h_resolved_mid : TContext.AliasesResolved Env_mid.context := by
-      rw [h_ctx_mid]; exact h_resolved
+      simp only [TContext.AliasesResolved, h_ctx_mid.2]; exact h_resolved
     have h_hta_e : LExpr.HasTypeA [] et.unresolved et.toLMonoTy :=
       resolve_HasTypeA e et C Env Env_mid h_step h_wf h_fwf h_resolved
     obtain ⟨res', h_rlen', h_ets', h_typ'⟩ :=
@@ -1819,11 +1798,11 @@ private theorem resolves_go_fvar_name_core (C : LContext CoreLParams)
     simp only [LExpr.resolves.go, Bind.bind, Except.bind] at h
     elim_err h with v_step h_step
     obtain ⟨et, Env_mid⟩ := v_step
-    have h_ctx_mid : Env_mid.context = Env.context :=
+    have h_ctx_mid : TContext.Equiv (T := CoreLParams) Env_mid.context Env.context :=
       resolve_preserves_context e et C Env Env_mid h_step h_wf h_ne h_fwf
     have h_wf_mid : TEnvWF (T := CoreLParams) Env_mid :=
       resolve_TEnvWF e et C Env Env_mid h_step h_wf h_fwf
-    have h_ne_mid : Env_mid.context.types ≠ [] := by rw [h_ctx_mid]; exact h_ne
+    have h_ne_mid : Env_mid.context.types ≠ [] := h_ctx_mid.symm.types_ne_nil h_ne
     obtain ⟨res', h_rlen', h_ets', h_fvar'⟩ :=
       ih Env_mid Env' (et :: acc) ets h h_wf_mid h_fwf h_ne_mid
     refine ⟨et :: res', ?_, ?_, ?_⟩
@@ -2108,16 +2087,17 @@ theorem typeCheckCmd_call_preserves_context (C : LContext CoreLParams) (Env : TE
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ []) :
-    Env'.context = Env.context := by
+    TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
   obtain ⟨proc, Env_lhs, v1, v2, v3, v4, _, _, h_env, F, _, _, _, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   subst h_env
-  -- Context preservation through resolves: v3.snd.context = v2.2.fst.context = Env.context.
+  -- Context preservation through resolves: v3.snd.context ≈ v2.2.fst.context = Env.context.
   have h_res_sound := resolves_HasType_core C v2.2.fst v3.snd
     (CallArg.getInputExprs callArgs) v3.fst F.resolves_raw F.wf_v2 h_fwf F.ne_v2 F.ws F.len
-  show (v3.snd.updateSubst v4).context = Env.context
-  rw [show (v3.snd.updateSubst v4).context = v3.snd.context from rfl,
-    h_res_sound.2.1, F.ctx_eq]
+  show TContext.Equiv (T := CoreLParams) (v3.snd.updateSubst v4).context Env.context
+  rw [show (v3.snd.updateSubst v4).context = v3.snd.context from rfl]
+  rw [← F.ctx_eq]
+  exact h_res_sound.2.1
 
 /-- Threading preservation for the `.call` case of `typeCheckCmd`. The output
     `Env' = v3.snd.updateSubst v4` shares its context with `Env` (calls do not
@@ -2146,10 +2126,10 @@ theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   have h_proc_closed : ProcHeaderClosed proc := h_closed _ proc heq_find
   -- Context is preserved (calls don't touch the type-scope), giving `ne`/`mono`.
-  have h_ctx : Env'.context = Env.context :=
+  have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
     typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
-  have h_ne' : Env'.context.types ≠ [] := h_ctx ▸ h_ne
-  have h_mono' : ContextMono Env'.context := by rw [h_ctx]; exact h_mono
+  have h_ne' : Env'.context.types ≠ [] := h_ctx.symm.types_ne_nil h_ne
+  have h_mono' : ContextMono Env'.context := ContextMono.of_equiv h_ctx.symm h_mono
   -- `Env' = v3.snd.updateSubst v4`, so `Env'.subst = v4.subst`.
   have h_subst' : Env'.stateSubstInfo.subst = v4.subst := by rw [h_env]; rfl
   -- The final substitution refines the input one.
@@ -2175,20 +2155,7 @@ theorem typeCheckCmd_call_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
       ∀ n, n ≥ v3.snd.genEnv.genState.tyGen → v ≠ TState.tyPrefix ++ toString n := by
     -- `LMonoTys.subst` unfolds to a `List.map` of the scalar `subst`.
     have subst_map : ∀ (S : Subst) (l : LMonoTys),
-        LMonoTys.subst S l = l.map (LMonoTy.subst S) := by
-      intro S l
-      induction l with
-      | nil =>
-        rw [LMonoTys.subst_eq_substLogic]
-        cases he : S.hasEmptyScopes <;> simp [LMonoTys.substLogic, he]
-      | cons hd tl ih =>
-        by_cases he : S.hasEmptyScopes
-        · have h_id : LMonoTy.subst S = id := funext (fun ty => LMonoTy.subst_emptyS he)
-          rw [h_id, List.map_id, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
-          simp [he]
-        · rw [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
-          simp only [he, Bool.false_eq_true, if_false, List.map_cons]
-          rw [← LMonoTys.subst_eq_substLogic, ih]
+        LMonoTys.subst S l = l.map (LMonoTy.subst S) := fun S l => LMonoTys.subst_eq_map S l
     -- Generator-state monotonicity along the call's stages.
     have h_mono_v2v3 : v3.snd.genEnv.genState.tyGen ≥ v2.2.fst.genEnv.genState.tyGen :=
       resolves_genState_mono C v2.2.fst v3.snd (CallArg.getInputExprs callArgs) v3.fst
@@ -2265,14 +2232,15 @@ theorem typeCheckCmd_call_preserves_shape (C : LContext CoreLParams) (Env : TEnv
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ []) :
-    Maps.pop Env'.context.types = Maps.pop Env.context.types ∧
+    Strata.Util.HMaps.Equiv (Strata.Util.HMaps.pop Env'.context.types)
+      (Strata.Util.HMaps.pop Env.context.types) ∧
     Env'.context.aliases = Env.context.aliases ∧
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
-  have h_ctx : Env'.context = Env.context :=
+  have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
     typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   obtain ⟨proc, Env_lhs, v1, v2, v3, v4, _, _, h_env, F, _, _, _, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
-  refine ⟨by rw [h_ctx], by rw [h_ctx], ?_⟩
+  refine ⟨HMaps.Equiv.pop h_ctx.1, h_ctx.2, ?_⟩
   -- `Env' = v3.snd.updateSubst v4`, and `updateSubst` leaves `genState` untouched.
   have h_env_gen : Env'.genEnv.genState.tyGen = v3.snd.genEnv.genState.tyGen := by
     rw [h_env]; rfl
@@ -2316,7 +2284,8 @@ theorem typeCheckCmd_preserves (C : LContext CoreLParams) (Env : TEnv Unit)
     Subst.absorbs Env'.stateSubstInfo.subst Env.stateSubstInfo.subst ∧
     (∀ v, v ∈ C.rigidTypeVars →
       LMonoTy.subst Env'.stateSubstInfo.subst (.ftvar v) = .ftvar v) ∧
-    Maps.pop Env'.context.types = Maps.pop Env.context.types ∧
+    Strata.Util.HMaps.Equiv (Strata.Util.HMaps.pop Env'.context.types)
+      (Strata.Util.HMaps.pop Env.context.types) ∧
     Env'.context.aliases = Env.context.aliases ∧
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   cases cmd with
@@ -2362,10 +2331,14 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
       ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
         CmdExtHasType C P (TContext.subst Env.context S)
           (.call pname callArgs md)
-          (TContext.subst Env.context S) := by
+          (TContext.subst Env'.context S) := by
+  -- Context is preserved up to `Equiv` (calls resolve, which only preserves `Equiv`).
+  have h_ctx_equiv : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
+    typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, _, h_env, F,
       h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
+  have h_ctx_out : TContext.Equiv (T := CoreLParams) Env'.context Env.context := h_ctx_equiv
   subst h_env
   refine ⟨proc, heq_find, ?_⟩
   intro S hS_abs hS_wf
@@ -2449,6 +2422,8 @@ theorem typeCheckCmd_call_sound_aux (C : LContext CoreLParams) (Env : TEnv Unit)
       rw [h_inp_arity, ListMap.keys.length]
     exact areInoutArgsValid_implies_fvar proc (CallArg.getInputExprs callArgs)
       h_inout_valid i hi h_contains h_arity
+  · -- output context `Δ` is `Equiv` to the input `Γ` (calls preserve context up to `Equiv`)
+    exact TContext.Equiv.subst h_ctx_out S
 
 /-! ### Part I — Unannotated soundness -/
 
@@ -2486,9 +2461,6 @@ theorem Command.typeCheckCmd_sound_gen (C : LContext CoreLParams) (Env : TEnv Un
       h_wf h_fwf h_ne h_mono S hS_abs hS_wf hS_rigid
     exact CmdExtHasType'.cmd _ _ c h_sound
   | call pname callArgs md =>
-    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
-      h_wf h_fwf h_ne
-    rw [h_ctx]
     have h_closed' := h_closed
     simp only [CmdExt.call.injEq] at h_closed'
     -- Extract proc from the successful typechecking
@@ -2536,9 +2508,6 @@ theorem Command.typeCheckCmd_sound (C : LContext CoreLParams) (Env : TEnv Unit)
       h_wf h_fwf h_ne h_mono h_rigid_inv
     exact CmdExtHasType'.cmd _ _ c h_sound
   | call pname callArgs md =>
-    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
-      h_wf h_fwf h_ne
-    rw [h_ctx]
     have h_closed' := h_closed
     simp only [CmdExt.call.injEq] at h_closed'
     have ⟨proc, h_find, h_call_sound⟩ :=
@@ -2853,7 +2822,10 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
     ∀ S, Subst.absorbs S Env'.stateSubstInfo.subst → SubstWF S →
       CmdExtHasTypeA C P (TContext.subst Env.context S)
         (Statement.Command.subst S cmd')
-        (TContext.subst Env.context S) := by
+        (TContext.subst Env'.context S) := by
+  -- Context is preserved up to `Equiv` (calls resolve, which only preserves `Equiv`).
+  have h_ctx_out : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
+    typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
   obtain ⟨proc, h_inst_lhs, v1, v2, v3, v4, heq_find, h_cmd, h_env, F,
       h_inp_arity, h_out_arity, h_lhs_exist, h_inout_valid, _⟩ :=
     typeCheckCmd_call_inversion C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
@@ -2989,6 +2961,8 @@ theorem typeCheckCmd_call_annotated_sound_aux (C : LContext CoreLParams) (Env : 
         exact h_eq.2.1
       rw [h_x_eq]
       exact ⟨_, _, rfl⟩
+  · -- output context `Δ` is `Equiv` to the input `Γ` (calls preserve context up to `Equiv`)
+    exact TContext.Equiv.subst h_ctx_out S
 
 /-! ### Part II — Annotated soundness -/
 
@@ -3026,9 +3000,6 @@ theorem Command.typeCheckCmd_annotated_sound_gen (C : LContext CoreLParams) (Env
       h_wf h_fwf h_ne h_mono h_resolved S hS_abs hS_wf
     exact CmdExtHasType'.cmd _ _ _ h_sound
   | call pname callArgs md =>
-    have h_ctx := typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h
-      h_wf h_fwf h_ne
-    rw [h_ctx]
     have h_closed' := h_closed
     simp only [CmdExt.call.injEq] at h_closed'
     exact typeCheckCmd_call_annotated_sound_aux C Env P pname callArgs md cmd' Env' h
@@ -3066,41 +3037,25 @@ theorem Command.typeCheckCmd_annotated_sound (C : LContext CoreLParams) (Env : T
 /-! ### Ambient-invariant preservation across a command step -/
 
 
-/-- Every value of `addInNewest ms [(x, v)]` is either an old value of `ms` or the
-    new value `v`. -/
-theorem mem_values_addInNewest_single {α β : Type} [DecidableEq α]
-    (ms : Maps α β) (x : α) (v : β) (ty : β)
-    (h : ty ∈ Maps.values (Maps.addInNewest ms [(x, v)])) :
-    ty ∈ Maps.values ms ∨ ty = v := by
-  cases ms with
-  | nil =>
-    -- addInNewest [] [(x,v)] = [(x,v)] :: [], values = [v].
-    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Maps.values] at h
-    rw [Map.values_append] at h
-    simp only [Map.values, List.nil_append, List.append_nil, List.mem_singleton] at h
-    exact Or.inr h
-  | cons m rest =>
-    -- addInNewest (m :: rest) [(x,v)] = (m ++ [(x,v)]) :: rest.
-    simp only [Maps.addInNewest, Maps.newest, Maps.pop, Maps.push, Maps.values] at h
-    rw [Map.values_append] at h
-    simp only [Map.values, List.append_assoc, List.mem_append,
-      List.mem_singleton] at h
-    rcases h with h_m | h_v | h_rest
-    · exact Or.inl (by simp only [Maps.values, List.mem_append]; exact Or.inl h_m)
-    · exact Or.inr h_v
-    · exact Or.inl (by simp only [Maps.values, List.mem_append]; exact Or.inr h_rest)
+/-- The values-based ambient-mono invariant transports across `TContext.Equiv`
+    (it reads the context only through `types.values`). -/
+theorem ambient_mono_of_equiv {Γ Γ' : TContext Unit}
+    (h : TContext.Equiv (T := CoreLParams) Γ Γ')
+    (h_am : ∀ ty ∈ Strata.Util.HMaps.values Γ.types, LTy.boundVars ty = []) :
+    ∀ ty ∈ Strata.Util.HMaps.values Γ'.types, LTy.boundVars ty = [] :=
+  fun ty h_mem => h_am ty ((h.1.mem_values ty).mpr h_mem)
 
 /-- Values-based ambient-monomorphic preservation for a single `update`. -/
 theorem update_ambient_mono (Env : TEnv Unit) (x : CoreIdent) (mty : LMonoTy)
-    (h : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = []) :
-    ∀ ty ∈ Maps.values (CmdType.update Env x (.forAll [] mty)).context.types,
+    (h : ∀ ty ∈ Strata.Util.HMaps.values Env.context.types, LTy.boundVars ty = []) :
+    ∀ ty ∈ Strata.Util.HMaps.values (CmdType.update Env x (.forAll [] mty)).context.types,
       LTy.boundVars ty = [] := by
   intro ty h_mem
   simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_mem
-  rcases mem_values_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) ty h_mem with
-    h_old | h_new
+  rcases HMaps.mem_values_addInNewest Env.genEnv.context.types (HMap.single x (.forAll [] mty)) ty h_mem with
+    h_new | h_old
+  · rw [HMap.mem_values_single_iff] at h_new; subst h_new; simp [LTy.boundVars]
   · exact h ty h_old
-  · subst h_new; simp [LTy.boundVars]
 
 /-- `Imperative.Cmd.typeCheck` preserves the values-based ambient-mono invariant. -/
 theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -3109,8 +3064,8 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = []) :
-    ∀ ty ∈ Maps.values Env'.context.types, LTy.boundVars ty = [] := by
+    (h_ambient_mono : ∀ ty ∈ Strata.Util.HMaps.values Env.context.types, LTy.boundVars ty = []) :
+    ∀ ty ∈ Strata.Util.HMaps.values Env'.context.types, LTy.boundVars ty = [] := by
   cases cmd with
   | init x xty e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
@@ -3141,13 +3096,15 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
       have h_ctx_pre : Env_pre.context = Env.context :=
         CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
       have h_ne_pre : Env_pre.context.types ≠ [] := h_ctx_pre ▸ h_ne
-      have h_ctx_infer : Env_infer.context = Env_pre.context :=
+      have h_ctx_infer : TContext.Equiv (T := CoreLParams) Env_infer.context Env_pre.context :=
         CmdType.inferType_preserves_context C Env_pre Env_infer _ _ e' ety
           h_infer h_wf_pre h_ne_pre h_fwf
       have h_ctx_unify : Env_unified.context = Env_infer.context :=
         CmdType.unifyTypes_preserves_context Env_infer Env_unified _ h_unify
-      have h_am : ∀ ty ∈ Maps.values Env_unified.context.types, LTy.boundVars ty = [] := by
-        rw [h_ctx_unify, h_ctx_infer, h_ctx_pre]; exact h_ambient_mono
+      have h_am_pre : ∀ ty ∈ Strata.Util.HMaps.values Env_pre.context.types, LTy.boundVars ty = [] := by
+        rw [h_ctx_pre]; exact h_ambient_mono
+      have h_am : ∀ ty ∈ Strata.Util.HMaps.values Env_unified.context.types, LTy.boundVars ty = [] := by
+        rw [h_ctx_unify]; exact ambient_mono_of_equiv h_ctx_infer.symm h_am_pre
       exact update_ambient_mono Env_unified x _ h_am
     · -- nondet: preprocess → postprocess → update
       rename_i _
@@ -3163,7 +3120,7 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
       rw [h_v2_snd, h_v2_fst]
       have h_ctx_pre : Env_pre.context = Env.context :=
         CmdType.preprocess_preserves_context C Env xty _ Env_pre h_preprocess
-      have h_am : ∀ ty ∈ Maps.values Env_pre.context.types, LTy.boundVars ty = [] := by
+      have h_am : ∀ ty ∈ Strata.Util.HMaps.values Env_pre.context.types, LTy.boundVars ty = [] := by
         rw [h_ctx_pre]; exact h_ambient_mono
       exact update_ambient_mono Env_pre x _ h_am
   | set x e md =>
@@ -3178,11 +3135,11 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
       simp only [TypeContext.lookup, TypeContext.inferType, TypeContext.unifyTypes,
         TypeContext.checkAnnotCompat] at *
       obtain ⟨e', ety, Env_infer⟩ := v
-      have h_ctx_infer : Env_infer.context = Env.context :=
+      have h_ctx_infer : TContext.Equiv (T := CoreLParams) Env_infer.context Env.context :=
         CmdType.inferType_preserves_context C Env _ _ expr e' ety h_infer h_wf h_ne h_fwf
       have h_ctx_unify : Env'.context = Env_infer.context :=
         CmdType.unifyTypes_preserves_context Env_infer Env' _ h_unify
-      rw [h_ctx_unify, h_ctx_infer]; exact h_ambient_mono
+      rw [h_ctx_unify]; exact ambient_mono_of_equiv h_ctx_infer.symm h_ambient_mono
     | nondet =>
       simp at h; cases h
       exact h_ambient_mono
@@ -3192,24 +3149,24 @@ theorem Cmd.typeCheck_preserves_ambient_mono (C : LContext CoreLParams) (Env : T
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     obtain ⟨e', ety, Env_infer⟩ := v
-    rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
-    exact h_ambient_mono
+    exact ambient_mono_of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm h_ambient_mono
   | assume label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h; rename_i v h_infer
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     obtain ⟨e', ety, Env_infer⟩ := v
-    rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
-    exact h_ambient_mono
+    exact ambient_mono_of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm h_ambient_mono
   | cover label e md =>
     simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
     elim_err h; rename_i v h_infer
     elim_err h; rename_i _u h_check
     elim_err h; cases h
     obtain ⟨e', ety, Env_infer⟩ := v
-    rw [CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf]
-    exact h_ambient_mono
+    exact ambient_mono_of_equiv
+      (CmdType.inferType_preserves_context C Env Env_infer _ e e' ety h_infer h_wf h_ne h_fwf).symm h_ambient_mono
 
 /-- A successful `typeCheckCmd` step keeps every context type monomorphic. -/
 theorem typeCheckCmd_preserves_ambient_mono (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -3218,8 +3175,8 @@ theorem typeCheckCmd_preserves_ambient_mono (C : LContext CoreLParams) (Env : TE
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_fwf : FactoryWF C.functions)
     (h_ne : Env.context.types ≠ [])
-    (h_ambient_mono : ∀ ty ∈ Maps.values Env.context.types, LTy.boundVars ty = []) :
-    ∀ ty ∈ Maps.values Env'.context.types, LTy.boundVars ty = [] := by
+    (h_ambient_mono : ∀ ty ∈ Strata.Util.HMaps.values Env.context.types, LTy.boundVars ty = []) :
+    ∀ ty ∈ Strata.Util.HMaps.values Env'.context.types, LTy.boundVars ty = [] := by
   cases cmd with
   | cmd c =>
     -- `.cmd` delegates to `Imperative.Cmd.typeCheck`.
@@ -3233,11 +3190,10 @@ theorem typeCheckCmd_preserves_ambient_mono (C : LContext CoreLParams) (Env : TE
     exact Cmd.typeCheck_preserves_ambient_mono C Env c c' Env_inner h_tc h_wf h_fwf h_ne
       h_ambient_mono
   | call pname callArgs md =>
-    -- `.call` preserves the context entirely.
-    have h_ctx : Env'.context = Env.context :=
+    -- `.call` preserves the context up to `Equiv`.
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
       typeCheckCmd_call_preserves_context C Env P pname callArgs md cmd' Env' h h_wf h_fwf h_ne
-    rw [h_ctx]
-    exact h_ambient_mono
+    exact ambient_mono_of_equiv h_ctx.symm h_ambient_mono
 
 
 /-- A successful `postprocess` stores a type whose free type variables are all in
@@ -3315,7 +3271,7 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
       -- The output env is `update v3.snd x v3.fst`. Context of `v3.snd` = `Env.context`.
       have h_postprocess' : CmdType.postprocess C Env_unified v1.fst = .ok (v3.fst, v3.snd) := by
         rw [h_postprocess]
-      have h_ctx_eq : v3.snd.context = Env.context := by
+      have h_ctx_eq : TContext.Equiv (T := CoreLParams) v3.snd.context Env.context := by
         have h1 := postprocess_preserves_context C Env_unified v1.fst v3.fst v3.snd h_postprocess'
         have h2 := CmdType.unifyTypes_preserves_context v2.2.snd Env_unified _ h_unify
         have h3 := CmdType.inferType_preserves_context C v1.snd v2.2.snd
@@ -3324,18 +3280,18 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
           (by rw [CmdType.preprocess_preserves_context C Env xty v1.fst v1.snd h_preprocess]; exact h_ne)
           h_fwf
         have h4 := CmdType.preprocess_preserves_context C Env xty v1.fst v1.snd h_preprocess
-        rw [h1, h2, h3, h4]
+        rw [h1, h2]; rw [h4] at h3; exact h3
       -- Free vars of the new stored binding `v3.fst` are all rigid (postprocess guard).
       have h_new_rigid : ∀ v ∈ LTy.freeVars v3.fst, v ∈ C.rigidTypeVars :=
         postprocess_freeVars_rigid C Env_unified v1.fst v3.fst v3.snd h_postprocess'
       intro y ty h_find
       simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
-      rcases Maps.find?_addInNewest_single v3.snd.genEnv.context.types x v3.fst y with
+      rcases Strata.Util.HMaps.find?_addInNewest_single v3.snd.genEnv.context.types x v3.fst y with
         ⟨h_new, _⟩ | h_old
       · rw [h_new] at h_find; injection h_find with h_find; subst h_find; exact h_new_rigid
       · rw [h_old] at h_find
         have h_find' : Env.context.types.find? y = some ty := by
-          rw [← h_ctx_eq]; simpa only [TEnv.context] using h_find
+          rw [← h_ctx_eq.find?]; simpa only [TEnv.context] using h_find
         exact h_ambient_rigid y ty h_find'
     · -- nondet
       rename_i heq_nondet
@@ -3354,7 +3310,7 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
         postprocess_freeVars_rigid C v1.snd v1.fst v2.fst v2.snd h_postprocess'
       intro y ty h_find
       simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
-      rcases Maps.find?_addInNewest_single v2.snd.genEnv.context.types x v2.fst y with
+      rcases Strata.Util.HMaps.find?_addInNewest_single v2.snd.genEnv.context.types x v2.fst y with
         ⟨h_new, _⟩ | h_old
       · rw [h_new] at h_find; injection h_find with h_find; subst h_find; exact h_new_rigid
       · rw [h_old] at h_find
@@ -3362,8 +3318,8 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
           rw [← h_ctx_eq]; simpa only [TEnv.context] using h_find
         exact h_ambient_rigid y ty h_find'
   | set x e md =>
-    -- `set` never changes the context: prove `Env'.context = Env.context`.
-    have h_ctx : Env'.context = Env.context := by
+    -- `set` changes the context only up to `Equiv` (infer resolves).
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
       simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
       elim_err h; rename_i xty h_lookup
       cases e with
@@ -3379,13 +3335,13 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
         have h_ctx_unify := CmdType.unifyTypes_preserves_context Env_infer Env'
           [(xty, ety)] h_unify
         simp only [TEnv.context] at *
-        rw [h_ctx_unify, h_ctx_infer]
-      | nondet => simp only [] at h; cases h; rfl
+        rw [h_ctx_unify]; exact h_ctx_infer
+      | nondet => simp only [] at h; cases h; exact TContext.Equiv.refl _
     intro y ty h_find
-    rw [h_ctx] at h_find
+    rw [h_ctx.find?] at h_find
     exact h_ambient_rigid y ty h_find
   | assert label e md =>
-    have h_ctx : Env'.context = Env.context := by
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
       simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
       elim_err h; rename_i v heq
       elim_err h; rename_i _u h_checkAnnot
@@ -3393,9 +3349,9 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
       cases h
       obtain ⟨e', ety, Env_out⟩ := v
       exact CmdType.inferType_preserves_context C Env Env_out (.assert label e md) e e' ety heq h_wf h_ne h_fwf
-    intro y ty h_find; rw [h_ctx] at h_find; exact h_ambient_rigid y ty h_find
+    intro y ty h_find; rw [h_ctx.find?] at h_find; exact h_ambient_rigid y ty h_find
   | assume label e md =>
-    have h_ctx : Env'.context = Env.context := by
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
       simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
       elim_err h; rename_i v heq
       elim_err h; rename_i _u h_checkAnnot
@@ -3403,9 +3359,9 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
       cases h
       obtain ⟨e', ety, Env_out⟩ := v
       exact CmdType.inferType_preserves_context C Env Env_out (.assume label e md) e e' ety heq h_wf h_ne h_fwf
-    intro y ty h_find; rw [h_ctx] at h_find; exact h_ambient_rigid y ty h_find
+    intro y ty h_find; rw [h_ctx.find?] at h_find; exact h_ambient_rigid y ty h_find
   | cover label e md =>
-    have h_ctx : Env'.context = Env.context := by
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
       simp only [Cmd.typeCheck, Bind.bind, Except.bind] at h
       elim_err h; rename_i v heq
       elim_err h; rename_i _u h_checkAnnot
@@ -3413,7 +3369,7 @@ theorem Cmd.typeCheck_preserves_ambient_rigid (C : LContext CoreLParams) (Env : 
       cases h
       obtain ⟨e', ety, Env_out⟩ := v
       exact CmdType.inferType_preserves_context C Env Env_out (.cover label e md) e e' ety heq h_wf h_ne h_fwf
-    intro y ty h_find; rw [h_ctx] at h_find; exact h_ambient_rigid y ty h_find
+    intro y ty h_find; rw [h_ctx.find?] at h_find; exact h_ambient_rigid y ty h_find
 
 /-- A successful `typeCheckCmd` step keeps every context type's free variables rigid. -/
 theorem typeCheckCmd_preserves_ambient_rigid (C : LContext CoreLParams) (Env : TEnv Unit)
@@ -3439,11 +3395,11 @@ theorem typeCheckCmd_preserves_ambient_rigid (C : LContext CoreLParams) (Env : T
     exact Cmd.typeCheck_preserves_ambient_rigid C Env c c' Env_inner h_tc h_wf h_fwf h_ne
       h_ambient_rigid
   | call pname callArgs md =>
-    -- `.call` leaves the type-scope unchanged.
-    have h_ctx : Env'.context = Env.context :=
+    -- `.call` leaves the type-scope unchanged up to `Equiv`.
+    have h_ctx : TContext.Equiv (T := CoreLParams) Env'.context Env.context :=
       typeCheckCmd_call_preserves_context C Env P pname callArgs md _ Env' h h_wf h_fwf h_ne
     intro y ty h_find
-    rw [h_ctx] at h_find
+    rw [h_ctx.find?] at h_find
     exact h_ambient_rigid y ty h_find
 
 end TypeSpec

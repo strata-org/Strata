@@ -471,4 +471,78 @@ procedure loop()
 };
 #end)
 
+-- Generic datatype: the `<T>` type-parameter list survives Abstract→Concrete→Abstract.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+#end)
+
+-- Multiple type parameters: their ORDER (`<A, B>`, not `<B, A>`) is preserved.
+/--
+info: datatype Either<A, B> { First(a: A), Second(b: B) }
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Either<A, B> { First(a: A), Second(b: B) }
+#end)
+
+-- Applied type in a type-annotation position (a procedure parameter): the
+-- `Option<int>` annotation uses the new `appliedType` grammar op — distinct from
+-- the `<T>` typeParams on the datatype declaration — so this exercises its
+-- serialize (`.Applied` → `appliedType`) and deserialize (`appliedType` →
+-- `.Applied`) arms, which the datatype-declaration round-trips above do not.
+-- The pretty-printer parenthesizes a non-atomic type in a type-argument slot, so
+-- `Option<int>` prints as `(Option<int>)`; the `parenType` grammar production
+-- makes that re-parse, so the program still converges.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: (Option<int>) := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<int> := Nothing()
+};
+#end)
+
+-- Nested applied type as a type argument (`Option<Option<int>>`): exercises the
+-- serializer's `args.map highTypeToArg` and deserializer's `mapM translateHighType`
+-- recursion, and the `parenType` wrapping the pretty-printer inserts at each
+-- nesting level.
+-- Only the outer application is parenthesized (the var-type slot); the inner
+-- `Option<int>` sits in the `<…>`-delimited argument slot, which needs no parens.
+/--
+info: datatype Option<T> { Nothing, Some(value: T) }
+
+procedure foo()
+  opaque
+{
+  var o: (Option<Option<int>>) := Nothing()
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+datatype Option<T> { Nothing, Some(value: T) }
+procedure foo() opaque {
+  var o: Option<Option<int>> := Nothing()
+};
+#end)
+
 end Strata.Laurel

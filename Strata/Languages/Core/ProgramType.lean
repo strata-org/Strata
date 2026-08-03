@@ -31,7 +31,7 @@ def typeCheck (C : Expression.TyContext) (T : Expression.TyEnv)
       if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
         -- Temporarily add formals in the context.
         let Env := Env.pushEmptyContext
-        let Env := Env.addInNewestContext func.inputPolyTypes
+        let Env := Env.addInNewestContext (Strata.Util.HMap.ofList func.inputPolyTypes)
         -- Type check the body and ensure that it unifies with the return type.
         -- let (bodyty, Env) ← infer Env body
         let (body_typed, Env) ← LExpr.resolve C Env body
@@ -56,7 +56,8 @@ C are already well-typed.
 @[expose] def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
   Except DiagnosticModel (Program × Core.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
-    let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
+    let Env := Env.updateSubst { subst := Subst.empty.push (Strata.Util.HMap.empty : SubstOne),
+                                 isWF := SubstWF_of_pushEmptyScope _ SubstWF_of_empty }
     let (decls, Env) ← go C Env program.decls []
     .ok ({ decls }, Env)
 

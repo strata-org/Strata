@@ -66,14 +66,14 @@ theorem isBoolType_eq (ty : LTy) :
 theorem update_preserves_subst (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) :
     (CmdType.update Env x ty).stateSubstInfo = Env.stateSubstInfo := by
   simp [CmdType.update]
-  exact TEnv.addInNewestContext_stateSubstInfo (T := CoreLParams) Env [(x, ty)]
+  exact TEnv.addInNewestContext_stateSubstInfo (T := CoreLParams) Env (Strata.Util.HMap.single x ty)
 
 /-- `update` keeps the type-scope non-empty (it pushes onto the newest scope). -/
 theorem update_types_ne (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) :
     (CmdType.update Env x ty).context.types ≠ [] := by
   simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
-    Maps.addInNewest, Maps.push]
-  exact List.cons_ne_nil _ _
+    Strata.Util.HMaps.addInNewest]
+  split <;> exact List.cons_ne_nil _ _
 
 /-- `update` with a monomorphic binding preserves `ContextMono`: the new type
     `forAll [] mty` has empty `boundVars`, and old bindings keep their types. -/
@@ -83,7 +83,7 @@ theorem update_ContextMono (Env : TEnv Unit) (x : CoreIdent) (mty : LMonoTy)
       LTy.boundVars ty = [] := by
   intro y ty h_find
   simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context] at h_find
-  rcases Maps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
+  rcases Strata.Util.HMaps.find?_addInNewest_single Env.genEnv.context.types x (.forAll [] mty) y with
     ⟨h_new, _⟩ | h_old
   · rw [h_new] at h_find; injection h_find with h_find; subst h_find; simp [LTy.boundVars]
   · rw [h_old] at h_find
@@ -100,9 +100,11 @@ theorem update_TEnvWF (Env : TEnv Unit) (x : CoreIdent) (mty : LMonoTy)
 /-- `update` only grows the *newest* `types` scope, so popping it recovers the
     input stack tail. Structural — no well-scoping assumption. -/
 theorem update_types_pop (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) :
-    Maps.pop (CmdType.update Env x ty).context.types = Maps.pop Env.context.types := by
+    Strata.Util.HMaps.pop (CmdType.update Env x ty).context.types = Strata.Util.HMaps.pop Env.context.types := by
   simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context,
-    Maps.addInNewest, Maps.push, Maps.pop]
+    Strata.Util.HMaps.addInNewest]
+  rcases h : Env.genEnv.context.types with _ | ⟨m, rest⟩ <;>
+    simp only [Strata.Util.HMaps.pop]
 
 /-- `update` leaves the alias list unchanged (it only touches `types`). -/
 theorem update_aliases (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) :
@@ -114,14 +116,18 @@ theorem update_tyGen (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) :
     (CmdType.update Env x ty).genEnv.genState.tyGen = Env.genEnv.genState.tyGen := by
   simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext]
 
-/-- Substitution on the output context of `update` inserts the substituted type. -/
+/-- Substitution on the output context of `update` is `Equiv` to inserting the
+    substituted type into the substituted context. (`HMap` opacity blocks the
+    structural equality that held for the old List-map representation.) -/
 theorem update_subst_context (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) (S : Subst)
+    (h_ne : Env.context.types ≠ [])
     (h_fresh : Env.context.types.find? x = none) :
-    TContext.subst (CmdType.update Env x ty).context S =
+    TContext.Equiv (T := CoreLParams) (TContext.subst (CmdType.update Env x ty).context S)
       { TContext.subst Env.context S with
         types := (TContext.subst Env.context S).types.insert x (LTy.subst S ty) } := by
-  simp [CmdType.update]
-  exact TEnv.addInNewestContext_singleton_subst_context (T := CoreLParams) Env x ty S h_fresh
+  simp only [CmdType.update, TEnv.addInNewestContext, TEnv.updateContext, TEnv.context]
+  exact TContext.subst_addInNewest_single_equiv_insert (T := CoreLParams)
+    Env.context S x ty h_ne h_fresh
 
 /-- Decompose a successful `preprocess` into the underlying `instantiateWithCheck` step.
     `preprocess` rejects polymorphic annotations (`boundVars != []`), then instantiates and
@@ -185,7 +191,9 @@ theorem preprocess_isInstance (C : LContext CoreLParams) (Env Env' : TEnv Unit)
     (LTy.forAll.inj h_eq).2
   rw [h_mty_pre]
   exact AnnotCompat_subst Env'.stateSubstInfo.subst
-    (⟨[], by unfold LMonoTy.subst; simp [Subst.hasEmptyScopes, Map.isEmpty]; exact h_ae⟩) h_aw
+    (⟨Strata.Util.HMap.empty, by
+      rw [LMonoTy.subst_of_hasEmptyScopes
+        (by simp [Subst.hasEmptyScopes, Strata.Util.HMap.isEmpty_empty])]; exact h_ae⟩) h_aw
 
 /-- After the unification substitution `S` is applied, `preprocess`'s output satisfies
     `RigidAnnotCompat`. Requires that `S` is identity on rigid vars and absorbs
@@ -352,7 +360,7 @@ theorem inferType_absorbs (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   unfold LExpr.resolve at h_resolve
   simp only [Bind.bind, Except.bind] at h_resolve
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h_resolve
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h_resolve
@@ -463,9 +471,8 @@ theorem inferType_preserves_context (C : LContext CoreLParams) (Env Env' : TEnv 
     (h_wf : TEnvWF (T := CoreLParams) Env)
     (h_ne : Env.context.types ≠ [])
     (h_fwf : FactoryWF C.functions) :
-    Env'.context = Env.context := by
+    TContext.Equiv (T := CoreLParams) Env'.context Env.context := by
   obtain ⟨ea, h_resolve, _, _⟩ := inferType_decompose C Env c e e' ety Env' h
-  have h_ws : WellScoped e Env.context := inferType_fvars_in_knownVars C Env c e e' ety Env' h
   exact resolve_preserves_context e ea C Env Env' h_resolve h_wf h_ne h_fwf
 
 /-- `inferType` preserves `TEnvWF`. -/
@@ -489,7 +496,7 @@ theorem inferType_genState_mono (C : LContext CoreLParams) (Env Env' : TEnv Unit
   unfold LExpr.resolve at h_resolve
   simp only [Bind.bind, Except.bind] at h_resolve
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h_resolve
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h_resolve
@@ -525,7 +532,7 @@ theorem inferType_output_fresh (C : LContext CoreLParams) (Env Env' : TEnv Unit)
   unfold LExpr.resolve at h_resolve
   simp only [Bind.bind, Except.bind] at h_resolve
   generalize h_init : (if Env.context.types.isEmpty = true then
-      Env.updateContext { types := [[]], aliases := Env.context.aliases }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env) = Env0 at h_resolve
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h_resolve

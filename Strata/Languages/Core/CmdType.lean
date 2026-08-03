@@ -29,7 +29,7 @@ def lookup (Env : TEnv Unit) (x : CoreIdent) : Option LTy :=
   Env.context.types.find? x
 
 def update (Env : TEnv Unit) (x : CoreIdent) (ty : LTy) : TEnv Unit :=
-  Env.addInNewestContext (T := CoreLParams) [(x, ty)]
+  Env.addInNewestContext (T := CoreLParams) (Strata.Util.HMap.single x ty)
 
 def freeVars (e : (LExpr CoreLParams.mono)) : List CoreIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)

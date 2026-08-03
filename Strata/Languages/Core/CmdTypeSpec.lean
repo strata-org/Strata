@@ -49,50 +49,63 @@ inductive CmdHasType' (C : LContext CoreLParams) [S : ExprTypingSpec τ] :
     TContext Unit → Cmd Expression → TContext Unit → Prop where
 
   /-- `var x : T := e` — `x` must be fresh, and the stored monotype `mty` must be
-      an instantiation of `T` up to `RigidAnnotCompat` (see `Cmd.typeCheck_sound`). -/
-  | init_det : ∀ Γ x (xty : LTy) e mty tys md,
+      an instantiation of `T` up to `RigidAnnotCompat` (see `Cmd.typeCheck_sound`).
+
+      The output context `Δ` is required only up to `TContext.Equiv` with the
+      canonical `insert`-form: the `HMap`-backed context does not observe key or
+      insertion order, so a structural equality is too strong (and the sound
+      theorem only produces the substituted-`update` context, which is `Equiv` to
+      the canonical form, not equal to it). The relation stays syntax-directed —
+      the command still selects exactly one constructor. -/
+  | init_det : ∀ Γ x (xty : LTy) e mty tys md Δ,
       Γ.types.find? x = none →
       x ∉ HasVarsPure.getVars (P := Expression) e →
       tys.length = xty.boundVars.length →
       RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
       S.exprTyped C Γ e (S.embed mty) →
-      CmdHasType' C Γ (.init x xty (.det e) md)
-        { Γ with types := Γ.types.insert x (.forAll [] mty) }
+      TContext.Equiv (T := CoreLParams) Δ { Γ with types := Γ.types.insert x (.forAll [] mty) } →
+      CmdHasType' C Γ (.init x xty (.det e) md) Δ
 
   /-- `var x : T := *` — `x` must be fresh, and `mty` must be an instantiation of
-      `T` up to `RigidAnnotCompat` (as in `init_det`). -/
-  | init_nondet : ∀ Γ x (xty : LTy) mty tys md,
+      `T` up to `RigidAnnotCompat` (as in `init_det`). Output up to `Equiv`. -/
+  | init_nondet : ∀ Γ x (xty : LTy) mty tys md Δ,
       Γ.types.find? x = none →
       tys.length = xty.boundVars.length →
       RigidAnnotCompat Γ.aliases C.rigidTypeVars (LTy.openFull xty tys) mty →
-      CmdHasType' C Γ (.init x xty .nondet md)
-        { Γ with types := Γ.types.insert x (.forAll [] mty) }
+      TContext.Equiv (T := CoreLParams) Δ { Γ with types := Γ.types.insert x (.forAll [] mty) } →
+      CmdHasType' C Γ (.init x xty .nondet md) Δ
 
-  /-- `x := e` — `x` must exist with mono type `mty`, and `e` must have that type. -/
-  | set_det : ∀ Γ x mty e md,
+  /-- `x := e` — `x` must exist with mono type `mty`, and `e` must have that type.
+      Output up to `Equiv` with the (unchanged) input context. -/
+  | set_det : ∀ Γ x mty e md Δ,
       Γ.types.find? x = some (.forAll [] mty) →
       S.exprTyped C Γ e (S.embed mty) →
-      CmdHasType' C Γ (.set x (.det e) md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdHasType' C Γ (.set x (.det e) md) Δ
 
-  /-- `x := *` — `x` must exist in context with a mono type. -/
-  | set_nondet : ∀ Γ x mty md,
+  /-- `x := *` — `x` must exist in context with a mono type. Output up to `Equiv`. -/
+  | set_nondet : ∀ Γ x mty md Δ,
       Γ.types.find? x = some (.forAll [] mty) →
-      CmdHasType' C Γ (.set x .nondet md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdHasType' C Γ (.set x .nondet md) Δ
 
-  /-- `assert l e` — `e` must have type `bool`. -/
-  | assert : ∀ Γ l e md,
+  /-- `assert l e` — `e` must have type `bool`. Output up to `Equiv`. -/
+  | assert : ∀ Γ l e md Δ,
       S.exprTyped C Γ e (S.embed .bool) →
-      CmdHasType' C Γ (.assert l e md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdHasType' C Γ (.assert l e md) Δ
 
-  /-- `assume l e` — `e` must have type `bool`. -/
-  | assume : ∀ Γ l e md,
+  /-- `assume l e` — `e` must have type `bool`. Output up to `Equiv`. -/
+  | assume : ∀ Γ l e md Δ,
       S.exprTyped C Γ e (S.embed .bool) →
-      CmdHasType' C Γ (.assume l e md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdHasType' C Γ (.assume l e md) Δ
 
-  /-- `cover l e` — `e` must have type `bool`. -/
-  | cover : ∀ Γ l e md,
+  /-- `cover l e` — `e` must have type `bool`. Output up to `Equiv`. -/
+  | cover : ∀ Γ l e md Δ,
       S.exprTyped C Γ e (S.embed .bool) →
-      CmdHasType' C Γ (.cover l e md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdHasType' C Γ (.cover l e md) Δ
 
 /-- `CmdHasType'` instantiated with the polymorphic `HasType` relation. -/
 abbrev CmdHasType (C : LContext CoreLParams) :=

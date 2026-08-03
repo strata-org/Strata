@@ -158,7 +158,7 @@ info: ok: (procedure Poly<a> (x : a, out y : a)
  ,
  context:
  types:   ⏎
- aliases: [] state: tyGen: 2 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [(a, $__ty0) ($__ty1, $__ty0)])
+ aliases: [] state: tyGen: 2 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [($__ty1, $__ty0) (a, $__ty0)])
 -/
 #guard_msgs in
 #eval do let (proc', _) ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default

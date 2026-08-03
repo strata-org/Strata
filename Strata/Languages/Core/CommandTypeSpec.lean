@@ -47,9 +47,13 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       - All LHS (output) variables exist in the context.
       - Each input expression has the instantiated formal input type.
       - Each LHS variable's context type equals the instantiated formal output type.
-      - In-out arguments are simple variable references with matching names. -/
+      - In-out arguments are simple variable references with matching names.
+
+      A call leaves the context unchanged; the output `Δ` is required only up to
+      `TContext.Equiv` (see `CmdHasType'` for why equality is too strong under the
+      `HMap`-backed context). -/
   | call : ∀ Γ (pname : String) callArgs proc md
-      (σ : List (TyIdentifier × LMonoTy)),
+      (σ : List (TyIdentifier × LMonoTy)) Δ,
       Program.Procedure.find? P pname = some proc →
       (CallArg.getInputExprs callArgs).length = proc.header.inputs.length →
       (CallArg.getLhs callArgs).length = proc.header.outputs.length →
@@ -60,19 +64,20 @@ inductive CmdExtHasType' (C : LContext CoreLParams) (P : Program)
       -- satisfy); a by-value input is self-typing via `S.exprTyped`.
       (∀ i (hi : i < (CallArg.getInputExprs callArgs).length)
            (hj : i < proc.header.inputs.values.length),
-        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.inputs.values[i])) ∧
+        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (proc.header.inputs.values[i])) ∧
           (match (CallArg.getInputExprs callArgs)[i] with
            | .fvar _ x none => Γ.types.find? x = some (.forAll [] mty)
            | e => S.exprTyped C Γ e (S.embed mty))) →
       (∀ i (hi : i < (CallArg.getLhs callArgs).length)
            (hj : i < proc.header.outputs.values.length),
-        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst [σ] (proc.header.outputs.values[i])) ∧
+        ∃ mty, AliasEquiv Γ.aliases mty (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (proc.header.outputs.values[i])) ∧
           Γ.types.find? ((CallArg.getLhs callArgs)[i]) = some (.forAll [] mty)) →
       (∀ i (hi : i < proc.header.inputs.keys.length),
         (ListMap.keys proc.header.outputs).contains (proc.header.inputs.keys[i]) →
         ∃ m ty, (CallArg.getInputExprs callArgs)[i]? =
         some (.fvar m (proc.header.inputs.keys[i]) ty)) →
-      CmdExtHasType' C P Γ (.call pname callArgs md) Γ
+      TContext.Equiv (T := CoreLParams) Δ Γ →
+      CmdExtHasType' C P Γ (.call pname callArgs md) Δ
 
 /-- `CmdExtHasType'` instantiated with the polymorphic `HasType` relation. -/
 abbrev CmdExtHasType (C : LContext CoreLParams) (P : Program) :=

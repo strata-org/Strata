@@ -94,14 +94,14 @@ private theorem destructArrow_ftvar (w : TyIdentifier) :
 
 /-- Under an ftvar-renaming `ρ`, `subst ρ` of a type variable is again a type variable. -/
 private theorem subst_ftvar_is_ftvar (ρ : Subst)
-    (h_ρ_ftvar : ∀ mty ∈ Maps.values ρ, ∃ w, mty = LMonoTy.ftvar w)
+    (h_ρ_ftvar : ∀ mty ∈ Strata.Util.HMaps.values ρ, ∃ w, mty = LMonoTy.ftvar w)
     (x : TyIdentifier) :
     ∃ w, LMonoTy.subst ρ (LMonoTy.ftvar x) = LMonoTy.ftvar w := by
   simp only [LMonoTy.subst_unfold]
-  cases h_find : Maps.find? ρ x with
+  cases h_find : Strata.Util.HMaps.find? ρ x with
   | none => exact ⟨x, rfl⟩
   | some sty =>
-    have h_mem : sty ∈ Maps.values ρ := Maps.find?_mem_values _ h_find
+    have h_mem : sty ∈ Strata.Util.HMaps.values ρ := Strata.Util.HMaps.find?_mem_values _ h_find
     obtain ⟨w, h_w⟩ := h_ρ_ftvar sty h_mem
     exact ⟨w, h_w⟩
 
@@ -115,7 +115,7 @@ private theorem subst_list_eq_map (ρ : Subst) (mtys : LMonoTys) :
 /-- Combined mutual claim: under an ftvar-renaming `ρ`, `subst ρ` commutes with
 `destructArrow`. -/
 private theorem destructArrow_subst_combined (ρ : Subst)
-    (h_ρ_ftvar : ∀ mty ∈ Maps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (n : Nat) :
+    (h_ρ_ftvar : ∀ mty ∈ Strata.Util.HMaps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (n : Nat) :
     (∀ (mty : LMonoTy), icSize mty ≤ n →
       (LMonoTy.subst ρ mty).destructArrow
         = mty.destructArrow.map (LMonoTy.subst ρ)) ∧
@@ -200,7 +200,7 @@ private theorem destructArrow_mkArrow' (ret : LMonoTy) (args : LMonoTys) :
 /-- Convenience corollary of the combined helper: under an ftvar-renaming `ρ`,
 `(subst ρ mty).destructArrow = mty.destructArrow.map (subst ρ)`. -/
 private theorem destructArrow_subst (ρ : Subst)
-    (h_ρ_ftvar : ∀ mty ∈ Maps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (mty : LMonoTy) :
+    (h_ρ_ftvar : ∀ mty ∈ Strata.Util.HMaps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (mty : LMonoTy) :
     (LMonoTy.subst ρ mty).destructArrow = mty.destructArrow.map (LMonoTy.subst ρ) :=
   (destructArrow_subst_combined ρ h_ρ_ftvar (icSize mty)).1 mty (Nat.le_refl _)
 
@@ -653,7 +653,7 @@ private theorem resolveAliasesList_append (as bs : LMonoTys) (Env : TEnv Unit)
 /-- An ftvar-renaming `ρ` preserves `knownInstance`: substituting variables for variables does not
     change any `tcons` head/arity, and `ftvar`/`bitvec` are always known instances. -/
 private theorem knownInstance_subst_renaming (ρ : Subst) (ks : Lambda.KnownTypes)
-    (h_ρ_ftvar : ∀ mty ∈ Maps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (n : Nat) :
+    (h_ρ_ftvar : ∀ mty ∈ Strata.Util.HMaps.values ρ, ∃ w, mty = LMonoTy.ftvar w) (n : Nat) :
     (∀ (mty : LMonoTy), icSize mty ≤ n →
       LMonoTy.knownInstance mty ks = true → LMonoTy.knownInstance (LMonoTy.subst ρ mty) ks = true) ∧
     (∀ (mtys : LMonoTys), icSizes mtys ≤ n →
@@ -847,7 +847,7 @@ theorem Function.typeCheck_inverse_components (C : LContext CoreLParams) (Env : 
     (h_aliases_not_known : ∀ a ∈ Env.context.aliases, a.name ≠ "arrow")
     -- `ρ` is a variable renaming (every range value is a `.ftvar`), so `subst ρ` preserves
     -- `destructArrow` shape.
-    (h_ρ_ftvar : ∀ mty ∈ Maps.values ρ, ∃ w, mty = LMonoTy.ftvar w)
+    (h_ρ_ftvar : ∀ mty ∈ Strata.Util.HMaps.values ρ, ∃ w, mty = LMonoTy.ftvar w)
     -- `"arrow"` is a known type at arity 2 (context well-formedness; true of `KnownTypes.default`
     -- and any extending context), so every arrow node is binary.
     (h_arrow_wf : ArrowKnownBinary C)

@@ -34,18 +34,25 @@ public section
     with one new scope binding each input parameter to its declared monotype.
     Return variables are intentionally absent — preconditions may not reference them. -/
 def procInputContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
-  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))
-  { Γ with types := Γ.types.push inputScope }
+  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
+  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList inputScope) }
 
 /-- The typing context for a procedure's postconditions and body: the input
     context's scope further extended with the output parameters and, for each
-    in-out parameter `g`, an `old g` binding at `g`'s type. -/
+    in-out parameter `g`, an `old g` binding at `g`'s type.
+
+    Scopes are concatenated `old ++ output ++ input`: `HMap.ofList` resolves a key
+    to its last occurrence, so at an in-out key (present in both `output` and
+    `input`) the input binding wins, and an `old` key (only in `old`) resolves
+    there. This matches the checker exactly, which adds inputs first and then merges
+    outputs and old-bindings with `HMap.union` (existing binding wins): both resolve
+    a key by `input`-then-`output`-then-`old` priority. -/
 def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
-  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))
-  let outputScope := proc.header.outputs.map (fun (id, mty) => (id, .forAll [] mty))
+  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
+  let outputScope := proc.header.outputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
   let oldScope := proc.header.getInoutParams.map
-    (fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty))
-  { Γ with types := Γ.types.push (inputScope ++ outputScope ++ oldScope) }
+    (fun (id, ty) => (CoreIdent.mkOld id.name, LTy.forAll [] ty))
+  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (oldScope ++ outputScope ++ inputScope)) }
 
 /-- `procBodyContext` only extends `Γ.types`, so it leaves the alias list unchanged. -/
 @[simp] theorem procBodyContext_aliases (Γ : TContext Unit) (proc : Procedure) :
@@ -55,10 +62,11 @@ def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
     pushed on top. -/
 theorem procBodyContext_types (Γ : TContext Unit) (proc : Procedure) :
     (procBodyContext Γ proc).types = Γ.types.push
-      ((proc.header.inputs.map (fun (id, mty) => (id, .forAll [] mty))) ++
-       (proc.header.outputs.map (fun (id, mty) => (id, .forAll [] mty))) ++
-       (proc.header.getInoutParams.map
-         (fun (id, ty) => (CoreIdent.mkOld id.name, .forAll [] ty)))) := by
+      (Strata.Util.HMap.ofList
+        ((proc.header.getInoutParams.map
+           (fun (id, ty) => (CoreIdent.mkOld id.name, LTy.forAll [] ty))) ++
+         (proc.header.outputs.map (fun (id, mty) => (id, LTy.forAll [] mty))) ++
+         (proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))))) := by
   simp only [procBodyContext]
 
 /--

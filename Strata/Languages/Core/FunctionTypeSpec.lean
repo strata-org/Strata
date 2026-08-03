@@ -38,7 +38,7 @@ public section
     For top-level program functions `Γ.types = []`, so this reduces to the single
     formals scope `{ types := [formals] }`. -/
 def funcContext (Γ : TContext Unit) (func : Function) : TContext Unit :=
-  { Γ with types := Γ.types.push (func.inputs.map (fun (id, mty) => (id, .forAll [] mty))) }
+  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (func.inputs.map (fun (id, mty) => (id, .forAll [] mty)))) }
 
 /--
 Declarative typing for functions, parameterized over `ExprTypingSpec`.
