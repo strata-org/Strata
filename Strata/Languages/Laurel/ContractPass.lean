@@ -220,7 +220,7 @@ private def mkTempAssignments (args : List StmtExprMd)
     let paramType := match inputParams[i]? with
       | some p => p.type
       | none => { val := .Unknown, source := src }
-    let param : Parameter := { name := mkId tempName, type := paramType }
+    let param : Parameter? := { name := mkId tempName, type := some paramType }
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName))) src]
   return (decls, refs)
@@ -347,7 +347,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
         let mut outputRefs : List StmtExprMd := []
         for p in info.outputParams do
           let tempName ← freshTemp
-          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := p.type }) src]
+          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
           outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
         let callWithOutputs : StmtExprMd :=
           ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩

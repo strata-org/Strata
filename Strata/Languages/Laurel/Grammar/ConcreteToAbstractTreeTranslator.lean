@@ -334,11 +334,15 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | q`Laurel.nondetHole, #[] => return mkStmtExprMd (.Hole false none) src
     | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
       let name ← translateIdent arg0
-      let varType ← match typeArg with
+      -- The type annotation is optional. When absent, the declaration's type is
+      -- recovered by the resolution pass: synthesized from the initializer for
+      -- `var x := e`, or `Unknown` (with a diagnostic) for `var x`.
+      let varType? ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
-          | q`Laurel.typeAnnotation, #[typeArg0] => translateHighType typeArg0
-          | _, _ => TransM.error s!"Variable {name} requires explicit type"
-        | _ => TransM.error s!"Variable {name} requires explicit type"
+          | q`Laurel.typeAnnotation, #[typeArg0] => (some <$> translateHighType typeArg0)
+          | _, _ => TransM.error s!"Variable {name} has a malformed type annotation"
+        | .option _ none => pure none
+        | _ => TransM.error s!"Variable {name} has a malformed type annotation"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
@@ -346,8 +350,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       match value with
-      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType⟩, src⟩] init) src
-      | none => return mkStmtExprMd (.Var (.Declare ⟨name, varType⟩)) src
+      | some init => return mkStmtExprMd (.Assign [⟨.Declare ⟨name, varType?⟩, src⟩] init) src
+      | none => return mkStmtExprMd (.Var (.Declare ⟨name, varType?⟩)) src
     | q`Laurel.identifier, #[arg0] =>
       let name ← translateIdent arg0
       return mkStmtExprMd (.Var (.Local name)) src
@@ -398,8 +402,14 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           match top.name, top.args with
           | q`Laurel.assignTargetDecl, #[nameArg, typeArg] =>
             let name ← translateIdent nameArg
-            let ty ← translateHighType typeArg
-            pure (⟨.Declare ⟨name, ty⟩, tSrc⟩ : VariableMd)
+            -- Like varDecl's, the annotation is optional; resolution infers the type from the callee's corresponding output.
+            let ty? ← match typeArg with
+              | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
+                | q`Laurel.typeAnnotation, #[typeArg0] => (some <$> translateHighType typeArg0)
+                | _, _ => TransM.error s!"Assign target {name} has a malformed type annotation"
+              | .option _ none => pure none
+              | _ => TransM.error s!"Assign target {name} has a malformed type annotation"
+            pure (⟨.Declare ⟨name, ty?⟩, tSrc⟩ : VariableMd)
           | q`Laurel.assignTargetVar, #[nameArg] =>
             let name ← translateIdent nameArg
             pure (⟨.Local name, tSrc⟩ : VariableMd)

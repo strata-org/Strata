@@ -323,6 +323,25 @@ structure Parameter where
   type : AstNode HighType
 
 /--
+A parameter with an *optional* type annotation, used for local variable
+declarations (`Variable.Declare`).
+
+This mirrors `Parameter` but lets the annotation be omitted: `type` is `some T`
+for an annotated declaration (`var x : T`, `var x : T := e`) and `none` for an
+unannotated one (`var x`, `var x := e`). An unannotated declaration is a
+transient form produced by the parser; the resolution pass recovers a concrete
+type — synthesized from the initializer for `var x := e`, or `Unknown` (with a
+diagnostic) for the annotation-less, initializer-less `var x` — and fills in
+`some T`. Every declaration reaching the post-resolution passes therefore
+carries `some`.
+-/
+structure Parameter? where
+  /-- The parameter name. -/
+  name : Identifier
+  /-- The parameter's optional type annotation. -/
+  type : Option (AstNode HighType)
+
+/--
 A condition with an optional human-readable summary.
 Used for assertions, preconditions, and postconditions.
 -/
@@ -379,8 +398,8 @@ inductive Variable : Type where
   | Local (name : Identifier)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
   | Field (target : AstNode StmtExpr) (fieldName : Identifier)
-  /-- A local variable declaration with a name and type. -/
-  | Declare (parameter : Parameter)
+  /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
+  | Declare (parameter : Parameter?)
 
 /--
 The unified statement-expression type for Laurel programs.

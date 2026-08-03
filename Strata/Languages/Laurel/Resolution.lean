@@ -965,7 +965,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     match (← targetTypeName tgt) with
     | some typeName => fieldTypeInScope typeName fieldName
     | none => pure none
-  | .Declare param => pure (some param.type.val)
+  | .Declare param => pure (param.type.map (·.val))
 
 /-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
     Only `int` and int-based constrained types (e.g. `nat`) are supported by the
@@ -1093,6 +1093,59 @@ pattern-match on the constructor and delegate to the corresponding helper. -/
 
 namespace Resolution
 
+/-- Shared guard for Decl-Synth (`Synth.declInfer`/`Check.declInfer`): the
+    initializer's synthesized type must be a *value* type to be adopted for
+    the binding. `TVoid` (a void procedure call, a `while`, an `if` without
+    `else`, …) and `MultiValuedExpr` (a multi-output call) carry no single
+    value to bind, so they are diagnosed and the binding falls back to
+    `Unknown`, suppressing cascades on later uses of the variable. -/
+private def declInferValueType (name : Identifier) (initSource : FileRange)
+    (valueTy : HighTypeMd) : ResolveM HighTypeMd := do
+  match valueTy.val with
+  | .TVoid =>
+    let diag := diagnosticFromSource initSource
+      s!"cannot infer a type for '{name.text}': the initializer yields no value (type 'void')"
+    modify fun s => { s with errors := s.errors.push diag }
+    pure { val := .Unknown, source := valueTy.source }
+  | .MultiValuedExpr _ =>
+    let diag := diagnosticFromSource initSource
+      "multi-output call cannot be used as a value here; it returns multiple values. Unpack it into separate variables first"
+    modify fun s => { s with errors := s.errors.push diag }
+    pure { val := .Unknown, source := valueTy.source }
+  | _ => pure valueTy
+
+/-- (Decl-Synth over multi-assign) Component types each target adopts from a
+    synthesized multi-valued RHS; all `none` on a non-multi-valued RHS.
+    Shared by `Synth.assign`/`Check.assign`. `inferInfo` is `some` only when
+    at least one target is an unannotated `Declare`, so for a fully-annotated
+    multi-assign this returns all `none` and never diagnoses — the ordinary
+    push-in check reports any mismatch there.
+
+    When the RHS *is* multi-valued but its arity doesn't match the target
+    count, no component can be adopted. That mismatch is diagnosed here —
+    "tried to unpack N values into M variables" — naming the actual cause,
+    and `arityError = true` tells the caller to skip the tuple-level Sub
+    check, which would only restate the same problem as an opaque
+    `expected '(Unknown, …)'` tuple mismatch built from the fallback
+    bindings. The targets still bind `Unknown`, suppressing cascades on
+    later uses. -/
+private def componentTypes (targets : List VariableMd)
+    (inferInfo : Option (StmtExprMd × HighTypeMd))
+    : ResolveM (List (Option HighTypeMd) × Bool) := do
+  match inferInfo with
+  | some (value', valueTy) =>
+    match valueTy.val with
+    | .MultiValuedExpr tys =>
+      if tys.length == targets.length then
+        pure (tys.map some, false)
+      else
+        let diag := diagnosticFromSource value'.source
+          s!"tried to unpack {tys.length} values into {targets.length} variables"
+        modify fun s => { s with errors := s.errors.push diag }
+        pure (targets.map fun _ => none, true)
+    | _ => pure (targets.map fun _ => none, false)
+  | none => pure (targets.map fun _ => none, false)
+
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
@@ -1136,6 +1189,11 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd) : ResolveM (StmtExprMd × HighTy
     Synth.compoundAssign exprMd op target rhs source (by rw [h_node])
   | .Var (.Field target fieldName) =>
     Synth.varField exprMd target fieldName source (by rw [h_node])
+  -- (Decl-Synth) `var x := e`: a sole unannotated declaration target with an
+  -- initializer is handled specially so the binding's type is recovered from
+  -- the synthesized RHS. All other assignment shapes go to `Synth.assign`.
+  | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
+    Synth.declInfer exprMd name vs value source (by rw [h_node])
   | .Assign targets value =>
     Synth.assign exprMd targets value source (by rw [h_node])
   | .PureFieldUpdate target fieldName newVal =>
@@ -1240,6 +1298,10 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
     Check.block exprMd (head :: tail) label expected source (by rw [h_node])
   | .IfThenElse cond thenBr elseBr =>
     Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node])
+  -- (Decl-Synth, check mode) sole unannotated initialized declaration —
+  -- see `Synth.resolveStmtExpr`.
+  | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
+    Check.declInfer exprMd name vs value expected source (by rw [h_node])
   | .Assign targets value =>
     Check.assign exprMd targets value expected source (by rw [h_node])
   | .Hole det none => pure (Check.holeNone det expected source)
@@ -1354,14 +1416,27 @@ def Synth.varField (exprMd : StmtExprMd)
 
 /-- (Var-Declare)
     ```
-    x ∉ dom(Γ)
+    x ∉ dom(Γ)                                       (annotated, type = some T_x)
     ────────────────────────────────────────────────────
-    Γ ⊢ Var (.Declare ⟨x, T_x⟩) ⇒ TVoid ⊣ Γ, x : T_x
+    Γ ⊢ Var (.Declare x (some T_x)) ⇒ TVoid ⊣ Γ, x : T_x
+
+    x ∉ dom(Γ)                                       (Var-Declare-Infer, type = none)
+    ────────────────────────────────────────────────────
+    Γ ⊢ Var (.Declare x none) ⇒ TVoid ⊣ Γ, x : Unknown
     ```
     `⊣ Γ, x : T_x` records that the surrounding scope is extended with
     the new binding for the remainder of the enclosing block. The
     declaration itself does no work other than registering `x : T_x`,
     and yields no value, so it synthesizes `TVoid`.
+
+    When the annotation is absent (`type = none`, i.e. surface `var x`),
+    there is *neither* an annotation *nor* an initializer to read a type
+    from — `var x := e` is handled in `Synth.declInfer`/`Check.declInfer` by
+    synthesizing `e` — so this rule emits a "cannot infer a type"
+    diagnostic (binding `x : Unknown`, so that later uses of `x` do not
+    cascade further type errors). Either way the node is rewritten to a
+    fully-typed `Declare x (some T)`, so no `none` annotation survives
+    resolution.
 
     `x ∉ dom(Γ)` is a soft side condition, not a hard premise: when `x`
     is already bound in the current scope, `defineNameCheckDup` emits a
@@ -1369,11 +1444,18 @@ def Synth.varField (exprMd : StmtExprMd)
     diagnostic and still extends the scope — but with an *unresolved*
     placeholder rather than `x : T_x`, so later uses of `x` do not
     cascade further type errors. -/
-def Check.varDeclare (param : Parameter) (source : FileRange) :
+def Check.varDeclare (param : Parameter?) (source : FileRange) :
     ResolveM StmtExprMd := do
-  let ty' ← resolveHighType param.type
+  let ty' ← match param.type with
+    | some ty => resolveHighType ty
+    | none =>
+      let unknown : HighTypeMd := { val := .Unknown, source := source }
+      typeMismatch source none
+        s!"cannot infer a type for '{param.name.text}': a declaration with neither a type annotation nor an initializer has no type to read off; add an annotation (`var {param.name.text} : T`) or an initializer (`var {param.name.text} := e`)"
+        unknown
+      pure unknown
   let name' ← defineNameCheckDup param.name (.var param.name ty')
-  pure { val := .Var (.Declare ⟨name', ty'⟩), source := source }
+  pure { val := .Var (.Declare ⟨name', some ty'⟩), source := source }
 
 -- ### Control flow
 
@@ -1924,7 +2006,20 @@ def Synth.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) :
     ResolveM (StmtExpr × HighTypeMd) := do
-  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+  -- (Decl-Synth over multi-assign) A sole unannotated initialized declaration
+  -- (`var x := e`) is routed to `Synth.declInfer` by the dispatcher *before*
+  -- reaching here, so an unannotated `Declare` here comes from a multi-target
+  -- `assign var x, y, var z := call()`. In that case the RHS is synthesized
+  -- *first* and each unannotated target adopts its corresponding component of
+  -- the synthesized tuple (the callee's declared output); the RHS/target
+  -- compatibility is then enforced by a tuple-level Sub check at the end
+  -- instead of the usual push-in.
+  let inferInfo ← if targets.any (fun t => t.val matches .Declare ⟨_, none⟩) then
+      some <$> Synth.resolveStmtExpr value
+    else pure none
+  let (compTys, arityError) ← componentTypes targets inferInfo
+  let targets' ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
+    have := hv
     let ⟨vv, vs⟩ := v
     match vv with
     | .Local ref =>
@@ -1935,20 +2030,39 @@ def Synth.assign (exprMd : StmtExprMd)
       let fieldName' ← resolveFieldRef target' fieldName source
       pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
     | .Declare param =>
-      let ty' ← resolveHighType param.type
+      let ty' ← match param.type with
+        | some ty => resolveHighType ty
+        | none =>
+          -- Unannotated multi-assign target: adopt the RHS component type.
+          -- When the RHS provides no matching component (arity mismatch, or a
+          -- non-multi-valued RHS), bind `Unknown` — `componentTypes` or the
+          -- tuple check below reports the single mismatch diagnostic, and the
+          -- gradual binding suppresses cascades on later uses.
+          match compTy with
+          | some t => declInferValueType param.name vs t
+          | none => pure { val := .Unknown, source := vs }
       let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+      pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   let targetType (t : VariableMd) : ResolveM HighTypeMd := do
     match t.val with
     | .Local ref => getVarType ref
-    | .Declare param => pure param.type
+    | .Declare param => pure (param.type.getD { val := .Unknown, source := t.source })
     | .Field _ fieldName => getVarType fieldName
   let targetTys ← targets'.mapM targetType
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let value' ← Check.resolveStmtExpr value expectedTy
-  pure (.Assign targets' value', expectedTy)
+  match inferInfo with
+  | some (value', valueTy) =>
+    -- RHS already synthesized for inference; enforce the boundary tuple-wise
+    -- (unless `componentTypes` already reported an arity mismatch, which the
+    -- tuple check would only restate against the `Unknown` fallback bindings).
+    unless arityError do
+      checkSubtype value'.source expectedTy valueTy
+    pure (.Assign targets' value', expectedTy)
+  | none =>
+    let value' ← Check.resolveStmtExpr value expectedTy
+    pure (.Assign targets' value', expectedTy)
   termination_by (exprMd, 1)
   decreasing_by
     all_goals
@@ -1972,7 +2086,15 @@ def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
     (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
-  let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+  -- See `Synth.assign` for the unannotated multi-assign target handling
+  -- (Decl-Synth over multi-assign): the RHS is synthesized first and each
+  -- unannotated target adopts its tuple component.
+  let inferInfo ← if targets.any (fun t => t.val matches .Declare ⟨_, none⟩) then
+      some <$> Synth.resolveStmtExpr value
+    else pure none
+  let (compTys, arityError) ← componentTypes targets inferInfo
+  let targets' ← (targets.attach.zip compTys).mapM fun (⟨v, hv⟩, compTy) => do
+    have := hv
     let ⟨vv, vs⟩ := v
     match vv with
     | .Local ref =>
@@ -1983,19 +2105,32 @@ def Check.assign (exprMd : StmtExprMd)
       let fieldName' ← resolveFieldRef target' fieldName source
       pure (⟨.Field target' fieldName', vs⟩ : VariableMd)
     | .Declare param =>
-      let ty' ← resolveHighType param.type
+      let ty' ← match param.type with
+        | some ty => resolveHighType ty
+        | none =>
+          match compTy with
+          | some t => declInferValueType param.name vs t
+          | none => pure { val := .Unknown, source := vs }
       let name' ← defineNameCheckDup param.name (.var param.name ty')
-      pure (⟨.Declare ⟨name', ty'⟩, vs⟩ : VariableMd)
+      pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   let targetType (t : VariableMd) : ResolveM HighTypeMd := do
     match t.val with
     | .Local ref => getVarType ref
-    | .Declare param => pure param.type
+    | .Declare param => pure (param.type.getD { val := .Unknown, source := t.source })
     | .Field _ fieldName => getVarType fieldName
   let targetTys ← targets'.mapM targetType
   let expectedTy : HighTypeMd := match targetTys with
     | [single] => single
     | _        => { val := .MultiValuedExpr targetTys, source := source }
-  let value' ← Check.resolveStmtExpr value expectedTy
+  let value' ← match inferInfo with
+    | some (value', valueTy) =>
+      -- Tuple-wise boundary check, skipped after a `componentTypes` arity
+      -- diagnostic — the tuple check would only restate the mismatch against
+      -- the `Unknown` fallback bindings.
+      unless arityError do
+        checkSubtype value'.source expectedTy valueTy
+      pure value'
+    | none => Check.resolveStmtExpr value expectedTy
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
   pure { val := .Assign targets' value', source := source }
@@ -2006,6 +2141,70 @@ def Check.assign (exprMd : StmtExprMd)
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
+
+/-- (Decl-Synth, synth mode)
+    ```
+    x ∉ dom(Γ)    Γ ⊢ e ⇒ T
+    ──────────────────────────────────────────────
+    Γ ⊢ (var x := e) ⇒ T ⊣ Γ, x : T
+    ```
+    `var x := e`, an *unannotated* declaration (`Declare x none`) with an
+    initializer. With no annotation to push into the RHS, we *synthesize* the
+    initializer's type `T` and adopt it for the binding. The node is rewritten
+    to `Assign [⟨.Declare x (some T)⟩] e`, so no `none` annotation survives
+    resolution. This rule handles the sole-target form; unannotated declared
+    targets of a *multi-target* `assign var x, y := call()` are recovered
+    component-wise inside `Synth.assign`/`Check.assign`. The synthesized type
+    is `T`, matching `Synth.assign`'s single-target case.
+
+    Scoping: the initializer is synthesized *before* `defineNameCheckDup`
+    introduces the binding, so `e` cannot see the `x` being declared — a
+    self-referential `var x := x + 1` reports "'x' is not defined" (or reads
+    an outer `x` if one is in scope). This is asymmetric with the *annotated*
+    path, which resolves targets first: `var x : int := x + 1` accepts the
+    self-reference, reading the fresh (uninitialized) binding. Pinned by
+    `selfRefNoOuter`/`selfRefOuterShadow` in `ResolutionTypeCheckTests`. -/
+def Synth.declInfer (exprMd : StmtExprMd)
+    (name : Identifier) (vs : FileRange) (value : StmtExprMd)
+    (source : FileRange)
+    (h : exprMd.val = .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value) :
+    ResolveM (StmtExpr × HighTypeMd) := do
+  let (value', valueTy) ← Synth.resolveStmtExpr value
+  let bindTy ← declInferValueType name value'.source valueTy
+  let name' ← defineNameCheckDup name (.var name bindTy)
+  pure (.Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', bindTy)
+  termination_by (exprMd, 1)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.Assign.sizeOf_spec] at hsz
+    omega
+
+/-- (Decl-Synth, check mode) `var x := e` (`Declare x none` with initializer)
+    where a type `A` is expected (e.g. as the value-producing last statement of
+    a checked block). Synthesizes the initializer's type and adopts it for the
+    binding (see `Synth.declInfer`), then runs the standard \[⇐\] Sub boundary
+    check `T <: A` against the surrounding `expected` — *unless* `A = TVoid`
+    (statement position), exactly as in `Check.assign`. -/
+def Check.declInfer (exprMd : StmtExprMd)
+    (name : Identifier) (vs : FileRange) (value : StmtExprMd)
+    (expected : HighTypeMd) (source : FileRange)
+    (h : exprMd.val = .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value) :
+    ResolveM StmtExprMd := do
+  let (value', valueTy) ← Synth.resolveStmtExpr value
+  let bindTy ← declInferValueType name value'.source valueTy
+  let name' ← defineNameCheckDup name (.var name bindTy)
+  unless expected.val matches .TVoid do
+    checkSubtype source expected bindTy
+  pure { val := .Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', source := source }
+  termination_by (exprMd, 0)
+  decreasing_by
+    apply Prod.Lex.left
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.Assign.sizeOf_spec] at hsz
+    omega
 
 -- ### Increment / decrement
 
@@ -2042,12 +2241,14 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
-      let ty' ← resolveHighType param.type
-      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+      let ty' ← match param.type with
+        | some ty => resolveHighType ty
+        | none => pure { val := .Unknown, source := target.source }
+      pure (⟨.Declare ⟨param.name, some ty'⟩, target.source⟩ : VariableMd)
   checkIncrDecrTargetType op target' source
   let resultTy ← match target'.val with
     | .Local ref => getVarType ref
-    | .Declare param => pure param.type
+    | .Declare param => pure (param.type.getD { val := .Unknown, source := target.source })
     | .Field _ fieldName => getVarType fieldName
   pure (.IncrDecr mode op target', resultTy)
   termination_by (exprMd, 1)
@@ -2088,13 +2289,16 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       let fieldName' ← resolveFieldRef tgt' fieldName source
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
     | .Declare param =>
-      -- Should not occur — the translator rejects a declaration target.
-      let ty' ← resolveHighType param.type
-      pure (⟨.Declare ⟨param.name, ty'⟩, target.source⟩ : VariableMd)
+      -- Should not occur — the translator rejects a declaration target;
+      -- treat conservatively by resolving its type only.
+      let ty' ← match param.type with
+        | some ty => resolveHighType ty
+        | none => pure { val := .Unknown, source := target.source }
+      pure (⟨.Declare ⟨param.name, some ty'⟩, target.source⟩ : VariableMd)
   checkCompoundAssignTargetType op target' source
   let resultTy ← match target'.val with
     | .Local ref => getVarType ref
-    | .Declare param => pure param.type
+    | .Declare param => pure (param.type.getD { val := .Unknown, source := target.source })
     | .Field _ fieldName => getVarType fieldName
   let rhs' ← Check.resolveStmtExpr rhs resultTy
   pure (.CompoundAssign op target' rhs', resultTy)
@@ -2202,7 +2406,12 @@ def Synth.staticCall (exprMd : StmtExprMd)
     match argTys with
     | [lhsTy, rhsTy] =>
       let ctx := (← get).typeLattice
-      unless isConsistent ctx lhsTy rhsTy do
+      -- `TVoid ~ TVoid` holds in `isConsistent` (it is `highEq` on equal
+      -- constructors), but a void expression carries no value to compare,
+      -- so a void operand is rejected even when both sides agree.
+      let voidOperand :=
+        lhsTy.val matches .TVoid || rhsTy.val matches .TVoid
+      if voidOperand || !isConsistent ctx lhsTy rhsTy then
         let diag := diagnosticFromSource source
           s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{opName}'"
         modify fun s => { s with errors := s.errors.push diag }
@@ -3364,14 +3573,17 @@ private def collectStmtExpr (map : Std.HashMap Nat ResolvedNode) (expr : StmtExp
   foldStmtExpr (fun e map =>
     match e.val with
     | .Var (.Declare param) =>
-      let map := register map param.name (.var param.name param.type)
-      collectHighType map param.type
+      -- Post-resolution every `Declare` is annotated; default to `Unknown`.
+      let ty := param.type.getD { val := .Unknown, source := param.name.source }
+      let map := register map param.name (.var param.name ty)
+      collectHighType map ty
     | .Assign targets _ =>
       targets.foldl (fun map t =>
         match t.val with
         | .Declare param =>
-          let map := register map param.name (.var param.name param.type)
-          collectHighType map param.type
+          let ty := param.type.getD { val := .Unknown, source := param.name.source }
+          let map := register map param.name (.var param.name ty)
+          collectHighType map ty
         | _ => map) map
     | .Quantifier _ param _ _ =>
       let map := register map param.name (.quantifierVar param.name param.type)
@@ -3819,6 +4031,55 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
             else none
         | _ => none
 
+/-- Diagnostics for `Declare` nodes at `n` whose type annotation is still
+    `none`. Declarations occur in four positions: as a standalone `Var`
+    statement, as an `Assign` target, and (per the AST, though not the
+    surface syntax) as an `IncrDecr` or `CompoundAssign` target.
+    Public so `ResolutionProps` can state per-node cleanliness lemmas. -/
+def unannotatedDeclares (n : StmtExprMd) : List DiagnosticModel :=
+  let bug (source : FileRange) (name : Identifier) : DiagnosticModel :=
+    diagnosticFromSource source
+      s!"declaration of '{name.text}' left resolution without a type annotation; resolution rewrites every declaration to carry an explicit type"
+      DiagnosticType.StrataBug
+  match n.val with
+  | .Var (.Declare ⟨name, none⟩) => [bug n.source name]
+  | .Assign targets _ => targets.filterMap fun
+      | ⟨.Declare ⟨name, none⟩, src⟩ => some (bug src name)
+      | _ => none
+  | .IncrDecr _ _ ⟨.Declare ⟨name, none⟩, src⟩ => [bug src name]
+  | .CompoundAssign _ ⟨.Declare ⟨name, none⟩, src⟩ _ => [bug src name]
+  | _ => []
+
+/-- Enforce the post-resolution invariant that every variable declaration
+    carries a type annotation (see the Var-Declare and Decl-Synth rules:
+    resolution fills in `some T` for every `Declare` it sees — synthesized
+    from the initializer, or `Unknown` plus a user diagnostic for a bare
+    `var x` — so no `none` annotation survives). A surviving `none` is a
+    Strata bug, not a user error: downstream passes match on
+    `Declare ⟨_, some ty⟩` (e.g. `ConstrainedTypeElim.elimNode`) and would
+    silently skip an unannotated declaration. Runs on every resolution, so
+    the pipeline's re-resolves after each lowering pass also catch a pass
+    that constructs an unannotated declaration. -/
+def validateFullyAnnotated (program : Program) : List DiagnosticModel :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  -- `mapProcedureM` enumerates every expression tree in a procedure
+  -- (preconditions, decreases, body, invokeOn, axioms).
+  let procDiags (proc : Procedure) : List DiagnosticModel :=
+    (mapProcedureM (m := StateM (List DiagnosticModel))
+      (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
+      proc |>.run []).2
+  let typeDiags := program.types.flatMap fun
+    | .Constrained ct =>
+      collectStmtExprList unannotatedDeclares ct.constraint
+        ++ collectStmtExprList unannotatedDeclares ct.witness
+    | _ => []
+  let constantDiags := program.constants.flatMap fun c =>
+    c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
+  (program.staticProcedures ++ instanceProcs).flatMap procDiags
+    ++ typeDiags ++ constantDiags
+
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
@@ -3884,11 +4145,18 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     if existingModel.isNone then
       validateMultiOutputCallContexts semanticModel program'
     else []
+  -- Every declaration must leave resolution annotated (see
+  -- `validateFullyAnnotated`). Unconditional: re-resolutions check that
+  -- lowering passes preserve the invariant too.
+  let annotationBugs := validateFullyAnnotated program'
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
-      invokeOnErrors ++ multiOutputCallErrors
+      invokeOnErrors ++ multiOutputCallErrors ++ annotationBugs
   }
+
+-- `resolve` establishes the invariant that every `Declare` in its output is
+-- annotated: see `resolve_fullyAnnotated` in `ResolutionProps.lean`.
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
 

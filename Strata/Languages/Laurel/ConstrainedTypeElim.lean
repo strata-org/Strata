@@ -95,7 +95,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
 
 def resolveVariable (ptMap : ConstrainedTypeMap) (v : VariableMd) : VariableMd :=
   match v.val with
-  | .Declare param => ⟨.Declare { param with type := resolveType ptMap param.type }, v.source⟩
+  | .Declare param => ⟨.Declare { param with type := param.type.map (resolveType ptMap ·) }, v.source⟩
   | _ => v
 
 /-- Resolve constrained types in type positions and inject constraint calls into quantifier bodies.
@@ -107,7 +107,7 @@ def resolveExprNode (ptMap : ConstrainedTypeMap) (expr : StmtExprMd) : StmtExprM
   | .Assign targets value =>
     ⟨.Assign (targets.map (resolveVariable ptMap)) value, source⟩
   | .Var (.Declare param) =>
-    ⟨.Var (.Declare { param with type := resolveType ptMap param.type }), source⟩
+    ⟨.Var (.Declare { param with type := param.type.map (resolveType ptMap ·) }), source⟩
   | .Quantifier mode param trigger body =>
     let param' := { param with type := resolveType ptMap param.type }
     -- With bottom-up traversal, `body` is already recursed into. The newly
@@ -140,8 +140,8 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
     (resultUsed : Bool) (node : StmtExprMd) : List StmtExprMd :=
   let source := node.source
   match node.val with
-  | .Var (.Declare param) =>
-    let check := (constraintCallFor ptMap param.type.val param.name (src := source)).toList.map
+  | .Var (.Declare ⟨name, some ty⟩) =>
+    let check := (constraintCallFor ptMap ty.val name (src := source)).toList.map
       fun c => ⟨.Assume c, source⟩
     [node] ++ check
   | .Assign targets _value =>
@@ -198,7 +198,7 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
 
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
-    ⟨.Assign [⟨.Declare ⟨witnessId, resolveType ptMap ct.base⟩, src⟩] ct.witness, src⟩
+    ⟨.Assign [⟨.Declare ⟨witnessId, some (resolveType ptMap ct.base)⟩, src⟩] ct.witness, src⟩
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor ptMap (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
   { name := mkId s!"$witness_{ct.name.text}"

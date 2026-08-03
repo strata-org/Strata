@@ -546,4 +546,84 @@ procedure foo() opaque {
 };
 #end)
 
+-- Additional coverage: multi-target assignment with an annotated declared target.
+-- assignTargetDecl needs @[prec(0)] (like varDecl) or the formatter parenthesizes
+-- the trailing Option TypeAnnotation and prints the unparseable `var x(: int)`.
+
+/--
+info: procedure twoOut()
+  returns (a: int, b: int)
+  opaque
+{
+  a := 1;
+  b := 2
+};
+
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+procedure twoOut() returns (a: int, b: int)
+  opaque
+{ a := 1; b := 2 };
+procedure p()
+  opaque
+{
+  var y: int := 0;
+  assign var x: int, y := twoOut();
+  assert x == y
+};
+#end)
+
+-- Resolution's Decl-Synth rewrites every unannotated declared target to the
+-- annotated form (`some T`), so every resolved program with declared targets
+-- prints with `: T` on each one. Build that post-resolution AST shape directly
+-- (there is no surface syntax that parses to it here) and check that the
+-- printed text parses back and converges.
+
+private def node {t : Type} (v : t) : AstNode t := { val := v, source := default }
+
+private def declTarget (nm : String) (ty : HighType) : AstNode Variable :=
+  node (.Declare { name := mkId nm, type := some (node ty) })
+
+private def resolvedMultiAssign : Program :=
+  { staticProcedures := [
+      { name := mkId "p", inputs := [], outputs := [],
+        preconditions := [], decreases := none,
+        body := .Opaque []
+          (some (node (.Block [
+            node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
+              (node (.StaticCall (mkId "twoOut") [])))
+          ] none)))
+          [] }
+    ],
+    staticFields := [], types := [] }
+
+/--
+info: procedure p()
+  opaque
+{
+  assign var x: int, var y: bool := twoOut()
+};
+-/
+#guard_msgs in
+#eval do
+  let text := laurelToText resolvedMultiAssign
+  -- The printed text must re-parse; unparseable output is the bug this pins.
+  let inputCtx := StrataDDM.Parser.stringInputContext "test" text
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Laurel]
+  let reparsedStrata ← parseStrataProgramFromDialect dialects Laurel.name inputCtx
+  let reparsed ← parseFromStrata reparsedStrata
+  if laurelToText reparsed != text then
+    throw (IO.userError s!"multiAssign print does not re-parse to the same text:\n{text}")
+  IO.println text
+
 end Strata.Laurel

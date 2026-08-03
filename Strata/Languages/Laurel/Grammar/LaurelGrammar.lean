@@ -5,14 +5,14 @@
 -/
 
 module
--- Laurel dialect definition, loaded from LaurelGrammar.st
+-- Laurel dialect definition, loaded from LaurelGrammar.st.
+-- The grammar includes compound-assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`),
+-- an optional `entry` clause on procedures, `free`/`checked` modifiers on
+-- requires/ensures clauses, and an optional type annotation on assignTargetDecl
+-- (at explicit @[prec(0)], like varDecl, so it prints without parentheses).
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
--- Update this file (e.g. this comment) to trigger a recompile after modifying LaurelGrammar.st.
--- Last grammar change: generic type application/params (`Option<T>`, datatype type parameters) and `parenType`, so parenthesized/applied types round-trip.
--- (prior: added compound assignment ops (`+=`, `-=`, `*=`, `/=`, `%=`, `^=`).)
--- (prior: added optional `entry` clause on procedure (producer-set entry point for interpretation).)
--- (prior: added `free`/`checked` modifiers to requires/ensures clauses.)
--- Rebuild trigger: bump this line (change-agnostic) to force a grammar-cache refresh.
+-- Update this file (e.g. the token below) to trigger a recompile after modifying LaurelGrammar.st.
+-- Rebuild trigger token: assignTargetDecl-prec0
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

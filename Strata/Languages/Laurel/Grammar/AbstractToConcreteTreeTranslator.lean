@@ -122,18 +122,20 @@ where
       | none => laurelOp "block" #[semicolonSep stmtArgs]
       | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
     | .Var (.Declare param) =>
-      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let typeOpt := optionArg (param.type.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
       let initOpt := optionArg none
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign [⟨.Declare param, _⟩] value =>
-      let typeOpt := optionArg (some (laurelOp "typeAnnotation" #[highTypeToArg param.type]))
+      let typeOpt := optionArg (param.type.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
       let initOpt := optionArg (some (laurelOp "initializer" #[stmtExprToArg value]))
       laurelOp "varDecl" #[ident param.name.text, typeOpt, initOpt]
     | .Assign targets value =>
       if targets.length > 1 then
         let targetArgs := targets.map fun t =>
           match t.val with
-          | .Declare param => laurelOp "assignTargetDecl" #[ident param.name.text, highTypeToArg param.type]
+          | .Declare ⟨name, ty?⟩ =>
+            let typeOpt := optionArg (ty?.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
+            laurelOp "assignTargetDecl" #[ident name.text, typeOpt]
           | .Local name => laurelOp "assignTargetVar" #[ident name.text]
           | .Field target fieldName =>
             match target.val with

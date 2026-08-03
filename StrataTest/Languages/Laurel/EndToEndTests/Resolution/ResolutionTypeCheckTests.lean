@@ -730,3 +730,471 @@ procedure mixedSlotsOk() opaque {
   var b: Box2<int> := Wrap(true, 7)
 };
 #end
+
+/-! ## Optional type annotations (type hints)
+
+The binding annotation is optional. `var x := e` (no annotation) recovers the
+type by *synthesizing* the initializer and adopting its type for the binding
+(rule **Decl-Synth**); `var x` (neither annotation nor initializer) has no type
+to read off, so it binds `x : Unknown` and reports a diagnostic. -/
+
+/-! ### Decl-Synth: `var x := e` infers `x`'s type from the initializer.
+
+`x` is inferred `int` from `42`; using it where `bool` is expected reports a
+mismatch with `got 'int'` — proving the recovered type is the precise `int`,
+not the gradual `Unknown` (which would silently absorb the `assert`). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferFromInit() opaque {
+  var x := 42;
+  assert x
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### Decl-Synth: a consistent later use produces no diagnostics.
+
+`x` is inferred `int` and returned where `int` is expected, so the program is
+accepted with no errors. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferConsistent(): int {
+  var x := 42;
+  return x
+};
+#end
+
+/-! ### Decl-Synth: the inferred type flows through a checked position.
+
+`x` is inferred `bool`; returning it where the procedure's declared output
+`int` is expected fails — the inferred type participates in subsumption like
+any annotated one. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferThenReturn(): int {
+  var x := true;
+  return x
+//       ^ error: expected 'int', got 'bool'
+};
+#end
+
+/-! ### `var x` with neither annotation nor initializer binds `Unknown` + diagnoses.
+
+There is nothing to read a type from, so the declaration is diagnosed and `x`
+is bound at the gradual `Unknown`. The single diagnostic is the inference
+failure; the later `assert x` is *not* re-reported (Unknown is consistent with
+`bool`), confirming the binding suppresses cascades. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure noAnnotationNoInit() opaque {
+  var x;
+//^^^^^ error: cannot infer a type for 'x'
+  assert x
+};
+#end
+
+/-! ### Decl-Synth works with a synthesizing `if` initializer.
+
+`if c then 1 else 2` synthesizes `int` (its branches are mutually consistent),
+so `var x := if …` infers `x : int`; the later `assert x` then reports the
+int/bool mismatch. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferFromIf(c: bool) opaque {
+  var x := if c then 1 else 2;
+  assert x
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### A `var x := e` with an unresolved initializer does not cascade.
+
+The initializer fails name resolution (one diagnostic); `x` is inferred
+`Unknown` from the failed synthesis, so the later `assert x` is not
+re-reported. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferFromUndef() opaque {
+  var x := nope;
+//         ^^^^ error: 'nope' is not defined
+  assert x
+};
+#end
+
+/-! ### The inferred type is enforced on later reassignment.
+
+`x` is inferred `int` from `1`; a later `x := "hello"` is rejected exactly as
+if `x` had been annotated `int` — inference fixes the binding's type once and
+for all, it does not leave the variable gradually retypable. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferThenReassign() opaque {
+  var x := 1;
+  x := "hello";
+//     ^^^^^^^ error: expected 'int', got 'string'
+  assert x
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### A void initializer is rejected: there is no value to bind.
+
+A call to a procedure with no outputs synthesizes `TVoid` (the n = 0 case of
+Static-Call). Decl-Synth requires the initializer to synthesize a *value*
+type (`declInferValueType`), so `var x := doNothing()` is diagnosed at the
+initializer rather than silently binding `x : void`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure doNothing() opaque { };
+procedure inferFromVoidCall() opaque {
+  var x := doNothing()
+//         ^^^^^^^^^^^ error: cannot infer a type for 'x': the initializer yields no value (type 'void')
+};
+#end
+
+/-! ### …and the rejected binding falls back to `Unknown`, not `void`.
+
+After the void-initializer diagnostic, `x` is bound at the gradual `Unknown`,
+so the later `assert x` does not cascade a second error. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure doNothing() opaque { };
+procedure voidBindingSuppressesCascade() opaque {
+  var x := doNothing();
+//         ^^^^^^^^^^^ error: cannot infer a type for 'x': the initializer yields no value (type 'void')
+  assert x
+};
+#end
+
+/-! ### A multi-output call as initializer is rejected.
+
+A call to a procedure with two outputs synthesizes `MultiValuedExpr [int, int]`
+(Static-Call-Multi) — an internal pseudo-type a single variable cannot hold
+(the surface syntax for unpacking is `assign var a, var b := twoOut()`).
+Decl-Synth rejects it with the same position-oriented diagnostic operators
+use for multi-output operands, and binds `x : Unknown` so the later use does
+not cascade. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure twoOut() returns (a: int, b: int)
+  opaque;
+procedure inferFromMultiOut() opaque {
+  var x := twoOut();
+//         ^^^^^^^^ error: multi-output call cannot be used as a value here
+  assert x
+};
+#end
+
+/-! ### A `while` initializer is rejected the same way.
+
+Statement-shaped constructs (`while`, `if` without `else`, …) synthesize
+`TVoid`, so `var x := while …` hits the same no-value guard as the void
+call — rather than binding `x : void` silently. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferFromWhile(c: bool) opaque {
+  var x := while (c) { };
+//         ^^^^^^^^^^^^^ error: cannot infer a type for 'x': the initializer yields no value (type 'void')
+  assert x
+};
+#end
+
+/-! ### …and so is an `if` without an `else`.
+
+An else-less `if` is statement-shaped (there is no value on the false path),
+so it synthesizes `TVoid` and `var x := if c then 1` hits the same no-value
+guard as `while` and void calls. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferFromIf() opaque {
+  var c: bool := true;
+  var x := if c then 1;
+//         ^^^^^^^^^^^ error: cannot infer a type for 'x': the initializer yields no value (type 'void')
+  assert x
+};
+#end
+
+/-! ### Void expressions cannot be compared with `==` either.
+
+`isConsistent` relates `TVoid ~ TVoid` (it is plain constructor equality), but
+comparing two void expressions is meaningless — there are no values to
+compare. Op-Eq now rejects a void operand even when both sides agree. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure doNothing() opaque { };
+procedure compareVoid() opaque {
+  assert doNothing() == doNothing()
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: cannot compare 'void' with 'void' using '=='
+};
+#end
+
+/-! ### `var x := x`: the initializer is resolved before the binding exists.
+
+Decl-Synth synthesizes the initializer *before* introducing the binding, so a
+self-referential `var x := x` with no outer `x` reports only "'x' is not
+defined"; `x` is then bound `Unknown` from the failed synthesis, and the later
+`assert x` does not cascade. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure selfRefNoOuter() opaque {
+  var x := x;
+//         ^ error: 'x' is not defined
+  assert x
+};
+#end
+
+/-! ### …and with an outer `x` in scope, the initializer reads the *outer* one.
+
+Same order-of-events, other outcome: in a nested block, the initializer of
+`var x := x` resolves in the enclosing scope (the new `x` is not yet defined),
+so the inner `x` is inferred `int` from the outer binding — proved by the inner
+`assert x` reporting `got 'int'`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure selfRefOuterShadow() opaque {
+  var x := 1;
+  {
+    var x := x;
+    assert x
+//         ^ error: expected 'bool', got 'int'
+  }
+};
+#end
+
+/-! ### Inference chains: from a parameter, and from another inferred variable.
+
+The initializer can be any synthesizing expression, including a parameter
+reference or a previously *inferred* variable: `x` is inferred `int` from the
+parameter `p`, `y` is inferred `int` from `x`, and the mismatch surfaces only
+at the final use. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferChained(p: int) opaque {
+  var x := p;
+  var y := x;
+  assert y
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### Decl-Synth infers from string and decimal literals too.
+
+Same rule, other literal shapes: `"hi"` synthesizes `string` and `1.5`
+synthesizes `real`; each later `bool` use names the precise inferred type. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferOtherLiterals() opaque {
+  var s := "hi";
+  var d := 1.5;
+  assert s;
+//       ^ error: expected 'bool', got 'string'
+  assert d
+//       ^ error: expected 'bool', got 'real'
+};
+#end
+
+/-! ### Duplicate definition: the re-declaration is flagged, then rebinds gradually.
+
+Inference does not change duplicate detection — re-declaring `x` reports the
+usual duplicate diagnostic. The duplicate binding is recovered as *unresolved*,
+whose type is `Unknown`, so after the duplicate, uses of `x` are gradually
+typed: the `assert x` reports neither `int` (first binding) nor `bool`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferDuplicate() opaque {
+  var x := 1;
+  var x := true;
+//    ^ error: Duplicate definition 'x' is already defined in this scope
+  assert x
+};
+#end
+
+/-! ### An unjoinable `if` initializer diagnoses once and binds `Unknown`.
+
+The primitive cousin of `T9b_IfBranchJoinInfer` (which covers unjoinable
+composite siblings and the annotated escape): synthesizing
+`if c then 1 else "s"` fails to join `int` and `string`, so the `if` reports
+one diagnostic and synthesizes `Unknown`; `x` adopts `Unknown` and the later
+`assert x` does not cascade. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure inferUnjoinableIf(c: bool) opaque {
+  var x := if c then 1 else "s";
+//         ^^^^^^^^^^^^^^^^^^^^ error: 'if' branches have incompatible types 'int' and 'string'
+  assert x
+};
+#end
+
+/-! ### Decl-Synth in value position: the inferred binding is consumed.
+
+A declaration is an `Assign` node and synthesizes its bound type, so an
+*unannotated* declaration in value position hands its inferred `int` to the
+surrounding arithmetic — accepted with no diagnostics. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure declValueConsumed() opaque {
+  var y: int := (var x := 5) + 1
+};
+#end
+
+/-! ### Decl-Synth nests: the inner synthesized type is the outer's initializer.
+
+`var x := 5` synthesizes `int`, which `var y := …` adopts in turn — proved by
+the later `y := "hello"` reporting `expected 'int'`, exactly as in
+`inferThenReassign`. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure declValueNested() opaque {
+  var y := (var x := 5);
+  y := "hello"
+//     ^^^^^^^ error: expected 'int', got 'string'
+};
+#end
+
+/-! ### A mistyped declaration in a *checked* value position is rejected.
+
+In checked positions `Check.declInfer` still runs the \[⇐\] Sub boundary
+check after adopting the initializer's type, so a declaration argument whose
+inferred `int` does not subsume into the parameter's `bool` is rejected at
+resolution. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure takesBool(b: bool) opaque;
+procedure declValueChecked() opaque {
+  takesBool((var x := 1))
+//           ^^^^^^^^^^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### …and as the last statement of a value-position block, it passes.
+
+The block pushes its expected `int` to its last statement; `Check.declInfer`
+synthesizes `int` for the unannotated declaration and the boundary check
+passes — accepted with no diagnostics. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure declValueBlock() opaque {
+  var y: int := { var x := 5 }
+};
+#end
+
+/-! ### Multi-assign declared targets infer from the callee's outputs.
+
+The `assign` form's declared targets may now omit the annotation, exactly like
+`var x := e`: each unannotated `var` target adopts the callee's corresponding
+declared output type. Here `a` infers `int` and `b` infers `bool` — proved by
+the later asserts: `assert b` (a `bool`) is fine, `assert a` reports the
+int/bool mismatch. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure intBool() returns (i: int, b: bool)
+  opaque;
+procedure multiAssignInfer() opaque {
+  assign var a, var b := intBool();
+  assert b;
+  assert a
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### Mixed annotated/unannotated/existing multi-assign targets.
+
+Inference is per-target: `x` keeps its annotation, `y` is an existing `int`
+variable, `z` infers `bool` from the third output. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure threeOut() returns (i: int, j: int, b: bool)
+  opaque;
+procedure multiAssignMixed() opaque {
+  var y: int := 0;
+  assign var x: int, y, var z := threeOut();
+  assert z;
+  assert x
+//       ^ error: expected 'bool', got 'int'
+};
+#end
+
+/-! ### Multi-assign arity mismatch still diagnoses with unannotated targets.
+
+With two targets against three outputs there is no component to adopt: the
+mismatch is reported as a dedicated arity diagnostic naming the two counts
+(rather than a tuple mismatch against the `Unknown` fallback bindings), the
+unannotated targets bind `Unknown`, and `assert a` stays quiet (no cascade). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure threeOut() returns (i: int, j: int, b: bool)
+  opaque;
+procedure multiAssignArity() opaque {
+  assign var a, var b := threeOut();
+//                       ^^^^^^^^^^ error: tried to unpack 3 values into 2 variables
+  assert a
+};
+#end
+
+/-! ### Multi-assign with a non-multi-valued RHS.
+
+A scalar RHS has no components to distribute at all: the unannotated targets
+bind `Unknown` and the tuple boundary check reports the single mismatch
+against the scalar type. `assert a` then stays quiet (no cascade). -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure multiAssignScalarRhs() opaque {
+  assign var a, var b := 5;
+//                       ^ error: expected '(Unknown, Unknown)', got 'int'
+  assert a
+};
+#end

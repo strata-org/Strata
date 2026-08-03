@@ -218,7 +218,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | target :: _ => match target.val with
           | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
-          | .Declare param => param.type
+          | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
         | _ => ⟨ .Unknown, source ⟩
       -- An unmodeled field-write target yields `targetType = .Unknown`. The RHS of an assignment whose
       -- target type is Unknown is a sound gradual hole: annotate it `.Unknown` directly so hole
@@ -254,7 +254,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       let targetType := match target.val with
         | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
         | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
-        | .Declare param => param.type
+        | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
       let target' ← match _targetEq : target.val with
         | .Field receiver fieldName =>
             pure ⟨.Field

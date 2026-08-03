@@ -572,7 +572,7 @@ responsible for recursing into compound types (`TSet`/`TMap`/`Applied`/…). -/
 /-- Rewrite the declared type carried by a `Variable` (only `Declare` carries one). -/
 def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Variable) : m Variable := do
   match v with
-  | .Declare param => pure (.Declare { param with type := ← f param.type })
+  | .Declare param => pure (.Declare { param with type := ← param.type.mapM f })
   | .Local _ | .Field _ _ => pure v
 
 /--

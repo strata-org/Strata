@@ -545,7 +545,7 @@ def translateExpr (expr : StmtExprMd)
   | .Block (⟨ .Assume _, innerSrc⟩ :: rest) label =>
     _ ← disallowed innerSrc "assumes are not YET supported in functions or contracts"
     translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
-  | .Block (⟨ .Assign [⟨ .Declare ⟨name, ty ⟩, _source⟩] initializer, innerSrc⟩ :: rest) label => do
+  | .Block (⟨ .Assign [⟨ .Declare ⟨name, some ty⟩, _source⟩] initializer, innerSrc⟩ :: rest) label => do
       -- These translations are not used yet (see below), but are kept for their
       -- side effect of surfacing any nested diagnostics in the initializer/body.
       let _valueExpr ← translateExpr initializer boundVars isPureContext
@@ -731,7 +731,8 @@ def translateStmt (stmt : StmtExprMd)
       | some l => return [Imperative.Stmt.block l innerStmts md]
       | none   => return innerStmts
   | .Var (.Declare param) =>
-      let coreMonoType ← translateType param.type
+      -- Post-resolution every declaration is annotated; default to `Unknown`.
+      let coreMonoType ← translateType (param.type.getD ⟨.Unknown, stmt.source⟩)
       let coreType := LTy.forAll [] coreMonoType
       let ident := ⟨param.name.text, ()⟩
       return [Core.Statement.init ident coreType .nondet md]
@@ -750,7 +751,7 @@ def translateStmt (stmt : StmtExprMd)
         for target in targets do
           match target.val with
           | .Declare param =>
-            let coreType := LTy.forAll [] (← translateType param.type)
+            let coreType := LTy.forAll [] (← translateType (param.type.getD ⟨.Unknown, target.source⟩))
             let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
             result := result ++ (← onDeclare ident coreType)
           | .Local name =>
@@ -765,7 +766,7 @@ def translateStmt (stmt : StmtExprMd)
         for target in targets do
           match target.val with
           | .Declare param =>
-            let coreType := LTy.forAll [] (← translateType param.type)
+            let coreType := LTy.forAll [] (← translateType (param.type.getD ⟨.Unknown, target.source⟩))
             let ident : Core.CoreIdent := ⟨param.name.text, ()⟩
             inits := inits ++ [Core.Statement.init ident coreType .nondet md]
             lhs := lhs ++ [ident]

@@ -113,7 +113,7 @@ def lowerNew (name : Identifier) (source : FileRange) : THM StmtExprMd := do
   let heapVar := heapVarName
   let freshVar ← freshVarName
   let getCounter := mkMd (.StaticCall "Heap..nextReference!" [mkMd (.Var (.Local heapVar)) source]) source
-  let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, ⟨.TInt, source⟩⟩) source] getCounter) source
+  let saveCounter := mkMd (.Assign [mkVarMd (.Declare ⟨freshVar, some ⟨.TInt, source⟩⟩) source] getCounter) source
   let newHeap := mkMd (.StaticCall "increment" [mkMd (.Var (.Local heapVar)) source]) source
   let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar) source] newHeap) source
   let compositeResult := mkMd (.StaticCall "MkComposite" [mkMd (.Var (.Local freshVar)) source, mkMd (.StaticCall (name.text ++ "_TypeTag") []) source]) source

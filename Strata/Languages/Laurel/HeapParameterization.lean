@@ -237,7 +237,7 @@ where
             if valueUsed then
               let freshVar ← freshVarName
               let callWithHeap := ⟨ .Assign
-                [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩) source]
+                [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, some (computeExprType model exprMd)⟩) source]
                 (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
               return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
             else
@@ -247,7 +247,7 @@ where
                 | .instanceProcedure _ proc => proc.outputs
                 | _ => []
               let extraTargets ← procOutputs.mapM fun out => do
-                pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩) source)
+                pure (mkVarMd (.Declare ⟨← freshVarName, some out.type⟩) source)
               let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
               return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
         else if calleeReadsHeap then
@@ -293,7 +293,7 @@ where
                 -- unobservable in the heap abstraction.
                 | do
                   let discardVar ← freshVarName
-                  return (accTargets ++ [mkVarMd (.Declare ⟨discardVar, ⟨.Unknown, source⟩⟩) source], accStmts)
+                  return (accTargets ++ [mkVarMd (.Declare ⟨discardVar, some ⟨.Unknown, source⟩⟩) source], accStmts)
               let valTy := (model.get fieldName).getType
               recordBoxConstructor model valTy.val
               let freshVar ← freshVarName
@@ -301,7 +301,7 @@ where
               let boxedVal := mkMd (.StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar)) source]) source
               let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar) source]
                 (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)) source, target', mkMd (.StaticCall qualifiedName []) source, boxedVal]) source), source ⟩
-              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩) source], accStmts ++ [updateStmt])
+              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, some valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
       -- Process calls to heap mutating procedures

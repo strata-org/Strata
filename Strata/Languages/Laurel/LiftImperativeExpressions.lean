@@ -274,7 +274,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
       let holeVar ← freshTempVar
-      prepend ⟨ .Var (.Declare ⟨holeVar, holeType⟩), source⟩
+      prepend ⟨ .Var (.Declare ⟨holeVar, some holeType⟩), source⟩
       return ⟨ .Var (.Local holeVar), source ⟩
 
   | .Assign targets value =>
@@ -308,7 +308,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             let snapshotName ← freshTempFor varName
             let varType ← computeType ⟨ .Var (.Local varName), source ⟩
             -- Snapshot goes before the assignment (cons pushes to front)
-            prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
+            prepend (⟨.Assign [⟨.Declare ⟨snapshotName, some varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
             setSubst varName snapshotName
         | _ => pure ()
 
@@ -327,7 +327,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultType := stripTrailingErrors callResultTypeFull
 
       let prepends ← asLifted (transformStmtAssignImperativeCall
-        [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)
+        [⟨ .Declare ⟨callResultVar, some callResultType⟩, source⟩] callee args source source)
       prependList prepends
       return ⟨.Var (.Local callResultVar), source⟩
 
@@ -378,7 +378,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         -- Output order: declaration, then if-then-else
         prepend (⟨.IfThenElse seqCond thenBlock seqElse, source⟩)
         if needsCondVar then
-          prepend ⟨.Var (.Declare ⟨condVar, condType⟩), source ⟩
+          prepend ⟨.Var (.Declare ⟨condVar, some condType⟩), source ⟩
           modify fun s => { s with prependedStmts := condPrepends ++ s.prependedStmts }
           return ⟨.Var (.Local condVar), source⟩
         else
