@@ -48,6 +48,16 @@ structure LaurelTranslateOptions where
   /-- How the transparency pass lowers procedures. Defaults to `Verify`, the
       analyze/verify behavior. See `AnalysisMode`. -/
   analysisMode : AnalysisMode := .Verify
+  /-- Type names treated as the gradual/dynamic top type in `isConsistent`.
+      Used by language frontends (e.g. Python registers "Any" here). -/
+  gradualTypes : Std.HashSet String := {}
+  /-- Frontend-supplied realizer for the abstract `Coercion` verdict of the
+      proof-relevant subtyping judgment: maps a verdict + the coerced term to a
+      rewritten term carrying the concrete box/unbox call. `none` = identity
+      (native Laurel inserts no coercion). Threaded onto `TypeLattice`. -/
+  realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none
+  /-- Caller truthiness hook (Python str_to_bool/etc.); threaded to TypeLattice.toBool. -/
+  toBool : Option (HighType → StmtExprMd → StmtExprMd) := none
 
 instance : Inhabited LaurelTranslateOptions where
   default := {}

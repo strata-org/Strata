@@ -175,4 +175,303 @@ procedure test() {
 };
 #end
 
+/-! ## Statement calls preserve earlier values across later assignments -/
+
+/--
+info: procedure writeHeap(c: int, value: int, heap: int)
+  returns (heap: int, written: int)
+  opaque;
+procedure consume(c: int, before: int, written: int, heap: int)
+  opaque;
+procedure reproduce()
+  opaque
+{
+  var heap: int := 2;
+  var $heap_0: int := heap;
+  assign heap, var written: int := writeHeap(0, 5, heap);
+  consume(0, $heap_0, {
+    written
+  }, heap);
+  consume(0, heap, 0, heap)
+};
+-/
+#guard_msgs in
+#eval printLifted ["writeHeap", "consume"]
+#strata
+program Laurel;
+procedure writeHeap(c: int, value: int, heap: int)
+  returns (heap: int, written: int)
+  opaque;
+procedure consume(c: int, before: int, written: int, heap: int)
+  opaque;
+procedure reproduce()
+  opaque
+{
+  var heap: int := 2;
+  consume(0, heap, {
+    assign heap, var written: int := writeHeap(0, 5, heap);
+    written
+  }, heap);
+  consume(0, heap, 0, heap)
+};
+#end
+
+/-! ## Snapshots taken in a condition do not escape the statement
+
+An assigning condition builds a before-snapshot the same way a call argument
+does. That snapshot is only valid for occurrences *earlier in the same
+statement*, so neither the statement after the `if`/`while` nor the guarded body
+may read it — they must see the live variable. -/
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure ifCondLeaksToNextStmt()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  if {
+    x
+  } > 0
+    then {
+      {
+        
+      }
+    };
+  consume(0, x)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure ifCondLeaksToNextStmt()
+  opaque
+{
+  var x: int := 1;
+  if { x := 5; x } > 0 then { };
+  consume(0, x)
+};
+#end
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure whileCondLeaksToNextStmt()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  while({
+    x
+  } > 0) {
+    {
+      
+    }
+  };
+  consume(0, x)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure whileCondLeaksToNextStmt()
+  opaque
+{
+  var x: int := 1;
+  while ({ x := 5; x } > 0) { };
+  consume(0, x)
+};
+#end
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure ifCondLeaksIntoBranch()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  if {
+    x
+  } > 0
+    then {
+      {
+        consume(0, x)
+      }
+    };
+  consume(1, x)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure ifCondLeaksIntoBranch()
+  opaque
+{
+  var x: int := 1;
+  if { x := 5; x } > 0 then { consume(0, x) };
+  consume(1, x)
+};
+#end
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure whileCondLeaksIntoBody()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  while({
+    x
+  } > 0) {
+    {
+      consume(0, x)
+    }
+  };
+  consume(1, x)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure whileCondLeaksIntoBody()
+  opaque
+{
+  var x: int := 1;
+  while ({ x := 5; x } > 0) { consume(0, x) };
+  consume(1, x)
+};
+#end
+
+/-! ## Regions evaluated after the condition also read live variables
+
+A loop invariant is evaluated at the loop head, and an `if`-expression's branches
+run after its condition, so neither may inherit a snapshot the condition took.
+(The `while` goldens here and above also show a condition's assignment being
+hoisted out of the loop, so it runs once rather than per iteration. That is a
+separate pre-existing defect in the loop lowering; these programs are chosen so
+it does not change their meaning.) -/
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure invariantReadsLiveVar()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  while({
+    x
+  } > 0)
+    invariant x >= 0 {
+    {
+      
+    }
+  };
+  consume(0, x)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure invariantReadsLiveVar()
+  opaque
+{
+  var x: int := 1;
+  while ({ x := 5; x } > 0) invariant x >= 0 { };
+  consume(0, x)
+};
+#end
+
+/--
+info: procedure consume(c: int, v: int)
+  opaque;
+procedure exprIfBranchesReadLiveVar()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  var z: int := if {
+    x
+  } > 0
+    then x
+    else x + 1;
+  consume(0, z)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int)
+  opaque;
+procedure exprIfBranchesReadLiveVar()
+  opaque
+{
+  var x: int := 1;
+  var z: int := (if { x := 5; x } > 0 then x else x + 1);
+  consume(0, z)
+};
+#end
+
+/-! ## An occurrence evaluated before the condition still gets the snapshot
+
+The counterpart to the tests above: visiting the branches before the condition
+must not stop the condition's substitution from reaching earlier arguments. -/
+
+/--
+info: procedure consume(c: int, v: int, w: int)
+  opaque;
+procedure earlierArgSeesSnapshot()
+  opaque
+{
+  var x: int := 1;
+  var $x_0: int := x;
+  x := 5;
+  consume(0, $x_0, if {
+    x
+  } > 0
+    then 7
+    else 8);
+  consume(1, x, 0)
+};
+-/
+#guard_msgs in
+#eval printLifted ["consume"]
+#strata
+program Laurel;
+procedure consume(c: int, v: int, w: int)
+  opaque;
+procedure earlierArgSeesSnapshot()
+  opaque
+{
+  var x: int := 1;
+  consume(0, x, (if { x := 5; x } > 0 then 7 else 8));
+  consume(1, x, 0)
+};
+#end
+
 end Laurel

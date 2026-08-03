@@ -49,8 +49,19 @@ instance : Std.ToFormat File2dRange where
 instance : Std.ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.range}"
 
-/-- A default file range for errors without source location.
-This should only be used for generated nodes that are guaranteed to be correct. -/
+/-- A sentinel file range indicating no real source location is available.
+
+Do not add new uses: propagate a real source location from the context instead
+(e.g. the procedure name, or the expression being transformed). Where the type
+only needs *some* `FileRange` to satisfy an `Inhabited` obligation, use
+`default` — `FileRange` derives `Inhabited`, and `default` reads as "placeholder"
+rather than as a location worth reporting.
+
+The uses that remain are all migrations still in flight:
+- `Identifier.source`'s default, until every `mkId` call site supplies a range.
+- The `Option FileRange`-to-`FileRange` bridges in Core (`getD`), until Core's
+  metadata carries a `FileRange` unconditionally.
+- `DiagnosticModel.fromMessage`/`fromFormat`, for diagnostics not yet located. -/
 def FileRange.unknown : FileRange :=
   { file := .file "<unknown>", range := SourceRange.none }
 
@@ -60,6 +71,7 @@ def FileRange.format (fr : FileRange) (fileMap : Option Lean.FileMap) (includeEn
                   | .file path => (path.splitToList (· == '/')).getLast!
   match fileMap with
   | some fm =>
+    if fr.range.isNone then f!"" else
     -- Lean's InputContext may have a fileMap which has an empty source and
     -- position. This can happen when InputContext is assigned Inhabited.default.
     if fm.source.isEmpty ∧ fm.positions.isEmpty then f!"" else

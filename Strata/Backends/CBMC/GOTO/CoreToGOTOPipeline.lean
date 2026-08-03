@@ -271,7 +271,7 @@ Translate a Core procedure into a CProver GOTO context.
 Returns the GOTO context together with any local function declarations
 that were lifted out of the procedure body. Axioms and distinct
 declarations are emitted as ASSUME instructions at the start of the
-body. Procedure contracts (requires/ensures/modifies) are attached
+body. Procedure contracts (requires/ensures) are attached
 as named sub-expressions on the code type.
 -/
 def procedureToGotoCtx

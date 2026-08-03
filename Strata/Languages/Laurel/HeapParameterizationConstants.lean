@@ -68,7 +68,9 @@ procedure increment(heap: Heap): Heap
 
 /-- The Laurel Core prelude as a Laurel Program. -/
 def heapConstants : Program :=
-  match Laurel.TransM.run none (Laurel.parseProgram laurelPreludeDDM) with
+  match Laurel.TransM.run
+      (.file "Strata/Languages/Laurel/HeapParameterizationConstants.lean")
+      (Laurel.parseProgram laurelPreludeDDM) (synthesized := true) with
   | .ok program => program
   | .error e => dbg_trace s!"BUG: Laurel heap prelude parse error: {e}"; default
 

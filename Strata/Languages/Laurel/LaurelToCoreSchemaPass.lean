@@ -44,6 +44,9 @@ structure TranslateState where
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
   model : SemanticModel
+  /-- Type names treated as gradual/dynamic-top (from options.gradualTypes). A `.UserDefined`
+      whose name is here maps to Core `Any` instead of hard-erroring, matching the `.Unknown` arm. -/
+  gradualTypes : Std.HashSet String := {}
   /-- Overflow check configuration -/
   overflowChecks : Core.OverflowChecks := {}
   /-- Do not process the produces Core program, since it has superfluous errors -/
@@ -90,7 +93,7 @@ def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
 def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
 
-private def invalidCoreType (source : Option FileRange) (reason : String) : TranslateM LMonoTy := do
+private def invalidCoreType (source : FileRange) (reason : String) : TranslateM LMonoTy := do
   emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
@@ -123,11 +126,17 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
   | .TSet elementType => return Core.mapTy (← translateType elementType) LMonoTy.bool
   | .TMap keyType valueType => return Core.mapTy (← translateType keyType) (← translateType valueType)
   | .UserDefined name =>
-    -- Check type parameters FIRST (matching how resolution scopes them): a
+    -- A `UserDefined` whose name is a primitive keyword lowers to that primitive
+    -- (phantom `UserDefined "real"` etc. from name round-trips / stub types).
+    if name.text == "real" then return LMonoTy.real
+    else if name.text == "int" then return LMonoTy.int
+    else if name.text == "bool" then return LMonoTy.bool
+    else if name.text == "string" then return LMonoTy.string
+    -- Check type parameters next (matching how resolution scopes them): a
     -- datatype's own type parameter (e.g. `Val`/`Err` of `Result<Val, Err>`)
     -- lowers to a Core free type variable. Checking `model.get?` first would
     -- mis-lower a parameter whose name collides with an in-scope type.
-    if (← get).typeParams.contains name.text then
+    else if (← get).typeParams.contains name.text then
       return .ftvar name.text
     else match model.get? name with
       -- A bare datatype reference (e.g. a constructor's erased result type,
@@ -142,7 +151,13 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
           | some (.datatypeDefinition dt) => dt.typeArgs.mapM (fun _ => freshTVar)
           | _ => pure []
         return .tcons typeName.text args
-      | _ => do -- resolution should have already emitted a diagnostic
+      | _ => do
+        -- A name registered gradual (e.g. a type imported from an unmodeled module like
+        -- `botocore.model.OperationModel`) is dynamic-top: map it to Core `Any`, exactly as the
+        -- `.Unknown` arm does, rather than hard-erroring. Otherwise resolution should already have
+        -- emitted a diagnostic, so surface the unresolved-composite error.
+        if (← get).gradualTypes.contains name.text then
+          return .tcons "Any" []
         emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
         return .tcons name.text []
   -- Generic type application, e.g. `Option<int>` → `.tcons "Option" [int]`.
@@ -163,8 +178,26 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
         return .tcons n.text coreArgs
     | _ => invalidCoreType ty.source "generic type application with a non-named base is not supported"
   | .TReal => return LMonoTy.real
+  | .TFloat64 =>
+    -- `float64` aliases to Core `real` ONLY in gradual mode (a frontend registered gradualTypes,
+    -- e.g. Python): Core has no distinct IEEE-754 float64 sort, so a translated Python `float` is
+    -- verified with real (arbitrary-precision) semantics — sound enough for the gradual frontend
+    -- (float overflow is not modeled). In native Laurel (no gradualTypes) keep the clean
+    -- unsupported-type error rather than aliasing to real and failing deep in Core with a cryptic
+    -- unify error; revisit if Core gains a float64 sort with float-specific overflow checks.
+    if (← get).gradualTypes.isEmpty then
+      invalidCoreType ty.source "float64 not supported in native mode (no distinct Core float64 sort)"
+    else
+      return LMonoTy.real
   | .MultiValuedExpr _ => invalidCoreType ty.source "MultiValuedExpr type encountered during Core translation"
-  | .Unknown => invalidCoreType ty.source "Unknown type encountered during Core translation"
+  | .Unknown =>
+    -- `.Unknown` is a gradual hole: map it to Core `Any` ONLY when a frontend has registered
+    -- gradual types (gradual mode). In native Laurel (no gradualTypes) `Any` is not a Core-native
+    -- type, so keep the old hard error rather than emit a dangling `tcons "Any"`.
+    if (← get).gradualTypes.isEmpty then
+      invalidCoreType ty.source "cannot translate Unknown type to Core"
+    else
+      return .tcons "Any" []
   | _ => do
     invalidCoreType ty.source s!"cannot translate type to Core: not supported yet"
 
@@ -212,7 +245,8 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
-  let disallowed (source : Option FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
+
+  let disallowed (source : FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
       emitExprDiagnostic $ diagnosticFromSource source msg
 
   match h: expr.val with
@@ -942,7 +976,7 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
       | .procedure proc => r.insert proc.name.text
       | _ => r) {}
     let initState : TranslateState :=
-      { model := fnModel, overflowChecks := options.overflowChecks, procedureNames }
+      { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
     let (coreProgramResult, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
     let diagnostics : List DiagnosticModel :=

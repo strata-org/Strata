@@ -20,13 +20,19 @@ open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
 structure TransState where
-  uri : Option Uri
+  /-- The file the program being translated came from. Compiler-embedded
+      preludes name their defining `.lean` file and set `synthesized`. -/
+  uri : Uri
+  /-- True when the source is a compiler-embedded prelude rather than a user
+      file. Only affects the Core `MetaData` provenance; `FileRange`s still
+      name `uri` so every AST node carries a real file. -/
+  synthesized : Bool := false
   errors : Array String
 
 @[expose] abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (uri : Option Uri) (m : TransM α) : Except String α :=
-  match StateT.run m { uri := uri, errors := #[] } with
+def TransM.run (uri : Uri) (m : TransM α) (synthesized : Bool := false) : Except String α :=
+  match StateT.run m { uri := uri, synthesized := synthesized, errors := #[] } with
   | .ok (v, _) => .ok v
   | .error e => .error e
 
@@ -36,24 +42,15 @@ def TransM.error (msg : String) : TransM α :=
 private def SourceRange.toFileRange (uri : Uri) (sr : SourceRange) : FileRange :=
   ⟨ uri, sr ⟩
 
-private def getArgFileRange (arg : Arg) : TransM (Option FileRange) := do
-  -- `SourceRange.none` ({0,0}) is StrataDDM's own "no location" sentinel (see
-  -- `StrataDDM.SourceRange.none`/`isNone`; its `format` prints "unknown", and
-  -- the Ion reader materializes a null range annotation as this value — no
-  -- producer literally writes zeroes on the wire). Surface it as `none` rather
-  -- than as a real-looking 0-0 location that downstream diagnostics would
-  -- point at (a real token at offset 0 has stop > 0). If source ranges become
-  -- mandatory, this check should give way to enclosing-range synthesis — see
-  -- `translateSingleReturnType` for the first instance of that pattern.
-  if arg.ann.isNone then return none
-  return match (← get).uri with
-  | some uri => some (SourceRange.toFileRange uri arg.ann)
-  | none => none
+private def getArgFileRange (arg : Arg) : TransM FileRange := do
+  return SourceRange.toFileRange (← get).uri arg.ann
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) := do
-  return match (← get).uri with
-  | some uri => Imperative.MetaData.ofSourceRange uri arg.ann
-  | none => Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
+  let s ← get
+  return if s.synthesized then
+    Imperative.MetaData.ofProvenance (.synthesized .laurelParse)
+  else
+    Imperative.MetaData.ofSourceRange s.uri arg.ann
 
 def checkOp (op : StrataDDM.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -91,8 +88,8 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited Parameter where
   default := { name := "" , type := default }
 
-def mkHighTypeMd (t : HighType) (source : Option FileRange) : HighTypeMd := { val := t, source := source }
-def mkStmtExprMd (e : StmtExpr) (source : Option FileRange) : StmtExprMd := { val := e, source := source }
+def mkHighTypeMd (t : HighType) (source : FileRange) : HighTypeMd := { val := t, source := source }
+def mkStmtExprMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source := source }
 
 def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
@@ -244,7 +241,7 @@ instance : Inhabited Procedure where
     preconditions := []
     decreases := none
     invokeOn := none
-    body := .Transparent { val := .LiteralBool true, source := none }
+    body := .Transparent { val := .LiteralBool true, source := default }
   }
 
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
@@ -564,9 +561,7 @@ def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
           let refs ← translateModifiesExprs refsArg
           allModifies := allModifies ++ refs
         | q`Laurel.modifiesWildcard, #[] =>
-          let src ← match (← get).uri with
-            | some uri => pure (some (SourceRange.toFileRange uri clauseOp.ann))
-            | none => pure none
+          let src := SourceRange.toFileRange (← get).uri clauseOp.ann
           allModifies := allModifies ++ [mkStmtExprMd .All src]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
@@ -651,9 +646,9 @@ def translateSingleReturnType (returnTypeOp : StrataDDM.Operation) :
   match returnTypeOp.name, returnTypeOp.args with
   | q`Laurel.returnType, #[typeArg] =>
     let retType ← translateHighType typeArg
-    let retType ← match retType.source with
-      | some _ => pure retType
-      | none => do pure { retType with source := ← getArgFileRange (.op returnTypeOp) }
+    let retType ← if retType.source.range.isNone then
+        do pure { retType with source := ← getArgFileRange (.op returnTypeOp) }
+      else pure retType
     pure [{ name := resultOutputName, type := retType : Parameter }]
   | _, _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeOp.name}"
 

@@ -140,7 +140,8 @@ private def runLaurelPasses
   emit "Initial" "laurel.st" program
 
   -- Initial resolution
-  let result := resolve program
+  let result := resolve program (gradualTypes := options.gradualTypes)
+                  (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
   let resolutionErrors : Std.HashSet DiagnosticModel := Std.HashSet.ofArray result.errors
   let (program, model) := (result.program, result.model)
 
@@ -156,7 +157,8 @@ private def runLaurelPasses
     allStats := allStats.merge stats
     -- Run resolve after the pass if needed
     if pass.needsResolves then
-      let result := resolve program (some model)
+      let result := resolve program (some model) (gradualTypes := options.gradualTypes)
+                      (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
       let newErrors := result.errors.filter fun e => !resolutionErrors.contains e
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
@@ -239,7 +241,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
     ucDiags := ucDiags ++ passPassDiags
     if pass.needsResolves then
       let compositeTypes := program.types.filter (fun t => match t with | .Composite _ => true | _ => false)
-      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes
+      let (uc', m', errors) := resolveUnorderedCore unorderedCore (some fnModel) compositeTypes options.gradualTypes options.realizeCoercion options.toBool
       if !errors.isEmpty then
         let newDiags := errors.toList.map fun d =>
           { d with message :=

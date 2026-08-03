@@ -36,7 +36,8 @@ private def laurelToText (prog : Program) : String :=
 /-- Roundtrip through the DDM tree: Laurel AST → StrataDDM.Program → Laurel AST → text -/
 private def roundtripViaDDM (prog : Program) : IO String := do
   let strataProgram := programToStrata prog
-  match Laurel.TransM.run .none (Laurel.parseProgram strataProgram) with
+  match Laurel.TransM.run (.file "AbstractToConcreteTreeTranslatorTest.lean")
+      (Laurel.parseProgram strataProgram) with
   | .error e => throw (IO.userError s!"DDM roundtrip parse errors: {e}")
   | .ok program2 => pure (laurelToText program2)
 

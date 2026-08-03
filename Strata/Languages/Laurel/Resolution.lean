@@ -225,11 +225,12 @@ def defineNameCheckDup (iden : Identifier) (node : ResolvedNode) (overrideResolu
   else
     defineName iden node overrideResolutionName
 
+
 /-- Resolve a reference: look up the name in scope and assign the definition's ID.
     Returns the identifier with its ID filled in.
     When `expected` is provided, emits a diagnostic if the resolved node's kind is not
     in the list of expected kinds. -/
-def resolveRef (name : Identifier) (source : Option FileRange := none)
+def resolveRef (name : Identifier) (source : FileRange := name.source)
     (expected : Array ResolvedNodeKind := #[]) : ResolveM Identifier := do
   let s ← get
   match s.scope.get? name.text with
@@ -237,12 +238,16 @@ def resolveRef (name : Identifier) (source : Option FileRange := none)
     let name' := { name with uniqueId := some defId }
     if expected.size > 0 && node.kind != .unresolved && !expected.contains node.kind then
       let expectedStr := ", ".intercalate (expected.toList.map ResolvedNodeKind.name)
-      let diag := diagnosticFromSource (source.orElse fun _ => name.source)
+      let diag := diagnosticFromSource source
         s!"'{name}' resolves to {node.kind.name}, but expected {expectedStr}"
       modify fun s => { s with errors := s.errors.push diag }
     return name'
   | none =>
-    let diag := diagnosticFromSource (source.orElse fun _ => name.source) s!"Resolution failed: '{name}' is not defined"
+    -- Name not in scope: report it. Language frontends that reference unmodeled external
+    -- names (e.g. the Python pipeline's imported/stdlib names) inject bodiless declarations
+    -- for them so they resolve through the normal declaration path, rather than pre-registering
+    -- them in the resolver.
+    let diag := diagnosticFromSource source s!"Resolution failed: '{name}' is not defined"
     modify fun s => { s with errors := s.errors.push diag }
     return { name with uniqueId := none }
 
@@ -306,7 +311,7 @@ private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier)
     Falls back to the instance type name (for `self.field` in instance methods),
     then to unqualified lookup if the target type cannot be determined. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (source : Option FileRange) : ResolveM Identifier := do
+    (source : FileRange) : ResolveM Identifier := do
   let typeName? ← targetTypeName target
   -- Try type scope from the target's declared type
   if let some typeName := typeName? then
@@ -316,7 +321,21 @@ def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
   if let some instTypeName := (← get).instanceTypeName then
     if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
       return resolved
-  resolveRef fieldName source
+  -- The field name (an attribute, not a variable) did not resolve in any type scope.
+  -- Leave it unresolved with no diagnostic ONLY for a genuinely gradual receiver:
+  -- Unknown/Any, or a `UserDefined` name registered in `gradualTypes` (the dynamic top).
+  -- Such a field access is sound-but-uninterpreted. For every other receiver — a known
+  -- composite that lacks this field, OR a primitive (`int`/`bool`/… whose `targetTypeName`
+  -- is `none`) — a missing field is a real bug (typo'd attribute), so fall through to
+  -- `resolveRef` and preserve the "Resolution failed: 'field' is not defined" diagnostic.
+  let s ← get
+  let isGradualReceiver (n? : Option String) : Bool := match n? with
+    | some n => s.typeLattice.gradualTypes.contains n
+    | none => false  -- primitive / void / inferred receiver: NOT a gradual escape
+  if isGradualReceiver typeName? || isGradualReceiver s.instanceTypeName then
+    return { fieldName with uniqueId := none }
+  else
+    resolveRef fieldName source
 
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
@@ -444,7 +463,7 @@ private def datatypeTypeParamNames (name : String) : ResolveM (List String) := d
     constrained type is unaffected. (The erased constructor-result-type reference,
     e.g. `Nothing() : Option`, is produced internally via `getCallInfo` and never
     reaches here.) -/
-private def checkBareGenericDatatype (name : Identifier) (source : Option FileRange) : ResolveM Unit := do
+private def checkBareGenericDatatype (name : Identifier) (source : FileRange) : ResolveM Unit := do
   match ← datatypeTypeArgArity name.text with
   | some n =>
     if n > 0 then
@@ -463,7 +482,7 @@ private def checkBareGenericDatatype (name : Identifier) (source : Option FileRa
       reaches Core / `translateType` and surfaces as an internal-error
       `strata-bug` instead of a clean *type 'X' is not generic* diagnostic.
     An unresolved base is left alone (`resolveRef` already reported it). -/
-private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : Option FileRange) : ResolveM Unit := do
+private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : FileRange) : ResolveM Unit := do
   match (← get).scope.get? base.text with
   | some (_, .typeParameter _) =>
     modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
@@ -491,7 +510,7 @@ private def checkTypeApplication (base : Identifier) (numArgs : Nat) (source : O
     from being type-checked against a phantom type. Shared by the bare
     `.UserDefined` arm and an `.Applied` base; the bare-generic-reference
     rejection is applied only by the former (an `.Applied` base is not bare). -/
-private def resolveTypeRef (ref : Identifier) (source : Option FileRange) : ResolveM HighType := do
+private def resolveTypeRef (ref : Identifier) (source : FileRange) : ResolveM HighType := do
   let ref' ← resolveRef ref source
     (expected := #[.compositeType, .constrainedType, .datatypeDefinition, .typeAlias, .typeParameter])
   let s ← get
@@ -554,7 +573,7 @@ private def formatType (ty : HighTypeMd) : String :=
     "<problem>, got '<actual>'". When `actual` is `Unknown` the trailing
     `got '…'` is dropped — "we couldn't synthesize a type" is the
     statement, not "the type we got was Unknown". -/
-private def typeMismatch (source : Option FileRange) (construct : Option StmtExpr)
+private def typeMismatch (source : FileRange) (construct : Option StmtExpr)
     (problem : String) (actual : HighTypeMd) : ResolveM Unit := do
   let constructor := match construct with
     | some c => s!"'{c.constrName}' "
@@ -565,14 +584,68 @@ private def typeMismatch (source : Option FileRange) (construct : Option StmtExp
   let diag := diagnosticFromSource source s!"{constructor}{problem}{suffix}"
   modify fun s => { s with errors := s.errors.push diag }
 
+/-- Collapse a proc-output type `(T, Error, ...)` to its value type `T` by dropping trailing
+    `Error` outputs. The maybe-thrown exception is carried as an output but is not a value the
+    caller binds, so single-output use sites compare against `T`, not the tuple. Shared by the
+    resolver's subtyping checks and the imperative-expression lifter. -/
+def stripTrailingErrors (actual : HighTypeMd) : HighTypeMd :=
+  match actual.val with
+  | .MultiValuedExpr (first :: rest) =>
+    if rest.all (fun o => match o.val with | .UserDefined id => id.text == "Error" | _ => false)
+    then first else actual
+  | _ => actual
+
+/-- `void` and `()` (unit) are mutually compatible — they both denote "no value." -/
+private def isVoidLikeHT (t : HighType) : Bool := match t with
+  | .TVoid | .MultiValuedExpr [] => true
+  | .UserDefined id => id.text == "()"
+  | _ => false
+
 /-- Type-level subtype check: emits the standard "expected/got" diagnostic when
     `actual` is not a consistent subtype of `expected`. Used at sites where the
     actual type is already in hand (assignment, call args, body vs declared
     output) — equivalent to `Check.resolveStmtExpr e expected` but without re-synthesizing. -/
-private def checkSubtype (source : Option FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
+private def checkSubtype (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd) : ResolveM Unit := do
   let ctx := (← get).typeLattice
-  unless isConsistentSubtype ctx actual expected do
+  let actual' := stripTrailingErrors actual
+  -- Strip trailing `Error` from BOTH sides: an `.err`-grade body has actual type
+  -- `(T, Error)` and an `.err`-grade declared output has expected type `(T, Error)`.
+  -- Stripping only `actual` left `T` vs `(T, Error)` → a spurious mismatch whose
+  -- diagnostic misleadingly printed identical tuples ("expected '(bool, Error)', got
+  -- '(bool, Error)'"). Symmetric stripping compares the value types `T` vs `T`.
+  let expected' := stripTrailingErrors expected
+  let compatible :=
+    (isVoidLikeHT actual'.val && isVoidLikeHT expected'.val) ||
+    isConsistentSubtype ctx actual' expected'
+  unless compatible do
     typeMismatch source none s!"expected '{formatType expected}'" actual
+
+/-- PROOF-RELEVANT `[⇐] Sub`: check `actual ≤ expected` AND, on success, REALIZE the
+    coercion witness onto the rewritten term `e` (returning the coerced term). This
+    is `checkSubtype` plus term-rewriting; use it wherever the resolver holds the
+    expression and rebuilds the AST (subsumption fallback, assignment RHS, …).
+
+    The witness is the abstract `coerce` verdict; the concrete coercion is inserted
+    by the frontend-supplied `ctx.realizeCoercion` (identity for native Laurel, so
+    this is a no-op there). The decision and the realized coercion share the single
+    `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
+    as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
+    position) inserts no coercion. -/
+private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
+    (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let ctx := (← get).typeLattice
+  let actual' := stripTrailingErrors actual
+  let expected' := stripTrailingErrors expected
+  if isVoidLikeHT actual'.val && isVoidLikeHT expected'.val then
+    pure e
+  else match coerce ctx actual' expected' with
+    | some verdict =>
+      match ctx.realizeCoercion with
+      | some realize => pure (realize verdict e)
+      | none => pure e
+    | none =>
+      typeMismatch source none s!"expected '{formatType expected}'" actual
+      pure e
 
 /-- Test whether a type is in the set of numeric primitives
     (`TInt` / `TReal` / `TFloat64` / `TBv`). `Unknown` is
@@ -637,7 +710,7 @@ private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd
   match proc.outputs with
   | [] => { val := .TVoid, source := callee.source }
   | [singleOutput] => singleOutput.type
-  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := callee.source }
 
 /-- Get the call return type and parameter types for a callee from scope. -/
 private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List HighTypeMd) := do
@@ -645,12 +718,15 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   match s.scope.get? callee.text with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
     pure (procReturnType callee proc, proc.inputs.map (·.type))
-  | some (_, .datatypeConstructor t _) =>
-    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type
+  | some (_, .datatypeConstructor t ctor) =>
+    -- Testers (e.g. "Color..isRed") return Bool; constructors return the type.
+    -- A constructor's argument types ARE its parameter types: return them so the
+    -- call rule checks + coerces each argument against them (e.g. `ListAny_cons(1,
+    -- …)` coerces `1` into the `Any` head slot).
     if (callee.text.splitOn "..is").length > 1 then
       pure ({ val := .TBool, source := callee.source }, [])
     else
-      pure ({ val := .UserDefined t, source := callee.source }, [])
+      pure ({ val := .UserDefined t, source := callee.source }, ctor.args.map (·.type))
   | some (_, .datatypeDestructor dtName p) =>
     -- A destructor's result is its field's declared type — except on a *generic*
     -- datatype, where that type may mention the datatype's erased type
@@ -899,7 +975,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     alone so that resolution errors are not duplicated as spurious incr/decr
     errors. -/
 private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
-    (source : Option FileRange) : ResolveM Unit := do
+    (source : FileRange) : ResolveM Unit := do
   match (← incrDecrTargetType target) with
   | none => pure ()
   | some ty =>
@@ -928,7 +1004,7 @@ private def checkIncrDecrTargetType (op : IncrDecrOp) (target : VariableMd)
     target element type, per `compoundAssignAccepts`. Checks only the *target*; the RHS
     is type-checked by the `Check.resolveStmtExpr` call in `Synth.compoundAssign`. -/
 private def checkCompoundAssignTargetType (op : Operation) (target : VariableMd)
-    (source : Option FileRange) : ResolveM Unit := do
+    (source : FileRange) : ResolveM Unit := do
   match (← incrDecrTargetType target) with
   | none => pure ()
   | some ty =>
@@ -1218,10 +1294,40 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .PrimitiveOp .Implies args skipProof =>
     Check.primitiveOp exprMd .Implies args skipProof expected source (by rw [h_node])
   | _ =>
-    -- Subsumption fallback: synth then check `actual <: expected`.
+    -- Subsumption fallback `[⇐] Sub`: synth, then check `actual <: expected` AND
+    -- realize the coercion witness onto the term. This chokepoint covers call
+    -- arguments, return values, functional bodies, and primitive-op subsumption —
+    -- every check-mode boundary without a bespoke rule funnels here.
     let (e', actual) ← Synth.resolveStmtExpr exprMd
-    checkSubtype source expected actual
-    pure e'
+    -- Truthiness (bool context): when the slot expects `TBool` but the actual type is not
+    -- bool-coercible by `coerce`, apply the caller's `toBool` hook. Truthiness is a
+    -- boolean-context coercion, not subtyping, so it is deliberately not part of `coerce`; the
+    -- hook fires only here, where the slot is known to be bool. Otherwise fall back to the
+    -- normal subsumption.
+    let ctx ← (do pure (← get).typeLattice)
+    -- Refl-gate for the truthiness hook: fire `toBool` when the slot is `TBool`, the actual is
+    -- not already bool, and `coerce` yields either no witness (there is no `int <: bool`) or only
+    -- a spurious gradual `refl` — i.e. a gradual-registered `UserDefined` that the gradual-top
+    -- fallback declares consistent-with-bool, which would otherwise let the raw value land in the bool
+    -- slot. A real `inject`/`project`/`upcast` witness (e.g. `Any → bool`) is not diverted: it
+    -- flows through `coerceTo`. Truthiness is a boolean-context coercion, not subtyping.
+    --
+    -- The "not already bool" clause is load-bearing and tested against the UNFOLDED actual:
+    -- `coerce TBool TBool` returns `some .refl` (via `highEq`), so without this guard an operand
+    -- that is already `bool` (or a phantom `UserDefined "bool"` that `unfold` canonicalizes to
+    -- `TBool`) would spuriously route through `toBool` and get wrapped in a redundant truthiness
+    -- call whenever a frontend installs the hook. Native Laurel (`toBool = none`) is unaffected
+    -- either way, but the Python frontend's `Any_to_bool` must not double-wrap native `bool`s.
+    let actualStripped := stripTrailingErrors actual
+    let fireToBool := expected.val == .TBool &&
+      (ctx.unfold actualStripped).val != .TBool &&
+      (match coerce ctx actualStripped expected with | none => true | some .refl => true | _ => false)
+    if fireToBool then
+      match ctx.toBool with
+      | some mk => pure (mk actualStripped.val e')
+      | none => coerceTo source expected actual e'
+    else
+      coerceTo source expected actual e'
   termination_by (exprMd, 3)
   decreasing_by all_goals first
     | (apply Prod.Lex.left; term_by_mem)
@@ -1232,24 +1338,24 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
 -- ### Literals
 
 /-- `Γ ⊢ LiteralInt n ⇒ TInt` -/
-def Synth.litInt (v : Int) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litInt (v : Int) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralInt v, { val := .TInt, source := source })
 
 /-- `Γ ⊢ LiteralBool b ⇒ TBool` -/
-def Synth.litBool (v : Bool) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litBool (v : Bool) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralBool v, { val := .TBool, source := source })
 
 /-- `Γ ⊢ LiteralString s ⇒ TString` -/
-def Synth.litString (v : String) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litString (v : String) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralString v, { val := .TString, source := source })
 
 /-- `Γ ⊢ LiteralDecimal d ⇒ TReal` -/
-def Synth.litDecimal (v : StrataDDM.Decimal) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litDecimal (v : StrataDDM.Decimal) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralDecimal v, { val := .TReal, source := source })
 
 /-- `Γ ⊢ LiteralBv v (width := n) ⇒ TBv n` — a bitvector literal's type is
     fixed by its declared width. -/
-def Synth.litBv (v : Nat) (width : Nat) (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.litBv (v : Nat) (width : Nat) (source : FileRange) : StmtExpr × HighTypeMd :=
   (.LiteralBv v width, { val := .TBv width, source := source })
 
 -- ### Variables
@@ -1261,7 +1367,7 @@ def Synth.litBv (v : Nat) (width : Nat) (source : Option FileRange) : StmtExpr �
     Γ ⊢ Var (.Local x) ⇒ T
     ```
     Resolves `ref` against the lexical scope and reads its declared type. -/
-def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
+def Synth.varLocal (ref : Identifier) (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
   let ty ← getVarType ref
@@ -1277,7 +1383,7 @@ def Synth.varLocal (ref : Identifier) (source : Option FileRange) :
     `f` is looked up against the type of `e` (or the enclosing instance type
     for `self.f`); the typing rule itself is path-agnostic. -/
 def Synth.varField (exprMd : StmtExprMd)
-    (target : StmtExprMd) (fieldName : Identifier) (source : Option FileRange)
+    (target : StmtExprMd) (fieldName : Identifier) (source : FileRange)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
@@ -1308,7 +1414,7 @@ def Synth.varField (exprMd : StmtExprMd)
     diagnostic and still extends the scope — but with an *unresolved*
     placeholder rather than `x : T_x`, so later uses of `x` do not
     cascade further type errors. -/
-def Check.varDeclare (param : Parameter) (source : Option FileRange) :
+def Check.varDeclare (param : Parameter) (source : FileRange) :
     ResolveM StmtExprMd := do
   let ty' ← resolveHighType param.type
   let name' ← defineNameCheckDup param.name (.var param.name ty')
@@ -1341,7 +1447,7 @@ def Check.varDeclare (param : Parameter) (source : Option FileRange) :
 def Check.while (exprMd : StmtExprMd)
     (cond : StmtExprMd) (invs : List StmtExprMd)
     (dec : Option StmtExprMd) (body : StmtExprMd) (postTest : Bool)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .While cond invs dec body postTest) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1380,7 +1486,7 @@ def Check.while (exprMd : StmtExprMd)
     (`ResolveState.labelScope`, populated by `Check.block` via
     `withLabel`). An unknown label is reported here as
     `"label '<l>' is not in scope"`. -/
-def Check.exit (target : String) (source : Option FileRange) :
+def Check.exit (target : String) (source : FileRange) :
     ResolveM StmtExprMd := do
   unless (← get).labelScope.contains target do
     let diag := diagnosticFromSource source
@@ -1450,7 +1556,7 @@ def Check.exit (target : String) (source : Option FileRange) :
     otherwise synthesized — so any errors inside `e` are reported in
     addition to the arity diagnostic. -/
 def Check.return (exprMd : StmtExprMd)
-    (val : Option StmtExprMd) (source : Option FileRange)
+    (val : Option StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Return val) :
     ResolveM StmtExprMd := do
   let expectedReturn := (← get).answerType
@@ -1498,7 +1604,7 @@ def Check.return (exprMd : StmtExprMd)
     empty list. When an empty block appears in check position,
     `Resolution.Check.resolveStmtExpr`'s wildcard arm synth-then-subsumes
     via the standard \[⇐\] Sub fallback. -/
-def Synth.emptyBlock (source : Option FileRange) : HighTypeMd :=
+def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
 /-- (Synth-Discard) Check a statement in *effect position*, written `Γ ⊢ s ⋄`.
@@ -1566,7 +1672,7 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
     so nested `exit l` checks can see it. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
   -- A non-last statement is in effect position: admitted by `Check.statement`
   -- (`Γ ⊢ s ⋄` — synthesized and the type discarded).
@@ -1593,12 +1699,10 @@ def Check.block (exprMd : StmtExprMd)
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
-      let nextSource : Option FileRange :=
+      let nextSource : FileRange :=
         match init'[i + 1]? with
         | some next => next.source
-        | none      => -- terminator is the last of init', so the dead one
-                       -- is the block's actual last statement
-          (stmts.getLast?.bind (·.source))
+        | none      => (stmts.getLast?.map (·.source)).getD source
       let termName : String :=
         match init'[i]? with
         | some s => s.val.constrName
@@ -1652,7 +1756,7 @@ def Check.block (exprMd : StmtExprMd)
     composes with for an empty block. -/
 def Check.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) : ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   let thenBr' ← Check.resolveStmtExpr thenBr expected
@@ -1688,7 +1792,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     `join` (`Unknown ⊔ T = T`), so a hole branch promotes to the other
     branch's concrete type and the synthesized type is independent of
     branch order. (`isConsistent` stays the accept/reject gate: it admits
-    a lone `TCore` corner where `join` is `none`, for which the result
+    a gradual corner where `join` is `none`, for which the result
     falls back to the then-branch type, leaving that boundary unchanged.)
     Inconsistent branches (e.g. `if c then 1 else "x"`) emit a diagnostic
     and synthesize `Unknown` to suppress cascading errors. Without an
@@ -1700,7 +1804,7 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     type into both branches); this rule fires only at the synth wildcard. -/
 def Synth.ifThenElse (exprMd : StmtExprMd)
     (cond thenBr : StmtExprMd) (elseBr : Option StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1711,14 +1815,30 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
   | some e =>
     let (e', elseTy) ← Synth.resolveStmtExpr e
     let ctx := (← get).typeLattice
+    -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
+    -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
+    -- position both branches run for effect, and the `Heap` value is the threaded heap, not a
+    -- user value. Treat `Heap` as void-like for this join only (not the shared `isVoidLikeHT`,
+    -- which gates coercion).
+    let isStmtBranchTy (t : HighType) : Bool :=
+      isVoidLikeHT t || (match t with | .UserDefined id => id.text == "Heap" | _ => false)
     let ty ←
+      -- Primary: the shared `join` (handles Unknown/TVoid/equal — e.g. an `int`/`void`
+      -- branch pair joins to `void`). Fallback: the frontend tolerances an `.err`-grade
+      -- `(T, Error)` body or a heap-threading branch needs (strip trailing Error; treat
+      -- Heap as void-like for this join only).
       match join ctx thenTy elseTy with
       | some joined => pure joined
       | none =>
-        let diag := diagnosticFromSource source
-          s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
-        modify fun s => { s with errors := s.errors.push diag }
-        pure { val := .Unknown, source := source }
+        if isConsistent ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy) ||
+            isVoidLikeHT (stripTrailingErrors thenTy).val && isVoidLikeHT (stripTrailingErrors elseTy).val ||
+            isStmtBranchTy (stripTrailingErrors thenTy).val && isStmtBranchTy (stripTrailingErrors elseTy).val then
+          pure ((join ctx (stripTrailingErrors thenTy) (stripTrailingErrors elseTy)).getD (stripTrailingErrors thenTy))
+        else
+          let diag := diagnosticFromSource source
+            s!"'if' branches have incompatible types '{formatType thenTy}' and '{formatType elseTy}'"
+          modify fun s => { s with errors := s.errors.push diag }
+          pure { val := .Unknown, source := source }
     pure (.IfThenElse cond' thenBr' (some e'), ty)
   termination_by (exprMd, 1)
   decreasing_by
@@ -1745,7 +1865,7 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     at the dispatch site; this rule only runs on a non-empty block. -/
 def Synth.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .Block stmts label) : ResolveM (StmtExpr × HighTypeMd) := do
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
@@ -1757,10 +1877,10 @@ def Synth.block (exprMd : StmtExprMd)
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
-      let nextSource : Option FileRange :=
+      let nextSource : FileRange :=
         match init'[i + 1]? with
         | some next => next.source
-        | none      => (stmts.getLast?.bind (·.source))
+        | none      => (stmts.getLast?.map (·.source)).getD source
       let termName : String :=
         match init'[i]? with
         | some s => s.val.constrName
@@ -1796,7 +1916,7 @@ def Synth.block (exprMd : StmtExprMd)
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assert (exprMd : StmtExprMd)
     (condExpr : StmtExprMd) (summary : Option String)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .Assert condExpr summary) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
@@ -1817,7 +1937,7 @@ def Check.assert (exprMd : StmtExprMd)
     `cond` is checked against `TBool`. `assume` is a statement: it
     yields no value, so it synthesizes `TVoid`. -/
 def Check.assume (exprMd : StmtExprMd)
-    (cond : StmtExprMd) (source : Option FileRange)
+    (cond : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assume cond) :
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
@@ -1846,7 +1966,7 @@ def Check.assume (exprMd : StmtExprMd)
     so the surrounding context sees the type the RHS was checked
     against. -/
 def Synth.assign (exprMd : StmtExprMd)
-    (targets : List VariableMd) (value : StmtExprMd) (source : Option FileRange)
+    (targets : List VariableMd) (value : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
@@ -1895,7 +2015,7 @@ def Synth.assign (exprMd : StmtExprMd)
     discarded in statement position, exactly as for calls. -/
 def Check.assign (exprMd : StmtExprMd)
     (targets : List VariableMd) (value : StmtExprMd)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Assign targets value) : ResolveM StmtExprMd := do
   let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
     let ⟨vv, vs⟩ := v
@@ -1953,7 +2073,7 @@ def Check.assign (exprMd : StmtExprMd)
     yielded value is discarded by `Check.statement`. -/
 def Synth.incrDecr (exprMd : StmtExprMd)
     (mode : IncrDecrMode) (op : IncrDecrOp) (target : VariableMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .IncrDecr mode op target) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let target' ← match h_tgt : target.val with
@@ -2001,7 +2121,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
     `Check.statement`. -/
 def Synth.compoundAssign (exprMd : StmtExprMd)
     (op : Operation) (target : VariableMd) (rhs : StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .CompoundAssign op target rhs) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let target' ← match h_tgt : target.val with
@@ -2078,7 +2198,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     The result type is the (possibly multi-valued) declared output type
     from `getCallInfo`. -/
 def Synth.staticCall (exprMd : StmtExprMd)
-    (callee : Identifier) (args : List StmtExprMd) (source : Option FileRange)
+    (callee : Identifier) (args : List StmtExprMd) (source : FileRange)
     (h : exprMd.val = .StaticCall callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
@@ -2193,11 +2313,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
         s!"constructor '{callee}' expects {ctor.args.length} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
     let ctx := (← get).typeLattice
-    let unknownTy : HighTypeMd := { val := .Unknown, source := none }
     -- Pad with `Unknown` so a surplus argument (arity already reported) is still
     -- resolved — surfacing any error inside it; a missing one is dropped by `zip`.
+    -- Each pad carries the surplus argument's own source, so any diagnostic from
+    -- resolving it points at that argument.
     let fieldTys : List HighTypeMd :=
-      ctor.args.map (·.type) ++ List.replicate (args.length - ctor.args.length) unknownTy
+      ctor.args.map (·.type)
+        ++ (args.drop ctor.args.length).map (fun a => { val := .Unknown, source := a.source })
     let args' ← (args.attach.zip fieldTys).mapM (fun (⟨a, hMem⟩, fieldTy) => do
       have := hMem
       -- A field is a *polymorphic slot* when its declared type mentions one of the
@@ -2217,9 +2339,11 @@ def Synth.staticCall (exprMd : StmtExprMd)
       else
         Check.resolveStmtExpr a fieldTy)
     return (.StaticCall callee' args', retTy)
-  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  -- Surplus arguments (an arity error, reported below) have no declared
+  -- parameter type. Pad with `.Unknown` carrying each surplus argument's own
+  -- source, so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
-    paramTypes ++ List.replicate (args.length - paramTypes.length) unknownTy
+    paramTypes ++ (args.drop paramTypes.length).map (fun a => { val := .Unknown, source := a.source })
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
@@ -2275,7 +2399,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     conditional-shaped arguments route through their own check rules. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
-    (source : Option FileRange)
+    (source : FileRange)
     (h : exprMd.val = .InstanceCall target callee args) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
@@ -2307,9 +2431,11 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   let callParamTypes :=
     if dropSelf then (match paramTypes with | _ :: rest => rest | [] => [])
     else paramTypes
-  let unknownTy : HighTypeMd := { val := .Unknown, source := none }
+  -- As in `Synth.staticCall`: pad surplus arguments with `.Unknown` carrying
+  -- the argument's own source so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
-    callParamTypes ++ List.replicate (args.length - callParamTypes.length) unknownTy
+    callParamTypes
+      ++ (args.drop callParamTypes.length).map (fun a => { val := .Unknown, source := a.source })
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
     Check.resolveStmtExpr a paramTy)
@@ -2396,7 +2522,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     `Check.resolveStmtExpr` instead of synth-then-`checkSubtype`,
     surfacing operand-shaped errors at their natural location. -/
 def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
-    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : Option FileRange)
+    (op : Operation) (args : List StmtExprMd) (skipProof : Bool) (source : FileRange)
     (h_expr : expr = .PrimitiveOp op args skipProof)
     (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -2404,8 +2530,8 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
   -- Guard (all operator families): a `MultiValuedExpr` operand is a
   -- multi-output call (`multi(x)` declared `returns (a, b)`) used in value
   -- position. It is an internal pseudo-type with no Core lowering, so it must
-  -- never reach an operator slot — letting it through crashes a later pass as
-  -- a `StrataBug`. Emit the position-oriented diagnostic per offending operand
+  -- never reach an operator slot — letting it through crashes a later pass.
+  -- Emit the position-oriented diagnostic per offending operand
   -- and return `true` so the caller short-circuits to the operator's natural
   -- result type, suppressing the per-family check (and its cascading error)
   -- on that operand.
@@ -2543,7 +2669,7 @@ def Synth.primitiveOp (exprMd : StmtExprMd) (expr : StmtExpr)
     `_ =>` arm of `Check.resolveStmtExpr`. -/
 def Check.primitiveOp (exprMd : StmtExprMd)
     (op : Operation) (args : List StmtExprMd) (skipProof : Bool)
-    (expected : HighTypeMd) (source : Option FileRange)
+    (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .PrimitiveOp op args skipProof) :
     ResolveM StmtExprMd := do
   let operandTy : HighTypeMd ← match op with
@@ -2592,7 +2718,7 @@ def Check.primitiveOp (exprMd : StmtExprMd)
     *unresolved* `ref`, or one absent from scope, takes the `UserDefined`
     branch instead — `resolveRef` has already reported the name, so
     re-flagging it here would only duplicate that diagnostic. -/
-def Synth.new (ref : Identifier) (source : Option FileRange) :
+def Synth.new (ref : Identifier) (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let ref' ← resolveRef ref source
     (expected := #[.compositeType, .datatypeDefinition])
@@ -2651,7 +2777,7 @@ def Synth.asType (exprMd : StmtExprMd)
     that share a lineage modulo gradual `Unknown`; testing `5 is Cat`
     is statically nonsense. The synthesized type is `TBool`. -/
 def Synth.isType (exprMd : StmtExprMd)
-    (target : StmtExprMd) (ty : HighTypeMd) (source : Option FileRange)
+    (target : StmtExprMd) (ty : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .IsType target ty) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
@@ -2687,7 +2813,7 @@ def Synth.isType (exprMd : StmtExprMd)
     extends `Animal` (the gradual `Unknown` wildcard makes either side
     flow freely against the other). -/
 def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
-    (lhs rhs : StmtExprMd) (source : Option FileRange)
+    (lhs rhs : StmtExprMd) (source : FileRange)
     (h_expr : expr = .ReferenceEquals lhs rhs)
     (h : exprMd.val = .ReferenceEquals lhs rhs) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -2756,7 +2882,7 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     itself synthesizes `TBool`. -/
 def Synth.quantifier (exprMd : StmtExprMd)
     (mode : QuantifierMode) (param : Parameter)
-    (trigger : Option StmtExprMd) (body : StmtExprMd) (source : Option FileRange)
+    (trigger : Option StmtExprMd) (body : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Quantifier mode param trigger body) :
     ResolveM (StmtExpr × HighTypeMd) := do
   withScope do
@@ -2795,7 +2921,7 @@ def Synth.quantifier (exprMd : StmtExprMd)
     deliberately leaves the operand unconstrained rather than rejecting,
     say, `assigned (a + b)`. -/
 def Synth.assigned (exprMd : StmtExprMd)
-    (name : StmtExprMd) (source : Option FileRange)
+    (name : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Assigned name) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (name', _) ← Synth.resolveStmtExpr name
@@ -2827,7 +2953,7 @@ def Synth.assigned (exprMd : StmtExprMd)
     one, so resolution only resolves names inside `v` and checks its
     type; it imposes no syntactic shape on `v`. -/
 def Check.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
+    (val : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .Old val) :
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
@@ -2855,7 +2981,7 @@ def Check.old (exprMd : StmtExprMd)
     construct would fall into the synth wildcard and spuriously report
     that its type cannot be synthesized. -/
 def Synth.old (exprMd : StmtExprMd)
-    (val : StmtExprMd) (source : Option FileRange)
+    (val : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .Old val) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (val', valTy) ← Synth.resolveStmtExpr val
@@ -2878,7 +3004,7 @@ def Synth.old (exprMd : StmtExprMd)
     `Unknown`) — `Fresh` only makes sense on heap-allocated references, so
     `fresh(5)` is rejected. The construct itself synthesizes `TBool`. -/
 def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
-    (val : StmtExprMd) (source : Option FileRange)
+    (val : StmtExprMd) (source : FileRange)
     (h_expr : expr = .Fresh val)
     (h : exprMd.val = .Fresh val) :
     ResolveM (StmtExpr × HighTypeMd) := do
@@ -2906,7 +3032,7 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
     propagates into `v`. The proof itself has no constraint on its type
     and is still synthesized. -/
 def Check.proveBy (exprMd : StmtExprMd)
-    (val proof : StmtExprMd) (expected : HighTypeMd) (source : Option FileRange)
+    (val proof : StmtExprMd) (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .ProveBy val proof) :
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
@@ -2933,7 +3059,7 @@ def Check.proveBy (exprMd : StmtExprMd)
     `T`, `proof` is synthesized only for its name-resolution side effects
     (its type is discarded), and `T` is returned. -/
 def Synth.proveBy (exprMd : StmtExprMd)
-    (val proof : StmtExprMd) (source : Option FileRange)
+    (val proof : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .ProveBy val proof) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (val', valTy) ← Synth.resolveStmtExpr val
@@ -2969,7 +3095,7 @@ def Synth.proveBy (exprMd : StmtExprMd)
     Otherwise an error is emitted ("'this' is not allowed outside instance
     methods") and the type collapses to `Unknown` to suppress cascading
     errors. -/
-def Synth.this (source : Option FileRange) :
+def Synth.this (source : FileRange) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let s ← get
   match s.instanceTypeName with
@@ -2987,11 +3113,11 @@ def Synth.this (source : Option FileRange) :
 -- ### Untyped forms
 
 /-- `Γ ⊢ Abstract ⇒ Unknown` -/
-def Synth.abstract (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.abstract (source : FileRange) : StmtExpr × HighTypeMd :=
   (.Abstract, { val := .Unknown, source := source })
 
 /-- `Γ ⊢ All ⇒ Unknown` -/
-def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
+def Synth.all (source : FileRange) : StmtExpr × HighTypeMd :=
   (.All, { val := .Unknown, source := source })
 
 -- ### ContractOf
@@ -3040,7 +3166,7 @@ def Synth.all (source : Option FileRange) : StmtExpr × HighTypeMd :=
     implemented" for it. The typing rule exists so resolution remains
     exhaustive over `StmtExpr`. -/
 def Synth.contractOf (exprMd : StmtExprMd)
-    (ty : ContractType) (fn : StmtExprMd) (source : Option FileRange)
+    (ty : ContractType) (fn : StmtExprMd) (source : FileRange)
     (h : exprMd.val = .ContractOf ty fn) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (fn', _) ← Synth.resolveStmtExpr fn
@@ -3060,7 +3186,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     modify fun s => { s with errors := s.errors.push diag }
   let resultTy : HighType := match ty with
     | .Precondition | .PostCondition => .TBool
-    | .Reads | .Modifies => .TSet { val := .Unknown, source := none }
+    | .Reads | .Modifies => .TSet { val := .Unknown, source := fn.source }
   pure (.ContractOf ty fn', { val := resultTy, source := source })
   termination_by (exprMd, 1)
   decreasing_by
@@ -3083,7 +3209,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
     downstream passes (hole elimination) can generate correctly typed
     uninterpreted functions. -/
 def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
-    (source : Option FileRange) : ResolveM StmtExprMd := do
+    (source : FileRange) : ResolveM StmtExprMd := do
   let ty' ← resolveHighType ty
   checkSubtype source expected ty'
   pure { val := .Hole det (some ty'), source := source }
@@ -3096,7 +3222,7 @@ def Check.holeSome (det : Bool) (ty : HighTypeMd) (expected : HighTypeMd)
     An untyped hole in check mode records the expected type on the node
     so downstream passes (hole elimination) don't have to infer it
     again. -/
-def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : Option FileRange) :
+def Check.holeNone (det : Bool) (expected : HighTypeMd) (source : FileRange) :
     StmtExprMd :=
   { val := .Hole det (some expected), source := source }
 
@@ -3184,12 +3310,17 @@ def resolveBody (body : Body) : ResolveM Body := do
     let (b', _) ← Synth.resolveStmtExpr b
     return .Transparent b'
   | .Opaque posts impl mods =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    -- Postconditions are boolean: check against `TBool` (like preconditions and loop
+    -- invariants) so a non-bool `ensures` errors instead of silently synthesizing, and
+    -- the truthiness coercion is inserted for an `Any`-typed condition.
+    let posts' ← posts.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let impl' ← impl.mapM Synth.resolveStmtExpr
     let mods' ← resolveModifies mods
     return .Opaque posts' (impl'.map (fun t => t.1)) mods'
   | .Abstract posts =>
-    let posts' ← posts.mapM (·.mapM resolveStmtExpr)
+    let posts' ← posts.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     return .Abstract posts'
   | .External => return .External
 
@@ -3219,7 +3350,13 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3276,7 +3413,13 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
     let inputs' ← proc.inputs.mapM resolveParameter
     let inputNames := inputs'.map (·.name.text)
     let outputs' ← proc.outputs.mapM (resolveOutputParameter inputNames)
-    let pres' ← proc.preconditions.mapM (·.mapM resolveStmtExpr)
+    -- Preconditions are boolean: check the condition against `TBool` so the
+    -- coercion (`Any_to_bool` via the frontend realizer) is inserted when the
+    -- condition is an `Any`-typed expression (a Python `assert` → `PLt(...) : Any`
+    -- lifted into a `bool`-returning `$pre` function). The elaborator no longer
+    -- coerces; the resolver owns it.
+    let pres' ← proc.preconditions.mapM (·.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source }))
     let dec' ← proc.decreases.mapM resolveStmtExpr
     let savedAnswer := (← get).answerType
     modify fun s => { s with answerType := some (outputs'.map (·.type)) }
@@ -3297,7 +3440,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
   match td with
   | .Composite ct =>
     let ctName' ← resolveRef ct.name
-    let extending' ← ct.extending.mapM (resolveRef · none (expected := #[.compositeType]))
+    let extending' ← ct.extending.mapM (fun name => resolveRef name name.source (expected := #[.compositeType]))
     let fields' ← ct.fields.mapM (resolveField ctName')
     -- Build per-type scope BEFORE resolving instance procedures, so that
     -- field references (e.g. self.field) inside methods can be resolved.
@@ -3388,13 +3531,14 @@ def resolveConstant (c : Constant) : ResolveM Constant := do
     (e.g. `IntList..isNil(x)`) without requiring a separate AST pass. -/
 private def mkTesterProcedure (dt : DatatypeDefinition) (ctor : DatatypeConstructor) : Procedure :=
   let tName := dt.testerName ctor
+  let src := dt.name.source
   let inputParam : Parameter := {
     name := mkId "value"
-    type := { val := .UserDefined dt.name, source := none }
+    type := { val := .UserDefined dt.name, source := src }
   }
   let outputParam : Parameter := {
     name := mkId "$result"
-    type := { val := .TBool, source := none }
+    type := { val := .TBool, source := src }
   }
   { name := mkId tName
     inputs := [inputParam]
@@ -3468,8 +3612,7 @@ private def collectProcedure (map : Std.HashMap Nat ResolvedNode) (proc : Proced
   let map := register map proc.name (mkNode proc)
   let map := proc.inputs.foldl collectParameter map
   let map := proc.outputs.foldl collectParameter map
-  let map := proc.preconditions.foldl (fun map c => collectStmtExpr map c.condition) map
-  let map := match proc.decreases with | some d => collectStmtExpr map d | none => map
+  let map := procedureSpecificationExprs proc |>.foldl collectStmtExpr map
   collectBody map proc.body
 
 private def collectField (map : Std.HashMap Nat ResolvedNode) (ownerName : Identifier) (field : Field)
@@ -3563,16 +3706,12 @@ Check whether accessing `fieldName` on `target` is a diamond-inherited field acc
 and if so return a diagnostic error using the given `source` range.
 -/
 private def checkDiamondFieldAccess (model : SemanticModel) (target : StmtExprMd)
-    (fieldName : Identifier) (source : Option FileRange) : List DiagnosticModel :=
+    (fieldName : Identifier) (source : FileRange) : List DiagnosticModel :=
   match (computeExprType model target).val with
   | .UserDefined typeName =>
     match isDiamondInheritedField model typeName fieldName with
     | .ok true =>
-      match source with
-      | some fileRange =>
-        [DiagnosticModel.withRange fileRange s!"fields that are inherited multiple times can not be accessed."]
-      | none =>
-        [DiagnosticModel.fromMessage s!"fields that are inherited multiple times can not be accessed."]
+      [DiagnosticModel.withRange source s!"fields that are inherited multiple times can not be accessed."]
     | .ok false => []
     | .error e => [DiagnosticModel.fromMessage e .StrataBug]
   | _ => []
@@ -3630,7 +3769,8 @@ def validateDiamondFieldAccesses (model: SemanticModel) (program : Program) : Li
 
 /-- A default ResolvedNode used as a placeholder during pre-registration.
     It will be overwritten with the real node when the definition is fully resolved. -/
-private def placeholderNode : ResolvedNode := .var "$placeholder" { val := .TVoid, source := none }
+private def placeholderNode : ResolvedNode :=
+  .var "$placeholder" { val := .TVoid, source := { file := .file "Strata/Languages/Laurel/Resolution.lean", range := SourceRange.none } }
 
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
@@ -3812,7 +3952,7 @@ private def effectiveOutputCount (heapWriters : Std.HashSet Nat)
     resolved `uniqueId` (an `InstanceCall`'s is stamped from the container-scoped
     lookup — see `Synth.instanceCall`), which `validateMultiOutputCallContexts`
     uses to resolve the callee to its correctly-scoped procedure. -/
-private def calleesOf (e : StmtExprMd) : List (Identifier × Option FileRange) :=
+private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
   collectStmtExprList (fun n => match n.val with
     | .StaticCall callee _ => [(callee, n.source)]
     | .InstanceCall _ callee _ => [(callee, n.source)]
@@ -3837,16 +3977,12 @@ private def calleesOf (e : StmtExprMd) : List (Identifier × Option FileRange) :
     contracts and are included. `.External` bodies have neither implementation
     nor postconditions, so nothing is collected. -/
 private def restrictedContextExprs (proc : Procedure) : List StmtExprMd :=
-  let contractExprs :=
-    proc.preconditions.map (·.condition)
-    ++ proc.decreases.toList
-    ++ proc.invokeOn.toList
   let bodyExprs := match proc.body with
     | .Transparent b => [b]
     | .Opaque posts _impl _mods => posts.map (·.condition)
     | .Abstract posts => posts.map (·.condition)
     | .External => []
-  contractExprs ++ bodyExprs
+  procedureSpecificationExprs proc ++ bodyExprs
 
 /-- Reject calling a multi-output procedure from a transparent procedure or a
     contract. A Core *function* has exactly one output, so a multi-output
@@ -3895,7 +4031,10 @@ private def validateMultiOutputCallContexts (model : SemanticModel)
         | _ => none
 
 /-- Run the full resolution pass on a Laurel program. -/
-public def resolve (program : Program) (existingModel: Option SemanticModel := none) : ResolutionResult :=
+public def resolve (program : Program) (existingModel: Option SemanticModel := none)
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
+    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM Program := do
     preRegisterTopLevel program
@@ -3906,7 +4045,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     return { staticProcedures := staticProcs', staticFields := staticFields',
              types := types', constants := constants' }
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let typeLattice := TypeLattice.ofTypes program.types
+  let typeLattice := { TypeLattice.ofTypes program.types with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
   let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
@@ -3957,8 +4097,8 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
     else []
   { program := program',
     model := semanticModel,
-    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++ invokeOnErrors
-             ++ multiOutputCallErrors
+    errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
+      invokeOnErrors ++ multiOutputCallErrors
   }
 
 /-! ## Resolution for UnorderedCoreWithLaurelTypes -/
@@ -3976,8 +4116,11 @@ but they are because certain type references have incorrectly not been updated.
 public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     (existingModel : Option SemanticModel := none)
     (additionalTypes : List TypeDefinition := [])
+    (gradualTypes : Std.HashSet String := {})
+    (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
+    (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     : UnorderedCoreWithLaurelTypes × SemanticModel × Array DiagnosticModel :=
-  -- Phase 1: pre-register all top-level names, then resolve references
+  -- Phase 1: register all top-level names, then resolve references
   let phase1 : ResolveM UnorderedCoreWithLaurelTypes := do
     preRegisterDefinitions
       (additionalTypes ++ uc.datatypes.map .Datatype)
@@ -4019,7 +4162,14 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
              datatypes := datatypes', constants := constants' }
 
   let nextId := existingModel.elim 1 (fun m => m.nextId)
-  let (uc', finalState) := phase1.run { nextId := nextId }
+  -- Thread the frontend's gradual type names AND the coercion/truthiness hooks onto the
+  -- lattice so consistency/coercion treats them as the dynamic top (e.g. Python `Any`) and
+  -- the second resolve pass sees the SAME lattice as the main `resolve` — otherwise the
+  -- widen arm (gated on realizeCoercion.isSome) and the toBool truthiness hook silently
+  -- differ between passes, producing spurious "resolution introduced this diagnostic".
+  let typeLattice := { TypeLattice.ofTypes (uc.datatypes.map .Datatype ++ additionalTypes) with
+    gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool }
+  let (uc', finalState) := phase1.run { nextId := nextId, typeLattice }
 
   -- Phase 2: build refToDef from the resolved unordered core
   let program' : Program := {

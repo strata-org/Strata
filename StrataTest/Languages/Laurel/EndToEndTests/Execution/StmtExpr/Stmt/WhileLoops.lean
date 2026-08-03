@@ -81,3 +81,42 @@ procedure secondInvariantFails()
     }
 };
 #end
+
+/-! ## An invariant is checked against the live state when the condition assigns
+
+The loop head is reached after the condition's assignment has been lifted out, so
+the invariant must be verified against the assigned value. Getting this wrong is
+silent in the dangerous direction: substituting the pre-assignment snapshot into
+the invariant made the false invariant below verify clean, dropping the proof
+obligation entirely. -/
+
+#eval testLaurelMultiple
+#strata
+program Laurel;
+procedure invariantHoldsOnLiveValue()
+  entry
+  opaque
+{
+    var x: int := 1;
+    while({ x := 5; x } < 0)
+      invariant x == 5
+    {
+    };
+    assert x == 5
+};
+#end
+
+#eval testLaurel
+#strata
+program Laurel;
+procedure invariantFailsOnLiveValue()
+  opaque
+{
+    var x: int := 1;
+    while({ x := 5; x } < 0)
+      invariant x == 1
+//              ^^^^^^ error: assertion does not hold
+    {
+    }
+};
+#end

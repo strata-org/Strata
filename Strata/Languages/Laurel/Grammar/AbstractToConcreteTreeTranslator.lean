@@ -92,16 +92,19 @@ private def operationName : Operation → String
   | .Gt => "gt" | .Geq => "ge" | .StrConcat => "strConcat"
 
 -- Internal-only: public because `partial` prevents `private` in this section
-partial def stmtExprToArg (s : StmtExprMd) : Arg :=
-  stmtExprValToArg s.val
+-- Printing never consults source locations, so this is defined on the bare
+-- `StmtExpr`; `stmtExprToArg` below is the `StmtExprMd` wrapper.
+partial def stmtExprValToArg (e : StmtExpr) : Arg :=
+  go e
 where
+  stmtExprToArg (s : StmtExprMd) : Arg := go s.val
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
     | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
-    -- Declare is handled specially in the `Assign [⟨.Declare …⟩]` case of `stmtExprValToArg`.
+    -- Declare is handled specially in the `Assign [⟨.Declare …⟩]` case of `go`.
     -- This fallback drops the type; it should not be reached in normal operation.
     | .Declare param => laurelOp "identifier" #[ident param.name.text]
-  stmtExprValToArg : StmtExpr → Arg
+  go : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
       match n with
@@ -224,8 +227,8 @@ where
     | .Assigned name => laurelOp "call" #[laurelOp "identifier" #[ident "assigned"], commaSep #[stmtExprToArg name]]
     | .Old value => laurelOp "old" #[stmtExprToArg value]
     | .Fresh value => laurelOp "call" #[laurelOp "identifier" #[ident "fresh"], commaSep #[stmtExprToArg value]]
-    | .ProveBy value _proof => stmtExprValToArg value.val
-    | .ContractOf _type fn => stmtExprValToArg fn.val
+    | .ProveBy value _proof => go value.val
+    | .ContractOf _type fn => go fn.val
     | .Abstract => laurelOp "identifier" #[ident "abstract"]
     | .All => laurelOp "identifier" #[ident "all"]
     | .PureFieldUpdate target field value =>
@@ -234,6 +237,9 @@ where
         laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text],
         stmtExprToArg value
       ]
+
+-- Internal-only: public because `partial` prevents `private` in this section
+def stmtExprToArg (s : StmtExprMd) : Arg := stmtExprValToArg s.val
 
 private def parameterToArg (p : Parameter) : Arg :=
   laurelOp "parameter" #[ident p.name.text, highTypeToArg p.type]
@@ -419,7 +425,7 @@ private def formatOp (o : StrataDDM.Operation) : Format :=
 def formatHighType (t : HighTypeMd) : Format := formatArg (highTypeToArg t)
 def formatHighTypeVal (t : HighType) : Format := formatArg (highTypeValToArg t)
 def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
-def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprToArg { val := s, source := none })
+def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprValToArg s)
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
@@ -435,7 +441,7 @@ def formatTypeDefinition : TypeDefinition → Format
   | .Alias ta => "type " ++ format ta.name ++ " = " ++ formatHighType ta.target
 
 def formatVariable (v : Variable) : Format :=
-  formatArg (stmtExprToArg ⟨.Var v, none⟩)
+  formatArg (stmtExprValToArg (.Var v))
 
 def formatVariableMd (v : VariableMd) : Format :=
   formatArg (stmtExprToArg ⟨.Var v.val, v.source⟩)

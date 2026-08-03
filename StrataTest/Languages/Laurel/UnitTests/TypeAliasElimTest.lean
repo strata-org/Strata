@@ -27,11 +27,11 @@ meta section
 open Strata.Laurel
 
 /-- Helper: construct a HighTypeMd with no source metadata. -/
-private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := none }
+private def mkTy (ty : HighType) : HighTypeMd := { val := ty, source := default }
 
 /-- Helper: construct a minimal procedure. -/
 private def mkProc (name : String) (inputs : List Parameter) (outputs : List Parameter)
-    (body : Body := .Transparent ⟨.Block [] none, none⟩) : Procedure :=
+    (body : Body := .Transparent ⟨.Block [] none, default⟩) : Procedure :=
   { name := mkId name, inputs, outputs, preconditions := [], decreases := none,
     body }
 
@@ -53,7 +53,7 @@ private def chainedProgram : Program :=
       mkProc "test"
         [{ name := mkId "x", type := mkTy (.UserDefined (mkId "B")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "A")) }]
-        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "x")), none⟩), none⟩)
+        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "x")), default⟩), default⟩)
     ]
     staticFields := []
     types := [
@@ -115,7 +115,7 @@ private def procSigProgram : Program :=
         [{ name := mkId "a", type := mkTy (.UserDefined (mkId "MyInt")) },
          { name := mkId "b", type := mkTy (.UserDefined (mkId "MyBool")) }]
         [{ name := mkId "r", type := mkTy (.UserDefined (mkId "MyInt")) }]
-        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "a")), none⟩), none⟩)
+        (.Transparent ⟨.Return (some ⟨.Var (.Local (mkId "a")), default⟩), default⟩)
     ]
     staticFields := []
     types := [

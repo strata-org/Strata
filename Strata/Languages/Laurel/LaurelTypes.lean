@@ -18,7 +18,7 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
+def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier): HighTypeMd :=
   match model.get callee with
     | .datatypeConstructor t _ => ⟨ .UserDefined t, source ⟩
     | .datatypeDestructor _ fld => fld.type
@@ -26,7 +26,7 @@ def getCallType (source : Option FileRange) (model : SemanticModel) (callee : Id
     | .staticProcedure proc | .instanceProcedure _ proc => match proc.outputs with
       | [] => { val := .TVoid, source := source }
       | [singleOutput] => singleOutput.type
-      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := none }
+      | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
     | .unresolved source => { val := HighType.Unknown, source := source }
     | astNode =>
       dbg_trace s!"BUG: static call to {callee} not to a procedure but to a {repr astNode}"

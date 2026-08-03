@@ -10,6 +10,7 @@ public import Strata.Languages.Laurel.LaurelPass
 public import Strata.Languages.Laurel.HeapAnalysis
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
+import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Languages.Laurel.LaurelTypes
 import Strata.Util.Tactics
@@ -107,21 +108,25 @@ def boxConstructorName (model : SemanticModel) (ty : HighType) : Identifier :=
   | .TBv n => s!"BoxBv{n}"
   | ty => dbg_trace s!"BUG, boxConstructorName bad type: {repr ty}"; "boxConstructorNameError"
 
+/-- Synthetic source location for compiler-generated Box datatype definitions. -/
+private def syntheticSource : FileRange :=
+  { file := .file "Strata/Languages/Laurel/HeapParameterization.lean", range := SourceRange.none }
+
 /-- Build the DatatypeConstructor for a Box variant from a HighType, for datatype generation -/
 private def boxConstructorDef (model : SemanticModel) (ty : HighType) : Option DatatypeConstructor :=
   match ty with
-  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, none⟩ }] }
-  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, none⟩ }] }
-  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, none⟩ }] }
-  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, none⟩ }] }
-  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, none⟩ }] }
+  | .TInt => some { name := "BoxInt", args := [{ name := "intVal", type := ⟨.TInt, syntheticSource⟩ }] }
+  | .TBool => some { name := "BoxBool", args := [{ name := "boolVal", type := ⟨.TBool, syntheticSource⟩ }] }
+  | .TReal => some { name := "BoxReal", args := [{ name := "realVal", type := ⟨.TReal, syntheticSource⟩ }] }
+  | .TFloat64 => some { name := "BoxFloat64", args := [{ name := "float64Val", type := ⟨.TFloat64, syntheticSource⟩ }] }
+  | .TString => some { name := "BoxString", args := [{ name := "stringVal", type := ⟨.TString, syntheticSource⟩ }] }
   | .UserDefined name =>
       if isDatatype model name then
-        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, none⟩ }] }
+        some { name := s!"Box..{name.text}", args := [{ name := s!"{name.text}Val", type := ⟨.UserDefined name, syntheticSource⟩ }] }
       else
-        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", none⟩ }] }
+        some { name := "BoxComposite", args := [{ name := "compositeVal", type := ⟨.UserDefined "Composite", syntheticSource⟩ }] }
   | .TBv n =>
-        some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, none⟩ }] }
+        some { name := s!"BoxBv{n}", args := [{ name := s!"bv{n}Val", type := ⟨.TBv n, syntheticSource⟩ }] }
   | ty => dbg_trace s!"BUG, boxConstructorDef bad type: {repr ty}"; none
 
 /-- Record a Box constructor use in the transform state -/
@@ -147,9 +152,9 @@ private def freshVarName : TransformM Identifier := do
   set { s with freshCounter := s.freshCounter + 1 }
   return s!"$tmp{s.freshCounter}"
 
-/-- Helper to wrap a StmtExpr into StmtExprMd with empty metadata -/
-private def mkMd (e : StmtExpr) : StmtExprMd := { val := e, source := none }
-private def mkVarMd (v : Variable) : VariableMd := { val := v, source := none }
+/-- Helper to wrap a StmtExpr into StmtExprMd with the given source -/
+private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := { val := e, source }
+private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val := v, source }
 
 /--
 Resolve the owning composite type name for a field access by computing the target expression's type.
@@ -161,17 +166,24 @@ def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : 
     | .unresolved _ => none
     | _ => dbg_trace s!"BUG: resolveQualifiedFieldName {fieldName} did resolved to something other than a field"; none
 
-private def wrapList (source : Option FileRange) : List StmtExprMd → StmtExprMd
+private def wrapList (source : FileRange) : List StmtExprMd → StmtExprMd
   | [single] => single
   | many => ⟨.Block many none, source⟩
+
+/-- Whether heap lowering may introduce imperative heap-threading assignments. -/
+inductive HeapTransformContext where
+  | executable
+  | specification
 
 /--
 Transform an expression, adding heap parameters where needed.
 - `heapVar`: the name of the heap variable to use
-- `env`: the type environment for resolving field owners
+- `model`: the semantic model for resolving fields and procedure effects
 - `valueUsed`: whether the result value of this expression is used (affects optimization of heap-writing calls)
+- `context`: specification contexts remain pure and never gain synthetic assignments
 -/
-def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
+def heapTransformExpr (heapVar : Identifier) (model: SemanticModel) (expr : StmtExprMd)
+    (valueUsed : Bool := true) (context : HeapTransformContext := .executable) : TransformM StmtExprMd :=
   recurseOne expr valueUsed
 where
   recurseOne (exprMd : StmtExprMd) (valueUsed : Bool := true) : TransformM StmtExprMd :=
@@ -186,33 +198,40 @@ where
 
         let valTy := (model.get fieldName).getType
         let selectTarget' ← recurseOne selectTarget
-        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)), selectTarget', mkMd (.StaticCall qualifiedName [])], source ⟩
+        let readExpr := ⟨ .StaticCall "readField" [mkMd (.Var (.Local heapVar)) source, selectTarget', mkMd (.StaticCall qualifiedName []) source], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor model valTy.val
-        return [mkMd <| .StaticCall (boxDestructorName model valTy.val) [readExpr]]
+        return [mkMd (.StaticCall (boxDestructorName model valTy.val) [readExpr]) source]
     | .StaticCall callee args =>
         let args' ← args.mapM (recurseOne ·)
         let calleeReadsHeap ← readsHeap callee
         let calleeWritesHeap ← writesHeap callee
         if calleeWritesHeap then
-          if valueUsed then
-            let freshVar ← freshVarName
-            let callWithHeap := ⟨ .Assign
-              [mkVarMd (.Local heapVar), mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩)]
-              (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩), source ⟩
-            return [callWithHeap, mkMd (.Var (.Local freshVar))]
-          else
-            -- Generate throwaway Declare targets for any non-heap outputs
-            let procOutputs := match model.get callee with
-              | .staticProcedure proc => proc.outputs
-              | .instanceProcedure _ proc => proc.outputs
-              | _ => []
-            let extraTargets ← procOutputs.mapM fun out => do
-              pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩))
-            let allTargets := mkVarMd (.Local heapVar) :: extraTargets
-            return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩), source ⟩]
+          match context with
+          | .specification =>
+              -- Specifications are pure. Keep the source-level call shape so the
+              -- pure-context validator reports the call itself, rather than a
+              -- synthetic heap-threading assignment introduced by this pass.
+              return [⟨.StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source⟩]
+          | .executable =>
+            if valueUsed then
+              let freshVar ← freshVarName
+              let callWithHeap := ⟨ .Assign
+                [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, computeExprType model exprMd⟩) source]
+                (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
+              return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
+            else
+              -- Generate throwaway Declare targets for any non-heap outputs
+              let procOutputs := match model.get callee with
+                | .staticProcedure proc => proc.outputs
+                | .instanceProcedure _ proc => proc.outputs
+                | _ => []
+              let extraTargets ← procOutputs.mapM fun out => do
+                pure (mkVarMd (.Declare ⟨← freshVarName, out.type⟩) source)
+              let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
+              return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
         else if calleeReadsHeap then
-          return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), source ⟩]
+          return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩]
         else
           return [⟨ .StaticCall callee args', source ⟩]
     | .InstanceCall callTarget callee args =>
@@ -249,16 +268,20 @@ where
           match _htv : t.val with
           | .Field target fieldName => do
               let some qualifiedName := resolveQualifiedFieldName model fieldName
-                -- Field name did not resolve; a diagnostic will have been emitted by the resolution pass.
-                | return (accTargets ++ [t], accStmts)
+                -- Unresolved field name = a write to an unmodeled object's attribute. Drop it from the heap
+                -- model (retarget to a throwaway local; emit no updateField) — an untracked field write is
+                -- unobservable in the heap abstraction.
+                | do
+                  let discardVar ← freshVarName
+                  return (accTargets ++ [mkVarMd (.Declare ⟨discardVar, ⟨.Unknown, source⟩⟩) source], accStmts)
               let valTy := (model.get fieldName).getType
               recordBoxConstructor model valTy.val
               let freshVar ← freshVarName
               let target' ← recurseOne target
-              let boxedVal := mkMd <| .StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar))]
-              let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar)]
-                (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)), target', mkMd (.StaticCall qualifiedName []), boxedVal])), source ⟩
-              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩)], accStmts ++ [updateStmt])
+              let boxedVal := mkMd (.StaticCall (boxConstructorName model valTy.val) [mkMd (.Var (.Local freshVar)) source]) source
+              let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar) source]
+                (mkMd (.StaticCall "updateField" [mkMd (.Var (.Local heapVar)) source, target', mkMd (.StaticCall qualifiedName []) source, boxedVal]) source), source ⟩
+              return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
       -- Process calls to heap mutating procedures
@@ -270,9 +293,9 @@ where
             let calleeWritesHeap ← writesHeap callee
             let calleeReadsHeap ← readsHeap callee
             if calleeWritesHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, true)
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, true)
             else if calleeReadsHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) :: args'), v.source ⟩, false)
+              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, false)
             else
               pure (⟨ .StaticCall callee args', v.source ⟩, false)
           | .InstanceCall callTarget _callee args => do
@@ -319,16 +342,16 @@ where
         match (computeExprType model e1).val with
         | .UserDefined name =>
           if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
-          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
-          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!]) source
+          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!]) source
           return [⟨ .PrimitiveOp .Eq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | .Neq, [e1, _e2] =>
         match (computeExprType model e1).val with
         | .UserDefined name =>
           if isDatatype model name then return [⟨ .PrimitiveOp op args', source ⟩]
-          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!])
-          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!])
+          let ref1 := mkMd (.StaticCall "Composite..ref!" [args'[0]!]) source
+          let ref2 := mkMd (.StaticCall "Composite..ref!" [args'[1]!]) source
           return [⟨ .PrimitiveOp .Neq [ref1, ref2], source ⟩]
         | _ => return [⟨ .PrimitiveOp op args', source ⟩]
       | _, _ => return [⟨ .PrimitiveOp op args', source ⟩]
@@ -370,6 +393,12 @@ where
       simp_all
       omega)
 
+/-- Heap-transform a pure specification expression without introducing
+heap-threading assignments for calls to heap-writing procedures. -/
+def heapTransformSpecificationExpr (heapName : Identifier) (model : SemanticModel)
+    (expr : StmtExprMd) : TransformM StmtExprMd :=
+  heapTransformExpr heapName model expr (context := .specification)
+
 /-- Heap-transform a modifies entry. A field target `o#f` is kept symbolic
 (only its owner is lowered) so the modifies pass can match it structurally. -/
 def heapTransformModifiesEntry (heapName : Identifier) (model : SemanticModel)
@@ -385,6 +414,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   let uid ← Identifier.getUniqueId proc.name
   let readsHeap := (← get).heapReaders.contains uid
   let writesHeap := (← get).heapWriters.contains uid
+  let proc ← if readsHeap || writesHeap then
+    mapProcedureSpecificationsM (heapTransformSpecificationExpr heapName model) proc
+  else
+    pure proc
 
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
@@ -394,16 +427,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let inputs' := heapParam :: proc.inputs
     let outputs' := heapParam :: proc.outputs
 
-    -- Preconditions reference $heap (evaluated at entry before any mutation)
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-
     let bodyValueIsUsed := !proc.outputs.isEmpty
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapName model bodyExpr bodyValueIsUsed
+          let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← match impl with
             | some implExpr =>
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
@@ -412,14 +442,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
     return { proc with
       inputs := inputs',
       outputs := outputs',
-      preconditions := preconditions',
       body := body' }
 
   else if readsHeap then
@@ -429,25 +458,22 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := heapParam :: proc.inputs
 
-    let preconditions' ← proc.preconditions.mapM (·.mapM (heapTransformExpr heapName model))
-
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
-          let bodyExpr' ← heapTransformExpr heapName model bodyExpr
+          let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
           pure (.Transparent bodyExpr')
       | .Opaque postconds impl modif =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
-          let postconds' ← postconds.mapM (·.mapM (heapTransformExpr heapName model))
+          let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           pure (.Abstract postconds')
       | .External => pure .External
 
     return { proc with
       inputs := inputs',
-      preconditions := preconditions',
       body := body' }
 
   else

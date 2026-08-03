@@ -187,7 +187,7 @@ exactly as in `mapStmtExprUsedM`).
 -/
 def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List StmtExprMd)))
     (post : Bool → StmtExprMd → m (List StmtExprMd)) (resultUsed : Bool) (expr : StmtExprMd) : m StmtExprMd := do
-  let collapse (results : List StmtExprMd) (src : Option FileRange) : StmtExprMd :=
+  let collapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
     match results with
     | [single] => single
     | many => ⟨.Block many none, src⟩
@@ -470,15 +470,51 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
+/-- Every expression-bearing specification field outside the procedure body, in
+    declaration order: preconditions, decreases, invoke-on trigger, then axioms. -/
+def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
+  proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
+    proc.invokeOn.toList ++ proc.axioms
+
+/-- Visit every expression node in a procedure in deterministic pre-order.
+    Body expressions come first, followed by preconditions, decreases, invoke-on,
+    and axioms. Opaque bodies visit postconditions, implementation, then modifies
+    entries; abstract bodies visit their postconditions. -/
+def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure) : m Unit := do
+  let visit := foldStmtExprM f
+  match proc.body with
+  | .Transparent body => visit body
+  | .Opaque postconditions implementation modifies =>
+    postconditions.forM (visit ·.condition)
+    implementation.forM visit
+    modifies.forM visit
+  | .Abstract postconditions => postconditions.forM (visit ·.condition)
+  | .External => pure ()
+  procedureSpecificationExprs proc |>.forM visit
+
+/-- Map procedure specification fields with separate transformations for
+    proposition-valued fields (`preconditions` and `axioms`) and unconstrained
+    value fields (`decreases` and `invokeOn`). The body is intentionally excluded. -/
+def mapProcedureSpecificationsWithM [Monad m]
+    (mapCondition mapValue : StmtExprMd → m StmtExprMd)
+    (proc : Procedure) : m Procedure := do
+  return { proc with
+    preconditions := ← proc.preconditions.mapM (·.mapM mapCondition)
+    decreases := ← proc.decreases.mapM mapValue
+    invokeOn := ← proc.invokeOn.mapM mapValue
+    axioms := ← proc.axioms.mapM mapCondition }
+
+/-- Apply one monadic transformation to every expression-bearing specification
+    field outside the procedure body. -/
+def mapProcedureSpecificationsM [Monad m] (f : StmtExprMd → m StmtExprMd)
+    (proc : Procedure) : m Procedure :=
+  mapProcedureSpecificationsWithM f f proc
+
 /-- Apply a monadic transformation to all `StmtExprMd` nodes in a procedure
-    (preconditions, decreases, body, invokeOn, and axioms). -/
+    (body, preconditions, decreases, invokeOn, and axioms). -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
-  return { proc with
-    preconditions := ← proc.preconditions.mapM (·.mapM f)
-    decreases := ← proc.decreases.mapM f
-    invokeOn := ← proc.invokeOn.mapM f
-    axioms := ← proc.axioms.mapM f }
+  mapProcedureSpecificationsM f proc
 
 /-- Apply a monadic transformation to every procedure in a program — both
     top-level static procedures and the instance procedures of composite types.
@@ -581,23 +617,15 @@ def mapStmtExprHighTypes (f : HighTypeMd → HighTypeMd) (expr : StmtExprMd) : S
   mapStmtExprHighTypesM (m := Id) f expr
 
 /-- Apply `f` to every `HighType` annotation in a procedure: parameter types,
-    body, preconditions, decreases measure, and auto-invocation trigger. -/
+    body, preconditions, decreases measure, auto-invocation trigger, and axioms. -/
 def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : Procedure) : m Procedure := do
   let mapExpr := mapStmtExprHighTypesM f
   let mapParam (p : Parameter) : m Parameter := do pure { p with type := ← f p.type }
-  let body' ← match proc.body with
-    | .Transparent b => pure (.Transparent (← mapExpr b))
-    | .Opaque ps impl mods =>
-      pure (.Opaque (← ps.mapM (·.mapM mapExpr)) (← impl.mapM mapExpr) (← mods.mapM mapExpr))
-    | .Abstract ps => pure (.Abstract (← ps.mapM (·.mapM mapExpr)))
-    | .External => pure .External
-  return { proc with
+  let proc ← mapProcedureBodiesM mapExpr proc
+  let proc := { proc with
     inputs := ← proc.inputs.mapM mapParam
-    outputs := ← proc.outputs.mapM mapParam
-    body := body'
-    preconditions := ← proc.preconditions.mapM (·.mapM mapExpr)
-    decreases := ← proc.decreases.mapM mapExpr
-    invokeOn := ← proc.invokeOn.mapM mapExpr }
+    outputs := ← proc.outputs.mapM mapParam }
+  mapProcedureSpecificationsM mapExpr proc
 
 /-- Apply `f` to every `HighType` annotation in a type definition: composite
     fields and instance procedures, constrained base/constraint/witness,
@@ -666,12 +694,14 @@ is a coverage test of the traversal, not an independent re-implementation of it.
 -/
 
 private def covSentinelText : String := "§MAP_STMT_EXPR_COVERAGE_SENTINEL§"
-private def covId (s : String) : Identifier := ⟨s, none, none⟩
-private def covS : StmtExprMd := ⟨.LiteralString covSentinelText, none⟩
-private def covMd (e : StmtExpr) : StmtExprMd := ⟨e, none⟩
-private def covVmd (v : Variable) : VariableMd := ⟨v, none⟩
-private def covTy : HighTypeMd := ⟨.TInt, none⟩
-private def covParam : Parameter := { name := covId "p", type := ⟨.TInt, none⟩ }
+private def covSyntheticSource : FileRange :=
+  { file := .file "Strata/Languages/Laurel/MapStmtExpr.lean", range := SourceRange.none }
+private def covId (s : String) : Identifier := ⟨s, none, covSyntheticSource⟩
+private def covS : StmtExprMd := ⟨.LiteralString covSentinelText, covSyntheticSource⟩
+private def covMd (e : StmtExpr) : StmtExprMd := ⟨e, covSyntheticSource⟩
+private def covVmd (v : Variable) : VariableMd := ⟨v, covSyntheticSource⟩
+private def covTy : HighTypeMd := ⟨.TInt, covSyntheticSource⟩
+private def covParam : Parameter := { name := covId "p", type := ⟨.TInt, covSyntheticSource⟩ }
 
 /-- A distinct key per `StmtExpr` constructor. Exhaustive (no wildcard): a new
     constructor forces an entry here, and then the completeness assertion in the

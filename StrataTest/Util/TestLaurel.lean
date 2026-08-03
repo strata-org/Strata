@@ -57,14 +57,15 @@ def defaultLaurelTestOptions : LaurelVerifyOptions :=
     Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
     navigation). -/
-private def runLaurelResolutionRaw (program : StrataDDM.Program) :
+private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
+    (program : StrataDDM.Program) :
     IO (Array Strata.DiagnosticModel) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
     return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let result := Laurel.resolve laurelProgram
+    let result := Laurel.resolve laurelProgram (gradualTypes := gradualTypes)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
@@ -633,8 +634,9 @@ def testLaurelKeepIntermediates (block : SourcedProgram) : IO Unit := do
     echoes each diagnostic's file-relative `line:col` range and
     `showSnippet := true` appends the snippet-relative range. -/
 def testLaurelResolution (block : SourcedProgram)
+    (gradualTypes : Std.HashSet String := {})
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit :=
-  runAndCheck block runLaurelResolutionRaw (label := "resolve")
+  runAndCheck block (runLaurelResolutionRaw gradualTypes) (label := "resolve")
     (showLocations := showLocations) (showSnippet := showSnippet)
 
 end StrataTest.Util

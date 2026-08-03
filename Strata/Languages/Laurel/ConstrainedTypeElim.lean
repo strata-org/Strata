@@ -57,7 +57,7 @@ def isConstrainedType (ptMap : ConstrainedTypeMap) (ty : HighType) : Bool :=
     `x` or a field read `c#count`), allowing this to serve every assignment
     target kind uniformly. -/
 def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (ref : StmtExprMd) (src : Option FileRange := none) : Option StmtExprMd :=
+    (ref : StmtExprMd) (src : FileRange) : Option StmtExprMd :=
   match ty with
   | .UserDefined name => if ptMap.contains name.text then
       some ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref], src⟩
@@ -67,28 +67,29 @@ def constraintCallForExpr (ptMap : ConstrainedTypeMap) (ty : HighType)
 /-- Build a call to the constraint procedure for a constrained type, checking a
     local variable read, or `none` if not constrained. -/
 def constraintCallFor (ptMap : ConstrainedTypeMap) (ty : HighType)
-    (varName : Identifier) (src : Option FileRange := none) : Option StmtExprMd :=
+    (varName : Identifier) (src : FileRange) : Option StmtExprMd :=
   constraintCallForExpr ptMap ty ⟨.Var (.Local varName), src⟩ src
 
 /-- Generate a constraint procedure for a constrained type.
     For nested types, the procedure calls the parent's constraint procedure. -/
 def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
+  let src := ct.constraint.source
   let bodyExpr: StmtExprMd := match ct.base.val with
     | .UserDefined parent =>
       if ptMap.contains parent.text then
         let paramId := { ct.valueName with uniqueId := none }
         let paramRef : StmtExprMd :=
-          { val := .Var (.Local paramId), source := none }
+          { val := .Var (.Local paramId), source := src }
         let parentCall : StmtExprMd :=
-          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := none }
-        { val := .PrimitiveOp .And [ct.constraint, parentCall], source := none }
+          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef], source := src }
+        { val := .PrimitiveOp .And [ct.constraint, parentCall], source := src }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := baseType }]
-    outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := none } }]
-    body := .Transparent { val := .Return bodyExpr, source := none }
+    outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := src } }]
+    body := .Transparent { val := .Return bodyExpr, source := src }
     decreases := none
     preconditions := [] }
 
@@ -179,13 +180,8 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   | .Abstract postconds => .Abstract (postconds ++ outputEnsures)
   | .External => .External
   let resolve := mapStmtExpr (resolveExprNode ptMap)
-  let resolveBody : Body → Body := fun body => match body with
-    | .Transparent b => .Transparent (resolve b)
-    | .Opaque ps impl modif => .Opaque (ps.map (·.mapCondition resolve)) (impl.map resolve) (modif.map resolve)
-    | .Abstract ps => .Abstract (ps.map (·.mapCondition resolve))
-    | .External => .External
-  { proc with
-    body := resolveBody body'
+  let proc := { proc with
+    body := body'
     inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType ptMap p.type }
     -- Prepend the generated input type-constraint requires. This is a
@@ -194,7 +190,8 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
     -- assume block at the callee body start and the independent asserts at
     -- call sites do not depend on this order. Kept constraints-first for
     -- readability.
-    preconditions := (inputRequires ++ proc.preconditions).map (·.mapCondition resolve) }
+    preconditions := inputRequires ++ proc.preconditions }
+  mapProcedureM (m := Id) resolve proc
 
 private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source

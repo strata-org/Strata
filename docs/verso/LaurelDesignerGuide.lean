@@ -437,6 +437,30 @@ standard library rather than the core language), — not present.
    * ✓
    * ✓
    * —
+ *
+   * Implicit numeric widening (`int` to `real`/`float64`)
+   * ✓
+   * —
+   * ✓
+   * —
+   * ✓
+   * ✓
+ *
+   * Truthiness (non-`bool` values in boolean position)
+   * ✓
+   * —
+   * —
+   * ✓
+   * ✓
+   * ✓
+ *
+   * Dynamic type (values assignable to and from any type)
+   * WIP
+   * —
+   * —
+   * ✓
+   * ✓
+   * —
 :::
 
 Notes on the partial (~) entries:
@@ -477,6 +501,14 @@ Notes on the partial (~) entries:
   `eval`/dynamic code loading is available only indirectly through `dlopen` (~). C has no built-in
   sets or maps, no classes or inheritance, no exceptions, no reflection, and no garbage collection,
   so those rows are —.
+- *Implicit numeric widening* — Java, Python, and C widen an integer to a floating-point value where
+  one is expected (`1 + 2.0`). JavaScript has a single `number` type, so there is no integer to widen
+  (—).
+- *Truthiness* — Python, JavaScript, and C admit non-boolean values in boolean position, each with
+  its own rule (`0`, `""`, empty containers, and `null`/`None`/`undefined` are false). Java rejects
+  them: a condition must already be `boolean` (—).
+- *Dynamic type* — Python and JavaScript are dynamically typed, so a value of any type flows into any
+  variable. Java and C are statically typed with no such type (—).
 
 Notes on the *Core* column. Core is Laurel's lowering target, a Boogie-style intermediate
 verification language, so the column records what survives to Core as a native construct rather than
@@ -514,6 +546,34 @@ by the Java Memory Model (`synchronized`, `volatile`, happens-before); Python ha
 GIL (✓); JavaScript is single-threaded and only achieves parallelism through workers that
 communicate by message passing (~). Laurel is currently sequential, and reasoning under a relaxed
 memory model is a large, separable piece of work, so this is planned rather than available.
+
+## Proof-relevant subtyping
+The shared conversions above — numeric widening, and (below) the dynamic type — are realized through
+a single subtyping judgment. `coerce S T` returns a witness describing how a value of type `S`
+becomes one of type `T`: `refl` for identical types, `upcast` for nominal widening
+(representation-preserving), `widen` for `int` to `real`/`float64`, and `inject`/`project` to box and
+unbox across the dynamic type. The boolean subtype check is derived from it
+(`isConsistentSubtype := (coerce …).isSome`), so one computation produces both the decision and the
+coercion. `upcast` and `widen` are ordinary subtyping and hold in every Laurel program.
+
+A frontend supplies `realizeCoercion` to turn a witness into the concrete box/unbox/convert term for
+its runtime. Native Laurel supplies none, so `refl` and `upcast` pass the value through unchanged and
+`widen` is rejected — an `int` in a `real` slot is only accepted once a frontend provides the
+conversion.
+
+## Truthiness coercion
+A value in boolean position — `if`, `while`, `assert`, boolean operators — coerces to `bool` through
+a canonical witness: `int_to_bool`, `str_to_bool`, `list_to_bool`, and so on. This coercion applies
+in boolean position specifically, so it lives in the `toBool` hook, which fires at boolean-context
+slots. An `int` in a condition (`if 5`) truthifies through `int_to_bool`; an `int` in a plain `bool`
+slot (`var b: bool := 5`) is a type error. `coerce` handles `Any` in boolean position directly, as
+the `project bool` verdict realized by `Any_to_bool`; `toBool` supplies the witnesses for the
+concrete types — `int`, `str`, `list`, and the rest.
+
+In the future that mechanism can be superseded by configurable coercive subtyping, but care needs to
+be taken to ensure that the resulting relation is coherent. Such a mechanism could also handle other
+implicit casts — for example, dereferencing a nullable reference in Java (`Nullable<T> => T`) in a
+position that expects a `T` but is provided a `Nullable<T>`.
 
 # Modular Verification
 To achieve goal (3), Laurel has the following features related to modular verification.
