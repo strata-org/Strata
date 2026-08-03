@@ -254,7 +254,11 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
       | .ok model => return some (.sat model, skipToNextVerdict rest)
       | .error _ => return some (.sat [], skipToNextVerdict rest)
     | "unsat" => return some (.unsat, skipToNextVerdict rest)
-    | "unknown" => return some (.unknown, skipToNextVerdict rest)
+    | "unknown" =>
+      let rawModel ← parseModelDDM rest
+      match (processModel typedVarToSMTFn vars rawModel E) with
+      | .ok model => return some (.unknown (some model), skipToNextVerdict rest)
+      | .error _  => return some (.unknown, skipToNextVerdict rest)
     | _ => return none
 
   let mkError (output : IO.Process.Output) : SolverError :=
@@ -319,12 +323,22 @@ def dischargeObligationIncremental {P : PureExpr} [ToFormat P.Ident] [BEq P.Iden
   let action : Strata.SMT.IncrementalSolverM
       (Except SolverError (Result P.Ident × Result P.Ident × Strata.SMT.EncoderState)) := do
     let solver := Strata.SMT.IncrementalSolver.mkIncrementalSolver
-    let { obligationId, assumptionIds, estate } ← encodeDecl solver
-    let varIds := assumptionIds.map fun id => Strata.SMT.Term.var ⟨id, .bool⟩
+    let { obligationId, assumptionIds := _, estate } ← encodeDecl solver
+    -- Build SMT terms for actual user variables (not boolean assumption IDs)
+    -- so get-value returns nat/pos values the candidate phase can validate.
+    let userVarTerms : List Strata.SMT.Term :=
+      vars.filterMap fun (var, ty) =>
+        match typedVarToSMTFn var ty with
+        | .error _ => none
+        | .ok (smtName, termType) =>
+          let key : Strata.SMT.UF := { id := smtName, args := [], out := termType }
+          match estate.functions[key]? with
+          | none => none
+          | some encodedId => some (Strata.SMT.Term.var ⟨encodedId, termType⟩)
     let getModelForVars : Strata.SMT.IncrementalSolverM (Model P.Ident) := do
-      if varIds.isEmpty then return []
+      if userVarTerms.isEmpty then return []
       try
-        let pairs ← solver.getValue varIds
+        let pairs ← solver.getValue userVarTerms
         match pairs with
         | [(.prim (.string rawOutput), _)] =>
           let rawModel ← parseModelDDM rawOutput
