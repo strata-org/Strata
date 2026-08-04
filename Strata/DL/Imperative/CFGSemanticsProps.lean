@@ -164,7 +164,6 @@ theorem EvalCmd_under_agreement {P : PureExpr}
     (h_agree : StoreAgreement σ_struct₀ σ_cfg₀)
     (h_eval : EvalCmd P δ σ_struct₀ c σ_struct₁ failed)
     (h_wf_def : WellFormedSemanticEvalMono δ)
-    (_h_congr : WellFormedSemanticEvalExprCongr δ)
     (h_fresh : ∀ x ∈ Cmd.definedVars c, σ_cfg₀ x = none) :
     ∃ σ_cfg₁, EvalCmd P δ σ_cfg₀ c σ_cfg₁ failed
             ∧ StoreAgreement σ_struct₁ σ_cfg₁ := by
@@ -458,8 +457,7 @@ theorem EvalCmds_under_agreement {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasVarsPure P P.Expr] [DecidableEq P.Ident]
     (δ : P.Factory)
     (cs : List (Cmd P))
-    (h_wf_def : WellFormedSemanticEvalMono δ)
-    (h_congr : WellFormedSemanticEvalExprCongr δ) :
+    (h_wf_def : WellFormedSemanticEvalMono δ) :
     ∀ (σ_struct₀ σ_cfg₀ σ_struct₁ : SemanticStore P) (failed : Bool),
       StoreAgreement σ_struct₀ σ_cfg₀ →
       EvalCmds P (EvalCmd P) δ σ_struct₀ cs σ_struct₁ failed →
@@ -491,7 +489,7 @@ theorem EvalCmds_under_agreement {P : PureExpr}
         exact h_fresh x hx'
       -- Apply EvalCmd_under_agreement to head cmd c.
       have ⟨σ_cfg_mid, h_cmd_cfg, h_agree_mid⟩ :=
-        EvalCmd_under_agreement δ σ_struct₀ σ_cfg₀ c σ_mid f h_agree hcmd h_wf_def h_congr
+        EvalCmd_under_agreement δ σ_struct₀ σ_cfg₀ c σ_mid f h_agree hcmd h_wf_def
           h_fresh_head
       -- Now we need σ_cfg_mid to satisfy the freshness for the tail cs.
       have h_fresh_tail : ∀ x ∈ Cmds.definedVars cs, σ_cfg_mid x = none := by

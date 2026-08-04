@@ -3153,7 +3153,7 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasFvars 
     injection h_pair with h_entry_eq h_blks_eq
     subst h_entry_eq; subst h_blks_eq
     have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-      EvalCmds_under_agreement ρ₀.factory accum.reverse h_wf_def h_congr
+      EvalCmds_under_agreement ρ₀.factory accum.reverse h_wf_def
         σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
         h_unique_accum
     have h_mem :
@@ -4515,7 +4515,6 @@ private theorem accum_failed_reaches_failing
     (hf_base hf_accum : Bool)
     (ρ₀ : Env P)
     (hwf_def : WellFormedSemanticEvalMono ρ₀.factory)
-    (hwf_congr : WellFormedSemanticEvalExprCongr ρ₀.factory)
     (h_accum : EvalCmds P (EvalCmd P) ρ₀.factory σ_struct_base accum.reverse ρ₀.store hf_accum)
     (h_agree_entry : StoreAgreement σ_struct_base σ_base)
     (h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none)
@@ -4535,7 +4534,7 @@ private theorem accum_failed_reaches_failing
     List.lookup_of_mem_nodup cfg.blocks h_cfg_nodup _ _ (h_cfg_blocks _ h_mem)
   -- Lift the (failing) accum to the CFG side via store agreement.
   have ⟨σ_cfg_after, h_accum_cfg, _⟩ :=
-    EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def hwf_congr
+    EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def
       σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
       h_unique_accum
   -- Fetch the entry block, then run the `accum.reverse` prefix; the resulting
@@ -4958,7 +4957,7 @@ private theorem stmtsToBlocks_simulation {P : PureExpr} [HasFvar P] [HasFvars P]
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup :=
       (List.nodup_append.mp h_unique_combined).1
     have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def hwf_congr
+      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def
         σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
         h_unique_accum
     -- Freshness preservation through the lifted accum.
@@ -7457,7 +7456,7 @@ private theorem stmtsToBlocks_simulation_to_cont {P : PureExpr} [HasFvar P] [Has
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup :=
       (List.nodup_append.mp h_unique_combined).1
     have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def hwf_congr
+      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def
         σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
         h_unique_accum
     -- Freshness preservation through the lifted accum.
@@ -9356,7 +9355,7 @@ private theorem stmtsToBlocks_simulation_to_exit {P : PureExpr} [HasFvar P] [Has
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup :=
       (List.nodup_append.mp h_unique_combined).1
     have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def hwf_congr
+      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def
         σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
         h_unique_accum
     -- Freshness preservation through the lifted accum.
@@ -10359,7 +10358,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
         (c0 :: accum) gen gen' entry blocks h_gen
         (Block.simpleShape_cons_iff.mp h_simple).2 (by simp)
         σ_struct_base σ_base hf_base (hf_accum || true) ρ₁
-        (heval_eq_c ▸ hwf_def) (heval_eq_c ▸ hwf_congr) h_accum'
+        (heval_eq_c ▸ hwf_def) h_accum'
         h_agree_entry h_fresh_accum' h_unique_accum' h_fail'
         cfg h_cfg_blocks h_cfg_nodup
     · -- Head command did not fail.  Then `ρ₁.hasFailure = false`, and the failing
@@ -10596,7 +10595,7 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup :=
       (List.nodup_append.mp h_unique_combined).1
     have ⟨σ_cfg_after, h_accum_cfg, h_agree_after⟩ :=
-      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def hwf_congr
+      EvalCmds_under_agreement ρ₀.factory accum.reverse hwf_def
         σ_struct_base σ_base ρ₀.store hf_accum h_agree_entry h_accum h_fresh_accum
         h_unique_accum
     have h_preserve_after :
