@@ -38,8 +38,9 @@ Today a hole in synth position synthesizes to `Unknown`, and that `Unknown` is
 discarded rather than being unified with the type its context later imposes.
 Instead, synthesizing a hole should return a fresh **type variable** that is
 recorded on the hole node, so that when the surrounding expression is checked
-(e.g. via `checkSubtype`, or the `join` in `Synth.primitiveOp`) the variable is
-solved to the concrete type and that solution is written back onto the hole.
+(e.g. via `checkSubtype`, or by overload selection in `Synth.staticCall`) the
+variable is solved to the concrete type and that solution is written back onto
+the hole.
 With that, holes such as `1 + <?>`, `<?> > 0`, or a call argument would be
 typed during resolution exactly as this pass types them now, and `Resolution`
 would assign a type to every hole on its own.
@@ -65,12 +66,51 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
     construct the input `HighType` directly without falling back to textual
     decoding of the override name. -/
 private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
+  -- `$eq`/`$neq` are declared `external` with a placeholder `int → int → bool`
+  -- signature, because polymorphic equality has no monomorphic Laurel type. Those
+  -- `int`s describe nothing about the operands, so typing a hole from them would
+  -- make `<?> == "hello"` infer `int` and only fail once a later pass re-resolves
+  -- the program — surfacing a plain type error as a `StrataBug`. Fall through to
+  -- `unresolvedOperatorArgType`, which reads the first non-hole sibling instead.
+  if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
+    none
+  else
   match model.get callee with
   | .staticProcedure proc => some (proc.inputs.map (·.type))
   | .datatypeConstructor typeName _
   | .datatypeDestructor typeName _ =>
       some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
+
+/-- Expected type for the arguments of a `StaticCall` whose callee did not
+    resolve to a single definition.
+
+    This is the operator case. `x + y` is a `StaticCall` to the overloaded
+    wrapper `$add`, and overload selection needs the argument types to pick
+    between the `int` and `real` overloads — so when *every* argument is a hole
+    (`<?> + <?>`, `-<?>`) there is nothing to select on, the callee keeps no
+    `uniqueId`, and `calleeParamTypes` yields nothing. The operand type is still
+    determined by the context: `var x: int := -<?>` says the operand is an `int`.
+
+    So fall back to the type the context imposes, mirroring what the dedicated
+    operator arm did before operators became calls:
+
+    - comparisons yield `bool` regardless of their operands, so `expectedType`
+      says nothing about the arguments; use the first non-hole sibling's type
+      instead (`inferComparisonArgType`, which defaults to `int`);
+    - for the other operators the result type is the operand type, so
+      `expectedType` *is* the argument type.
+
+    A non-operator callee that failed to resolve is a genuine error reported
+    elsewhere; keep the previous `Unknown` there rather than inventing a type. -/
+private def unresolvedOperatorArgType (model : SemanticModel) (callee : Identifier)
+    (args : List StmtExprMd) (expectedType : HighTypeMd) (source : FileRange) : HighTypeMd :=
+  match Operation.ofProcName? callee.text with
+  | some op =>
+    match op with
+    | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
+    | _ => expectedType
+  | none => ⟨ .Unknown, source ⟩
 
 /-- Recover the expected receiver type for a resolved field reference. -/
 private def fieldOwnerType (model : SemanticModel) (fieldName : Identifier)
@@ -148,23 +188,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .PrimitiveOp op args skipProof =>
-      let argType := match op with
-        | .Eq | .Neq | .Lt | .Leq | .Gt | .Geq => inferComparisonArgType model args source
-        | _ =>
-          -- Use computeExprType on the whole expression to get the result type,
-          -- which equals the argument type for arithmetic/logic/string ops.
-          -- Fall back to expectedType if computeExprType can't determine it
-          -- (e.g. when the first arg is a Hole).
-          let computed := computeExprType model expr
-          match computed.val with
-          | .Unknown => expectedType
-          | _ => computed
-      return ⟨.PrimitiveOp op (← inferArgs args argType outputType) skipProof, source⟩
   | .StaticCall callee args =>
       let args' ← match calleeParamTypes model callee with
         | some paramTypes => inferArgsTyped args paramTypes source outputType
-        | none => inferArgs args ⟨ .Unknown, source ⟩ outputType
+        | none =>
+          inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
       return ⟨.StaticCall callee args', source⟩
   | .InstanceCall target callee args =>
       return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType), source⟩
@@ -190,7 +218,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | target :: _ => match target.val with
           | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
-          | .Declare param => param.type
+          | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
         | _ => ⟨ .Unknown, source ⟩
       -- An unmodeled field-write target yields `targetType = .Unknown`. The RHS of an assignment whose
       -- target type is Unknown is a sound gradual hole: annotate it `.Unknown` directly so hole
@@ -226,7 +254,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       let targetType := match target.val with
         | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
         | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
-        | .Declare param => param.type
+        | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
       let target' ← match _targetEq : target.val with
         | .Field receiver fieldName =>
             pure ⟨.Field

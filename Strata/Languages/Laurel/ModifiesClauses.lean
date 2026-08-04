@@ -95,22 +95,23 @@ Build the "obj is not modified" condition for a single modifies entry as a Laure
 def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) (source : FileRange) : StmtExprMd :=
   match entry with
   | .single expr =>
-    mkMd (.PrimitiveOp .Neq [obj, expr]) source
+    mkMd (.StaticCall (mkId Operation.Neq.procName) [obj, expr]) source
   | .set expr =>
     let membership := mkMd (.StaticCall "select" [expr, obj]) source
-    mkMd (.PrimitiveOp .Not [membership]) source
+    mkMd (.StaticCall (mkId Operation.Not.procName) [membership]) source
   | .field objExpr fieldConst =>
-    let objEq := mkMd (.PrimitiveOp .Eq [obj, objExpr]) source
-    let fldEq := mkMd (.PrimitiveOp .Eq [fld, fieldConst]) source
-    let bothMatch := mkMd (.PrimitiveOp .And [objEq, fldEq]) source
-    mkMd (.PrimitiveOp .Not [bothMatch]) source
+    let objEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [obj, objExpr]) source
+    let fldEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [fld, fieldConst]) source
+    let bothMatch := mkMd (.StaticCall (mkId Operation.And.procName) [objEq, fldEq]) source
+    mkMd (.StaticCall (mkId Operation.Not.procName) [bothMatch]) source
 
 /-- Conjoin a list of StmtExprs with `&&`. -/
 def conjoinAll (exprs : List StmtExprMd) (source : FileRange) : StmtExprMd :=
   match exprs with
   | [] => mkMd (.LiteralBool true) source
   | [single] => single
-  | first :: rest => rest.foldl (fun acc e => mkMd (.PrimitiveOp .And [acc, e]) source) first
+  | first :: rest =>
+    rest.foldl (fun acc e => mkMd (.StaticCall (mkId Operation.And.procName) [acc, e]) source) first
 
 /--
 Quantified (pointwise) frame: every allocated object the `modifies` clause does not name keeps
@@ -130,18 +131,18 @@ def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let fld := mkMd (.Var (.Local fldName)) src
   let heapCounter := mkMd (.StaticCall "Heap..nextReference!" [heapIn]) src
   let objRef := mkMd (.StaticCall "Composite..ref!" [obj]) src
-  let objAllocated := mkMd (.PrimitiveOp .Lt [objRef, heapCounter]) src
+  let objAllocated := mkMd (.StaticCall (mkId Operation.Lt.procName) [objRef, heapCounter]) src
   let antecedent := if entries.isEmpty
     then objAllocated
     else
       -- Build the "not modified" precondition from all entries
       -- Combine: $obj < old($heap).nextReference && notModified($obj, $fld)
       let notModified := conjoinAll (entries.map (buildNotModifiedForEntry obj fld · src)) src
-      mkMd (.PrimitiveOp .And [objAllocated, notModified]) src
+      mkMd (.StaticCall (mkId Operation.And.procName) [objAllocated, notModified]) src
   let readIn := mkMd (.StaticCall "readField" [heapIn, obj, fld]) src
   let readOut := mkMd (.StaticCall "readField" [heapOut, obj, fld]) src
-  let heapUnchanged := mkMd (.PrimitiveOp .Eq [readIn, readOut]) src
-  let implBody := mkMd (.PrimitiveOp .Implies [antecedent, heapUnchanged]) src
+  let heapUnchanged := mkMd (.StaticCall (mkId Operation.Eq.procName) [readIn, readOut]) src
+  let implBody := mkMd (.StaticCall (mkId Operation.Implies.procName) [antecedent, heapUnchanged]) src
   let innerForall := mkMd (.Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := src } ⟩ none implBody) src
   { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined "Composite", source := src } ⟩ none innerForall, source := src }
 
@@ -157,9 +158,9 @@ def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let framedData := modifiedRefs.foldr
     (fun ref acc => mkMd (.StaticCall "update" [acc, ref, mkMd (.StaticCall "select" [dataOut, ref]) src]) src)
     (data heapIn)
-  let dataPreserved := mkMd (.PrimitiveOp .Eq [dataOut, framedData]) src
-  let refsMonotone := mkMd (.PrimitiveOp .Leq [nextRef heapIn, nextRef heapOut]) src
-  { val := .PrimitiveOp .And [dataPreserved, refsMonotone], source := src }
+  let dataPreserved := mkMd (.StaticCall (mkId Operation.Eq.procName) [dataOut, framedData]) src
+  let refsMonotone := mkMd (.StaticCall (mkId Operation.Leq.procName) [nextRef heapIn, nextRef heapOut]) src
+  { val := .StaticCall (mkId Operation.And.procName) [dataPreserved, refsMonotone], source := src }
 
 /-- True when the `modifies` clause is non-empty and names only individual references
 (no set-valued entries), so the enumerated frame applies. -/

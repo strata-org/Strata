@@ -130,6 +130,50 @@ instance : ToString Operation where
     | .StrConcat => "++"
 
 /--
+Name of the built-in wrapper procedure implementing an `Operation`.
+
+Operators are not a distinct kind of expression: `x + y` is a `StaticCall` to
+the overloaded procedure `$add`, declared in `CoreDefinitionsForLaurel` and
+prepended to every program. The `$` prefix puts these in Laurel's reserved
+namespace so they cannot collide with a user-defined `add`.
+
+Each wrapper is a thin transparent procedure delegating to a type-specific
+external (`intAdd`, `realAdd`, …) that `LaurelToCoreSchemaPass` recognizes and
+lowers to the corresponding Core operator. Overload resolution picks the
+wrapper matching the argument types, which is why the wrappers must share one
+name per operator while the externals they call do not.
+-/
+def Operation.procName : Operation → String
+  | .Eq => "$eq"                | .Neq => "$neq"
+  | .And => "$and"              | .Or => "$or"
+  | .Not => "$not"              | .Implies => "$implies"
+  | .AndThen => "$andThen"      | .OrElse => "$orElse"
+  | .Neg => "$neg"              | .Add => "$add"
+  | .Sub => "$sub"              | .Mul => "$mul"
+  | .Div => "$div"              | .Mod => "$mod"
+  | .DivT => "$divT"            | .ModT => "$modT"
+  | .Lt => "$lt"                | .Leq => "$le"
+  | .Gt => "$gt"                | .Geq => "$ge"
+  | .StrConcat => "$strConcat"
+
+/-- Inverse of `Operation.procName`: recognize a built-in operator wrapper by
+    name. Used by the pretty-printer to print `$add(x, y)` back as `x + y`, so
+    that a parsed program round-trips. -/
+def Operation.ofProcName? : String → Option Operation
+  | "$eq" => some .Eq                | "$neq" => some .Neq
+  | "$and" => some .And              | "$or" => some .Or
+  | "$not" => some .Not              | "$implies" => some .Implies
+  | "$andThen" => some .AndThen      | "$orElse" => some .OrElse
+  | "$neg" => some .Neg              | "$add" => some .Add
+  | "$sub" => some .Sub              | "$mul" => some .Mul
+  | "$div" => some .Div              | "$mod" => some .Mod
+  | "$divT" => some .DivT            | "$modT" => some .ModT
+  | "$lt" => some .Lt                | "$le" => some .Leq
+  | "$gt" => some .Gt                | "$ge" => some .Geq
+  | "$strConcat" => some .StrConcat
+  | _ => none
+
+/--
 A wrapper that pairs a value with source-level metadata such as source
 locations and annotations. All Laurel AST nodes are wrapped in
 `AstNode` so that error messages and verification conditions can
@@ -279,6 +323,25 @@ structure Parameter where
   type : AstNode HighType
 
 /--
+A parameter with an *optional* type annotation, used for local variable
+declarations (`Variable.Declare`).
+
+This mirrors `Parameter` but lets the annotation be omitted: `type` is `some T`
+for an annotated declaration (`var x : T`, `var x : T := e`) and `none` for an
+unannotated one (`var x`, `var x := e`). An unannotated declaration is a
+transient form produced by the parser; the resolution pass recovers a concrete
+type — synthesized from the initializer for `var x := e`, or `Unknown` (with a
+diagnostic) for the annotation-less, initializer-less `var x` — and fills in
+`some T`. Every declaration reaching the post-resolution passes therefore
+carries `some`.
+-/
+structure Parameter? where
+  /-- The parameter name. -/
+  name : Identifier
+  /-- The parameter's optional type annotation. -/
+  type : Option (AstNode HighType)
+
+/--
 A condition with an optional human-readable summary.
 Used for assertions, preconditions, and postconditions.
 -/
@@ -335,8 +398,8 @@ inductive Variable : Type where
   | Local (name : Identifier)
   /-- Read a field from a target expression. Combined with `Assign` for field writes. -/
   | Field (target : AstNode StmtExpr) (fieldName : Identifier)
-  /-- A local variable declaration with a name and type. -/
-  | Declare (parameter : Parameter)
+  /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
+  | Declare (parameter : Parameter?)
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -403,13 +466,10 @@ inductive StmtExpr : Type where
   | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
-  /-- Call a static procedure by name with the given arguments. -/
+  /-- Call a static procedure by name with the given arguments.
+      Primitive operators are calls too: `x + y` is a `StaticCall` to the
+      built-in wrapper `$add`. See `Operation.procName`. -/
   | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-  /-- Apply a primitive operation to the given arguments.
-      The skipProof property is used internally.
-      It means that any precondition of the operator, such as division has, should be ignored. -/
-  | PrimitiveOp (operator : Operation) (arguments : List (AstNode StmtExpr))
-    (skipProof: Bool := false)
   /-- Create new object (`new`). -/
   | New (ref : Identifier)
   /-- Reference to the current object (`this`/`self`). -/
@@ -479,7 +539,6 @@ def StmtExpr.constrName : StmtExpr → String
   | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
   | .StaticCall ..       => "call"
-  | .PrimitiveOp op ..   => toString op
   | .New ..              => "new"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
@@ -929,7 +988,6 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
   | .StaticCall .. => "StaticCall"
-  | .PrimitiveOp .. => "PrimitiveOp"
   | .New .. => "New"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"

@@ -13,12 +13,6 @@ open StrataDDM (Program)
 ---------------------------------------------------------------------
 namespace Strata
 
-/--
-error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
----
-error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
--/
-#guard_msgs in
 def badTypeAlias : Program :=
 #strata
 program Core;
@@ -35,6 +29,17 @@ procedure P () {
   assert [fooAssertion]: (fooConst1 == fooConst2);
 };
 #end
+
+-- The mismatch (`FooAlias (Foo int int)` = `Foo bool bool` vs `Foo int bool`) is
+-- now caught by Core's own type checker (`resolve`) rather than DDM. If Core ever
+-- relies on DDM type checking again, this could instead be caught at DDM parse time.
+/--
+error: ❌ Type checking error.
+Impossible to unify (Foo int bool) with (Foo bool bool).
+First mismatch: int with bool.
+-/
+#guard_msgs in
+#eval Core.verify badTypeAlias (options := .quiet)
 
 --------------------------------------------------------------------
 

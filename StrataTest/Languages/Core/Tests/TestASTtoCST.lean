@@ -39,7 +39,7 @@ program Core;
 type T0;
 
 // Type aliases with built-in types
-type Byte := bv8;
+type Byte := bv W8;
 type IntMap := Map int int;
 
 // Polymorphic types
@@ -63,7 +63,7 @@ datatype Tree (a : Type) {
 info: program Core;
 
 type T0;
-type Byte := bv8;
+type Byte := bv W8;
 type IntMap := Map int int;
 type T1 (x : Type);
 type MyMap (a : Type, b : Type);
@@ -93,8 +93,8 @@ axiom [fooConst_value]: fooConst == 5;
 
 // 1-ary function
 function f1(x: int): int;
-axiom [f1_ax1]: (forall x : int :: {f1(x)} f1(x) > x);
-axiom [f1_ax2_no_trigger]: (forall x : int :: f1(x) > x);
+axiom [f1_ax1]: (forall x : int :: {f1(x)} int.gt(f1(x), x));
+axiom [f1_ax2_no_trigger]: (forall x : int :: int.gt(f1(x), x));
 
 // 2-ary function
 function f2(x : int, y : bool): bool;
@@ -125,8 +125,8 @@ function fooConst () : int;
 axiom [fooConst_value]: fooConst == 5;
 function f1 (x : int) : int;
 axiom [f1_ax1]: forall x : int ::  { f1(x) }
-  f1(x) > x;
-axiom [f1_ax2_no_trigger]: forall x : int :: f1(x) > x;
+  int.gt(f1(x), x);
+axiom [f1_ax2_no_trigger]: forall x : int :: int.gt(f1(x), x);
 function f2 (x : int, y : bool) : bool;
 axiom [f2_ax]: forall x : int :: forall y : bool ::  { f2(x, true), f2(x, false) }
   f2(x, true) == true;
@@ -326,23 +326,23 @@ private def operatorAdjacentIdentifiers :=
 #strata
 program Core;
 
-procedure P(x: bv8, step: bv8, a: int, table: int, total: int, safe: int) {
-  var r1 : bv8 := x>>step;
-  var r2 : int := a/table;
-  var r3 : int := a%total;
-  var r4 : int := safe+1;
+procedure P(x: bv W8, step: bv W8, a: int, table: int, total: int, safe: int) {
+  var r1 : bv W8 := bv8.uShr(x, step);
+  var r2 : int := int.safeDiv(a, table);
+  var r3 : int := int.safeMod(a, total);
+  var r4 : int := int.add(safe, 1);
 };
 #end
 
 /--
 info: program Core;
 
-procedure P (x : bv8, step : bv8, a : int, table : int, total : int, safe : int)
+procedure P (x : bv W8, step : bv W8, a : int, table : int, total : int, safe : int)
 {
-  var r1 : bv8 := x >> step;
-  var r2 : int := a / table;
-  var r3 : int := a % total;
-  var r4 : int := safe + 1;
+  var r1 : bv W8 := bv8.uShr(x, step);
+  var r2 : int := int.safeDiv(a, table);
+  var r3 : int := int.safeMod(a, total);
+  var r4 : int := int.add(safe, 1);
 };
 -/
 #guard_msgs in
@@ -354,41 +354,41 @@ private def bitvecPgm :=
 #strata
 program Core;
 
-procedure P(x: bv8, y: bv8, z: bv8) {
-  assert [add_comm]: x + y == y + x;
-  assert [xor_cancel]: x ^ x == bv{8}(0);
-  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
-  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
-  assert [demorgan]: ~(x & y) == ~x | ~y;
-  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
-  assert [bad_shift]: x >> y == x << y;
-  assert [arith_shift]: x ashr y == x >> y;
-  assert [signed_lt]: x slt y;
-  assert [signed_le]: x sle y;
-  var xy : bv16 := bvconcat{8}{8}(x, y);
-  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
+procedure P(x: bv W8, y: bv W8, z: bv W8) {
+  assert [add_comm]: bv8.add(x, y) == bv8.add(y, x);
+  assert [xor_cancel]: bv8.xor(x, x) == bv{8}(0);
+  assert [div_shift]: bv8.uDiv(x, bv{8}(2)) == bv8.uShr(x, bv{8}(1));
+  assert [mul_shift]: bv8.mul(x, bv{8}(2)) == bv8.shl(x, bv{8}(1));
+  assert [demorgan]: bv8.not(bv8.and(x, y)) == bv8.or(bv8.not(x), bv8.not(y));
+  assert [mod_and]: bv8.uMod(x, bv{8}(2)) == bv8.and(x, bv{8}(1));
+  assert [bad_shift]: bv8.uShr(x, y) == bv8.shl(x, y);
+  assert [arith_shift]: bv8.sShr(x, y) == bv8.uShr(x, y);
+  assert [signed_lt]: bv8.sLt(x, y);
+  assert [signed_le]: bv8.sLe(x, y);
+  var xy : bv W16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv W32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv W64 := bvconcat{32}{32}(xy2, xy2);
 };
 #end
 
 /--
 info: program Core;
 
-procedure P (x : bv8, y : bv8, z : bv8)
+procedure P (x : bv W8, y : bv W8, z : bv W8)
 {
-  assert [add_comm]: x + y == y + x;
-  assert [xor_cancel]: x ^ x == bv{8}(0);
-  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
-  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
-  assert [demorgan]: ~(x & y) == ~x | ~y;
-  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
-  assert [bad_shift]: x >> y == x << y;
-  assert [arith_shift]: x ashr y == x >> y;
-  assert [signed_lt]: x slt y;
-  assert [signed_le]: x sle y;
-  var xy : bv16 := bvconcat{8}{8}(x, y);
-  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
-  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
+  assert [add_comm]: bv8.add(x, y) == bv8.add(y, x);
+  assert [xor_cancel]: bv8.xor(x, x) == bv{8}(0);
+  assert [div_shift]: bv8.uDiv(x, bv{8}(2)) == bv8.uShr(x, bv{8}(1));
+  assert [mul_shift]: bv8.mul(x, bv{8}(2)) == bv8.shl(x, bv{8}(1));
+  assert [demorgan]: bv8.not(bv8.and(x, y)) == bv8.or(bv8.not(x), bv8.not(y));
+  assert [mod_and]: bv8.uMod(x, bv{8}(2)) == bv8.and(x, bv{8}(1));
+  assert [bad_shift]: bv8.uShr(x, y) == bv8.shl(x, y);
+  assert [arith_shift]: bv8.sShr(x, y) == bv8.uShr(x, y);
+  assert [signed_lt]: bv8.sLt(x, y);
+  assert [signed_le]: bv8.sLe(x, y);
+  var xy : bv W16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv W32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv W64 := bvconcat{32}{32}(xy2, xy2);
 };
 -/
 #guard_msgs in
@@ -404,14 +404,14 @@ private def intDivModPgm :=
 program Core;
 
 procedure Q(a: int, b: int) {
-  assert [euclid_div]: a div b == a div b;
-  assert [euclid_mod]: a mod b == a mod b;
-  assert [safe_div]: a / b == a / b;
-  assert [safe_mod]: a % b == a % b;
-  assert [trunc_div]: Int.DivT(a, b) == Int.DivT(a, b);
-  assert [trunc_mod]: Int.ModT(a, b) == Int.ModT(a, b);
-  assert [safe_trunc_div]: Int.SafeDivT(a, b) == Int.SafeDivT(a, b);
-  assert [safe_trunc_mod]: Int.SafeModT(a, b) == Int.SafeModT(a, b);
+  assert [euclid_div]: int.div(a, b) == int.div(a, b);
+  assert [euclid_mod]: int.mod(a, b) == int.mod(a, b);
+  assert [safe_div]: int.safeDiv(a, b) == int.safeDiv(a, b);
+  assert [safe_mod]: int.safeMod(a, b) == int.safeMod(a, b);
+  assert [trunc_div]: int.divT(a, b) == int.divT(a, b);
+  assert [trunc_mod]: int.modT(a, b) == int.modT(a, b);
+  assert [safe_trunc_div]: int.safeDivT(a, b) == int.safeDivT(a, b);
+  assert [safe_trunc_mod]: int.safeModT(a, b) == int.safeModT(a, b);
 };
 #end
 
@@ -420,14 +420,14 @@ info: program Core;
 
 procedure Q (a : int, b : int)
 {
-  assert [euclid_div]: a div b == a div b;
-  assert [euclid_mod]: a mod b == a mod b;
-  assert [safe_div]: a / b == a / b;
-  assert [safe_mod]: a % b == a % b;
-  assert [trunc_div]: Int.DivT(a, b) == Int.DivT(a, b);
-  assert [trunc_mod]: Int.ModT(a, b) == Int.ModT(a, b);
-  assert [safe_trunc_div]: Int.SafeDivT(a, b) == Int.SafeDivT(a, b);
-  assert [safe_trunc_mod]: Int.SafeModT(a, b) == Int.SafeModT(a, b);
+  assert [euclid_div]: int.div(a, b) == int.div(a, b);
+  assert [euclid_mod]: int.mod(a, b) == int.mod(a, b);
+  assert [safe_div]: int.safeDiv(a, b) == int.safeDiv(a, b);
+  assert [safe_mod]: int.safeMod(a, b) == int.safeMod(a, b);
+  assert [trunc_div]: int.divT(a, b) == int.divT(a, b);
+  assert [trunc_mod]: int.modT(a, b) == int.modT(a, b);
+  assert [safe_trunc_div]: int.safeDivT(a, b) == int.safeDivT(a, b);
+  assert [safe_trunc_mod]: int.safeModT(a, b) == int.safeModT(a, b);
 };
 -/
 #guard_msgs in
@@ -442,27 +442,27 @@ private def safeBvPgm :=
 #strata
 program Core;
 
-procedure R(x: bv8, y: bv8) {
-  assert [s_add]: Bv.SafeAdd(x, y) == Bv.SafeAdd(x, y);
-  assert [s_sub]: Bv.SafeSub(x, y) == Bv.SafeSub(x, y);
-  assert [s_mul]: Bv.SafeMul(x, y) == Bv.SafeMul(x, y);
-  assert [s_neg]: Bv.SafeNeg(x) == Bv.SafeNeg(x);
-  assert [s_sdiv]: Bv.SafeSDiv(x, y) == Bv.SafeSDiv(x, y);
-  assert [s_smod]: Bv.SafeSMod(x, y) == Bv.SafeSMod(x, y);
+procedure R(x: bv W8, y: bv W8) {
+  assert [s_add]: bv8.safeAdd(x, y) == bv8.safeAdd(x, y);
+  assert [s_sub]: bv8.safeSub(x, y) == bv8.safeSub(x, y);
+  assert [s_mul]: bv8.safeMul(x, y) == bv8.safeMul(x, y);
+  assert [s_neg]: bv8.safeNeg(x) == bv8.safeNeg(x);
+  assert [s_sdiv]: bv8.safeSDiv(x, y) == bv8.safeSDiv(x, y);
+  assert [s_smod]: bv8.safeSMod(x, y) == bv8.safeSMod(x, y);
 };
 #end
 
 /--
 info: program Core;
 
-procedure R (x : bv8, y : bv8)
+procedure R (x : bv W8, y : bv W8)
 {
-  assert [s_add]: Bv.SafeAdd(x, y) == Bv.SafeAdd(x, y);
-  assert [s_sub]: Bv.SafeSub(x, y) == Bv.SafeSub(x, y);
-  assert [s_mul]: Bv.SafeMul(x, y) == Bv.SafeMul(x, y);
-  assert [s_neg]: Bv.SafeNeg(x) == Bv.SafeNeg(x);
-  assert [s_sdiv]: Bv.SafeSDiv(x, y) == Bv.SafeSDiv(x, y);
-  assert [s_smod]: Bv.SafeSMod(x, y) == Bv.SafeSMod(x, y);
+  assert [s_add]: bv8.safeAdd(x, y) == bv8.safeAdd(x, y);
+  assert [s_sub]: bv8.safeSub(x, y) == bv8.safeSub(x, y);
+  assert [s_mul]: bv8.safeMul(x, y) == bv8.safeMul(x, y);
+  assert [s_neg]: bv8.safeNeg(x) == bv8.safeNeg(x);
+  assert [s_sdiv]: bv8.safeSDiv(x, y) == bv8.safeSDiv(x, y);
+  assert [s_smod]: bv8.safeSMod(x, y) == bv8.safeSMod(x, y);
 };
 -/
 #guard_msgs in
@@ -529,7 +529,7 @@ private def funcDeclStmtPgm : Program :=
 program Core;
 
 procedure testFuncDecl(c: int) {
-  function double(x : int) : int { x + x + c }
+  function double(x : int) : int { int.add(int.add(x, x), c) }
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
@@ -542,7 +542,7 @@ info: program Core;
 
 procedure testFuncDecl (c : int)
 {
-  function double (x : int) : int { x + x + c }
+  function double (x : int) : int { int.add(int.add(x, x), c) }
   var y : int := 5;
   var result : int := double(y);
   assert [assert_0]: result == 12;
@@ -557,29 +557,29 @@ private def findMaxPgm : Program :=
 #strata
 program Core;
 
-procedure find_max(nums: Map bv64 bv32, nums_len: bv64, out ret: bv32)
+procedure find_max(nums: Map (bv W64) (bv W32), nums_len: bv W64, out ret: bv W32)
 spec {
-  requires ((nums_len > bv{64}(0)));
-  ensures (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) ==> (ret sge (nums[x0]))));
-  ensures (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < nums_len)) && (ret == (nums[x0]))));
+  requires ((bv64.uGt(nums_len, bv{64}(0))));
+  ensures (forall x0: bv W64 :: (((bv64.uLe(bv{64}(0), x0)) && (bv64.uLt(x0, nums_len))) ==> (bv32.sGe(ret, (nums[x0])))));
+  ensures (exists x0: bv W64 :: (((bv64.uLe(bv{64}(0), x0)) && (bv64.uLt(x0, nums_len))) && (ret == (nums[x0]))));
 }
 {
-  var max : bv32;
-  var i : bv64;
+  var max : bv W32;
+  var i : bv W64;
   max := (nums[bv{64}(0)]);
   i := bv{64}(1);
-  while ((i < nums_len))
-    invariant (nums_len > bv{64}(0))
-    invariant (bv{64}(0) <= i)
-    invariant (i <= nums_len)
-    invariant (forall x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) ==> (max sge (nums[x0]))))
-    invariant (exists x0: bv64 :: (((bv{64}(0) <= x0) && (x0 < i)) && (max == (nums[x0]))))
+  while ((bv64.uLt(i, nums_len)))
+    invariant (bv64.uGt(nums_len, bv{64}(0)))
+    invariant (bv64.uLe(bv{64}(0), i))
+    invariant (bv64.uLe(i, nums_len))
+    invariant (forall x0: bv W64 :: (((bv64.uLe(bv{64}(0), x0)) && (bv64.uLt(x0, i))) ==> (bv32.sGe(max, (nums[x0])))))
+    invariant (exists x0: bv W64 :: (((bv64.uLe(bv{64}(0), x0)) && (bv64.uLt(x0, i))) && (max == (nums[x0]))))
   {
-    if (((nums[i]) sgt max)) {
+    if ((bv32.sGt((nums[i]), max))) {
       max := (nums[i]);
     } else {
     }
-    i := (i + bv{64}(1));
+    i := (bv64.add(i, bv{64}(1)));
   }
   ret := max;
 };
@@ -588,27 +588,27 @@ spec {
 /--
 info: program Core;
 
-procedure find_max (nums : Map bv64 bv32, nums_len : bv64, out ret : bv32)
+procedure find_max (nums : Map (bv W64) (bv W32), nums_len : bv W64, out ret : bv W32)
 spec {
-  requires [find_max_requires_0]: nums_len > bv{64}(0);
-  ensures [find_max_ensures_1]: forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len ==> ret sge nums[x0];
-  ensures [find_max_ensures_2]: exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < nums_len && ret == nums[x0];
+  requires [find_max_requires_0]: bv64.uGt(nums_len, bv{64}(0));
+  ensures [find_max_ensures_1]: forall x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) ==> bv32.sGe(ret, nums[x0]);
+  ensures [find_max_ensures_2]: exists x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, nums_len) && ret == nums[x0];
   } {
-  var max : bv32;
-  var i : bv64;
+  var max : (bv W32);
+  var i : (bv W64);
   max := nums[bv{64}(0)];
   i := bv{64}(1);
-  while (i < nums_len)
-  invariant nums_len > bv{64}(0)
-  invariant bv{64}(0) <= i
-  invariant i <= nums_len
-  invariant forall x0 : bv64 :: bv{64}(0) <= x0 && x0 < i ==> max sge nums[x0]
-  invariant exists x0 : bv64 :: bv{64}(0) <= x0 && x0 < i && max == nums[x0]
+  while (bv64.uLt(i, nums_len))
+  invariant bv64.uGt(nums_len, bv{64}(0))
+  invariant bv64.uLe(bv{64}(0), i)
+  invariant bv64.uLe(i, nums_len)
+  invariant forall x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) ==> bv32.sGe(max, nums[x0])
+  invariant exists x0 : (bv W64) :: bv64.uLe(bv{64}(0), x0) && bv64.uLt(x0, i) && max == nums[x0]
   {
-    if (nums[i] sgt max) {
+    if (bv32.sGt(nums[i], max)) {
       max := nums[i];
     }
-    i := i + bv{64}(1);
+    i := bv64.add(i, bv{64}(1));
   }
   ret := max;
 };
@@ -626,7 +626,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 #end
@@ -639,7 +639,7 @@ datatype IntList {
 };
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 -/
 #guard_msgs in
@@ -660,7 +660,7 @@ rec function treeSize (@[cases] t : RoseTree) : int
 }
 function listSize (@[cases] xs : RoseList) : int
 {
-  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+  if RoseList..isRNil(xs) then 0 else int.add(treeSize(RoseList..hd(xs)), listSize(RoseList..tl(xs)))
 };
 
 #end
@@ -681,7 +681,7 @@ rec function treeSize (@[cases] t : RoseTree) : int
 }
 function listSize (@[cases] xs : RoseList) : int
 {
-  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+  if RoseList..isRNil(xs) then 0 else int.add(treeSize(RoseList..hd(xs)), listSize(RoseList..tl(xs)))
 };
 -/
 #guard_msgs in
@@ -701,18 +701,18 @@ procedure TestNondetIf()
   } else {
     x := 2;
   }
-  assert [x_pos]: x >= 0;
+  assert [x_pos]: int.ge(x, 0);
 };
 
 procedure TestNondetWhile()
 {
   var x : int := 0;
   while *
-    invariant x >= 0
+    invariant int.ge(x, 0)
   {
-    x := x + 1;
+    x := int.add(x, 1);
   }
-  assert [x_pos]: x >= 0;
+  assert [x_pos]: int.ge(x, 0);
 };
 #end
 
@@ -727,17 +727,17 @@ procedure TestNondetIf ()
   } else {
     x := 2;
   }
-  assert [x_pos]: x >= 0;
+  assert [x_pos]: int.ge(x, 0);
 };
 procedure TestNondetWhile ()
 {
   var x : int := 0;
   while *
-  invariant x >= 0
+  invariant int.ge(x, 0)
   {
-    x := x + 1;
+    x := int.add(x, 1);
   }
-  assert [x_pos]: x >= 0;
+  assert [x_pos]: int.ge(x, 0);
 };
 -/
 #guard_msgs in
@@ -753,15 +753,15 @@ program Core;
 
 procedure Callee(x : int, inout y : int, out z : int)
 spec {
-  ensures z == x + y;
-  ensures y == old y + 1;
+  ensures z == int.add(x, y);
+  ensures y == int.add(old y, 1);
 } {
-  z := x + y;
-  y := y + 1;
+  z := int.add(x, y);
+  y := int.add(y, 1);
 };
 
 procedure UnitCallee(a : int) {
-  assert a > 0;
+  assert int.gt(a, 0);
 };
 
 procedure Caller(inout g : int, out result : int) {
@@ -777,15 +777,15 @@ info: program Core;
 
 procedure Callee (x : int, inout y : int, out z : int)
 spec {
-  ensures [Callee_ensures_0]: z == x + y;
-  ensures [Callee_ensures_1]: y == old y + 1;
+  ensures [Callee_ensures_0]: z == int.add(x, y);
+  ensures [Callee_ensures_1]: y == int.add(old y, 1);
   } {
-  z := x + y;
-  y := y + 1;
+  z := int.add(x, y);
+  y := int.add(y, 1);
 };
 procedure UnitCallee (a : int)
 {
-  assert [assert_0]: a > 0;
+  assert [assert_0]: int.gt(a, 0);
 };
 procedure Caller (inout g : int, out result : int)
 {
@@ -887,7 +887,7 @@ private def lambdaMultiBindPgm : Core.Program := { decls := [
 info: program Core;
 
 function add () : int -> int -> int {
-  fun x : int => fun y : int => x + y
+  fun x : int => fun y : int => int.add(x, y)
 }
 -/
 #guard_msgs in
@@ -977,7 +977,7 @@ function f () : real {
 info: program Core;
 
 function f () : real {
-  -(frac{2, 3})
+  real.neg(frac{2, 3})
 }
 -/
 #guard_msgs in
@@ -990,7 +990,7 @@ function f () : real {
 info: program Core;
 
 function f () : real {
-  -(frac{1, 3})
+  real.neg(frac{1, 3})
 }
 -/
 #guard_msgs in
@@ -1017,7 +1017,7 @@ private def fracRoundtripPgm : Program :=
 program Core;
 
 function oneThird () : real { frac{1, 3} }
-function negTwoThirds () : real { -frac{2, 3} }
+function negTwoThirds () : real { real.neg(frac{2, 3}) }
 #end
 
 /--
@@ -1027,7 +1027,7 @@ function oneThird () : real {
   frac{1, 3}
 }
 function negTwoThirds () : real {
-  -(frac{2, 3})
+  real.neg(frac{2, 3})
 }
 -/
 #guard_msgs in

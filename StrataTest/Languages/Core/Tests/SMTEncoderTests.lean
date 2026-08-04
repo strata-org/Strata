@@ -594,8 +594,8 @@ program Core;
 
 procedure P()
 {
-  assert [three_thirds]: frac{1, 3} + frac{1, 3} + frac{1, 3} == 1.0;
-  assert [neg_neq_pos]: -frac{2, 3} == frac{2, 3};
+  assert [three_thirds]: real.add(real.add(frac{1, 3}, frac{1, 3}), frac{1, 3}) == 1.0;
+  assert [neg_neq_pos]: real.neg(frac{2, 3}) == frac{2, 3};
 };
 #end
 

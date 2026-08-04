@@ -73,7 +73,7 @@ info: "assert [u1]: unknownUnary(x);\n\n-- Errors encountered during conversion:
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: re_search_bool\nContext: Global scope:\n  freeVars: [s]"
+info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBinaryOps: unknown operation, rendering as generic call: re_search_bool\nContext: Global scope:\n  freeVars: [s]"
 -/
 #guard_msgs in
 #eval do
@@ -85,7 +85,7 @@ info: "assert [b1]: re_search_bool(\"^[0-9]+$\", s);\n\n-- Errors encountered du
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [b2]: customBinOp(x, y);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBitvecBinaryOps: unknown operation, rendering as generic call: customBinOp\nContext: Global scope:\n  freeVars: [x, y]"
+info: "assert [b2]: customBinOp(x, y);\n\n-- Errors encountered during conversion:\nUnsupported construct in handleBinaryOps: unknown operation, rendering as generic call: customBinOp\nContext: Global scope:\n  freeVars: [x, y]"
 -/
 #guard_msgs in
 #eval do
@@ -122,7 +122,7 @@ info: "assert [q1]: fourArgFn(a, b, c, d);\n\n-- Errors encountered during conve
 -- -----------------------------------------------------------------------
 
 /--
-info: "assert [known_add]: x + y;"
+info: "assert [known_add]: int.add(x, y);"
 -/
 #guard_msgs in
 #eval do

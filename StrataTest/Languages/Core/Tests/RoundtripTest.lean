@@ -71,7 +71,7 @@ private def testTypesRoundtrip : Program :=
 program Core;
 
 type T0;
-type Byte := bv8;
+type Byte := bv W8;
 type IntMap := Map int int;
 type T1 (x : Type);
 type MyMap (a : Type, b : Type);
@@ -131,7 +131,7 @@ private def testFunctionsRoundtrip : Program :=
 program Core;
 
 function f1(x : int) : int;
-axiom [f1_ax]: (forall x : int :: f1(x) > x);
+axiom [f1_ax]: (forall x : int :: int.gt(f1(x), x));
 
 function f2(x : int, y : bool) : bool;
 axiom [f2_ax]: (forall x : int, y : bool ::
@@ -175,7 +175,7 @@ private def testInlineFunctionRoundtrip : Program :=
 program Core;
 
 inline function double(x : int) : int {
-  x + x
+  int.add(x, x)
 }
 #end
 

@@ -32,7 +32,16 @@ set_option maxHeartbeats 400000
 #dialect
 dialect Core;
 
-// Metadata annotation syntax: @[key, key = value, ...]
+// Core runs its own type inference (`LExpr.resolve`), so DDM's type checker
+// is skipped here. Implicit type-parameter slots are left as placeholders for
+// `resolve` to fill from the arguments.
+dialect_option typecheck off;
+
+// ═══════════════════════════════════════════════════════════════════
+// TYPES & BINDING
+// ═══════════════════════════════════════════════════════════════════
+
+// ---- Metadata annotations: @[key, key = value, ...] ----
 category MetadataAnnValue;
 op mdAnnValStr (s : Str) : MetadataAnnValue => s;
 op mdAnnValExpr (e : Expr) : MetadataAnnValue => "(" e ")";
@@ -56,21 +65,29 @@ constructors : Ident, testerTemplate : FunctionTemplate,
 accessorTemplate : FunctionTemplate,
 unsafeAccessorTemplate : FunctionTemplate);
 
+// ---- Types ----
 type bool;
 type int;
 type string;
 type regex;
 type real;
-// TODO: make these parameterized
-type bv1;
-type bv8;
-type bv16;
-type bv32;
-type bv64;
-type bv128;
+// A bitvector type is `bv W`, where `W` is a width marker `W1 … W128`; a
+// concrete type is written `bv W8`. Widths are types (not numbers) because a
+// type-declaration parameter must be a type. The width marker is only valid as
+// the argument to `bv`: `translateLMonoTy` maps `bv W8` to a width-8 bitvector
+// and rejects a bare marker. Operators are polymorphic in `W` (see the wrappers
+// below), so each family is one op over `bv W` rather than one per width.
+type bv (n : Type);
+type W1;
+type W8;
+type W16;
+type W32;
+type W64;
+type W128;
 type Map (dom : Type, range : Type);
 type Sequence (elem : Type);
 
+// ---- Type variables and binders ----
 category TypeVar;
 @[declareTVar(name)]
 op type_var (name : Ident) : TypeVar => name;
@@ -102,24 +119,29 @@ op monoDeclAtom (b : MonoBind) : MonoDeclList => b;
 op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
   dl:0 ", " b:0;
 
-fn not (b : bool) : bool => "!" b;
+// ═══════════════════════════════════════════════════════════════════
+// EXPRESSIONS
+// ═══════════════════════════════════════════════════════════════════
 
+// ---- Numeric literals ----
 fn natToInt (n : Num) : int => n;
-fn bv1Lit (n : Num) : bv1 => "bv{1}" "(" n ")";
-fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
-fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
-fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
-fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
-fn bv128Lit (n : Num) : bv128 => "bv{128}" "(" n ")";
+fn bv1Lit (n : Num) : bv W1 => "bv{1}" "(" n ")";
+fn bv8Lit (n : Num) : bv W8 => "bv{8}" "(" n ")";
+fn bv16Lit (n : Num) : bv W16 => "bv{16}" "(" n ")";
+fn bv32Lit (n : Num) : bv W32 => "bv{32}" "(" n ")";
+fn bv64Lit (n : Num) : bv W64 => "bv{64}" "(" n ")";
+fn bv128Lit (n : Num) : bv W128 => "bv{128}" "(" n ")";
 
-fn as_uint  (T : Type, e : T) : int  => "as_uint"  "(" e ")";
-fn as_sint  (T : Type, e : T) : int  => "as_sint"  "(" e ")";
-fn as_bv1   (e : int) : bv1   => "as_bv1"   "(" e ")";
-fn as_bv8   (e : int) : bv8   => "as_bv8"   "(" e ")";
-fn as_bv16  (e : int) : bv16  => "as_bv16"  "(" e ")";
-fn as_bv32  (e : int) : bv32  => "as_bv32"  "(" e ")";
-fn as_bv64  (e : int) : bv64  => "as_bv64"  "(" e ")";
-fn as_bv128 (e : int) : bv128 => "as_bv128" "(" e ")";
+// ---- int -> bitvector casts ----
+// One fn per width: the result width has no operand to infer it from, so it is
+// fixed by the fn rather than a polymorphic `W`.
+fn as_bv1   (e : int) : bv W1   => "as_bv1"   "(" e ")";
+fn as_bv8   (e : int) : bv W8   => "as_bv8"   "(" e ")";
+fn as_bv16  (e : int) : bv W16  => "as_bv16"  "(" e ")";
+fn as_bv32  (e : int) : bv W32  => "as_bv32"  "(" e ")";
+fn as_bv64  (e : int) : bv W64  => "as_bv64"  "(" e ")";
+fn as_bv128 (e : int) : bv W128 => "as_bv128" "(" e ")";
+// ---- String and real literals ----
 fn strLit (s : Str) : string => s;
 fn realLit (d : Decimal) : real => d;
 // Exact rational literal `frac{num, den}`, used to print reals whose value has
@@ -130,10 +152,12 @@ fn realLit (d : Decimal) : real => d;
 // with `safediv_expr`, which owns the infix `/` token.
 fn fracLit (num : Num, den : Num) : real => "frac{" num ", " den "}";
 
+// ---- Conditional and old-state ----
 fn if (tp : Type, c : bool, t : tp, f : tp) : tp => @[prec(2)] "if " c:0 " then " t:0 " else " f:0;
 
 fn old (tp : Type, v : tp) : tp => "old " v;
 
+// ---- Maps ----
 fn map_get (K : Type, V : Type, m : Map K V, k : K) : V => m "[" k "]";
 fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
   m "[" k ":=" v "]";
@@ -142,6 +166,7 @@ fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
 // The value type V is inferred from `v`.
 fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v ")";
 
+// ---- Sequences ----
 // seq_empty uses explicit type annotation syntax since there are no value
 // arguments to infer the type parameter from.
 fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
@@ -160,6 +185,7 @@ fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
 fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
   "Sequence.drop" "(" s ", " n ")";
 
+// ---- Strings ----
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
 fn str_concat (a : string, b : string) : string => "str.concat" "(" a ", " b ")";
@@ -174,6 +200,7 @@ fn str_replace (s : string, t : string, u : string) : string => "str.replace" "(
 fn str_at (s : string, i : int) : string => "str.at" "(" s ", " i ")";
 fn str_lt (s : string, t : string) : bool => "str.lt" "(" s ", " t ")";
 fn str_le (s : string, t : string) : bool => "str.le" "(" s ", " t ")";
+// ---- Regexes ----
 fn re_allchar () : regex => "re.allchar" "(" ")";
 fn re_all () : regex => "re.all" "(" ")";
 fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 ", " s2 ")";
@@ -186,77 +213,366 @@ fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 ", " r2 ")";
 fn re_comp (r : regex) : regex => "re.comp" "(" r ")";
 fn re_none () : regex => "re.none" "(" ")";
 
+// ---- Booleans ----
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
+fn not (b : bool) : bool => "!" b;
 fn equiv (a : bool, b : bool) : bool => @[prec(4)] a " <==> " b;
 fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a " ==> " b;
 fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
 fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
 
+// ---- Equality ----
 fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
 fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
-fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " <= " b;
-fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " < "  b;
-fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " >= " b;
-fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " > "  b;
 
-fn neg_expr (tp : Type, a : tp) : tp => "-" a;
-fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " + " b;
-fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a " - " b;
-fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " * " b;
-fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " div " b;
-fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " mod " b;
-fn safediv_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " / " b;
-fn safemod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a " % " b;
-fn divt_expr (tp : Type, a : tp, b : tp) : tp => "Int.DivT(" a ", " b ")";
-fn modt_expr (tp : Type, a : tp, b : tp) : tp => "Int.ModT(" a ", " b ")";
-fn safedivt_expr (tp : Type, a : tp, b : tp) : tp => "Int.SafeDivT(" a ", " b ")";
-fn safemodt_expr (tp : Type, a : tp, b : tp) : tp => "Int.SafeModT(" a ", " b ")";
+// ---- UnaryArithInt ----
+category UnaryArithInt;
+op int_neg : UnaryArithInt => "int.neg";
+fn unaryArithInt (f : UnaryArithInt, a : int) : int => f "(" a ")";
 
-fn bvnot (tp : Type, a : tp) : tp => "~" a;
-fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " & " b;
-fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " | " b;
-fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ^ " b;
-fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " << " b;
-fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " >> " b;
-fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " ashr " b;
-fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " sdiv " b;
-fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a " smod " b;
-fn safeadd_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeAdd" "(" a ", " b ")";
-fn safesub_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSub" "(" a ", " b ")";
-fn safemul_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeMul" "(" a ", " b ")";
-fn safeneg_expr (tp : Type, a : tp) : tp => "Bv.SafeNeg" "(" a ")";
-fn safesdiv_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSDiv" "(" a ", " b ")";
-fn safesmod_expr (tp : Type, a : tp, b : tp) : tp => "Bv.SafeSMod" "(" a ", " b ")";
-fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " slt " b;
-fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sle " b;
-fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sgt " b;
-fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a " sge " b;
+// ---- UnaryArithReal ----
+category UnaryArithReal;
+op real_neg : UnaryArithReal => "real.neg";
+fn unaryArithReal (f : UnaryArithReal, a : real) : real => f "(" a ")";
 
-fn bv_neg_overflow (tp : Type, a : tp) : bool => "Bv.SNegOverflow" "(" a ")";
-fn bv_uneg_overflow (tp : Type, a : tp) : bool => "Bv.UNegOverflow" "(" a ")";
-fn bv_sadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SAddOverflow" "(" a ", " b ")";
-fn bv_ssub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SSubOverflow" "(" a ", " b ")";
-fn bv_smul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SMulOverflow" "(" a ", " b ")";
-fn bv_sdiv_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.SDivOverflow" "(" a ", " b ")";
-fn bv_uadd_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UAddOverflow" "(" a ", " b ")";
-fn bv_usub_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.USubOverflow" "(" a ", " b ")";
-fn bv_umul_overflow (tp : Type, a : tp, b : tp) : bool => "Bv.UMulOverflow" "(" a ", " b ")";
+// ---- UnaryArithBv (width-polymorphic: a : bv W -> bv W) ----
+category UnaryArithBv;
+op bv1_neg : UnaryArithBv => "bv1.neg";
+op bv1_not : UnaryArithBv => "bv1.not";
+op bv8_neg : UnaryArithBv => "bv8.neg";
+op bv8_not : UnaryArithBv => "bv8.not";
+op bv16_neg : UnaryArithBv => "bv16.neg";
+op bv16_not : UnaryArithBv => "bv16.not";
+op bv32_neg : UnaryArithBv => "bv32.neg";
+op bv32_not : UnaryArithBv => "bv32.not";
+op bv64_neg : UnaryArithBv => "bv64.neg";
+op bv64_not : UnaryArithBv => "bv64.not";
+fn unaryArithBv (W : Type, f : UnaryArithBv, a : bv W) : bv W => f "(" a ")";
 
-fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a ", " b ")";
-fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a ", " b ")";
-fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a ", " b ")";
+// ---- UnarySafeBv (width-polymorphic) ----
+category UnarySafeBv;
+op bv1_safeNeg : UnarySafeBv => "bv1.safeNeg";
+op bv1_safeUNeg : UnarySafeBv => "bv1.safeUNeg";
+op bv8_safeNeg : UnarySafeBv => "bv8.safeNeg";
+op bv8_safeUNeg : UnarySafeBv => "bv8.safeUNeg";
+op bv16_safeNeg : UnarySafeBv => "bv16.safeNeg";
+op bv16_safeUNeg : UnarySafeBv => "bv16.safeUNeg";
+op bv32_safeNeg : UnarySafeBv => "bv32.safeNeg";
+op bv32_safeUNeg : UnarySafeBv => "bv32.safeUNeg";
+op bv64_safeNeg : UnarySafeBv => "bv64.safeNeg";
+op bv64_safeUNeg : UnarySafeBv => "bv64.safeUNeg";
+fn unarySafeBv (W : Type, f : UnarySafeBv, a : bv W) : bv W => f "(" a ")";
 
-fn bvextract_7_7 (a : bv8) : bv1 => "bvextract{7}{7}{8}" "(" a ")";
-fn bvextract_15_15 (a : bv16) : bv1 => "bvextract{15}{15}{16}" "(" a ")";
-fn bvextract_31_31 (a : bv32) : bv1 => "bvextract{31}{31}{32}" "(" a ")";
-fn bvextract_7_0_16 (a : bv16) : bv8 => "bvextract{7}{0}{16}" "(" a ")";
-fn bvextract_7_0_32 (a : bv32) : bv8 => "bvextract{7}{0}{32}" "(" a ")";
-fn bvextract_15_0_32 (a : bv32) : bv16 => "bvextract{15}{0}{32}" "(" a ")";
-fn bvextract_7_0_64 (a : bv64) : bv8 => "bvextract{7}{0}{64}" "(" a ")";
-fn bvextract_15_0_64 (a : bv64) : bv16 => "bvextract{15}{0}{64}" "(" a ")";
-fn bvextract_31_0_64 (a : bv64) : bv32 => "bvextract{31}{0}{64}" "(" a ")";
+// ---- UnaryOverflowBv (width-polymorphic: a : bv W -> bool) ----
+category UnaryOverflowBv;
+op bv1_sNegOverflow : UnaryOverflowBv => "bv1.sNegOverflow";
+op bv1_uNegOverflow : UnaryOverflowBv => "bv1.uNegOverflow";
+op bv8_sNegOverflow : UnaryOverflowBv => "bv8.sNegOverflow";
+op bv8_uNegOverflow : UnaryOverflowBv => "bv8.uNegOverflow";
+op bv16_sNegOverflow : UnaryOverflowBv => "bv16.sNegOverflow";
+op bv16_uNegOverflow : UnaryOverflowBv => "bv16.uNegOverflow";
+op bv32_sNegOverflow : UnaryOverflowBv => "bv32.sNegOverflow";
+op bv32_uNegOverflow : UnaryOverflowBv => "bv32.uNegOverflow";
+op bv64_sNegOverflow : UnaryOverflowBv => "bv64.sNegOverflow";
+op bv64_uNegOverflow : UnaryOverflowBv => "bv64.uNegOverflow";
+fn unaryOverflowBv (W : Type, f : UnaryOverflowBv, a : bv W) : bool => f "(" a ")";
 
+// ---- CastBv (width-polymorphic: a : bv W -> int) ----
+category CastBv;
+op bv1_toUInt : CastBv => "bv1.toUInt";
+op bv1_toInt : CastBv => "bv1.toInt";
+op bv8_toUInt : CastBv => "bv8.toUInt";
+op bv8_toInt : CastBv => "bv8.toInt";
+op bv16_toUInt : CastBv => "bv16.toUInt";
+op bv16_toInt : CastBv => "bv16.toInt";
+op bv32_toUInt : CastBv => "bv32.toUInt";
+op bv32_toInt : CastBv => "bv32.toInt";
+op bv64_toUInt : CastBv => "bv64.toUInt";
+op bv64_toInt : CastBv => "bv64.toInt";
+op bv128_toUInt : CastBv => "bv128.toUInt";
+op bv128_toInt : CastBv => "bv128.toInt";
+fn castBv (W : Type, f : CastBv, a : bv W) : int => f "(" a ")";
+
+// ---- BinaryArithBasicInt ----
+category BinaryArithBasicInt;
+op int_add : BinaryArithBasicInt => "int.add";
+op int_sub : BinaryArithBasicInt => "int.sub";
+op int_mul : BinaryArithBasicInt => "int.mul";
+fn binaryArithBasicInt (f : BinaryArithBasicInt, a : int, b : int) : int => f "(" a ", " b ")";
+
+// ---- BinaryArithBasicReal ----
+category BinaryArithBasicReal;
+op real_add : BinaryArithBasicReal => "real.add";
+op real_sub : BinaryArithBasicReal => "real.sub";
+op real_mul : BinaryArithBasicReal => "real.mul";
+fn binaryArithBasicReal (f : BinaryArithBasicReal, a : real, b : real) : real => f "(" a ", " b ")";
+
+// ---- BinaryArithBasicBv (width-polymorphic: a b : bv W -> bv W) ----
+category BinaryArithBasicBv;
+op bv1_add : BinaryArithBasicBv => "bv1.add";
+op bv1_sub : BinaryArithBasicBv => "bv1.sub";
+op bv1_mul : BinaryArithBasicBv => "bv1.mul";
+op bv8_add : BinaryArithBasicBv => "bv8.add";
+op bv8_sub : BinaryArithBasicBv => "bv8.sub";
+op bv8_mul : BinaryArithBasicBv => "bv8.mul";
+op bv16_add : BinaryArithBasicBv => "bv16.add";
+op bv16_sub : BinaryArithBasicBv => "bv16.sub";
+op bv16_mul : BinaryArithBasicBv => "bv16.mul";
+op bv32_add : BinaryArithBasicBv => "bv32.add";
+op bv32_sub : BinaryArithBasicBv => "bv32.sub";
+op bv32_mul : BinaryArithBasicBv => "bv32.mul";
+op bv64_add : BinaryArithBasicBv => "bv64.add";
+op bv64_sub : BinaryArithBasicBv => "bv64.sub";
+op bv64_mul : BinaryArithBasicBv => "bv64.mul";
+fn binaryArithBasicBv (W : Type, f : BinaryArithBasicBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
+
+// ---- BinaryArithDivModInt ----
+category BinaryArithDivModInt;
+op int_div : BinaryArithDivModInt => "int.div";
+op int_mod : BinaryArithDivModInt => "int.mod";
+fn binaryArithDivModInt (f : BinaryArithDivModInt, a : int, b : int) : int => f "(" a ", " b ")";
+
+// ---- BinaryArithDivModReal ----
+category BinaryArithDivModReal;
+op real_div : BinaryArithDivModReal => "real.div";
+fn binaryArithDivModReal (f : BinaryArithDivModReal, a : real, b : real) : real => f "(" a ", " b ")";
+
+// ---- BinaryArithDivModBv (width-polymorphic) ----
+category BinaryArithDivModBv;
+op bv1_uDiv : BinaryArithDivModBv => "bv1.uDiv";
+op bv1_uMod : BinaryArithDivModBv => "bv1.uMod";
+op bv1_sDiv : BinaryArithDivModBv => "bv1.sDiv";
+op bv1_sMod : BinaryArithDivModBv => "bv1.sMod";
+op bv8_uDiv : BinaryArithDivModBv => "bv8.uDiv";
+op bv8_uMod : BinaryArithDivModBv => "bv8.uMod";
+op bv8_sDiv : BinaryArithDivModBv => "bv8.sDiv";
+op bv8_sMod : BinaryArithDivModBv => "bv8.sMod";
+op bv16_uDiv : BinaryArithDivModBv => "bv16.uDiv";
+op bv16_uMod : BinaryArithDivModBv => "bv16.uMod";
+op bv16_sDiv : BinaryArithDivModBv => "bv16.sDiv";
+op bv16_sMod : BinaryArithDivModBv => "bv16.sMod";
+op bv32_uDiv : BinaryArithDivModBv => "bv32.uDiv";
+op bv32_uMod : BinaryArithDivModBv => "bv32.uMod";
+op bv32_sDiv : BinaryArithDivModBv => "bv32.sDiv";
+op bv32_sMod : BinaryArithDivModBv => "bv32.sMod";
+op bv64_uDiv : BinaryArithDivModBv => "bv64.uDiv";
+op bv64_uMod : BinaryArithDivModBv => "bv64.uMod";
+op bv64_sDiv : BinaryArithDivModBv => "bv64.sDiv";
+op bv64_sMod : BinaryArithDivModBv => "bv64.sMod";
+fn binaryArithDivModBv (W : Type, f : BinaryArithDivModBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
+
+// ---- BinaryBitwiseBv (width-polymorphic) ----
+category BinaryBitwiseBv;
+op bv1_and : BinaryBitwiseBv => "bv1.and";
+op bv1_or : BinaryBitwiseBv => "bv1.or";
+op bv1_xor : BinaryBitwiseBv => "bv1.xor";
+op bv1_shl : BinaryBitwiseBv => "bv1.shl";
+op bv1_uShr : BinaryBitwiseBv => "bv1.uShr";
+op bv1_sShr : BinaryBitwiseBv => "bv1.sShr";
+op bv8_and : BinaryBitwiseBv => "bv8.and";
+op bv8_or : BinaryBitwiseBv => "bv8.or";
+op bv8_xor : BinaryBitwiseBv => "bv8.xor";
+op bv8_shl : BinaryBitwiseBv => "bv8.shl";
+op bv8_uShr : BinaryBitwiseBv => "bv8.uShr";
+op bv8_sShr : BinaryBitwiseBv => "bv8.sShr";
+op bv16_and : BinaryBitwiseBv => "bv16.and";
+op bv16_or : BinaryBitwiseBv => "bv16.or";
+op bv16_xor : BinaryBitwiseBv => "bv16.xor";
+op bv16_shl : BinaryBitwiseBv => "bv16.shl";
+op bv16_uShr : BinaryBitwiseBv => "bv16.uShr";
+op bv16_sShr : BinaryBitwiseBv => "bv16.sShr";
+op bv32_and : BinaryBitwiseBv => "bv32.and";
+op bv32_or : BinaryBitwiseBv => "bv32.or";
+op bv32_xor : BinaryBitwiseBv => "bv32.xor";
+op bv32_shl : BinaryBitwiseBv => "bv32.shl";
+op bv32_uShr : BinaryBitwiseBv => "bv32.uShr";
+op bv32_sShr : BinaryBitwiseBv => "bv32.sShr";
+op bv64_and : BinaryBitwiseBv => "bv64.and";
+op bv64_or : BinaryBitwiseBv => "bv64.or";
+op bv64_xor : BinaryBitwiseBv => "bv64.xor";
+op bv64_shl : BinaryBitwiseBv => "bv64.shl";
+op bv64_uShr : BinaryBitwiseBv => "bv64.uShr";
+op bv64_sShr : BinaryBitwiseBv => "bv64.sShr";
+fn binaryBitwiseBv (W : Type, f : BinaryBitwiseBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
+
+// ---- BinarySafeInt ----
+category BinarySafeInt;
+op int_safeDiv : BinarySafeInt => "int.safeDiv";
+op int_safeMod : BinarySafeInt => "int.safeMod";
+fn binarySafeInt (f : BinarySafeInt, a : int, b : int) : int => f "(" a ", " b ")";
+
+// ---- BinarySafeBv (width-polymorphic) ----
+category BinarySafeBv;
+op bv1_safeAdd : BinarySafeBv => "bv1.safeAdd";
+op bv1_safeSub : BinarySafeBv => "bv1.safeSub";
+op bv1_safeMul : BinarySafeBv => "bv1.safeMul";
+op bv1_safeUAdd : BinarySafeBv => "bv1.safeUAdd";
+op bv1_safeUSub : BinarySafeBv => "bv1.safeUSub";
+op bv1_safeUMul : BinarySafeBv => "bv1.safeUMul";
+op bv1_safeSDiv : BinarySafeBv => "bv1.safeSDiv";
+op bv1_safeSMod : BinarySafeBv => "bv1.safeSMod";
+op bv8_safeAdd : BinarySafeBv => "bv8.safeAdd";
+op bv8_safeSub : BinarySafeBv => "bv8.safeSub";
+op bv8_safeMul : BinarySafeBv => "bv8.safeMul";
+op bv8_safeUAdd : BinarySafeBv => "bv8.safeUAdd";
+op bv8_safeUSub : BinarySafeBv => "bv8.safeUSub";
+op bv8_safeUMul : BinarySafeBv => "bv8.safeUMul";
+op bv8_safeSDiv : BinarySafeBv => "bv8.safeSDiv";
+op bv8_safeSMod : BinarySafeBv => "bv8.safeSMod";
+op bv16_safeAdd : BinarySafeBv => "bv16.safeAdd";
+op bv16_safeSub : BinarySafeBv => "bv16.safeSub";
+op bv16_safeMul : BinarySafeBv => "bv16.safeMul";
+op bv16_safeUAdd : BinarySafeBv => "bv16.safeUAdd";
+op bv16_safeUSub : BinarySafeBv => "bv16.safeUSub";
+op bv16_safeUMul : BinarySafeBv => "bv16.safeUMul";
+op bv16_safeSDiv : BinarySafeBv => "bv16.safeSDiv";
+op bv16_safeSMod : BinarySafeBv => "bv16.safeSMod";
+op bv32_safeAdd : BinarySafeBv => "bv32.safeAdd";
+op bv32_safeSub : BinarySafeBv => "bv32.safeSub";
+op bv32_safeMul : BinarySafeBv => "bv32.safeMul";
+op bv32_safeUAdd : BinarySafeBv => "bv32.safeUAdd";
+op bv32_safeUSub : BinarySafeBv => "bv32.safeUSub";
+op bv32_safeUMul : BinarySafeBv => "bv32.safeUMul";
+op bv32_safeSDiv : BinarySafeBv => "bv32.safeSDiv";
+op bv32_safeSMod : BinarySafeBv => "bv32.safeSMod";
+op bv64_safeAdd : BinarySafeBv => "bv64.safeAdd";
+op bv64_safeSub : BinarySafeBv => "bv64.safeSub";
+op bv64_safeMul : BinarySafeBv => "bv64.safeMul";
+op bv64_safeUAdd : BinarySafeBv => "bv64.safeUAdd";
+op bv64_safeUSub : BinarySafeBv => "bv64.safeUSub";
+op bv64_safeUMul : BinarySafeBv => "bv64.safeUMul";
+op bv64_safeSDiv : BinarySafeBv => "bv64.safeSDiv";
+op bv64_safeSMod : BinarySafeBv => "bv64.safeSMod";
+fn binarySafeBv (W : Type, f : BinarySafeBv, a : bv W, b : bv W) : bv W => f "(" a ", " b ")";
+
+// ---- BinaryTruncInt ----
+category BinaryTruncInt;
+op int_divT : BinaryTruncInt => "int.divT";
+op int_modT : BinaryTruncInt => "int.modT";
+op int_safeDivT : BinaryTruncInt => "int.safeDivT";
+op int_safeModT : BinaryTruncInt => "int.safeModT";
+fn binaryTruncInt (f : BinaryTruncInt, a : int, b : int) : int => f "(" a ", " b ")";
+
+// ---- BinaryCmpBaseInt ----
+category BinaryCmpBaseInt;
+op int_le : BinaryCmpBaseInt => "int.le";
+op int_lt : BinaryCmpBaseInt => "int.lt";
+op int_ge : BinaryCmpBaseInt => "int.ge";
+op int_gt : BinaryCmpBaseInt => "int.gt";
+fn binaryCmpBaseInt (f : BinaryCmpBaseInt, a : int, b : int) : bool => f "(" a ", " b ")";
+
+// ---- BinaryCmpBaseReal ----
+category BinaryCmpBaseReal;
+op real_le : BinaryCmpBaseReal => "real.le";
+op real_lt : BinaryCmpBaseReal => "real.lt";
+op real_ge : BinaryCmpBaseReal => "real.ge";
+op real_gt : BinaryCmpBaseReal => "real.gt";
+fn binaryCmpBaseReal (f : BinaryCmpBaseReal, a : real, b : real) : bool => f "(" a ", " b ")";
+
+// ---- BinaryCmpBaseBv (width-polymorphic: a b : bv W -> bool) ----
+category BinaryCmpBaseBv;
+op bv1_uLe : BinaryCmpBaseBv => "bv1.uLe";
+op bv1_uLt : BinaryCmpBaseBv => "bv1.uLt";
+op bv1_uGe : BinaryCmpBaseBv => "bv1.uGe";
+op bv1_uGt : BinaryCmpBaseBv => "bv1.uGt";
+op bv8_uLe : BinaryCmpBaseBv => "bv8.uLe";
+op bv8_uLt : BinaryCmpBaseBv => "bv8.uLt";
+op bv8_uGe : BinaryCmpBaseBv => "bv8.uGe";
+op bv8_uGt : BinaryCmpBaseBv => "bv8.uGt";
+op bv16_uLe : BinaryCmpBaseBv => "bv16.uLe";
+op bv16_uLt : BinaryCmpBaseBv => "bv16.uLt";
+op bv16_uGe : BinaryCmpBaseBv => "bv16.uGe";
+op bv16_uGt : BinaryCmpBaseBv => "bv16.uGt";
+op bv32_uLe : BinaryCmpBaseBv => "bv32.uLe";
+op bv32_uLt : BinaryCmpBaseBv => "bv32.uLt";
+op bv32_uGe : BinaryCmpBaseBv => "bv32.uGe";
+op bv32_uGt : BinaryCmpBaseBv => "bv32.uGt";
+op bv64_uLe : BinaryCmpBaseBv => "bv64.uLe";
+op bv64_uLt : BinaryCmpBaseBv => "bv64.uLt";
+op bv64_uGe : BinaryCmpBaseBv => "bv64.uGe";
+op bv64_uGt : BinaryCmpBaseBv => "bv64.uGt";
+fn binaryCmpBaseBv (W : Type, f : BinaryCmpBaseBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
+
+// ---- BinaryCmpSignedBv (width-polymorphic) ----
+category BinaryCmpSignedBv;
+op bv1_sLe : BinaryCmpSignedBv => "bv1.sLe";
+op bv1_sLt : BinaryCmpSignedBv => "bv1.sLt";
+op bv1_sGe : BinaryCmpSignedBv => "bv1.sGe";
+op bv1_sGt : BinaryCmpSignedBv => "bv1.sGt";
+op bv8_sLe : BinaryCmpSignedBv => "bv8.sLe";
+op bv8_sLt : BinaryCmpSignedBv => "bv8.sLt";
+op bv8_sGe : BinaryCmpSignedBv => "bv8.sGe";
+op bv8_sGt : BinaryCmpSignedBv => "bv8.sGt";
+op bv16_sLe : BinaryCmpSignedBv => "bv16.sLe";
+op bv16_sLt : BinaryCmpSignedBv => "bv16.sLt";
+op bv16_sGe : BinaryCmpSignedBv => "bv16.sGe";
+op bv16_sGt : BinaryCmpSignedBv => "bv16.sGt";
+op bv32_sLe : BinaryCmpSignedBv => "bv32.sLe";
+op bv32_sLt : BinaryCmpSignedBv => "bv32.sLt";
+op bv32_sGe : BinaryCmpSignedBv => "bv32.sGe";
+op bv32_sGt : BinaryCmpSignedBv => "bv32.sGt";
+op bv64_sLe : BinaryCmpSignedBv => "bv64.sLe";
+op bv64_sLt : BinaryCmpSignedBv => "bv64.sLt";
+op bv64_sGe : BinaryCmpSignedBv => "bv64.sGe";
+op bv64_sGt : BinaryCmpSignedBv => "bv64.sGt";
+fn binaryCmpSignedBv (W : Type, f : BinaryCmpSignedBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
+
+// ---- BinaryOverflowBv (width-polymorphic: a b : bv W -> bool) ----
+category BinaryOverflowBv;
+op bv1_sAddOverflow : BinaryOverflowBv => "bv1.sAddOverflow";
+op bv1_sSubOverflow : BinaryOverflowBv => "bv1.sSubOverflow";
+op bv1_sMulOverflow : BinaryOverflowBv => "bv1.sMulOverflow";
+op bv1_sDivOverflow : BinaryOverflowBv => "bv1.sDivOverflow";
+op bv1_uAddOverflow : BinaryOverflowBv => "bv1.uAddOverflow";
+op bv1_uSubOverflow : BinaryOverflowBv => "bv1.uSubOverflow";
+op bv1_uMulOverflow : BinaryOverflowBv => "bv1.uMulOverflow";
+op bv8_sAddOverflow : BinaryOverflowBv => "bv8.sAddOverflow";
+op bv8_sSubOverflow : BinaryOverflowBv => "bv8.sSubOverflow";
+op bv8_sMulOverflow : BinaryOverflowBv => "bv8.sMulOverflow";
+op bv8_sDivOverflow : BinaryOverflowBv => "bv8.sDivOverflow";
+op bv8_uAddOverflow : BinaryOverflowBv => "bv8.uAddOverflow";
+op bv8_uSubOverflow : BinaryOverflowBv => "bv8.uSubOverflow";
+op bv8_uMulOverflow : BinaryOverflowBv => "bv8.uMulOverflow";
+op bv16_sAddOverflow : BinaryOverflowBv => "bv16.sAddOverflow";
+op bv16_sSubOverflow : BinaryOverflowBv => "bv16.sSubOverflow";
+op bv16_sMulOverflow : BinaryOverflowBv => "bv16.sMulOverflow";
+op bv16_sDivOverflow : BinaryOverflowBv => "bv16.sDivOverflow";
+op bv16_uAddOverflow : BinaryOverflowBv => "bv16.uAddOverflow";
+op bv16_uSubOverflow : BinaryOverflowBv => "bv16.uSubOverflow";
+op bv16_uMulOverflow : BinaryOverflowBv => "bv16.uMulOverflow";
+op bv32_sAddOverflow : BinaryOverflowBv => "bv32.sAddOverflow";
+op bv32_sSubOverflow : BinaryOverflowBv => "bv32.sSubOverflow";
+op bv32_sMulOverflow : BinaryOverflowBv => "bv32.sMulOverflow";
+op bv32_sDivOverflow : BinaryOverflowBv => "bv32.sDivOverflow";
+op bv32_uAddOverflow : BinaryOverflowBv => "bv32.uAddOverflow";
+op bv32_uSubOverflow : BinaryOverflowBv => "bv32.uSubOverflow";
+op bv32_uMulOverflow : BinaryOverflowBv => "bv32.uMulOverflow";
+op bv64_sAddOverflow : BinaryOverflowBv => "bv64.sAddOverflow";
+op bv64_sSubOverflow : BinaryOverflowBv => "bv64.sSubOverflow";
+op bv64_sMulOverflow : BinaryOverflowBv => "bv64.sMulOverflow";
+op bv64_sDivOverflow : BinaryOverflowBv => "bv64.sDivOverflow";
+op bv64_uAddOverflow : BinaryOverflowBv => "bv64.uAddOverflow";
+op bv64_uSubOverflow : BinaryOverflowBv => "bv64.uSubOverflow";
+op bv64_uMulOverflow : BinaryOverflowBv => "bv64.uMulOverflow";
+fn binaryOverflowBv (W : Type, f : BinaryOverflowBv, a : bv W, b : bv W) : bool => f "(" a ", " b ")";
+
+// ---- Bitvector concat and extract ----
+fn bvconcat8 (a : bv W8, b : bv W8) : bv W16 => "bvconcat{8}{8}" "(" a ", " b ")";
+fn bvconcat16 (a : bv W16, b : bv W16) : bv W32 => "bvconcat{16}{16}" "(" a ", " b ")";
+fn bvconcat32 (a : bv W32, b : bv W32) : bv W64 => "bvconcat{32}{32}" "(" a ", " b ")";
+
+fn bvextract_7_7 (a : bv W8) : bv W1 => "bvextract{7}{7}{8}" "(" a ")";
+fn bvextract_15_15 (a : bv W16) : bv W1 => "bvextract{15}{15}{16}" "(" a ")";
+fn bvextract_31_31 (a : bv W32) : bv W1 => "bvextract{31}{31}{32}" "(" a ")";
+fn bvextract_7_0_16 (a : bv W16) : bv W8 => "bvextract{7}{0}{16}" "(" a ")";
+fn bvextract_7_0_32 (a : bv W32) : bv W8 => "bvextract{7}{0}{32}" "(" a ")";
+fn bvextract_15_0_32 (a : bv W32) : bv W16 => "bvextract{15}{0}{32}" "(" a ")";
+fn bvextract_7_0_64 (a : bv W64) : bv W8 => "bvextract{7}{0}{64}" "(" a ")";
+fn bvextract_15_0_64 (a : bv W64) : bv W16 => "bvextract{15}{0}{64}" "(" a ")";
+fn bvextract_31_0_64 (a : bv W64) : bv W32 => "bvextract{31}{0}{64}" "(" a ")";
+
+// ---- Quantifiers and binders ----
 category TriggerGroup;
 category Triggers;
 op trigger (exprs : CommaSepBy Expr) : TriggerGroup =>
@@ -293,10 +609,16 @@ fn forallT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool
 fn existsT (d : DeclList, @[scope(d)] triggers : Triggers,  @[scope(d)] b : bool) : bool =>
   "exists " d " :: " triggers indent(2, b:3);
 
+// ═══════════════════════════════════════════════════════════════════
+// STATEMENTS
+// ═══════════════════════════════════════════════════════════════════
+
+// ---- Assignment targets ----
 category Lhs;
 op lhsIdent (v : Ident) : Lhs => v;
 op lhsArray (tp : Type, a : Lhs, idx : tp) : Lhs => a "[" idx "]";
 
+// ---- Statements (var, assign, assume/assert, if, call, blocks) ----
 category Statement;
 category Block;
 category Else;
@@ -324,6 +646,7 @@ op else0 () : Else =>;
 op else1 (f : Block) : Else => " else " f:0;
 op havoc_statement (annots : Option MetadataAnn, v : Ident) : Statement => annots:0 "havoc " v ";";
 
+// ---- Loops (invariants, measure, while) ----
 category Invariant;
 op invariant (label : Option Label, e : Expr) : Invariant => "invariant" label e ";";
 
@@ -351,6 +674,11 @@ op block (c : NewlineSepBy Statement) : Block => "{\n  " indent(2, c) "\n}";
 op block_statement (annots : Option MetadataAnn, label : Ident, b : Block) : Statement => annots:0 label ": " b:0;
 op exit_statement (annots : Option MetadataAnn, label : Ident) : Statement => annots:0 "exit " label ";";
 
+// ═══════════════════════════════════════════════════════════════════
+// DECLARATIONS & PROGRAMS
+// ═══════════════════════════════════════════════════════════════════
+
+// ---- Procedure specs (requires / ensures) ----
 category SpecElt;
 category Free;
 op free () : Free => "free ";
@@ -362,6 +690,7 @@ op requires_spec (label : Option Label, free? : Option Free, b : bool) : SpecElt
 category Spec;
 op spec_mk (elts : Seq SpecElt) : Spec => "spec " indent(2, "{\n" elts "} ");
 
+// ---- Procedure parameter bindings ----
 category Binding;
 @[declare(name, tp)]
 op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name " : " tp:0;
@@ -376,6 +705,7 @@ category Bindings;
 @[scope(bindings)]
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => " (" bindings ")";
 
+// ---- Commands (procedures, type/const/function declarations, programs) ----
 op command_procedure (annots : Option MetadataAnn,
                       name : Ident,
                       typeArgs : Option TypeArgs,

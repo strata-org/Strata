@@ -291,7 +291,9 @@ The following notation recurs throughout the rules:
   $`\mathsf{TBv}_w` (a bitvector of any width $`w`), with $`\mathsf{Unknown}`
   admitted as the gradual escape hatch.
 - $`\dashv \Gamma'` — a rule's *output scope*: the judgment threads $`\Gamma` in
-  and produces $`\Gamma'` out. Only \[⇐\] Var-Declare extends the scope; the
+  and produces $`\Gamma'` out. Only the declaring rules extend the scope —
+  \[⇒\] Var-Declare / Var-Declare-Infer, the Decl-Synth pair, and
+  \[⇒\]/\[⇐\] Assign when a target is a `Declare`; the
   block rules thread it statement-to-statement (the $`\Gamma_{i-1} \to
   \Gamma_i` chain in \[⇐\] Block / \[⇒\] Block-Synth).
 - $`\rightsquigarrow \text{error: …}` — the rule emits an error and aborts; no
@@ -305,7 +307,8 @@ The Index below links to each construct's subsection.
 
 - {ref "rules-subsumption"}[*Subsumption*] — \[⇐\] Sub
 - {ref "rules-literals"}[*Literals*] — \[⇒\] Lit-Int, \[⇒\] Lit-Bool, \[⇒\] Lit-String, \[⇒\] Lit-Decimal
-- {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field, \[⇒\] Var-Declare
+- {ref "rules-variables"}[*Variables*] — \[⇒\] Var-Local, \[⇒\] Var-Field,
+  \[⇒\] Var-Declare, \[⇒\] Var-Declare-Infer
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse,
   \[⇒\] If-Synth, \[⇒\] If-Synth-NoElse;
   \[⇐\] Block, \[⇒\] Block-Synth, \[⋄\] Synth-Discard,
@@ -314,11 +317,13 @@ The Index below links to each construct's subsection.
   \[⇒\] Return-Some, \[⇒\] Return-Void-Error,
   \[⇒\] Return-Multi-Error; \[⇒\] While
 - {ref "rules-verification-statements"}[*Verification statements*] — \[⇒\] Assert, \[⇒\] Assume
-- {ref "rules-assignment"}[*Assignment*] — \[⇒\] Assign, \[⇐\] Assign
+- {ref "rules-assignment"}[*Assignment*] — \[⇒\] Assign, \[⇐\] Assign,
+  \[⇒\] Decl-Synth, \[⇐\] Decl-Synth
 - {ref "rules-calls"}[*Calls*] — \[⇒\] Static-Call, \[⇒\] Static-Call-Multi,
   \[⇒\] Instance-Call, \[⇒\] Instance-Call-Multi
-- {ref "rules-primitive-operations"}[*Primitive operations*] — \[⇒\] Op-Bool, \[⇒\] Op-Cmp, \[⇒\] Op-Eq,
-  \[⇒\] Op-Arith, \[⇒\] Op-Concat; \[⇐\] Op-Arith, \[⇐\] Op-Bool
+- {ref "rules-primitive-operations"}[*Operators*] — no operator-specific rules:
+  operators are calls, typed by \[⇒\] Static-Call. Equality is the one
+  special case: \[⇒\] Op-Eq
 - {ref "rules-object-forms"}[*Object forms*] — \[⇒\] New-Ok, \[⇒\] New-Fallback; \[⇒\] AsType; \[⇒\] IsType;
   \[⇒\] RefEq; \[⇒\] PureFieldUpdate
 - {ref "rules-verification-expressions"}[*Verification expressions*] — \[⇒\] Quantifier, \[⇒\] Assigned, \[⇐\] Old,
@@ -373,7 +378,21 @@ $$`\frac{\Gamma \vdash e \Rightarrow \_ \quad \Gamma(f) = T_f}{\Gamma \vdash \ma
 
 {docstring Strata.Laurel.Resolution.Synth.varField}
 
-$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, T_x\rangle) \Rightarrow \mathsf{TVoid} \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇒] Var-Declare)}`
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, \mathsf{some}\;T_x\rangle) \Rightarrow \mathsf{TVoid} \quad \dashv \quad \Gamma, x : T_x} \quad \text{([⇒] Var-Declare)}`
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash \mathsf{Var}\;(\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle) \Rightarrow \mathsf{TVoid} \quad [\text{emits “cannot infer a type …”}] \quad \dashv \quad \Gamma, x : \mathsf{Unknown}} \quad \text{([⇒] Var-Declare-Infer)}`
+
+The type annotation is optional in the AST (`type : Option`). A bare
+`var x` (annotation `none`) has *neither* an annotation *nor* an
+initializer to read a type from, so \[⇒\] Var-Declare-Infer diagnoses it
+and binds $`x : \mathsf{Unknown}` so later uses of $`x` don't cascade
+further type errors. An unannotated declaration *with* an initializer
+(`var x := e`) never reaches these rules: it parses as an `Assign` with a
+sole `Declare` target and is handled by the \[⇒\]/\[⇐\] Decl-Synth rules
+(see {ref "rules-assignment"}[*Assignment*]), which recover the
+binding's type from the initializer. Either way the node is rewritten to a
+fully-annotated `Declare x (some T)`, so no `none` annotation survives
+resolution.
 
 $`x \notin \mathrm{dom}(\Gamma)` is a soft side condition rather than a
 hard premise: when $`x` is already bound in the current scope the rule still
@@ -459,8 +478,9 @@ is accepted in statement position — the `f(x);` idiom works regardless
 of `f`'s return type, and `x++;` is admitted even though `++`
 synthesizes the target's type.
 
-Only `Var (.Declare …)` actually extends the scope $`\Gamma_i`; every
-other statement leaves it unchanged. The block opens a fresh nested
+Only declarations actually extend the scope $`\Gamma_i` — `Var (.Declare …)`
+and `Assign` statements with `Declare` targets (`var x := e`,
+`assign var x, y := call()`); every other statement leaves it unchanged. The block opens a fresh nested
 scope, so declarations made inside don't leak out — once the block ends,
 the surrounding $`\Gamma` is restored. It also emits a
 `"dead code after '<terminator>'"` diagnostic when an `Exit` or
@@ -609,6 +629,32 @@ discarded.
 
 {docstring Strata.Laurel.Resolution.Check.assign}
 
+An *unannotated* declaring assignment — `var x := e`, i.e. an `Assign`
+whose sole target is `Declare x none` — is dispatched to a dedicated
+rule pair *before* \[⇒\]/\[⇐\] Assign. The target has no declared type
+to push into the RHS, so the direction flips: the initializer is
+*synthesized* and the binding adopts its type.
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \Gamma \vdash e \Rightarrow T}{\Gamma \vdash \mathsf{Assign}\;[\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle]\;e \Rightarrow T \quad \dashv \quad \Gamma, x : T} \quad \text{([⇒] Decl-Synth)}`
+
+$$`\frac{x \notin \mathrm{dom}(\Gamma) \quad \Gamma \vdash e \Rightarrow T \quad T' = \mathsf{TVoid} \lor T <:_\sim T'}{\Gamma \vdash \mathsf{Assign}\;[\mathsf{.Declare}\;\langle x, \mathsf{none}\rangle]\;e \Leftarrow T' \quad \dashv \quad \Gamma, x : T} \quad \text{([⇐] Decl-Synth)}`
+
+The adopted type $`T` must be a *value* type: a $`\mathsf{TVoid}`
+initializer (a void call, a `while`, …) or a
+$`\mathsf{MultiValuedExpr}` (a multi-output call)
+$`[\text{emits “cannot infer a type …”}]` and binds
+$`x : \mathsf{Unknown}` instead, suppressing cascades on later uses.
+As in \[⇒\] Var-Declare, the node is rewritten to carry
+$`\mathsf{some}\;T`, so no `none` annotation survives resolution.
+Unannotated declared targets of a *multi-target*
+`assign var x, y := call()` don't take this rule; they are recovered
+component-wise from the synthesized RHS tuple inside
+\[⇒\]/\[⇐\] Assign (see the docstrings above).
+
+{docstring Strata.Laurel.Resolution.Synth.declInfer}
+
+{docstring Strata.Laurel.Resolution.Check.declInfer}
+
 ### Calls
 %%%
 tag := "rules-calls"
@@ -639,60 +685,89 @@ $`\mathsf{MultiValuedExpr}`.
 
 {docstring Strata.Laurel.Resolution.Synth.instanceCall}
 
-### Primitive operations
+### Operators
 %%%
 tag := "rules-primitive-operations"
 %%%
 
-`Numeric` abbreviates "consistent with one of {name Strata.Laurel.HighType.TInt}`TInt`,
-{name Strata.Laurel.HighType.TReal}`TReal`,
-{name Strata.Laurel.HighType.TFloat64}`TFloat64`, or
-{name Strata.Laurel.HighType.TBv}`TBv` (a bitvector of any width)", with
-`Unknown` admitted as the gradual escape hatch.
+Operators are *not* a distinct kind of expression, and there are no
+operator-specific typing rules. `x + y` parses as
+$`\mathsf{StaticCall}\;\$\mathsf{add}\;[x; y]`, a call to an overloaded
+built-in wrapper procedure declared in `CoreDefinitionsForLaurel` and
+prepended to every program, so operators are typed entirely by
+\[⇒\] Static-Call above. What used to be an operator's admissible
+operand types is now just the set of declared overloads:
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Bool)}`
+```
+procedure $add(x: int, y: int) : int    return intAdd(x, y);
+procedure $add(x: real, y: real) : real return realAdd(x, y);
+```
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad \mathit{op} \in \{\mathsf{Lt}, \mathsf{Leq}, \mathsf{Gt}, \mathsf{Geq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Cmp)}`
+Each wrapper is a thin transparent procedure delegating to a
+type-specific external (`intAdd`, `realAdd`, …) that
+`LaurelToCoreSchemaPass` recognizes and lowers to the corresponding
+Core operator. The wrappers of one operator must all share a name —
+the parser cannot know which overload a `+` denotes — while the
+externals they delegate to do not.
 
-$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad \mathit{op} \in \{\mathsf{Eq}, \mathsf{Neq}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
+Two consequences of typing operators as calls:
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad \mathsf{Numeric}\;U_i \quad T = \bigsqcup_i U_i \text{ (consistency join)} \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow T} \quad \text{([⇒] Op-Arith)}`
+: Operand admissibility is overload selection
 
-The arithmetic synth rule mirrors $`[⇒]\,\text{Op-Eq}` but generalised
-to $`n` operands. Each operand is synthesized and required to be
-$`\mathsf{Numeric}` (i.e. $`\mathsf{TInt}`, $`\mathsf{TReal}`,
-$`\mathsf{TFloat64}`, $`\mathsf{TBv}_w` (a bitvector of any width), or
-the gradual $`\mathsf{Unknown}`). The
-result type is the *consistency join* $`\bigsqcup_i U_i` — a fold of
-the operand types under
-{name Strata.Laurel.isConsistent}`isConsistent`'s flat lattice:
-$`\mathsf{Unknown} \sqcup T = T`, $`T \sqcup T = T`, and any other
-combination is rejected. The fold runs via `join`, a pure function, so
-the search has no diagnostic side-effects.
+  There is no `Numeric` side-condition. `1 + 2.0` is rejected not
+  because a rule demands equal operand types, but because neither the
+  `int` nor the `real` overload of `$add` accepts an
+  $`(\mathsf{TInt}, \mathsf{TReal})` pair — reported as *no overload of
+  '$add' matches the argument types*. Likewise `<` on bitvectors
+  resolves only at the widths Core provides operators for
+  (1, 8, 16, 32, 64), rather than silently mistranslating other widths.
 
-:::example "Arithmetic operand join"
-- `1 + 2` synthesizes $`\mathsf{TInt}`
-- `1.5 + 2.5` synthesizes $`\mathsf{TReal}`
-- `<?> + 1` synthesizes $`\mathsf{TInt}` — the $`\mathsf{Unknown}` operand promotes to its neighbour
-- `<?> + <?>` synthesizes $`\mathsf{Unknown}`
-- `1 + 2.0` is rejected: *cannot apply '+' to operands of types 'int', 'real'*
+: Preconditions come from the wrapper
+
+  Because a wrapper is an ordinary procedure it can carry a contract.
+  `$div` declares `requires y != 0` and delegates to Core's *safe*
+  division, so a possible division by zero surfaces as a failed
+  precondition on the call.
+
+The gradual $`\mathsf{Unknown}` still flows freely: it is a consistent
+subtype of every parameter type, so it never rules an overload out. An
+$`\mathsf{Unknown}` argument therefore cannot *discriminate* between
+overloads, but the other arguments still can — selection runs on the
+informative arguments alone, and only an unresolved result caused by an
+$`\mathsf{Unknown}` argument is passed over silently (the argument's own
+error already covers it) instead of being reported as a no-match or an
+ambiguity.
+
+:::example "Operator overload selection"
+- `1 + 2` selects the `int` overload and synthesizes $`\mathsf{TInt}`
+- `1.5 + 2.5` selects the `real` overload and synthesizes $`\mathsf{TReal}`
+- `<?> + 1` selects the `int` overload — the informative operand decides
+- `<?> + <?>` is unresolved and synthesizes $`\mathsf{Unknown}`; no error is reported
+- `1 + 2.0` is rejected: *no overload of '$add' matches the argument types*
 :::
 
-$$`\frac{\Gamma \vdash \mathit{args}_i \Rightarrow U_i \quad U_i <: \mathsf{TString} \quad \mathit{op} = \mathsf{StrConcat}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Rightarrow \mathsf{TString}} \quad \text{([⇒] Op-Concat)}`
+Equality is the one operator that is *not* a transparent wrapper.
+`$eq` / `$neq` are declared `external`, because equality is polymorphic
+and Laurel has no polymorphic types: a wrapper body would carry a
+placeholder $`\mathsf{int} \to \mathsf{int} \to \mathsf{bool}`
+signature into Core and fail to unify against a composite, a datatype,
+or a bool. `Synth.staticCall` special-cases these two names to require
+only that the operands be consistent ($`T_l \sim T_r`), and
+`LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic
+equality.
 
-{docstring Strata.Laurel.Resolution.Synth.primitiveOp}
+$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad T_l \neq \mathsf{TVoid} \quad T_r \neq \mathsf{TVoid} \quad \mathit{callee} \in \{\$\mathsf{eq}, \$\mathsf{neq}\}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
-The arithmetic and boolean families also have a check-mode rule, used
-when the surrounding context provides an `expected` type. The rule
-pushes the operand type into each operand via
-`Check.resolveStmtExpr`, replacing the synth-then-`checkSubtype`
-discipline with bidirectional check.
+The $`\neq \mathsf{TVoid}` premises reject void operands even though
+$`\mathsf{TVoid} \sim \mathsf{TVoid}` holds: a void expression carries no
+value to compare.
 
-$$`\frac{\mathsf{Numeric}\;T \quad \Gamma \vdash \mathit{args}_i \Leftarrow T \quad \mathit{op} \in \{\mathsf{Neg}, \mathsf{Add}, \mathsf{Sub}, \mathsf{Mul}, \mathsf{Div}, \mathsf{Mod}, \mathsf{DivT}, \mathsf{ModT}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Arith)}`
-
-$$`\frac{\mathsf{TBool} <: T \quad \Gamma \vdash \mathit{args}_i \Leftarrow \mathsf{TBool} \quad \mathit{op} \in \{\mathsf{And}, \mathsf{Or}, \mathsf{AndThen}, \mathsf{OrElse}, \mathsf{Not}, \mathsf{Implies}\}}{\Gamma \vdash \mathsf{PrimitiveOp}\;\mathit{op}\;\mathit{args} \Leftarrow T} \quad \text{([⇐] Op-Bool)}`
-
-{docstring Strata.Laurel.Resolution.Check.primitiveOp}
+Since an operator is a call, the check-mode rule for one is
+\[⇐\] Sub applied to \[⇒\] Static-Call: the call's synthesized
+result type is compared against the expected type. There is no separate
+operand-pushing rule, so a mixed-type operator expression reports one
+overload-resolution failure over the whole call rather than a mismatch
+against an individual operand.
 
 ### Object forms
 %%%

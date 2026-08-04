@@ -74,7 +74,7 @@ cfg entry {
     goto last;
   }
   last: {
-    y := x + z;
+    y := int.add(x, z);
     return;
   }
 };

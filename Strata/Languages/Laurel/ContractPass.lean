@@ -220,7 +220,7 @@ private def mkTempAssignments (args : List StmtExprMd)
     let paramType := match inputParams[i]? with
       | some p => p.type
       | none => { val := .Unknown, source := src }
-    let param : Parameter := { name := mkId tempName, type := paramType }
+    let param : Parameter? := { name := mkId tempName, type := some paramType }
     decls := decls ++ [⟨StmtExpr.Assign [mkVarMd (.Declare param) src] arg, src⟩]
     refs := refs ++ [mkMd (.Var (.Local (mkId tempName))) src]
   return (decls, refs)
@@ -347,7 +347,7 @@ private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
         let mut outputRefs : List StmtExprMd := []
         for p in info.outputParams do
           let tempName ← freshTemp
-          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := p.type }) src]
+          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
           outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
         let callWithOutputs : StmtExprMd :=
           ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
@@ -422,7 +422,7 @@ private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String Contrac
 private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=
   match conds.map (·.condition) with
   | [] => none
-  | e :: rest => some (rest.foldl (fun acc x => mkMd (.PrimitiveOp .And [acc, x]) source) e)
+  | e :: rest => some (rest.foldl (fun acc x => mkMd (.StaticCall (mkId Operation.And.procName) [acc, x]) source) e)
 
 /-- Build an axiom expression from `invokeOn` trigger and ensures clauses.
     Produces `∀ p1, ∀ p2, ..., ∀ pn :: { trigger } (preconds => ensures)`.
@@ -432,7 +432,7 @@ private def mkInvokeOnAxiom (params : List Parameter) (trigger : StmtExprMd)
   let src := trigger.source
   let ensures := (conjoin postconds src).getD (mkMd (.LiteralBool true) src)
   let body := match conjoin preconds src with
-    | some pre => mkMd (.PrimitiveOp .Implies [pre, ensures]) src
+    | some pre => mkMd (.StaticCall (mkId Operation.Implies.procName) [pre, ensures]) src
     | none => ensures
   -- Wrap in nested Forall from last param (innermost) to first (outermost).
   -- The trigger is placed on the innermost quantifier.

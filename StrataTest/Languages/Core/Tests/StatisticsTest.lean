@@ -58,7 +58,7 @@ def statsPgm2 : StrataDDM.Program :=
 program Core;
 
 function add(a : int, b : int) : int
-{ a + b }
+{ int.add(a, b) }
 
 procedure P1(x : int, out y : int)
 spec {

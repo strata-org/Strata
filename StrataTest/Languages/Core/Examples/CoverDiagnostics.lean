@@ -18,10 +18,10 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
+  assume (int.ge(x, 0));
 
-  cover [unsatisfiable_cover]: (x < 0);
-  assert [failing_assert]: (x < 0);
+  cover [unsatisfiable_cover]: int.lt(x, 0);
+  assert [failing_assert]: int.lt(x, 0);
 };
 #end
 
@@ -44,10 +44,10 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
+  assume (int.ge(x, 0));
 
-  cover [satisfiable_cover]: (x >= 0);
-  assert [passing_assert]: (x >= 0);
+  cover [satisfiable_cover]: int.ge(x, 0);
+  assert [passing_assert]: int.ge(x, 0);
 };
 #end
 
@@ -71,8 +71,8 @@ procedure Test()
 {
   var x : int;
 
-  cover [satisfiable_cover]: (x > 0);
-  assert [unprovable_assert]: (x > 0);
+  cover [satisfiable_cover]: int.gt(x, 0);
+  assert [unprovable_assert]: int.gt(x, 0);
 };
 #end
 

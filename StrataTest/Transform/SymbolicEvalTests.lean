@@ -36,9 +36,9 @@ private def simpleProg :=
 #strata
 program Core;
 procedure test(x : int)
-spec { requires [pre]: x >= 0; }
+spec { requires [pre]: int.ge(x, 0); }
 {
-  assert [a]: x >= 0;
+  assert [a]: int.ge(x, 0);
 };
 #end
 
@@ -47,9 +47,9 @@ info: program Core;
 
 procedure test ()
 {
-  assume [pre]: x@1 >= 0;
-  assert [a]: x@1 >= 0;
-  };
+  assume [pre]: int.ge(x@1, 0);
+  assert [a]: int.ge(x@1, 0);
+};
 -/
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint simpleProg
@@ -60,12 +60,12 @@ private def detIfProg :=
 #strata
 program Core;
 procedure detIfTest(x : int)
-spec { requires [pre]: x >= 0; }
+spec { requires [pre]: int.ge(x, 0); }
 {
-  if (x > 5) {
-    assert [big]: x > 5;
+  if (int.gt(x, 5)) {
+    assert [big]: int.gt(x, 5);
   } else {
-    assert [small]: x <= 5;
+    assert [small]: int.le(x, 5);
   }
 };
 #end
@@ -76,13 +76,13 @@ info: program Core;
 procedure detIfTest ()
 {
   if * {
-    assume [pre]: x@1 >= 0;
-    assume [|<label_ite_cond_true: x > 5>|]: x@1 > 5;
-    assert [big]: x@1 > 5;
+    assume [pre]: int.ge(x@1, 0);
+    assume [|<label_ite_cond_true: int.gt(x, 5)>|]: int.gt(x@1, 5);
+    assert [big]: int.gt(x@1, 5);
   } else {
-    assume [pre]: x@1 >= 0;
-    assume [|<label_ite_cond_false: !(x > 5)>|]: if x@1 > 5 then false else true;
-    assert [small]: x@1 <= 5;
+    assume [pre]: int.ge(x@1, 0);
+    assume [|<label_ite_cond_false: !(int.gt(x, 5))>|]: if int.gt(x@1, 5) then false else true;
+    assert [small]: int.le(x@1, 5);
   }
 };
 -/
@@ -96,14 +96,14 @@ private def nondetIfProg :=
 program Core;
 procedure nondetIfTest(x : int, out r : int)
 spec {
-  requires [pre]: x >= 0;
-  ensures [post]: r >= 0;
+  requires [pre]: int.ge(x, 0);
+  ensures [post]: int.ge(r, 0);
 }
 {
   if * {
     r := x;
   } else {
-    r := x + 1;
+    r := int.add(x, 1);
   }
 };
 #end
@@ -113,10 +113,10 @@ info: program Core;
 
 procedure nondetIfTest ()
 {
-  assume [pre]: x@1 >= 0;
+  assume [pre]: int.ge(x@1, 0);
   assume [|<label_ite_cond_true: $__nondet_cond_2>|]: if $__nondet_cond_2 then $__nondet_cond_2 else true;
   assume [|<label_ite_cond_false: !($__nondet_cond_2)>|]: if if $__nondet_cond_2 then false else true then if $__nondet_cond_2 then false else true else true;
-  assert [post]: (if $__nondet_cond_2 then x@1 else x@1 + 1) >= 0;
+  assert [post]: int.ge(if $__nondet_cond_2 then x@1 else int.add(x@1, 1), 0);
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -128,14 +128,14 @@ private def blockExitProg :=
 #strata
 program Core;
 procedure blockExitTest(x : int)
-spec { requires [pre]: x >= 0; }
+spec { requires [pre]: int.ge(x, 0); }
 {
   outer: {
-    if (x > 10) {
-      assert [big]: x > 10;
+    if (int.gt(x, 10)) {
+      assert [big]: int.gt(x, 10);
       exit outer;
     }
-    assert [small]: x <= 10;
+    assert [small]: int.le(x, 10);
   }
 };
 #end
@@ -146,13 +146,13 @@ info: program Core;
 procedure blockExitTest ()
 {
   if * {
-    assume [pre]: x@1 >= 0;
-    assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-    assert [big]: x@1 > 10;
+    assume [pre]: int.ge(x@1, 0);
+    assume [|<label_ite_cond_true: int.gt(x, 10)>|]: int.gt(x@1, 10);
+    assert [big]: int.gt(x@1, 10);
   } else {
-    assume [pre]: x@1 >= 0;
-    assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
-    assert [small]: x@1 <= 10;
+    assume [pre]: int.ge(x@1, 0);
+    assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
+    assert [small]: int.le(x@1, 10);
   }
 };
 -/
@@ -166,27 +166,27 @@ private def blockExitIfProg :=
 program Core;
 procedure blockTest(x : int, y : int, out r : int)
 spec {
-  requires [pre_x]: x >= 0;
-  requires [pre_y]: y >= 0;
-  ensures [post]: r >= 0;
+  requires [pre_x]: int.ge(x, 0);
+  requires [pre_y]: int.ge(y, 0);
+  ensures [post]: int.ge(r, 0);
 }
 {
   outer: {
-    if (x > 10) {
+    if (int.gt(x, 10)) {
       r := x;
-      assert [big_x]: r > 10;
+      assert [big_x]: int.gt(r, 10);
       exit outer;
     }
     inner: {
       if * {
         r := y;
       } else {
-        r := x + y;
+        r := int.add(x, y);
       }
     }
-    assert [after_inner]: r >= 0;
+    assert [after_inner]: int.ge(r, 0);
   }
-  assert [final]: r >= 0;
+  assert [final]: int.ge(r, 0);
 };
 #end
 
@@ -200,45 +200,45 @@ procedure blockTest ()
       if * {
         if * {
           if * {
-            assume [pre_x]: x@1 >= 0;
-            assume [pre_y]: y@1 >= 0;
-            assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-            assert [big_x]: x@1 > 10;
+            assume [pre_x]: int.ge(x@1, 0);
+            assume [pre_y]: int.ge(y@1, 0);
+            assume [|<label_ite_cond_true: int.gt(x, 10)>|]: int.gt(x@1, 10);
+            assert [big_x]: int.gt(x@1, 10);
           } else {
-            assume [pre_x]: x@1 >= 0;
-            assume [pre_y]: y@1 >= 0;
-            assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-            assert [final]: x@1 >= 0;
+            assume [pre_x]: int.ge(x@1, 0);
+            assume [pre_y]: int.ge(y@1, 0);
+            assume [|<label_ite_cond_true: int.gt(x, 10)>|]: int.gt(x@1, 10);
+            assert [final]: int.ge(x@1, 0);
           }
         } else {
-          assume [pre_x]: x@1 >= 0;
-          assume [pre_y]: y@1 >= 0;
-          assume [|<label_ite_cond_true: x > 10>|]: x@1 > 10;
-          assert [post]: x@1 >= 0;
+          assume [pre_x]: int.ge(x@1, 0);
+          assume [pre_y]: int.ge(y@1, 0);
+          assume [|<label_ite_cond_true: int.gt(x, 10)>|]: int.gt(x@1, 10);
+          assert [post]: int.ge(x@1, 0);
         }
       } else {
-        assume [pre_x]: x@1 >= 0;
-        assume [pre_y]: y@1 >= 0;
-        assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+        assume [pre_x]: int.ge(x@1, 0);
+        assume [pre_y]: int.ge(y@1, 0);
+        assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
         assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
         assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-        assert [after_inner]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
+        assert [after_inner]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
       }
     } else {
-      assume [pre_x]: x@1 >= 0;
-      assume [pre_y]: y@1 >= 0;
-      assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+      assume [pre_x]: int.ge(x@1, 0);
+      assume [pre_y]: int.ge(y@1, 0);
+      assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
       assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
       assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-      assert [final]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
+      assert [final]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
     }
   } else {
-    assume [pre_x]: x@1 >= 0;
-    assume [pre_y]: y@1 >= 0;
-    assume [|<label_ite_cond_false: !(x > 10)>|]: if x@1 > 10 then false else true;
+    assume [pre_x]: int.ge(x@1, 0);
+    assume [pre_y]: int.ge(y@1, 0);
+    assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
     assume [|<label_ite_cond_true: $__nondet_cond_3>|]: if $__nondet_cond_3 then $__nondet_cond_3 else true;
     assume [|<label_ite_cond_false: !($__nondet_cond_3)>|]: if if $__nondet_cond_3 then false else true then if $__nondet_cond_3 then false else true else true;
-    assert [post]: (if $__nondet_cond_3 then y@1 else x@1 + y@1) >= 0;
+    assert [post]: int.ge(if $__nondet_cond_3 then y@1 else int.add(x@1, y@1), 0);
   }
 };
 -/

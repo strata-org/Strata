@@ -31,17 +31,20 @@ private def desugarShortCircuitNode (imperativeCallees : List String) (expr : St
   let source := expr.source
   let wrap (v : StmtExpr) : StmtExprMd := ⟨v, source⟩
   match expr.val with
-  | .PrimitiveOp op args _ =>
-    match op, args with
+  -- The short-circuit operators are calls to their built-in wrappers
+  -- (`Operation.procName`); none of them is overloaded, so `UniqueOverloadNames`
+  -- leaves the names alone and matching on the callee text is safe.
+  | .StaticCall callee args =>
+    match Operation.ofProcName? callee.text, args with
     -- With bottom-up traversal, `a` and `b` are already desugared (nested
     -- short-circuits converted to IfThenElse). The check still works because
     -- `containsAssignmentOrImperativeCall` recurses into IfThenElse.
-    | .AndThen, [a, b] | .Implies, [a, b] =>
+    | some op@.AndThen, [a, b] | some op@.Implies, [a, b] =>
       if containsAssignmentOrImperativeCall imperativeCallees b then
         let elseVal := match op with | .AndThen => false | _ => true
         ⟨.IfThenElse a b (some (wrap (.LiteralBool elseVal))), source⟩
       else expr
-    | .OrElse, [a, b] =>
+    | some .OrElse, [a, b] =>
       if containsAssignmentOrImperativeCall imperativeCallees b then
         ⟨.IfThenElse a (wrap (.LiteralBool true)) (some b), source⟩
       else expr

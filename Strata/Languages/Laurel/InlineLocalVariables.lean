@@ -155,14 +155,66 @@ def inlineLocalVariablesInFunction (proc : Procedure) : Procedure × Array Diagn
     | none => (proc, #[])
   | _ => (proc, #[])
 
-/-- Inline local variables in every function of an `UnorderedCoreWithLaurelTypes`.
-    Only `functions` are transformed; `coreProcedures` are left unchanged. -/
+/-- Inline local variables inside the loop invariants and `decreases` clauses of a
+    procedure, leaving the rest of its body alone.
+
+    A procedure body may legitimately declare locals, so unlike a function it is not
+    inlined wholesale. Its loop invariants, however, are spec positions: they are pure
+    expressions that reach Core as such, so — exactly like a function body — they
+    cannot carry a `var` declaration.
+
+    Declarations end up there because the contract pass rewrites a call to a
+    `requires`-bearing procedure into argument temporaries plus a precondition
+    `assert`, and `LiftImperativeExpressions` deliberately does not hoist those out of
+    a loop head (doing so would freeze loop-varying operands at their pre-loop
+    values). Inlining folds them back into the expression, so
+    `var $cp_1 := 2 * i; … $div$asFunction($cp_1, 2)` becomes
+    `$div$asFunction(2 * i, 2)` — re-evaluated every iteration, as written. -/
+def inlineLocalVariablesInProcedureSpecs (proc : Procedure)
+    : Procedure × Array DiagnosticModel :=
+  -- Each invariant is inlined in its own fresh scope: they are independent
+  -- expressions, so a binding in one must not leak into the next.
+  let inlineSpec (s : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd := do
+    let (result, st) := (inlineExpr s).run.run {}
+    modify (· ++ st.diags)
+    match result with
+    | .ok s' => return s'
+    | .error e =>
+      modify (·.push (diagnosticFromSource proc.name.source
+        s!"inline pass error in loop invariant: {e}" .StrataBug))
+      return s
+  let rewrite (body : StmtExprMd) : StateM (Array DiagnosticModel) StmtExprMd :=
+    mapStmtExprM (m := StateM (Array DiagnosticModel)) (fun e => do
+      match e.val with
+      | .While cond invs dec whileBody postTest =>
+        let invs' ← invs.mapM inlineSpec
+        let dec' ← dec.mapM inlineSpec
+        return ⟨.While cond invs' dec' whileBody postTest, e.source⟩
+      | _ => return e) body
+  let runRewrite (body : StmtExprMd) : StmtExprMd × Array DiagnosticModel :=
+    (rewrite body).run #[]
+  match proc.body with
+  | .Transparent body =>
+    let (body', diags) := runRewrite body
+    ({ proc with body := .Transparent body' }, diags)
+  | .Opaque postconds impl modif =>
+    match impl with
+    | some i =>
+      let (i', diags) := runRewrite i
+      ({ proc with body := .Opaque postconds (some i') modif }, diags)
+    | none => (proc, #[])
+  | _ => (proc, #[])
+
+/-- Inline local variables in every function of an `UnorderedCoreWithLaurelTypes`,
+    and in the loop invariants of every `coreProcedure`. -/
 def inlineLocalVariablesInFunctions (uc : UnorderedCoreWithLaurelTypes)
     : UnorderedCoreWithLaurelTypes × List DiagnosticModel :=
   let results := uc.functions.map inlineLocalVariablesInFunction
   let functions' := results.map (·.1)
-  let diags := results.flatMap (·.2.toList)
-  ({ uc with functions := functions' }, diags)
+  let procResults := uc.coreProcedures.map inlineLocalVariablesInProcedureSpecs
+  let coreProcedures' := procResults.map (·.1)
+  let diags := results.flatMap (·.2.toList) ++ procResults.flatMap (·.2.toList)
+  ({ uc with functions := functions', coreProcedures := coreProcedures' }, diags)
 
 public def inlineLocalVariablesPass : LaurelPass UnorderedCoreWithLaurelTypes UnorderedCoreWithLaurelTypes where
   name := "InlineLocalVariables"

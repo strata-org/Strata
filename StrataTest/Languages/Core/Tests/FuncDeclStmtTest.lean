@@ -24,7 +24,7 @@ procedure test()
 {
   var x : int := 1;
   function addX(y : int) : int
-  { y + x }
+  { int.add(y, x) }
   var z : int := addX(5);
 };
 
@@ -39,7 +39,7 @@ info: ok: program Core;
 procedure test ()
 {
   var x : int := 1;
-  function addX (y : int) : int { y + x }
+  function addX (y : int) : int { int.add(y, x) }
   var z : int := addX(5);
 };
 -/

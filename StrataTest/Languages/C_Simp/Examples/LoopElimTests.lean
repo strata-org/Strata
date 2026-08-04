@@ -45,33 +45,33 @@ info: program Core;
 
 procedure loopNoMeasure (n : int, out return : int)
 spec {
-  requires [pre]: n >= 0;
+  requires [pre]: int.ge(n, 0);
   ensures [post]: true;
   } {
   var i : int;
   i := 0;
-  if (i < n) {
+  if (int.lt(i, n)) {
     first_iter_asserts: {
-      assert [entry_invariant_0]: i <= n;
+      assert [entry_invariant_0]: int.le(i, n);
     }
     |arbitrary iter facts|: {
       |loop havoc|: {
         havoc i;
       }
       arbitrary_iter_assumes: {
-        assume [assume_guard]: i < n;
-        assume [assume_invariant_0]: i <= n;
+        assume [assume_guard]: int.lt(i, n);
+        assume [assume_invariant_0]: int.le(i, n);
       }
-      i := i + 1;
-      assert [arbitrary_iter_maintain_invariant_0]: i <= n;
+      i := int.add(i, 1);
+      assert [arbitrary_iter_maintain_invariant_0]: int.le(i, n);
     }
     |loop havoc|: {
       havoc i;
     }
-    assume [not_guard]: !(i < n);
-    assume [invariant_0]: i <= n;
+    assume [not_guard]: !(int.lt(i, n));
+    assume [invariant_0]: int.le(i, n);
   }
-  assert [i_le_n]: i <= n;
+  assert [i_le_n]: int.le(i, n);
   return := i;
 };
 -/
@@ -119,14 +119,14 @@ info: program Core;
 
 procedure nondetLoop (n : int, out return : int)
 spec {
-  requires [pre]: n >= 0;
+  requires [pre]: int.ge(n, 0);
   ensures [post]: true;
   } {
   var i : int := 0;
   loop: {
     first_iter_asserts: {
-      assert [entry_invariant_0]: i <= n;
-      assume [assume_entry_invariant_0]: i <= n;
+      assert [entry_invariant_0]: int.le(i, n);
+      assume [assume_entry_invariant_0]: int.le(i, n);
     }
     if * {
       |arbitrary iter facts|: {
@@ -134,15 +134,15 @@ spec {
           havoc i;
         }
         arbitrary_iter_assumes: {
-          assume [assume_invariant_0]: i <= n;
+          assume [assume_invariant_0]: int.le(i, n);
         }
-        i := i + 1;
-        assert [arbitrary_iter_maintain_invariant_0]: i <= n;
+        i := int.add(i, 1);
+        assert [arbitrary_iter_maintain_invariant_0]: int.le(i, n);
       }
       |loop havoc|: {
         havoc i;
       }
-      assume [invariant_0]: i <= n;
+      assume [invariant_0]: int.le(i, n);
     }
   }
   exit return;

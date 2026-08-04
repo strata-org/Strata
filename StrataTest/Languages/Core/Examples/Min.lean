@@ -18,10 +18,10 @@ program Core;
 
 procedure min(n : int, m : int, out k : int)
 spec {
-  ensures ((k <= n) && (k <= m));
+  ensures (int.le(k, n) && int.le(k, m));
 }
 {
-  k := if (n < m) then n else m;
+  k := if int.lt(n, m) then n else m;
   k := k;
 };
 #end
@@ -35,7 +35,7 @@ VCs:
 Label: min_ensures_0
 Property: assert
 Obligation:
-(if n@1 < m@1 then n@1 else m@1) <= n@1 && (if n@1 < m@1 then n@1 else m@1) <= m@1
+int.le(if int.lt(n@1, m@1) then n@1 else m@1, n@1) && int.le(if int.lt(n@1, m@1) then n@1 else m@1, m@1)
 
 ---
 info:

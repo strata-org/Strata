@@ -70,10 +70,11 @@ op divAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), righta
 op modAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " %= " value;
 op strConcatAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), rightassoc] target " ^= " value;
 
-// Multi-target assignment: assign var x: int, y, var z: int := call()
+// Multi-target assignment: assign var x: int, y, var z := call()
 // Uses the 'assign' keyword to avoid ambiguity with other comma-separated constructs.
+// The declared target's annotation is optional, like varDecl's.
 category AssignTarget;
-op assignTargetDecl (name: Ident, targetType: LaurelType): AssignTarget => "var " name ": " targetType;
+op assignTargetDecl (name: Ident, targetType: Option TypeAnnotation): AssignTarget => @[prec(0)] "var " name targetType;
 op assignTargetVar (name: Ident): AssignTarget => name;
 op assignTargetField (obj: Ident, field: Ident): AssignTarget => obj "#" field;
 

@@ -10,6 +10,7 @@ import Strata.Languages.Laurel.HeapParameterization
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel.LiftInstanceProcedures
 
+import Strata.Languages.Laurel.CoreDefinitionsForLaurel
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateDeterministicHoles
 /-!
@@ -37,6 +38,18 @@ private def externalProc (name : String) (inputs : List Parameter)
     preconditions := []
     decreases := none
     body := .External }
+
+/-- Prepend Laurel's built-in definitions, as `runLaurelPasses` does.
+
+    Operators are `StaticCall`s to the `$`-prefixed wrapper procedures declared in
+    `CoreDefinitionsForLaurel` (`$gt`, `$add`, …), so a hand-built program that
+    resolves without the prelude would see every operator as an undefined callee —
+    and `InferHoleTypes`, which reads the callee's parameter types to type a hole
+    operand, would get nothing. -/
+private def withBuiltins (program : Program) : Program :=
+  { program with
+    staticProcedures := coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
+    types := coreDefinitionsForLaurel.types ++ program.types }
 
 private def allProcedures (program : Program) : List Procedure :=
   program.staticProcedures ++ program.types.flatMap fun
@@ -264,7 +277,7 @@ private def specificationsHasFieldRead (proc : Procedure) : Bool :=
 private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
   match expr.val with
   | .StaticCall unbox [read] =>
-      unbox.text == "Box..intVal!" && match read.val with
+      unbox.text == "$Box..intVal!" && match read.val with
         | .StaticCall readField [heap, receiver, field] =>
             readField.text == "readField" &&
               (match heap.val with
@@ -606,8 +619,8 @@ expected type of proposition-valued positions.
 
 private def contractHoleProgram : Program :=
   let hole := md (.Hole true none)
-  let comparison := md (.PrimitiveOp .Gt [localExpr "x", hole] true)
-  let decreases := md (.PrimitiveOp .Add [localExpr "x", hole])
+  let comparison := md (.StaticCall (mkId Operation.Gt.procName) [localExpr "x", hole])
+  let decreases := md (.StaticCall (mkId Operation.Add.procName) [localExpr "x", hole])
   let invokeOn := md (.StaticCall (mkId "triggerTarget") [hole])
   let staticProc := {
     externalProc "contractHoles" [param "x" .TInt] with
@@ -670,13 +683,15 @@ private def staticContractPositionsMatch (program : Program) (proc : Procedure) 
   | [comparison, bareRequires], some decreases, some invokeOn,
       .Opaque [postcondition] none [], [bareAxiom, typedAxiom] =>
     let comparisonMatches := match comparison.condition.val with
-      | .PrimitiveOp .Gt [lhs, holeCall] true =>
-          isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
+      | .StaticCall callee [lhs, holeCall] =>
+          callee.text == Operation.Gt.procName &&
+            isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
       | _ => false
     let requiresMatches := generatedCallMatches program .TBool "x" bareRequires.condition
     let decreasesMatches := match decreases.val with
-      | .PrimitiveOp .Add [lhs, holeCall] _ =>
-          isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
+      | .StaticCall callee [lhs, holeCall] =>
+          callee.text == Operation.Add.procName &&
+            isLocalNamed "x" lhs && generatedCallMatches program .TInt "x" holeCall
       | _ => false
     let invokeOnMatches := match invokeOn.val with
       | .StaticCall callee [holeCall] =>
@@ -701,7 +716,7 @@ private def instanceContractPositionsMatch (program : Program) (proc : Procedure
         generatedCallMatches program .TBool "self" axiomExpr
   | _, _, _, _, _ => false
 private def checkContractHoles : IO Unit := do
-  let resolved := resolve contractHoleProgram
+  let resolved := resolve (withBuiltins contractHoleProgram)
   let (inferred, diagnostics, _) := inferHoleTypes resolved.model resolved.program
   let (eliminated, _) := eliminateDeterministicHoles inferred
   let staticProc := (findProcedure eliminated "contractHoles").get!

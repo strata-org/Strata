@@ -114,8 +114,9 @@ def deferObligation (E : Env) (ob : ProofObligation Expression) : Env :=
 def continuePastAssert (E : Env) : Bool :=
   E.collectAllAssertFailures
 
-def recordAssertFailure (E : Env) (label : String) (e : Expression.Expr) : Env :=
-  { E with assertFailures := (label, e) :: E.assertFailures }
+def recordAssertFailure (E : Env) (label : String) (e : Expression.Expr)
+    (md : Imperative.MetaData Expression) : Env :=
+  { E with assertFailures := (label, e, md) :: E.assertFailures }
 
 def ignoreAssume (E : Env) : Bool :=
   E.ignoreAssumes

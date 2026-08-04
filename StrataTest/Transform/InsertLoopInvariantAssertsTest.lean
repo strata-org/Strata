@@ -45,12 +45,12 @@ procedure countUp(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
-    decreases n - i
-    invariant 0 <= i
-    invariant i <= n
+  while (int.lt(i, n))
+    decreases int.sub(n, i)
+    invariant int.le(0, i)
+    invariant int.le(i, n)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -62,25 +62,25 @@ procedure countUp (n : int)
 {
   var i : int;
   i := 0;
-  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: 0 <= i;
-  assert [insertLoopInvAssert_entry_invariant_loop_0_1]: i <= n;
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: 0 <= i;
-  assume [insertLoopInvAssume_entry_invariant_loop_0_1]: i <= n;
-  while (i < n)
+  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
+  assert [insertLoopInvAssert_entry_invariant_loop_0_1]: int.le(i, n);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_1]: int.le(i, n);
+  while (int.lt(i, n))
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: 0 <= i;
-    assume [insertLoopInvAssume_invariant_loop_0_1]: i <= n;
+    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    assume [insertLoopInvAssume_invariant_loop_0_1]: int.le(i, n);
     var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == n - i;
-    assert [insertLoopInvAssert_measure_lb_loop_0]: !($__loop_measure_loop_0 < 0);
-    i := i + 1;
-    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: 0 <= i;
-    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1]: i <= n;
-    assert [insertLoopInvAssert_measure_decrease_loop_0]: n - i < $__loop_measure_loop_0;
+    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1]: int.le(i, n);
+    assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: 0 <= i;
-  assume [insertLoopInvAssume_exit_invariant_loop_0_1]: i <= n;
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(i < n);
+  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_exit_invariant_loop_0_1]: int.le(i, n);
+  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in
@@ -96,16 +96,16 @@ procedure nested(n : int, m : int)
   var i : int;
   var j : int;
   i := 0;
-  while (i < n)
-    invariant 0 <= i
+  while (int.lt(i, n))
+    invariant int.le(0, i)
   {
     j := 0;
-    while (j < m)
-      invariant 0 <= j
+    while (int.lt(j, m))
+      invariant int.le(0, j)
     {
-      j := (j + 1);
+      j := int.add(j, 1);
     }
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -118,27 +118,27 @@ procedure nested (n : int, m : int)
   var i : int;
   var j : int;
   i := 0;
-  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: 0 <= i;
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: 0 <= i;
-  while (i < n)
+  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
+  while (int.lt(i, n))
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: 0 <= i;
+    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
     j := 0;
-    assert [insertLoopInvAssert_entry_invariant_loop_1_0]: 0 <= j;
-    assume [insertLoopInvAssume_entry_invariant_loop_1_0]: 0 <= j;
-    while (j < m)
+    assert [insertLoopInvAssert_entry_invariant_loop_1_0]: int.le(0, j);
+    assume [insertLoopInvAssume_entry_invariant_loop_1_0]: int.le(0, j);
+    while (int.lt(j, m))
     {
-      assume [insertLoopInvAssume_invariant_loop_1_0]: 0 <= j;
-      j := j + 1;
-      assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_1_0]: 0 <= j;
+      assume [insertLoopInvAssume_invariant_loop_1_0]: int.le(0, j);
+      j := int.add(j, 1);
+      assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_1_0]: int.le(0, j);
     }
-    assume [insertLoopInvAssume_exit_invariant_loop_1_0]: 0 <= j;
-    assume [insertLoopInvAssume_exit_not_guard_loop_1]: !(j < m);
-    i := i + 1;
-    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: 0 <= i;
+    assume [insertLoopInvAssume_exit_invariant_loop_1_0]: int.le(0, j);
+    assume [insertLoopInvAssume_exit_not_guard_loop_1]: !(int.lt(j, m));
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: 0 <= i;
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(i < n);
+  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in
@@ -153,9 +153,9 @@ procedure bare()
 {
   var i : int;
   i := 0;
-  while (i < 10)
+  while (int.lt(i, 10))
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -182,10 +182,10 @@ procedure nondetMeasure(n : int)
   var i : int;
   i := 0;
   while *
-    decreases n - i
-    invariant 0 <= i
+    decreases int.sub(n, i)
+    invariant int.le(0, i)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -207,9 +207,9 @@ procedure nondetInv()
   var i : int;
   i := 0;
   while *
-    invariant 0 <= i
+    invariant int.le(0, i)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -221,15 +221,15 @@ procedure nondetInv ()
 {
   var i : int;
   i := 0;
-  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: 0 <= i;
-  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: 0 <= i;
+  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(0, i);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(0, i);
   while *
   {
-    assume [insertLoopInvAssume_invariant_loop_0_0]: 0 <= i;
-    i := i + 1;
-    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: 0 <= i;
+    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(0, i);
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(0, i);
   }
-  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: 0 <= i;
+  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(0, i);
 };
 -/
 #guard_msgs in
@@ -249,10 +249,10 @@ procedure measureOnly(n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
-    decreases n - i
+  while (int.lt(i, n))
+    decreases int.sub(n, i)
   {
-    i := (i + 1);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -264,15 +264,15 @@ procedure measureOnly (n : int)
 {
   var i : int;
   i := 0;
-  while (i < n)
+  while (int.lt(i, n))
   {
     var $__loop_measure_loop_0 : int;
-    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == n - i;
-    assert [insertLoopInvAssert_measure_lb_loop_0]: !($__loop_measure_loop_0 < 0);
-    i := i + 1;
-    assert [insertLoopInvAssert_measure_decrease_loop_0]: n - i < $__loop_measure_loop_0;
+    assume [insertLoopInvAssume_measure_loop_0]: $__loop_measure_loop_0 == int.sub(n, i);
+    assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_measure_decrease_loop_0]: int.lt(int.sub(n, i), $__loop_measure_loop_0);
   }
-  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(i < n);
+  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
 };
 -/
 #guard_msgs in

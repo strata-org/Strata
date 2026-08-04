@@ -18,15 +18,24 @@ open StrataTest.Util
 
 namespace Strata.Laurel
 
-/-- Resolve, eliminate holes, and print all procedures. -/
+/-- Resolve, eliminate holes, and print all procedures.
+
+    The built-in definitions are prepended before resolution (`withBuiltins`)
+    because operators are calls to their wrapper procedures: `InferHoleTypes`
+    types a hole operand of `1 + <?>` from `$add`'s declared parameter types, so
+    without the wrappers in scope the hole would be left `Unknown`. They are
+    filtered back out before printing, so the expected output below shows only
+    the procedures the snippet itself declares. -/
 private def parseElimAndPrint (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
-  let result := resolve laurelProgram
+  let builtinNames := (Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text))
+  let result := resolve (withBuiltins laurelProgram)
   let (laurelProgram, model) := (result.program, result.model)
   let (laurelProgram, _, _) := inferHoleTypes model laurelProgram
   let (laurelProgram, _) := eliminateDeterministicHoles laurelProgram
   for proc in laurelProgram.staticProcedures do
-    IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
+    unless builtinNames.contains proc.name.text do
+      IO.println (toString (Std.Format.pretty (Std.ToFormat.format proc)))
 
 /-! ## Basic: single hole in various positions -/
 

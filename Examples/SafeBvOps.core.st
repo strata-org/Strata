@@ -1,18 +1,18 @@
 program Core;
 
-procedure safe_bv_ops(x: bv32, y: bv32, out r: bv32)
+procedure safe_bv_ops(x: bv W32, y: bv W32, out r: bv W32)
 {
-    var a: bv32;
-    var b: bv32;
-    var c: bv32;
-    var d: bv32;
-    var e: bv32;
-    var f: bv32;
-    a := Bv.SafeAdd(x, y);
-    b := Bv.SafeSub(x, y);
-    c := Bv.SafeMul(x, y);
-    d := Bv.SafeNeg(x);
-    e := Bv.SafeSDiv(x, y);
-    f := Bv.SafeSMod(x, y);
+    var a: bv W32;
+    var b: bv W32;
+    var c: bv W32;
+    var d: bv W32;
+    var e: bv W32;
+    var f: bv W32;
+    a := bv32.safeAdd(x, y);
+    b := bv32.safeSub(x, y);
+    c := bv32.safeMul(x, y);
+    d := bv32.safeNeg(x);
+    e := bv32.safeSDiv(x, y);
+    f := bv32.safeSMod(x, y);
     r := a;
 };

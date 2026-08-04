@@ -382,12 +382,21 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident _ q`Core.bv1 #[] => pure <| .bitvec 1
-  | .ident _ q`Core.bv8 #[] => pure <| .bitvec 8
-  | .ident _ q`Core.bv16 #[] => pure <| .bitvec 16
-  | .ident _ q`Core.bv32 #[] => pure <| .bitvec 32
-  | .ident _ q`Core.bv64 #[] => pure <| .bitvec 64
-  | .ident _ q`Core.bv128 #[] => pure <| .bitvec 128
+  -- Bitvectors are `bv W`, where the width marker `W1 … W128` fixes the width.
+  | .ident _ q`Core.bv #[.ident _ q`Core.W1 #[]] => pure <| .bitvec 1
+  | .ident _ q`Core.bv #[.ident _ q`Core.W8 #[]] => pure <| .bitvec 8
+  | .ident _ q`Core.bv #[.ident _ q`Core.W16 #[]] => pure <| .bitvec 16
+  | .ident _ q`Core.bv #[.ident _ q`Core.W32 #[]] => pure <| .bitvec 32
+  | .ident _ q`Core.bv #[.ident _ q`Core.W64 #[]] => pure <| .bitvec 64
+  | .ident _ q`Core.bv #[.ident _ q`Core.W128 #[]] => pure <| .bitvec 128
+  -- A width marker is only meaningful as the argument to `bv`; a bare marker
+  -- (or `bv` applied to anything else) is malformed user input, so record the
+  -- error and continue with a fallback type rather than panicking.
+  | .ident _ q`Core.W1 _ | .ident _ q`Core.W8 _ | .ident _ q`Core.W16 _
+  | .ident _ q`Core.W32 _ | .ident _ q`Core.W64 _ | .ident _ q`Core.W128 _ =>
+      TransM.recordError s!"bitvector width marker used outside `bv`: {repr tp}" (.bitvec 8)
+  | .ident _ q`Core.bv argst =>
+      TransM.recordError s!"`bv` expects a width marker `W1 … W128`, got {repr argst}" (.bitvec 8)
   | .ident _ i argst =>
       let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
@@ -603,17 +612,6 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
     | _ => te
   | _ => te
 
-def dealiasTypeArg (p : Program) (a : Arg) : Arg :=
-  match a with
-  | .type te => .type (dealiasTypeExpr p te)
-  | _ => a
-
-def isArithTy : LMonoTy → Bool
-| .int => true
-| .real => true
-| .bitvec _ => true
-| _ => false
-
 def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expression.Expr :=
   match ty?, q with
   | _, q`Core.equiv    => return Core.boolEquivOp
@@ -622,182 +620,261 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.or       => return Core.boolOrOp
   | _, q`Core.not      => return Core.boolNotOp
 
-  | .some .int, q`Core.le       => return Core.intLeOp
-  | .some .int, q`Core.lt       => return Core.intLtOp
-  | .some .int, q`Core.ge       => return Core.intGeOp
-  | .some .int, q`Core.gt       => return Core.intGtOp
-  | .some .int, q`Core.add_expr => return Core.intAddOp
-  | .some .int, q`Core.sub_expr => return Core.intSubOp
-  | .some .int, q`Core.mul_expr => return Core.intMulOp
-  | .some .int, q`Core.div_expr => return Core.intDivOp
-  | .some .int, q`Core.mod_expr => return Core.intModOp
-  | .some .int, q`Core.safediv_expr => return Core.intSafeDivOp
-  | .some .int, q`Core.safemod_expr => return Core.intSafeModOp
-  | .some .int, q`Core.divt_expr => return Core.intDivTOp
-  | .some .int, q`Core.modt_expr => return Core.intModTOp
-  | .some .int, q`Core.safedivt_expr => return Core.intSafeDivTOp
-  | .some .int, q`Core.safemodt_expr => return Core.intSafeModTOp
-  | .some .int, q`Core.neg_expr => return Core.intNegOp
-
-  | .some .real, q`Core.le       => return Core.realLeOp
-  | .some .real, q`Core.lt       => return Core.realLtOp
-  | .some .real, q`Core.ge       => return Core.realGeOp
-  | .some .real, q`Core.gt       => return Core.realGtOp
-  | .some .real, q`Core.add_expr => return Core.realAddOp
-  | .some .real, q`Core.sub_expr => return Core.realSubOp
-  | .some .real, q`Core.mul_expr => return Core.realMulOp
-  | .some .real, q`Core.div_expr => return Core.realDivOp
-  | .some .real, q`Core.neg_expr => return Core.realNegOp
-
-  | .some .bv1, q`Core.le       => return Core.bv1ULeOp
-  | .some .bv1, q`Core.lt       => return Core.bv1ULtOp
-  | .some .bv1, q`Core.ge       => return Core.bv1UGeOp
-  | .some .bv1, q`Core.gt       => return Core.bv1UGtOp
-  | .some .bv1, q`Core.bvsle    => return Core.bv1SLeOp
-  | .some .bv1, q`Core.bvslt    => return Core.bv1SLtOp
-  | .some .bv1, q`Core.bvsge    => return Core.bv1SGeOp
-  | .some .bv1, q`Core.bvsgt    => return Core.bv1SGtOp
-  | .some .bv1, q`Core.neg_expr => return Core.bv1NegOp
-  | .some .bv1, q`Core.add_expr => return Core.bv1AddOp
-  | .some .bv1, q`Core.sub_expr => return Core.bv1SubOp
-  | .some .bv1, q`Core.mul_expr => return Core.bv1MulOp
-  | .some .bv1, q`Core.div_expr => return Core.bv1UDivOp
-  | .some .bv1, q`Core.mod_expr => return Core.bv1UModOp
-  | .some .bv1, q`Core.bvsdiv   => return Core.bv1SDivOp
-  | .some .bv1, q`Core.bvsmod   => return Core.bv1SModOp
-  | .some .bv1, q`Core.safeadd_expr  => return Core.bv1SafeAddOp
-  | .some .bv1, q`Core.safesub_expr  => return Core.bv1SafeSubOp
-  | .some .bv1, q`Core.safemul_expr  => return Core.bv1SafeMulOp
-  | .some .bv1, q`Core.safeneg_expr  => return Core.bv1SafeNegOp
-  | .some .bv1, q`Core.safesdiv_expr => return Core.bv1SafeSDivOp
-  | .some .bv1, q`Core.safesmod_expr => return Core.bv1SafeSModOp
-  | .some .bv1, q`Core.bvnot    => return Core.bv1NotOp
-  | .some .bv1, q`Core.bvand    => return Core.bv1AndOp
-  | .some .bv1, q`Core.bvor     => return Core.bv1OrOp
-  | .some .bv1, q`Core.bvxor    => return Core.bv1XorOp
-  | .some .bv1, q`Core.bvshl    => return Core.bv1ShlOp
-  | .some .bv1, q`Core.bvushr   => return Core.bv1UShrOp
-  | .some .bv1, q`Core.bvsshr   => return Core.bv1SShrOp
-
-  | .some .bv8, q`Core.le       => return Core.bv8ULeOp
-  | .some .bv8, q`Core.lt       => return Core.bv8ULtOp
-  | .some .bv8, q`Core.ge       => return Core.bv8UGeOp
-  | .some .bv8, q`Core.gt       => return Core.bv8UGtOp
-  | .some .bv8, q`Core.bvsle    => return Core.bv8SLeOp
-  | .some .bv8, q`Core.bvslt    => return Core.bv8SLtOp
-  | .some .bv8, q`Core.bvsge    => return Core.bv8SGeOp
-  | .some .bv8, q`Core.bvsgt    => return Core.bv8SGtOp
-  | .some .bv8, q`Core.neg_expr => return Core.bv8NegOp
-  | .some .bv8, q`Core.add_expr => return Core.bv8AddOp
-  | .some .bv8, q`Core.sub_expr => return Core.bv8SubOp
-  | .some .bv8, q`Core.mul_expr => return Core.bv8MulOp
-  | .some .bv8, q`Core.div_expr => return Core.bv8UDivOp
-  | .some .bv8, q`Core.mod_expr => return Core.bv8UModOp
-  | .some .bv8, q`Core.bvsdiv   => return Core.bv8SDivOp
-  | .some .bv8, q`Core.bvsmod   => return Core.bv8SModOp
-  | .some .bv8, q`Core.safeadd_expr  => return Core.bv8SafeAddOp
-  | .some .bv8, q`Core.safesub_expr  => return Core.bv8SafeSubOp
-  | .some .bv8, q`Core.safemul_expr  => return Core.bv8SafeMulOp
-  | .some .bv8, q`Core.safeneg_expr  => return Core.bv8SafeNegOp
-  | .some .bv8, q`Core.safesdiv_expr => return Core.bv8SafeSDivOp
-  | .some .bv8, q`Core.safesmod_expr => return Core.bv8SafeSModOp
-  | .some .bv8, q`Core.bvnot    => return Core.bv8NotOp
-  | .some .bv8, q`Core.bvand    => return Core.bv8AndOp
-  | .some .bv8, q`Core.bvor     => return Core.bv8OrOp
-  | .some .bv8, q`Core.bvxor    => return Core.bv8XorOp
-  | .some .bv8, q`Core.bvshl    => return Core.bv8ShlOp
-  | .some .bv8, q`Core.bvushr   => return Core.bv8UShrOp
-  | .some .bv8, q`Core.bvsshr   => return Core.bv8SShrOp
-
-  | .some .bv16, q`Core.le       => return Core.bv16ULeOp
-  | .some .bv16, q`Core.lt       => return Core.bv16ULtOp
-  | .some .bv16, q`Core.ge       => return Core.bv16UGeOp
-  | .some .bv16, q`Core.gt       => return Core.bv16UGtOp
-  | .some .bv16, q`Core.bvsle    => return Core.bv16SLeOp
-  | .some .bv16, q`Core.bvslt    => return Core.bv16SLtOp
-  | .some .bv16, q`Core.bvsge    => return Core.bv16SGeOp
-  | .some .bv16, q`Core.bvsgt    => return Core.bv16SGtOp
-  | .some .bv16, q`Core.neg_expr => return Core.bv16NegOp
-  | .some .bv16, q`Core.add_expr => return Core.bv16AddOp
-  | .some .bv16, q`Core.sub_expr => return Core.bv16SubOp
-  | .some .bv16, q`Core.mul_expr => return Core.bv16MulOp
-  | .some .bv16, q`Core.div_expr => return Core.bv16UDivOp
-  | .some .bv16, q`Core.mod_expr => return Core.bv16UModOp
-  | .some .bv16, q`Core.bvsdiv   => return Core.bv16SDivOp
-  | .some .bv16, q`Core.bvsmod   => return Core.bv16SModOp
-  | .some .bv16, q`Core.safeadd_expr  => return Core.bv16SafeAddOp
-  | .some .bv16, q`Core.safesub_expr  => return Core.bv16SafeSubOp
-  | .some .bv16, q`Core.safemul_expr  => return Core.bv16SafeMulOp
-  | .some .bv16, q`Core.safeneg_expr  => return Core.bv16SafeNegOp
-  | .some .bv16, q`Core.safesdiv_expr => return Core.bv16SafeSDivOp
-  | .some .bv16, q`Core.safesmod_expr => return Core.bv16SafeSModOp
-  | .some .bv16, q`Core.bvnot    => return Core.bv16NotOp
-  | .some .bv16, q`Core.bvand    => return Core.bv16AndOp
-  | .some .bv16, q`Core.bvor     => return Core.bv16OrOp
-  | .some .bv16, q`Core.bvxor    => return Core.bv16XorOp
-  | .some .bv16, q`Core.bvshl    => return Core.bv16ShlOp
-  | .some .bv16, q`Core.bvushr   => return Core.bv16UShrOp
-  | .some .bv16, q`Core.bvsshr   => return Core.bv16SShrOp
-
-  | .some .bv32, q`Core.le       => return Core.bv32ULeOp
-  | .some .bv32, q`Core.lt       => return Core.bv32ULtOp
-  | .some .bv32, q`Core.ge       => return Core.bv32UGeOp
-  | .some .bv32, q`Core.gt       => return Core.bv32UGtOp
-  | .some .bv32, q`Core.bvsle    => return Core.bv32SLeOp
-  | .some .bv32, q`Core.bvslt    => return Core.bv32SLtOp
-  | .some .bv32, q`Core.bvsge    => return Core.bv32SGeOp
-  | .some .bv32, q`Core.bvsgt    => return Core.bv32SGtOp
-  | .some .bv32, q`Core.neg_expr => return Core.bv32NegOp
-  | .some .bv32, q`Core.add_expr => return Core.bv32AddOp
-  | .some .bv32, q`Core.sub_expr => return Core.bv32SubOp
-  | .some .bv32, q`Core.mul_expr => return Core.bv32MulOp
-  | .some .bv32, q`Core.div_expr => return Core.bv32UDivOp
-  | .some .bv32, q`Core.mod_expr => return Core.bv32UModOp
-  | .some .bv32, q`Core.bvsdiv   => return Core.bv32SDivOp
-  | .some .bv32, q`Core.bvsmod   => return Core.bv32SModOp
-  | .some .bv32, q`Core.safeadd_expr  => return Core.bv32SafeAddOp
-  | .some .bv32, q`Core.safesub_expr  => return Core.bv32SafeSubOp
-  | .some .bv32, q`Core.safemul_expr  => return Core.bv32SafeMulOp
-  | .some .bv32, q`Core.safeneg_expr  => return Core.bv32SafeNegOp
-  | .some .bv32, q`Core.safesdiv_expr => return Core.bv32SafeSDivOp
-  | .some .bv32, q`Core.safesmod_expr => return Core.bv32SafeSModOp
-  | .some .bv32, q`Core.bvnot    => return Core.bv32NotOp
-  | .some .bv32, q`Core.bvand    => return Core.bv32AndOp
-  | .some .bv32, q`Core.bvor     => return Core.bv32OrOp
-  | .some .bv32, q`Core.bvxor    => return Core.bv32XorOp
-  | .some .bv32, q`Core.bvshl    => return Core.bv32ShlOp
-  | .some .bv32, q`Core.bvushr   => return Core.bv32UShrOp
-  | .some .bv32, q`Core.bvsshr   => return Core.bv32SShrOp
-
-  | .some .bv64, q`Core.le       => return Core.bv64ULeOp
-  | .some .bv64, q`Core.lt       => return Core.bv64ULtOp
-  | .some .bv64, q`Core.ge       => return Core.bv64UGeOp
-  | .some .bv64, q`Core.gt       => return Core.bv64UGtOp
-  | .some .bv64, q`Core.bvsle    => return Core.bv64SLeOp
-  | .some .bv64, q`Core.bvslt    => return Core.bv64SLtOp
-  | .some .bv64, q`Core.bvsge    => return Core.bv64SGeOp
-  | .some .bv64, q`Core.bvsgt    => return Core.bv64SGtOp
-  | .some .bv64, q`Core.neg_expr => return Core.bv64NegOp
-  | .some .bv64, q`Core.add_expr => return Core.bv64AddOp
-  | .some .bv64, q`Core.sub_expr => return Core.bv64SubOp
-  | .some .bv64, q`Core.mul_expr => return Core.bv64MulOp
-  | .some .bv64, q`Core.div_expr => return Core.bv64UDivOp
-  | .some .bv64, q`Core.mod_expr => return Core.bv64UModOp
-  | .some .bv64, q`Core.bvsdiv   => return Core.bv64SDivOp
-  | .some .bv64, q`Core.bvsmod   => return Core.bv64SModOp
-  | .some .bv64, q`Core.safeadd_expr  => return Core.bv64SafeAddOp
-  | .some .bv64, q`Core.safesub_expr  => return Core.bv64SafeSubOp
-  | .some .bv64, q`Core.safemul_expr  => return Core.bv64SafeMulOp
-  | .some .bv64, q`Core.safeneg_expr  => return Core.bv64SafeNegOp
-  | .some .bv64, q`Core.safesdiv_expr => return Core.bv64SafeSDivOp
-  | .some .bv64, q`Core.safesmod_expr => return Core.bv64SafeSModOp
-  | .some .bv64, q`Core.bvnot    => return Core.bv64NotOp
-  | .some .bv64, q`Core.bvand    => return Core.bv64AndOp
-  | .some .bv64, q`Core.bvor     => return Core.bv64OrOp
-  | .some .bv64, q`Core.bvxor    => return Core.bv64XorOp
-  | .some .bv64, q`Core.bvshl    => return Core.bv64ShlOp
-  | .some .bv64, q`Core.bvushr   => return Core.bv64UShrOp
-  | .some .bv64, q`Core.bvsshr   => return Core.bv64SShrOp
+  -- int
+  | _, q`Core.int_neg => return Core.intNegOp
+  | _, q`Core.int_add => return Core.intAddOp
+  | _, q`Core.int_sub => return Core.intSubOp
+  | _, q`Core.int_mul => return Core.intMulOp
+  | _, q`Core.int_div => return Core.intDivOp
+  | _, q`Core.int_mod => return Core.intModOp
+  | _, q`Core.int_safeDiv => return Core.intSafeDivOp
+  | _, q`Core.int_safeMod => return Core.intSafeModOp
+  | _, q`Core.int_divT => return Core.intDivTOp
+  | _, q`Core.int_modT => return Core.intModTOp
+  | _, q`Core.int_safeDivT => return Core.intSafeDivTOp
+  | _, q`Core.int_safeModT => return Core.intSafeModTOp
+  | _, q`Core.int_le => return Core.intLeOp
+  | _, q`Core.int_lt => return Core.intLtOp
+  | _, q`Core.int_ge => return Core.intGeOp
+  | _, q`Core.int_gt => return Core.intGtOp
+  -- real
+  | _, q`Core.real_neg => return Core.realNegOp
+  | _, q`Core.real_add => return Core.realAddOp
+  | _, q`Core.real_sub => return Core.realSubOp
+  | _, q`Core.real_mul => return Core.realMulOp
+  | _, q`Core.real_div => return Core.realDivOp
+  | _, q`Core.real_le => return Core.realLeOp
+  | _, q`Core.real_lt => return Core.realLtOp
+  | _, q`Core.real_ge => return Core.realGeOp
+  | _, q`Core.real_gt => return Core.realGtOp
+  -- bv1
+  | _, q`Core.bv1_neg => return Core.bv1NegOp
+  | _, q`Core.bv1_add => return Core.bv1AddOp
+  | _, q`Core.bv1_sub => return Core.bv1SubOp
+  | _, q`Core.bv1_mul => return Core.bv1MulOp
+  | _, q`Core.bv1_uDiv => return Core.bv1UDivOp
+  | _, q`Core.bv1_uMod => return Core.bv1UModOp
+  | _, q`Core.bv1_sDiv => return Core.bv1SDivOp
+  | _, q`Core.bv1_sMod => return Core.bv1SModOp
+  | _, q`Core.bv1_not => return Core.bv1NotOp
+  | _, q`Core.bv1_and => return Core.bv1AndOp
+  | _, q`Core.bv1_or => return Core.bv1OrOp
+  | _, q`Core.bv1_xor => return Core.bv1XorOp
+  | _, q`Core.bv1_shl => return Core.bv1ShlOp
+  | _, q`Core.bv1_uShr => return Core.bv1UShrOp
+  | _, q`Core.bv1_sShr => return Core.bv1SShrOp
+  | _, q`Core.bv1_uLe => return Core.bv1ULeOp
+  | _, q`Core.bv1_uLt => return Core.bv1ULtOp
+  | _, q`Core.bv1_uGe => return Core.bv1UGeOp
+  | _, q`Core.bv1_uGt => return Core.bv1UGtOp
+  | _, q`Core.bv1_sLe => return Core.bv1SLeOp
+  | _, q`Core.bv1_sLt => return Core.bv1SLtOp
+  | _, q`Core.bv1_sGe => return Core.bv1SGeOp
+  | _, q`Core.bv1_sGt => return Core.bv1SGtOp
+  | _, q`Core.bv1_safeAdd => return Core.bv1SafeAddOp
+  | _, q`Core.bv1_safeSub => return Core.bv1SafeSubOp
+  | _, q`Core.bv1_safeMul => return Core.bv1SafeMulOp
+  | _, q`Core.bv1_safeUAdd => return Core.bv1SafeUAddOp
+  | _, q`Core.bv1_safeUSub => return Core.bv1SafeUSubOp
+  | _, q`Core.bv1_safeUMul => return Core.bv1SafeUMulOp
+  | _, q`Core.bv1_safeNeg => return Core.bv1SafeNegOp
+  | _, q`Core.bv1_safeUNeg => return Core.bv1SafeUNegOp
+  | _, q`Core.bv1_safeSDiv => return Core.bv1SafeSDivOp
+  | _, q`Core.bv1_safeSMod => return Core.bv1SafeSModOp
+  | _, q`Core.bv1_sNegOverflow => return Core.bv1SNegOverflowOp
+  | _, q`Core.bv1_uNegOverflow => return Core.bv1UNegOverflowOp
+  | _, q`Core.bv1_sAddOverflow => return Core.bv1SAddOverflowOp
+  | _, q`Core.bv1_sSubOverflow => return Core.bv1SSubOverflowOp
+  | _, q`Core.bv1_sMulOverflow => return Core.bv1SMulOverflowOp
+  | _, q`Core.bv1_sDivOverflow => return Core.bv1SDivOverflowOp
+  | _, q`Core.bv1_uAddOverflow => return Core.bv1UAddOverflowOp
+  | _, q`Core.bv1_uSubOverflow => return Core.bv1USubOverflowOp
+  | _, q`Core.bv1_uMulOverflow => return Core.bv1UMulOverflowOp
+  -- bv8
+  | _, q`Core.bv8_neg => return Core.bv8NegOp
+  | _, q`Core.bv8_add => return Core.bv8AddOp
+  | _, q`Core.bv8_sub => return Core.bv8SubOp
+  | _, q`Core.bv8_mul => return Core.bv8MulOp
+  | _, q`Core.bv8_uDiv => return Core.bv8UDivOp
+  | _, q`Core.bv8_uMod => return Core.bv8UModOp
+  | _, q`Core.bv8_sDiv => return Core.bv8SDivOp
+  | _, q`Core.bv8_sMod => return Core.bv8SModOp
+  | _, q`Core.bv8_not => return Core.bv8NotOp
+  | _, q`Core.bv8_and => return Core.bv8AndOp
+  | _, q`Core.bv8_or => return Core.bv8OrOp
+  | _, q`Core.bv8_xor => return Core.bv8XorOp
+  | _, q`Core.bv8_shl => return Core.bv8ShlOp
+  | _, q`Core.bv8_uShr => return Core.bv8UShrOp
+  | _, q`Core.bv8_sShr => return Core.bv8SShrOp
+  | _, q`Core.bv8_uLe => return Core.bv8ULeOp
+  | _, q`Core.bv8_uLt => return Core.bv8ULtOp
+  | _, q`Core.bv8_uGe => return Core.bv8UGeOp
+  | _, q`Core.bv8_uGt => return Core.bv8UGtOp
+  | _, q`Core.bv8_sLe => return Core.bv8SLeOp
+  | _, q`Core.bv8_sLt => return Core.bv8SLtOp
+  | _, q`Core.bv8_sGe => return Core.bv8SGeOp
+  | _, q`Core.bv8_sGt => return Core.bv8SGtOp
+  | _, q`Core.bv8_safeAdd => return Core.bv8SafeAddOp
+  | _, q`Core.bv8_safeSub => return Core.bv8SafeSubOp
+  | _, q`Core.bv8_safeMul => return Core.bv8SafeMulOp
+  | _, q`Core.bv8_safeUAdd => return Core.bv8SafeUAddOp
+  | _, q`Core.bv8_safeUSub => return Core.bv8SafeUSubOp
+  | _, q`Core.bv8_safeUMul => return Core.bv8SafeUMulOp
+  | _, q`Core.bv8_safeNeg => return Core.bv8SafeNegOp
+  | _, q`Core.bv8_safeUNeg => return Core.bv8SafeUNegOp
+  | _, q`Core.bv8_safeSDiv => return Core.bv8SafeSDivOp
+  | _, q`Core.bv8_safeSMod => return Core.bv8SafeSModOp
+  | _, q`Core.bv8_sNegOverflow => return Core.bv8SNegOverflowOp
+  | _, q`Core.bv8_uNegOverflow => return Core.bv8UNegOverflowOp
+  | _, q`Core.bv8_sAddOverflow => return Core.bv8SAddOverflowOp
+  | _, q`Core.bv8_sSubOverflow => return Core.bv8SSubOverflowOp
+  | _, q`Core.bv8_sMulOverflow => return Core.bv8SMulOverflowOp
+  | _, q`Core.bv8_sDivOverflow => return Core.bv8SDivOverflowOp
+  | _, q`Core.bv8_uAddOverflow => return Core.bv8UAddOverflowOp
+  | _, q`Core.bv8_uSubOverflow => return Core.bv8USubOverflowOp
+  | _, q`Core.bv8_uMulOverflow => return Core.bv8UMulOverflowOp
+  -- bv16
+  | _, q`Core.bv16_neg => return Core.bv16NegOp
+  | _, q`Core.bv16_add => return Core.bv16AddOp
+  | _, q`Core.bv16_sub => return Core.bv16SubOp
+  | _, q`Core.bv16_mul => return Core.bv16MulOp
+  | _, q`Core.bv16_uDiv => return Core.bv16UDivOp
+  | _, q`Core.bv16_uMod => return Core.bv16UModOp
+  | _, q`Core.bv16_sDiv => return Core.bv16SDivOp
+  | _, q`Core.bv16_sMod => return Core.bv16SModOp
+  | _, q`Core.bv16_not => return Core.bv16NotOp
+  | _, q`Core.bv16_and => return Core.bv16AndOp
+  | _, q`Core.bv16_or => return Core.bv16OrOp
+  | _, q`Core.bv16_xor => return Core.bv16XorOp
+  | _, q`Core.bv16_shl => return Core.bv16ShlOp
+  | _, q`Core.bv16_uShr => return Core.bv16UShrOp
+  | _, q`Core.bv16_sShr => return Core.bv16SShrOp
+  | _, q`Core.bv16_uLe => return Core.bv16ULeOp
+  | _, q`Core.bv16_uLt => return Core.bv16ULtOp
+  | _, q`Core.bv16_uGe => return Core.bv16UGeOp
+  | _, q`Core.bv16_uGt => return Core.bv16UGtOp
+  | _, q`Core.bv16_sLe => return Core.bv16SLeOp
+  | _, q`Core.bv16_sLt => return Core.bv16SLtOp
+  | _, q`Core.bv16_sGe => return Core.bv16SGeOp
+  | _, q`Core.bv16_sGt => return Core.bv16SGtOp
+  | _, q`Core.bv16_safeAdd => return Core.bv16SafeAddOp
+  | _, q`Core.bv16_safeSub => return Core.bv16SafeSubOp
+  | _, q`Core.bv16_safeMul => return Core.bv16SafeMulOp
+  | _, q`Core.bv16_safeUAdd => return Core.bv16SafeUAddOp
+  | _, q`Core.bv16_safeUSub => return Core.bv16SafeUSubOp
+  | _, q`Core.bv16_safeUMul => return Core.bv16SafeUMulOp
+  | _, q`Core.bv16_safeNeg => return Core.bv16SafeNegOp
+  | _, q`Core.bv16_safeUNeg => return Core.bv16SafeUNegOp
+  | _, q`Core.bv16_safeSDiv => return Core.bv16SafeSDivOp
+  | _, q`Core.bv16_safeSMod => return Core.bv16SafeSModOp
+  | _, q`Core.bv16_sNegOverflow => return Core.bv16SNegOverflowOp
+  | _, q`Core.bv16_uNegOverflow => return Core.bv16UNegOverflowOp
+  | _, q`Core.bv16_sAddOverflow => return Core.bv16SAddOverflowOp
+  | _, q`Core.bv16_sSubOverflow => return Core.bv16SSubOverflowOp
+  | _, q`Core.bv16_sMulOverflow => return Core.bv16SMulOverflowOp
+  | _, q`Core.bv16_sDivOverflow => return Core.bv16SDivOverflowOp
+  | _, q`Core.bv16_uAddOverflow => return Core.bv16UAddOverflowOp
+  | _, q`Core.bv16_uSubOverflow => return Core.bv16USubOverflowOp
+  | _, q`Core.bv16_uMulOverflow => return Core.bv16UMulOverflowOp
+  -- bv32
+  | _, q`Core.bv32_neg => return Core.bv32NegOp
+  | _, q`Core.bv32_add => return Core.bv32AddOp
+  | _, q`Core.bv32_sub => return Core.bv32SubOp
+  | _, q`Core.bv32_mul => return Core.bv32MulOp
+  | _, q`Core.bv32_uDiv => return Core.bv32UDivOp
+  | _, q`Core.bv32_uMod => return Core.bv32UModOp
+  | _, q`Core.bv32_sDiv => return Core.bv32SDivOp
+  | _, q`Core.bv32_sMod => return Core.bv32SModOp
+  | _, q`Core.bv32_not => return Core.bv32NotOp
+  | _, q`Core.bv32_and => return Core.bv32AndOp
+  | _, q`Core.bv32_or => return Core.bv32OrOp
+  | _, q`Core.bv32_xor => return Core.bv32XorOp
+  | _, q`Core.bv32_shl => return Core.bv32ShlOp
+  | _, q`Core.bv32_uShr => return Core.bv32UShrOp
+  | _, q`Core.bv32_sShr => return Core.bv32SShrOp
+  | _, q`Core.bv32_uLe => return Core.bv32ULeOp
+  | _, q`Core.bv32_uLt => return Core.bv32ULtOp
+  | _, q`Core.bv32_uGe => return Core.bv32UGeOp
+  | _, q`Core.bv32_uGt => return Core.bv32UGtOp
+  | _, q`Core.bv32_sLe => return Core.bv32SLeOp
+  | _, q`Core.bv32_sLt => return Core.bv32SLtOp
+  | _, q`Core.bv32_sGe => return Core.bv32SGeOp
+  | _, q`Core.bv32_sGt => return Core.bv32SGtOp
+  | _, q`Core.bv32_safeAdd => return Core.bv32SafeAddOp
+  | _, q`Core.bv32_safeSub => return Core.bv32SafeSubOp
+  | _, q`Core.bv32_safeMul => return Core.bv32SafeMulOp
+  | _, q`Core.bv32_safeUAdd => return Core.bv32SafeUAddOp
+  | _, q`Core.bv32_safeUSub => return Core.bv32SafeUSubOp
+  | _, q`Core.bv32_safeUMul => return Core.bv32SafeUMulOp
+  | _, q`Core.bv32_safeNeg => return Core.bv32SafeNegOp
+  | _, q`Core.bv32_safeUNeg => return Core.bv32SafeUNegOp
+  | _, q`Core.bv32_safeSDiv => return Core.bv32SafeSDivOp
+  | _, q`Core.bv32_safeSMod => return Core.bv32SafeSModOp
+  | _, q`Core.bv32_sNegOverflow => return Core.bv32SNegOverflowOp
+  | _, q`Core.bv32_uNegOverflow => return Core.bv32UNegOverflowOp
+  | _, q`Core.bv32_sAddOverflow => return Core.bv32SAddOverflowOp
+  | _, q`Core.bv32_sSubOverflow => return Core.bv32SSubOverflowOp
+  | _, q`Core.bv32_sMulOverflow => return Core.bv32SMulOverflowOp
+  | _, q`Core.bv32_sDivOverflow => return Core.bv32SDivOverflowOp
+  | _, q`Core.bv32_uAddOverflow => return Core.bv32UAddOverflowOp
+  | _, q`Core.bv32_uSubOverflow => return Core.bv32USubOverflowOp
+  | _, q`Core.bv32_uMulOverflow => return Core.bv32UMulOverflowOp
+  -- bv64
+  | _, q`Core.bv64_neg => return Core.bv64NegOp
+  | _, q`Core.bv64_add => return Core.bv64AddOp
+  | _, q`Core.bv64_sub => return Core.bv64SubOp
+  | _, q`Core.bv64_mul => return Core.bv64MulOp
+  | _, q`Core.bv64_uDiv => return Core.bv64UDivOp
+  | _, q`Core.bv64_uMod => return Core.bv64UModOp
+  | _, q`Core.bv64_sDiv => return Core.bv64SDivOp
+  | _, q`Core.bv64_sMod => return Core.bv64SModOp
+  | _, q`Core.bv64_not => return Core.bv64NotOp
+  | _, q`Core.bv64_and => return Core.bv64AndOp
+  | _, q`Core.bv64_or => return Core.bv64OrOp
+  | _, q`Core.bv64_xor => return Core.bv64XorOp
+  | _, q`Core.bv64_shl => return Core.bv64ShlOp
+  | _, q`Core.bv64_uShr => return Core.bv64UShrOp
+  | _, q`Core.bv64_sShr => return Core.bv64SShrOp
+  | _, q`Core.bv64_uLe => return Core.bv64ULeOp
+  | _, q`Core.bv64_uLt => return Core.bv64ULtOp
+  | _, q`Core.bv64_uGe => return Core.bv64UGeOp
+  | _, q`Core.bv64_uGt => return Core.bv64UGtOp
+  | _, q`Core.bv64_sLe => return Core.bv64SLeOp
+  | _, q`Core.bv64_sLt => return Core.bv64SLtOp
+  | _, q`Core.bv64_sGe => return Core.bv64SGeOp
+  | _, q`Core.bv64_sGt => return Core.bv64SGtOp
+  | _, q`Core.bv64_safeAdd => return Core.bv64SafeAddOp
+  | _, q`Core.bv64_safeSub => return Core.bv64SafeSubOp
+  | _, q`Core.bv64_safeMul => return Core.bv64SafeMulOp
+  | _, q`Core.bv64_safeUAdd => return Core.bv64SafeUAddOp
+  | _, q`Core.bv64_safeUSub => return Core.bv64SafeUSubOp
+  | _, q`Core.bv64_safeUMul => return Core.bv64SafeUMulOp
+  | _, q`Core.bv64_safeNeg => return Core.bv64SafeNegOp
+  | _, q`Core.bv64_safeUNeg => return Core.bv64SafeUNegOp
+  | _, q`Core.bv64_safeSDiv => return Core.bv64SafeSDivOp
+  | _, q`Core.bv64_safeSMod => return Core.bv64SafeSModOp
+  | _, q`Core.bv64_sNegOverflow => return Core.bv64SNegOverflowOp
+  | _, q`Core.bv64_uNegOverflow => return Core.bv64UNegOverflowOp
+  | _, q`Core.bv64_sAddOverflow => return Core.bv64SAddOverflowOp
+  | _, q`Core.bv64_sSubOverflow => return Core.bv64SSubOverflowOp
+  | _, q`Core.bv64_sMulOverflow => return Core.bv64SMulOverflowOp
+  | _, q`Core.bv64_sDivOverflow => return Core.bv64SDivOverflowOp
+  | _, q`Core.bv64_uAddOverflow => return Core.bv64UAddOverflowOp
+  | _, q`Core.bv64_uSubOverflow => return Core.bv64USubOverflowOp
+  | _, q`Core.bv64_uMulOverflow => return Core.bv64UMulOverflowOp
+  -- bitvector -> int casts
+  | _, q`Core.bv1_toUInt => return .op () ⟨"Bv1.ToUInt", ()⟩ (.some (.arrow (.bitvec 1) .int))
+  | _, q`Core.bv1_toInt  => return .op () ⟨"Bv1.ToInt",  ()⟩ (.some (.arrow (.bitvec 1) .int))
+  | _, q`Core.bv8_toUInt => return .op () ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))
+  | _, q`Core.bv8_toInt  => return .op () ⟨"Bv8.ToInt",  ()⟩ (.some (.arrow (.bitvec 8) .int))
+  | _, q`Core.bv16_toUInt => return .op () ⟨"Bv16.ToUInt", ()⟩ (.some (.arrow (.bitvec 16) .int))
+  | _, q`Core.bv16_toInt  => return .op () ⟨"Bv16.ToInt",  ()⟩ (.some (.arrow (.bitvec 16) .int))
+  | _, q`Core.bv32_toUInt => return .op () ⟨"Bv32.ToUInt", ()⟩ (.some (.arrow (.bitvec 32) .int))
+  | _, q`Core.bv32_toInt  => return .op () ⟨"Bv32.ToInt",  ()⟩ (.some (.arrow (.bitvec 32) .int))
+  | _, q`Core.bv64_toUInt => return .op () ⟨"Bv64.ToUInt", ()⟩ (.some (.arrow (.bitvec 64) .int))
+  | _, q`Core.bv64_toInt  => return .op () ⟨"Bv64.ToInt",  ()⟩ (.some (.arrow (.bitvec 64) .int))
+  | _, q`Core.bv128_toUInt => return .op () ⟨"Bv128.ToUInt", ()⟩ (.some (.arrow (.bitvec 128) .int))
+  | _, q`Core.bv128_toInt  => return .op () ⟨"Bv128.ToInt",  ()⟩ (.some (.arrow (.bitvec 128) .int))
 
   | _, q`Core.bvconcat8 => return Core.bv8ConcatOp
   | _, q`Core.bvconcat16 => return Core.bv16ConcatOp
@@ -812,54 +889,8 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.bvextract_15_0_64 => return Core.bv64Extract_15_0_Op
   | _, q`Core.bvextract_31_0_64 => return Core.bv64Extract_31_0_Op
 
-  | .some .bv1, q`Core.bv_neg_overflow   => return Core.bv1SNegOverflowOp
-  | .some .bv1, q`Core.bv_uneg_overflow  => return Core.bv1UNegOverflowOp
-  | .some .bv1, q`Core.bv_sadd_overflow  => return Core.bv1SAddOverflowOp
-  | .some .bv1, q`Core.bv_ssub_overflow  => return Core.bv1SSubOverflowOp
-  | .some .bv1, q`Core.bv_smul_overflow  => return Core.bv1SMulOverflowOp
-  | .some .bv1, q`Core.bv_sdiv_overflow  => return Core.bv1SDivOverflowOp
-  | .some .bv1, q`Core.bv_uadd_overflow  => return Core.bv1UAddOverflowOp
-  | .some .bv1, q`Core.bv_usub_overflow  => return Core.bv1USubOverflowOp
-  | .some .bv1, q`Core.bv_umul_overflow  => return Core.bv1UMulOverflowOp
-  | .some .bv8, q`Core.bv_neg_overflow   => return Core.bv8SNegOverflowOp
-  | .some .bv8, q`Core.bv_uneg_overflow  => return Core.bv8UNegOverflowOp
-  | .some .bv8, q`Core.bv_sadd_overflow  => return Core.bv8SAddOverflowOp
-  | .some .bv8, q`Core.bv_ssub_overflow  => return Core.bv8SSubOverflowOp
-  | .some .bv8, q`Core.bv_smul_overflow  => return Core.bv8SMulOverflowOp
-  | .some .bv8, q`Core.bv_sdiv_overflow  => return Core.bv8SDivOverflowOp
-  | .some .bv8, q`Core.bv_uadd_overflow  => return Core.bv8UAddOverflowOp
-  | .some .bv8, q`Core.bv_usub_overflow  => return Core.bv8USubOverflowOp
-  | .some .bv8, q`Core.bv_umul_overflow  => return Core.bv8UMulOverflowOp
-  | .some .bv16, q`Core.bv_neg_overflow  => return Core.bv16SNegOverflowOp
-  | .some .bv16, q`Core.bv_uneg_overflow => return Core.bv16UNegOverflowOp
-  | .some .bv16, q`Core.bv_sadd_overflow => return Core.bv16SAddOverflowOp
-  | .some .bv16, q`Core.bv_ssub_overflow => return Core.bv16SSubOverflowOp
-  | .some .bv16, q`Core.bv_smul_overflow => return Core.bv16SMulOverflowOp
-  | .some .bv16, q`Core.bv_sdiv_overflow => return Core.bv16SDivOverflowOp
-  | .some .bv16, q`Core.bv_uadd_overflow => return Core.bv16UAddOverflowOp
-  | .some .bv16, q`Core.bv_usub_overflow => return Core.bv16USubOverflowOp
-  | .some .bv16, q`Core.bv_umul_overflow => return Core.bv16UMulOverflowOp
-  | .some .bv32, q`Core.bv_neg_overflow  => return Core.bv32SNegOverflowOp
-  | .some .bv32, q`Core.bv_uneg_overflow => return Core.bv32UNegOverflowOp
-  | .some .bv32, q`Core.bv_sadd_overflow => return Core.bv32SAddOverflowOp
-  | .some .bv32, q`Core.bv_ssub_overflow => return Core.bv32SSubOverflowOp
-  | .some .bv32, q`Core.bv_smul_overflow => return Core.bv32SMulOverflowOp
-  | .some .bv32, q`Core.bv_sdiv_overflow => return Core.bv32SDivOverflowOp
-  | .some .bv32, q`Core.bv_uadd_overflow => return Core.bv32UAddOverflowOp
-  | .some .bv32, q`Core.bv_usub_overflow => return Core.bv32USubOverflowOp
-  | .some .bv32, q`Core.bv_umul_overflow => return Core.bv32UMulOverflowOp
-  | .some .bv64, q`Core.bv_neg_overflow  => return Core.bv64SNegOverflowOp
-  | .some .bv64, q`Core.bv_uneg_overflow => return Core.bv64UNegOverflowOp
-  | .some .bv64, q`Core.bv_sadd_overflow => return Core.bv64SAddOverflowOp
-  | .some .bv64, q`Core.bv_ssub_overflow => return Core.bv64SSubOverflowOp
-  | .some .bv64, q`Core.bv_smul_overflow => return Core.bv64SMulOverflowOp
-  | .some .bv64, q`Core.bv_sdiv_overflow => return Core.bv64SDivOverflowOp
-  | .some .bv64, q`Core.bv_uadd_overflow => return Core.bv64UAddOverflowOp
-  | .some .bv64, q`Core.bv_usub_overflow => return Core.bv64USubOverflowOp
-  | .some .bv64, q`Core.bv_umul_overflow => return Core.bv64UMulOverflowOp
 
-  | .some (.bitvec n), q`Core.as_uint => return .op () ⟨s!"Bv{n}.ToUInt", ()⟩ (.some (.arrow (.bitvec n) .int))
-  | .some (.bitvec n), q`Core.as_sint => return .op () ⟨s!"Bv{n}.ToInt",  ()⟩ (.some (.arrow (.bitvec n) .int))
+
 
   | _, q`Core.str_len      => return Core.strLengthOp
   | _, q`Core.str_concat   => return Core.strConcatOp
@@ -886,6 +917,20 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
   | _, q`Core.re_comp      => return Core.reCompOp
   | _, q`Core.re_none      => return Core.reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
+
+/-- Extract the operator name from a grouped-operator wrapper's first argument.
+
+Type-specific operators (`int.add`, `bv8.uLt`, …) are grouped in the grammar: a
+handful of wrapper `fn`s in `Expr` (`binaryArithBasic`, `unaryArith`, …) each take
+a leading category argument (`BinaryArithBasic`, `UnaryArith`, …) whose nullary op
+*is* the operator name (`Core.int_add`, `Core.bv8_uLt`, …). This reads that name so
+`translateFn` can map it to the monomorphic Core op. -/
+private def translateOpGroupName (a : Arg) : TransM QualifiedIdent := do
+  let .op op := a
+    | TransM.error s!"translateOpGroupName expected op {repr a}"
+  match op.args with
+  | #[] => return op.name
+  | _ => TransM.error s!"translateOpGroupName: expected nullary op, got {repr op.name}"
 
 mutual
 
@@ -1028,6 +1073,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
     return .bitvecConst () 64 n
+  | .fn _ q`Core.bv128Lit, [xa] =>
+    let n ← translateBitVec 128 xa
+    return .bitvecConst () 128 n
   | .fn _ q`Core.strLit, [xa] =>
     let x ← translateStr xa
     return .strConst () x
@@ -1052,23 +1100,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     return (.app () Core.boolNotOp (.eq () x y))
-  | .fn _ q`Core.bvnot, [tpa, xa] =>
-    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let x ← translateExpr p bindings xa
-    let fn : LExpr Core.CoreLParams.mono ←
-      translateFn (.some tp) q`Core.bvnot
-    return (.app () fn x)
-  -- Bv → Int casts
-  | .fn _ q`Core.as_uint, [tpa, xa] =>
-    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let x ← translateExpr p bindings xa
-    let fn ← translateFn (.some tp) q`Core.as_uint
-    return .app () fn x
-  | .fn _ q`Core.as_sint, [tpa, xa] =>
-    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let x ← translateExpr p bindings xa
-    let fn ← translateFn (.some tp) q`Core.as_sint
-    return .app () fn x
   -- Int → Bv casts
   | .fn _ q`Core.as_bv1,   [xa] => return .app () (.op () ⟨"Int.ToBv1",   ()⟩ (.some (.arrow .int (.bitvec 1))))   (← translateExpr p bindings xa)
   | .fn _ q`Core.as_bv8,   [xa] => return .app () (.op () ⟨"Int.ToBv8",   ()⟩ (.some (.arrow .int (.bitvec 8))))   (← translateExpr p bindings xa)
@@ -1095,8 +1126,8 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn ← translateFn .none q`Core.re_all
     return fn
   -- Sequence.empty (1 type arg, 0 value args)
-  | .fn _ q`Core.seq_empty, [_atp] =>
-     let ety ← translateLMonoTy bindings _atp
+  | .fn _ q`Core.seq_empty, [atp] =>
+     let ety ← translateLMonoTy bindings atp
      let fn : LExpr Core.CoreLParams.mono :=
        Core.coreOpExpr (.seq .Empty)
          (.some (Core.seqTy ety))
@@ -1123,26 +1154,47 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       let x ← translateExpr p bindings xa
       return .mkApp () fn [x]
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
-  | .fn _ q`Core.neg_expr, [tpa, xa] =>
-    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let fn ← translateFn ty q`Core.neg_expr
+  -- Grouped type-specific unary operators. The wrapper's first arg names
+  -- the operation (`int.neg`, `bv8.not`, `bv8.toUInt`, …); `translateFn` maps it
+  -- to the monomorphic Core op.
+  | .fn _ q`Core.unaryArithInt, [fa, xa]
+  | .fn _ q`Core.unaryArithReal, [fa, xa]
+  -- Bitvector unary wrappers are width-polymorphic (`unaryArithBv (W : Type, f,
+  -- a : bv W)`); the `W` slot is a placeholder `resolve` fills from the operand,
+  -- so it is ignored here. The operation (including width) is the nullary op
+  -- `fa` (e.g. `Core.bv8_neg`), which `translateFn` matches to a Core op.
+  | .fn _ q`Core.unaryArithBv, [_, fa, xa]
+  | .fn _ q`Core.unarySafeBv, [_, fa, xa]
+  | .fn _ q`Core.unaryOverflowBv, [_, fa, xa]
+  | .fn _ q`Core.castBv, [_, fa, xa] =>
+    let fn ← translateFn .none (← translateOpGroupName fa)
     let x ← translateExpr p bindings xa
     return .mkApp () fn [x]
-  | .fn _ q`Core.safeneg_expr, [tpa, xa] =>
-    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let fn ← translateFn ty q`Core.safeneg_expr
+  -- Grouped type-specific binary operators. The wrapper's first arg names
+  -- the operation (`int.add`, `bv8.uLt`, `bv8.sAddOverflow`, …).
+  | .fn _ q`Core.binaryArithBasicInt, [fa, xa, ya]
+  | .fn _ q`Core.binaryArithBasicReal, [fa, xa, ya]
+  | .fn _ q`Core.binaryArithDivModInt, [fa, xa, ya]
+  | .fn _ q`Core.binaryArithDivModReal, [fa, xa, ya]
+  | .fn _ q`Core.binarySafeInt, [fa, xa, ya]
+  | .fn _ q`Core.binaryTruncInt, [fa, xa, ya]
+  | .fn _ q`Core.binaryCmpBaseInt, [fa, xa, ya]
+  | .fn _ q`Core.binaryCmpBaseReal, [fa, xa, ya]
+  -- Bitvector binary wrappers are width-polymorphic (`… (W : Type, f, a b : bv
+  -- W)`); the `W` slot is a placeholder `resolve` fills from the operands, so it
+  -- is ignored here. The operation (including width) is the nullary op `fa`
+  -- (e.g. `Core.bv8_uLt`), which `translateFn` matches to a Core op.
+  | .fn _ q`Core.binaryArithBasicBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binaryArithDivModBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binaryBitwiseBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binarySafeBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binaryCmpBaseBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binaryCmpSignedBv, [_, fa, xa, ya]
+  | .fn _ q`Core.binaryOverflowBv, [_, fa, xa, ya] =>
+    let fn ← translateFn .none (← translateOpGroupName fa)
     let x ← translateExpr p bindings xa
-    return .mkApp () fn [x]
-  | .fn _ q`Core.bv_neg_overflow, [tpa, xa] =>
-    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let fn ← translateFn ty q`Core.bv_neg_overflow
-    let x ← translateExpr p bindings xa
-    return .mkApp () fn [x]
-  | .fn _ q`Core.bv_uneg_overflow, [tpa, xa] =>
-    let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let fn ← translateFn ty q`Core.bv_uneg_overflow
-    let x ← translateExpr p bindings xa
-    return .mkApp () fn [x]
+    let y ← translateExpr p bindings ya
+    return .mkApp () fn [x, y]
   -- Strings
   | .fn _ q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
@@ -1168,95 +1220,67 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      match x with
      | .fvar m ident ty => return .fvar m (Core.CoreIdent.mkOld ident.name) ty
      | _ => TransM.error s!"old: expected an identifier, got {x}"
+  -- Map get/set: key and value types are implicit in the surface syntax. Like
+  -- the seq operators, the type arguments are left as placeholders and Core's
+  -- `resolve` recovers them from the map argument. (map_const below keeps its
+  -- annotation — its key type cannot be recovered from the value argument.)
   | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
-     let kty ← translateLMonoTy bindings _ktp
-     let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Core.mapSelectOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Select) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty])))
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.map .Select)
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
   | .fn _ q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
-     let kty ← translateLMonoTy bindings _ktp
-     let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Core.mapUpdateOp, but specialized
-     let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Update) (.some (LMonoTy.mkArrow (Core.mapTy kty vty) [kty, vty, Core.mapTy kty vty])))
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.map .Update)
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
-  | .fn _ q`Core.map_const, [_ktp, _vtp, va] =>
-     let kty ← translateLMonoTy bindings _ktp
-     let vty ← translateLMonoTy bindings _vtp
+  | .fn _ q`Core.map_const, [ktp, vtp, va] =>
+     let kty ← translateLMonoTy bindings ktp
+     let vty ← translateLMonoTy bindings vtp
      let fn : LExpr Core.CoreLParams.mono := (Core.coreOpExpr (.map .Const) (.some (LMonoTy.mkArrow vty [Core.mapTy kty vty])))
      let v ← translateExpr p bindings va
      return .mkApp () fn [v]
-  -- Seq operations
-  | .fn _ q`Core.seq_length, [_atp, sa] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Length)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int]))
+  -- Seq operations. The type parameter is implicit in the surface syntax, so
+  -- the type argument is left as a placeholder; Core's `resolve` recovers the
+  -- element type from the sequence argument.
+  | .fn _ q`Core.seq_length, [_, sa] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Length)
      let s ← translateExpr p bindings sa
      return .mkApp () fn [s]
-  | .fn _ q`Core.seq_select, [_atp, sa, ia] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Select)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety) [.int, ety]))
+  | .fn _ q`Core.seq_select, [_, sa, ia] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Select)
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      return .mkApp () fn [s, i]
-  | .fn _ q`Core.seq_append, [_atp, s1a, s2a] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Append)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety)
-           [Core.seqTy ety, Core.seqTy ety]))
+  | .fn _ q`Core.seq_append, [_, s1a, s2a] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Append)
      let s1 ← translateExpr p bindings s1a
      let s2 ← translateExpr p bindings s2a
      return .mkApp () fn [s1, s2]
-  | .fn _ q`Core.seq_build, [_atp, sa, va] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Build)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, Core.seqTy ety]))
+  | .fn _ q`Core.seq_build, [_, sa, va] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Build)
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_update, [_atp, sa, ia, va] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Update)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety)
-           [.int, ety, Core.seqTy ety]))
+  | .fn _ q`Core.seq_update, [_, sa, ia, va] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Update)
      let s ← translateExpr p bindings sa
      let i ← translateExpr p bindings ia
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, i, v]
-  | .fn _ q`Core.seq_contains, [_atp, sa, va] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Contains)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety) [ety, .bool]))
+  | .fn _ q`Core.seq_contains, [_, sa, va] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Contains)
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_take, [_atp, sa, na] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Take)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety)
-           [.int, Core.seqTy ety]))
+  | .fn _ q`Core.seq_take, [_, sa, na] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Take)
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
-  | .fn _ q`Core.seq_drop, [_atp, sa, na] =>
-     let ety ← translateLMonoTy bindings _atp
-     let fn : LExpr Core.CoreLParams.mono :=
-       Core.coreOpExpr (.seq .Drop)
-         (.some (LMonoTy.mkArrow (Core.seqTy ety)
-           [.int, Core.seqTy ety]))
+  | .fn _ q`Core.seq_drop, [_, sa, na] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Drop)
      let s ← translateExpr p bindings sa
      let n ← translateExpr p bindings na
      return .mkApp () fn [s, n]
@@ -1292,57 +1316,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let y ← translateExpr p bindings ya
     let z ← translateExpr p bindings za
     return .mkApp () fn [x, y, z]
-  -- Binary function applications (polymorphic)
-  | .fn _ fni, [tpa, xa, ya] =>
-    match fni with
-    | q`Core.add_expr
-    | q`Core.sub_expr
-    | q`Core.mul_expr
-    | q`Core.div_expr
-    | q`Core.safediv_expr
-    | q`Core.mod_expr
-    | q`Core.safemod_expr
-    | q`Core.divt_expr
-    | q`Core.modt_expr
-    | q`Core.safedivt_expr
-    | q`Core.safemodt_expr
-    | q`Core.bvand
-    | q`Core.bvor
-    | q`Core.bvxor
-    | q`Core.bvshl
-    | q`Core.bvushr
-    | q`Core.bvsshr
-    | q`Core.bvsdiv
-    | q`Core.bvsmod
-    | q`Core.safeadd_expr
-    | q`Core.safesub_expr
-    | q`Core.safemul_expr
-    | q`Core.safesdiv_expr
-    | q`Core.safesmod_expr
-    | q`Core.le
-    | q`Core.lt
-    | q`Core.gt
-    | q`Core.ge
-    | q`Core.bvsle
-    | q`Core.bvslt
-    | q`Core.bvsgt
-    | q`Core.bvsge
-    | q`Core.bv_sadd_overflow
-    | q`Core.bv_ssub_overflow
-    | q`Core.bv_smul_overflow
-    | q`Core.bv_sdiv_overflow
-    | q`Core.bv_uadd_overflow
-    | q`Core.bv_usub_overflow
-    | q`Core.bv_umul_overflow =>
-      let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-      if ¬ isArithTy ty then
-        TransM.error s!"translateExpr unexpected type for {repr fni}: {repr args}"
-      else
-        let fn ← translateFn (.some ty) fni
-        let x ← translateExpr p bindings xa
-        let y ← translateExpr p bindings ya
-        return .mkApp () fn [x, y]
-    | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
   | .bvar _ i, argsa => do

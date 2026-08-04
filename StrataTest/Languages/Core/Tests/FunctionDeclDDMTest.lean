@@ -23,7 +23,7 @@ def funcDeclStmtPgm : Program :=
 program Core;
 
 procedure testFuncDecl(c: int) {
-  function double(x : int) : int { x + x + c}
+  function double(x : int) : int { int.add(int.add(x, x), c)}
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
@@ -36,7 +36,7 @@ procedure testFuncDecl(c: int) {
 info: program Core;
 procedure testFuncDecl (c : int)
 {
-  function double (x : int) : int { x + x + c }
+  function double (x : int) : int { int.add(int.add(x, x), c) }
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
@@ -58,7 +58,7 @@ program Core;
 
 {
   var c : int := 2;
-  function double(x : int) : int { x + x + c }
+  function double(x : int) : int { int.add(int.add(x, x), c) }
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
@@ -71,7 +71,7 @@ program Core;
 info: program Core;
 ({
   var c : int := 2;
-  function double (x : int) : int { x + x + c }
+  function double (x : int) : int { int.add(int.add(x, x), c) }
   var y : int := 5;
   var result : int := double(y);
   assert result == 12;
