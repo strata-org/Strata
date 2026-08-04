@@ -270,7 +270,13 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         -- `$proof_n` and the lifting pass's `$cndtn_n`), so they cannot collide with
         -- a user identifier. The counter keeps sibling and nested proof blocks apart.
         let havocName : Identifier := mkId s!"$havoc_{n}"
-        let havocParam : Parameter := { param with name := havocName }
+        -- `Declare` carries a `Parameter?`, whose type annotation is optional. The
+        -- quantifier binder's type is always present, so the havoc declaration takes
+        -- it: the havoc stands for an arbitrary value of the quantified type. Leaving
+        -- the annotation off would instead leave resolution nothing to infer from —
+        -- the declaration has no initializer — so it would bind `Unknown` and
+        -- diagnose.
+        let havocParam : Parameter? := { name := havocName, type := some param.type }
         let varDecl : StmtExprMd := ⟨.Var (.Declare havocParam), e.source⟩
         -- Point the body's references at the renamed declaration. Without this the
         -- body would still name the binder, which is not declared inside the branch.
