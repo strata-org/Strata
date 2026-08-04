@@ -70,20 +70,7 @@ structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Express
 
 structure WFexitProp  (p : Program) (label : String) : Prop where
 
-/-- Well-formedness for local function declarations.
-    Checks that function parameter names are unique.
-
-    This is kept separate from `FuncWF` (from `Strata.DL.Util.Func`) because:
-    1. `FuncWF` requires function parameters (`getName`, `getVarNames`) that add complexity
-    2. `FuncWF.concreteEval_argmatch` is not decidable, making it harder to use in proofs
-    3. For statement-level WF, only `arg_nodup` is needed; the additional `FuncWF`
-       properties (`concreteEval_argmatch`, etc.) and the `FuncClosed` closedness
-       properties (`body_freevars`) are for factory functions
-
-    Note: `WFfuncDeclProp` checks uniqueness of full `CoreIdent` (including visibility),
-    while `FuncWF.arg_nodup` checks uniqueness of just the string names. -/
 structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
-  arg_nodup : decl.inputs.keys.Nodup
 
 @[simp, expose]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
@@ -156,10 +143,6 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
-  nonempty : fs ≠ []
-  namesDistinct : (fs.map (·.name)).Nodup
-  noInline : ∀ f ∈ fs, ¬ f.attr.any (· == .inline)
-  wfFuncs : ∀ f ∈ fs, WFFunctionProp p f
 
 @[simp, expose, grind]
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
