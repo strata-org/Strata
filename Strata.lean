@@ -27,6 +27,7 @@ import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
+import Strata.Languages.Core.WFProps
 
 import Strata.Languages.Laurel.Grammar
 import Strata.Languages.Laurel.LaurelCompilationPipeline
@@ -102,6 +103,7 @@ import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
 import Strata.DL.Lambda.Denote.LExprSemanticsConsistent
+import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.Semantics

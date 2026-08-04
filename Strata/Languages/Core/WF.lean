@@ -112,6 +112,14 @@ structure WFPrePostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedu
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
+  /-- A precondition carries no `old `-prefixed free variable. Unlike a
+      postcondition, a precondition is evaluated in the pre-state, where an
+      `old p` reference has no meaning; type checking rejects it because the
+      `old` bindings for inout parameters are only introduced when checking
+      postconditions and the body, not preconditions. This is the pre-state
+      counterpart of `WFPostProp.oldOnlyInout`. -/
+  noOldFvars : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
+    ¬ CoreIdent.isOldIdent id
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
