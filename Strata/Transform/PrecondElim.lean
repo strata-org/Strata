@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import all Strata.DL.Imperative.Stmt
@@ -40,7 +41,7 @@ namespace Core
 namespace PrecondElim
 
 open Lambda
-open Strata (DiagnosticModel)
+open Strata (Message)
 open Core.Transform
 
 /-- Statistics keys tracked by the precondition elimination transformation. -/
@@ -318,7 +319,7 @@ def transformStmt (s : Statement)
   | .funcDecl decl md => do
     let funcName := decl.name.name
     -- Add function to factory before processing its preconditions/body
-    let func ← liftDiag ((Function.ofPureFunc decl).mapError DiagnosticModel.fromFormat)
+    let func ← liftDiag ((Function.ofPureFunc decl).mapError Message.fromFormat)
 
     let .isFalse notMem := Strata.decideProp (func.name.name ∈ F)
       | throw (md.toDiagnosticF f!"{func.name.name} already in factory.")

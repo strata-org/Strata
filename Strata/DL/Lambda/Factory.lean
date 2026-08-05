@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
@@ -321,10 +322,10 @@ variable  {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func : LFunc T) : Except DiagnosticModel (Factory T) :=
+def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func : LFunc T) : Except Message (Factory T) :=
   if h : func.name.name ∈ F then
     let func' := F[func.name.name]
-    .error <| DiagnosticModel.fromFormat f!"A function of name {func.name} already exists! \
+    .error <| Message.fromFormat f!"A function of name {func.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Function: {func'}\n\
               New Function:{func}"
@@ -335,14 +336,14 @@ def tryPush {T} [Inhabited T.Metadata] [ToFormat T.IDMeta] (F : Factory T) (func
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def tryAddAll (F : Factory T) (newF : Array (LFunc T)) : Except DiagnosticModel (Factory T) :=
+def tryAddAll (F : Factory T) (newF : Array (LFunc T)) : Except Message (Factory T) :=
   newF.foldlM (·.tryPush ·) (init := F)
 
 /--
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def addFactory (F newF : Factory T) : Except DiagnosticModel (Factory T) :=
+def addFactory (F newF : Factory T) : Except Message (Factory T) :=
   F.tryAddAll newF.toArray
 
 end

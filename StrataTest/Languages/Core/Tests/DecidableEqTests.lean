@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.Languages.Core.Verifier
 import StrataDDM.Integration.Lean.HashCommands
@@ -76,7 +77,7 @@ procedure P(out ret : int)
 };
 #end
 
-private def toCore (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
+private def toCore (pgm : StrataDDM.Program) : Except Message Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
   Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
 

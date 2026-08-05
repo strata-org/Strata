@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Languages.Core.ProcedureEval
@@ -456,7 +457,7 @@ section ConcreteInterpretation
 open Lambda Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
-private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
+private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except Message Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
   Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
 

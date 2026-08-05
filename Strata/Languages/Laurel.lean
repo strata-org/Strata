@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core
 public import Strata.Languages.Laurel.LaurelAST
@@ -134,18 +135,18 @@ and any translation diagnostics.
 def Laurel.verifyProgram
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
-    : IO (Option Core.VCResults × List DiagnosticModel) :=
+    : IO (Option Core.VCResults × List Message) :=
   Strata.Laurel.verifyToVcResults program { verifyOptions := options }
 
 /--
 Analyze a Laurel program and return structured diagnostic models
 (combining translation errors and verification results).
 -/
-def Laurel.analyzeToDiagnosticModels
+def Laurel.analyzeToMessages
     (program : Laurel.Program)
     (options : Core.VerifyOptions := .default)
-    : IO (Array DiagnosticModel) :=
-  Strata.Laurel.verifyToDiagnosticModels program { verifyOptions := options }
+    : IO (Array Message) :=
+  Strata.Laurel.verifyToMessages program { verifyOptions := options }
 
 end Strata
 

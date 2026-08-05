@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.LExprEvalProps
@@ -49,11 +50,11 @@ def typeCheckAndPartialEval
   (t: TypeFactory (IDMeta:=T.IDMeta) := TypeFactory.default)
   (f : Factory (T:=T) := Factory.default)
   (e : LExpr T.mono) :
-  Except DiagnosticModel (LExpr T.mono) := do
+  Except Message (LExpr T.mono) := do
   let E := TEnv.default
   let C := LContext.default (functions := f)
   let C ← C.addTypeFactory t
-  let (et, _T) ← LExpr.annotate C E e |>.mapError DiagnosticModel.fromFormat
+  let (et, _T) ← LExpr.annotate C E e |>.mapError Message.fromFormat
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory C.functions
   return (LExpr.evalWithLState σ.config.fuel σ et).fst

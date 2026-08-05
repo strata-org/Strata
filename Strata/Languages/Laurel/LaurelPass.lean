@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Util.Statistics
@@ -93,7 +94,7 @@ end
     metadata fields remain directly accessible (e.g. `p.name`). -/
 structure LaurelPass (Input: Type) (Output: Type) extends PassMeta where
   /-- The pass action. -/
-  run : LaurelTranslateOptions → Input → SemanticModel → Output × List DiagnosticModel × Statistics
+  run : LaurelTranslateOptions → Input → SemanticModel → Output × List Message × Statistics
 
 abbrev LoweringPass := LaurelPass Laurel.Program Laurel.Program
 

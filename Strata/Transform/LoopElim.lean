@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.DL.Util.StringGen
@@ -98,14 +99,14 @@ def removeLoop (s : Statement)
   match s with
   | .loop guard measure invariants bss md => do
     if !invariants.isEmpty || measure.isSome then
-      throw (Strata.DiagnosticModel.fromFormat
+      throw (Strata.Message.fromFormat
         f!"LoopElim invoked on a loop that still carries invariants/measure; \
 run InsertLoopInvariantAsserts first (or use the built-in verify pipeline)")
     let loop_num ← genLoopNum
     -- Reject loop bodies whose block/exit labels collide with the blocks we are
     -- about to mint, which would otherwise silently redirect control flow.
     if hasLabelConflict loop_num bss then
-      throw (Strata.DiagnosticModel.fromFormat
+      throw (Strata.Message.fromFormat
         f!"Generated loop block label conflicts with exit target in loop body (loop {loop_num})")
     -- Havoc only loop-carried variables. Variables declared inside the loop
     -- body are block-local and should not be treated as pre-existing state by

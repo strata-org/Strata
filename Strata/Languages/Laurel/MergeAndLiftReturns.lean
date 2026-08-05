@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.LaurelAST
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
@@ -21,9 +22,9 @@ Emits a diagnostic if it fails at any step.
 namespace Strata.Laurel
 
 /-- Recurse into a statement, applying the guard-return rewrite inside blocks and branches.
-    Returns `Except DiagnosticModel StmtExprMd` so that unsupported statement forms produce
+    Returns `Except Message StmtExprMd` so that unsupported statement forms produce
     a diagnostic instead of panicking. -/
-def removeReturns (stmt : StmtExprMd) : Except DiagnosticModel StmtExprMd :=
+def removeReturns (stmt : StmtExprMd) : Except Message StmtExprMd :=
   match _h : stmt.val with
   | .Return (some expr) => .ok expr
   | .Block [head] _ => removeReturns head
@@ -67,7 +68,7 @@ decreasing_by
 
 /-- Transform a single procedure by applying the guard-return elimination to its body.
     Returns the procedure and any diagnostic emitted on failure. -/
-private def eliminateReturnsInExpression (proc : Procedure) : Procedure × List DiagnosticModel :=
+private def eliminateReturnsInExpression (proc : Procedure) : Procedure × List Message :=
   match proc.body with
   | .Transparent body =>
     match removeReturns body with
@@ -80,7 +81,7 @@ public section
 /--
 Transform a program by eliminating returns in all procedure bodies.
 -/
-def mergeAndLiftReturns (program : Program) : Program × List DiagnosticModel :=
+def mergeAndLiftReturns (program : Program) : Program × List Message :=
   let (procs, diags) := program.staticProcedures.foldl (fun (ps, ds) proc =>
     let (proc', procDiags) := eliminateReturnsInExpression proc
     (proc' :: ps, ds ++ procDiags)

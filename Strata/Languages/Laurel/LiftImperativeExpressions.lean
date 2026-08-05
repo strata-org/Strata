@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
@@ -96,6 +97,23 @@ structure LiftState where
   procedures : List Procedure := []
   /-- Names of callees whose calls should be treated as imperative (lifted) -/
   imperativeCallees : List String := []
+  /-- Variable uniqueIds referenced by lifted statements. When a `Var (.Declare ...)`
+      is encountered for a variable whose uniqueId is in this set, it is also lifted
+      so the declaration remains in scope for the lifted statements that read it.
+
+      Unlike `subst` and `prependedStmts`, this is *not* saved and restored around
+      nested scopes — it accumulates across the whole procedure and is only reset
+      per procedure. That is sound because of a precondition on the input:
+      Resolution assigns a program-globally-unique `uniqueId` to every `Declare`,
+      so an entry for uniqueId `N` names exactly one declaration site and can
+      never cause an unrelated one to hoist.
+
+      A pass that duplicates a `Declare` node while keeping its `uniqueId` breaks
+      this. `defineName` preserves an already-set `uniqueId`, so simply re-running
+      Resolution does not repair such a duplicate — the pass must clear the copy's
+      `uniqueId` and let re-resolution mint a fresh one. `TransparencyPass`'s
+      quantifier proof block does exactly that for its havoc variable. -/
+  liftedVarRefs : Std.HashSet Nat := {}
 
 @[expose] abbrev LiftM := ExceptT String (StateM LiftState)
 
@@ -110,11 +128,31 @@ private def freshTempVar : LiftM Identifier := do
   modify fun s => { s with condCounter := n + 1 }
   return s!"$cndtn_{n}"
 
-private def prepend (stmt : StmtExprMd) : LiftM Unit :=
-  modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
+/-- Variables read by `expr`, by `uniqueId`. Used to record which declarations a
+    lifted statement depends on, so `Var (.Declare ..)` can hoist them along. -/
+private def collectVarRefs (expr : StmtExprMd) : List Nat :=
+  foldStmtExpr (fun e acc =>
+    match e.val with
+    | .Var (.Local name) => match name.uniqueId with
+      | some uid => uid :: acc
+      | none => acc
+    | _ => acc) [] expr
 
+private def prepend (stmt : StmtExprMd) : LiftM Unit := do
+  let varRefs := collectVarRefs stmt
+  modify fun s => { s with
+    prependedStmts := stmt :: s.prependedStmts
+    liftedVarRefs := varRefs.foldl (·.insert ·) s.liftedVarRefs }
+
+/-- Like `prepend`, for a list of statements, and it records read variables the
+    same way: a statement lifted through this path also needs the declarations it
+    reads hoisted along with it, or it ends up above them. The `$cndtn_N` temporary
+    that `transformLiftedExpr` builds for an assert/assume condition arrives here,
+    so a declaration read only by such a temporary is hoisted on its account. -/
 private def prependList (stmts : List StmtExprMd) : LiftM Unit :=
-  modify fun s => { s with prependedStmts := stmts ++ s.prependedStmts }
+  modify fun s => { s with
+    prependedStmts := stmts ++ s.prependedStmts
+    liftedVarRefs := (stmts.flatMap collectVarRefs).foldl (·.insert ·) s.liftedVarRefs }
 
 private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmts with
@@ -426,18 +464,23 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return ⟨ .Block filtered labelOption, source⟩
 
   | .Var (.Declare param) =>
-      -- If the substitution map has an entry for this variable, it was
-      -- assigned to the right and we need to lift this declaration so it
-      -- appears before the snapshot that references it.
+      -- Lift the declaration if either:
+      -- 1. The substitution map has an entry (assigned to the right), or
+      -- 2. The variable was already read by a previously-processed expression
+      --    (e.g., a lifted assert/assume references it).
       match param.name.uniqueId with
       | some paramUid =>
         let hasSubst := (← get).subst.get? paramUid |>.isSome
+        let wasRead := (← get).liftedVarRefs.contains paramUid
         if hasSubst then
           prepend (⟨.Var (.Declare param), expr.source⟩)
           return ⟨.Var (.Local (← getSubst param.name)), expr.source⟩
+        else if wasRead then
+          prepend (⟨.Var (.Declare param), expr.source⟩)
+          return ⟨.Var (.Local param.name), expr.source⟩
         else
           return expr
-      | none => return expr
+      | none => throw s!"Var (.Declare {param.name.text}) has no uniqueId"
 
   | .Assume cond =>
       let (argPrepends, newCond) ← transformLiftedExpr cond
@@ -673,7 +716,7 @@ def transformProcedureBody (source: FileRange) (body : StmtExprMd) : LiftM StmtE
   | multiple => pure ⟨.Block multiple none, source ⟩
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  modify fun s => { s with subst := {}, prependedStmts := [], varCounters := [] }
+  modify fun s => { s with subst := {}, prependedStmts := [], varCounters := [], liftedVarRefs := {} }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody proc.name.source bodyExpr
@@ -726,6 +769,6 @@ public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTyp
   run := fun _ p m =>
     match liftImperativeExpressionsInCore p m with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in LiftImperativeExpressions: {e}" .StrataBug], {})
+    | .error e => (p, [Message.fromString s!"Internal error in LiftImperativeExpressions: {e}" .strataBug], {})
 
 end Laurel

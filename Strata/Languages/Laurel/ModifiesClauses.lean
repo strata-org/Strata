@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
@@ -176,7 +177,7 @@ def hasHeapOut (proc : Procedure) : Bool :=
 
 /-- Build and attach `proc`'s modifies frame, then clear the clause. -/
 def transformModifiesClauses (model: SemanticModel)
-    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array DiagnosticModel) Procedure :=
+    (proc : Procedure) (useEnumeratedFrame : Bool) : Except (Array Message) Procedure :=
   match proc.body with
   | .External => .ok proc
   | .Opaque postconds impl modifiesExprs =>
@@ -214,7 +215,7 @@ This is a Laurel → Laurel pass that should run after heap parameterization.
 Always returns the (best-effort) transformed program together with any diagnostics,
 so that later passes can continue and report additional errors.
 -/
-def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List DiagnosticModel :=
+def modifiesClausesTransform (model: SemanticModel) (program : Program) (useEnumeratedFrame : Bool) : Program × List Message :=
   let (procs', errors) := program.staticProcedures.foldl (fun (acc, errs) proc =>
     match transformModifiesClauses model proc useEnumeratedFrame with
     | .ok proc' => (acc ++ [proc'], errs)

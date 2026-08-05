@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import Strata.Languages.Laurel.HeapParameterizationConstants
 import Strata.Util.Tactics
@@ -197,7 +198,7 @@ public def typeHierarchyTransformPass : LoweringPass where
   run := fun _ p m =>
     match typeHierarchyTransform m p with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage e .StrataBug], {})
+    | .error e => (p, [Message.fromString e .strataBug], {})
 
 end Strata.Laurel
 

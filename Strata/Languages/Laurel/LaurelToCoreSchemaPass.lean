@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Options
@@ -46,7 +47,7 @@ private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
 /-- State threaded through expression and statement translation -/
 structure TranslateState where
   /-- Diagnostics accumulated during translation -/
-  diagnostics : List DiagnosticModel := []
+  diagnostics : List Message := []
   /-- Next fresh ID to allocate. -/
   nextId : Nat := 1
   /-- Constants known to the program (field constants, etc.) -/
@@ -71,7 +72,7 @@ structure TranslateState where
       When non-empty, the produced Core program is suppressed. Each entry records
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
-  coreDiagnostics : List DiagnosticModel := []
+  coreDiagnostics : List Message := []
   /-- Names of the program's (non-functional) procedures. A `StaticCall` whose
       callee is in this set is a procedure call; anything else (Core functions,
       the `$asFunction` twins produced by TransparencyPass, constants, etc.) is a
@@ -93,15 +94,15 @@ def containsProcedure (name : Identifier) : TranslateM Bool := do
   return (← get).procedureNames.contains name.text
 
 /-- Emit a diagnostic into the translation state (soft warning, does not abort) -/
-def emitDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+def emitDiagnostic (d : Message) : TranslateM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [d] }
 
 /-- Emit a core diagnostic that flags the Core program as invalid. -/
-def emitCoreDiagnostic (d : DiagnosticModel) : TranslateM Unit :=
+def emitCoreDiagnostic (d : Message) : TranslateM Unit :=
   modify fun s => { s with coreDiagnostics := s.coreDiagnostics ++ [d] }
 
 private def invalidCoreType (source : FileRange) (reason : String) : TranslateM LMonoTy := do
-  emitCoreDiagnostic (diagnosticFromSource source reason DiagnosticType.StrataBug)
+  emitCoreDiagnostic (diagnosticFromSource source reason MessageKind.strataBug)
   return .tcons s!"LaurelResolutionErrorPlaceholder" []
 
 /-- Allocate a fresh unique ID. -/
@@ -165,7 +166,7 @@ def translateType (ty : HighTypeMd) : TranslateM LMonoTy := do
         -- emitted a diagnostic, so surface the unresolved-composite error.
         if (← get).gradualTypes.contains name.text then
           return .tcons "Any" []
-        emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" DiagnosticType.StrataBug)
+        emitCoreDiagnostic (diagnosticFromSource ty.source s!"UserDefined type {name} could not be resolved to a composite or datatype" MessageKind.strataBug)
         return .tcons name.text []
   -- Generic type application, e.g. `Option<int>` → `.tcons "Option" [int]`.
   -- Core has real polymorphic datatypes, so the type arguments are forwarded.
@@ -228,7 +229,7 @@ def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α �
   m.run s
 
 /-- Emit a diagnostic and continue with a default expression (does not abort). -/
-def emitExprDiagnostic (d : DiagnosticModel): TranslateM Core.Expression.Expr := do
+def emitExprDiagnostic (d : Message): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return default
@@ -355,7 +356,7 @@ Translate Laurel StmtExpr to Core Expression using the `TranslateM` monad.
 Diagnostics for disallowed constructs are emitted into the monad state.
 
 `isPureContext` should be `true` when translating function bodies or contract expressions.
-In that case, disallowed constructs emit `DiagnosticModel` errors into the state.
+In that case, disallowed constructs emit `Message` errors into the state.
 When `false` (inside a procedure body statement), disallowed constructs throw a diagnostic
 because `liftImperativeExpressions` should have already removed them.
 
@@ -393,13 +394,13 @@ def translateExpr (expr : StmtExprMd)
         | .field _ f => return .op () ⟨f.name.text, ()⟩ none
         | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
-      emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" DiagnosticType.StrataBug
+      emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" MessageKind.strataBug
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
       let belse ← match elseBranch with
         | none =>
-            emitExprDiagnostic $ diagnosticFromSource expr.source s!"if-then without else expression" DiagnosticType.NotYetImplemented
+            emitExprDiagnostic $ diagnosticFromSource expr.source s!"if-then without else expression" MessageKind.notYetImplemented
         | some e =>
             have : sizeOf e < sizeOf expr := by
               have := AstNode.sizeOf_val_lt expr
@@ -481,7 +482,7 @@ def translateExpr (expr : StmtExprMd)
           return LExpr.mkApp () (binaryOperatorOp callee.text) [re1, re2]
         | _, _ =>
           emitExprDiagnostic $ diagnosticFromSource expr.source
-            s!"operator procedure '{callee.text}' called with wrong number of arguments" DiagnosticType.UserError
+            s!"operator procedure '{callee.text}' called with wrong number of arguments" .userError
       else
       -- In a pure context, only Core functions (not procedures) are allowed
       if isPureContext && (← containsProcedure callee) then
@@ -531,10 +532,10 @@ def translateExpr (expr : StmtExprMd)
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .IncrDecr _ _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source
-        "IncrDecr should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
+        "IncrDecr should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" MessageKind.strataBug
   | .CompoundAssign _ _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source
-        "CompoundAssign should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" DiagnosticType.StrataBug
+        "CompoundAssign should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" MessageKind.strataBug
   | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in transparent bodies or contracts"
   | .Exit _ => disallowed expr.source "exit is not supported in expression position"
@@ -568,21 +569,21 @@ def translateExpr (expr : StmtExprMd)
   | .Var (.Field target fieldId) =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
-      emitExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" MessageKind.strataBug
   | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
   | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ =>
       disallowed whileSource "loops are not supported in functions or contracts"
   | .Block (head :: tail) _ =>
-      emitExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" MessageKind.strataBug
   | .Block [] _ =>
-      emitExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" DiagnosticType.StrataBug
-  | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" DiagnosticType.StrataBug
+      emitExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" MessageKind.strataBug
+  | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" MessageKind.strataBug
   | .IsType _ _ =>
-      emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" DiagnosticType.StrataBug
-  | .New _ => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" DiagnosticType.StrataBug
-  | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" DiagnosticType.NotYetImplemented
-  | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" DiagnosticType.NotYetImplemented
+      emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" MessageKind.strataBug
+  | .New _ => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
+  | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
+  | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
   | .Old value =>
       -- `pushOldInward` is expected to leave every `Old` wrapping `Var (Local n)`
       -- with `n` an inout parameter of the enclosing procedure. We do not rely on
@@ -598,7 +599,7 @@ def translateExpr (expr : StmtExprMd)
               s!"old({name.text}) refers to a name that is not an inout parameter \
                  of the enclosing procedure (inouts: {inouts}). This violates the \
                  pushOldInward normalization invariant."
-              DiagnosticType.StrataBug
+              MessageKind.strataBug
           else
             let coreTy ← translateType (model.get name).getType
             return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
@@ -606,17 +607,17 @@ def translateExpr (expr : StmtExprMd)
           emitExprDiagnostic $ diagnosticFromSource expr.source
             "old(...) should have been pushed inward to a variable reference. \
              This violates the pushOldInward normalization invariant."
-            DiagnosticType.StrataBug
-  | .Fresh _ => emitExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" DiagnosticType.NotYetImplemented
-  | .Assert .. => emitExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" DiagnosticType.NotYetImplemented
-  | .Assume _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" DiagnosticType.NotYetImplemented
-  | .ProveBy value _ => emitExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" DiagnosticType.NotYetImplemented
-  | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" DiagnosticType.NotYetImplemented
-  | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" DiagnosticType.NotYetImplemented
-  | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" DiagnosticType.NotYetImplemented
-  | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" DiagnosticType.NotYetImplemented
-  | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" DiagnosticType.NotYetImplemented
-  | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" DiagnosticType.NotYetImplemented
+            MessageKind.strataBug
+  | .Fresh _ => emitExprDiagnostic $ diagnosticFromSource expr.source "fresh expression translation" MessageKind.notYetImplemented
+  | .Assert .. => emitExprDiagnostic $ diagnosticFromSource expr.source "assert expression translation" MessageKind.notYetImplemented
+  | .Assume _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assume expression translation" MessageKind.notYetImplemented
+  | .ProveBy value _ => emitExprDiagnostic $ diagnosticFromSource expr.source "proveBy expression translation" MessageKind.notYetImplemented
+  | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" MessageKind.notYetImplemented
+  | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" MessageKind.notYetImplemented
+  | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" MessageKind.notYetImplemented
+  | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" MessageKind.notYetImplemented
+  | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
+  | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
   termination_by expr
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt expr; term_by_mem)
@@ -663,7 +664,7 @@ private def exprAsUnusedInit (expr : StmtExprMd) (md : Imperative.MetaData Core.
   let coreType := LTy.forAll [] ty
   return [Core.Statement.init ident coreType (.det coreExpr) md]
 
-def throwStmtDiagnostic (d : DiagnosticModel): TranslateM (List Core.Statement) := do
+def throwStmtDiagnostic (d : Message): TranslateM (List Core.Statement) := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return []
@@ -700,7 +701,7 @@ private def buildCallArgs (calleeId : Identifier) (coreArgs : List Core.Expressi
           s!"inout argument at index {i} of call to '{calleeId.text}' is not a \
              variable reference, so the output side of the inout cannot be \
              wired through. This should not happen after the preceding passes."
-          DiagnosticType.StrataBug
+          MessageKind.strataBug
         modify fun st => { st with coreProgramHasSuperfluousErrors := true }
         callArgs := callArgs ++ [.inArg arg]
     else
@@ -740,7 +741,7 @@ def translateStmt (stmt : StmtExprMd)
       -- Check if any target is a Field — these should have been lowered already
       let hasField := targets.any fun t => match t.val with | .Field _ _ => true | _ => false
       if hasField then
-        throwStmtDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" DiagnosticType.StrataBug
+        throwStmtDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" MessageKind.strataBug
       else
       -- Dispatch over targets, calling onDeclare/onLocal per target type.
       let dispatchTargets
@@ -798,7 +799,7 @@ def translateStmt (stmt : StmtExprMd)
               (onLocal := fun ident => pure [Core.Statement.set ident coreExpr md])
             return result
           | _ =>
-            throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" DiagnosticType.StrataBug
+            throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" MessageKind.strataBug
       | .InstanceCall _target callee args =>
           translateCallTargets callee args
       | .Hole _ _ =>
@@ -814,7 +815,7 @@ def translateStmt (stmt : StmtExprMd)
             (onDeclare := fun ident coreType => pure [Core.Statement.init ident coreType (.det coreExpr) md])
             (onLocal := fun ident => pure [Core.Statement.set ident coreExpr md])
         | _ =>
-          throwStmtDiagnostic $ md.toDiagnostic "Multi-target assignment need a call as a RHS" DiagnosticType.StrataBug
+          throwStmtDiagnostic $ md.toDiagnostic "Multi-target assignment need a call as a RHS" MessageKind.strataBug
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond
       let bthen ← translateStmt thenBranch
@@ -845,13 +846,13 @@ def translateStmt (stmt : StmtExprMd)
       -- Instance method call as statement: no return value, treated as no-op
       return ([])
   | .Return _ =>
-      let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" DiagnosticType.StrataBug
+      let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
       emitCoreDiagnostic d
       return default
   | .While cond invariants decreasesExpr body postTest =>
       if postTest then
         return ← throwStmtDiagnostic (diagnosticFromSource cond.source
-          "post-test while (do-while) should have been eliminated by EliminateDoWhile pass" DiagnosticType.StrataBug)
+          "post-test while (do-while) should have been eliminated by EliminateDoWhile pass" MessageKind.strataBug)
       let condExpr ← translateExpr cond
       let invExprs ← invariants.mapM (fun i => do return ("", ← translateExpr i))
       let decreasingExprCore ← decreasesExpr.mapM (translateExpr)
@@ -905,7 +906,7 @@ private def translateChecks (checks : List Condition) (labelBase : String)
     if check.mode != ConditionMode.Assume then
       let d := diagnosticFromSource check.condition.source
         s!"internal error: a non-free {labelBase} reached Core translation; the contract pass should have lowered it to an assertion"
-        DiagnosticType.StrataBug
+        MessageKind.strataBug
       emitDiagnostic d
       emitCoreDiagnostic d
     let c : Core.Procedure.Check := { expr := checkExpr, attr := .Free, md }
@@ -1082,7 +1083,7 @@ def translateDatatypeDefinition (dt : DatatypeDefinition)
     : Lambda.LDatatype Unit
   }
 
-abbrev TranslateResult := (Option Core.Program) × (List DiagnosticModel)
+abbrev TranslateResult := (Option Core.Program) × (List Message)
 
 /--
 Translate a `CoreWithLaurelTypes` program to a `Core.Program`.
@@ -1144,14 +1145,14 @@ public def laurelToCoreSchemaPass : LaurelPass CoreWithLaurelTypes Core.Program 
       { model := fnModel, overflowChecks := options.overflowChecks, procedureNames, gradualTypes := options.gradualTypes }
     let (coreProgramResult, translateState) :=
       runTranslateM initState (translateLaurelToCore options p)
-    let diagnostics : List DiagnosticModel :=
+    let diagnostics : List Message :=
       -- Because of the duplication between functions and procedures, this translation is liable to create duplicate diagnostics
       let d := translateState.diagnostics.eraseDups
       if d.isEmpty then translateState.coreDiagnostics else d
     match coreProgramResult with
     | .ok coreProgram => (coreProgram, diagnostics, {})
     | .error e =>
-      let diag := DiagnosticModel.fromMessage s!"Internal error in LaurelToCoreSchema: {e}" .StrataBug
+      let diag := Message.fromString s!"Internal error in LaurelToCoreSchema: {e}" .strataBug
       (default, diagnostics ++ [diag], {})
 
 end -- public section

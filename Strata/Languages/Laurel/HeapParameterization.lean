@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
@@ -524,7 +525,7 @@ public def heapParameterizationPass : LoweringPass where
   run := fun _ p m =>
     match heapParameterization m p with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in HeapParameterization: {e}" .StrataBug], {})
+    | .error e => (p, [Message.fromString s!"Internal error in HeapParameterization: {e}" .strataBug], {})
   comesAfter := [⟨ eliminateValueInReturnsPass.meta, "eliminate value in returns need to come before any passes that change the amount of output parameters of procedures." ⟩]
   comesBefore := [
     ⟨ liftImperativeExpressionsPass.meta, "the heap parameterization pass introduces assignments (to the heap variables) that need to be lifted."⟩,

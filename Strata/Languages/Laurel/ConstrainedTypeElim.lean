@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
@@ -222,7 +223,7 @@ def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (ct :
     instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model) }
 
 public def constrainedTypeElim (model : SemanticModel) (program : Program)
-    : Program × List DiagnosticModel :=
+    : Program × List Message :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let constraintProcs := program.types.filterMap fun

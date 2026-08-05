@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.C_Simp.C_Simp
 public import Strata.Languages.Core.Verifier
@@ -183,7 +184,7 @@ def C_Simp.get_program (p : StrataDDM.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run Inhabited.default (Strata.C_Simp.translateProgram (p.commands))).fst
 
 def C_Simp.typeCheck (p : StrataDDM.Program) (options : VerifyOptions := .default):
-  Except DiagnosticModel Core.Program := do
+  Except Message Core.Program := do
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
