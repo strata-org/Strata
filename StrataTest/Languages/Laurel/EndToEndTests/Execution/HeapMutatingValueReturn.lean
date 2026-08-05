@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Correct heap mutating value return -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 composite Container {
@@ -30,7 +30,7 @@ procedure setAndReturn(c: Container, x: int) returns (r: int)
 
 /-! ## Buggy: postcondition r == x + 1 cannot hold when r := x -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Container {
@@ -70,7 +70,7 @@ it did.
 Note the clause order: `ensures` must precede `modifies`, or it is a parse error
 rather than a test of any of this. -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 
@@ -109,7 +109,7 @@ taking them as parameters, so they are provably distinct — two parameters of t
 type may alias, which would make the assertion unprovable for a reason unrelated to
 the frame. -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 

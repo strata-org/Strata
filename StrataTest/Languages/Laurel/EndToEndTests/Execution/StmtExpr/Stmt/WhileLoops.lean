@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure countDown()
@@ -47,7 +47,7 @@ These negative tests pin each failing loop invariant's diagnostic to that
 invariant's own source range (per-invariant source ranges threaded through
 loop elimination), rather than the whole loop. -/
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure badInitialInvariant()
@@ -63,7 +63,7 @@ procedure badInitialInvariant()
 };
 #end
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure secondInvariantFails()
@@ -90,7 +90,7 @@ silent in the dangerous direction: substituting the pre-assignment snapshot into
 the invariant made the false invariant below verify clean, dropping the proof
 obligation entirely. -/
 
-#eval testLaurelMultiple
+#eval testLaurelExecution { skipCoreInterpreter := false }
 #strata
 program Laurel;
 procedure invariantHoldsOnLiveValue()
@@ -106,7 +106,7 @@ procedure invariantHoldsOnLiveValue()
 };
 #end
 
-#eval testLaurel
+#eval testLaurelExecution {}
 #strata
 program Laurel;
 procedure invariantFailsOnLiveValue()

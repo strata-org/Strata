@@ -15,7 +15,7 @@ open Strata
 -- pipeline helper because the expected diagnostics are not pure resolution
 -- errors.
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure hasMutatingAssignment(): int
@@ -60,7 +60,7 @@ The transparency pass reports only the first fatal transparent-body error per
 program, so this case lives in its own `#eval` block to avoid masking (or being
 masked by) the destructive-assignment diagnostics above. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 procedure functionWithWhile(x: int): int

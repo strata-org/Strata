@@ -87,7 +87,7 @@ procedure useThem(x: int, s: string) opaque {
 -- the *semantics*: each body deliberately computes something other than the
 -- operator it shares a name with, so the asserts hold only if the user's procedure
 -- is the one being called.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

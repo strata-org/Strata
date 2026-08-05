@@ -28,7 +28,7 @@ exceptional channel.
 -/
 
 -- Single type parameter: construct, test, and destruct a generic `Option`.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype Option<T> {
@@ -51,7 +51,7 @@ procedure useOption()
 -- the exception lowering: `EliminateExceptions` injects its own `Result` datatype
 -- into any program that uses exceptions, which a user-declared `Result` would
 -- collide with.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype Either<A, B> {
@@ -121,7 +121,7 @@ private def dropTypeParams (op : StrataDDM.Operation) : StrataDDM.Operation :=
 -- `Box<T>`. Exercises the `.Applied` recursion in `resolveHighType` and
 -- `translateType` — the inner `T` (a scoped type parameter) lowers to a Core
 -- `.ftvar` while the surrounding `Option` lowers to a `.tcons` carrying it.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype Option<T> {
@@ -145,7 +145,7 @@ procedure useContainer()
 -- disagreed on precedence (resolution keeping the marker, translation lowering to
 -- the concrete `Color`), the `Foo<int> := Mk(5)` construction would fail Core
 -- type-checking (`int` vs `Color`); its success pins the typeParams-first rule.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype Color {
@@ -171,7 +171,7 @@ procedure useFoo()
 -- silently accepting an ill-typed program. The pinned wording is Core's
 -- (`Impossible to unify (Option int) with (Option bool)`), so it is deliberately
 -- matched loosely on the first line.
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 datatype Option<T> {

@@ -6,7 +6,10 @@ ergonomic work) and notes where **Boole** uses the same primitives. For Python
 test wiring, see [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
 
 > **Quick rule of thumb:** put the dialect program inside a `#strata` block
-> and call `testLaurel` (or `testLaurelResolution`) on it. If the program is
+> and call the helper that matches the test's directory: `testLaurelExecution`
+> in `Execution/`, `testLaurelVerification` in `Verification/`, and
+> `testLaurelResolution` in `Resolution/`. When in doubt, default to
+> `testLaurelExecution` rather than `testLaurelVerification`. If the program is
 > expected to fail, annotate the expected diagnostics inline with
 > `// ^^^ kind: message`. The helper auto-detects whether to expect a clean
 > run or to match annotations.
@@ -37,7 +40,7 @@ is edited.
 
 ### 1. Positive test — program checks cleanly through the full pipeline
 
-Use `testLaurel`. The helper throws if any diagnostics fire, so no
+Use `testLaurelVerification`. The helper throws if any diagnostics fire, so no
 `#guard_msgs` / docstring is needed:
 
 ```lean
@@ -45,7 +48,7 @@ import StrataTest.Util.TestLaurel
 
 open StrataTest.Util
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 procedure foo() opaque { assert true };
@@ -54,12 +57,12 @@ procedure foo() opaque { assert true };
 
 ### 2. Negative test — assert that specific errors fire
 
-Same helper, `testLaurel`. Annotate each expected diagnostic *inline*, on the
+Same helper, `testLaurelVerification`. Annotate each expected diagnostic *inline*, on the
 line directly below the offending source line, with carets pointing at the
 column range and the kind + (substring of the) message after the carets:
 
 ```lean
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 procedure unsafeDivision(x: int)
@@ -71,7 +74,7 @@ procedure unsafeDivision(x: int)
 #end
 ```
 
-`testLaurel` auto-detects: when annotations are present, it requires an
+`testLaurelVerification` auto-detects: when annotations are present, it requires an
 **exact match on everything except the message text** — every diagnostic
 annotated, every annotation fires, positions (line + column range) agree,
 kind matches — and the annotation's message must appear as a **substring**
@@ -110,17 +113,17 @@ their `line` differs from the file line).
 When the test is about resolution (kind mismatches, duplicate names, scope
 errors), running the verifier on a deliberately-broken program adds
 unrelated noise (`dbg_trace` warnings, vacuous VCs). Use
-`testLaurelResolution` — same auto-detect behavior as `testLaurel`, but
+`testLaurelResolution` — same auto-detect behavior as `testLaurelVerification`, but
 stops after `resolve`.
 
-The gap between the two is not just the SMT call: `testLaurel` runs the full
+The gap between the two is not just the SMT call: `testLaurelVerification` runs the full
 compilation pipeline, which after `resolve` applies roughly a dozen
 Laurel-to-Laurel lowering passes (type-alias elimination, heap
 parameterization, type-hierarchy and modifies-clause transforms, hole-type
 inference and elimination, short-circuit desugaring, imperative-expression
 lifting, constrained-type elimination, …) before translating to Core and
 verifying. Several of those passes re-run `resolve` on their output. So a
-diagnostic that only `testLaurel` surfaces may originate from a later pass,
+diagnostic that only `testLaurelVerification` surfaces may originate from a later pass,
 not the verifier. The major passes are described in the **Translation
 Pipeline** section of the Laurel language implementor guide — published at
 [strata-org.github.io/Strata](https://strata-org.github.io/Strata/laurelimpl/html-multi/),
@@ -214,7 +217,7 @@ snippet.
 
 ```lean
 /-! ### Safe paths verify cleanly -/
-#eval testLaurel #strata
+#eval testLaurelVerification #strata
 program Laurel;
 procedure safeDivision() opaque {
   var z: int := 10 / 2;
@@ -223,7 +226,7 @@ procedure safeDivision() opaque {
 #end
 
 /-! ### Unsafe division: divisor not constrained, fails verification -/
-#eval testLaurel #strata
+#eval testLaurelVerification #strata
 program Laurel;
 procedure unsafeDivision(x: int) opaque {
   var z: int := 10 / x
@@ -240,7 +243,7 @@ diagnostics across all the contained procedures in one block.
 
 ## Practical workflow
 
-1. Write the `#strata` block first, prefaced with `#eval testLaurel`.
+1. Write the `#strata` block first, prefaced with `#eval testLaurelVerification`.
 2. For negative tests, sketch placeholder annotations like `// ^ error:`
    below the offending lines — column positions don't have to be right yet.
 3. Run it: `lake env lean StrataTest/Languages/Laurel/<your_file>.lean`.
@@ -262,7 +265,7 @@ file held.
   [`StrataTest/Languages/Boole/find_max.lean`](../StrataTest/Languages/Boole/find_max.lean)
   for the canonical pattern. `#strata` is dialect-agnostic — Boole could use
   inline annotations the same way once a Boole-side helper analogous to
-  `testLaurel` is written.
+  `testLaurelVerification` is written.
 - **Python** has its own pipeline-driven harness; see
   [`StrataTest/Languages/Python/README.md`](../StrataTest/Languages/Python/README.md).
 

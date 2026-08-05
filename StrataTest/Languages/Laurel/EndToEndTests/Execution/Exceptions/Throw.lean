@@ -26,9 +26,10 @@ resolution-time exception checks (see `validateExceptionEscapes` in `Resolution.
 What may be thrown is also covered here, because it is a property of `throw`'s
 operand rather than of any combination: a composite, and — since there is no built-in
 root — a bare primitive. The primitive section at the end allocates nothing, so it
-runs under `testLaurelMultiple`, i.e. verifier *and* interpreter. The composite cases
-above it put their exception value on the heap, which the interpret path does not
-support yet, so those stay on `testLaurel`. The other file that runs both ways is
+runs under `testLaurelExecution { skipCoreInterpreter := false }`, i.e. verifier *and*
+interpreter. The composite cases above it put their exception value on the heap, which
+the interpret path does not support yet, so those stay verification-only
+(`testLaurelExecution` with the default paths). The other file that runs both ways is
 `TryCatchThrow.lean`, whose smoke cases throw nothing at all.
 
 Front-end *boxing* — wrapping an arbitrary value in a carrier composite so a single
@@ -38,7 +39,7 @@ Front-end *boxing* — wrapping an arbitrary value in a carrier composite so a s
 
 -- Well-typed and declared `throws`: lowers to a `Result`-returning procedure
 -- and verifies — there are no proof obligations to discharge.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -54,7 +55,7 @@ procedure throwsException()
 
 -- No-escape enforcement: a `throw` whose exception would escape a procedure
 -- that does not declare `throws` is rejected during resolution.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -71,7 +72,7 @@ procedure throwsWithoutDeclaring()
 -- Throw a value of a declared subtype of the `throws` type. The procedure
 -- declares `throws`, so this lowers to a `Result`-returning Core procedure
 -- and verifies (no proof obligations).
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -86,13 +87,13 @@ procedure throwsSubtype() throws (e: Exception) opaque {
 
 Laurel imposes no root exception type, so a primitive is a legal `throws` type and a
 legal `throw` operand. Both guides say so; these two cases are the evidence. Nothing is
-allocated here, so unlike the rest of the file these two run under `testLaurelMultiple`
+allocated here, so unlike the rest of the file these two run under `testLaurelExecution`
 — verifier *and* interpreter. That is also why the callers take no arguments and pass a
-literal: `testLaurelMultiple` needs an `entry` procedure for the interpreter to invoke,
+literal: `testLaurelExecution` needs an `entry` procedure for the interpreter to invoke,
 and an entry point is called with none. -/
 
 -- `throws int` with a bare `throw 3`, caught by the caller.
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure parsePositive(x: int) returns (r: int)
@@ -120,7 +121,7 @@ procedure catchesInt()
 -- The thrown primitive is observable in the handler, and a case's `ensures` can
 -- constrain it by value rather than by type — there is no type test to make here,
 -- which is the point: the binding is an `int`.
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure throwsCode(x: int) returns (r: int)

@@ -9,7 +9,7 @@ import StrataTest.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelMultiple <|
+#eval testLaurelExecution { skipCoreInterpreter := false } <|
 #strata
 program Laurel;
 procedure foo(x: int)

@@ -29,7 +29,7 @@ What is checked here:
 
 -- Valid: `throws` a composite. Recorded and ignored at translation, so the
 -- procedure verifies with no diagnostics.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -45,7 +45,7 @@ procedure mightThrow()
 
 -- Valid: a `throwsOn` case with a boolean guard and a boolean postcondition. The body
 -- has to throw, because the guard `true` forces it.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -65,7 +65,7 @@ procedure mightThrow2()
 
 -- Valid: a `throws` type is any composite from the front end's own hierarchy —
 -- there is no built-in exception root it must extend.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -80,7 +80,7 @@ procedure throwsBareComposite()
 #end
 
 -- Ill-typed: a case's postcondition is an int, not a bool.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -99,7 +99,7 @@ procedure badCaseEnsures()
 #end
 
 -- Ill-typed the other way: a case's *guard* is an int, not a bool.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -120,7 +120,7 @@ procedure badThrowsOnGuard()
 -- exceptional exit for it to describe, and neither `EliminateExceptions` nor
 -- `ModifiesClauses` would lower it, so it would be silently ignored rather than
 -- checked. One diagnostic per case.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -155,7 +155,7 @@ defined there.
 mentions nothing about its exception still names it. -/
 
 -- The binding is not in scope in a `requires`.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -175,7 +175,7 @@ procedure bindingInRequires(x: int)
 #end
 
 -- Nor in a case's guard, which is a pre-state predicate.
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 
@@ -201,7 +201,7 @@ thrown value, so a case that referred to a value output would read
 a diagnosable error. Inout parameters are exempt: they survive as outputs of the lowered
 procedure. -/
 
-#eval testLaurel <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 

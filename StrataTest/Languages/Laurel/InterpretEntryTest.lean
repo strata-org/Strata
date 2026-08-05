@@ -47,7 +47,7 @@ private def runMarkedEntries (laurel : Laurel.Program) (fuel : Nat := 10000) :
     | .ok prog => pure prog
     | .error e => IO.println s!"type error: {e.message}"; return
   -- Inline bodied functions so concrete evaluation can reduce them, exactly as
-  -- the real command and `TestLaurel`'s interpret helper do. Operators reach
+  -- the real command and `TestLaurelVerification`'s interpret helper do. Operators reach
   -- Core as calls to their built-in wrapper functions (`$add`, …), so without
   -- this an `assert x + x == 4` never reduces to a bool.
   let core := Core.Program.inlineBodiedFunctions core

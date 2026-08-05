@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Correct early return -/
 
-#eval testLaurel
+#eval testLaurelVerification
 #strata
 program Laurel;
 procedure earlyReturnCorrect(x: int) returns (r: int)
@@ -27,7 +27,7 @@ procedure earlyReturnCorrect(x: int) returns (r: int)
 
 /-! ## Buggy early return: postcondition fails -/
 
-#eval testLaurel <|
+#eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure earlyReturnBuggy(x: int) returns (r: int)
