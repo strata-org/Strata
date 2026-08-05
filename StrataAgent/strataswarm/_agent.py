@@ -91,6 +91,26 @@ class SwarmAgent:
         self.cancellation = cancellation or CancellationToken()
         self.pause = pause or PauseToken()
         self._backend_lock = asyncio.Lock()
+        # Session-ownership guard, SEPARATE from _backend_lock. run_ai() holds this
+        # for the WHOLE run (blocking acquire); a persistent _listen_messages loop
+        # only TRIES to acquire it and parks while it is held. This lets both a
+        # writer/guide's listen-task and an orchestrator-driven run_ai() stay alive
+        # for the whole lemma without both consuming turns on the one backend
+        # session at once — run_ai always wins, the listener yields. It must NOT be
+        # _backend_lock: run_ai re-enters _consume_response per turn and asyncio
+        # locks are non-reentrant, so holding _backend_lock across a run would
+        # self-deadlock. Acquired at the run_ai layer, above _backend_lock.
+        self._driving_lock = asyncio.Lock()
+        # Tools blocked for the duration of the CURRENT run_ai() only. A permanent
+        # PreToolUse hook (installed in swarm_agent) reads this set live and denies
+        # any listed tool. run_ai() sets it from its block_tools arg inside
+        # _driving_lock and clears it in finally, so it is empty during a persistent
+        # _listen_messages consume (that path also holds _driving_lock, never
+        # overlapping a run_ai). Used to stop the guide from send_message-ing the
+        # writer during a strategy/decision run — its reply is already copied into
+        # the writer's prompt, and an extra message would auto-start the writer's
+        # listener and break the orchestrator's sequencing.
+        self._blocked_tools: set[str] = set()
         self._render_vars = render_vars or {}
         self._on_event = on_event
         self._mcp_servers_override = mcp_servers_override
@@ -501,6 +521,7 @@ class SwarmAgent:
         inp: Any = None,
         result_type: type[T] | None = None,
         max_turns: int | None = None,
+        block_tools: list[str] | None = None,
     ) -> AgentResult[T]:
         """Hand control to the LLM on the existing session.
 
@@ -512,17 +533,29 @@ class SwarmAgent:
             inp: Optional query to send. None = agent picks up from inbox.
             result_type: Force structured output. None = freeform text.
             max_turns: Cap LLM turns for this call. Prevents runaway.
+            block_tools: Tool names to DENY for this run only (via the live
+                PreToolUse block hook). Set while _driving_lock is held and
+                cleared on exit, so it never affects a listen-loop consume.
         """
         saved_wait = self._wait_after_completion
         saved_turns = self.spec.max_turns
         self._wait_after_completion = False
         if max_turns is not None:
             self.spec.max_turns = max_turns
-        try:
-            return await self._run_inner(inp, result_type)
-        finally:
-            self._wait_after_completion = saved_wait
-            self.spec.max_turns = saved_turns
+        # Own the session for the whole run. A concurrent _listen_messages task on
+        # this same agent only try-acquires this lock, so it parks (consumes no
+        # turns) for the duration — every turn this run emits lands in THIS result,
+        # never split with the listener. Blocking acquire: if the listener is
+        # mid-turn we wait for that turn to finish (never truncate it), then win.
+        async with self._driving_lock:
+            if block_tools:
+                self._blocked_tools = set(block_tools)
+            try:
+                return await self._run_inner(inp, result_type)
+            finally:
+                self._blocked_tools = set()
+                self._wait_after_completion = saved_wait
+                self.spec.max_turns = saved_turns
 
     async def get_context_percentage(self) -> float | None:
         """Return context window usage as 0-100 percentage, or None if unavailable."""
@@ -777,22 +810,37 @@ class SwarmAgent:
             should_continue = cancellation_token.is_cancelled is False
             while should_continue:
                 await asyncio.sleep(1) # yield to event loop
+                # PARK while run_ai() owns the session. run_ai holds _driving_lock
+                # for its whole run and its own between-turn check (_run_inner)
+                # already pulls the mailbox, so leave the wakeup signal on the
+                # channel for it to consume — do not touch the backend or drain the
+                # channel here. We resume listening once run_ai releases the lock.
+                if self._driving_lock.locked():
+                    continue
                 messages_ch = self.channel_bus.get_or_create(f"{self.spec.name}:messages")
                 msg = await messages_ch.receive(timeout=0.1)
                 if msg:
-                    # Drain other queued signals — content is in the mailbox.
-                    while await messages_ch.receive(timeout=0) is not None:
-                        pass
-                    await self._emit("message_received", f"from:{msg.sender}")
-                    # _mailbox_push registers the inlined sender in the reply_only FIFO.
-                    injection = self._mailbox_push()
-                    if injection is not None:
-                        await self._emit("message", injection)
-                        # Send + consume WITHOUT the cancellation token: an in-flight
-                        # reply must always finish (never truncated mid-turn — the
-                        # `01:33:34` "our messages crossed" bug). Cancellation is a
-                        # graceful "stop after this turn", observed only at the loop
-                        # boundary below.
-                        should_continue = await self._consume_response(result, start_time, query=injection)
+                    # We won the signal. Hold _driving_lock across the whole
+                    # consume so a concurrent run_ai() can't interleave turns on
+                    # this session. Blocking acquire: in the rare race where run_ai
+                    # grabbed the lock between the check above and here, we simply
+                    # wait for it to finish, then process — never truncated, never
+                    # split. Same lock ORDER as run_ai (_driving_lock then, inside
+                    # _consume_response, _backend_lock) so there is no deadlock.
+                    async with self._driving_lock:
+                        # Drain other queued signals — content is in the mailbox.
+                        while await messages_ch.receive(timeout=0) is not None:
+                            pass
+                        await self._emit("message_received", f"from:{msg.sender}")
+                        # _mailbox_push registers the inlined sender in the reply_only FIFO.
+                        injection = self._mailbox_push()
+                        if injection is not None:
+                            await self._emit("message", injection)
+                            # Send + consume WITHOUT the cancellation token: an in-flight
+                            # reply must always finish (never truncated mid-turn — the
+                            # `01:33:34` "our messages crossed" bug). Cancellation is a
+                            # graceful "stop after this turn", observed only at the loop
+                            # boundary below.
+                            should_continue = await self._consume_response(result, start_time, query=injection)
                 should_continue = should_continue and not cancellation_token.is_cancelled
         return result

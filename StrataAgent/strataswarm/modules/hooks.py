@@ -21,6 +21,43 @@ logger = logging.getLogger("strataswarm.hooks")
 
 
 
+# ─── Live per-run tool block ─────────────────────────────────────────────────
+
+def blocked_tools_hooks(agent_ref) -> dict:
+    """Deny any tool listed in agent_ref._blocked_tools, checked LIVE per call.
+
+    The set is populated by run_ai(block_tools=[...]) for the duration of one run
+    (inside _driving_lock) and cleared on exit — so a persistent _listen_messages
+    consume, which never overlaps a run_ai, always sees it empty. Matches on the
+    bare tool name and, for MCP tools, the final `__`-segment, so a caller can
+    pass either "send_message" or the full "mcp__agent_messaging__send_message".
+
+    The caller passing block_tools is responsible for telling the agent WHY in the
+    prompt (so it never attempts the call). This deny is the generic failsafe.
+    """
+    async def _block(input_data, tool_use_id, context):
+        if not isinstance(input_data, dict):
+            return {}
+        if input_data.get("hook_event_name") != "PreToolUse":
+            return {}
+        blocked = getattr(agent_ref, "_blocked_tools", None)
+        if not blocked:
+            return {}
+        tool_name = input_data.get("tool_name", "")
+        short = tool_name.rsplit("__", 1)[-1]
+        if tool_name in blocked or short in blocked:
+            return deny(tool_name, (
+                f"'{short}' is temporarily disabled for this call. Do NOT use it "
+                f"now — complete your response using your other tools, or just "
+                f"answer inline."
+            ))
+        return {}
+
+    return {
+        "PreToolUse": [HookMatcher(matcher=".*", hooks=[_block])]
+    }
+
+
 # ─── Budget warning: fires on PreToolUse when turns running low ──────────────
 
 def budget_warning_hooks(agent_ref) -> dict:

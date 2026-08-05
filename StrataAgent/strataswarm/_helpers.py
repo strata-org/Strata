@@ -251,6 +251,20 @@ class swarm_agent:
             else:
                 combined_hooks = extra_hooks
 
+        # Live per-run tool block: denies whatever run_ai(block_tools=...) puts in
+        # self._agent._blocked_tools for the duration of one run. No-op when empty,
+        # so it is safe to install on every agent.
+        from .modules.hooks import blocked_tools_hooks
+        block_hooks = blocked_tools_hooks(self._agent)
+        if combined_hooks:
+            for event, matchers in block_hooks.items():
+                if event in combined_hooks:
+                    combined_hooks[event].extend(matchers)
+                else:
+                    combined_hooks[event] = matchers
+        else:
+            combined_hooks = block_hooks
+
         # Add budget warning as a PreToolUse hook (fires when turns running low)
         if spec.max_turns:
             from .modules.hooks import budget_warning_hooks

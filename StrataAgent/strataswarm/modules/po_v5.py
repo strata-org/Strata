@@ -222,6 +222,25 @@ def _read_hint(state: PO5State) -> str:
 # Guide APIs — the only way to interact with the guide
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Tools blocked while the orchestrator drives the guide via run_ai for strategy /
+# a decision. The guide's reply TEXT is already copied into the writer's next
+# prompt, so a send_message here would double-message the writer AND auto-start
+# its listener out of sequence. wait_for_reply is blocked too: a blocking wait
+# during a synchronous decision call would stall the orchestrator. Passed as bare
+# names — blocked_tools_hooks matches on the MCP tool's final `__` segment.
+_GUIDE_DECISION_BLOCK = ["send_message", "wait_for_reply"]
+
+# Inline reminder prepended to every strategy/decision prompt, matching
+# _GUIDE_DECISION_BLOCK. Told UP FRONT so the guide simply answers inline instead
+# of attempting a send_message that the block hook would deny — a denied call
+# still costs a turn. The hook stays as the failsafe.
+_GUIDE_DECISION_NO_MSG = (
+    "⚠️ ANSWER INLINE ONLY. Your reply text below is delivered to the writer "
+    "automatically — do NOT call send_message or wait_for_reply in this response "
+    "(they are disabled for this turn). Just write your answer.\n\n"
+)
+
+
 async def _consult_guide_raw(agent, state: PO5State, ledger: LemmaLedger,
                               entry: LemmaEntry, cwd: Path,
                               task: str | None = None) -> str:
@@ -241,7 +260,8 @@ async def _consult_guide_raw(agent, state: PO5State, ledger: LemmaLedger,
             parts.append(f"⚠️ FAILURE:\n{ctx.failure_context}")
         task = "\n\n".join(parts) if parts else "Continue. Read the file and advise."
 
-    result = await guide.run_ai(inp=task)
+    result = await guide.run_ai(inp=_GUIDE_DECISION_NO_MSG + task,
+                                block_tools=_GUIDE_DECISION_BLOCK)
     return result.raw_result or ""
 
 
@@ -273,6 +293,7 @@ async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
 
     options_str = " | ".join(options)
     prompt = (
+        f"{_GUIDE_DECISION_NO_MSG}"
         f"{task}\n\n"
         f"DECIDE one of: [{options_str}]\n"
         f"Reply EXACTLY:\n"
@@ -282,7 +303,7 @@ async def _consult_guide_decide(agent, state: PO5State, ledger: LemmaLedger,
         prompt += post_prompt + "\n"
     prompt += "REASON: <one sentence>"
 
-    result = await guide.run_ai(inp=prompt)
+    result = await guide.run_ai(inp=prompt, block_tools=_GUIDE_DECISION_BLOCK)
     raw = result.raw_result or ""
 
     pattern = "|".join(re.escape(o) for o in options)
@@ -601,6 +622,13 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         _save_state(cwd, state)
 
     # ─── Done ─────────────────────────────────────────────────────────────
+    # Tear down every persistent writer/guide listen task. Most instances are
+    # cached on `agent` per lemma-id and reused (never rotated/cleaned up on the
+    # proved path), so their _listen_messages tasks would otherwise outlive the
+    # workflow — a 1s-polling coroutine per instance holding a backend. Sweep all
+    # of them here so no listener leaks past the run.
+    await _stop_all_listeners(agent)
+
     elapsed = _time.time() - start_time
     total_cost = getattr(agent.swarm, '_total_cost', 0.0) if hasattr(agent, 'swarm') else 0.0
     await agent._emit("message",
@@ -728,6 +756,11 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
     copy_cheat_sheet(cwd, ws_path, state.use_cheat_sheet, state.cheat_sheet_path)
 
     writer = await _get_writer(agent, entry, state, ledger)
+    # Keep the writer live and reactive for the WHOLE lemma. Between chunks (when no
+    # run_ai drives it) this lets the guide's decision-phase questions reach the
+    # writer immediately; during a chunk the writer's own run_ai owns the session
+    # (via _driving_lock) and this listener parks. See _ensure_listening.
+    _ensure_listening(agent, writer)
     verify_fn = _make_verifier(entry, stub_rel, original_content, ledger, cwd)
     protected_names = _get_protected_names(tools, stub_rel, entry)
 
@@ -826,54 +859,48 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         writer_pct = await writer.get_context_percentage()
         # _get_guide handles rotation internally if >= 75%
         guide = await _get_guide(agent, entry, state, ledger)
+        # Keep the guide live and reactive for the WHOLE lemma via a persistent
+        # listen task (idempotent; re-ensured each iteration in case the guide
+        # rotated to a fresh instance). While the writer proves this chunk the guide
+        # is not being driven by run_ai, so its listener answers the writer in real
+        # time; when the orchestrator later calls run_ai on the guide for its
+        # review/decision, run_ai owns the session and the listener parks.
+        _ensure_listening(agent, guide)
         # Open the live writer↔guide channel for THIS chunk. Re-established every
-        # iteration because either instance may have rotated (new name). The guide
-        # is about to park in run_while_listening_to_messages, so the writer can
-        # report to it mid-chunk and receive a reply on the same channel.
+        # iteration because either instance may have rotated (new name). Both
+        # instances now listen persistently, so a writer→guide message lands in
+        # real time and the guide can reply on the same channel.
         guide_name = _link_writer_guide(agent, writer, guide)
         guide_pct = await guide.get_context_percentage()
         await agent._emit("message",
             f"[PO5] Chunk {entry.attempts} ({chunk_budget}t, total={total_turns}) "
             f"[{elapsed/60:.1f}min] | writer: {writer_pct or 0:.0f}% | guide: {guide_pct or 0:.0f}%")
 
-        # Writer works
+        # Writer works. The guide is already live in its own persistent listen task
+        # (_ensure_listening above), so it answers the writer's mid-chunk messages
+        # in real time — no per-chunk gather/cancel dance, and the guide is NOT torn
+        # down at the chunk boundary. The writer's run_ai holds _driving_lock for
+        # the whole chunk; if it messages the guide and waits, the reply is injected
+        # at the writer's next turn boundary (run_ai's own between-turn mailbox pull).
         chunk = min(MAX_CHUNK_TURNS, max(MIN_CHUNK_TURNS, chunk_budget))
-        # We will let the guide run in background meanwhile
-        cancellation_token = CancellationToken()
-
-        async def _run_guide_while_listening_to_messages():
-            result = await guide.run_while_listening_to_messages(cancellation_token=cancellation_token)
-            await agent._emit("message", f"[PO5] Guide stopped listening for messages: {result.raw_result or ''}")
-            return result.raw_result or ""
-
-        async def _run_writer_then_cancel():
-            result = await verified_loop(
-                agent_ctx=writer,
-                initial_input=(
-                    f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
-                    f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}\n\n"
-                    f"Your proof guide '{guide_name}' is available RIGHT NOW while you work. "
-                    f"If you hit something strategic — the goal looks false or mis-stated, "
-                    f"the signature seems unprovable as written, a lemma you need is missing, "
-                    f"or you're stuck in a way tactics alone won't fix — report it with "
-                    f"send_message(to=\"{guide_name}\", message=\"...\") and then "
-                    f"wait_for_reply(sender=\"{guide_name}\", timeout=60) for the reply. Do "
-                    f"NOT message for routine compile errors — fix those yourself."
-                ),
-                verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
-            )
-            # Graceful stop: the guide finishes any in-flight reply (never truncated
-            # mid-turn — the `01:33:34` desync) and stops at its next loop boundary.
-            # cancel() sets the flag; the guide's listen loop polls the channel with
-            # a short timeout (_agent._listen_messages), so it re-checks cancellation
-            # within ~1s without needing an explicit wakeup nudge.
-            cancellation_token.cancel()
-            await agent._emit("message", "[PO5] Signalled guide to stop after its current turn")
-            return result
-
-        outcome, _ = await asyncio.gather(
-            _run_writer_then_cancel(),
-            _run_guide_while_listening_to_messages(),
+        outcome = await verified_loop(
+            agent_ctx=writer,
+            initial_input=(
+                f"STRATEGY ADVICE from your proof guide:\n{advice}\n\n"
+                f"You have {chunk} turns. File MUST compile (sorry allowed).{scope_note}\n\n"
+                f"Your proof guide '{guide_name}' is live RIGHT NOW while you work and "
+                f"answers in real time. Keep proving — do NOT block waiting on it. If you "
+                f"hit something strategic — the goal looks false or mis-stated, the "
+                f"signature seems unprovable as written, a lemma you need is missing, or "
+                f"you're stuck in a way tactics alone won't fix — report it with "
+                f"send_message(to=\"{guide_name}\", message=\"...\") and KEEP WORKING; its "
+                f"reply reaches you at your next turn. Only if you genuinely cannot proceed "
+                f"without the answer, follow up with wait_for_reply(sender=\"{guide_name}\", "
+                f"timeout=<seconds you expect it to take>) — pick a short timeout for a quick "
+                f"check, a longer one for a deep architectural call. Do NOT message for "
+                f"routine compile errors — fix those yourself."
+            ),
+            verify=verify_fn, max_rounds=2, max_turns=chunk, use_run_ai=True,
         )
 
         total_turns += chunk
@@ -2041,13 +2068,90 @@ def _remove_guide_from_visibility(agent, entry: LemmaEntry, writer_agent):
         visible.discard(g)
 
 
+def _ensure_listening(agent, instance) -> None:
+    """Attach a persistent background _listen_messages task to a writer/guide
+    instance, so it stays live and reactive for the WHOLE lemma — not just during
+    one chunk's gather.
+
+    The task parks on the instance's message channel and, when a message arrives,
+    injects it into that instance's backend session. It coordinates with any
+    orchestrator-driven run_ai() on the SAME instance via _driving_lock (held by
+    run_ai for its whole run; only try-acquired by the listener) — so the listener
+    yields the session whenever run_ai is driving and resumes when it finishes.
+    That is what lets the guide answer the writer mid-chunk while the writer proves,
+    and lets the writer answer the guide during the decision phase, with no torn
+    turns and no split results.
+
+    Idempotent: a no-op if the instance already has a live listen task. The task's
+    lifetime is bound to the instance — _stop_listening is called wherever the
+    instance is destroyed (_rotate_agent, _cleanup_agents).
+    """
+    if instance is None:
+        return
+    existing = getattr(instance, "_po5_listen_task", None)
+    if existing is not None and not existing.done():
+        return
+    token = CancellationToken()
+    task = asyncio.ensure_future(instance._listen_messages(token))
+    instance._po5_listen_token = token
+    instance._po5_listen_task = task
+
+
+async def _stop_listening(instance) -> None:
+    """Cancel and await the instance's persistent listen task (see _ensure_listening).
+
+    Graceful first: signal the CancellationToken so the loop stops at its next
+    boundary (never truncating an in-flight reply). Then hard-cancel the task as a
+    backstop and await it so the coroutine is fully torn down before the instance's
+    backend is disconnected.
+    """
+    if instance is None:
+        return
+    token = getattr(instance, "_po5_listen_token", None)
+    task = getattr(instance, "_po5_listen_task", None)
+    if token is not None:
+        token.cancel()
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+    instance._po5_listen_token = None
+    instance._po5_listen_task = None
+
+
+async def _stop_all_listeners(agent) -> None:
+    """Run-level sweep: cancel EVERY persistent listen task still attached to a
+    cached guide/writer/closer instance on the orchestrator.
+
+    Instances are cached on `agent` keyed by lemma id (`_guide_<id>`,
+    `_writer_<id>`, …) and reused across chunks. They are torn down on rotation
+    (_rotate_agent) and on the decompose path (_cleanup_agents), but a lemma that
+    finishes proved/contingent/failed WITHOUT rotating leaves its instance — and
+    its 1s-polling _listen_messages coroutine — cached for the rest of the run.
+    Call this once at workflow completion so no listener outlives its usefulness.
+    Identify instances by the marker attribute _ensure_listening sets, so we do
+    not depend on which lemma ids are still live at the end.
+    """
+    seen = set()
+    for value in list(vars(agent).values()):
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        if getattr(value, "_po5_listen_task", None) is not None:
+            await _stop_listening(value)
+
+
 def _link_writer_guide(agent, writer_agent, guide_agent) -> str:
     """Open a live, bidirectional message channel between THIS writer and THIS
     guide instance and return the guide's current name.
 
-    The writer proves a chunk while the guide is parked in
-    ``run_while_listening_to_messages``, so a writer→guide message lands in real
-    time and the guide can reply on the same channel. `send_message` enforces a
+    The writer proves a chunk while the guide is parked in its persistent
+    ``_listen_messages`` task (see _ensure_listening), so a writer→guide message
+    lands in real time and the guide can reply on the same channel. Likewise a
+    guide→writer question between chunks reaches the writer's own live listener.
+    `send_message` enforces a
     DIRECTED visibility check (recipient ∈ visibility_graph[sender]), so BOTH
     directions need an edge: writer→guide (to report) and guide→writer (to
     reply). Instance names change on rotation, so we (re)establish the edge each
@@ -2065,6 +2169,10 @@ def _link_writer_guide(agent, writer_agent, guide_agent) -> str:
 
 async def _rotate_agent(agent, entry: LemmaEntry, cwd: Path, role: str, instance):
     """Dump agent state to disk and destroy the instance so a fresh one is created."""
+    # Stop the persistent listen task BEFORE dumping state / disconnecting: the
+    # state-dump below is itself a run_ai() call on this instance, and we must not
+    # leave a listener racing it (or holding the session) as the backend goes away.
+    await _stop_listening(instance)
     # Ask agent to dump its state
     try:
         result = await instance.run_ai(
@@ -2104,6 +2212,9 @@ async def _cleanup_agents(agent, entry: LemmaEntry):
     for role in ("guide", "writer", "closer"):
         attr = f"_{role}_{entry.id}"
         ctx_attr = f"{attr}_ctx"
+        instance = getattr(agent, attr, None)
+        # Tear down the persistent listen task before disconnecting the backend.
+        await _stop_listening(instance)
         ctx = getattr(agent, ctx_attr, None)
         if ctx:
             try:
