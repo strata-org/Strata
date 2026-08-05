@@ -19,6 +19,7 @@ rev = "bump_to_v4.29.0-rc8"
 
 [[lean_lib]]
 name = "Strata"
+moreLeancArgs = ["-fbracket-depth=512"]
 
 [[lean_lib]]
 name = "StrataExamples"
