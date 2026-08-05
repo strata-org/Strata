@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeVar
@@ -37,6 +38,23 @@ STALL_TIMEOUT = 600  # 10 minutes — if no message for this long (and no tool i
 # enough for heavy Lean builds/probes, but still finite so a truly-hung
 # subprocess is eventually reaped rather than hanging forever.
 TOOL_STALL_TIMEOUT = 1800  # 30 minutes — watchdog ceiling while a tool is running
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a positive float from the environment, falling back to `default`."""
+    try:
+        v = float(os.environ.get(name, "").strip())
+        return v if v > 0 else default
+    except (ValueError, AttributeError):
+        return default
+
+
+# Context-usage % (0-100, USED) at which a stateful agent compacts or hands off to
+# a fresh restart. Overridable so a test can force compaction/restart early —
+# lowering this makes agents rotate their context much sooner, which is one of the
+# knobs used to drive BigSur end-to-end (see tests/ Layer 3): frequent rotation
+# churns proofs and provokes the give-ups that escalate to the repair agent.
+CONTEXT_COMPACT_THRESHOLD = _env_float("STRATA_CONTEXT_COMPACT_PCT", 70.0)
 
 
 def parse_checkpoint_state(checkpoint_md: str) -> dict | None:
@@ -722,7 +740,7 @@ class SwarmAgent:
                 # Context management (stateful only, unless disabled)
                 if not self.spec.stateless and not self.spec.disable_compaction:
                     ctx_pct = await self.backend.get_context_percentage()
-                    if ctx_pct is not None and ctx_pct >= 70.0:
+                    if ctx_pct is not None and ctx_pct >= CONTEXT_COMPACT_THRESHOLD:
                         if self.spec.checkpointable:
                             # Checkpointable agents: handoff-restart instead of compact
                             # Generate handoff, then signal exit for fresh restart

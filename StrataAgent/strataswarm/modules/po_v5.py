@@ -21,7 +21,9 @@ Per-lemma state (LemmaContext):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import os
 import re
 import shutil
 import time as _time
@@ -71,14 +73,37 @@ ENDGAME_GRACE_CHUNKS = 4
 # TIER 2 — HARD run-level ceiling (absolute wall-clock for the WHOLE run). Set via
 # `start_dashboard.sh --max-run-minutes`. None ⇒ NO stopping time (run until proved
 # or otherwise terminated). This is the only unconditional stop.
-# When a child gives up, its parent is re-activated to re-decompose differently.
-# Bound how many times a single parent may be re-activated before we stop and
-# propagate the failure further up (prevents the give_up ↔ re-decompose churn).
-MAX_REACTIVATIONS = 2
+# BigSur — the repair agent of last resort. EVERY give-up that reaches
+# _propagate_failure_to_parent escalates straight to BigSur (no local
+# parent-reactivation first — a give-up's real cause usually lives ABOVE the parent,
+# which a parent-only re-decompose cannot fix). BigSur is a powerful agent that may
+# rewrite any contract/decomposition/ledger/snapshot ANYWHERE in the Sandbox except
+# the root human signature. BIGSUR_DECISION_ROUNDS bounds the "are you done and
+# consistent?" run_ai loop after BigSur's initial free-form repair run;
+# BIGSUR_MAX_INVOCATIONS bounds how many times BigSur may be invoked across the whole
+# run (a global backstop against a repair ↔ re-fail loop).
+BIGSUR_DECISION_ROUNDS = 6
+BIGSUR_MAX_INVOCATIONS = 4
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a positive float from the environment, falling back to `default`."""
+    try:
+        v = float(os.environ.get(name, "").strip())
+        return v if v > 0 else default
+    except (ValueError, AttributeError):
+        return default
+
+
 # An agent's context window is rotated (swapped for a fresh instance) once usage
 # crosses this. NOTE: the figure everywhere in this module is context *USED* —
 # a LOW number means the agent has lots of runway left, NOT that it is exhausted.
-CONTEXT_ROTATION_THRESHOLD = 75.0  # percent USED
+# This same threshold sets the guide's runway bands (_runway_note): the guide
+# perceives the writer as "FULL" once usage reaches it, which is the primary
+# signal steering it toward `decompose`. Overridable so a test can LOWER it to make
+# the guide decompose much earlier than a healthy proof would — driving the
+# give-up/re-decompose churn that escalates to BigSur end-to-end (Layer 3).
+CONTEXT_ROTATION_THRESHOLD = _env_float("STRATA_CONTEXT_ROTATION_PCT", 75.0)  # percent USED
 
 
 def _runway_note(pct: float | None) -> str:
@@ -89,17 +114,26 @@ def _runway_note(pct: float | None) -> str:
     guide as "5% left → exhausted" and triggered a premature `decompose` on turn 1
     (the number is context USED, so 5% means 95% free). We spell out both the
     number and its meaning so the signal cannot be inverted.
+
+    We also state the DECOMPOSITION THRESHOLD explicitly — the context-usage %
+    (CONTEXT_ROTATION_THRESHOLD, set by the user via STRATA_CONTEXT_ROTATION_PCT)
+    at which the writer is "FULL" and decomposition becomes warranted — so the
+    guide knows the exact point it is aiming at rather than inferring it from the
+    band label alone.
     """
     used = pct or 0.0
     free = 100.0 - used
-    if used < CONTEXT_ROTATION_THRESHOLD * 0.6:        # < ~45% used
+    thr = CONTEXT_ROTATION_THRESHOLD
+    if used < thr * 0.6:                # < 60% of the threshold
         band = "HEALTHY — plenty of runway, keep the writer working"
-    elif used < CONTEXT_ROTATION_THRESHOLD:            # ~45–75% used
+    elif used < thr:                    # approaching the threshold
         band = "GETTING FULL — rotation approaching, wrap up soon"
-    else:                                              # ≥ 75% used
+    else:                               # at/over the threshold
         band = "FULL — will rotate to a fresh writer"
     return (f"Writer runway: {band} "
-            f"({used:.0f}% of context USED, {free:.0f}% free)")
+            f"({used:.0f}% of context USED, {free:.0f}% free). "
+            f"Decomposition threshold (set by the user): {thr:.0f}% context USED — "
+            f"decompose once usage reaches this and the writer is genuinely stuck.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -181,10 +215,6 @@ class LemmaContext:
     failure_context: str = ""
     needs_fresh_guide: bool = False
     needs_fresh_writer: bool = False
-    # How many times this lemma has been re-activated because a child gave up.
-    # Bounds the re-decompose loop (Bug #3): after MAX_REACTIVATIONS we stop
-    # re-decomposing and propagate the failure further up instead.
-    reactivations: int = 0
 
 
 @dataclass
@@ -216,6 +246,9 @@ class PO5State:
     # must fix something (false/mis-stated goal, wrong def, missing hypothesis,
     # unavailable dependency), the specific request(s) are captured here.
     user_fix_request: str = ""
+    # How many times the BigSur repair agent has been invoked this run. Bounded by
+    # BIGSUR_MAX_INVOCATIONS — a global backstop against a repair ↔ re-fail loop.
+    bigsur_invocations: int = 0
 
 
 def _read_hint(state: PO5State) -> str:
@@ -340,57 +373,262 @@ def _register_lemma(state: PO5State, ledger: LemmaLedger, **kwargs) -> LemmaEntr
     return entry
 
 
-def _propagate_failure_to_parent(state: PO5State, ledger: LemmaLedger,
-                                  entry: LemmaEntry, message: str):
-    """A child gave up — route the failure to the parent AND re-activate it so its
-    guide can re-decompose differently, instead of leaving a dead child that gets
-    the same give-up re-derived forever (Bug #3).
+async def _propagate_failure_to_parent(agent, state: PO5State, ledger: LemmaLedger,
+                                        entry: LemmaEntry, cwd: Path, message: str):
+    """A child gave up — ALWAYS escalate to BigSur, the repair agent.
 
-    Steps:
-      1. Record the failure text on the parent's context (guide sees it next turn).
-      2. Prune the failed child's subtree so its dead siblings/imports don't linger.
-      3. Reset the parent to PENDING (priority-boosted) so SELECT re-picks it and
-         its guide is asked for a DIFFERENT decomposition — bounded by
-         MAX_REACTIVATIONS. Once exhausted, we stop re-activating and let the
-         failure bubble further up (the parent itself will hit its own give-up).
+    We do NOT try local parent-reactivation first. A give-up almost always means a
+    decomposition boundary is wrong — the child's contract needs a fact (a
+    well-formedness / freshness / shape hypothesis) that lives ABOVE the parent
+    (see the terminal_sim reset-loop). A parent-only re-decompose cannot express
+    that fix, so it just re-derives the same give-up until it exhausts its budget.
+    Instead, on every give-up we go straight to `_run_bigsur`, which:
+      1. Re-consults the give-up guide to scan the ancestry (ledger + SearchAgent)
+         and produce an IMPACT REPORT of what must change and where.
+      2. Spawns BigSur to rewrite whatever contracts/decompositions/ledger/snapshots
+         are needed across the Sandbox to make the project self-consistent again —
+         everything except the root human signature — or give up with an epiphany
+         that the ROOT theorem itself is the problem (→ propagate to top and fail).
+
+    Steps here just prepare the ground:
+      1. Record the failure text on the parent's context.
+      2. Prune the failed child's subtree so dead siblings/imports don't linger.
     """
     from .lemma_ledger import LemmaStatus
 
     parent = ledger.get_parent(entry.id)
-    if not parent:
-        return
 
-    parent_ctx = state.lemma_ctx.get(parent.id)
-    if parent_ctx is None:
-        parent_ctx = LemmaContext()
-        state.lemma_ctx[parent.id] = parent_ctx
+    if parent is not None:
+        parent_ctx = state.lemma_ctx.get(parent.id)
+        if parent_ctx is None:
+            parent_ctx = LemmaContext()
+            state.lemma_ctx[parent.id] = parent_ctx
+        # Record failure text (append — parent may have multiple failed children).
+        if parent_ctx.failure_context:
+            parent_ctx.failure_context += f"\n{message}"
+        else:
+            parent_ctx.failure_context = message
 
-    # 1. Record failure text (append — parent may have multiple failed children).
-    if parent_ctx.failure_context:
-        parent_ctx.failure_context += f"\n{message}"
-    else:
-        parent_ctx.failure_context = message
-
-    # 2. Prune the dead child's subtree (mark_failed already set the child FAILED;
-    #    prune_branch skips PROVED/FAILED roots, so prune its children explicitly).
+    # Prune the dead child's subtree (mark_failed already set the child FAILED;
+    # prune_branch skips PROVED/FAILED roots, so prune its children explicitly).
     for cid in list(entry.children):
         ledger.prune_branch(cid, f"parent child '{entry.name}' gave up")
 
-    # 3. Re-activate the parent for a different decomposition, if budget remains.
-    if parent_ctx.reactivations >= MAX_REACTIVATIONS:
-        # Exhausted: don't churn. Leave the parent as-is; when SELECT finds no
-        # pending work under it, _phase_check escalates (and the parent's own
-        # give-up will propagate one level further up).
+    # ALWAYS escalate to BigSur (guide impact-report consult happens inside).
+    await _run_bigsur(agent, state, ledger, entry, cwd, message)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BigSur — the repair agent of last resort
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _root_signature_hash(cwd: Path, workspace: str) -> str | None:
+    """SHA-256 of the pristine root signature file (Stub.clean.lean), or None if
+    absent. Used to detect whether BigSur tampered with the immutable reference."""
+    clean = cwd / workspace / "Stub.clean.lean"
+    if not clean.exists():
+        return None
+    return hashlib.sha256(clean.read_bytes()).hexdigest()
+
+
+async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
+                      entry: LemmaEntry, cwd: Path, give_up_reason: str):
+    """Escalate a give-up to BigSur, the repair agent of last resort.
+
+    Flow:
+      1. Re-consult the give-up guide (the one that owns `entry`) to scan the
+         ancestry (ledger + SearchAgent) and produce an IMPACT REPORT of what needs
+         to change and where.
+      2. Hash the pristine root signature (Stub.clean.lean) so we can detect
+         tampering afterward.
+      3. Spawn BigSur (`run`, unlimited turns) with the give-up reason + impact
+         report. BigSur may rewrite any contract/decomposition/ledger/snapshot in
+         the Sandbox EXCEPT the root human signature, using its BigSur-only
+         destructive ledger + snapshot MCPs.
+      4. Loop a run_ai decision question — "is everything consistent (ledger, no
+         stale snapshots, no bad decomposition, compiles)?" — until BigSur attests
+         DONE, gives up with an epiphany, or we exhaust BIGSUR_DECISION_ROUNDS.
+      5. Enforce the ONE hard rule: if the Stub.clean.lean hash changed, BigSur
+         tampered with the immutable reference → treat as a failed repair and
+         propagate to the top.
+      6. If BigSur gave up (root theorem itself is wrong), record it as a user-fix
+         request and fail the root. Otherwise BigSur re-opened work in the ledger;
+         the main loop's next SELECT picks it up against the corrected contracts.
+    """
+    from .._bigsur_ledger_mcp import create_bigsur_ledger_mcp_server
+    from .._bigsur_snapshot_mcp import create_bigsur_snapshot_mcp_server
+
+    root_entry = ledger.get(state.root_id)
+
+    # Global backstop: don't let BigSur churn forever against an unfixable project.
+    if state.bigsur_invocations >= BIGSUR_MAX_INVOCATIONS:
+        await agent._emit("message",
+            f"[PO5] BigSur invocation cap reached ({BIGSUR_MAX_INVOCATIONS}); "
+            f"propagating failure to root.")
+        _record_give_up(state, root_entry or entry,
+                        f"BigSur could not repair after {BIGSUR_MAX_INVOCATIONS} "
+                        f"attempts; last give-up: {give_up_reason}")
+        if root_entry:
+            ledger.mark_failed(state.root_id, f"BigSur exhausted: {give_up_reason}")
         return
-    parent_ctx.reactivations += 1
-    parent_ctx.needs_fresh_guide = True
-    parent_ctx.needs_fresh_writer = True
-    parent_ctx.current_task = (
-        f"A previous decomposition failed: {message}\n"
-        f"Re-decompose '{parent.name}' DIFFERENTLY — the earlier split recreated an "
-        f"unprovable/false obligation. Do NOT reproduce the same child."
+    state.bigsur_invocations += 1
+
+    await agent._emit("message",
+        f"[PO5] ⛰️  Escalating give-up on '{entry.name}' to BigSur "
+        f"(#{state.bigsur_invocations}/{BIGSUR_MAX_INVOCATIONS}): {give_up_reason}")
+
+    # 1. Impact report from the give-up guide (best-effort — BigSur can also scan).
+    impact_report = ""
+    try:
+        impact_report = await _consult_guide_raw(
+            agent, state, ledger, entry, cwd,
+            task=(
+                f"You gave up on '{entry.name}'. Reason: {give_up_reason}\n\n"
+                f"Before we hand this to the BigSur repair agent, scan the ANCESTRY "
+                f"of this lemma (use ledger_ancestry / ledger_get / ledger_children "
+                f"on the ledger, and SearchAgent for the actual files) and produce a "
+                f"concise IMPACT REPORT:\n"
+                f"1. WHY is '{entry.name}' (or its failed child) unprovable AS STATED "
+                f"— what fact/hypothesis is missing?\n"
+                f"2. Which ANCESTOR actually HAS that fact (name + file)?\n"
+                f"3. Which intermediate lemma SIGNATURES must be strengthened to "
+                f"thread it down, and which decomposition files/ledger entries are "
+                f"now stale and should be removed?\n"
+                f"4. Could the ROOT human theorem itself be wrong? If so, why?\n"
+                f"Answer as a numbered report — this is the brief BigSur will act on."
+            ))
+    except Exception as e:
+        await agent._emit("message", f"[PO5] BigSur impact-report consult failed: {e}")
+
+    # 2. Snapshot the immutable root reference so we can detect tampering.
+    root_ws = root_entry.workspace if root_entry else entry.workspace
+    clean_hash_before = _root_signature_hash(cwd, root_ws)
+
+    # 3+4. Spawn BigSur with the destructive MCPs and drive it to a consistent state.
+    sandbox_root = cwd / state.root_workspace
+    bigsur_ledger_mcp = create_bigsur_ledger_mcp_server(ledger)
+    bigsur_snapshot_mcp = create_bigsur_snapshot_mcp_server(sandbox_root)
+
+    root_name = root_entry.name if root_entry else state.root_theorem_name
+    briefing = (
+        f"A proof give-up has escalated to you.\n\n"
+        f"FAILED LEMMA: {entry.name} (id={entry.id})\n"
+        f"GIVE-UP REASON: {give_up_reason}\n\n"
+        f"ROOT HUMAN THEOREM (DO NOT change its signature): {root_name}\n"
+        f"Its pristine signature lives in {root_ws}/Stub.clean.lean — NEVER edit "
+        f"that file.\n\n"
+        f"GUIDE'S IMPACT REPORT:\n{impact_report or '(none — scan the ancestry yourself)'}\n\n"
+        f"Make the whole Sandbox self-consistent: strengthen the contracts that need "
+        f"the missing hypotheses threaded down from the right ancestor, update the "
+        f"corresponding ledger entries (ledger_update_signature / ledger_reset_to_pending "
+        f"/ ledger_reparent), purge stale decomposition subtrees (ledger_purge_subtree) "
+        f"and their files, and delete now-stale snapshots. LEAVE sorries in place — "
+        f"provers close them later. Every file you touch must COMPILE (sorry warnings "
+        f"OK, errors NOT). If the ROOT theorem itself is wrong, give up with a clear "
+        f"epiphany instead of hacking around it."
     )
-    ledger.mark_pending(parent.id, priority_boost=True)
+
+    gave_up = False
+    epiphany = ""
+    async with swarm_agent(
+        "bigsur", swarm=agent.swarm, cwd=agent._cwd,
+        can_see=["SearchAgent"],
+        extra_mcp_servers={"bigsur_ledger": bigsur_ledger_mcp,
+                           "bigsur_snapshots": bigsur_snapshot_mcp},
+        disable_compaction=True,
+    ) as bigsur:
+        # Initial free-form repair pass — unlimited turns.
+        await bigsur.run(inp=briefing)
+
+        # Decision loop: keep asking until BigSur attests consistency or gives up.
+        for round_i in range(BIGSUR_DECISION_ROUNDS):
+            prompt = (
+                "Decision check. Answer EXACTLY:\n"
+                "DECISION: <done | not_done | give_up>\n"
+                "REASON: <one sentence>\n\n"
+                "Choose:\n"
+                "- done: the ledger is consistent (no dangling refs, no cycles), all "
+                "stale snapshots are deleted, bad decomposition files are removed, and "
+                "every file you changed COMPILES (sorry OK, errors NOT). You have "
+                "verified this — not merely intend to.\n"
+                "- not_done: work remains; you will continue after answering.\n"
+                "- give_up: the ROOT human theorem itself is wrong/unprovable — state "
+                "the epiphany (counterexample or missing hypothesis) in REASON."
+            )
+            result = await bigsur.run_ai(inp=prompt, max_turns=60)
+            raw = result.raw_result or ""
+            m = re.search(r'DECISION:\s*(done|not_done|give_up)', raw, re.IGNORECASE)
+            rm = re.search(r'REASON:\s*(.+)', raw)
+            decision = m.group(1).lower() if m else "not_done"
+            reason = rm.group(1).strip() if rm else raw[:200]
+            if decision == "done":
+                await agent._emit("message", f"[PO5] BigSur attests consistent: {reason}")
+                break
+            if decision == "give_up":
+                gave_up = True
+                epiphany = reason
+                await agent._emit("message", f"[PO5] BigSur gave up (epiphany): {reason}")
+                break
+            await agent._emit("message",
+                f"[PO5] BigSur round {round_i+1}/{BIGSUR_DECISION_ROUNDS}: not done — {reason}")
+            # Nudge it to keep fixing before the next check.
+            await bigsur.run_ai(
+                inp="Continue fixing until fully consistent, then I will re-check.",
+                max_turns=80)
+        else:
+            await agent._emit("message",
+                f"[PO5] BigSur exhausted {BIGSUR_DECISION_ROUNDS} decision rounds "
+                f"without attesting done — proceeding with whatever it changed.")
+
+    # 5. Enforce the ONE hard rule: BigSur must not have touched Stub.clean.lean.
+    clean_hash_after = _root_signature_hash(cwd, root_ws)
+    if clean_hash_before is not None and clean_hash_after != clean_hash_before:
+        await agent._emit("message",
+            "[PO5] ⛔ BigSur TAMPERED with the root reference (Stub.clean.lean "
+            "changed). Rejecting the repair and failing the root.")
+        # Restore the reference from the current on-disk root Stub if possible is
+        # unsafe (BigSur may have changed it too); simplest correct action is to
+        # fail — the run cannot be trusted to preserve the human's theorem.
+        _record_give_up(state, root_entry or entry,
+                        "BigSur altered the immutable root signature reference "
+                        "(Stub.clean.lean); repair rejected.")
+        if root_entry:
+            ledger.mark_failed(state.root_id,
+                               "BigSur tampered with root signature reference")
+        return
+
+    # 6. Route the outcome.
+    if gave_up:
+        # BigSur's epiphany: the root theorem itself is the problem. Record as a
+        # user-fix request and fail the root — this is the correct terminal state.
+        request = f"'{root_name}': {epiphany}" if epiphany else \
+                  f"'{root_name}': BigSur determined the theorem is unprovable as stated."
+        if state.user_fix_request:
+            state.user_fix_request += f"\n{request}"
+        else:
+            state.user_fix_request = request
+        _record_give_up(state, root_entry or entry,
+                        f"BigSur epiphany — root unfixable: {epiphany}")
+        if root_entry:
+            ledger.mark_failed(state.root_id, f"BigSur epiphany: {epiphany}")
+        await agent._emit("message",
+            f"[PO5] BigSur propagated failure to root '{root_name}': {epiphany}")
+        return
+
+    # BigSur repaired the project: it re-opened work in the ledger (reset_to_pending /
+    # update_signature). Any cached guide/writer now holds a STALE contract in its
+    # context, so tear them ALL down — the next SELECT rebuilds fresh agents that
+    # read the corrected ledger + files (a torn-down instance is recreated by
+    # _get_guide/_get_writer regardless of the needs_fresh flags).
+    #
+    # NOTE: we deliberately do NOT clear state.current_lemma_id here. The give-up
+    # call sites return a transition (several go PROVE/EXTRACT/DETECT → UPDATE,
+    # which dereferences current_lemma_id) and BigSur may have DELETED that entry.
+    # _phase_update tolerates a missing entry (guarded); the subsequent CHECK →
+    # SELECT then picks fresh work from the corrected ledger.
+    await _cleanup_all_agents(agent)
+    await agent._emit("message",
+        f"[PO5] BigSur repair complete; resuming proof search against corrected contracts.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -736,7 +974,7 @@ async def _phase_prove(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
     else:
         if entry.status != LemmaStatus.FAILED:
             ledger.mark_failed(entry.id, result)
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' failed: {result}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' failed: {result}")
         return Trans.CONTRADICTORY
 
 
@@ -840,7 +1078,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             ctx.failure_context = f"Backstop give-up: {reason}"
             ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
             _record_give_up(state, entry, f"Backstop give-up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' hit run cap: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' hit run cap: {reason}")
             return "failed"
         if tier1_stop or chunk_stop:
             reason = (f"runaway backstop: {chunks_this_call} chunks / "
@@ -859,7 +1097,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             ledger.mark_failed(entry.id, f"Backstop give-up: {reason}")
             _record_give_up(state, entry, f"Backstop give-up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Backstop give-up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' hit backstop: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' hit backstop: {reason}")
             return "failed"
         elapsed = _time.time() - getattr(agent, '_po4_start_time', _time.time())
         writer_pct = await writer.get_context_percentage()
@@ -1208,7 +1446,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
             ledger.mark_failed(entry.id, f"Guide gave up: {reason}")
             _record_give_up(state, entry, f"Guide gave up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Guide gave up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' gave up: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' gave up: {reason}")
             return "failed"
         elif decision == "fresh_start":
             await agent._emit("message", f"[PO5] Fresh start: {reason}")
@@ -1403,7 +1641,7 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
             ledger.mark_failed(entry.id, f"Max depth, gave up: {reason}")
             _record_give_up(state, entry, f"Max depth, gave up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Max depth, gave up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' failed at max depth: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' failed at max depth: {reason}")
             return "failed"
         elif decision == "fresh_start":
             await agent._emit("message", f"[PO5] Deep fresh start: {reason}")
@@ -1501,7 +1739,7 @@ async def _grace_phase(agent, state, ledger, entry, cwd,
     ctx = state.lemma_ctx.get(entry.id, LemmaContext())
     ctx.failure_context = "Could not make the protected block sorry-free despite multiple attempts"
     ledger.mark_failed(entry.id, "Protected block still has sorry after grace phase")
-    _propagate_failure_to_parent(state, ledger, entry,
+    await _propagate_failure_to_parent(agent, state, ledger, entry, cwd,
         f"Child '{entry.name}' failed: could not eliminate sorry from the main proof body")
     return "failed"
 
@@ -1559,7 +1797,7 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
             _record_give_up(state, entry, f"Nothing extractable, gave up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd,
                                       f"Nothing extractable, gave up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry,
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd,
                                          f"Child '{entry.name}' cannot be decomposed: {reason}")
             return Trans.CONTRADICTORY
         ctx.failure_context = "Nothing extractable — must prove inline."
@@ -1620,7 +1858,7 @@ async def _phase_extract(agent, state: PO5State, ledger: LemmaLedger, cwd: Path)
             _record_give_up(state, entry, f"Extraction failed ({extract_error}), gave up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd,
                                       f"Extraction failed ({extract_error}), gave up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' extraction failed: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' extraction failed: {reason}")
             return Trans.CONTRADICTORY
         ctx.failure_context = f"Extraction failed: {extract_error}"
         ctx.current_task = (
@@ -1756,7 +1994,7 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
             ledger.mark_failed(entry.id, f"Cycle, gave up: {reason}")
             _record_give_up(state, entry, f"Cycle, gave up: {reason}")
             await _ask_guide_user_fix(agent, state, ledger, entry, cwd, f"Cycle, gave up: {reason}")
-            _propagate_failure_to_parent(state, ledger, entry, f"Child '{entry.name}' has unresolvable cycle: {reason}")
+            await _propagate_failure_to_parent(agent, state, ledger, entry, cwd, f"Child '{entry.name}' has unresolvable cycle: {reason}")
             return Trans.CONTRADICTORY
         elif decision == "expand_mutual":
             ctx.current_task = (
@@ -1803,6 +2041,15 @@ async def _phase_detect(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) 
 async def _phase_update(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -> Trans:
     """Apply verdicts to ledger. Mechanical — no guide needed."""
     entry = ledger.get(state.current_lemma_id)
+    if entry is None:
+        # The current lemma no longer exists — BigSur may have deleted/reshaped it
+        # during a give-up repair (see _run_bigsur). There is nothing to apply
+        # verdicts against; drop any stale verdicts and let CHECK → SELECT pick
+        # fresh work from the corrected ledger.
+        state._detect_verdicts = None
+        _resolve_import_dependencies(ledger, cwd)
+        _propagate_proved(ledger, cwd)
+        return Trans.CHECKED
     _apply_verdicts(state, ledger, entry, cwd)
     _resolve_import_dependencies(ledger, cwd)
 
@@ -2288,6 +2535,34 @@ async def _cleanup_agents(agent, entry: LemmaEntry):
                 pass
             setattr(agent, ctx_attr, None)
             setattr(agent, attr, None)
+
+
+async def _cleanup_all_agents(agent) -> None:
+    """Destroy EVERY cached guide/writer/closer instance on the orchestrator (no
+    state dump). Used after a BigSur repair: BigSur may have rewritten signatures
+    and re-shaped the DAG for arbitrarily many entries, so any cached agent's
+    conversation context now holds a STALE contract. Tearing them all down forces
+    the next SELECT to rebuild a fresh guide/writer that reads the corrected ledger
+    and files (via _get_guide's init prompt) instead of trusting stale beliefs.
+
+    Instances are keyed `_guide_<id>` / `_writer_<id>` / `_closer_<id>`; discover
+    them by attribute-name prefix so we don't depend on which ids are live.
+    """
+    prefixes = ("_guide_", "_writer_", "_closer_")
+    attrs = [a for a in list(vars(agent).keys())
+             if any(a.startswith(p) for p in prefixes) and not a.endswith("_ctx")]
+    for attr in attrs:
+        instance = getattr(agent, attr, None)
+        ctx_attr = f"{attr}_ctx"
+        await _stop_listening(instance)
+        ctx = getattr(agent, ctx_attr, None)
+        if ctx:
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+        setattr(agent, ctx_attr, None)
+        setattr(agent, attr, None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

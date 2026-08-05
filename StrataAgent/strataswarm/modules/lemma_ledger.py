@@ -530,6 +530,135 @@ class LemmaLedger:
                 entry.writer_name = writer_name
                 entry.guide_name = guide_name
 
+    # ─── BigSur destructive mutators ───────────────────────────────────────────
+    # HARD structural edits reserved for the BigSur repair agent, which only runs
+    # on a give-up. Unlike prune_branch/mark_* (which just flip a status), these
+    # physically remove entries and rewrite signatures — the DAG must be able to
+    # match a post-fix reality where files/signatures were rewritten. Exposed ONLY
+    # via create_bigsur_ledger_mcp_server; the normal (read-only) ledger MCP that
+    # guides/writers see never sees them.
+
+    def _unlink_from_parents(self, entry_id: str):
+        """Remove entry_id from every parent's children list + fix indegree.
+        Caller must hold the lock."""
+        for e in self._entries.values():
+            if entry_id in e.children:
+                e.children = [c for c in e.children if c != entry_id]
+        self._indegree.pop(entry_id, None)
+        self._rebuild_indegree()
+
+    def bigsur_delete_entry(self, entry_id: str) -> str:
+        """Hard-delete a SINGLE entry: remove it from the table and unlink it from
+        all parents. Its children are re-attached to nothing (orphaned) — use
+        bigsur_purge_subtree if you mean the whole subtree. Returns a status str."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if not entry:
+                return f"Entry {entry_id} not found"
+            if entry_id == self._root_id:
+                return "REFUSED: cannot delete the root entry"
+            name = entry.name
+            self._unlink_from_parents(entry_id)
+            del self._entries[entry_id]
+            return f"Deleted entry '{name}' ({entry_id})"
+
+    def bigsur_purge_subtree(self, entry_id: str) -> list[str]:
+        """Hard-delete an entry AND all its descendants. Returns deleted IDs.
+        Refuses to purge the root. Descendants shared with a live branch (indegree
+        > 1 from outside the subtree) are unlinked but kept."""
+        with self._lock:
+            if entry_id == self._root_id:
+                return []
+            if entry_id not in self._entries:
+                return []
+            # Collect the subtree.
+            subtree: list[str] = []
+            seen: set[str] = set()
+            stack = [entry_id]
+            while stack:
+                cur = stack.pop()
+                if cur in seen:
+                    continue
+                seen.add(cur)
+                e = self._entries.get(cur)
+                if not e:
+                    continue
+                subtree.append(cur)
+                stack.extend(e.children)
+            subtree_set = set(subtree)
+            deleted: list[str] = []
+            for eid in subtree:
+                if eid == self._root_id:
+                    continue
+                e = self._entries.get(eid)
+                if not e:
+                    continue
+                # Keep a DESCENDANT still referenced by a parent OUTSIDE the purged
+                # subtree (a shared node in a diamond DAG). This never applies to the
+                # explicitly-named purge root itself — its parent is always "external"
+                # (it lives above the subtree), yet the whole point is to delete it.
+                if eid != entry_id:
+                    external_parents = [
+                        p.id for p in self._entries.values()
+                        if eid in p.children and p.id not in subtree_set]
+                    if external_parents:
+                        continue
+                self._unlink_from_parents(eid)
+                del self._entries[eid]
+                deleted.append(eid)
+            return deleted
+
+    def bigsur_update_signature(self, entry_id: str, new_statement: str) -> str:
+        """Rewrite an entry's statement/signature. Recomputes signature_hash and
+        RESETS the entry to PENDING (a changed contract invalidates any prior
+        proof and must be re-proved). Clears failure/cycle state."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if not entry:
+                return f"Entry {entry_id} not found"
+            entry.statement = new_statement
+            entry.signature_hash = self.compute_signature_hash(new_statement)
+            entry.status = LemmaStatus.PENDING
+            entry.failure_reason = ""
+            entry.cycle_ancestor_id = ""
+            entry.pruned_reason = ""
+            entry.priority_boost = True
+            return (f"Updated signature of '{entry.name}' ({entry_id}); "
+                    f"reset to PENDING for re-proof")
+
+    def bigsur_reparent(self, child_id: str, new_parent_id: str) -> str:
+        """Move child under a new parent (cycle-guarded). Detaches from all current
+        parents first, then attaches to new_parent_id."""
+        with self._lock:
+            child = self._entries.get(child_id)
+            parent = self._entries.get(new_parent_id)
+            if not child or not parent:
+                return "child or new parent not found"
+            if child_id == new_parent_id:
+                return "REFUSED: cannot parent an entry to itself"
+            if self._is_descendant_of(new_parent_id, child_id):
+                return "REFUSED: would create a cycle (new parent is under child)"
+            self._unlink_from_parents(child_id)
+            parent.children.append(child_id)
+            child.parent_id = new_parent_id
+            self._rebuild_indegree()
+            return f"Reparented '{child.name}' under '{parent.name}'"
+
+    def bigsur_reset_to_pending(self, entry_id: str) -> str:
+        """Clear failure/cycle state and mark PENDING (priority-boosted) so SELECT
+        re-picks it. For re-proving a lemma whose contract BigSur just fixed
+        elsewhere, without changing its own signature."""
+        with self._lock:
+            entry = self._entries.get(entry_id)
+            if not entry:
+                return f"Entry {entry_id} not found"
+            entry.status = LemmaStatus.PENDING
+            entry.failure_reason = ""
+            entry.cycle_ancestor_id = ""
+            entry.pruned_reason = ""
+            entry.priority_boost = True
+            return f"Reset '{entry.name}' ({entry_id}) to PENDING"
+
     # ─── Persistence ─────────────────────────────────────────────────────────
 
     def save(self):
