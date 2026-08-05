@@ -72,21 +72,21 @@ Label: isEven_terminates_0
 Property: assert
 Assumptions:
 MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
+  int.ge(MyNat..adtRank(x), 0)
 MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@3)) ==> MyNat..adtRank(MyNat..pred(n@3)) < MyNat..adtRank(n@3)
+!(MyNat..isZero(n@3)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@3)), MyNat..adtRank(n@3))
 
 Label: isOdd_terminates_0
 Property: assert
 Assumptions:
 MyNat..adtRank_0: forall x : MyNat ::  { MyNat..adtRank(x) }
-  MyNat..adtRank(x) >= 0
+  int.ge(MyNat..adtRank(x), 0)
 MyNat..adtRank_1: forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  MyNat..adtRank(pred) < MyNat..adtRank(Succ(pred))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))
 Obligation:
-!(MyNat..isZero(n@4)) ==> MyNat..adtRank(MyNat..pred(n@4)) < MyNat..adtRank(n@4)
+!(MyNat..isZero(n@4)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@4)), MyNat..adtRank(n@4))
 
 Label: zeroEven
 Property: assert
@@ -172,7 +172,7 @@ rec function treeSize (@[cases] t : RoseTree) : int
 }
 function listSize (@[cases] xs : RoseList) : int
 {
-  if RoseList..isRNil(xs) then 0 else treeSize(RoseList..hd(xs)) + listSize(RoseList..tl(xs))
+  if RoseList..isRNil(xs) then 0 else int.add(treeSize(RoseList..hd(xs)), listSize(RoseList..tl(xs)))
 };
 
 procedure TestRoseTreeGround()
@@ -298,7 +298,7 @@ function isOdd (@[cases] n : MyNat) : bool
 rec function evenHalf (@[cases] n : MyNat) : int
   requires isEven(n);
 {
-  if MyNat..isZero(n) then 0 else 1 + oddHalf(MyNat..pred(n))
+  if MyNat..isZero(n) then 0 else int.add(1, oddHalf(MyNat..pred(n)))
 }
 function oddHalf (@[cases] n : MyNat) : int
   requires isOdd(n);

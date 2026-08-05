@@ -35,10 +35,10 @@ private def iteDupProg :=
 #strata
 program Core;
 procedure test(x : int, y : int) {
-  if (x + y > 0) {
-    assert (x + y >= 1);
+  if (int.gt(int.add(x, y), 0)) {
+    assert (int.ge(int.add(x, y), 1));
   } else {
-    assert (x + y <= 0);
+    assert (int.le(int.add(x, y), 0));
   }
 };
 #end
@@ -48,11 +48,11 @@ info: program Core;
 
 procedure test (x : int, y : int)
 {
-  var $__cse.0 : int := x + y;
-  if ($__cse.0 > 0) {
-    assert [assert_0]: $__cse.0 >= 1;
+  var $__cse.0 : int := int.add(x, y);
+  if (int.gt($__cse.0, 0)) {
+    assert [assert_0]: int.ge($__cse.0, 1);
   } else {
-    assert [assert_1]: $__cse.0 <= 0;
+    assert [assert_1]: int.le($__cse.0, 0);
   }
 };
 -/
@@ -65,8 +65,8 @@ private def noDupProg :=
 #strata
 program Core;
 procedure test(x : int, y : int) {
-  assume (x >= 5);
-  assert (y <= 10);
+  assume (int.ge(x, 5));
+  assert (int.le(y, 10));
 };
 #end
 
@@ -75,8 +75,8 @@ info: program Core;
 
 procedure test (x : int, y : int)
 {
-  assume [assume_0]: x >= 5;
-  assert [assert_0]: y <= 10;
+  assume [assume_0]: int.ge(x, 5);
+  assert [assert_0]: int.le(y, 10);
 };
 -/
 #guard_msgs in
@@ -88,8 +88,8 @@ private def iteDupExprProg :=
 #strata
 program Core;
 procedure test(x : int, y : int) {
-  assert ((if x > 0 then x else y) >= 0);
-  assert ((if x > 0 then x else y) <= 100);
+  assert (int.ge((if int.gt(x, 0) then x else y), 0));
+  assert (int.le((if int.gt(x, 0) then x else y), 100));
 };
 #end
 
@@ -98,9 +98,9 @@ info: program Core;
 
 procedure test (x : int, y : int)
 {
-  var $__cse.0 : int := if x > 0 then x else y;
-  assert [assert_0]: $__cse.0 >= 0;
-  assert [assert_1]: $__cse.0 <= 100;
+  var $__cse.0 : int := if int.gt(x, 0) then x else y;
+  assert [assert_0]: int.ge($__cse.0, 0);
+  assert [assert_1]: int.le($__cse.0, 100);
 };
 -/
 #guard_msgs in
@@ -112,8 +112,8 @@ private def fnCallDupArgProg :=
 #strata
 program Core;
 procedure test(x : int, y : int) {
-  assert (x + y > 0);
-  assert (x + y < 100);
+  assert (int.gt(int.add(x, y), 0));
+  assert (int.lt(int.add(x, y), 100));
 };
 #end
 
@@ -122,9 +122,9 @@ info: program Core;
 
 procedure test (x : int, y : int)
 {
-  var $__cse.0 : int := x + y;
-  assert [assert_0]: $__cse.0 > 0;
-  assert [assert_1]: $__cse.0 < 100;
+  var $__cse.0 : int := int.add(x, y);
+  assert [assert_0]: int.gt($__cse.0, 0);
+  assert [assert_1]: int.lt($__cse.0, 100);
 };
 -/
 #guard_msgs in
@@ -136,8 +136,8 @@ private def uniqueSubexprProg :=
 #strata
 program Core;
 procedure test(x : int, y : int) {
-  assert (x + 1 > 0);
-  assert (y + 2 < 100);
+  assert (int.gt(int.add(x, 1), 0));
+  assert (int.lt(int.add(y, 2), 100));
 };
 #end
 
@@ -146,8 +146,8 @@ info: program Core;
 
 procedure test (x : int, y : int)
 {
-  assert [assert_0]: x + 1 > 0;
-  assert [assert_1]: y + 2 < 100;
+  assert [assert_0]: int.gt(int.add(x, 1), 0);
+  assert [assert_1]: int.lt(int.add(y, 2), 100);
 };
 -/
 #guard_msgs in
@@ -165,9 +165,9 @@ private def nestedDupProg :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert ((x + 1) * 2 > 0);
-  assert ((x + 1) * 2 < 100);
-  assert (x + 1 > 50);
+  assert (int.gt(int.mul(int.add(x, 1), 2), 0));
+  assert (int.lt(int.mul(int.add(x, 1), 2), 100));
+  assert (int.gt(int.add(x, 1), 50));
 };
 #end
 
@@ -176,11 +176,11 @@ info: program Core;
 
 procedure test (x : int)
 {
-  var $__cse.1 : int := x + 1;
-  var $__cse.0 : int := $__cse.1 * 2;
-  assert [assert_0]: $__cse.0 > 0;
-  assert [assert_1]: $__cse.0 < 100;
-  assert [assert_2]: $__cse.1 > 50;
+  var $__cse.1 : int := int.add(x, 1);
+  var $__cse.0 : int := int.mul($__cse.1, 2);
+  assert [assert_0]: int.gt($__cse.0, 0);
+  assert [assert_1]: int.lt($__cse.0, 100);
+  assert [assert_2]: int.gt($__cse.1, 50);
 };
 -/
 #guard_msgs in
@@ -201,8 +201,8 @@ private def quantBoundaryProg :=
 program Core;
 procedure test (x : int)
 {
-  assert [a0]: x + 1 > 0;
-  assert [a1]: forall y : int :: (x + 1) > y;
+  assert [a0]: int.gt(int.add(x, 1), 0);
+  assert [a1]: forall y : int :: int.gt(int.add(x, 1), y);
 };
 #end
 
@@ -211,8 +211,8 @@ info: program Core;
 
 procedure test (x : int)
 {
-  assert [a0]: x + 1 > 0;
-  assert [a1]: forall y : int :: x + 1 > y;
+  assert [a0]: int.gt(int.add(x, 1), 0);
+  assert [a1]: forall y : int :: int.gt(int.add(x, 1), y);
 };
 -/
 #guard_msgs in
@@ -228,7 +228,7 @@ private def quantBvarProg :=
 program Core;
 procedure test (x : int)
 {
-  assert [a0]: forall y : int :: (y + 1) > 0 && (y + 1) < 10;
+  assert [a0]: forall y : int :: int.gt(int.add(y, 1), 0) && int.lt(int.add(y, 1), 10);
 };
 #end
 
@@ -237,7 +237,7 @@ info: program Core;
 
 procedure test (x : int)
 {
-  assert [a0]: forall y : int :: y + 1 > 0 && y + 1 < 10;
+  assert [a0]: forall y : int :: int.gt(int.add(y, 1), 0) && int.lt(int.add(y, 1), 10);
 };
 -/
 #guard_msgs in
@@ -253,8 +253,8 @@ private def absBvarProg :=
 program Core;
 procedure test (x : int)
 {
-  var g : int -> int := fun y : int => (y + 1) * (y + 1);
-  assert [a0]: x > 0;
+  var g : int -> int := fun y : int => int.mul(int.add(y, 1), int.add(y, 1));
+  assert [a0]: int.gt(x, 0);
 };
 #end
 
@@ -263,8 +263,8 @@ info: program Core;
 
 procedure test (x : int)
 {
-  var g : int -> int := fun y : int => (y + 1) * (y + 1);
-  assert [a0]: x > 0;
+  var g : int -> int := fun y : int => int.mul(int.add(y, 1), int.add(y, 1));
+  assert [a0]: int.gt(x, 0);
 };
 -/
 #guard_msgs in
@@ -280,9 +280,9 @@ private def quantLiftProg :=
 program Core;
 procedure test (x : int)
 {
-  assert [a0]: x + 1 > 0;
-  assert [a1]: x + 1 < 100;
-  assert [a2]: forall y : int :: (x + 1) > y;
+  assert [a0]: int.gt(int.add(x, 1), 0);
+  assert [a1]: int.lt(int.add(x, 1), 100);
+  assert [a2]: forall y : int :: int.gt(int.add(x, 1), y);
 };
 #end
 
@@ -291,10 +291,10 @@ info: program Core;
 
 procedure test (x : int)
 {
-  var $__cse.0 : int := x + 1;
-  assert [a0]: $__cse.0 > 0;
-  assert [a1]: $__cse.0 < 100;
-  assert [a2]: forall y : int :: $__cse.0 > y;
+  var $__cse.0 : int := int.add(x, 1);
+  assert [a0]: int.gt($__cse.0, 0);
+  assert [a1]: int.lt($__cse.0, 100);
+  assert [a2]: forall y : int :: int.gt($__cse.0, y);
 };
 -/
 #guard_msgs in

@@ -68,12 +68,13 @@ private def targetAsRead (target : VariableMd) : StmtExprMd :=
 
 /-- Build `.Assign [target] (target ⊕ rhs)` where `⊕` is `primOp`, yielding the new
     value. Shared by the `IncrDecr` lowering (`rhs = 1`) and `CompoundAssign` (user's
-    RHS). The `.PrimitiveOp` keeps the default `skipProof := false`, so `/=`/`%=` carry
-    the same division-by-zero obligation as a hand-written `x := x / e`. -/
+    RHS). The operator becomes a call to its built-in wrapper, exactly as a
+    hand-written `x := x / e` would, so `/=`/`%=` carry the same
+    division-by-zero obligation. -/
 private def lowerOpAssign (primOp : Operation) (target : VariableMd)
     (rhs : StmtExprMd) (source : FileRange) : StmtExprMd :=
   let read := targetAsRead target
-  let updated : StmtExprMd := ⟨.PrimitiveOp primOp [read, rhs], source⟩
+  let updated : StmtExprMd := ⟨.StaticCall (mkId primOp.procName) [read, rhs], source⟩
   ⟨.Assign [target] updated, source⟩
 
 /-- Build `.Assign [target] (target ⊕ 1)` where `⊕` is `Add` for `Incr` and
@@ -98,7 +99,7 @@ private def lowerIncrDecr (mode : IncrDecrMode) (op : IncrDecrOp)
       | .Incr => .Sub
       | .Decr => .Add
     let one : StmtExprMd := ⟨.LiteralInt 1, source⟩
-    ⟨.PrimitiveOp inverseOp [assign, one], source⟩
+    ⟨.StaticCall (mkId inverseOp.procName) [assign, one], source⟩
 
 /-- The rewrite step applied bottom-up by `mapStmtExpr`. Replaces `.IncrDecr`
     and `.CompoundAssign` with their lowered forms; all other nodes pass through.

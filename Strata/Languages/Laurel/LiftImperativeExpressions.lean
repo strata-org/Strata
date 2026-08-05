@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 import Strata.Util.Tactics
 public import Strata.Languages.Laurel.LaurelPass
@@ -96,6 +97,23 @@ structure LiftState where
   procedures : List Procedure := []
   /-- Names of callees whose calls should be treated as imperative (lifted) -/
   imperativeCallees : List String := []
+  /-- Variable uniqueIds referenced by lifted statements. When a `Var (.Declare ...)`
+      is encountered for a variable whose uniqueId is in this set, it is also lifted
+      so the declaration remains in scope for the lifted statements that read it.
+
+      Unlike `subst` and `prependedStmts`, this is *not* saved and restored around
+      nested scopes — it accumulates across the whole procedure and is only reset
+      per procedure. That is sound because of a precondition on the input:
+      Resolution assigns a program-globally-unique `uniqueId` to every `Declare`,
+      so an entry for uniqueId `N` names exactly one declaration site and can
+      never cause an unrelated one to hoist.
+
+      A pass that duplicates a `Declare` node while keeping its `uniqueId` breaks
+      this. `defineName` preserves an already-set `uniqueId`, so simply re-running
+      Resolution does not repair such a duplicate — the pass must clear the copy's
+      `uniqueId` and let re-resolution mint a fresh one. `TransparencyPass`'s
+      quantifier proof block does exactly that for its havoc variable. -/
+  liftedVarRefs : Std.HashSet Nat := {}
 
 @[expose] abbrev LiftM := ExceptT String (StateM LiftState)
 
@@ -110,11 +128,31 @@ private def freshTempVar : LiftM Identifier := do
   modify fun s => { s with condCounter := n + 1 }
   return s!"$cndtn_{n}"
 
-private def prepend (stmt : StmtExprMd) : LiftM Unit :=
-  modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
+/-- Variables read by `expr`, by `uniqueId`. Used to record which declarations a
+    lifted statement depends on, so `Var (.Declare ..)` can hoist them along. -/
+private def collectVarRefs (expr : StmtExprMd) : List Nat :=
+  foldStmtExpr (fun e acc =>
+    match e.val with
+    | .Var (.Local name) => match name.uniqueId with
+      | some uid => uid :: acc
+      | none => acc
+    | _ => acc) [] expr
 
+private def prepend (stmt : StmtExprMd) : LiftM Unit := do
+  let varRefs := collectVarRefs stmt
+  modify fun s => { s with
+    prependedStmts := stmt :: s.prependedStmts
+    liftedVarRefs := varRefs.foldl (·.insert ·) s.liftedVarRefs }
+
+/-- Like `prepend`, for a list of statements, and it records read variables the
+    same way: a statement lifted through this path also needs the declarations it
+    reads hoisted along with it, or it ends up above them. The `$cndtn_N` temporary
+    that `transformLiftedExpr` builds for an assert/assume condition arrives here,
+    so a declaration read only by such a temporary is hoisted on its account. -/
 private def prependList (stmts : List StmtExprMd) : LiftM Unit :=
-  modify fun s => { s with prependedStmts := stmts ++ s.prependedStmts }
+  modify fun s => { s with
+    prependedStmts := stmts ++ s.prependedStmts
+    liftedVarRefs := (stmts.flatMap collectVarRefs).foldl (·.insert ·) s.liftedVarRefs }
 
 private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (List StmtExprMd) := do
   match stmts with
@@ -274,7 +312,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
   | .Hole false (some holeType) =>
       -- Nondeterministic typed hole: lift to a fresh variable with no initializer (havoc)
       let holeVar ← freshTempVar
-      prepend ⟨ .Var (.Declare ⟨holeVar, holeType⟩), source⟩
+      prepend ⟨ .Var (.Declare ⟨holeVar, some holeType⟩), source⟩
       return ⟨ .Var (.Local holeVar), source ⟩
 
   | .Assign targets value =>
@@ -308,16 +346,11 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
             let snapshotName ← freshTempFor varName
             let varType ← computeType ⟨ .Var (.Local varName), source ⟩
             -- Snapshot goes before the assignment (cons pushes to front)
-            prepend (⟨.Assign [⟨.Declare ⟨snapshotName, varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
+            prepend (⟨.Assign [⟨.Declare ⟨snapshotName, some varType⟩, source⟩] (⟨.Var (.Local varName), source⟩), source⟩)
             setSubst varName snapshotName
         | _ => pure ()
 
       return resultExpr
-
-  | .PrimitiveOp op args _ =>
-      -- Process arguments right to left
-      let seqArgs ← args.reverse.mapM transformExpr
-      return ⟨.PrimitiveOp op seqArgs.reverse, source⟩
 
   | .StaticCall callee args =>
     let imperativeCallees := (← get).imperativeCallees
@@ -332,7 +365,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
       let callResultType := stripTrailingErrors callResultTypeFull
 
       let prepends ← asLifted (transformStmtAssignImperativeCall
-        [⟨ .Declare ⟨callResultVar, callResultType⟩, source⟩] callee args source source)
+        [⟨ .Declare ⟨callResultVar, some callResultType⟩, source⟩] callee args source source)
       prependList prepends
       return ⟨.Var (.Local callResultVar), source⟩
 
@@ -383,7 +416,7 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         -- Output order: declaration, then if-then-else
         prepend (⟨.IfThenElse seqCond thenBlock seqElse, source⟩)
         if needsCondVar then
-          prepend ⟨.Var (.Declare ⟨condVar, condType⟩), source ⟩
+          prepend ⟨.Var (.Declare ⟨condVar, some condType⟩), source ⟩
           modify fun s => { s with prependedStmts := condPrepends ++ s.prependedStmts }
           return ⟨.Var (.Local condVar), source⟩
         else
@@ -431,18 +464,23 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
         return ⟨ .Block filtered labelOption, source⟩
 
   | .Var (.Declare param) =>
-      -- If the substitution map has an entry for this variable, it was
-      -- assigned to the right and we need to lift this declaration so it
-      -- appears before the snapshot that references it.
+      -- Lift the declaration if either:
+      -- 1. The substitution map has an entry (assigned to the right), or
+      -- 2. The variable was already read by a previously-processed expression
+      --    (e.g., a lifted assert/assume references it).
       match param.name.uniqueId with
       | some paramUid =>
         let hasSubst := (← get).subst.get? paramUid |>.isSome
+        let wasRead := (← get).liftedVarRefs.contains paramUid
         if hasSubst then
           prepend (⟨.Var (.Declare param), expr.source⟩)
           return ⟨.Var (.Local (← getSubst param.name)), expr.source⟩
+        else if wasRead then
+          prepend (⟨.Var (.Declare param), expr.source⟩)
+          return ⟨.Var (.Local param.name), expr.source⟩
         else
           return expr
-      | none => return expr
+      | none => throw s!"Var (.Declare {param.name.text}) has no uniqueId"
 
   | .Assume cond =>
       let (argPrepends, newCond) ← transformLiftedExpr cond
@@ -462,15 +500,12 @@ def transformExpr (expr : StmtExprMd) : LiftM StmtExprMd := do
 
   | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
-      -- As in `transformStmt`'s `.While` arm: invariants, `decreases` and the
-      -- body all run after the condition, so none of them may inherit a snapshot
-      -- the condition took.
-      let seqInvs ← invs.mapM (fun i => withFreshSubst (transformExpr i))
-      let seqDec ← match dec with
-        | some d => pure (some (← withFreshSubst (transformExpr d)))
-        | none => pure none
+      -- Invariants and `decreases` are left untransformed: see the statement-position
+      -- `.While` arm for why nothing may be hoisted out of a loop head. That also
+      -- means they cannot inherit a snapshot the condition took, which is what
+      -- `withFreshSubst` guards against for the body.
       let seqBody ← withFreshSubst (transformExpr body)
-      return ⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩
+      return ⟨.While seqCond invs dec seqBody postTest, source⟩
 
   | .PureFieldUpdate target fieldName newValue =>
       let seqTarget ← transformExpr target
@@ -617,31 +652,48 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
   | .While cond invs dec body postTest =>
       let seqCond ← transformExpr cond
       let condPrepends ← takePrepends
-      -- Invariants and `decreases` are evaluated at the loop head, after any
-      -- assignment hoisted out of the condition, so they read live variables and
-      -- must not inherit the condition's snapshots. Each is isolated from the
-      -- others for the same reason.
-      let seqInvs ← invs.mapM (fun i => withFreshSubst (transformExpr i))
-      let invPrepends ← takePrepends
-      let seqDec ← match dec with
-        | some d => pure (some (← withFreshSubst (transformExpr d)))
-        | none => pure none
-      let decPrepends ← takePrepends
+      -- Invariants and `decreases` are *spec* positions, like a `requires` or an
+      -- `ensures`, and are deliberately left untransformed. They are re-evaluated at
+      -- the loop head on entry and after every iteration, so hoisting a statement out
+      -- of one would evaluate it exactly once, before the loop, freezing every
+      -- loop-varying operand at its pre-loop value — silently changing what the
+      -- invariant says rather than just making it harder to prove.
+      --
+      -- Anything the contract pass left inside an invariant (e.g. the `var $cp_… :=`
+      -- argument temporaries of a call to a `requires`-bearing procedure such as the
+      -- `$div` wrapper behind `/`) therefore stays in place, where it is evaluated per
+      -- iteration and still means what was written. `InlineLocalVariables` folds those
+      -- declarations back into the expression afterwards, since a Core invariant can no
+      -- more carry a declaration than a function body can.
+      --
+      -- This also means a nondeterministic hole in an invariant is no longer
+      -- havoc-lifted here. That lifting could never have been correct in a loop head:
+      -- it emits an uninitialized `var` before the loop, so the hole would take one
+      -- fixed (if arbitrary) value for every iteration instead of being re-havoced.
+      --
+      -- Leaving them alone also subsumes what `withFreshSubst` did for them here:
+      -- an untransformed invariant cannot inherit a snapshot the condition took,
+      -- because no substitution is applied to it at all.
       let seqBody ← do
         let stmts ← transformStmt body
         pure ⟨.Block stmts none, source⟩
-      return condPrepends ++ invPrepends ++ decPrepends ++
-        [⟨.While seqCond seqInvs seqDec seqBody postTest, source⟩]
+      return condPrepends ++
+        [⟨.While seqCond invs dec seqBody postTest, source⟩]
 
   | .StaticCall name args =>
+      -- Right-to-left, like the expression-position `.StaticCall` arm: a snapshot
+      -- created for an assignment argument must be visible to the arguments to its
+      -- *left* in source order (those are the ones that have to read the old
+      -- value), so they must be traversed after it.
       let seqArgs ← args.reverse.mapM transformExpr
       let prepends ← takePrepends
+      -- `subst` is scoped to a single statement: it maps a variable to the
+      -- snapshot holding its pre-assignment value while that statement's
+      -- arguments are being traversed. Leaking it into the next statement would
+      -- rewrite that statement's reads to the stale snapshot, so clear it here
+      -- as every sibling statement arm does.
+      modify fun s => { s with subst := {} }
       return prepends ++ [⟨.StaticCall name seqArgs.reverse, source⟩]
-
-  | .PrimitiveOp op args _ =>
-      let seqArgs ← args.reverse.mapM transformExpr
-      let prepends ← takePrepends
-      return prepends ++ [⟨.PrimitiveOp op seqArgs.reverse, source⟩]
 
   | .Return (some retExpr) =>
       let seqRet ← transformExpr retExpr
@@ -664,7 +716,7 @@ def transformProcedureBody (source: FileRange) (body : StmtExprMd) : LiftM StmtE
   | multiple => pure ⟨.Block multiple none, source ⟩
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
-  modify fun s => { s with subst := {}, prependedStmts := [], varCounters := [] }
+  modify fun s => { s with subst := {}, prependedStmts := [], varCounters := [], liftedVarRefs := {} }
   match proc.body with
   | .Transparent bodyExpr =>
       let seqBody ← transformProcedureBody proc.name.source bodyExpr
@@ -717,6 +769,6 @@ public def liftImperativeExpressionsPass : LaurelPass UnorderedCoreWithLaurelTyp
   run := fun _ p m =>
     match liftImperativeExpressionsInCore p m with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage s!"Internal error in LiftImperativeExpressions: {e}" .StrataBug], {})
+    | .error e => (p, [Message.fromString s!"Internal error in LiftImperativeExpressions: {e}" .strataBug], {})
 
 end Laurel

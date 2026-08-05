@@ -30,7 +30,7 @@ procedure zeroIter(out s : int)
   var n : int;
   n := 0;
   s := 0;
-  while (n > 0)
+  while (int.gt(n, 0))
     invariant s == 42
   { s := 42; }
 };
@@ -44,7 +44,7 @@ VCs:
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<dead_branch: n > 0>: false
+<dead_branch: int.gt(n, 0)>: false
 insertLoopInvAssume_entry_invariant_loop_0_0: false
 Obligation:
 true

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.CallGraph
 public import Strata.Languages.Core.CoreGen
@@ -160,7 +161,7 @@ def CoreTransformState.emp : CoreTransformState :=
     currentProcedureName := .none, cachedAnalyses := .emp }
 
 @[expose]
-abbrev Err := Strata.DiagnosticModel
+abbrev Err := Strata.Message
 
 @[expose]
 abbrev CoreTransformM := ExceptT Err (StateM CoreTransformState)
@@ -180,8 +181,8 @@ def liftCoreGenM {α : Type} (cgm : CoreGenM α) : StateM CoreTransformState α 
 instance : MonadLift CoreGenM (StateM CoreTransformState) where
   monadLift := liftCoreGenM
 
-/-- Lift an `Except DiagnosticModel` into `CoreTransformM`. -/
-def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM α :=
+/-- Lift an `Except Message` into `CoreTransformM`. -/
+def liftDiag {α : Type} (e : Except Strata.Message α) : CoreTransformM α :=
   match e with
   | .ok a => pure a
   | .error dm => throw dm
@@ -190,7 +191,7 @@ def liftDiag {α : Type} (e : Except Strata.DiagnosticModel α) : CoreTransformM
 def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
   match (← get).factory with
   | some F => pure F
-  | none => throw (Strata.DiagnosticModel.fromMessage "factory not set in CoreTransformState")
+  | none => throw (Strata.Message.fromString "factory not set in CoreTransformState")
 
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
@@ -212,7 +213,7 @@ def genArgExprIdentsTrip
   (args : List Expression.Expr)
   : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
-  if inputs.length ≠ args.length then throw (Strata.DiagnosticModel.fromMessage "input length and args length mismatch")
+  if inputs.length ≠ args.length then throw (Strata.Message.fromString "input length and args length mismatch")
   else let gen_idents ← genArgExprIdents args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
@@ -225,7 +226,7 @@ def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
-  if outputs.length ≠ lhs.length then throw (Strata.DiagnosticModel.fromMessage "output length and lhs length mismatch")
+  if outputs.length ≠ lhs.length then throw (Strata.Message.fromString "output length and lhs length mismatch")
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
 
@@ -381,7 +382,7 @@ def runProgram
 
         let bodyStmts ← match proc.body with
           | .structured ss => pure ss
-          | .cfg _ => throw (Strata.DiagnosticModel.fromMessage
+          | .cfg _ => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
         let (changed, new_body) ← runStmtsRec f bodyStmts
 

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.Languages.Core.StatementSemantics
@@ -112,7 +113,7 @@ def insertInvariantAsserts (s : Statement)
     -- be shown to terminate by a measure. Reject such an ill-formed loop with a
     -- diagnostic rather than silently dropping its invariants downstream.
     if measure.isSome && guardExpr?.isNone then
-      throw (Strata.DiagnosticModel.fromFormat
+      throw (Strata.Message.fromFormat
         f!"nondeterministic loop (`while *`) cannot carry a `decreases` measure: \
 it iterates an arbitrary number of times and so cannot be shown to terminate")
     let loop_num ← genLoopNum

@@ -87,7 +87,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(fun x : int => x + 1, 5);
+  result := apply(fun x : int => int.add(x, 1), 5);
 };
 #end
 
@@ -104,7 +104,7 @@ procedure TestLambdaApply (out result : int)
 spec {
   ensures [TestLambdaApply_ensures_0]: result == 6;
   } {
-  result := apply(fun x : int => x + 1, 5);
+  result := apply(fun x : int => int.add(x, 1), 5);
 };
 -/
 #guard_msgs in
@@ -135,7 +135,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(fun x : int => x + 1, 5);
+  result := apply(fun x : int => int.add(x, 1), 5);
 };
 #end
 
@@ -156,7 +156,7 @@ program Core;
 
 function mkFn(i: int) : int
 {
-  (fun x : int => x + 1)(i)
+  (fun x : int => int.add(x, 1))(i)
 }
 
 procedure Test(out result : int)
@@ -193,7 +193,7 @@ spec {
   ensures result == 3;
 }
 {
-  result := applyN(Succ(Succ(Succ(Zero()))), fun x : int => x + 1, 0);
+  result := applyN(Succ(Succ(Succ(Zero()))), fun x : int => int.add(x, 1), 0);
 };
 #end
 
@@ -223,7 +223,7 @@ datatype MyNat { Zero(), Succ(pred: MyNat) };
 rec function foo(@[cases] n : MyNat) : int -> int
 {
   if MyNat..isZero(n) then fun x : int => x
-  else fun x : int => x + 1
+  else fun x : int => int.add(x, 1)
 };
 
 procedure Test(out result : int)
@@ -253,16 +253,16 @@ spec {
   ensures result == true;
 }
 {
-  var y : int -> int := fun x : int => x + 1;
+  var y : int -> int := fun x : int => int.add(x, 1);
 
-  result := (y == fun x : int => 1 + x);
+  result := (y == fun x : int => int.add(1, x));
 };
 #end
 
 /-- info: Obligation: Test_ensures_0
 Property: assert
 Result: 🚨 SMT Encoding Error! Cannot encode lambda expression to SMT. Lambda abstractions must be eliminated (e.g., by beta-reduction) before SMT encoding.
-Lambda: fun x : int => x + 1-/
+Lambda: fun x : int => int.add(x, 1)-/
 #guard_msgs in
 #eval Strata.Core.verify lambdaInAssertPgm (options := .quiet)
 
@@ -276,9 +276,9 @@ spec {
   ensures result == true;
 }
 {
-  var y : int -> int := fun x : int => x + 1;
+  var y : int -> int := fun x : int => int.add(x, 1);
 
-  result := (y == fun z : int => z + 1);
+  result := (y == fun z : int => int.add(z, 1));
 };
 #end
 
@@ -305,7 +305,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(fun x : int => x + 1, 5);
+  result := apply(fun x : int => int.add(x, 1), 5);
 };
 #end
 
@@ -330,7 +330,7 @@ spec {
   ensures result == true;
 }
 {
-  result := compose(fun x : int => x >= 0, fun x : int => x + 1, -1);
+  result := compose(fun x : int => int.ge(x, 0), fun x : int => int.add(x, 1), int.neg(1));
 };
 
 procedure Test1(out result : bool)
@@ -338,7 +338,7 @@ spec {
   ensures result == false;
 }
 {
-  result := compose(fun x : int => x > 0, fun x : int => x + 1, -1);
+  result := compose(fun x : int => int.gt(x, 0), fun x : int => int.add(x, 1), int.neg(1));
 };
 #end
 
@@ -398,7 +398,7 @@ spec {
   ensures r1 == 5 && r2 == true;
 }
 {
-  r1 := apply(fun x : int => x + 1, 4);
+  r1 := apply(fun x : int => int.add(x, 1), 4);
   r2 := apply(fun b : bool => !b, false);
 };
 #end
@@ -418,7 +418,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
 rec function intListLen(@[cases] xs : MyList int) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + intListLen(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, intListLen(MyList..tl(xs)))
 };
 
 inline function apply<T>(f : T -> T, x : T) : T
@@ -431,7 +431,7 @@ spec {
   ensures result == 5;
 }
 {
-  result := apply(fun n : int => n + 2, intListLen(Cons(1, Cons(2, Cons(3, Nil())))));
+  result := apply(fun n : int => int.add(n, 2), intListLen(Cons(1, Cons(2, Cons(3, Nil())))));
 };
 #end
 
@@ -466,7 +466,7 @@ spec {
   ensures result == 7;
 }
 {
-  result := apply2(fun x : int, y : int => x + y, 3, 4);
+  result := apply2(fun x : int, y : int => int.add(x, y), 3, 4);
 };
 #end
 
@@ -488,7 +488,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := (fun x : int => x + 1)(5);
+  result := (fun x : int => int.add(x, 1))(5);
 };
 #end
 
@@ -511,7 +511,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := (Box..val(MkBox(fun x : int => x + 1)))(5);
+  result := (Box..val(MkBox(fun x : int => int.add(x, 1))))(5);
 };
 #end
 
@@ -535,7 +535,7 @@ inline function apply(f : int -> int, x : int) : int
 
 procedure Test(out result : int)
 spec {
-  ensures (fun x : int => x * 2)(result) == 10;
+  ensures (fun x : int => int.mul(x, 2))(result) == 10;
 }
 {
   result := 5;
@@ -559,7 +559,7 @@ spec {
   ensures result == 7;
 }
 {
-  result := ((fun x : int => fun y : int => x + y)(3))(4);
+  result := ((fun x : int => fun y : int => int.add(x, y))(3))(4);
 };
 #end
 
@@ -585,8 +585,8 @@ spec {
   ensures r1 == 5 && r2 == 6;
 }
 {
-  r1 := apply(if true then fun x : int => x else fun x : int => x + 1, 5);
-  r2 := apply(if false then fun x : int => x else fun x : int => x + 1, 5);
+  r1 := apply(if true then fun x : int => x else fun x : int => int.add(x, 1), 5);
+  r2 := apply(if false then fun x : int => x else fun x : int => int.add(x, 1), 5);
 };
 #end
 
@@ -608,7 +608,7 @@ spec {
 }
 {
   // (λ f . λ x. f x) (λ y. y + 1) 5
-  result := ((fun f : int -> int, x : int => (f)(x))(fun y : int => y + 1))(5);
+  result := ((fun f : int -> int, x : int => (f)(x))(fun y : int => int.add(y, 1)))(5);
 };
 #end
 
@@ -637,7 +637,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := applyTransformer(MkTransformer(fun x : int => x + 1, 5));
+  result := applyTransformer(MkTransformer(fun x : int => int.add(x, 1), 5));
 };
 #end
 
@@ -658,12 +658,12 @@ inline function applyTransformer(t : Transformer) : int
 }
 
 function add1 (x: int) : int {
-  x + 1
+  int.add(x, 1)
 }
 
 procedure Test(z : int, out result : int)
 spec {
-  ensures result == z + 1;
+  ensures result == int.add(z, 1);
 
 }
 {
@@ -697,7 +697,7 @@ spec {
   ensures result == 6;
 }
 {
-  result := apply(Box..val(MkBox(fun x : int => x + 1)), 5);
+  result := apply(Box..val(MkBox(fun x : int => int.add(x, 1))), 5);
 };
 #end
 

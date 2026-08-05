@@ -17,9 +17,9 @@ program Core;
 
 procedure SumPositive(a: int, b: int, out c: int)
 spec {
-    requires [precond1]: 0 <= a;
-    requires [precond2]: c <= b;
+    requires [precond1]: int.le(0, a);
+    requires [precond2]: int.le(c, b);
 }
 {
-    c := a + b;
+    c := int.add(a, b);
 };

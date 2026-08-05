@@ -115,8 +115,6 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.PureFieldUpdate (← mapStmtExprUsedM f true target) fieldName (← mapStmtExprUsedM f true newValue), source⟩
   | .StaticCall callee args =>
     pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
-  | .PrimitiveOp op args skipProof =>
-    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) skipProof, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprUsedM f true lhs) (← mapStmtExprUsedM f true rhs), source⟩
   | .AsType target ty =>
@@ -237,8 +235,6 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
         (collapse (← go true newValue) newValue.source), source⟩
     | .StaticCall callee args =>
       pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
-    | .PrimitiveOp op args skipProofs =>
-      pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) skipProofs, source⟩
     | .ReferenceEquals lhs rhs =>
       pure ⟨.ReferenceEquals (collapse (← go true lhs) lhs.source) (collapse (← go true rhs) rhs.source), source⟩
     | .AsType target ty =>
@@ -321,8 +317,6 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
   | .StaticCall callee args =>
     pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
-  | .PrimitiveOp op args skipProofs =>
-    pure ⟨.PrimitiveOp op (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) skipProofs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprPrePostM pre post lhs) (← mapStmtExprPrePostM pre post rhs), source⟩
   | .AsType target ty =>
@@ -413,8 +407,6 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   | .PureFieldUpdate target _ newValue =>
     foldStmtExprM f target; foldStmtExprM f newValue
   | .StaticCall _ args =>
-    args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
-  | .PrimitiveOp _ args _ =>
     args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .ReferenceEquals lhs rhs =>
     foldStmtExprM f lhs; foldStmtExprM f rhs
@@ -580,7 +572,7 @@ responsible for recursing into compound types (`TSet`/`TMap`/`Applied`/…). -/
 /-- Rewrite the declared type carried by a `Variable` (only `Declare` carries one). -/
 def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Variable) : m Variable := do
   match v with
-  | .Declare param => pure (.Declare { param with type := ← f param.type })
+  | .Declare param => pure (.Declare { param with type := ← param.type.mapM f })
   | .Local _ | .Field _ _ => pure v
 
 /--
@@ -720,30 +712,29 @@ private def covCtorKey : StmtExpr → Nat
   | .Assign ..        => 10
   | .PureFieldUpdate .. => 11
   | .StaticCall ..    => 12
-  | .PrimitiveOp ..   => 13
-  | .New ..           => 14
-  | .This             => 15
-  | .ReferenceEquals .. => 16
-  | .AsType ..        => 17
-  | .IsType ..        => 18
-  | .InstanceCall ..  => 19
-  | .Quantifier ..    => 20
-  | .Assigned ..      => 21
-  | .Old ..           => 22
-  | .Fresh ..         => 23
-  | .Assert ..        => 24
-  | .Assume ..        => 25
-  | .ProveBy ..       => 26
-  | .ContractOf ..    => 27
-  | .Abstract         => 28
-  | .All              => 29
-  | .Hole ..          => 30
-  | .LiteralBv ..     => 31
-  | .IncrDecr ..      => 32
-  | .CompoundAssign .. => 33
+  | .New ..           => 13
+  | .This             => 14
+  | .ReferenceEquals .. => 15
+  | .AsType ..        => 16
+  | .IsType ..        => 17
+  | .InstanceCall ..  => 18
+  | .Quantifier ..    => 19
+  | .Assigned ..      => 20
+  | .Old ..           => 21
+  | .Fresh ..         => 22
+  | .Assert ..        => 23
+  | .Assume ..        => 24
+  | .ProveBy ..       => 25
+  | .ContractOf ..    => 26
+  | .Abstract         => 27
+  | .All              => 28
+  | .Hole ..          => 29
+  | .LiteralBv ..     => 30
+  | .IncrDecr ..      => 31
+  | .CompoundAssign .. => 32
 
 /-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
-private def covCtorCount : Nat := 34
+private def covCtorCount : Nat := 33
 
 /-- One representative per constructor, paired with the number of sentinels it
     places in `StmtExprMd` child positions. -/
@@ -761,7 +752,6 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.Assign [covVmd (.Field covS (covId "f"))] covS), 2),
   (covMd (.PureFieldUpdate covS (covId "f") covS), 2),
   (covMd (.StaticCall (covId "c") [covS, covS]), 2),
-  (covMd (.PrimitiveOp .Add [covS, covS]), 2),
   (covMd (.New (covId "r")), 0),
   (covMd .This, 0),
   (covMd (.ReferenceEquals covS covS), 2),

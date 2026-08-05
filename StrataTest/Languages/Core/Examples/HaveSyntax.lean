@@ -30,8 +30,8 @@ spec {
   ensures true;
 }
 {
-  assert [single]: have x : int = 1 in x + x == 2;
-  assert [nested]: have x : int = 1 in have y : int = 2 in x + y == 3;
+  assert [single]: have x : int = 1 in int.add(x, x) == 2;
+  assert [nested]: have x : int = 1 in have y : int = 2 in int.add(x, y) == 3;
 };
 #end
 

@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Pipeline.Messages
 import StrataDDM.Integration.Lean.HashCommands
 import StrataDDM.Elab
 import StrataDDM.BuiltinDialects.Init
@@ -29,11 +30,27 @@ def translateLaurel (program : StrataDDM.Program) : IO Laurel.Program := do
   | .error e => throw (IO.userError s!"Translation errors: {e}")
   | .ok laurelProgram => pure laurelProgram
 
-/-- Convert pipeline `DiagnosticModel`s (carrying file-global byte offsets in
+/-- Prepend Laurel's built-in definitions to a program, exactly as the real
+    pipeline does (`runLaurelPasses`).
+
+    Operators are calls to the `$`-prefixed wrapper procedures declared in
+    `CoreDefinitionsForLaurel` (`$add`, `$eq`, `$lt`, …), so a test that resolves
+    a snippet without these would see every `+`, `==`, `<`, … as an undefined
+    name — and any pass keying off the callee's declaration (e.g.
+    `InferHoleTypes` reading its parameter types to type a hole operand) would
+    silently get nothing. Any test driving `resolve` on a bare snippet needs
+    this. -/
+def withBuiltins (program : Laurel.Program) : Laurel.Program :=
+  { program with
+    staticProcedures :=
+      Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
+    types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
+
+/-- Convert pipeline `Message`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by
     subtracting `basePos` and looking up in a snippet `FileMap`. -/
 private def renderSnippetLocal (basePos : Nat) (snippet : String)
-    (dms : Array Strata.DiagnosticModel) : Array Strata.Diagnostic :=
+    (dms : Array Strata.Message) : Array Strata.Diagnostic :=
   let fileMap := Lean.FileMap.ofString snippet
   dms.map fun dm =>
     let startB := dm.fileRange.range.start.byteIdx
@@ -45,7 +62,7 @@ private def renderSnippetLocal (basePos : Nat) (snippet : String)
     { start := { line := startPos.line, column := startPos.column }
       ending := { line := endPos.line, column := endPos.column }
       message := dm.message
-      type := dm.type }
+      type := dm.kind }
 
 /-- Default options used by `testLaurel` when the caller doesn't override:
     quiet verifier, default solver. Override by passing
@@ -54,34 +71,34 @@ def defaultLaurelTestOptions : LaurelVerifyOptions :=
   { verifyOptions := .quiet }
 
 /-- Run translate + resolve only on a parsed program. Skips SMT verification.
-    Returns diagnostics as `DiagnosticModel`s so the caller can choose how to
+    Returns diagnostics as `Message`s so the caller can choose how to
     render them (snippet-local for inline annotations, file-global for editor
     navigation). -/
 private def runLaurelResolutionRaw (gradualTypes : Std.HashSet String := {})
     (program : StrataDDM.Program) :
-    IO (Array Strata.DiagnosticModel) := do
+    IO (Array Strata.Message) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
   | .ok laurelProgram =>
-    let result := Laurel.resolve laurelProgram (gradualTypes := gradualTypes)
+    let result := Laurel.resolve (withBuiltins laurelProgram) (gradualTypes := gradualTypes)
     return result.errors
 
 /-- Run the full Laurel pipeline (translate + resolve + verify).
-    Returns diagnostics as `DiagnosticModel`s. -/
+    Returns diagnostics as `Message`s. -/
 private def runLaurelPipelineRaw (program : StrataDDM.Program)
-    (options : LaurelVerifyOptions) : IO (Array Strata.DiagnosticModel) := do
+    (options : LaurelVerifyOptions) : IO (Array Strata.Message) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e =>
-    return #[Strata.DiagnosticModel.fromMessage s!"Translation error: {e}"]
+    return #[Strata.Message.fromString s!"Translation error: {e}"]
   | .ok laurelProgram =>
     -- Use the *capturing* entry point: a verify-phase type/symbolic error comes
-    -- back as a structured `DiagnosticModel` (rather than thrown like the CLI),
+    -- back as a structured `Message` (rather than thrown like the CLI),
     -- so it flows through the same snippet-local `line:col` rendering as every
     -- other diagnostic instead of leaking a raw byte offset in its message.
-    Laurel.verifyToDiagnosticModelsCapturing laurelProgram options
+    Laurel.verifyToMessagesCapturing laurelProgram options
 
 /-! ## Concrete-interpretation path
 
@@ -91,11 +108,12 @@ the producer marked `entry` — and checks the *runtime* assertion failures agai
 the very same inline `// ^^^` annotations the verifier is checked against.
 (`testLaurel` runs verification only and never takes this path.)
 
-This mirrors `laurelInterpretCommand` in `StrataMainLib`: translate to Core,
-type-check with the default Core factory, inline bodied functions so concrete
-evaluation can reduce them, then run each `entry` procedure from a fresh
-environment and map any `AssertFail` back to source via `collectAssertRanges`
-(the helper now shared out of `Core.Program`).
+This shares its implementation with `laurelInterpretCommand` in `StrataMainLib`:
+translate to Core and type-check here, then hand off to
+`Core.Program.interpretEntries`, which the CLI command also calls. So the parts
+that define what interpretation means — inlining bodied functions, the evaluator
+flags, mapping an `AssertFail` back to source via the metadata the failure
+carries — cannot drift between the two.
 
 Only *deterministic* assertion failures reproduce under concrete execution:
 verifier-only diagnostics (a precondition that "does not hold" over all inputs,
@@ -119,72 +137,42 @@ assume makes the assert unreachable) belongs in `testLaurel`, not
 
 /-- Run the interpret path on a translated, type-checked Core program: execute
     every `entry` procedure from a fresh environment and return the runtime
-    assertion failures as `DiagnosticModel`s (mapped back to source), so they
+    assertion failures as `Message`s (mapped back to source), so they
     flow through the same snippet-local rendering and annotation matching as the
     verifier's diagnostics.
 
-    The environment runs with `collectAllAssertFailures := true`, so the
-    interpreter records *every* failed assertion on a path instead of halting on
-    the first. That lets a single `entry` procedure with several failing asserts
-    reproduce all of them, matching the verifier which reports each independently.
+    The run itself is `Core.Program.interpretEntries`, the same implementation
+    the `laurelInterpret` CLI command uses, so these tests exercise the CLI's
+    evaluator configuration (notably `collectAllAssertFailures` and
+    `ignoreAssumes`) directly. This function only decides how to *report* what
+    that run found.
 
     A non-assertion runtime error (out of fuel, or a `Misc` such as marking a
-    procedure with parameters `entry`) is a test *mis-setup* rather than a
-    property of the program under test, so it is thrown rather than reported as
-    a diagnostic. -/
+    procedure with parameters `entry`), and an assertion failure that maps to no
+    source range, are both test *mis-setup* rather than properties of the program
+    under test, so they are thrown rather than reported as diagnostics. A run can
+    hit both; the error is reported first because it says the interpreter stopped,
+    which subsumes an unmapped label as a diagnosis. The message still counts the
+    unmapped labels so neither signal is lost. -/
 private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
-    IO (Array Strata.DiagnosticModel) := do
-  let core := Core.Program.inlineBodiedFunctions core
-  let assertInfo := Core.Program.collectAssertInfo core
-  match core.run with
-  | .error diag =>
-    throw <| IO.userError s!"interpreter setup failed: {diag.message}"
-  | .ok E =>
-    -- Collect all assertion failures per run rather than halting on the first,
-    -- and treat contract-scaffolding `assume`s as no-ops: the interpreter is an
-    -- assertion oracle, so an `assume false` on an infeasible-but-reached path
-    -- (e.g. the body of a `requires false` procedure) should not derail it.
-    let E := { E with collectAllAssertFailures := true, ignoreAssumes := true }
-    let mut dms : Array Strata.DiagnosticModel := #[]
-    -- Diagnostics already emitted, so an assert re-hit on a later loop iteration
-    -- collapses to a single diagnostic (see the dedup note below).
-    let mut seen : Std.HashSet Strata.DiagnosticModel := {}
-    for p in Core.Program.entryProcedures core do
-      let procName := p.header.name.name
-      let resultEnv := Core.Program.runEntry E p fuel
-      -- Emit collected assertion failures first (in source order — the list is
-      -- most-recent-first, so we reverse). This must happen before the error
-      -- check below: a callee ending in `.exiting` can carry assertion failures
-      -- AND set a "failed to terminate" error, and we want to report those
-      -- failures as diagnostics. Any failures collected before a non-assertion
-      -- error are also appended to the thrown message for debuggability.
-      --
-      -- Dedup exact duplicates: an assert inside a loop that fails on every
-      -- iteration is recorded once per iteration, but the verifier emits a
-      -- single diagnostic for that assert. Collapsing identical diagnostics
-      -- (same range and message) keeps the interpret path 1:1 with the verifier
-      -- under `checkAgainstAnnotations`. Only *exact* duplicates are dropped —
-      -- two distinct asserts that happen to share wording are both kept.
-      for (label, _) in resultEnv.assertFailures.reverse do
-        match assertInfo[label]? with
-        | some (fr, summary) =>
-          let dm := Strata.DiagnosticModel.withRange fr s!"{summary} does not hold"
-          unless seen.contains dm do
-            dms := dms.push dm
-            seen := seen.insert dm
-        | none =>
-          throw <| IO.userError
-            s!"interpret: assertion '{label}' in '{procName}' failed with no source range"
-      -- In collect mode a failed assertion is recorded (not set as `error`), so
-      -- any lingering `error` is a genuine non-assertion failure: a test mis-setup.
-      if let some e := resultEnv.error then
-        let collected := if dms.isEmpty then "" else
-          "\ncollected assertion failures before the error:" ++
-            String.join (dms.toList.map fun d => s!"\n  {d.message}")
-        throw <| IO.userError
-          s!"interpret: '{procName}' raised a non-assertion error: \
-             {Std.format (Imperative.EvalError.toFormat e)}{collected}"
-    return dms
+    IO (Array Strata.Message) := do
+  let outcome ← match Core.Program.interpretEntries core (Core.Program.entryProcedures core) fuel with
+    | .error diag => throw <| IO.userError s!"interpreter setup failed: {diag.message}"
+    | .ok outcome => pure outcome
+  let dms := outcome.diagnostics
+  if let some (procName, e) := outcome.errors[0]? then
+    let collected := if dms.isEmpty then "" else
+      "\ncollected assertion failures before the error:" ++
+        String.join (dms.toList.map fun d => s!"\n  {d.message}")
+    let alsoUnmapped := if outcome.unmapped.isEmpty then "" else
+      s!"\nalso {outcome.unmapped.size} assertion failure(s) with no source range"
+    let formatted := Imperative.EvalError.toFormat (P := Core.Expression) e
+    throw <| IO.userError
+      s!"interpret: '{procName}' raised a non-assertion error: {formatted}{collected}{alsoUnmapped}"
+  if let some (procName, label) := outcome.unmapped[0]? then
+    throw <| IO.userError
+      s!"interpret: assertion '{label}' in '{procName}' failed with no source range"
+  return dms
 
 /-- Translate + type-check a Laurel program for the interpret path, then run
     every `entry` procedure. Returns `none` when the program marks *no* entry
@@ -200,7 +188,7 @@ private def runLaurelInterpretCore (core : Core.Program) (fuel : Nat := 10000) :
     *does* mark an entry, a translate/type-check failure here is a real problem
     and is thrown. -/
 private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 10000) :
-    IO (Option (Array Strata.DiagnosticModel)) := do
+    IO (Option (Array Strata.Message)) := do
   let uri := Strata.Uri.file "<#strata>"
   let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
     | .error _ => return none  -- doesn't even parse as Laurel → leave it to verify
@@ -257,12 +245,12 @@ private structure DiagnosticAnnotation where
   message : String
 
 /-- Render the `kind` of a `Diagnostic` to the string used in annotations. -/
-private def diagnosticKindString (t : Strata.DiagnosticType) : String :=
-  match t with
-  | .Warning => "warning"
-  | .UserError => "error"
-  | .NotYetImplemented => "not-yet-implemented"
-  | .StrataBug => "strata-bug"
+private def messageKindString (k : Strata.MessageKind) : String :=
+  match k.category with
+  | "warning" => "warning"
+  | "userError" => "error"
+  | "notYetImplemented" => "not-yet-implemented"
+  | _ => "strata-bug"
 
 /-! ## Unified reporting normal form
 
@@ -291,7 +279,7 @@ private structure LocatedMessage where
 /-- View an actual pipeline `Diagnostic` as a `LocatedMessage`. -/
 private def LocatedMessage.ofDiagnostic (d : Strata.Diagnostic) : LocatedMessage :=
   { line := d.start.line, colStart := d.start.column, colEnd := d.ending.column
-    kind := diagnosticKindString d.type, message := d.message }
+    kind := messageKindString d.type, message := d.message }
 
 /-- View an expected `DiagnosticAnnotation` as a `LocatedMessage`. -/
 private def LocatedMessage.ofAnnotation (a : DiagnosticAnnotation) : LocatedMessage :=
@@ -489,7 +477,7 @@ private def checkAgainstAnnotations (block : SourcedProgram) (label : String)
     - Otherwise asserts an exact match: every diagnostic must be annotated,
       every annotation must fire. Throws on mismatch. -/
 private def runAndCheck (block : SourcedProgram)
-    (run : StrataDDM.Program → IO (Array Strata.DiagnosticModel))
+    (run : StrataDDM.Program → IO (Array Strata.Message))
     (label : String := "verify")
     (showLocations : Bool := false) (showSnippet : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
@@ -574,17 +562,10 @@ def testLaurel (block : SourcedProgram)
     `testLaurelMultiple` — put it in a verify-only `testLaurel` block. (Unifying
     the two wordings in the matcher is possible but deliberately not done here.)
 
-    **Known limitation — label collision for multiple preconditions at one call
-    site.** `collectAssertInfo` keys by the position-derived assert label, but
-    `mkPreChecks` emits one `Assert` per precondition at the *same* call-site
-    source position. Multiple precondition asserts at a single call site therefore
-    share a label, and the `HashMap` keeps only the last `(range, summary)` pair —
-    collapsing N distinct failures into one diagnostic on the interpret side. The
-    verifier reports each independently (keyed by a uid-augmented key), so a test
-    block with multiple preconditions at one call site will mismatch between the two
-    modes. For now such blocks must use `testLaurel` (verify-only). This is a
-    pre-existing limitation of the label scheme, not introduced by
-    `testLaurelMultiple`.
+    Multiple preconditions at a single call site are each reported independently,
+    matching the verifier: `mkPreChecks` emits one `Assert` per precondition at
+    the *same* call-site source position, and each failure carries its own
+    metadata.
 
     If the program marks no `entry`, there is nothing for the interpreter to run,
     which is a mis-use of this entry point and is reported as an error.

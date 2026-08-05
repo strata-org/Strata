@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Laurel.MapStmtExpr
 public import Strata.Languages.Laurel.LaurelPass
@@ -82,7 +83,7 @@ public def pushOldInwardPass : LoweringPass where
   run := fun _ p _ =>
     match pushOldInward p with
     | .ok p' => (p', [], {})
-    | .error e => (p, [DiagnosticModel.fromMessage e .StrataBug], {})
+    | .error e => (p, [Message.fromString e .strataBug], {})
 
 end -- public section
 end Laurel

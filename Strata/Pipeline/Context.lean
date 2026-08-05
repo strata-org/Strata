@@ -150,7 +150,7 @@ public def getMessages (ctx : PipelineContext) : BaseIO (Array PipelineMessage) 
 public def getToolErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
   ctx.toolErrorsRef.get
 
-/-- Messages with `.userCodeIssue` impact.
+/-- Messages with `.userCodeError` impact.
     These represent definite errors in the user's source code. -/
 public def getUserCodeErrors (ctx : PipelineContext) : BaseIO (Array PipelineMessage) :=
   ctx.userCodeErrorsRef.get
@@ -383,19 +383,19 @@ public def addMessage (msg : Pipeline.PipelineMessage) : Pipeline.PipelineM Unit
     { ps with messageCounts := ps.messageCounts.alter msg.kind.category fun mv => some (mv.getD 0 + 1) }
   match msg.kind.impact with
   | .internalError | .configurationError => ctx.toolErrorsRef.modify (·.push msg)
-  | .userCodeIssue => ctx.userCodeErrorsRef.modify (·.push msg)
+  | .userCodeError => ctx.userCodeErrorsRef.modify (·.push msg)
   | _ => pure ()
   let mut fields : List (String × Lean.Json) := [
     ("type", .str "diagnostic"), ("phase", .str msg.phase.display),
     ("file", .str msg.file.toString), ("category", .str msg.kind.category),
-    ("impact", .str (toString msg.kind.impact)), ("message", .str msg.message)]
+    ("impact", .str (toString msg.kind.impact)), ("message", .str msg.message.message)]
   unless msg.loc == default do
     fields := fields ++ [("start", .num msg.loc.start.byteIdx), ("stop", .num msg.loc.stop.byteIdx)]
   ctx.emitMetric (Lean.Json.mkObj fields)
   if ctx.outputMode == .verbose then
     let tag := toString msg.kind.impact
     let indent := String.replicate ((msg.phase.depth - 1) * 2) ' '
-    let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
+    let _ ← (do IO.eprintln s!"{indent}[{tag}] {msg.file}: {msg.message.message}"; (← IO.getStderr).flush : IO Unit).toBaseIO
 
 /-- Emit a diagnostic message and continue. Tags with current phase.
     The impact classification is for downstream consumers — callers may
@@ -403,7 +403,7 @@ public def addMessage (msg : Pipeline.PipelineMessage) : Pipeline.PipelineM Unit
 public def emitMessage (kind : Pipeline.MessageKind) (message : String)
     (file : System.FilePath := default) (loc : SourceRange := default) : Pipeline.PipelineM Unit := do
   let phase ← getPhase
-  addMessage { file, loc, phase, kind, message }
+  addMessage { phase, message := { fileRange := { file := .file file.toString, range := loc }, message, kind } }
 
 /-- Emit a diagnostic message and abort the pipeline.
     Polymorphic return type allows use in expression position. -/

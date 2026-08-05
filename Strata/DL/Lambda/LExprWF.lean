@@ -13,6 +13,16 @@ public import Strata.DL.Util.Map
 
 See the definition `Lambda.LExpr.WF`. Also see theorem `HasType.regularity` in
 `Strata.DL.Lambda.LExprTypeSpec`.
+
+Key theorems:
+
+- `LExpr.freeVars_eq_freeVarsFast` (`@[csimp]`) — `freeVars` and its
+  linear-time implementation `freeVarsFast` agree; the compiler emits
+  `freeVarsFast` wherever compiled code calls `freeVars`.
+
+This theorem lives here rather than in `LExprWFProps.lean` because `@[csimp]`
+substitution only applies in modules that import the file containing the
+theorem.
 -/
 
 ---------------------------------------------------------------------
@@ -41,6 +51,58 @@ in it.
   | .app _ e1 e2 => freeVars e1 ++ freeVars e2
   | .ite _ c t e => freeVars c ++ freeVars t ++ freeVars e
   | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
+
+/--
+Accumulator-passing form of `freeVars`: prepends the free variables
+of `e` onto `acc`.
+-/
+private def freeVarsAcc (e : LExpr ⟨T, GenericTy⟩) (acc : IdentTs GenericTy T.IDMeta) :
+    IdentTs GenericTy T.IDMeta :=
+  match e with
+  | .const _ _ => acc
+  | .op _ _ _ => acc
+  | .bvar _ _ => acc
+  | .fvar _ x ty => (x, ty) :: acc
+  | .abs _ _ _ e1 => freeVarsAcc e1 acc
+  | .quant _ _ _ _ tr e1 => freeVarsAcc tr (freeVarsAcc e1 acc)
+  | .app _ e1 e2 => freeVarsAcc e1 (freeVarsAcc e2 acc)
+  | .ite _ c t e => freeVarsAcc c (freeVarsAcc t (freeVarsAcc e acc))
+  | .eq _ e1 e2 => freeVarsAcc e1 (freeVarsAcc e2 acc)
+
+omit [DecidableEq T.IDMeta] in
+private theorem freeVarsAcc_eq (e : LExpr ⟨T, GenericTy⟩) (acc : IdentTs GenericTy T.IDMeta) :
+    freeVarsAcc e acc = freeVars e ++ acc := by
+  induction e generalizing acc with
+  | const _ _ =>
+    rw [freeVarsAcc, freeVars, List.nil_append]
+  | op _ _ _ =>
+    rw [freeVarsAcc, freeVars, List.nil_append]
+  | bvar _ _ =>
+    rw [freeVarsAcc, freeVars, List.nil_append]
+  | fvar _ _ _ =>
+    rw [freeVarsAcc, freeVars, List.singleton_append]
+  | abs _ _ _ _ ih =>
+    rw [freeVarsAcc, freeVars, ih]
+  | quant _ _ _ _ _ _ ih_tr ih_e1 =>
+    rw [freeVarsAcc, freeVars, ih_e1, ih_tr, List.append_assoc]
+  | app _ _ _ ih1 ih2 =>
+    rw [freeVarsAcc, freeVars, ih2, ih1, List.append_assoc]
+  | ite _ _ _ _ ih_c ih_t ih_e =>
+    rw [freeVarsAcc, freeVars, ih_e, ih_t, ih_c, List.append_assoc, List.append_assoc]
+  | eq _ _ _ ih1 ih2 =>
+    rw [freeVarsAcc, freeVars, ih2, ih1, List.append_assoc]
+
+/-- Linear-time implementation of `freeVars`. -/
+def freeVarsFast (e : LExpr ⟨T, GenericTy⟩) : IdentTs GenericTy T.IDMeta :=
+  freeVarsAcc e []
+
+/-- `freeVars` and `freeVarsFast` agree so the compiler emits
+    `freeVarsFast` whenever `freeVars` is called. -/
+@[csimp]
+theorem freeVars_eq_freeVarsFast : @freeVars = @freeVarsFast := by
+  funext T GenericTy e
+  unfold freeVarsFast
+  rw [freeVarsAcc_eq, List.append_nil]
 
 /--
 Is `x` a fresh variable w.r.t. `e`?

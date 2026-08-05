@@ -52,7 +52,7 @@ private def rewriteNode (node : StmtExprMd) : ElimM StmtExprMd := do
   | .While cond invs dec body true =>
     let source := node.source
     let exitLabel ← freshExitLabel
-    let notCond : StmtExprMd := ⟨.PrimitiveOp .Not [cond], source⟩
+    let notCond : StmtExprMd := ⟨.StaticCall (mkId Operation.Not.procName) [cond], source⟩
     let exitStmt : StmtExprMd := ⟨.Exit exitLabel, source⟩
     let guardCheck : StmtExprMd := ⟨.IfThenElse notCond exitStmt none, source⟩
     let loopBody : StmtExprMd := ⟨.Block [body, guardCheck] none, source⟩

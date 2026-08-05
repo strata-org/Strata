@@ -32,8 +32,8 @@ axiom forall m: Heap, kk: Ref, vv: Struct :: m[kk := vv][kk] == vv;
 
 procedure test(h: Heap, ref: Ref, field: Field)
 {
-  var newH: Heap := h[ref := h[ref][field := h[ref][field] + 1]];
-  assert newH[ref][field] == h[ref][field] + 1;
+  var newH: Heap := h[ref := h[ref][field := int.add(h[ref][field], 1)]];
+  assert newH[ref][field] == int.add(h[ref][field], 1);
 };
 
 #end
@@ -51,8 +51,8 @@ axiom [axiom_2]: forall m : Heap :: forall okk : Ref :: forall kk : Ref :: foral
 axiom [axiom_3]: forall m : Heap :: forall kk : Ref :: forall vv : Struct :: (m[kk:=vv])[kk] == vv;
 procedure test (h : Heap, ref : Ref, field : Field)
 {
-  var newH : Heap := h[ref:=(h[ref])[field:=(h[ref])[field] + 1]];
-  assert [assert_0]: (newH[ref])[field] == (h[ref])[field] + 1;
+  var newH : Heap := h[ref:=(h[ref])[field:=int.add((h[ref])[field], 1)]];
+  assert [assert_0]: (newH[ref])[field] == int.add((h[ref])[field], 1);
 };
 -/
 #guard_msgs in
@@ -71,7 +71,7 @@ axiom_1: forall m : (Map Field int) :: forall kk : Field :: forall vv : int :: (
 axiom_2: forall m : (Map Ref (Map Field int)) :: forall okk : Ref :: forall kk : Ref :: forall vv : (Map Field int) :: !(okk == kk) ==> m[okk] == (m[kk:=vv])[okk]
 axiom_3: forall m : (Map Ref (Map Field int)) :: forall kk : Ref :: forall vv : (Map Field int) :: (m[kk:=vv])[kk] == vv
 Obligation:
-((h@1[ref@1:=(h@1[ref@1])[field@1:=(h@1[ref@1])[field@1] + 1]])[ref@1])[field@1] == (h@1[ref@1])[field@1] + 1
+((h@1[ref@1:=(h@1[ref@1])[field@1:=int.add((h@1[ref@1])[field@1], 1)]])[ref@1])[field@1] == int.add((h@1[ref@1])[field@1], 1)
 
 ---
 info:

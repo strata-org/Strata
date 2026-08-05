@@ -25,13 +25,13 @@ program Core;
 
 procedure simpleTest(x : int, y : int, out ret : int)
 spec {
-  requires [x_positive]:    (x > 0);
+  requires [x_positive]:    int.gt(x, 0);
 }
 {
   var z : int;
   z := x;
   //assume [foo]: z < 10;
-  z := z + 1;
+  z := int.add(z, 1);
   ret := 0;
 };
 #end

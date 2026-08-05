@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core
@@ -19,7 +20,7 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
+  assume (int.ge(x, 0));
 
   if (false) {
     cover [unreachable_cover1]: (true);
@@ -27,7 +28,7 @@ procedure Test()
     assert [unreachable_assert]: (false);
   } else {
     cover [reachable_cover]: (true);
-    cover [unsatisfiable_cover]: (x == -1);
+    cover [unsatisfiable_cover]: (x == int.neg(1));
     assert [reachable_assert]: (true);
   }
 };
@@ -70,14 +71,14 @@ def coverPgm2 :=
 program Core;
 procedure Test(x : int)
 spec {
-  requires x > 1;
+  requires int.gt(x, 1);
 }
 {
-  if (x <= 1) {
+  if (int.le(x, 1)) {
     cover [ctest1]: (true);
   } else {
-    cover [ctest2]: (x > 2);
-    assert [atest2]: (x > 1);
+    cover [ctest2]: int.gt(x, 2);
+    assert [atest2]: int.gt(x, 1);
   }
 };
 #end
@@ -114,11 +115,11 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
-  assume (x < 0);
+  assume (int.ge(x, 0));
+  assume (int.lt(x, 0));
 
-  assert [unreach_assert]: (x > 5);
-  cover [unreach_cover]: (x > 5);
+  assert [unreach_assert]: int.gt(x, 5);
+  cover [unreach_cover]: int.gt(x, 5);
 };
 #end
 
@@ -150,15 +151,15 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
+  assume (int.ge(x, 0));
 
-  if (x < 0) {
+  if (int.lt(x, 0)) {
     assert [unreach_assert]: (x == 42);
     cover [unreach_cover]: (x == 42);
   } else {
-    assert [reach_assert_pass]: (x >= 0);
+    assert [reach_assert_pass]: int.ge(x, 0);
     cover [reach_cover_pass]: (x == 5);
-    cover [reach_cover_fail]: (x < 0);
+    cover [reach_cover_fail]: int.lt(x, 0);
   }
 };
 #end
@@ -203,13 +204,13 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
-  assume (x < 0);
+  assume (int.ge(x, 0));
+  assume (int.lt(x, 0));
 
-  @[reachCheck] assert [rc_assert]: (x > 5);
-  assert [no_rc_assert]: (x > 5);
-  @[reachCheck] cover [rc_cover]: (x > 5);
-  cover [no_rc_cover]: (x > 5);
+  @[reachCheck] assert [rc_assert]: int.gt(x, 5);
+  assert [no_rc_assert]: int.gt(x, 5);
+  @[reachCheck] cover [rc_cover]: int.gt(x, 5);
+  cover [no_rc_cover]: int.gt(x, 5);
 };
 #end
 
@@ -238,7 +239,7 @@ Result: ❌ fail
 
 -- Test: Diagnostic messages for unreachable outcomes
 --
--- Verify that `toDiagnosticModel` produces the expected messages for
+-- Verify that `toMessage` produces the expected messages for
 -- both assert and cover when they are unreachable.
 def reachCheckDiagnosticsPgm :=
 #strata
@@ -246,11 +247,11 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
-  assume (x < 0);
+  assume (int.ge(x, 0));
+  assume (int.lt(x, 0));
 
-  assert [unreach_assert_diag]: (x > 5);
-  cover [unreach_cover_diag]: (x > 5);
+  assert [unreach_assert_diag]: int.gt(x, 5);
+  cover [unreach_cover_diag]: int.gt(x, 5);
 };
 #end
 
@@ -260,8 +261,8 @@ info: #["unreach_assert_diag holds vacuously (unreachable in this context)", "co
 #guard_msgs in
 #eval do
   let results ← Core.verify reachCheckDiagnosticsPgm (options := {Core.VerifyOptions.quiet with checkLevel := .full})
-  let diagnostics := results.filterMap toDiagnosticModel
-  return diagnostics.map DiagnosticModel.message
+  let diagnostics := results.filterMap toMessage
+  return diagnostics.map Message.message
 
 ---------------------------------------------------------------------
 
@@ -279,13 +280,13 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x >= 0);
-  assume (x < 0);
+  assume (int.ge(x, 0));
+  assume (int.lt(x, 0));
 
   assert [pe_assert_pass]: (true);
   cover [pe_cover_fail]: (false);
-  assert [rc_assert]: (x > 5);
-  cover [rc_cover]: (x > 5);
+  assert [rc_assert]: int.gt(x, 5);
+  cover [rc_cover]: int.gt(x, 5);
 };
 #end
 
@@ -321,9 +322,9 @@ program Core;
 procedure Test()
 {
   var x : int;
-  assume (x > 0);
-  assert [test_pass]: (x >= 0);
-  assert [test_fail]: (x < 0);
+  assume (int.gt(x, 0));
+  assert [test_pass]: int.ge(x, 0);
+  assert [test_fail]: int.lt(x, 0);
 };
 #end
 

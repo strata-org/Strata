@@ -21,7 +21,7 @@ function isRef(v: Box): bool;
 function allocationTime(r: Ref): int;
 
 // TODO: What happens if allocating in an if-expression
-axiom [nullAllocationTimeMinusOne]: allocationTime(null) == -1;
+axiom [nullAllocationTimeMinusOne]: allocationTime(null) == int.neg(1);
 
 
 // Monomorphized boxing unboxing functions
@@ -65,19 +65,19 @@ axiom [nextFieldType]: forall s: Struct :: isContainerStruct(s) ==> (isRef(s[nex
 
 // Modifies frame for Container_ctor (manual lambda lifting) TODO use lambdas when available
 function Container_ctorModifiesFrame(h: Heap, testedRef: Ref, r: Ref, methodEntryTime: int): bool {
-  testedRef == r || (allocationTime(testedRef) >= methodEntryTime)
+  testedRef == r || (int.ge(allocationTime(testedRef), methodEntryTime))
 }
 procedure Container_ctor(inout tickingClock: int, heap: Heap, r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref, out newHeap: Heap)
 spec {
   // Refs are allocated
-  free requires tickingClock >= 0;
-  requires allocationTime(r) < tickingClock;
-  requires allocationTime(initialNext) < tickingClock;
+  free requires int.ge(tickingClock, 0);
+  requires int.lt(allocationTime(r), tickingClock);
+  requires int.lt(allocationTime(initialNext), tickingClock);
   requires isContainer(r);
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
+    (o != null && int.ge(allocationTime(o), 0) && int.lt(allocationTime(o), old tickingClock))
        ==> (newHeap[o] == heap[o] || o == r));
 
   // User provided ------------------------------------------------------------------------------------------------------------
@@ -87,7 +87,7 @@ spec {
   ensures UnboxingInt(newHeap[r][pineappleField]) == initialPineapple;
   ensures UnboxingRef(newHeap[r][nextField]) == initialNext;
 
-  ensures tickingClock >= old tickingClock;
+  ensures int.ge(tickingClock, old tickingClock);
 
 }
 {
@@ -115,25 +115,25 @@ spec {
 
 // Modifies frame for UpdateContainers (manual lambda lifting)
 function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, methodEntryTime: int): bool {
-  testedRef == ref1 || (allocationTime(testedRef) >= methodEntryTime)
+  testedRef == ref1 || (int.ge(allocationTime(testedRef), methodEntryTime))
 }
 
 // Annotated with "modifies ref1"
 procedure UpdateContainers(inout tickingClock: int, heap: Heap, ref1: Ref, ref2: Ref, out newHeap: Heap)
 spec {
   // Refs are allocated
-  free requires tickingClock >= 0;
-  requires allocationTime(ref1) < tickingClock;
-  requires allocationTime(ref2) < tickingClock;
+  free requires int.ge(tickingClock, 0);
+  requires int.lt(allocationTime(ref1), tickingClock);
+  requires int.lt(allocationTime(ref2), tickingClock);
 
   requires isContainer(ref1);
   requires isContainer(ref2);
 
-  ensures tickingClock >= old tickingClock;
+  ensures int.ge(tickingClock, old tickingClock);
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
+    (o != null && int.ge(allocationTime(o), 0) && int.lt(allocationTime(o), old tickingClock))
        ==> (newHeap[o] == heap[o] || o == ref1));
 
   // User provided ------------------------------------------------------------------------------------------------------------
@@ -162,7 +162,7 @@ spec {
   // ref1.lychee += 1
 
   assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, methodEntryTime);
-  var rhs1: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
+  var rhs1: Box := BoxingInt(int.add(UnboxingInt(heap_var[ref1][lycheeField]), 1));
   heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs1]];
 
   // Cannot modify ref2
@@ -175,7 +175,7 @@ spec {
   // Modify ref1.pineapples through an alias in ref2
   // ref1.pineapple += 1
   assert [modifiesFrameRef2Next]: UpdateContainersModifiesFrame(heap_var, UnboxingRef(heap_var[ref2][nextField]), ref1, methodEntryTime);
-  var rhs2: Box := BoxingInt(UnboxingInt(heap_var[UnboxingRef(heap_var[ref2][nextField])][pineappleField]) + 1);
+  var rhs2: Box := BoxingInt(int.add(UnboxingInt(heap_var[UnboxingRef(heap_var[ref2][nextField])][pineappleField]), 1));
   heap_var := heap_var[UnboxingRef(heap_var[ref2][nextField]) := heap_var[UnboxingRef(heap_var[ref2][nextField])][pineappleField := rhs2]];
 
 
@@ -185,18 +185,18 @@ spec {
 
 // Modifies frame for Main (manual lambda lifting)
 function MainModifiesFrame(h: Heap, testedRef: Ref, methodEntryTime: int): bool {
-  (allocationTime(testedRef) >= methodEntryTime)
+  (int.ge(allocationTime(testedRef), methodEntryTime))
 }
 
 // annotated with "modifies {}"
 procedure Main(inout tickingClock: int, heap: Heap, out newHeap: Heap)
 spec {
-  free requires tickingClock >= 0;
-  ensures tickingClock >= old tickingClock;
+  free requires int.ge(tickingClock, 0);
+  ensures int.ge(tickingClock, old tickingClock);
 
   free ensures (forall o: Ref ::
     { newHeap[o] }
-    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old tickingClock)
+    (o != null && int.ge(allocationTime(o), 0) && int.lt(allocationTime(o), old tickingClock))
        ==> (newHeap[o] == heap[o]));
 }
 {
@@ -207,7 +207,7 @@ spec {
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
   assume isContainer(c1);
-  tickingClock := tickingClock + 1;           // After allocation: increase the tick
+  tickingClock := int.add(tickingClock, 1);           // After allocation: increase the tick
   call Container_ctor(inout tickingClock, heap_var, c1, 0, 1, null, out heap_var);
 
   assert [c1Lychees0]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
@@ -217,7 +217,7 @@ spec {
   var c2: Ref;
   assume allocationTime(c2) == tickingClock;
   assume isContainer(c2);
-  tickingClock := tickingClock + 1;           // After allocation: increase the tick
+  tickingClock := int.add(tickingClock, 1);           // After allocation: increase the tick
   call Container_ctor(inout tickingClock, heap_var, c2, 0, 0, null, out heap_var);
 
   // c1.next := c2

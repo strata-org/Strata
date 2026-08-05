@@ -975,10 +975,6 @@ Transparent procedures will support:
 - Multiple output parameters
 - Control flow with loops
 
-## Enhance support for quantifiers
-- Support assumptions in quantifiers
-- Support checking the wellformedness of quantifiers
-
 ## Property-based testing
 To be designed..
 

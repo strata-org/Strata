@@ -51,9 +51,9 @@ program Core;
 procedure Test()
 {
   var x : int;
-  @[reachCheck] assert [a1]: (x > 0);
-  @[reachCheck, propertyType = "divisionByZero"] assert [a2]: (x > 0);
-  assert [a3]: (x > 0);
+  @[reachCheck] assert [a1]: int.gt(x, 0);
+  @[reachCheck, propertyType = "divisionByZero"] assert [a2]: int.gt(x, 0);
+  assert [a3]: int.gt(x, 0);
 };
 #end
 
@@ -67,11 +67,10 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  assert [a1]: x > 0;
-  assert [a2]: x > 0;
-  assert [a3]: x > 0;
+  assert [a1]: int.gt(x, 0);
+  assert [a2]: int.gt(x, 0);
+  assert [a3]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testPgm .none
@@ -86,11 +85,10 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[reachCheck] assert [a1]: x > 0;
-  @[reachCheck] assert [a2]: x > 0;
-  assert [a3]: x > 0;
+  @[reachCheck] assert [a1]: int.gt(x, 0);
+  @[reachCheck] assert [a2]: int.gt(x, 0);
+  assert [a3]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testPgm .checks
@@ -105,11 +103,10 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[reachCheck, propertySummary = "a1"] assert [a1]: x > 0;
-  @[reachCheck, propertyType = "divisionByZero", propertySummary = "a2"] assert [a2]: x > 0;
-  @[propertySummary = "a3"] assert [a3]: x > 0;
+  @[reachCheck, propertySummary = "a1"] assert [a1]: int.gt(x, 0);
+  @[reachCheck, propertyType = "divisionByZero", propertySummary = "a2"] assert [a2]: int.gt(x, 0);
+  @[propertySummary = "a3"] assert [a3]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testPgm .properties
@@ -139,10 +136,10 @@ program Core;
 procedure Test()
 {
   var x : int;
-  @[reachCheck] assert [a1]: (x > 0);
-  @[fullCheck] cover [c1]: (x > 0);
-  @[customFlag, myTool = "info"] assert [a2]: (x > 0);
-  assume [s1]: (x > 0);
+  @[reachCheck] assert [a1]: int.gt(x, 0);
+  @[fullCheck] cover [c1]: int.gt(x, 0);
+  @[customFlag, myTool = "info"] assert [a2]: int.gt(x, 0);
+  assume [s1]: int.gt(x, 0);
 };
 #end
 
@@ -152,12 +149,11 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[reachCheck, propertySummary = "a1"] assert [a1]: x > 0;
-  @[fullCheck] cover [c1]: x > 0;
-  @[customFlag, myTool = "info", propertySummary = "a2"] assert [a2]: x > 0;
-  assume [s1]: x > 0;
+  @[reachCheck, propertySummary = "a1"] assert [a1]: int.gt(x, 0);
+  @[fullCheck] cover [c1]: int.gt(x, 0);
+  @[customFlag, myTool = "info", propertySummary = "a2"] assert [a2]: int.gt(x, 0);
+  assume [s1]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testRoundtrip (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
@@ -174,9 +170,9 @@ program Core;
 procedure Test()
 {
   var x : int;
-  @[provenance = "myfile.st:100-200"] assert [a1]: (x > 0);
-  @[provenance = "<synthesized:smt-encode>"] assert [a2]: (x > 0);
-  @[provenance = "foo.st:10-20", relatedFileRange = "bar.st:30-40"] assert [a3]: (x > 0);
+  @[provenance = "myfile.st:100-200"] assert [a1]: int.gt(x, 0);
+  @[provenance = "<synthesized:smt-encode>"] assert [a2]: int.gt(x, 0);
+  @[provenance = "foo.st:10-20", relatedFileRange = "bar.st:30-40"] assert [a3]: int.gt(x, 0);
 };
 #end
 
@@ -199,20 +195,20 @@ private def testStmtVariety : Program :=
 program Core;
 procedure Callee (x : int)
 {
-  assume (x > 0);
+  assume (int.gt(x, 0));
 };
 procedure Test()
 {
   var x : int;
   @[reachCheck] havoc x;
   @[fullCheck] x := 0;
-  @[reachCheck] if (x > 0) {
+  @[reachCheck] if (int.gt(x, 0)) {
     x := 1;
   } else {
     x := 2;
   }
-  @[reachCheck] while (x > 0) {
-    x := x + 1;
+  @[reachCheck] while (int.gt(x, 0)) {
+    x := int.add(x, 1);
   }
   @[reachCheck] call Callee(x);
   @[reachCheck] blk: {
@@ -227,21 +223,21 @@ info: program Core;
 
 procedure Callee (x : int)
 {
-  assume [assume_0]: x > 0;
+  assume [assume_0]: int.gt(x, 0);
 };
 procedure Test ()
 {
   var x : int;
   @[reachCheck] havoc x;
   @[fullCheck] x := 0;
-  @[reachCheck] if (x > 0) {
+  @[reachCheck] if (int.gt(x, 0)) {
     x := 1;
   } else {
     x := 2;
   }
-  @[reachCheck] while (x > 0)
+  @[reachCheck] while (int.gt(x, 0))
   {
-    x := x + 1;
+    x := int.add(x, 1);
   }
   @[reachCheck] call Callee(x);
   @[reachCheck] blk: {
@@ -249,7 +245,6 @@ procedure Test ()
   }
   @[reachCheck] exit blk;
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testStmtVariety (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
@@ -266,7 +261,7 @@ program Core;
 @[myTool = "generated"] type Alias := int;
 @[myTool = "generated"] const c : int;
 @[myTool = "generated"] function f (x : int) : int;
-@[myTool = "generated"] function g (x : int) : int { x + 1 }
+@[myTool = "generated"] function g (x : int) : int { int.add(x, 1) }
 @[myTool = "generated"] axiom [ax1]: true;
 @[myTool = "generated"] distinct [d1]: [c];
 @[myTool = "generated"] datatype Color { Red(), Green(), Blue() };
@@ -280,7 +275,7 @@ info: program Core;
 @[myTool = "generated"] function c () : int;
 @[myTool = "generated"] function f (x : int) : int;
 @[myTool = "generated"] function g (x : int) : int {
-  x + 1
+  int.add(x, 1)
 }
 @[myTool = "generated"] axiom [ax1]: true;
 @[myTool = "generated"] distinct [d1]: [c];
@@ -289,7 +284,6 @@ info: program Core;
   Green(),
   Blue()
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testCommandAnnotations (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
@@ -304,7 +298,7 @@ program Core;
 procedure Test()
 {
   var x : int;
-  @[python.source_line = "42", boogie.severity = "warning"] assert [a1]: (x > 0);
+  @[python.source_line = "42", boogie.severity = "warning"] assert [a1]: int.gt(x, 0);
 };
 #end
 
@@ -314,9 +308,8 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[python.source_line = "42", boogie.severity = "warning", propertySummary = "a1"] assert [a1]: x > 0;
+  @[python.source_line = "42", boogie.severity = "warning", propertySummary = "a1"] assert [a1]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testDialectPrefixed (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
@@ -331,7 +324,7 @@ program Core;
 procedure Test()
 {
   var x : int;
-  @[] assert [a1]: (x > 0);
+  @[] assert [a1]: int.gt(x, 0);
 };
 #end
 
@@ -341,9 +334,8 @@ info: program Core;
 procedure Test ()
 {
   var x : int;
-  @[propertySummary = "a1"] assert [a1]: x > 0;
+  @[propertySummary = "a1"] assert [a1]: int.gt(x, 0);
 };
-
 -/
 #guard_msgs in
 #eval formatWithFilter testEmptyAnnotation (.allExcept (Std.HashSet.ofList ["provenance", "relatedFileRange"]))
