@@ -9,8 +9,6 @@ public import Strata.Backends.CBMC.Common
 public import Strata.Languages.Core.Procedure
 
 public import StrataDDM.AST
-import StrataDDM.Integration.Lean.HashCommands -- shake: keep
-import Strata.Languages.Core.DDMTransform.Translate
 
 public section
 
@@ -18,31 +16,6 @@ open Lean
 open Strata.CBMC
 
 namespace Core
--- Our test program
-private def SimpleTestEnv :=
-#strata
-program Core;
-
-procedure simpleTest(x : int, y : int, out ret : int)
-spec {
-  requires [x_positive]:    int.gt(x, 0);
-}
-{
-  var z : int;
-  z := x;
-  //assume [foo]: z < 10;
-  z := int.add(z, 1);
-  ret := 0;
-};
-#end
-
-open Core in
-private def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
-
-private def myProc : Except String Core.Procedure := do
-  match SimpleTestEnvAST.fst.decls.head!.getProc? with
-  | .some p => return p
-  | .none => throw "Expected procedure"
 
 
 class IdentToStr (I : Type) where

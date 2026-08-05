@@ -21,8 +21,7 @@ section Tests
 open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
-/--
-info: Error:
+/-- info: Error:
 none
 Subst Map:
 
@@ -301,6 +300,38 @@ func Bv64.UNegOverflow :  ((x : bv64)) → bool;
 func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
+func Bv128.Neg :  ((x : bv128)) → bv128;
+func Bv128.Add :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Sub :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Mul :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UDiv :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UMod :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SDiv :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SMod :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Not :  ((x : bv128)) → bv128;
+func Bv128.And :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Or :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Xor :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Shl :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UShr :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SShr :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.ULt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.ULe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UGt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UGe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SLt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SLe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SGt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SGe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SNegOverflow :  ((x : bv128)) → bool;
+func Bv128.SAddOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SSubOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SMulOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SDivOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UNegOverflow :  ((x : bv128)) → bool;
+func Bv128.UAddOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.USubOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UMulOverflow :  ((x : bv128) (y : bv128)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
   requires !(bv1.sAddOverflow(x, y));
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
@@ -381,6 +412,22 @@ func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
   requires !(bv64.uMulOverflow(x, y));
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
   requires !(bv64.uNegOverflow(x));
+func Bv128.SafeAdd :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sAddOverflow(x, y));
+func Bv128.SafeSub :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sSubOverflow(x, y));
+func Bv128.SafeMul :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sMulOverflow(x, y));
+func Bv128.SafeNeg :  ((x : bv128)) → bv128
+  requires !(bv128.sNegOverflow(x));
+func Bv128.SafeUAdd :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uAddOverflow(x, y));
+func Bv128.SafeUSub :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uSubOverflow(x, y));
+func Bv128.SafeUMul :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uMulOverflow(x, y));
+func Bv128.SafeUNeg :  ((x : bv128)) → bv128
+  requires !(bv128.uNegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
   requires !(bv1.sDivOverflow(x, y));
@@ -411,6 +458,12 @@ func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
   requires !(bv64.sDivOverflow(x, y));
+func Bv128.SafeSDiv :  ((x : bv128) (y : bv128)) → bv128
+  requires !(y == bv{128}(0))
+  requires !(bv128.sDivOverflow(x, y));
+func Bv128.SafeSMod :  ((x : bv128) (y : bv128)) → bv128
+  requires !(y == bv{128}(0))
+  requires !(bv128.sDivOverflow(x, y));
 
 
 Datatypes:

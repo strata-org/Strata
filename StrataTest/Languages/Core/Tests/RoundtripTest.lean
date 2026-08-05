@@ -274,6 +274,90 @@ function j () : Map (Sequence (int -> int)) int;
 #guard_msgs in
 #eval roundtrip testArrowTypeArgRoundtrip
 
+
+-------------------------------------------------------------------------------
+-- Test: every named operator roundtrips
+-------------------------------------------------------------------------------
+
+/-!
+Translate and FormatCore each maintain a hand-written table mapping the
+grammar's named operators to internal Core ops and back. A transposed or
+missing arm in either table is invisible to the type checker, so this test
+generates one use of every named operator and roundtrips the whole program:
+parse → translate → format → re-parse → re-translate → compare.
+-/
+
+private def bvWidths : List Nat := [1, 8, 16, 32, 64, 128]
+
+/-- One statement per operator, at every width. Results land in typed local
+    variables so the program is well-formed for Core's own type checker too. -/
+private def allOpsProgramText : String := Id.run do
+  let mut ls : List String := []
+  -- int
+  let intBin := ["add", "sub", "mul", "div", "mod", "safeDiv", "safeMod",
+                 "divT", "modT", "safeDivT", "safeModT"]
+  let intCmp := ["le", "lt", "ge", "gt"]
+  for o in intBin do
+    ls := ls ++ [s!"  var i_{o} : int := int.{o}(xi, yi);"]
+  for o in intCmp do
+    ls := ls ++ [s!"  var i_{o} : bool := int.{o}(xi, yi);"]
+  ls := ls ++ ["  var i_neg : int := int.neg(xi);"]
+  -- real
+  for o in ["add", "sub", "mul", "div"] do
+    ls := ls ++ [s!"  var r_{o} : real := real.{o}(xr, yr);"]
+  for o in intCmp do
+    ls := ls ++ [s!"  var r_{o} : bool := real.{o}(xr, yr);"]
+  ls := ls ++ ["  var r_neg : real := real.neg(xr);"]
+  -- bv families at every width
+  for w in bvWidths do
+    let bv := s!"bv{w}"
+    let a := s!"a{w}"
+    let b := s!"b{w}"
+    let ty := s!"bv W{w}"
+    for o in ["neg", "not", "safeNeg", "safeUNeg"] do
+      ls := ls ++ [s!"  var {bv}_{o} : {ty} := {bv}.{o}({a});"]
+    for o in ["sNegOverflow", "uNegOverflow"] do
+      ls := ls ++ [s!"  var {bv}_{o} : bool := {bv}.{o}({a});"]
+    for o in ["add", "sub", "mul", "and", "or", "xor", "shl", "uShr", "sShr",
+              "uDiv", "uMod", "sDiv", "sMod",
+              "safeAdd", "safeSub", "safeMul", "safeUAdd", "safeUSub",
+              "safeUMul", "safeSDiv", "safeSMod"] do
+      ls := ls ++ [s!"  var {bv}_{o} : {ty} := {bv}.{o}({a}, {b});"]
+    for o in ["uLe", "uLt", "uGe", "uGt", "sLe", "sLt", "sGe", "sGt",
+              "sAddOverflow", "sSubOverflow", "sMulOverflow", "sDivOverflow",
+              "uAddOverflow", "uSubOverflow", "uMulOverflow"] do
+      ls := ls ++ [s!"  var {bv}_{o} : bool := {bv}.{o}({a}, {b});"]
+    for o in ["toUInt", "toInt"] do
+      ls := ls ++ [s!"  var {bv}_{o} : int := {bv}.{o}({a});"]
+    ls := ls ++ [s!"  var {bv}_from_int : {ty} := as_bv{w}(xi);"]
+  let header := String.intercalate "\n" <|
+    ["procedure allOps(xi : int, yi : int, xr : real, yr : real"]
+    ++ (bvWidths.map fun w => s!"  , a{w} : bv W{w}, b{w} : bv W{w}")
+    ++ [")", "{"]
+  return header ++ "\n" ++ String.intercalate "\n" ls ++ "\n};\n"
+
+/-- Parse program text, translate, format, re-parse, re-translate, compare. -/
+private def roundtripText (text : String) : IO Unit := do
+  let ast1 ← parseAndTranslate text
+  let formatted := (Core.formatProgram ast1).pretty
+  let ast2 ← parseAndTranslate formatted
+  let formatted2 := (Core.formatProgram ast2).pretty
+  if formatted == formatted2 then
+    IO.println "OK"
+  else
+    -- Report the first differing line so a broken arm is identifiable.
+    let l1 := formatted.splitOn "\n"
+    let l2 := formatted2.splitOn "\n"
+    for (a, b) in l1.zip l2 do
+      if a ≠ b then
+        IO.println s!"FAIL first diff:\n  first : {a}\n  second: {b}"
+        return
+    IO.println s!"FAIL: length mismatch {l1.length} vs {l2.length}"
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtripText allOpsProgramText
+
 end Strata.Test.Roundtrip
 
 end
