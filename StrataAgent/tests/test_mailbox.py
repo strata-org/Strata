@@ -167,6 +167,61 @@ async def test_reply_only_has_no_pull_tools():
     print("  test_reply_only_has_no_pull_tools OK")
 
 
+def _push_agent(name, bus):
+    """Minimal SwarmAgent wired to `bus` so we can call _mailbox_push directly."""
+    from strataswarm._agent import SwarmAgent
+    from strataswarm._backend import AgentBackend
+    from strataswarm._types import AgentSpec
+
+    class _NullBackend(AgentBackend):
+        async def connect(self, config): return None
+        async def send_query(self, prompt): return None
+        async def receive_messages(self):
+            if False:
+                yield None
+        async def interrupt(self): return None
+        async def disconnect(self): return None
+
+    spec = AgentSpec(name=name, system_prompt="t", stateless=False)
+    return SwarmAgent(spec=spec, backend=_NullBackend(), channel_bus=bus,
+                      mcp_servers_override={"agent_messaging": {"instance": object()}})
+
+
+def test_mailbox_push_inlines_latest_when_multiple_unread():
+    """REGRESSION: with ≥2 unread, the turn-boundary push must inline the FULL
+    LATEST message (and mark it read), not emit a header-only nudge pointing at a
+    pull tool the writer may not have. That nudge silently dropped the guide's
+    advice — the writer plowed on with its old plan."""
+    d = tempfile.mkdtemp()
+    bus = mk_bus(d)
+    agent = _push_agent("proof_writer_v2_4", bus)
+    mb = bus.mailbox
+
+    # 0 unread → nothing to inject.
+    assert agent._mailbox_push() is None
+
+    # exactly 1 unread → full body inline, marked read.
+    mb.deliver("proof_guide_5", "proof_writer_v2_4", "first advice: use fuel induction",
+               subject="approach")
+    out1 = agent._mailbox_push()
+    assert out1 and "1 new message" in out1 and "first advice: use fuel induction" in out1
+    assert mb.unread_count("proof_writer_v2_4") == 0, "single unread should be marked read"
+
+    # ≥2 unread → the LATEST body is shown in full and marked read; older noted.
+    mb.deliver("proof_guide_5", "proof_writer_v2_4", "older: close the ite case", subject="ite")
+    latest = mb.deliver("proof_guide_5", "proof_writer_v2_4",
+                        "LATEST: reject option B, it is unsound — use A", subject="canfail")
+    assert mb.unread_count("proof_writer_v2_4") == 2
+    out2 = agent._mailbox_push()
+    assert out2 is not None
+    assert "LATEST: reject option B, it is unsound" in out2, "must inline the latest body"
+    assert "older unread" in out2, "must note the remaining older message(s)"
+    # the latest is now read; the older one is still pullable.
+    assert not mb._unread["proof_writer_v2_4"] or latest.msg_id not in mb._unread["proof_writer_v2_4"]
+    assert mb.unread_count("proof_writer_v2_4") == 1, "only the latest is consumed by the push"
+    print("  test_mailbox_push_inlines_latest_when_multiple_unread OK")
+
+
 def test_render():
     d = tempfile.mkdtemp()
     mb = Mailbox(); mb.bind_file(Path(d) / "m.jsonl")
@@ -187,6 +242,7 @@ if __name__ == "__main__":
     test_reload_assumes_read_and_resumes_ids()
     test_torn_write_tolerance()
     test_render()
+    test_mailbox_push_inlines_latest_when_multiple_unread()
     asyncio.run(test_tool_surface())
     asyncio.run(test_reply_only_has_no_pull_tools())
     print("ALL MAILBOX TESTS PASSED")

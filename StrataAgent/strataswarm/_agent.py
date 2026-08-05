@@ -414,11 +414,15 @@ class SwarmAgent:
 
         - 0 unread → None (nothing to inject).
         - exactly 1 unread → inline the full email and MARK IT READ.
-        - ≥2 unread → a header nudge only; marks nothing read (agent pulls the rest
-          via see_last_unread_mail() / list_all_unread_mail()).
+        - ≥2 unread → inline the FULL LATEST email (the one that matters most) and
+          mark it read, with a one-line footer noting the older unread ones. The
+          agent never has to call a pull tool to see the message that just landed —
+          previously this branch showed a header-only nudge pointing at
+          see_last_unread_mail(), which the writer does not even have, so the
+          guide's actual advice was silently dropped.
 
         reply_only agents have no pull tools — they are purely reactive — so they
-        always get the oldest unread inlined one at a time (they loop back for the
+        always get the OLDEST unread inlined one at a time (they loop back for the
         next), preserving the sequential request→reply model.
 
         Registers the inlined message's sender in the reply_only FIFO so the agent
@@ -433,8 +437,7 @@ class SwarmAgent:
         if count == 0:
             return None
 
-        def _inline_oldest(prefix: str) -> str | None:
-            entry = mailbox.oldest_unread(name)
+        def _inline(entry, prefix: str, suffix: str = "") -> str | None:
             if entry is None:
                 return None
             mailbox.mark_read(name, entry.msg_id)
@@ -445,18 +448,20 @@ class SwarmAgent:
                 pending = getattr(inst, "_pending_replies", None)
                 if pending is not None:
                     pending.append(entry.sender)
-            return prefix + render_mail(entry, mailbox)
+            return prefix + render_mail(entry, mailbox) + suffix
 
         if count == 1 or self.spec.reply_only:
-            return _inline_oldest("📬 1 new message:\n" if count == 1 else "📬 New message:\n")
-        # ≥2 (non-reply_only): header nudge only, marks nothing read.
+            entry = mailbox.oldest_unread(name)
+            return _inline(entry, "📬 1 new message:\n" if count == 1 else "📬 New message:\n")
+        # ≥2 (non-reply_only): inline the FULL LATEST email + a footer for the rest.
+        # The latest message is the freshest direction; older unread are pullable
+        # via list_all_unread_mail() for agents that have it.
         latest = mailbox.unread_entries(name)[-1]
-        subj = ("RE: " + latest.subject) if latest.in_reply_to is not None else latest.subject
-        return (
-            f"📬 You have {count} unread messages. "
-            f'Latest: {latest.sender} — "{subj}". '
-            f"Use see_last_unread_mail() to read the oldest, or list_all_unread_mail() to browse."
+        footer = (
+            f"\n\n(＋{count - 1} older unread message(s). "
+            f"Use list_all_unread_mail() to see them if you need the earlier context.)"
         )
+        return _inline(latest, f"📬 {count} new messages — showing the latest:\n", footer)
 
     # ─── Wait for wakeup (stateful only) ─────────────────────────────────
 
