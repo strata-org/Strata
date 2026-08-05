@@ -62,6 +62,12 @@ MAX_CHUNKS_PER_LEMMA = 80          # ~80 chunks × up to 100 turns = a lot of ro
 # grant bounded extensions (EXTEND_MINUTES) when it judges the lemma is close.
 LEMMA_IDLE_MINUTES = 180           # minutes WITHOUT progress before the backstop fires
 MAX_GUIDE_EXTEND_MINUTES = 30      # max minutes the guide may add per grant
+# ENDGAME grace: chunks with 0 leaf-sorries but a not-yet-compiling proof count as
+# progress (reset the idle clock) for this many chunks — a writer that closed the
+# last sorry and is fixing compile errors is on the critical path, not stalling.
+# After the window the idle clock ages again so a permanently-wedged endgame (a
+# proof the writer can never compile) is still caught by the flexible/hard backstop.
+ENDGAME_GRACE_CHUNKS = 4
 # TIER 2 — HARD run-level ceiling (absolute wall-clock for the WHOLE run). Set via
 # `start_dashboard.sh --max-run-minutes`. None ⇒ NO stopping time (run until proved
 # or otherwise terminated). This is the only unconditional stop.
@@ -940,9 +946,14 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 return "contingent"
 
         # Reachable in-file helpers the TARGET depends on that still carry a
-        # transitive sorry, excluding the protected targets themselves and genuine
+        # LITERAL sorry, excluding the protected targets themselves and genuine
         # siblings. These are the writer's real pending obligations even when its
         # own block reads clean (it factored the goal into inline `sorry` helpers).
+        # Filter on has_local_sorry (a literal token), NOT the axioms verdict's
+        # open_deps: when the build is RED the verdict marks EVERY reachable decl
+        # has_transitive_sorry=True, which in the endgame (0 sorries, still fixing
+        # compile errors) would falsely flag clean helpers and contradict the
+        # positive endgame framing.
         open_deps_all: set[str] = set()
         for t in protected_names:
             if t in tsm.targets:
@@ -950,19 +961,40 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         transitive_inline_sorry_info = {
             n: [tsm.decls[n].start] for n in sorted(open_deps_all)
             if n not in protected_names and n not in siblings and n in tsm.decls
+            and tsm.decls[n].has_local_sorry
         }
 
-        # Progress metric: total DISTINCT in-file decls reachable from our targets
-        # that are still transitively unproven (replaces the protected-only literal
-        # count, which read 0 the moment the writer delegated to inline helpers and
-        # made the guide blind to real 5→1 progress).
-        sorry_count = tsm.open_sorry_count()
+        # Progress metric: the number of literal `sorry` TOKENS in OUR obligations
+        # (protected targets + the inline helpers they depend on), excluding
+        # siblings whose sorries other branches own. This is the LEAF-sorry count —
+        # deliberately NOT tsm.open_sorry_count(), which counts distinct reachable
+        # decls via the axioms verdict. That decl-count had two failure modes on the
+        # critical path, both of which this replaces:
+        #   * BUILD RED → the axioms oracle can't confirm anything, so every
+        #     reachable decl reads has_transitive_sorry=True and the count freezes
+        #     at the reachable-decl total. A proof with 0 real sorries but compile
+        #     errors then looked identical to a genuine stall (idle clock never
+        #     reset, backstop could kill a nearly-done proof).
+        #   * 1:1 FACTORING → moving a sorry from the target into a fresh inline
+        #     helper spawns a new reachable decl, so the decl-count SPIKED upward
+        #     (4→5) on healthy decomposition — the very signal feeding decompose /
+        #     give-up. Leaf-count stays flat when a sorry just moves.
         # For display: literal-sorry positions, partitioned protected vs sibling.
         sorry_info = local_sorry
         protected_sorry_info = {n: sorry_info.get(n, []) for n in protected_names if sorry_info.get(n)}
         sibling_sorry_info = {n: v for n, v in sorry_info.items()
                               if n not in protected_names and v}
-        progress = _format_progress(prev_sorry_count, sorry_count)
+        # Our leaf-sorries = every literal sorry position EXCEPT those in sibling
+        # obligations. Covers protected targets + writer-created inline helpers.
+        sorry_count = sum(len(v) for n, v in sorry_info.items() if n not in siblings)
+        file_compiles_now = cr.success
+        # ENDGAME: 0 leaf-sorries but the file does not compile yet. The writer has
+        # replaced the last sorry with a real proof and is closing compile errors on
+        # the full statement — the single most forward state there is. Treated as
+        # progress below (resets the idle clock) and framed positively to the guide,
+        # so a proof one tactic from done is never scored as a stall.
+        finishing_compile = (sorry_count == 0 and not file_compiles_now)
+        progress = _format_progress(prev_sorry_count, sorry_count, compiles=file_compiles_now)
         prior_sorry_count = prev_sorry_count  # snapshot BEFORE overwrite (stuck check)
         prev_sorry_count = sorry_count
         writer_pct = await writer.get_context_percentage()
@@ -991,7 +1023,11 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
         snap_summary = snapshot_summary(cwd, entry.workspace)
         snap_note = f"\n{snap_summary}\n" if snap_summary else ""
         sorry_map = _format_sorry_map(tsm, set(protected_names), siblings)
-        await agent._emit("message", f"[PO5] Guide reviews: {progress}{' (NOT COMPILING)' if compile_note else ''}")
+        # In the endgame (0 sorries, not yet compiling) `progress` already frames the
+        # non-compile positively; only tack on the alarming "(NOT COMPILING)" when
+        # there is still open work, so a near-done proof doesn't read as a stall.
+        _compile_suffix = ' (NOT COMPILING)' if (compile_note and not finishing_compile) else ''
+        await agent._emit("message", f"[PO5] Guide reviews: {progress}{_compile_suffix}")
         advice = await _consult_guide_raw(agent, state, ledger, entry, cwd,
             task=(
                 f"Writer completed chunk {entry.attempts} ({total_turns} total turns).\n"
@@ -1029,28 +1065,56 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 out["extend_minutes"] = int(em.group(1))
             return out
 
-        # Track consecutive no-reduction chunks. Progress = the transitive
-        # open-sorry count STRICTLY decreased this chunk. A chunk that closes an
-        # inline helper now correctly counts as progress (the old protected-only
-        # count read 0 the whole run and made this misfire). Compare against the
-        # value captured BEFORE we overwrote prev_sorry_count above.
+        # Track consecutive no-reduction chunks. Progress = the leaf-sorry count
+        # STRICTLY decreased this chunk. A chunk that closes an inline helper counts
+        # as progress; a chunk that merely MOVES a sorry into a fresh helper does not
+        # inflate the count (leaf-count is flat under 1:1 factoring), so it is
+        # neither scored as progress nor as a stall. Compare against the value
+        # captured BEFORE we overwrote prev_sorry_count above.
         if not hasattr(entry, '_stuck_count'):
             entry._stuck_count = 0
         made_progress = (
             prior_sorry_count is not None and sorry_count < prior_sorry_count)
+        # `finishing_compile` (computed above): 0 leaf-sorries but not yet compiling.
+        # It must NOT be scored as a stall — the axioms-verdict count used to read
+        # this as "still N open, NOT COMPILING" and let the idle clock run toward a
+        # backstop that could kill a proof one tactic from done.
         still_open = sorry_count > 0
         if still_open and not made_progress:
             entry._stuck_count = getattr(entry, '_stuck_count', 0) + 1
         else:
             entry._stuck_count = 0
+        # Endgame credit is BOUNDED. `finishing_compile` counts as progress (resets
+        # the idle clock) only for the first ENDGAME_GRACE_CHUNKS chunks — enough for
+        # a writer that is genuinely one-tactic-away, but not a licence to reset the
+        # backstop forever on a compile the writer can never close. After the grace
+        # window the idle clock is allowed to age again so the flexible/hard
+        # backstops can still fire on a truly wedged endgame.
+        if finishing_compile:
+            entry._endgame_count = getattr(entry, '_endgame_count', 0) + 1
+        else:
+            entry._endgame_count = 0
+        endgame_credit = finishing_compile and entry._endgame_count <= ENDGAME_GRACE_CHUNKS
         # Record the moment of last real progress so the flexible per-lemma
         # backstop (Fix B) measures time-SINCE-PROGRESS, not raw wall-clock — a
-        # proof that is still shedding sorries must not be killed by the timer.
-        if made_progress or prior_sorry_count is None:
+        # proof that is still shedding sorries (or, within the grace window, closing
+        # out the final compile errors with no sorries left) must not be killed.
+        if made_progress or endgame_credit or prior_sorry_count is None:
             entry._last_progress_time = _time.time()
 
         stuck_hint = ""
-        if entry._stuck_count >= 3:
+        if finishing_compile and entry._endgame_count > ENDGAME_GRACE_CHUNKS:
+            # 0 sorries but stuck on the SAME broken proof for several chunks — this
+            # is NOT a decompose situation (there is nothing left to extract). Steer
+            # the guide toward recovering a compiling snapshot or a fresh approach.
+            stuck_hint = (
+                f"\n⚠️ ENDGAME STALL: {entry._endgame_count} chunks with 0 sorries but the "
+                f"proof still does NOT compile. The writer replaced the last sorry with a "
+                f"proof it cannot make compile. Do NOT decompose (nothing to extract). "
+                f"Consider read_snapshot(<best compiling tag>) to recover the last green "
+                f"state, or fresh_start for a different closing tactic.\n"
+            )
+        elif entry._stuck_count >= 3:
             stuck_hint = (
                 f"\n⚠️ STUCK: {entry._stuck_count} consecutive chunks with no sorry reduction. "
                 f"Consider decompose even if the writer still has runway — after this many "
@@ -1287,7 +1351,8 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
         # parks the entry as CONTINGENT when it is locally clean but still waiting
         # on an unproven SIBLING obligation (not just a child), matching the
         # per-target gate — otherwise a finished target gets needlessly re-driven.
-        if tools.check_compiles(stub_rel).success:
+        _compiles_now = tools.check_compiles(stub_rel).success
+        if _compiles_now:
             verdict = _proved_or_contingent(tools, ledger, entry, cwd, stub_rel)
             if verdict is not None:
                 return verdict
@@ -1297,7 +1362,7 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
         # Gather state
         sorry_info = tools.get_sorries_by_theorem(stub_rel)
         sorry_count = sum(len(v) for v in sorry_info.values())
-        progress = _format_progress(prev_sorry_count, sorry_count)
+        progress = _format_progress(prev_sorry_count, sorry_count, compiles=_compiles_now)
         prev_sorry_count = sorry_count
         writer_pct = await deep_writer.get_context_percentage()
 
@@ -2765,14 +2830,29 @@ def _get_protected_names(tools, stub_rel, entry) -> set[str]:
     return protected
 
 
-def _format_progress(prev: int | None, current: int) -> str:
+def _format_progress(prev: int | None, current: int, *, compiles: bool = True) -> str:
+    """Render the chunk-over-chunk progress line from the LEAF-sorry count.
+
+    `current`/`prev` are counts of literal `sorry` tokens in our obligations
+    (build-INDEPENDENT), not the axioms-verdict decl count. The one special case
+    is the ENDGAME: 0 sorries left but the file does not yet compile — the writer
+    has replaced the last sorry with a real (still-buggy) proof and is closing
+    compile errors. That is forward motion on the critical path, NOT a stall, so
+    it gets its own positive message (and the caller keeps the idle clock alive)."""
+    if current == 0 and not compiles:
+        if prev is not None and prev > 0:
+            return (f"PROGRESS: last sorry closed ({prev} → 0). SKETCH COMPLETE — "
+                    f"0 sorries remaining; writer is closing compile errors on the "
+                    f"full proof (endgame, not a stall).")
+        return ("SKETCH COMPLETE — 0 sorries remaining; writer is closing compile "
+                "errors on the full proof (endgame, not a stall).")
     if prev is None:
-        return f"Transitive open-sorry count: {current}."
+        return f"Open leaf-sorries: {current}."
     if current < prev:
-        return f"PROGRESS: transitive open sorries {prev} → {current}."
+        return f"PROGRESS: leaf-sorries {prev} → {current}."
     elif current == prev:
-        return f"NO REDUCTION: still {current} transitive open sorries."
-    return f"Transitive open-sorry count: {current} (was {prev})."
+        return f"NO REDUCTION: still {current} leaf-sorries."
+    return f"Leaf-sorry count: {current} (was {prev})."
 
 
 def _format_sorry_map(tsm, protected_names: set, siblings: set) -> str:
