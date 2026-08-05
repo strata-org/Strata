@@ -169,10 +169,12 @@ def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofOb
     -- Seed the encoding context with the env's datatypes and the array-theory flag.
     let smtCtx := { Core.SMT.Context.default with
       datatypes := .ofFactory E.datatypes, useArrayTheory := options.useArrayTheory }
-    let maybeTerms := Core.ProofObligation.toSMTTerms E.factory ob smtCtx
+    -- Encode this single obligation from a fresh encoder state.
+    let encState : Core.SMTEncodeState := .init { ctx := smtCtx }
+    let maybeTerms := Core.encodeObligationToSMT E.factory encState ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
+    | .ok ({ assumptions := ts, varDefs, goal := t, ctx, .. }, _) =>
       -- For denotational semantics, variable definitions are equivalent to equalities
       let defAssumptions := varDefs.map fun d =>
         Strata.SMT.Factory.eq (.app (.uf ⟨d.name, [], d.ty⟩) [] d.ty) d.body

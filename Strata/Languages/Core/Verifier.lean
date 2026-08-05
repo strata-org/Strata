@@ -1411,8 +1411,13 @@ def VCResults.mergeByAssertion (rs : VCResults) : VCResults :=
 
 /--
 Preprocess a proof obligation using symbolic simulation.
-Returns the symbolic results for satisfiability and validity independently.
-Each result is `some r` if evaluator can determine it, `none` if the solver is needed.
+Returns the symbolic results for satisfiability and validity independently
+(`some r` if the evaluator can determine it, `none` if the solver is needed),
+plus the labels of axiom assumptions found irrelevant to this obligation
+(empty when pruning is off or inapplicable). The returned obligation has the
+pruned axioms removed from its assumptions; the labels let a caller that
+needs the *original* assumptions (e.g. for cross-obligation sharing) apply
+the pruning at emission time instead.
 -/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
@@ -1423,7 +1428,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- A program whose declarations consist of axioms only, used by
     -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
-    : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result) := do
+    : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
   -- Evaluator can determine satisfiability if the obligation is literally false (unsat)
   let peSatResult : Option SMT.Result :=
     if !satisfiabilityCheck then some .unknown
@@ -1446,11 +1451,11 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
   -- Apply axiom pruning if needed.
   -- Axiom removal is unsound for cover obligations (removing axioms weakens
   -- path conditions, potentially making unreachable paths appear satisfiable).
-  let obligation ←
+  let (obligation, prunedAxiomLabels) ←
     match options.removeIrrelevantAxioms, axiomCache, obligation.property with
-    | .Off, _, _ | _, .none, _ | _, _, .cover => pure obligation
+    | .Off, _, _ | _, .none, _ | _, _, .cover => pure (obligation, [])
     | mode, .some cache, _ => -- All property types except `.cover`.
-      if peSatResult.isSome && peValResult.isSome then pure obligation
+      if peSatResult.isSome && peValResult.isSome then pure (obligation, [])
       else do
         let consequentFns := obligation.obligation.getOps.map CoreIdent.toPretty
         let relevantFns :=
@@ -1477,8 +1482,8 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
           IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache relevantFns
         let newAssumptions :=
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
-        pure { obligation with assumptions := newAssumptions }
-  return (obligation, peSatResult, peValResult)
+        pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
+  return (obligation, peSatResult, peValResult, prunedAxiomLabels)
 
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
@@ -1838,6 +1843,19 @@ def verifySingleEnv (oblProgram : Program)
   -- often share many assumption terms. Sequential path only; parallel passes `none`.
   let termCache ← IO.toEIO (fun e => Message.fromFormat f!"{e}")
     (IO.mkRef (∅ : Std.HashMap Term String))
+  -- The encoder, threaded across this env's obligations: shared
+  -- path-condition history is encoded once and reused; each obligation's
+  -- result is forked from the current position.
+  -- Tracks the last SMT-encoded obligation, not the loop index: the evaluator
+  -- fast-path and encoding failures leave it unchanged. `advance` recomputes
+  -- reuse against whatever frames are present, so correctness
+  -- (`PathConditions.Fold.advance_eq_reference`) is independent of which
+  -- obligations advanced it; skipping only affects how much prefix is reused
+  -- next.
+  let smtCtx := { SMT.Context.default with
+    datatypes,
+    useArrayTheory := options.useArrayTheory }
+  let mut encState : SMTEncodeState := .init { ctx := smtCtx }
   for obligation in obligations do
     -- Determine which checks to perform based on metadata or check mode/amount
     let (satisfiabilityCheck, validityCheck) :=
@@ -1851,7 +1869,10 @@ def verifySingleEnv (oblProgram : Program)
         | .deductive, _ =>
           if obligation.property.passWhenUnreachable then (false, true) else (true, false)
         | .bugFinding, _ => (true, false)
-    let (obligation, peSatResult?, peValResult?) ← pctx.withRepeatedPhase "evalDischarge" do
+    -- The state encodes the *original* assumptions; `prunedAxiomLabels` applies
+    -- the pruning as an emission-time label filter instead.
+    let origObligation := obligation
+    let (obligation, peSatResult?, peValResult?, prunedAxiomLabels) ← pctx.withRepeatedPhase "evalDischarge" do
       preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
@@ -1873,6 +1894,7 @@ def verifySingleEnv (oblProgram : Program)
             let prog := f!"\n\n[DEBUG] Evaluated program:\n{Core.formatProgram p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
+        -- Evaluator resolved both checks: skip SMT, leaving `encState` unadvanced.
         continue
     -- Need the solver for at least one check
     let needSatCheck := satisfiabilityCheck && peSatResult?.isNone
@@ -1881,15 +1903,16 @@ def verifySingleEnv (oblProgram : Program)
     -- The action returns an `ObligationDisposition` plus the encoding statistics to merge;
     -- On the parallel path this phase wraps only `coreToSMT`/`collectVars`;
     -- the solver phases then run in the phase-2 dispatch and are recorded there.
-    let (disposition, encStats) ← pctx.withRepeatedPhase "smtDischarge" do
-      -- Seed the encoding context with the env's datatypes and encoder flags.
-      let smtCtx := { SMT.Context.default with
-        datatypes,
-        useArrayTheory := options.useArrayTheory }
-      -- `toSMTTerms` is pure, so it must go through the `*Pure` helper
+    -- Snapshot the state for the phase closures (`mut` variables cannot be
+    -- captured); the phase returns the advanced state to thread forward.
+    let encState0 := encState
+    let (disposition, encStats, encStateNext) ← pctx.withRepeatedPhase "smtDischarge" do
+      -- `encodeObligationToSMT` is pure, so it must go through the `*Pure` helper
       -- otherwise the compiler will evaluate it before the phase is entered.
+      -- It advances over the obligation's history (encoding only the delta
+      -- detection reports) and forks this obligation's result.
       let maybeTerms ← pctx.withRepeatedPhasePure "coreToSMT" fun _ =>
-        ProofObligation.toSMTTerms E.factory obligation smtCtx
+        encodeObligationToSMT E.factory encState0 origObligation prunedAxiomLabels
       match maybeTerms with
       | .error err =>
         let result := { obligation,
@@ -1898,8 +1921,11 @@ def verifySingleEnv (oblProgram : Program)
                         checkLevel := options.checkLevel,
                         checkMode := options.checkMode,
                         lexprModel := [] }
-        pure (ObligationDisposition.resolved result, (default : Statistics))
-      | .ok (assumptionTerms, varDefs, varDecls, obligationTerm, ctx, encStats) =>
+        -- Encoding failed mid-advance; the surviving snapshot keeps the state
+        -- at its last good position (the next obligation re-detects from there).
+        pure (ObligationDisposition.resolved result, (default : Statistics), encState0)
+      | .ok ({ assumptions := assumptionTerms, varDefs, varDecls,
+               goal := obligationTerm, ctx, stats := encStats }, encState') =>
         -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
         let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
           let vars := ProofObligation.getVars obligation
@@ -1916,7 +1942,7 @@ def verifySingleEnv (oblProgram : Program)
             obligation, assumptionTerms, obligationTerm, ctx,
             needSatCheck, needValCheck, peSatResult?, peValResult?,
             typedVarsInObligation, varDefs, varDecls }
-          pure (ObligationDisposition.deferred job, encStats)
+          pure (ObligationDisposition.deferred job, encStats, encState')
         else
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache) pctx
@@ -1932,7 +1958,8 @@ def verifySingleEnv (oblProgram : Program)
                   satisfiabilityProperty := satResult,
                   validityProperty := valResult } }
             | .error _ => result
-          pure (ObligationDisposition.resolved result, encStats)
+          pure (ObligationDisposition.resolved result, encStats, encState')
+    encState := encStateNext
     stats := stats.merge encStats
     match disposition with
     | .resolved result =>

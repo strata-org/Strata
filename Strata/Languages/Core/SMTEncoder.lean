@@ -6,6 +6,7 @@
 module
 import all Strata.DL.Lambda.LTyProps
 
+public import Strata.DL.Imperative.PathConditionsFold
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.SMT.Factory
 public import Strata.Languages.Core.Env
@@ -22,6 +23,8 @@ namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
 open Strata.Util (OrderedSet OrderedKeyedSet)
+open Imperative (PathConditionEntry ExprOrNondet PathCondition PathConditions)
+open Imperative.PathConditions (Fold FoldState)
 
 public section
 /--
@@ -88,7 +91,7 @@ def SMT.Datatypes.getType (d : SMT.Datatypes) (name : String) :
 /--
 SMT.Context holds the list of created SMT sorts, declared/defined functions, axioms,
 type substitutions and others while translating Imperative.ProofObligation Expression to
-SMT. This is one of the returned objects from ProofObligation.toSMTTerms.
+SMT. This is one of the objects in an `EncodeResult` (see `encodeObligationToSMT`).
 
 SMT.Context also has fields that are invariant during translation; they are
 explicitly marked as invariant in their comments.
@@ -941,92 +944,50 @@ structure VarDeclaration where
   name : String
   ty : Strata.SMT.TermType
 
-/--
-Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
-The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
-for the check-sat encoding that applies negation for validity checks.
+/-! ### Per-item encoding workers -/
 
-Variable definitions (from `init name ty (.det e)`) are returned separately as
-`VarDefinition`s so the caller can emit them as `define-fun`.
-Variable declarations (from `init name ty .nondet`) are returned separately as
-`VarDeclaration`s so the caller can emit them as `declare-fun`.
--/
-def ProofObligation.toSMTTerms (factory : @Lambda.Factory CoreLParams)
-  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
-  Except Format (List Term × List VarDefinition × List VarDeclaration × Term × SMT.Context × Statistics) := do
-  -- 1. Partition the (flattened) path-condition entries by kind: plain
-  --    assumptions, variable definitions/declarations, and distinctness facts
-  --    (all of which now live as path-condition entries).
-  let flatEntries := d.assumptions.flatten
-  let mut assumptionExprsRev : List (LExpr CoreLParams.mono) := []
-  let mut varDefsRev : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
-  let mut varDeclsRev : List (CoreIdent × Expression.Ty) := []
-  let mut distinctGroupsRev : List (List (LExpr CoreLParams.mono)) := []
-  for entry in flatEntries do
-    match entry with
-    | .assumption _ expr => assumptionExprsRev := expr :: assumptionExprsRev
-    | .varDecl name ty (.det e) => varDefsRev := (name, ty, e) :: varDefsRev
-    | .varDecl name ty .nondet => varDeclsRev := (name, ty) :: varDeclsRev
-    | .distinct _ exprs => distinctGroupsRev := exprs :: distinctGroupsRev
-  let assumptionExprs := assumptionExprsRev.reverse
-  let varDefs := varDefsRev.reverse
-  let varDecls := varDeclsRev.reverse
-  let distinctGroups := distinctGroupsRev.reverse
+/-- Encode one plain assumption entry. Lambda redexes in assumption/obligation
+    terms (e.g. an argument-value precondition modelled as
+    `(fun _ : string => true)(arg)`) are contracted by the `betaReduce`
+    pipeline phase; a redex reaching `appToSMTTerm`'s catch-all here would
+    fail with "Cannot encode .app expression". -/
+def SMT.encodeAssumptionItem (factory : @Lambda.Factory CoreLParams)
+    (e : LExpr CoreLParams.mono) (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue) :=
+  Core.toSMTTerm factory [] e ctx pending
 
-  -- `pending` accumulates factory functions whose definitions `toSMTOp` defers;
-  -- it is threaded through all term encoding below and drained once at the end.
-  let pending : SMT.PendingFnQueue := {}
+/-- Encode one distinctness group entry into a single `distinct` assertion. -/
+def SMT.encodeDistinctItem (factory : @Lambda.Factory CoreLParams)
+    (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
+  let (ts, ctx, pending) ← Core.toSMTTerms factory es ctx pending
+  .ok (Term.app (.core .distinct) ts .bool, ctx, pending)
 
-  -- 2. Encode distinctness facts, one `distinct` assertion per group.
-  let (ctx, pending, distinct_terms) ← distinctGroups.foldlM (λ (ctx, pending, tss) es =>
-    do let (ts, ctx', pending') ← Core.toSMTTerms factory es ctx pending
-       pure (ctx', pending', ts :: tss)) (ctx, pending, [])
-  let distinct_assumptions := distinct_terms.reverse.map
-    (λ ts => Term.app (.core .distinct) ts .bool)
+/-- Encode one variable-definition entry (`init name ty (.det e)`), emitted by
+    callers as `define-fun`. -/
+def SMT.encodeVarDefItem (factory : @Lambda.Factory CoreLParams)
+    (item : CoreIdent × Expression.Ty × LExpr CoreLParams.mono)
+    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (VarDefinition × SMT.Context × SMT.PendingFnQueue) := do
+  let (name, ty, rhs) := item
+  if h : ty.isMonoType then
+    let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
+    let (rhsTerm, ctx, pending) ← Core.toSMTTerm factory [] rhs ctx pending
+    .ok ({ name := name.name, ty := smtTy, body := rhsTerm }, ctx, pending)
+  else
+    .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
 
-  -- 3. Encode assumptions. Lambda redexes in assumption/obligation terms
-  -- (e.g. an argument-value precondition modelled as
-  -- `(fun _ : string => true)(arg)`) are contracted by the `betaReduce`
-  -- pipeline phase; a redex reaching `appToSMTTerm`'s catch-all here would
-  -- fail with "Cannot encode .app expression".
-  let (assumptions_terms, ctx, pending) ← Core.toSMTTerms factory assumptionExprs ctx pending
-
-  -- 4. Encode variable definitions (`init name ty (.det e)`), emitted by the
-  --    caller as `define-fun`.
-  let (smtVarDefsRev, ctx, pending) ← varDefs.foldlM (init := (([] : List VarDefinition), ctx, pending)) fun (defs, ctx, pending) (name, ty, rhs) => do
-    if h : ty.isMonoType then
-      let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
-      let (rhsTerm, ctx, pending) ← Core.toSMTTerm factory [] rhs ctx pending
-      .ok ({ name := name.name, ty := smtTy, body := rhsTerm } :: defs, ctx, pending)
-    else
-      .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
-  let smtVarDefs := smtVarDefsRev.reverse
-
-  -- 5. Encode variable declarations, emitted by the
-  --    caller as `declare-fun`. These have no body, so they schedule no
-  --    deferred functions and need not thread `pending`.
-  let (smtVarDeclsRev, ctx) ← varDecls.foldlM (init := (([] : List VarDeclaration), ctx)) fun (decls, ctx) (name, ty) => do
-    if h : ty.isMonoType then
-      let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
-      .ok ({ name := name.name, ty := smtTy } :: decls, ctx)
-    else
-      .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
-  let smtVarDecls := smtVarDeclsRev.reverse
-
-  -- 6. Encode the obligation (the goal) itself.
-  let (obligation_term, ctx, pending) ← Core.toSMTTerm factory [] d.obligation ctx pending
-
-  -- 7. Resolve and commit the definitions/axioms of every factory function
-  --    referenced above. `toSMTOp` defers these into `pending`; commit them now
-  --    that all terms (distinctness facts, assumptions, var defs, and the
-  --    obligation) have been encoded.
-  let ctx ← processPendingFnDefs factory ctx pending
-
-  -- 8. Collect statistics and return the encoded pieces.
-  let stats : Statistics := ({} : Statistics)
-    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
-        (distinct_assumptions.length + assumptions_terms.length)
-  .ok (distinct_assumptions ++ assumptions_terms, smtVarDefs, smtVarDecls, obligation_term, ctx, stats)
+/-- Encode one variable-declaration entry (`init name ty .nondet`), emitted by
+    callers as `declare-fun`. Declarations have no body, so they schedule no
+    deferred functions and need not thread the pending queue. -/
+def SMT.encodeVarDeclItem (item : CoreIdent × Expression.Ty) (ctx : SMT.Context) :
+    Except Format (VarDeclaration × SMT.Context) := do
+  let (name, ty) := item
+  if h : ty.isMonoType then
+    let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
+    .ok ({ name := name.name, ty := smtTy }, ctx)
+  else
+    .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
 
 ---------------------------------------------------------------------
 
@@ -1126,6 +1087,195 @@ def convertModel (model : Imperative.SMT.Model Expression.Ident)
 
 /-- Backward-compatible alias. -/
 @[deprecated convertModel (since := "2026-04-03")] abbrev convertCounterEx := @convertModel
+
+/-! ## Shared-prefix obligation encoder
+
+Encodes an env's obligations in arrival order, encoding each
+`PathConditionEntry` of their `assumptions` once, instead of re-encoding
+every obligation's full `assumptions` from scratch.
+
+The incremental machinery is the `Imperative.PathConditionsFold` fold; this
+section instantiates it (`smtEncodingFold`): the checkpoint `σ` is an
+`SMTCheckpoint` (the accumulated `SMT.Context`), the per-frame output `ω` is an
+`SMTEncodedPathCondition` (each entry's encoded term or deferred error, plus the
+factory-function definitions that term depends on), and the step is
+`encodePathConditionEntry`. Per obligation, `encodeObligationToSMT` encodes
+whichever of the obligation's `assumptions` the state has not already encoded,
+then encodes the goal separately (`snapshotObligation`). That way the goal never
+enters the shared state.
+
+The state holds the full, unpruned `assumptions`, so entries stay shared
+across obligations that prune different irrelevant axioms. An entry's term,
+any encoding error, and its definition dependencies are attributed to that
+entry, so `snapshotObligation` selects only the entries an obligation keeps:
+a pruned entry's term is never asserted, its error is never surfaced, and its
+definitions are never drained — for these three mechanisms the result matches
+a from-scratch encoding of the pruned obligation.
+
+Declarations are the exception: encoding an entry registers the sorts and
+free-variable UFs it mentions in the shared `SMT.Context` by side effect
+(first mention wins), with no per-entry attribution. A pruned entry's
+registrations therefore remain in the context and are emitted as `declare-sort`
+/ `declare-fun` lines a pruned-first encoding would not contain. These are
+semantically inert (solvers treat unused declarations as no-ops; verification
+results are unaffected).
+
+See `SMTEncoderProps.lean` for `encodeRun_eq_reference`: threading one
+state across an env's obligations produces exactly the results of encoding
+each obligation independently from scratch. -/
+
+/-- The encoder's checkpoint: the accumulated `SMT.Context`. -/
+structure SMTCheckpoint where
+  ctx : SMT.Context
+
+/-- One entry's complete, self-contained encoding contribution: either the
+    encoded term together with the factory-function definitions it depends on
+    (its own fresh `PendingFnQueue`), or the encoding error.
+
+    Deferring the error into the output — rather than failing the fold — lets
+    `snapshotObligation` surface it only for obligations that keep the entry's
+    label; capturing the per-entry queue lets the drain be seeded from kept
+    entries alone. -/
+structure EncodedEntry where
+  label : String
+  result : Except Format (Term × SMT.PendingFnQueue)
+
+/-- The encoded contributions of one frame, one list per `PathConditionEntry`
+    kind, each reversed for O(1) accumulation.
+
+    Assumptions and distincts are label-prunable, so each is stored as an
+    `EncodedEntry` whose error is deferred. Variable definitions/declarations
+    are program variables, so they are stored eagerly; a `varDef` additionally
+    carries its definition dependencies. -/
+structure SMTEncodedPathCondition where
+  assumptionsRev : List EncodedEntry := []
+  distinctsRev : List EncodedEntry := []
+  varDefsRev : List (VarDefinition × SMT.PendingFnQueue) := []
+  varDeclsRev : List VarDeclaration := []
+
+/-- Encode one `PathConditionEntry` against the accumulated context
+    (`current.ctx`), returning the updated `SMTCheckpoint` and `out` extended
+    with the entry's contribution. Serves as the step function of the
+    incremental fold.
+
+    Each entry is encoded against a *fresh* PendingFnQueue, so the returned queue
+    is exactly this entry's direct factory-function references.
+    Assumption/distinct encoding errors are deferred into the output and leave
+    the checkpoint unchanged; they become fatal only if a snapshot keeps
+    the entry's label. -/
+def encodePathConditionEntry (factory : @Lambda.Factory CoreLParams) (current : SMTCheckpoint)
+    (out : SMTEncodedPathCondition) (e : PathConditionEntry Expression) :
+    Except Format (SMTCheckpoint × SMTEncodedPathCondition) := do
+  match e with
+  | .assumption label expr =>
+    match SMT.encodeAssumptionItem factory expr current.ctx {} with
+    | .ok (t, ctx, pending) =>
+      let entry : EncodedEntry := { label, result := .ok (t, pending) }
+      .ok ({ ctx }, { out with assumptionsRev := entry :: out.assumptionsRev })
+    | .error err =>
+      let entry : EncodedEntry := { label, result := .error err }
+      .ok (current, { out with assumptionsRev := entry :: out.assumptionsRev })
+  | .distinct label exprs =>
+    match SMT.encodeDistinctItem factory exprs current.ctx {} with
+    | .ok (t, ctx, pending) =>
+      let entry : EncodedEntry := { label, result := .ok (t, pending) }
+      .ok ({ ctx }, { out with distinctsRev := entry :: out.distinctsRev })
+    | .error err =>
+      let entry : EncodedEntry := { label, result := .error err }
+      .ok (current, { out with distinctsRev := entry :: out.distinctsRev })
+  | .varDecl name ty (.det rhs) =>
+    let (d, ctx, pending) ← SMT.encodeVarDefItem factory (name, ty, rhs) current.ctx {}
+    .ok ({ ctx }, { out with varDefsRev := (d, pending) :: out.varDefsRev })
+  | .varDecl name ty .nondet =>
+    let (d, ctx) ← SMT.encodeVarDeclItem (name, ty) current.ctx
+    .ok ({ ctx }, { out with varDeclsRev := d :: out.varDeclsRev })
+
+/-- The SMT instantiation of the `PathConditionsFold` backend: each
+    `PathConditionEntry` is encoded to an SMT term against an `SMTCheckpoint`,
+    accumulating per-frame `SMTEncodedPathCondition`s. -/
+def smtEncodingFold (factory : @Lambda.Factory CoreLParams) :
+    Fold Format SMTCheckpoint SMTEncodedPathCondition Expression where
+  stepEntry := encodePathConditionEntry factory
+  emptyOutput := {}
+
+/-- The SMT encoder's fold state: the generic
+    `Imperative.PathConditions.FoldState` instantiated at the SMT backend's
+    checkpoint and output types. -/
+abbrev SMTEncodeState := FoldState SMTCheckpoint SMTEncodedPathCondition Expression
+
+/-- The result one obligation's encoding produces. -/
+structure EncodeResult where
+  /-- Terms to assert as assumptions: the obligation's kept distinctness
+      constraints followed by its kept path-condition assumptions. -/
+  assumptions : List Term
+  /-- Variable definitions (emitted as `define-fun`). -/
+  varDefs : List VarDefinition
+  /-- Variable declarations (emitted as `declare-fun`). -/
+  varDecls : List VarDeclaration
+  /-- The encoded goal term. -/
+  goal : Term
+  /-- The SMT context after draining the function definitions the kept
+      terms and the goal depend on. -/
+  ctx : SMT.Context
+  /-- Encoding statistics for this obligation. -/
+  stats : Statistics
+
+/-- Assemble one obligation's `EncodeResult` from the state `st` *without
+    writing anything back to `st`*: encode the goal against `st.current`, select
+    the entries this obligation keeps (forcing their deferred results, so a kept
+    entry's encoding error surfaces here while a pruned entry's is dropped), and
+    drain only the definitions those kept entries and the goal depend on.
+
+    Emission order is newest frame first, in-frame program order. -/
+def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (goal : Expression.Expr) (prunedLabels : List String) :
+    Except Format EncodeResult := do
+  -- Obligation-specific fork: encode the goal against a fresh queue, capturing
+  -- the goal's own definition dependencies.
+  let (goalTerm, ctx, goalPending) ←
+    Core.toSMTTerm factory [] goal st.current.ctx {}
+  -- Emission-time pruning: O(1) membership.
+  let pruned : Std.HashSet String :=
+    prunedLabels.foldl (fun acc l => acc.insert l) ∅
+  let keep (l : String) : Bool := !pruned.contains l
+  -- Select kept entries and force their deferred results; a kept label whose
+  -- encoding failed surfaces its error here.
+  let keptDistincts ← (st.frames.flatMap fun f =>
+    f.output.distinctsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let keptAssumptions ← (st.frames.flatMap fun f =>
+    f.output.assumptionsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let distincts := keptDistincts.map (·.1)
+  let assumptions := keptAssumptions.map (·.1)
+  let varDefsWithPending := st.frames.flatMap fun f => f.output.varDefsRev.reverse
+  let varDefs := varDefsWithPending.map (·.1)
+  let varDecls := st.frames.flatMap fun f => f.output.varDeclsRev.reverse
+  -- Seed the drain from only the definitions the kept terms (and the goal)
+  -- depend on; `processPendingFnDefs` rediscovers the transitive closure.
+  let seedQueues : List SMT.PendingFnQueue :=
+    keptAssumptions.map (·.2) ++ keptDistincts.map (·.2)
+      ++ varDefsWithPending.map (·.2) ++ [goalPending]
+  let seed : SMT.PendingFnQueue :=
+    seedQueues.foldl (fun acc q => q.toList.foldl (·.insert ·) acc) ({} : SMT.PendingFnQueue)
+  let ctx ← processPendingFnDefs factory ctx seed
+  let stats : Statistics := ({} : Statistics)
+    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
+        (distincts.length + assumptions.length)
+  .ok { assumptions := distincts ++ assumptions, varDefs, varDecls,
+        goal := goalTerm, ctx, stats }
+
+/-- Encode one obligation: encode whichever of its `assumptions` the state has
+    not already encoded, then `snapshotObligation` for the goal. Returns the
+    obligation's result and the advanced state to thread to the next
+    obligation. -/
+def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := []) :
+    Except Format (EncodeResult × SMTEncodeState) := do
+  -- `assumptions` lists its PathConditions newest first; the fold runs oldest first.
+  let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
+  let r ← snapshotObligation factory st ob.obligation prunedLabels
+  .ok (r, st)
 
 end -- public section
 

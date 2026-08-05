@@ -11,6 +11,7 @@ public import Strata.Languages.Core.WF
 import all Strata.Languages.Core.Program
 import all Strata.Languages.Core.ProgramType
 import all Strata.Languages.Core.StatementType
+import Strata.Util.ExceptProps
 import Std.Do.Triple.SpecLemmas
 import Std.Tactic.BVDecide.Normalize.Prop
 
@@ -234,30 +235,13 @@ private theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p C ds
   rw [this] at H; have H:=  Program.typeCheck.go_elim_acc H
   simp [H]
 
-@[local simp, local grind =]
-private theorem Except_ok_bind {E α β}
-  (a : α) (h : α → Except E β) :
-  (.ok a >>= h) = h a := by
-  simp [bind, Except.bind]
-
-@[local simp, local grind =]
-private theorem Except_error_bind {E α β}
-  (e : E) (h : α → Except E β) :
-  (.error e >>= h) = .error e := by
-  simp [bind, Except.bind]
-
-private theorem Except_bind_is_ok {E α β}
-  (m : Except E α) (h : α → Except E β) (r : β) :
-  ((m >>= h) = .ok r) ↔ ∃(a : α), m = .ok a ∧ h a = .ok r := by
-  match m with
-  | .ok a => grind
-  | .error e => grind
+attribute [local simp, local grind =] Except.ok_bind Except.error_bind
 
 @[local grind →]
 private theorem Except_bind_is_ok_rhs {E α β}
   (m : Except E α) (h : α → Except E β) (r : β) :
   ((m >>= h) = .ok r) → ∃(a : α), m = .ok a ∧ h a = .ok r :=
-  Except_bind_is_ok m h r |>.mp
+  Except.bind_is_ok m h r |>.mp
 
 @[local grind .]
 private theorem WFTypeDeclarationProp_trivial (p : Program) (f : TypeDecl) :
@@ -297,7 +281,7 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
   induction ds generalizing ds' C T T' with
   | nil => simp
   | cons h t hyp =>
-    simp only [Program.typeCheck.go, Except_bind_is_ok] at tcok
+    simp only [Program.typeCheck.go, Except.bind_is_ok] at tcok
     let ⟨idents, ⟨ident_eq, q⟩⟩ := tcok
     clear tcok
     match h with
@@ -316,10 +300,10 @@ private theorem Program.typeCheck.goWF : Program.typeCheck.go p C T ds [] = .ok 
       split at q
       -- First contradiction: empty funcs list
       case isTrue =>
-        simp [Except_bind_is_ok, tryCatch, tryCatchThe, MonadExceptOf.tryCatch] at q
+        simp [Except.bind_is_ok, tryCatch, tryCatchThe, MonadExceptOf.tryCatch] at q
         rcases q with ⟨x, ⟨y, ⟨z, ⟨hcon, _⟩⟩⟩⟩
         contradiction
-      simp only [Except_bind_is_ok] at q
+      simp only [Except.bind_is_ok] at q
       rcases q with ⟨res, ⟨q, hty⟩⟩
       simp only [Except.tryCatch, tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.bind, bind, pure, Except.pure] at q
       split at q <;> try contradiction
@@ -627,7 +611,7 @@ The main lemma stating that a program 'p' that passes type checking is well form
 -/
 theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFProgramProp p := by
   intros tcok
-  simp [Program.typeCheck, Except_bind_is_ok] at tcok
+  simp [Program.typeCheck, Except.bind_is_ok] at tcok
   let ⟨ds, ⟨tcOk, _⟩⟩ := tcok
   constructor
   case namesNodup =>
