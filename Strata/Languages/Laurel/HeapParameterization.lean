@@ -38,11 +38,18 @@ primitive type (BoxInt, BoxBool, BoxFloat64, BoxComposite). Composite is a type 
 
 3. Procedure calls are transformed:
    - Calls to heap-writing procedures in expressions:
-     `f(args...) => (var freshVar: type; heapVar, freshVar := f(heapVar, args...); freshVar)`
+     `f(args...) => (var freshVar: type; freshVar, heapVar := f(args..., heapVar); freshVar)`
    - Calls to heap-writing procedures as statements:
-     `f(args...)` => `heap := f(heap, args...)`
+     `f(args...)` => `heap := f(args..., heap)`
    - Calls to heap-reading procedures:
-     `f(args...)` => `f(heap, args...)`
+     `f(args...)` => `f(args..., heap)`
+
+The hidden heap argument is passed LAST so that explicit arguments are
+evaluated before the heap is sampled: an effectful earlier argument (e.g. a
+call that writes the heap) updates `heap` before the trailing heap argument
+reads it, and the imperative-lifting pass snapshots any earlier heap reads.
+This preserves source-level left-to-right evaluation without a separate
+argument-hoisting step in this pass.
 
 The analysis is transitive: if procedure A calls procedure B, and B reads/writes the heap,
 then A is also considered to read/write the heap.
@@ -251,13 +258,13 @@ where
               -- Specifications are pure. Keep the source-level call shape so the
               -- pure-context validator reports the call itself, rather than a
               -- synthetic heap-threading assignment introduced by this pass.
-              return [⟨.StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source⟩]
+              return [⟨.StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source⟩]
           | .executable =>
             if valueUsed then
               let freshVar ← freshVarName
               let callWithHeap := ⟨ .Assign
                 [mkVarMd (.Local heapVar) source, mkVarMd (.Declare ⟨freshVar, some (computeExprType model exprMd)⟩) source]
-                (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩
+                (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩
               return [callWithHeap, mkMd (.Var (.Local freshVar)) source]
             else
               -- Generate throwaway Declare targets for any non-heap outputs
@@ -268,9 +275,9 @@ where
               let extraTargets ← procOutputs.mapM fun out => do
                 pure (mkVarMd (.Declare ⟨← freshVarName, some out.type⟩) source)
               let allTargets := mkVarMd (.Local heapVar) source :: extraTargets
-              return [⟨ .Assign allTargets (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩), source ⟩]
+              return [⟨ .Assign allTargets (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩), source ⟩]
         else if calleeReadsHeap then
-          return [⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), source ⟩]
+          return [⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), source ⟩]
         else
           return [⟨ .StaticCall callee args', source ⟩]
     | .InstanceCall callTarget callee args =>
@@ -332,9 +339,9 @@ where
             let calleeWritesHeap ← writesHeap callee
             let calleeReadsHeap ← readsHeap callee
             if calleeWritesHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, true)
+              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, true)
             else if calleeReadsHeap then
-              pure (⟨ .StaticCall callee (mkMd (.Var (.Local heapVar)) source :: args'), v.source ⟩, false)
+              pure (⟨ .StaticCall callee (args' ++ [mkMd (.Var (.Local heapVar)) source]), v.source ⟩, false)
             else
               pure (⟨ .StaticCall callee args', v.source ⟩, false)
           | .InstanceCall callTarget _callee args => do
@@ -371,11 +378,28 @@ where
     | .PureFieldUpdate t f v => return [⟨ .PureFieldUpdate (← recurseOne t) f (← recurseOne v), source ⟩]
     | .New _ => return [exprMd]
     | .ReferenceEquals l r => return [⟨ .ReferenceEquals (← recurseOne l) (← recurseOne r), source ⟩]
-    | .AsType t ty =>
-        let t' ← recurseOne t valueUsed
-        let isCheck := ⟨ .IsType t' ty, source ⟩
-        let assertStmt := ⟨ .Assert isCheck none, source ⟩
-        return [⟨ .Block [assertStmt, t'] none, source ⟩]
+    | .AsType target ty =>
+        let target' ← recurseOne target true
+        match context with
+        | .specification =>
+          -- Specifications are pure, so the target can be evaluated twice; a
+          -- declared temp is not resolvable here (no inference in specs).
+          let check : StmtExprMd := ⟨.Assert ⟨.IsType target' ty, source⟩ none, source⟩
+          return [⟨.Block [check, target'] none, source⟩]
+        | .executable =>
+          -- Capture the target once: it is used both by the type check and as
+          -- the result, and an effectful target (e.g. a heap-writing call)
+          -- must run exactly once. No type annotation: the declared return
+          -- type of a generic callee (e.g. `Result..err : Result<Val, Err> →
+          -- Err`) names type parameters that are unbound here; the resolver
+          -- infers the instantiated type.
+          let result ← freshVarName
+          let resultRef : StmtExprMd := ⟨.Var (.Local result), source⟩
+          let capture : StmtExprMd := ⟨.Assign
+            [⟨.Declare ⟨result, none⟩, source⟩] target', source⟩
+          let check : StmtExprMd :=
+            ⟨.Assert ⟨.IsType resultRef ty, source⟩ none, source⟩
+          return [⟨.Block [capture, check, resultRef] none, source⟩]
     | .IsType t ty => return [⟨ .IsType (← recurseOne t) ty, source ⟩]
     | .Quantifier mode p trigger b =>
       let trigger' ← trigger.attach.mapM fun ⟨t, _⟩ => recurseOne t
@@ -442,9 +466,13 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
   if writesHeap then
     -- This procedure writes the heap — $heap appears in both inputs and outputs
     -- (true inout). Core's two-state semantics provide `old $heap` automatically.
+    -- The heap goes LAST in the inputs so explicit arguments evaluate before the
+    -- heap is sampled at call sites (see the module docs). It stays FIRST in the
+    -- outputs: Core's `CallArg.getLhs` yields inout receivers before plain out
+    -- receivers, and `CallElim` pairs receivers with outputs positionally.
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
 
-    let inputs' := heapParam :: proc.inputs
+    let inputs' := proc.inputs ++ [heapParam]
     let outputs' := heapParam :: proc.outputs
 
     let bodyValueIsUsed := !proc.outputs.isEmpty
@@ -498,7 +526,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- Use the prelude `Heap` datatype for the parameter type (see the
     -- writes-heap branch above for rationale).
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
-    let inputs' := heapParam :: proc.inputs
+    let inputs' := proc.inputs ++ [heapParam]
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>

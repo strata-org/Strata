@@ -333,75 +333,93 @@ private def mkCallArgs (info : ContractInfo) (origArgs tempRefs : List StmtExprM
     | some p => if inout.contains p.name.text then origArgs[i]?.getD tempRef else tempRef
     | none => tempRef
 
-/-- Rewrite call sites in a statement/expression tree. -/
+private def rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
+    (info : ContractInfo) (src : FileRange)
+    : ContractM (List StmtExprMd) := do
+  let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
+  let preCheck := mkPreChecks info tempRefs src
+  let (callStmt, postAssume, returnValue) ←
+    if info.hasPostCondition && !info.outputParams.isEmpty then do
+      let mut outputTempDecls : List VariableMd := []
+      let mut outputRefs : List StmtExprMd := []
+      for p in info.outputParams do
+        let tempName ← freshTemp
+        outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
+        outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
+      let callWithOutputs : StmtExprMd :=
+        ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
+      let assume := mkPostAssumes info tempRefs outputRefs src
+      let retVal : List StmtExprMd := match outputRefs with
+        | [single] => [single]
+        | _ => []
+      pure (callWithOutputs, assume, retVal)
+    else
+      pure (⟨.StaticCall callee tempRefs, src⟩, [], [])
+  return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
+
+private def rewriteAssignedCall (info : ContractInfo) (targets : List VariableMd)
+    (callee : Identifier) (args : List StmtExprMd) (src callSrc : FileRange)
+    : ContractM (List StmtExprMd) := do
+  let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
+  let callArgs := mkCallArgs info args tempRefs
+  let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
+  let preCheck := mkPreChecks info tempRefs src
+  let outputArgs := targets.filterMap fun t =>
+    match t.val with
+    | .Local name => some (mkMd (.Var (.Local name)) src)
+    | .Declare param => some (mkMd (.Var (.Local param.name)) src)
+    | _ => none
+  let postAssume := mkPostAssumes info tempRefs outputArgs src
+  return tempDecls ++ preCheck ++ [callWithTemps] ++ postAssume
+
+private def contractAssign? (contractInfoMap : Std.HashMap String ContractInfo)
+    (e : StmtExprMd)
+    : Option (ContractInfo × List VariableMd × Identifier × List StmtExprMd × FileRange) :=
+  match e.val with
+  | .Assign targets (.mk (.StaticCall callee args) callSrc) =>
+    (contractInfoMap.get? callee.text).map ((·, targets, callee, args, callSrc))
+  | _ => none
+
+private def contractCall? (contractInfoMap : Std.HashMap String ContractInfo)
+    (e : StmtExprMd) : Option (ContractInfo × Identifier × List StmtExprMd) :=
+  match e.val with
+  | .StaticCall callee args => (contractInfoMap.get? callee.text).map ((·, callee, args))
+  | _ => none
+
+private def rewriteContractAssign (contractInfoMap : Std.HashMap String ContractInfo)
+    (rewriteArg : StmtExprMd → ContractM StmtExprMd) (e : StmtExprMd)
+    : ContractM (Option (List StmtExprMd)) := do
+  let some (info, targets, callee, args, callSrc) := contractAssign? contractInfoMap e
+    | return none
+  let args' ← args.mapM rewriteArg
+  return some (← rewriteAssignedCall info targets callee args' e.source callSrc)
+
+private def rewriteBareContractCall (contractInfoMap : Std.HashMap String ContractInfo)
+    (e : StmtExprMd) : ContractM (List StmtExprMd) := do
+  let some (info, callee, args) := contractCall? contractInfoMap e
+    | return [e]
+  rewriteStaticCall callee args info e.source
+
+/-- Rewrite call sites in a statement/expression tree.
+
+    `mapStmtExprFlattenM` does not re-traverse a pre-hook replacement, so
+    `rewriteContractAssign` rewrites nested call sites inside the arguments
+    itself, by recursing through `go`. Each step descends into a strict
+    subterm, so the recursion depth is bounded by the node count of `expr`:
+    seeding `fuel` with that count makes termination structural, and the fuel
+    cannot run out as long as `foldStmtExpr` counts every position that
+    `mapStmtExprFlattenM` visits. -/
 private def rewriteCallSites (contractInfoMap : Std.HashMap String ContractInfo)
-    (expr : StmtExprMd) : ContractM StmtExprMd := do
-  let rewriteStaticCall (callee : Identifier) (args : List StmtExprMd)
-      (info : ContractInfo) (src : FileRange)
-      : ContractM (List StmtExprMd) := do
-    let (tempDecls, tempRefs) ← mkTempAssignments args info.inputParams src
-    let preCheck := mkPreChecks info tempRefs src
-    let (callStmt, postAssume, returnValue) ←
-      if info.hasPostCondition && !info.outputParams.isEmpty then do
-        let mut outputTempDecls : List VariableMd := []
-        let mut outputRefs : List StmtExprMd := []
-        for p in info.outputParams do
-          let tempName ← freshTemp
-          outputTempDecls := outputTempDecls ++ [mkVarMd (.Declare { name := mkId tempName, type := some p.type }) src]
-          outputRefs := outputRefs ++ [mkMd (.Var (.Local (mkId tempName))) src]
-        let callWithOutputs : StmtExprMd :=
-          ⟨.Assign outputTempDecls ⟨.StaticCall callee tempRefs, src⟩, src⟩
-        let assume := mkPostAssumes info tempRefs outputRefs src
-        let retVal : List StmtExprMd := match outputRefs with
-          | [single] => [single]
-          | _ => []
-        pure (callWithOutputs, assume, retVal)
-      else
-        pure (⟨.StaticCall callee tempRefs, src⟩, [], [])
-    return tempDecls ++ preCheck ++ [callStmt] ++ postAssume ++ returnValue
-  let result ←
-    mapStmtExprFlattenM (m := ContractM)
-      -- Pre: intercept Assign targets (StaticCall ...) before recursion
-      (fun _ e => do
-        match e.val with
-        | .Assign targets (.mk (.StaticCall callee args) callSrc) =>
-          match contractInfoMap.get? callee.text with
-          | some info =>
-            let src := e.source
-            -- Recurse into arguments
-            let args' ← args.mapM (mapStmtExprM (m := ContractM) (fun e' => do
-              match e'.val with
-              | .StaticCall callee' args' =>
-                match contractInfoMap.get? callee'.text with
-                | some info' =>
-                  let stmts ← rewriteStaticCall callee' args' info' e'.source
-                  return ⟨.Block stmts none, e'.source⟩
-                | none => return e'
-              | _ => return e'))
-            let (tempDecls, tempRefs) ← mkTempAssignments args' info.inputParams src
-            let callArgs := mkCallArgs info args' tempRefs
-            let callWithTemps : StmtExprMd := ⟨.Assign targets ⟨.StaticCall callee callArgs, callSrc⟩, src⟩
-            let preCheck := mkPreChecks info tempRefs src
-            let outputArgs := targets.filterMap fun t =>
-              match t.val with
-              | .Local name => some (mkMd (.Var (.Local name)) src)
-              | .Declare param => some (mkMd (.Var (.Local param.name)) src)
-              | _ => none
-            let postAssume := mkPostAssumes info tempRefs outputArgs src
-            return some (tempDecls ++ preCheck ++ [callWithTemps] ++ postAssume)
-          | none => return none
-        | _ => return none)
-      -- Post: handle bare StaticCall
-      (fun _ e => do
-        match e.val with
-        | .StaticCall callee args =>
-          match contractInfoMap.get? callee.text with
-          | some info =>
-            let stmts ← rewriteStaticCall callee args info e.source
-            return stmts
-          | none => return [e]
-        | _ => return [e]) true expr
-  return result
+    (expr : StmtExprMd) : ContractM StmtExprMd :=
+  go (foldStmtExpr (fun _ n => n + 1) 0 expr) expr
+where
+  go : Nat → StmtExprMd → ContractM StmtExprMd
+    | 0, _ => panic! "rewriteCallSites: fuel exhausted — foldStmtExpr counts fewer \
+        nodes than mapStmtExprFlattenM visits"
+    | fuel + 1, e =>
+      mapStmtExprFlattenM (m := ContractM)
+        (fun _ => rewriteContractAssign contractInfoMap (go fuel))
+        (fun _ => rewriteBareContractCall contractInfoMap) true e
 
 /-- Rewrite call sites in all bodies of a procedure. -/
 private def rewriteCallSitesInProc (contractInfoMap : Std.HashMap String ContractInfo)
