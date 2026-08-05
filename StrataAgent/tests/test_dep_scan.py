@@ -185,6 +185,25 @@ def test_local_sorry_positions_word_boundary():
     print("✓ test_local_sorry_positions_word_boundary")
 
 
+def test_local_sorry_positions_ignores_dotted_warn_sorry():
+    # REGRESSION: `set_option warn.sorry false in` is code (not a comment), so
+    # blank_comments leaves it intact; the `sorry` after the DOT must NOT be
+    # counted as a real sorry token. Every stub uses this pragma, so a phantom
+    # here inflated count_sorries by +1 per decl, mis-attributed a sorry to
+    # fully-proved theorems, and floored the leaf-progress metric above 0.
+    src = (
+        "set_option warn.sorry false in\n"
+        "theorem t : True := by\n"
+        "  sorry\n"
+        "set_option warn.sorry false in\n"
+        "theorem u : True := trivial\n"
+    )
+    pos = local_sorry_positions(src)
+    assert pos == [{"line": 2, "col": 2}], (
+        f"only the real body sorry (line 2) should count, not `warn.sorry`: {pos}")
+    print("✓ test_local_sorry_positions_ignores_dotted_warn_sorry")
+
+
 # ══ Layer 2: dependency scan (parser-only, no build) ══════════════════════════
 
 def test_direct_edge_and_word_boundary():
@@ -338,6 +357,10 @@ if __name__ == "__main__":
         test_strip_comments_inline_comment()
         test_strip_comments_nested_block()
         test_strip_comments_unterminated_block_is_safe()
+        test_blank_comments_preserves_line_and_col()
+        test_local_sorry_positions_ignores_prose_sorry()
+        test_local_sorry_positions_word_boundary()
+        test_local_sorry_positions_ignores_dotted_warn_sorry()
         # Layer 2 — parser only
         test_direct_edge_and_word_boundary()
         test_comment_reference_is_not_an_edge()

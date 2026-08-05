@@ -191,7 +191,11 @@ def blank_comments(content: str) -> str:
 
 # Word-boundary match for the bare `sorry` tactic/term token. Excludes identifiers
 # like `sorryAx`, `my_sorry`, `sorry_free` — only the standalone keyword counts.
-_SORRY_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])sorry(?![A-Za-z0-9_])")
+# The lookbehind ALSO excludes a leading `.` so a dotted name like the `warn.sorry`
+# option in `set_option warn.sorry false in` is not miscounted as a real sorry (the
+# bare tactic/term keyword is never preceded by a dot; a `.sorry` is always a field
+# access, not the keyword).
+_SORRY_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_.])sorry(?![A-Za-z0-9_])")
 
 
 def local_sorry_positions(content: str) -> list[dict]:
