@@ -101,6 +101,10 @@ import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Util.HList
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
+import Strata.DL.Lambda.DatatypeWF
+import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.DatatypeTypeSpec
+import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
