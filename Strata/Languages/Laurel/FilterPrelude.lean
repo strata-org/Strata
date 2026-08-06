@@ -127,6 +127,17 @@ private def collectProcDeps (proc : Procedure) : CollectM Unit := do
   proc.preconditions.forM (collectExprNames ·.condition)
   proc.decreases.forM collectExprNames
   proc.invokeOn.forM collectExprNames
+  -- Exceptional contract: the declared type plus every part of every behavior
+  -- case (guard, postconditions, frame), so a prelude name reachable *only* from
+  -- one of them survives the filter. There is no exception prelude to gate in
+  -- here: the `Result` datatype the exceptional channel lowers to is injected
+  -- later, by `EliminateExceptions` itself, and only for programs that use
+  -- exceptions.
+  proc.throwsType.forM collectHighTypeNames
+  proc.throwsOn.forM fun blk => do
+    collectExprNames blk.guard
+    blk.postconditions.forM (collectExprNames ·.condition)
+    blk.modifies.forM collectExprNames
   collectBodyNames proc.body
 
 /-- Collect all names referenced by a type definition. -/

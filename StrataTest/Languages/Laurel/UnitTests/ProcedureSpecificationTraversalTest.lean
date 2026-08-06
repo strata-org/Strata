@@ -389,7 +389,7 @@ private def specificationCallProgram : Program :=
 
 private def isHeapAwareCall (calleeName : String) (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .StaticCall callee [heap, cell] =>
+  | .StaticCall callee [cell, heap] =>
       callee.text == calleeName &&
         (match heap.val with
         | .Var (.Local name) => name.text == "$heap"

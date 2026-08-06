@@ -31,6 +31,8 @@ macro_rules
       all_goals simp_wf
       all_goals (try have := AstNode.sizeOf_val_lt $x)
       all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+      all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+      all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
       all_goals (try term_by_mem)
       all_goals (revert $x; intro x; cases x; simp_all; omega)))
 
@@ -137,6 +139,18 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.Assert (← mapStmtExprUsedM f true cond) summary, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprUsedM f true cond), source⟩
+  | .Throw value =>
+    pure ⟨.Throw (← mapStmtExprUsedM f true value), source⟩
+  | .Try body catches finally? =>
+    -- `try`/`catch`/`finally` types as `TVoid` (statement): its bodies never
+    -- flow a value out, so recurse with `used := false` (like the `While` body).
+    -- The catch guard predicate is a used boolean value.
+    pure ⟨.Try (← mapStmtExprUsedM f false body)
+      (← catches.attach.mapM fun ⟨c, _⟩ => do
+        pure { c with
+          predicate := (← c.predicate.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
+          body := (← mapStmtExprUsedM f false c.body) })
+      (← finally?.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f false e), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprUsedM f true value) (← mapStmtExprUsedM f true proof), source⟩
   | .ContractOf ty func =>
@@ -153,6 +167,8 @@ decreasing_by
   all_goals simp_wf
   all_goals (try have := AstNode.sizeOf_val_lt expr)
   all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
   all_goals (try term_by_mem)
   all_goals (cases expr; simp_all; omega)
 
@@ -253,6 +269,14 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .Assert cond summary =>
       pure ⟨.Assert (collapse (← go true cond) cond.source) summary, source⟩
     | .Assume cond => pure ⟨.Assume (collapse (← go true cond) cond.source), source⟩
+    | .Throw value => pure ⟨.Throw (collapse (← go true value) value.source), source⟩
+    | .Try body catches finally? =>
+      pure ⟨.Try (collapse (← go false body) body.source)
+        (← catches.attach.mapM fun ⟨c, _⟩ => do
+          pure { c with
+            predicate := (← c.predicate.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
+            body := collapse (← go false c.body) c.body.source })
+        (← finally?.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go false x) x.source)), source⟩
     | .ProveBy value proof =>
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go true proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
@@ -339,6 +363,15 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.Assert (← mapStmtExprPrePostM pre post cond) summary, source⟩
   | .Assume cond =>
     pure ⟨.Assume (← mapStmtExprPrePostM pre post cond), source⟩
+  | .Throw value =>
+    pure ⟨.Throw (← mapStmtExprPrePostM pre post value), source⟩
+  | .Try body catches finally? =>
+    pure ⟨.Try (← mapStmtExprPrePostM pre post body)
+      (← catches.attach.mapM fun ⟨c, _⟩ => do
+        pure { c with
+          predicate := (← c.predicate.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
+          body := (← mapStmtExprPrePostM pre post c.body) })
+      (← finally?.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
   | .ProveBy value proof =>
     pure ⟨.ProveBy (← mapStmtExprPrePostM pre post value) (← mapStmtExprPrePostM pre post proof), source⟩
   | .ContractOf ty func =>
@@ -430,6 +463,14 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f cond
   | .Assume cond =>
     foldStmtExprM f cond
+  | .Throw value =>
+    foldStmtExprM f value
+  | .Try body catches finally? =>
+    foldStmtExprM f body
+    catches.attach.forM fun ⟨c, _⟩ => do
+      c.predicate.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+      foldStmtExprM f c.body
+    finally?.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .ProveBy value proof =>
     foldStmtExprM f value; foldStmtExprM f proof
   | .ContractOf _ func =>
@@ -463,10 +504,18 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .External => return proc
 
 /-- Every expression-bearing specification field outside the procedure body, in
-    declaration order: preconditions, decreases, invoke-on trigger, then axioms. -/
+    declaration order: preconditions, decreases, invoke-on trigger, axioms, then the
+    `throwsOn` behavior cases.
+
+    A case contributes all three of its expression-bearing parts — its guard, its
+    postconditions, and its frame targets — because a pass that walked only some of
+    them would silently miss the rest: `FilterPrelude` would delete a prelude name
+    reachable only from the part it skipped. -/
 def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
   proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
-    proc.invokeOn.toList ++ proc.axioms
+    proc.invokeOn.toList ++ proc.axioms ++
+    proc.throwsOn.flatMap (fun blk =>
+      blk.guard :: blk.postconditions.map (·.condition) ++ blk.modifies)
 
 /-- Visit every expression node in a procedure in deterministic pre-order.
     Body expressions come first, followed by preconditions, decreases, invoke-on,
@@ -485,8 +534,14 @@ def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure)
   procedureSpecificationExprs proc |>.forM visit
 
 /-- Map procedure specification fields with separate transformations for
-    proposition-valued fields (`preconditions` and `axioms`) and unconstrained
-    value fields (`decreases` and `invokeOn`). The body is intentionally excluded. -/
+    proposition-valued fields (`preconditions`, `axioms`, and a `throwsOn` case's
+    `ensures`) and unconstrained value fields (`decreases`, `invokeOn`, and a case's
+    guard and frame targets). The body is intentionally excluded.
+
+    A case's guard takes `mapValue` rather than `mapCondition` even though it is
+    boolean: it is evaluated on entry, in the same position as a `decreases`, so a
+    caller that treats conditions as postcondition-shaped (rewriting outputs, say)
+    must not reach it. -/
 def mapProcedureSpecificationsWithM [Monad m]
     (mapCondition mapValue : StmtExprMd → m StmtExprMd)
     (proc : Procedure) : m Procedure := do
@@ -494,7 +549,12 @@ def mapProcedureSpecificationsWithM [Monad m]
     preconditions := ← proc.preconditions.mapM (·.mapM mapCondition)
     decreases := ← proc.decreases.mapM mapValue
     invokeOn := ← proc.invokeOn.mapM mapValue
-    axioms := ← proc.axioms.mapM mapCondition }
+    axioms := ← proc.axioms.mapM mapCondition
+    throwsOn := ← proc.throwsOn.mapM (fun blk => do
+      pure { blk with
+        guard := ← mapValue blk.guard
+        postconditions := ← blk.postconditions.mapM (·.mapM mapCondition)
+        modifies := ← blk.modifies.mapM mapValue }) }
 
 /-- Apply one monadic transformation to every expression-bearing specification
     field outside the procedure body. -/
@@ -732,9 +792,11 @@ private def covCtorKey : StmtExpr → Nat
   | .LiteralBv ..     => 30
   | .IncrDecr ..      => 31
   | .CompoundAssign .. => 32
+  | .Throw ..         => 33
+  | .Try ..           => 34
 
 /-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
-private def covCtorCount : Nat := 33
+private def covCtorCount : Nat := 35
 
 /-- One representative per constructor, paired with the number of sentinels it
     places in `StmtExprMd` child positions. -/
@@ -774,7 +836,12 @@ private def covProbes : List (StmtExprMd × Nat) := [
   -- `IncrDecr` can carry; a `.Local` target places 0 sentinels and the check
   -- would pass vacuously.
   (covMd (.IncrDecr .Pre .Incr (covVmd (.Field covS (covId "x")))), 1),
-  (covMd (.CompoundAssign .Add (covVmd (.Field covS (covId "x"))) covS), 2)
+  (covMd (.CompoundAssign .Add (covVmd (.Field covS (covId "x"))) covS), 2),
+  (covMd (.Throw covS), 1),
+  -- A guarded `catch` clause and a `finally` arm, so the probe covers every
+  -- `StmtExprMd` position a `try` can carry: body, guard, handler, finally. A
+  -- probe without them would leave those arms unchecked.
+  (covMd (.Try covS [{ binding := covId "e", predicate := some covS, body := covS }] (some covS)), 4)
 ]
 
 /-- How many sentinels `mapStmtExprM` actually reaches when traversing `e`. -/

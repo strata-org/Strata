@@ -1494,6 +1494,10 @@ procedure makeOne()
 };
 ```
 
+A `modifies` clause frames the *normal* return only. A procedure that can also finish
+by throwing frames that exit separately, with a `throwsOn` case's `modifies` — see the Exceptions
+section.
+
 ## Reads clauses
 
 To be designed..
@@ -1604,6 +1608,358 @@ To be designed..
 ## Concurrency
 
 To be designed..
+
+# Exceptions
+
+Mainstream languages use exceptions to signal that an operation cannot complete
+normally, and to transfer control from the point of failure to the code prepared to
+handle it. Laurel models this directly: a procedure declares what it may throw with
+`throws`, a `throw` statement raises a value, and `try` / `catch` / `finally`
+handles it. Modelling exceptions here means each frontend does not have to
+re-implement them.
+
+Laurel imposes no root exception type, and does not require a thrown value to belong
+to any particular hierarchy — a procedure may declare `throws int` and `throw 3`.
+What Laurel provides instead is subtype-aware typing of the `catch` binding, so each
+frontend uses its own hierarchy directly: Java's `Throwable`, Python's
+`BaseException`, or JavaScript's convention of throwing an `Error`.
+
+## Declaring and throwing
+
+`throws T` in a procedure's signature says the procedure may finish by throwing a
+`T`. In the body, `throw e` raises `e` and abandons the rest of the procedure.
+
+```laurel
+composite Exception {}
+composite ArithmeticException extends Exception {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+{
+  if b == 0 then {
+    var ae: ArithmeticException := new ArithmeticException;
+    throw ae
+  };
+  r := a / b
+};
+```
+
+`throws` is part of the signature — it changes what callers have to deal with — so
+it sits with `returns`, before `opaque`.
+
+## Catch or declare
+
+Laurel enforces *catch-or-declare*, the discipline Java applies to its checked
+exceptions. A procedure that declares no `throws` may not let an exception escape,
+whether thrown directly or propagated from a callee, and a procedure declaring
+`throws T` may only let exceptions escape whose type is a subtype of `T`.
+
+```laurel
+composite ArithError {}
+composite ParseError {}
+
+procedure wrongThrows()
+  throws (e: ArithError)
+  opaque
+{
+  var e: ParseError := new ParseError;
+  throw e
+  // error: procedure 'wrongThrows' may throw 'ParseError', which is not a
+  // subtype of its declared `throws` type 'ArithError'
+};
+```
+
+The check is about the program as you wrote it rather than about how it lowers, so
+it runs during resolution and reports at the offending `throw` or call. Whether the
+*source* language requires catch-or-declare is a separate question: procedures
+coming from Python or JavaScript carry a `throws` clause too, even though neither
+language has that surface construct.
+
+## Handling: try, catch, finally
+
+`catch` dispatches on a *predicate* rather than on a type, written
+`catch e when <condition on e>`. Type-based dispatch is one such predicate:
+`catch e when e is NotFound`. Clauses are ordered and first-match-wins, and a clause
+with no `when` guard is a catch-all. `finally` runs on the way out of the `try`.
+
+```laurel
+composite Exception {}
+composite NotFound extends Exception {}
+composite Invalid extends Exception {}
+
+procedure handle(fail: int) returns (r: int)
+  opaque
+{
+  r := 0;
+  try {
+    if fail == 1 then {
+      var e: NotFound := new NotFound;
+      throw e
+    };
+    if fail == 2 then {
+      var i: Invalid := new Invalid;
+      throw i
+    }
+  } catch e when e is NotFound {
+    r := 1
+  } catch e {
+    r := 2
+  } finally {
+    assert r >= 0
+  }
+};
+```
+
+`finally` runs after a normal completion, after a caught exception, on the way out
+with an uncaught one, and when a handler itself throws or returns. A `return` or an
+`exit` that leaves the `try` runs it too, and nested `finally` arms chain outward.
+
+One rule decides the rest: if the `finally` arm itself completes abruptly — it
+returns, throws, or exits — that completion wins, and whatever was pending is
+discarded. This is Java's rule (JLS 14.20.2), so `try { throw e } finally { return }`
+returns normally and the exception is gone.
+
+## The type of a catch binding
+
+A `catch` binding is typed at the *least common ancestor* of the exception types
+that can reach it: the types thrown directly in the `try` body, and the declared
+`throws` types of the procedures the body calls. When those share a common ancestor
+`T`, the binding has type `T`, and reading a field of `e` needs no downcast.
+
+```laurel
+composite Exception {
+  var message: string
+}
+composite NotFound extends Exception {}
+composite Invalid extends Exception {}
+
+procedure logFailure(which: int) returns (out: string)
+  opaque
+{
+  out := "";
+  try {
+    if which == 1 then {
+      var f: NotFound := new NotFound;
+      f#message := "missing";
+      throw f
+    };
+    var i: Invalid := new Invalid;
+    i#message := "invalid";
+    throw i
+  } catch e {
+    // `NotFound` and `Invalid` join at `Exception`, so `e` is an `Exception` and
+    // the inherited field is readable without a cast.
+    out := e#message
+  }
+};
+```
+
+If the types reaching a `catch` share no common ancestor, Laurel reports an error
+rather than leaving the binding untyped. If the body throws nothing determinable,
+no exception can reach the clauses, and they are dropped as unreachable.
+
+A frontend that needs to catch values with no useful common ancestor — unrelated
+types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a
+composite field when throwing, and unwrap it in the handler.
+
+## Exceptional contracts
+
+`requires` and `ensures` describe the entry condition and the normal return. A
+procedure that can throw has a second exit, described by one or more `throwsOn`
+*behavior cases*. They follow `opaque`, alongside `ensures` and `modifies`, because
+they constrain an exit rather than form part of the signature.
+
+A case pairs a pre-state guard with the contract for the throwing path it selects:
+
+```laurel
+composite Exception {}
+composite ArithmeticException extends Exception {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures e is ArithmeticException
+  }
+{
+  if b == 0 then {
+    var ae: ArithmeticException := new ArithmeticException;
+    throw ae
+  };
+  r := a / b
+};
+```
+
+The guard *forces* the throw. If `b == 0` holds on entry the procedure is guaranteed
+to exit by throwing, and the thrown value satisfies the case's `ensures` clauses. So a
+caller can prove ahead of time that a given input will fail, and knows what it will get.
+
+`throws (e: T)` names the thrown value as well as its type, and scopes that name over
+every case's `ensures`. There is one spelling, always binding: a procedure that says
+nothing about its exception today would otherwise have to change its signature the moment
+it wants to. `e` is deliberately *not* in scope in a `requires`, in a top-level `ensures`,
+or in a guard — all three are evaluated where no exception exists.
+
+The declaration already tells callers what was thrown. `throws (e: T)` on its own
+guarantees
+
+    it threw  ==>  e is T
+
+on *every* throwing path, so a case never has to restate the declared type. That is why
+the example above says `ensures e is ArithmeticException` and not `ensures e is Exception`:
+a case's type test earns its place only when it *narrows* the declaration to a subtype for
+that particular path. Restating the declared type would in fact say less, since the case's
+`ensures` holds only when that case's guard held, while the declaration holds always.
+
+A case with nothing left to say may therefore be empty, and is still meaningful — its
+guard alone forces the throw:
+
+```laurel
+composite Exception {}
+
+procedure mustThrow(a: int, b: int) returns (r: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+  };
+```
+
+A caller passing `b == 0` learns that the call throws, and learns from the declaration
+that what it gets is an `Exception`.
+
+Stating cases also settles the converse. Because a guard forces its throw, writing any
+case is a claim to have enumerated them, so the verifier checks
+
+    it threw  ==>  one of the guards held
+
+A caller that can refute every guard therefore learns the call cannot have thrown. Two
+consequences worth knowing: a throwing path that matches no guard is reported rather
+than quietly accepted, and the two boundary cases read as you would hope —
+`throwsOn true { … }` means the procedure always throws, and `throwsOn false { }` means
+it never does.
+
+None of this is documentation only. For a procedure with a body the verifier proves the
+body honours the cases; at a call site they are assumed, so a caller can reason about a
+throwing procedure without seeing its code.
+
+### What a case may contain
+
+A case takes `ensures` and `modifies`, mirroring their normal-exit counterparts but scoped
+to the path its guard selects. An `ensures` inside a case also takes `summary "…"`, exactly
+as a top-level one does, so a failing exceptional postcondition can report in your words:
+
+```laurel
+  throwsOn b == 0 {
+    ensures e is ArithmeticException summary "dividing by zero throws"
+  }
+```
+
+Two forms that exist on the normal exit are deliberately absent inside a case, so a parse
+error there is the surface telling you to write something else:
+
+* No `free` or `checked` variant of a case's `ensures`. This is a deferral rather than a
+  rule about exceptions; until it lands, a case's `ensures` is always both checked against
+  the body and assumed by callers.
+* No `modifies *`. It would say nothing new: a case that names no `modifies` already leaves
+  its throwing path unframed, which is exactly what the wildcard means on the normal exit.
+  Write `throwsOn C { }` — or omit the `modifies` and keep the `ensures` — instead.
+
+The reasoning behind both is in the exceptions section of the Laurel Designer Guide.
+
+### Stating no case
+
+Cases are optional, and omitting them is not the same as `throwsOn false`. A procedure
+with no case makes no claim about its throwing paths at all:
+
+```laurel
+composite Err {}
+
+procedure thrower(x: int) returns (r: int)
+  throws (e: Err)
+  opaque
+{
+  if x < 0 then {
+    var e: Err := new Err;
+    throw e
+  };
+  r := x
+};
+```
+
+A caller of `thrower` learns exactly one thing about the throwing exit — that what comes
+out is an `Err`, from the declaration. It cannot tell *when* the call throws, so it must
+allow for both exits; and because no case names a frame, it must also assume the heap may
+have changed. Nothing is checked against the body either: with no guards to enumerate,
+the `it threw ==> one of the guards held` obligation is not emitted.
+
+That is weaker than stating a case, but it is weak in the safe direction — the contract
+claims nothing, so nothing it claims can be wrong. The dangerous shape is *partial*
+enumeration, cases with a gap between them, and that is what the check above catches.
+
+Saying nothing is the right choice when the throwing condition is not expressible in the
+procedure's own pre-state. The clearest example is a procedure that propagates a callee's
+exception: it throws exactly when the callee does, and the callee's contract need not say
+when that is. Where the condition *is* available — as `x < 0` is to `thrower` — stating a
+case is strictly more informative, and worth doing.
+
+## Exceptional frames
+
+`modifies` at the top level frames the normal return. A `modifies` inside a case frames
+that case's throwing path: it names the locations that may change when the procedure
+throws for that reason.
+
+```laurel
+composite Cell {
+  value: int
+}
+composite Err {}
+
+procedure doWork(c: Cell, logCell: Cell, fail: bool) returns (r: int)
+  throws (e: Err)
+  opaque
+  modifies c
+  throwsOn fail {
+    modifies logCell
+  }
+{
+  if fail then {
+    logCell#value := 1;
+    var e: Err := new Err;
+    throw e
+  };
+  c#value := 42;
+  r := 0
+};
+```
+
+Only `c` may change on the normal path, and only `logCell` when it throws because
+`fail`. All frames are checked against the body and assumed at call sites, a case's
+`modifies` accepts the same targets the top-level one does including field-granular ones
+(`modifies logCell#value`), and an object allocated inside the body is exempt from all of
+them.
+
+Because each case carries its own frame, a procedure that writes different locations for
+different reasons can say so — one case each — rather than declaring only their union.
+A caller that rules out one case can then conclude the others' targets are unchanged.
+
+Two things to keep in mind. Guards are not checked for overlap: if two can hold at once
+both frames apply, and a caller gets only their intersection, which is rarely what was
+meant. And framing a throwing path means naming its condition, so a procedure whose
+throwing condition cannot be stated — one that propagates a callee's exception, say —
+has to leave that path unframed by stating no case.
+
+## Not yet supported
+
+Two shapes are rejected during resolution with a *not yet supported* diagnostic
+rather than lowered, because the alternatives would be an internal error or a silent
+miscompile:
+
+- a call to a procedure that `throws` in a nested expression position. Only a whole
+  statement or a whole assignment right-hand side is handled, so `s := f()` is fine
+  while `s := 1 + f()` is rejected;
+- a `catch` handler that re-declares its own exception binding, because the
+  substitution that rewrites the binding matches by name and is not scope-aware.
 
 # Verification - Proof hints
 
