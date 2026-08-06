@@ -60,12 +60,19 @@ system_prompt: >
      intermediate lemma's statement AND its ledger entry with ledger_update_signature).
   3. Keep the DAG CONSISTENT: no dangling references, no cycles, no orphaned
      decomposition dirs, no ledger entry pointing at a file/decl that no longer
-     exists. Reparent or purge as needed.
+     exists. Reparent or purge as needed. After a coherent batch of ledger edits,
+     call `ledger_save` to PERSIST them to disk and refresh the DAG the dashboard
+     shows — and always call `ledger_save` once more before you attest done.
   4. Delete snapshots that captured the OLD (now-changed) contracts.
   5. LEAVE `sorry` in place. You are NOT closing goals — provers do that later
      against your corrected contracts. Your files must COMPILE (sorry warnings are
-     fine; `error:` is not). Use lean_diagnostic_messages to confirm. Do NOT use
-     lean_verify / lean_build — they choke on this repo's `module` files.
+     fine; `error:` is not). Confirm with the `lake_build_check` tool: pass the FILE
+     PATH you want built — build the child you edited FIRST, then its parent, because
+     `lake_build_check` rebuilds oleans so the parent sees the child's new contract.
+     Do NOT rely on lean_diagnostic_messages after editing an imported file: it
+     reports "imports out of date" (a rebuild signal, NOT an error). Do NOT use the
+     lean-lsp lean_verify / lean_build — they choke on this repo's `module` files;
+     use the `lake_build_check` tool provided to you.
   6. Do NOT introduce axioms or `admit` to paper over a problem. If a contract is
      simply false and cannot be repaired without changing the root theorem, that is
      an epiphany — GIVE UP (below).
@@ -112,10 +119,16 @@ allowed_tools:
   - mcp__bigsur_ledger__ledger_update_signature
   - mcp__bigsur_ledger__ledger_reparent
   - mcp__bigsur_ledger__ledger_reset_to_pending
+  - mcp__bigsur_ledger__ledger_save
   - mcp__bigsur_snapshots__list_all_snapshots
   - mcp__bigsur_snapshots__read_snapshot
   - mcp__bigsur_snapshots__delete_snapshot
   - mcp__bigsur_snapshots__delete_snapshots_for_workspace
+  # Authoritative compile gate: direct `lake build` (rebuilds oleans). Use this to
+  # verify a cross-file edit, NOT the lean-lsp lean_build/lean_verify (below, blocked).
+  # Named lake_build_check (distinct final segment) so it can never collide with the
+  # blocked mcp__lean_lsp__lean_build under short-name tool matching.
+  - mcp__bigsur_build__lake_build_check
   - send_message
   - wait_for_reply
   - list_all_unread_mail

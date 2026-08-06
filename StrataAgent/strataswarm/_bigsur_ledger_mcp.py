@@ -217,11 +217,30 @@ def create_bigsur_ledger_mcp_server(ledger: "LemmaLedger"):
     async def ledger_reset_to_pending(input: dict[str, Any]) -> dict[str, Any]:
         return _text(ledger.bigsur_reset_to_pending(input["id"]))
 
+    @tool(
+        name="ledger_save",
+        description=(
+            "PERSIST your ledger changes to disk NOW. Your delete/purge/reparent/"
+            "update_signature/reset_to_pending edits are applied to the live ledger "
+            "in memory immediately, but they are only written to lemma_ledger.json — "
+            "and the DAG views the UI displays are only regenerated — on save. Call "
+            "this after a coherent batch of edits (and again before you finish) so "
+            "your repaired DAG is durable and shown correctly in the dashboard, even "
+            "if the run is interrupted before the next phase boundary."),
+        input_schema={"type": "object", "properties": {}, "required": []},
+    )
+    async def ledger_save(input: dict[str, Any]) -> dict[str, Any]:
+        ledger.save()
+        stats = {s.value: sum(1 for e in ledger.entries() if e.status == s)
+                 for s in LemmaStatus}
+        return _text({"saved": True, "total_entries": len(ledger.entries()),
+                      "by_status": {k: v for k, v in stats.items() if v}})
+
     return create_sdk_mcp_server(
         name="bigsur_ledger",
         version="1.0.0",
         tools=[ledger_search, ledger_get, ledger_children, ledger_ancestry,
                ledger_dag, ledger_stats,
                ledger_delete_entry, ledger_purge_subtree, ledger_update_signature,
-               ledger_reparent, ledger_reset_to_pending],
+               ledger_reparent, ledger_reset_to_pending, ledger_save],
     )

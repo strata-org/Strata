@@ -547,10 +547,26 @@ class LemmaLedger:
         self._indegree.pop(entry_id, None)
         self._rebuild_indegree()
 
+    def _repoint_orphaned_children(self, deleted_id: str):
+        """After deleting `deleted_id`, fix any SURVIVING entry that still records
+        it as `parent_id` (a stored back-pointer to a node that no longer exists —
+        a ghost that would truncate get_ancestry). Re-point each such child to a
+        parent that still lists it in `children` (a diamond may have one), else
+        clear parent_id to "". Caller holds the lock and has already removed
+        `deleted_id` from `self._entries` and from all parents' children lists."""
+        for child in self._entries.values():
+            if child.parent_id != deleted_id:
+                continue
+            surviving_parent = next(
+                (p.id for p in self._entries.values() if child.id in p.children), "")
+            child.parent_id = surviving_parent
+
     def bigsur_delete_entry(self, entry_id: str) -> str:
         """Hard-delete a SINGLE entry: remove it from the table and unlink it from
-        all parents. Its children are re-attached to nothing (orphaned) — use
-        bigsur_purge_subtree if you mean the whole subtree. Returns a status str."""
+        all parents. Its children are re-parented to a surviving parent if one
+        exists (a diamond may share them), otherwise orphaned (parent_id cleared) —
+        never left pointing at the deleted node. Use bigsur_purge_subtree if you
+        mean the whole subtree. Returns a status str."""
         with self._lock:
             entry = self._entries.get(entry_id)
             if not entry:
@@ -560,52 +576,66 @@ class LemmaLedger:
             name = entry.name
             self._unlink_from_parents(entry_id)
             del self._entries[entry_id]
+            self._repoint_orphaned_children(entry_id)
             return f"Deleted entry '{name}' ({entry_id})"
 
     def bigsur_purge_subtree(self, entry_id: str) -> list[str]:
         """Hard-delete an entry AND all its descendants. Returns deleted IDs.
-        Refuses to purge the root. Descendants shared with a live branch (indegree
-        > 1 from outside the subtree) are unlinked but kept."""
+        Refuses to purge the root.
+
+        A descendant that is still reachable from a LIVE branch outside the purge is
+        KEPT — and keeping it TRANSITIVELY protects its own descendants (a kept
+        shared node is useless without the nodes holding it up). We compute the
+        delete-set to a FIXPOINT: start with the whole subtree, then repeatedly
+        rescue any node that has a parent not (yet) marked for deletion, until
+        nothing changes. The explicitly-named purge root is always deleted (its
+        parent is external by construction, but deleting it is the whole point)."""
         with self._lock:
             if entry_id == self._root_id:
                 return []
             if entry_id not in self._entries:
                 return []
-            # Collect the subtree.
-            subtree: list[str] = []
-            seen: set[str] = set()
+            # Collect the subtree reachable from entry_id.
+            subtree: set[str] = set()
             stack = [entry_id]
             while stack:
                 cur = stack.pop()
-                if cur in seen:
+                if cur in subtree:
                     continue
-                seen.add(cur)
                 e = self._entries.get(cur)
                 if not e:
                     continue
-                subtree.append(cur)
+                subtree.add(cur)
                 stack.extend(e.children)
-            subtree_set = set(subtree)
-            deleted: list[str] = []
-            for eid in subtree:
-                if eid == self._root_id:
-                    continue
-                e = self._entries.get(eid)
-                if not e:
-                    continue
-                # Keep a DESCENDANT still referenced by a parent OUTSIDE the purged
-                # subtree (a shared node in a diamond DAG). This never applies to the
-                # explicitly-named purge root itself — its parent is always "external"
-                # (it lives above the subtree), yet the whole point is to delete it.
-                if eid != entry_id:
-                    external_parents = [
+
+            # Fixpoint keep-set: a node is RESCUED (kept) if it has any parent NOT
+            # in the current delete-set. Rescuing a node can rescue its children on
+            # the next pass (their parent is no longer being deleted), so iterate
+            # until stable. The named purge root is never rescued.
+            to_delete = set(subtree) - {self._root_id}
+            changed = True
+            while changed:
+                changed = False
+                for eid in list(to_delete):
+                    if eid == entry_id:
+                        continue  # named purge root: always deleted
+                    surviving_parents = [
                         p.id for p in self._entries.values()
-                        if eid in p.children and p.id not in subtree_set]
-                    if external_parents:
-                        continue
+                        if eid in p.children and p.id not in to_delete]
+                    if surviving_parents:
+                        to_delete.discard(eid)
+                        changed = True
+
+            deleted: list[str] = []
+            for eid in list(to_delete):
+                if eid not in self._entries:
+                    continue
                 self._unlink_from_parents(eid)
                 del self._entries[eid]
                 deleted.append(eid)
+            # Fix any kept node that recorded a now-deleted node as its parent_id.
+            for eid in deleted:
+                self._repoint_orphaned_children(eid)
             return deleted
 
     def bigsur_update_signature(self, entry_id: str, new_statement: str) -> str:

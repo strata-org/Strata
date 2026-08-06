@@ -397,6 +397,60 @@ def _get_exe_path() -> Path:
     return root / ".lake" / "build" / "bin" / "SwarmAgentTools"
 
 
+def file_path_to_module(file_path: str, cwd: Path) -> str:
+    """Convert a .lean file path to the Lean module name `lake build` expects.
+
+    Accepts either a path relative to `cwd` or an absolute path under it. Strips
+    the `.lean` suffix and turns separators into dots, e.g.
+    `StrataAgent/Sandbox/decomposed/foo/Stub.lean` → `StrataAgent.Sandbox.decomposed.foo.Stub`.
+    A value with no `.lean` suffix and no separators is assumed to already be a
+    module name and returned unchanged.
+    """
+    p = Path(file_path)
+    if p.is_absolute():
+        try:
+            p = p.relative_to(cwd)
+        except ValueError:
+            pass
+    s = str(p)
+    if s.endswith(".lean"):
+        s = s[: -len(".lean")]
+    if "/" not in s and "\\" not in s:
+        # Already a module name (dotted or single segment) — leave as-is.
+        return s
+    return s.replace("/", ".").replace("\\", ".")
+
+
+def lake_build(module: str, cwd: Path, timeout: int = LEAN_BUILD_TIMEOUT) -> tuple[bool, list[str]]:
+    """Run `lake build <module>` and return (ok, error_lines).
+
+    `ok` is True iff `lake` exited 0 — the ground truth for build success. We do NOT
+    infer success from the absence of `": error:"` lines: lake's own failures (e.g. a
+    NONEXISTENT module → `error: no such file`, `error: build failed`) are not in
+    Lean's `file:line:col: error:` diagnostic format, so filtering for that pattern
+    alone would report a missing/typo'd module as a clean build (a dangerous false
+    positive for BigSur, which chooses the file to build). This is the single
+    authoritative build path shared by the ASSEMBLY phase and the BigSur repair
+    agent: it shells out to `lake` directly (rebuilding oleans, so downstream imports
+    are no longer "out of date") rather than via the lean-lsp MCP tools, which choke
+    on this repo's `module` files. On timeout, `ok` is False and the list explains it."""
+    try:
+        result = subprocess.run(
+            ["lake", "build", module], cwd=str(cwd),
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return False, [f"lake build {module} timed out after {timeout}s"]
+    ok = result.returncode == 0
+    # Report both Lean diagnostics (`file:line:col: error:`) and lake's own `error:`
+    # lines so a failure is explained regardless of which layer produced it.
+    lines = (result.stdout + "\n" + result.stderr).splitlines()
+    errors = [l for l in lines if ": error:" in l or l.lstrip().startswith("error:")]
+    if not ok and not errors:
+        errors = [f"lake build {module} failed (exit {result.returncode})"]
+    return ok, errors
+
+
 def _get_process_rss_kb(pid: int) -> int:
     """Get RSS (resident set size) in kB for a process."""
     try:

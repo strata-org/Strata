@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .po_agents import verified_loop, run_splitter, LoopOutcome
-from .po_lean import get_lean_tools, MoveSession
+from .po_lean import get_lean_tools, MoveSession, lake_build, file_path_to_module
 from .po_util import setup_child_workspace, copy_cheat_sheet, cheat_sheet_name, cheat_sheet_source
 from .lemma_ledger import LemmaLedger, LemmaEntry, LemmaStatus
 from .cycle_detection import detect, MatchType
@@ -84,6 +84,11 @@ ENDGAME_GRACE_CHUNKS = 4
 # run (a global backstop against a repair ↔ re-fail loop).
 BIGSUR_DECISION_ROUNDS = 6
 BIGSUR_MAX_INVOCATIONS = 4
+# Turn budget for BigSur's initial free-form repair pass (the run_ai that reads the
+# briefing + impact report and rewrites contracts/ledger/snapshots). Generous — a
+# real repair reads many files and edits several — but bounded so a wedged pass is
+# eventually reaped and the decision loop takes over.
+BIGSUR_INITIAL_TURNS = 200
 
 
 def _env_float(name: str, default: float) -> float:
@@ -415,7 +420,18 @@ async def _propagate_failure_to_parent(agent, state: PO5State, ledger: LemmaLedg
         ledger.prune_branch(cid, f"parent child '{entry.name}' gave up")
 
     # ALWAYS escalate to BigSur (guide impact-report consult happens inside).
-    await _run_bigsur(agent, state, ledger, entry, cwd, message)
+    # BigSur is an AI agent and a LAST resort, so a failure to even run it (network
+    # hiccup, model timeout, subprocess death) must NOT crash the whole proof run —
+    # the phase loop does not wrap handler() in a try, so an exception here would
+    # propagate out and abandon all work on every other lemma. Swallow it: log,
+    # leave this lemma given-up, and let the rest of the run continue.
+    try:
+        await _run_bigsur(agent, state, ledger, entry, cwd, message)
+    except Exception as e:
+        await agent._emit("message",
+            f"[PO5] ⚠️ BigSur failed to run on '{entry.name}' ({type(e).__name__}: {e}); "
+            f"leaving it given-up and continuing.")
+        _record_give_up(state, entry, f"BigSur invocation error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -457,6 +473,7 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
     """
     from .._bigsur_ledger_mcp import create_bigsur_ledger_mcp_server
     from .._bigsur_snapshot_mcp import create_bigsur_snapshot_mcp_server
+    from .._bigsur_build_mcp import create_bigsur_build_mcp_server
 
     root_entry = ledger.get(state.root_id)
 
@@ -504,10 +521,12 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
     root_ws = root_entry.workspace if root_entry else entry.workspace
     clean_hash_before = _root_signature_hash(cwd, root_ws)
 
-    # 3+4. Spawn BigSur with the destructive MCPs and drive it to a consistent state.
+    # 3+4. Spawn BigSur with the destructive MCPs + the lake-build compile gate and
+    # drive it to a consistent state.
     sandbox_root = cwd / state.root_workspace
     bigsur_ledger_mcp = create_bigsur_ledger_mcp_server(ledger)
     bigsur_snapshot_mcp = create_bigsur_snapshot_mcp_server(sandbox_root)
+    bigsur_build_mcp = create_bigsur_build_mcp_server(cwd)
 
     root_name = root_entry.name if root_entry else state.root_theorem_name
     briefing = (
@@ -524,8 +543,11 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
         f"/ ledger_reparent), purge stale decomposition subtrees (ledger_purge_subtree) "
         f"and their files, and delete now-stale snapshots. LEAVE sorries in place — "
         f"provers close them later. Every file you touch must COMPILE (sorry warnings "
-        f"OK, errors NOT). If the ROOT theorem itself is wrong, give up with a clear "
-        f"epiphany instead of hacking around it."
+        f"OK, errors NOT) — verify with the `lake_build_check` tool (pass the file path; "
+        f"it rebuilds oleans, so build the child you edited THEN its parent). Do NOT rely "
+        f"on lean_diagnostic_messages after a cross-file edit: it will report 'imports "
+        f"out of date', which is a rebuild signal, not an error. If the ROOT theorem "
+        f"itself is wrong, give up with a clear epiphany instead of hacking around it."
     )
 
     gave_up = False
@@ -534,11 +556,21 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
         "bigsur", swarm=agent.swarm, cwd=agent._cwd,
         can_see=["SearchAgent"],
         extra_mcp_servers={"bigsur_ledger": bigsur_ledger_mcp,
-                           "bigsur_snapshots": bigsur_snapshot_mcp},
-        disable_compaction=True,
+                           "bigsur_snapshots": bigsur_snapshot_mcp,
+                           "bigsur_build": bigsur_build_mcp},
+        # Auto-compaction ENABLED (disable_compaction=False): a real repair reads
+        # many files + runs builds over the BIGSUR_INITIAL_TURNS budget, so BigSur's
+        # context fills up. Compaction (fired between turns inside run_ai once usage
+        # crosses CONTEXT_COMPACT_THRESHOLD) lets it keep working instead of running
+        # out of room. BigSur is non-checkpointable, so this is in-place compaction.
+        disable_compaction=False,
     ) as bigsur:
-        # Initial free-form repair pass — unlimited turns.
-        await bigsur.run(inp=briefing)
+        # Initial free-form repair pass. MUST use run_ai, NOT run(): BigSur is a
+        # stateful agent (stateless=False), so run() sets _wait_after_completion
+        # and never returns — it parks in the wait-for-messages loop after the
+        # briefing, so the decision loop below would be unreachable and the whole
+        # run hangs. run_ai drives exactly one bounded turn-budget and returns.
+        await bigsur.run_ai(inp=briefing, max_turns=BIGSUR_INITIAL_TURNS)
 
         # Decision loop: keep asking until BigSur attests consistency or gives up.
         for round_i in range(BIGSUR_DECISION_ROUNDS):
@@ -579,6 +611,12 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
             await agent._emit("message",
                 f"[PO5] BigSur exhausted {BIGSUR_DECISION_ROUNDS} decision rounds "
                 f"without attesting done — proceeding with whatever it changed.")
+
+    # Backstop-persist BigSur's live-ledger mutations to disk + regenerate the DAG
+    # views the dashboard reads. BigSur is prompted to call ledger_save itself, but
+    # we save here too so its DAG surgery is durable and shown correctly regardless
+    # (the main loop's own save() only runs at the next phase boundary).
+    ledger.save()
 
     # 5. Enforce the ONE hard rule: BigSur must not have touched Stub.clean.lean.
     clean_hash_after = _root_signature_hash(cwd, root_ws)
@@ -2114,7 +2152,6 @@ async def _phase_check(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -
 
 async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path) -> Trans:
     """Assembly: copy proved files, build, guide + fixer on errors."""
-    import subprocess
     tools = get_lean_tools()
     root_entry = ledger.get(state.root_id)
 
@@ -2129,16 +2166,12 @@ async def _phase_assemble(agent, state: PO5State, ledger: LemmaLedger, cwd: Path
         if stub.exists() and target.exists():
             shutil.copy2(stub, target)
 
-    # Build + fix loop (guide + fixer pairs)
+    # Build + fix loop (guide + fixer pairs). Uses the shared lake_build helper —
+    # the SAME authoritative build path BigSur uses for its compile gate.
     root_module = f"{state.root_workspace}.Stub".replace("/", ".")
     for attempt in range(3):
-        result = subprocess.run(
-            ["lake", "build", root_module], cwd=str(cwd),
-            capture_output=True, text=True, timeout=180,
-        )
-        errors = [l for l in (result.stdout + "\n" + result.stderr).splitlines()
-                  if ": error:" in l]
-        if not errors:
+        ok, errors = lake_build(root_module, cwd, timeout=180)
+        if ok:
             break
 
         error_text = "\n".join(errors[:20])
