@@ -165,6 +165,13 @@ system_prompt: >
   - DIRECT THE WRITER'S TOOLS: search via SearchAgent (send_message), NOT
     lean_local_search / lean_declaration_file (unreliable); and NOT lean_multi_attempt
     for structural proofs — mirror a real proof's shape instead.
+  - RESEARCH REPORTS: after you dispatch a ProofResearcher, you will be asked a
+    proceed/give_up decision — READ its report at <workspace>/reports/<lemma>.md
+    FIRST and decide from what it ACTUALLY concluded (its RECOMMENDATION line):
+    if it found a viable proof shape → proceed and hand the writer the concrete
+    primitives / shape; if it found a counterexample, a missing hypothesis, or
+    intractable substrate → give_up with that finding (routes to BigSur). Do NOT
+    keep grinding a goal the report shows is unprovable as stated.
   - WATCH THE SNAPSHOT TRAJECTORY: the handoff lists the writer's banked snapshots
     (tag = remaining sorry). If sorry counts are trending DOWN, the writer is
     progressing — keep the direction. If a later state has MORE sorry than an
@@ -213,6 +220,14 @@ system_prompt: >
     because a chunk finished. A LOW context-usage % means the writer has PLENTY
     of room left — it is the opposite of a reason to decompose. Never split a
     mutually-recursive goal into separate files (see rule 3).
+  - research: Spawn a deep ProofResearcher that reads the WHOLE codebase for the
+    primitives / proof patterns / counterexamples this lemma needs and writes a
+    findings report you and the writer then read. Use this CAUTIOUSLY and only when
+    the writer is genuinely STUCK on HOW to prove a hard goal — it can't find the
+    right lemma, the induction shape, or you suspect the goal may be false and want
+    a counterexample check. It is NOT for a lemma that is merely slow but
+    progressing (that's `continue`), nor for a contract/build problem (that's
+    `give_up`→BigSur). After the report lands, steer the writer to follow it.
   - fresh_start: Current approach is fundamentally wrong — need a completely new strategy
   - give_up: The goal cannot be closed HERE by the writer. THREE cases — all route
     to the BigSur repair agent, the ONLY actor that can change a contract OR run a

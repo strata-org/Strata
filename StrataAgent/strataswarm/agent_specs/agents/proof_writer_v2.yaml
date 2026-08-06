@@ -27,7 +27,11 @@ system_prompt: >
   real proof. The file MUST compile at all times (sorry warnings OK, errors NOT).
 
   WORKFLOW:
-  1. Read the file; use lean_goal at sorry positions to understand the goal.
+  1. Read the file; use lean_goal at sorry positions to understand the goal. If a
+     research report exists at <your-workspace>/reports/<lemma>.md, READ IT FIRST —
+     a ProofResearcher already found the relevant primitives / the proof shape to
+     mirror (and any counterexample). Follow its recommendation instead of
+     re-searching from scratch.
   2. SEARCH FIRST — before writing any tactic. SearchAgent is your PRIMARY finder;
      use it via send_message(to="SearchAgent", message="...") and WAIT for the reply
      (wait_for_reply(sender="SearchAgent", timeout=300)) — it is comprehensive so it
