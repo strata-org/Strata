@@ -79,6 +79,16 @@ theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
     AnnotCompat aliases ann ann :=
   ⟨HMap.empty, by rw [LMonoTy.subst_single_empty]; exact AliasEquiv.refl⟩
 
+/-- Like `AnnotCompat` but the existential substitution must be identity on rigid
+    type variables. When `rigidVars = []` this reduces to `AnnotCompat`.
+    When all free vars of `ann` are rigid this forces `AliasEquiv ann mty` directly
+    (since σ is identity on all free vars, `subst [σ] ann = ann`). -/
+def RigidAnnotCompat (aliases : List TypeAlias) (rigidVars : List TyIdentifier)
+    (ann mty : LMonoTy) : Prop :=
+  ∃ (σ : SubstOne),
+    (∀ v, v ∈ rigidVars → LMonoTy.subst [σ] (.ftvar v) = .ftvar v) ∧
+    AliasEquiv aliases (LMonoTy.subst [σ] ann) mty
+
 -- `AnnotCompat_subst` is defined later (after `AliasEquiv_subst` which it depends on).
 -- See the actual definition below the `AliasEquiv_subst` theorem.
 

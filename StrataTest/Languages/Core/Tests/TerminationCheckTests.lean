@@ -1227,6 +1227,100 @@ recursive function 'bad': non-variable decreases expression must have type int, 
 #guard_msgs in
 #eval Core.verify decreasesNonVarPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test: structural recursion through a let-alias (β-redex) — should pass.
+-- A front-end binding that names an intermediate value (see the module
+-- docstring of `Strata/Transform/BetaReduce.lean`) lowers to a redex
+-- `(λ c. ... f(tl(c))) xs`. The decreasing argument `tl(c)` references the
+-- *bound* `c`; β-reducing the alias rewrites it to `tl(xs)` so structural
+-- termination goes through instead of erroring on a bound var.
+---------------------------------------------------------------------
+
+def letAliasTermPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLenAlias (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else (fun c : IntList => int.add(1, listLenAlias(IntList..tl(c))))(xs)
+};
+#end
+
+/-- info:
+Obligation: listLenAlias_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLenAlias_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify letAliasTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Same shape via Core's surface syntax: `have c : T = v in body` is sugar
+-- for the redex `(fun c : T => body)(v)`. The decreasing argument `tl(c)`
+-- again references the bound `c`; the checker's non-erasing reduction
+-- rewrites it to `tl(xs)` and structural termination passes.
+---------------------------------------------------------------------
+
+def haveAliasTermPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function listLenHave (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else have c : IntList = xs in int.add(1, listLenHave(IntList..tl(c)))
+};
+#end
+
+/-- info:
+Obligation: listLenHave_body_calls_IntList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listLenHave_terminates_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify haveAliasTermPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Regression: a constant-lambda redex must NOT erase a
+-- recursive call. `(fun ignored => 0)(bad(xs))` is a constant lambda whose
+-- argument carries a non-decreasing recursive call. Plain β-reduction would
+-- drop the argument (value-preserving but not call-preserving), hiding the
+-- call from the termination checker so the function is silently accepted.
+-- `betaReduceRedexesPreservingArgs` leaves such redexes un-reduced, so the
+-- obligation is still emitted (and here unprovable, as it should be).
+---------------------------------------------------------------------
+
+def constLambdaEraseRecCallPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then 0
+  else (fun ignored : int => 0)(bad(xs))
+};
+#end
+
+/-- info:
+Obligation: bad_terminates_0
+Property: assert
+Result: ❓ unknown -/
+#guard_msgs in
+#eval Core.verify constLambdaEraseRecCallPgm (options := .quiet)
+
 end Strata.TerminationCheckTest
 
 end

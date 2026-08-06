@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.TypeConstructor
+public import Strata.DL.Util.ListUtils
 
 namespace Imperative
 
@@ -742,8 +743,8 @@ end
 
 /-!
 `transportShape` is a second shape walker, finer than `simpleShape`: it carves out
-the fragment the loop-init hoist pass's body simulation can express (the
-`BodyTransport` correspondence in `Strata.Transform.LoopInitHoistCorrect`).
+the fragment the loop-init hoist pass's body simulation can express (the same-name
+`StoreAgreement` body simulation in `Strata.Transform.LoopInitHoistCorrect`).
 Unlike `simpleShape`, which treats every `.cmd _` alike, `transportShape` inspects
 the command — `init`/`set` are admitted with either a `.det` or `.nondet` rhs, and
 `.funcDecl` is rejected — and it admits a nested `.loop` only when it is
@@ -979,46 +980,130 @@ mutual
   termination_by (Block.sizeOf ss)
 end
 
-mutual
-/-- Returns true if the statement contains a `.funcDecl ...` somewhere. -/
-@[expose] def Stmt.containsFuncDecl (s : Stmt P (Cmd P)) : Bool :=
-  match s with
-  | .cmd _ => false
-  | .block _ bss _ => Block.containsFuncDecl bss
-  | .ite _ tss ess _ => Block.containsFuncDecl tss || Block.containsFuncDecl ess
-  | .loop _ _ _ bss _ => Block.containsFuncDecl bss
-  | .exit _ _ => false
-  | .funcDecl _ _ => true
-  | .typeDecl _ _ => false
-  termination_by (Stmt.sizeOf s)
 
-/-- Returns true if any statement in `ss` contains a funcDecl. -/
-@[expose] def Block.containsFuncDecl (ss : List (Stmt P (Cmd P))) : Bool :=
-  match ss with
-  | [] => false
-  | s :: srest =>
-      Stmt.containsFuncDecl s || Block.containsFuncDecl srest
-  termination_by (Block.sizeOf ss)
-end
+/-! ## `getBlockLabels`
 
-
-/-! ## `userBlockLabels`
-
-`userBlockLabels` collects all user-provided `Stmt.block` labels appearing in a
-list of statements. The command type `C` is left abstract: `userBlockLabels`
+`getBlockLabels` collects all user-provided `Stmt.block` labels appearing in a
+list of statements. The command type `C` is left abstract: `getBlockLabels`
 never inspects a command, so this applies uniformly to the pipeline's
 `Imperative.Cmd`-bodied statement lists and to extended command types. -/
 
-@[expose] def Block.userBlockLabels {P : PureExpr} {C : Type} :
+@[expose] def Block.getBlockLabels {P : PureExpr} {C : Type} :
     List (Stmt P C) → List String
   | [] => []
-  | s :: rest => stmtUserBlockLabels s ++ Block.userBlockLabels rest
+  | s :: rest => stmtGetBlockLabels s ++ Block.getBlockLabels rest
 where
-  stmtUserBlockLabels : Stmt P C → List String
-    | .block l ss _ => l :: Block.userBlockLabels ss
-    | .ite _ tss ess _ => Block.userBlockLabels tss ++ Block.userBlockLabels ess
-    | .loop _ _ _ ss _ => Block.userBlockLabels ss
+  stmtGetBlockLabels : Stmt P C → List String
+    | .block l ss _ => l :: Block.getBlockLabels ss
+    | .ite _ tss ess _ => Block.getBlockLabels tss ++ Block.getBlockLabels ess
+    | .loop _ _ _ ss _ => Block.getBlockLabels ss
     | _ => []
+
+
+/-! ## Strengthened freshness predicate `namesFreshInExprs`
+
+Parametric form: "every `names` element is fresh in every cmd
+expression / loop guard / inv / measure at any depth in `s`".
+
+The predicate is MONOTONE in `names`'s subset relation (smaller names
+list = weaker requirement). It checks freshness at every expression
+position — command RHS, loop/ite guard, invariant, and measure.
+
+Each leaf freshness condition "`names` avoids `vars`" is expressed as
+`List.Disjoint names vars` (i.e. `∀ z ∈ names, z ∉ vars`). -/
+
+/-- "names is fresh in s": no name `z ∈ names` appears in any read position
+(cmd expression, loop guard, invariant, or measure) at any depth in `s`.  This is
+exactly disjointness from `s`'s read-var set `Stmt.getVars s`.  (On a `.funcDecl`
+this now checks the body free-vars too, whereas the passes run under `noFuncDecl`
+so the added leaf is vacuous.) -/
+@[expose] def Stmt.namesFreshInExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
+  List.Disjoint names (Stmt.getVars s)
+
+/-- "names is fresh in ss": disjointness from the block's read-var set. -/
+@[expose] def Block.namesFreshInExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Prop :=
+  List.Disjoint names (Block.getVars ss)
+
+/-! ## RHS-only freshness predicate `namesFreshInRhsExprs`
+
+A relaxation of `namesFreshInExprs` that checks freshness only against
+command *right-hand-side* expressions (`init`/`set` rhs, assertion / assume /
+cover conditions) at every depth, but NOT against `.ite`/`.loop` *guard*,
+invariant, or measure expressions.
+
+The RHS-only form is load-bearing: `nondetElim` reads its own fresh guard
+`$__ndelim_loop$_0` in a guard position, so `nondetElimM_namesFreshInRhsExprs`
+(the preservation theorem) requires the predicate to NOT check guards. -/
+
+mutual
+
+/-- "names is fresh in every command RHS of `s`": every `z ∈ names` is absent
+from each `init`/`set` rhs and each `assert`/`assume`/`cover` condition at any
+depth in `s`, with `.ite`/`.loop` recursing into branches/body only (the
+guard/invariant/measure read positions are NOT checked). -/
+@[expose] def Stmt.namesFreshInRhsExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
+  match s with
+  | .cmd (.init _ _ rhs _) => List.Disjoint names (ExprOrNondet.getVars rhs)
+  | .cmd (.set _ rhs _) => List.Disjoint names (ExprOrNondet.getVars rhs)
+  | .cmd (.assert _ e _) => List.Disjoint names (HasFvars.getFvars e)
+  | .cmd (.assume _ e _) => List.Disjoint names (HasFvars.getFvars e)
+  | .cmd (.cover _ e _) => List.Disjoint names (HasFvars.getFvars e)
+  | .block _ bss _ => Block.namesFreshInRhsExprs names bss
+  | .ite _ tss ess _ =>
+    Block.namesFreshInRhsExprs names tss ∧ Block.namesFreshInRhsExprs names ess
+  | .loop _ _ _ body _ =>
+    Block.namesFreshInRhsExprs names body
+  | .exit _ _ => True
+  | .funcDecl _ _ => True
+  | .typeDecl _ _ => True
+  termination_by sizeOf s
+
+/-- Block-level RHS-only freshness, lifted pointwise across the block. -/
+@[expose] def Block.namesFreshInRhsExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Prop :=
+  match ss with
+  | [] => True
+  | s :: rest =>
+    Stmt.namesFreshInRhsExprs names s ∧ Block.namesFreshInRhsExprs names rest
+  termination_by sizeOf ss
+
+end
+
+/-- The freshness predicate the hoisting pass requires: RHS-only freshness
+for the body's own init-vars. It uses `namesFreshInRhsExprs` (not the full
+`namesFreshInExprs`): the hoisting preservation proof reads back only the
+RHS / body-recursion parts of this conjunct. -/
+@[expose] def Block.hoistedNamesFreshInRhsAndGuards {P : PureExpr} [HasFvars P]
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  Block.namesFreshInRhsExprs (Block.initVars ss) ss
+
+/-! ## Expression shape-freedom predicate `exprsShapeFree`
+
+A front-end well-formedness assumption on a source program: every variable
+read by any expression occurring in the program — `init`/`set` rhs, `assert`
+/`assume`/`cover` conditions, loop guards/measures/invariants, `.ite` guards
+— is a "kind-free" name: it never satisfies the *kind predicate* `Q` on the
+underlying label string (the kind of name a pass generates). -/
+
+/-- "Every read-var occurring in `s` is kind-free": no variable read by `s`
+is the identifier of a `Q`-kind label string.  Expressed directly over
+`Stmt.getVars` (the read-var collector); on a `.funcDecl` this therefore also
+constrains the body free-vars `Stmt.getVars` collects (the pipeline consumers all
+run under `noFuncDecl`, where that case does not arise). -/
+@[expose] def Stmt.exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvars P]
+    (Q : String → Prop)
+    (s : Stmt P (Cmd P)) : Prop :=
+  ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Stmt.getVars s
+
+/-- "Every read-var occurring in `ss` is kind-free": expressed directly over
+`Block.getVars` (the read-var collector). -/
+@[expose] def Block.exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvars P]
+    (Q : String → Prop)
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Block.getVars ss
 
 
 end -- public section

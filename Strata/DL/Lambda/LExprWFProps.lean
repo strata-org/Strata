@@ -8,13 +8,15 @@ module
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExpr
+public import Strata.DL.Util.List
 
 /-!
 ## Properties of Well-formed Lambda Expressions
 
-Theorems about the well-formedness predicates and substitution operations
-defined in `Strata.DL.Lambda.LExprWF` (`freeVars`, `varOpen`, `varClose`,
-`lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substK`).
+Theorems about the well-formedness predicates, substitution operations, and
+beta reduction defined in `Strata.DL.Lambda.LExprWF` (`freeVars`, `varOpen`,
+`varClose`, `lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substK`,
+`betaReduce(K)`, `betaReduceRedexesFuel` and its wrappers).
 
 ### Local closedness (`varOpen` / `varClose` / `lcAt`)
 `varOpen` preserves `sizeOf`, `varClose`/`varOpen` are mutually inverse on fresh
@@ -45,6 +47,18 @@ included: the `.fvar` lookup lemmas `substFvars_fvar_find` /
 ### `getVars` and `freeVars`
 `getVars` is the identifier projection of `freeVars` (`getVars_eq_freeVars_idents`),
 so closed terms have no `getVars` (`closed_implies_getVars_nil`).
+
+### Beta reduction (`betaReduce` / `betaReduceRedexes*`)
+On a locally-closed redex, the lifting/decrementing reduction coincides with
+plain `subst` (`betaReduceWith_eq_subst_of_lc` for any metadata-indexed
+replacement family; `betaReduce_eq_subst_of_lc` for the single-argument case).
+The non-erasing redex walker preserves every operator occurrence — the
+call-preservation statement `getOps_subset_betaReduceRedexesPreservingArgs`
+(via `getOps_subset_betaReduceRedexesFuel`, at every fuel budget); the
+analogous statement for the erasing walker is provably false, because a
+constant-lambda redex erases its argument's operators
+(`getOps_betaReduce_of_not_bvarUsed`; alias redexes preserve them,
+`getOps_body_subset_betaReduce` / `getOps_arg_subset_betaReduce`).
 -/
 
 namespace Lambda
@@ -638,5 +652,322 @@ theorem closed_implies_getVars_nil {T : LExprParams} (e : LExpr T.mono)
   rw [getVars_eq_freeVars_idents]
   simp [LExpr.closed, List.isEmpty_iff] at hc
   simp [hc]
+
+/-! ## Properties of beta reduction
+
+Properties of the beta-reduction definitions in `Strata.DL.Lambda.LExprWF`
+(`betaReduce`, `betaReduceK`, `betaReduceRedexesFuel`, and the
+`betaReduceRedexes` / `betaReduceRedexesPreservingArgs` wrappers).
+
+Key results:
+
+- `betaReduceWith_eq_subst_of_lc` (via `betaReduceK_eq_substK_of_lc`) and its
+  single-argument corollary `betaReduce_eq_subst_of_lc`: on a locally-closed
+  redex, the lifting/decrementing reduction coincides with the plain
+  locally-nameless `subst`, so consumers of locally-closed terms can reuse the
+  existing `subst` lemmas.
+- `getOps_subset_betaReduceRedexesPreservingArgs`: the top-level
+  call-preservation statement — the non-erasing reducer never drops an operator
+  occurrence (call head), at *every* fuel budget. Syntactic analyses that must
+  see every call (e.g. recursive-call extraction) rely on this.
+- `getOps_betaReduce_of_not_bvarUsed`: the counterpoint — a constant-lambda
+  redex erases its argument's operator occurrences, which is why the analogous
+  preservation statement for the *erasing* reducer is provably false.
+- Supporting per-step lemmas: `getOps_body_subset_betaReduce`,
+  `getOps_arg_subset_betaReduce`, and the fuel-induction workhorse
+  `getOps_subset_betaReduceRedexesFuel`. (The K-level helpers
+  `getOps_liftBVars`, `getOps_subset_betaReduceK`,
+  `getOps_arg_subset_betaReduceK`, and `getOps_betaReduceK_of_not_bvarUsed`
+  are `private` — file-internal stepping stones only.)
+-/
+
+public section
+
+namespace LExpr
+
+variable {T : LExprParams} [DecidableEq T.IDMeta]
+
+omit [DecidableEq T.IDMeta] in
+/-- On a locally-closed redex body (`lcAt (k+1)`) with closed replacements
+    (`lcAt 0`), `betaReduceK` coincides with `substK`: there are no enclosing-binder
+    indices to decrement and the replacement needs no lift. -/
+private theorem betaReduceK_eq_substK_of_lc
+    {s : T.mono.base.Metadata → LExpr T.mono} (hs : ∀ m, lcAt 0 (s m) = true) :
+    ∀ (body : LExpr T.mono) (k : Nat), lcAt (k + 1) body = true →
+      betaReduceK k s body = substK k s body := by
+  intro body
+  induction body with
+  | const | op | fvar => intro k _; rfl
+  | bvar m i =>
+    intro k hbody
+    simp only [lcAt, decide_eq_true_eq] at hbody
+    by_cases hik : i = k
+    · subst hik; simp [betaReduceK, substK, liftBVars_eq_of_lcAt (hs m)]
+    · have hni : ¬ i > k := by omega
+      have hbeq : ¬ (i == k) = true := by simp [hik]
+      simp [betaReduceK, substK, hbeq, hni]
+  | abs _ _ _ b ih =>
+    intro k hbody
+    simp only [lcAt] at hbody
+    simp only [betaReduceK, substK]
+    exact congrArg _ (ih (k + 1) hbody)
+  | quant _ _ _ _ tr b ihtr ihb =>
+    intro k hbody
+    simp only [lcAt, Bool.and_eq_true] at hbody
+    simp only [betaReduceK, substK]
+    rw [ihtr (k + 1) hbody.1, ihb (k + 1) hbody.2]
+  | app _ fn a ihf iha =>
+    intro k hbody
+    simp only [lcAt, Bool.and_eq_true] at hbody
+    simp only [betaReduceK, substK]
+    rw [ihf k hbody.1, iha k hbody.2]
+  | ite _ c t e ihc iht ihe =>
+    intro k hbody
+    simp only [lcAt, Bool.and_eq_true] at hbody
+    simp only [betaReduceK, substK]
+    rw [ihc k hbody.1.1, iht k hbody.1.2, ihe k hbody.2]
+  | eq _ l r ihl ihr =>
+    intro k hbody
+    simp only [lcAt, Bool.and_eq_true] at hbody
+    simp only [betaReduceK, substK]
+    rw [ihl k hbody.1, ihr k hbody.2]
+
+omit [DecidableEq T.IDMeta] in
+/-- Bridge, metadata-aware form: on a locally-closed redex body with locally-closed
+    replacements, the lifting/decrementing `betaReduceWith` equals the plain
+    `subst`. Lets soundness proofs stated for locally-closed, empty-context terms
+    reuse the existing `subst` lemmas. -/
+theorem betaReduceWith_eq_subst_of_lc
+    {s : T.mono.base.Metadata → LExpr T.mono} (hs : ∀ m, lcAt 0 (s m) = true)
+    {body : LExpr T.mono} (hbody : lcAt 1 body = true)
+    : betaReduceWith s body = subst s body :=
+  betaReduceK_eq_substK_of_lc hs body 0 hbody
+
+omit [DecidableEq T.IDMeta] in
+/-- Bridge, single-argument corollary: on a locally-closed redex, the
+    lifting/decrementing `betaReduce` equals the plain `subst`. -/
+theorem betaReduce_eq_subst_of_lc
+    {arg body : LExpr T.mono}
+    (hbody : lcAt 1 body = true) (harg : lcAt 0 arg = true)
+    : betaReduce arg body = subst (fun _ => arg) body :=
+  betaReduceWith_eq_subst_of_lc (fun _ => harg) hbody
+
+/-- `liftBVars` only shifts de Bruijn indices, so operator occurrences are
+unchanged. -/
+private theorem getOps_liftBVars {T} {GenericTy} (d : Nat) :
+    ∀ (e : LExpr ⟨T, GenericTy⟩) (c : Nat), getOps (liftBVars d e c) = getOps e := by
+  intro e
+  induction e with
+  | const | op | fvar => intro c; rfl
+  | bvar m i => intro c; simp only [liftBVars]; split <;> rfl
+  | abs _ _ _ b ih => intro c; simp only [liftBVars, getOps]; rw [ih (c + 1)]
+  | quant _ _ _ _ tr b ihtr ihb => intro c; simp only [liftBVars, getOps]; rw [ihtr (c + 1), ihb (c + 1)]
+  | app _ a b iha ihb => intro c; simp only [liftBVars, getOps]; rw [iha c, ihb c]
+  | ite _ p t f ihp iht ihf => intro c; simp only [liftBVars, getOps]; rw [ihp c, iht c, ihf c]
+  | eq _ a b iha ihb => intro c; simp only [liftBVars, getOps]; rw [iha c, ihb c]
+
+/-- `betaReduceK` never drops an operator occurrence of the body: bound-variable
+leaves carry no operators, and every other node is preserved structurally. -/
+private theorem getOps_subset_betaReduceK {T : LExprParamsT} (s : T.base.Metadata → LExpr T) :
+    ∀ (e : LExpr T) (k : Nat), getOps e ⊆ getOps (betaReduceK k s e) := by
+  intro e
+  induction e with
+  | const | bvar | fvar => intro k; simp only [getOps]; exact List.nil_subset _
+  | op => intro k; simp only [getOps, betaReduceK]; exact List.Subset.refl _
+  | abs _ _ _ b ih => intro k; simp only [getOps, betaReduceK]; exact ih (k + 1)
+  | quant _ _ _ _ tr b ihtr ihb => intro k; simp only [getOps, betaReduceK]; exact List.append_subset_append (ihtr (k + 1)) (ihb (k + 1))
+  | app _ a b iha ihb => intro k; simp only [getOps, betaReduceK]; exact List.append_subset_append (iha k) (ihb k)
+  | ite _ p t f ihp iht ihf => intro k; simp only [getOps, betaReduceK]; exact List.append_subset_append (List.append_subset_append (ihp k) (iht k)) (ihf k)
+  | eq _ a b iha ihb => intro k; simp only [getOps, betaReduceK]; exact List.append_subset_append (iha k) (ihb k)
+
+/-- If the redex body uses its bound variable (an *alias* redex), `betaReduceK`
+places the argument at that occurrence, so the argument's operator
+occurrences — including any recursive call — survive. -/
+private theorem getOps_arg_subset_betaReduceK {T : LExprParamsT} (arg : LExpr T) :
+    ∀ (e : LExpr T) (k : Nat), bvarUsed k e = true →
+      getOps arg ⊆ getOps (betaReduceK k (fun _ => arg) e) := by
+  intro e
+  induction e with
+  | const | op | fvar => intro k h; simp [bvarUsed] at h
+  | bvar m i =>
+    intro k h
+    simp only [bvarUsed, beq_iff_eq] at h
+    subst h
+    simp only [betaReduceK, beq_self_eq_true, if_true]
+    rw [getOps_liftBVars]
+    exact List.Subset.refl _
+  | abs _ _ _ b ih =>
+    intro k h
+    simp only [bvarUsed] at h
+    simp only [betaReduceK, getOps]
+    exact ih (k + 1) h
+  | quant _ _ _ _ tr b ihtr ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_true] at h
+    simp only [betaReduceK, getOps]
+    rcases h with h | h
+    · exact List.Subset.trans (ihtr (k + 1) h) (List.subset_append_left _ _)
+    · exact List.Subset.trans (ihb (k + 1) h) (List.subset_append_right _ _)
+  | app _ a b iha ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_true] at h
+    simp only [betaReduceK, getOps]
+    rcases h with h | h
+    · exact List.Subset.trans (iha k h) (List.subset_append_left _ _)
+    · exact List.Subset.trans (ihb k h) (List.subset_append_right _ _)
+  | ite _ p t f ihp iht ihf =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_true] at h
+    simp only [betaReduceK, getOps]
+    rcases h with (h | h) | h
+    · exact List.Subset.trans (List.Subset.trans (ihp k h) (List.subset_append_left _ _)) (List.subset_append_left _ _)
+    · exact List.Subset.trans (List.Subset.trans (iht k h) (List.subset_append_right _ _)) (List.subset_append_left _ _)
+    · exact List.Subset.trans (ihf k h) (List.subset_append_right _ _)
+  | eq _ a b iha ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_true] at h
+    simp only [betaReduceK, getOps]
+    rcases h with h | h
+    · exact List.Subset.trans (iha k h) (List.subset_append_left _ _)
+    · exact List.Subset.trans (ihb k h) (List.subset_append_right _ _)
+
+/-- Conversely, if the redex body does NOT use its bound variable (a *constant*
+lambda), `betaReduceK` erases the argument entirely: the result has exactly the
+body's operator occurrences and none of the argument's. -/
+private theorem getOps_betaReduceK_of_not_bvarUsed {T : LExprParamsT}
+    (s : T.base.Metadata → LExpr T) :
+    ∀ (e : LExpr T) (k : Nat), bvarUsed k e = false →
+      getOps (betaReduceK k s e) = getOps e := by
+  intro e
+  induction e with
+  | const | op | fvar => intro k _; rfl
+  | bvar m i =>
+    intro k h
+    simp only [bvarUsed] at h
+    simp [betaReduceK, getOps, h]
+    split <;> rfl
+  | abs _ _ _ b ih =>
+    intro k h
+    simp only [bvarUsed] at h
+    simp only [betaReduceK, getOps]
+    exact ih (k + 1) h
+  | quant _ _ _ _ tr b ihtr ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_false_iff] at h
+    simp only [betaReduceK, getOps]
+    rw [ihtr (k + 1) h.1, ihb (k + 1) h.2]
+  | app _ a b iha ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_false_iff] at h
+    simp only [betaReduceK, getOps]
+    rw [iha k h.1, ihb k h.2]
+  | ite _ p t f ihp iht ihf =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_false_iff] at h
+    simp only [betaReduceK, getOps]
+    rw [ihp k h.1.1, iht k h.1.2, ihf k h.2]
+  | eq _ a b iha ihb =>
+    intro k h
+    simp only [bvarUsed, Bool.or_eq_false_iff] at h
+    simp only [betaReduceK, getOps]
+    rw [iha k h.1, ihb k h.2]
+
+/-- `betaReduce` never drops the redex body's operator occurrences. -/
+theorem getOps_body_subset_betaReduce {T : LExprParamsT} (arg body : LExpr T) :
+    getOps body ⊆ getOps (betaReduce arg body) := by
+  unfold betaReduce betaReduceWith
+  exact getOps_subset_betaReduceK (fun _ => arg) body 0
+
+/-- If the redex uses its bound variable (an *alias* redex, not a constant
+lambda), `betaReduce` preserves the argument's operator occurrences — so a
+recursive call inside `arg` survives the reduction. -/
+theorem getOps_arg_subset_betaReduce {T : LExprParamsT} (arg body : LExpr T)
+    (h : bvarUsed 0 body = true) :
+    getOps arg ⊆ getOps (betaReduce arg body) := by
+  unfold betaReduce betaReduceWith
+  exact getOps_arg_subset_betaReduceK arg body 0 h
+
+/-- A CONSTANT-lambda redex erases its argument: `betaReduce` drops every operator
+occurrence of `arg`. This is why the erasing `betaReduceRedexes` is unsound for
+call-extraction purposes (a call hidden in `arg` disappears) and why
+call-preserving consumers use `betaReduceRedexesPreservingArgs`. -/
+theorem getOps_betaReduce_of_not_bvarUsed {T : LExprParamsT} (arg body : LExpr T)
+    (h : bvarUsed 0 body = false) :
+    getOps (betaReduce arg body) = getOps body := by
+  unfold betaReduce betaReduceWith
+  exact getOps_betaReduceK_of_not_bvarUsed (fun _ => arg) body 0 h
+
+/-- Whole-function call-preservation for the *non-erasing* reducer: every
+operator occurrence (call head, `.op`) of `e` survives `betaReduceRedexesFuel
+true`. It holds at *every* fuel (even `0`), so consumers do not depend on the
+reducer reaching a normal form. The `app`/reduce case reduces exactly the
+`bvarUsed 0 body = true` (alias) redexes, so `getOps_arg_subset_betaReduce`
+applies and the argument's calls survive. The analogous statement for the
+*erasing* reducer (`betaReduceRedexesFuel false`) is provably FALSE: a
+constant-lambda redex erases its argument's calls
+(`getOps_betaReduce_of_not_bvarUsed`). -/
+theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT} (fuel : Nat) :
+    ∀ e : LExpr T, getOps e ⊆ getOps (betaReduceRedexesFuel true fuel e) := by
+  induction fuel with
+  | zero => intro e; simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+  | succ fuel ih =>
+    intro e
+    cases e with
+    | const m c => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+    | op m o ty => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+    | bvar m i => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+    | fvar m x ty => simp only [betaReduceRedexesFuel]; exact List.Subset.refl _
+    | abs m n t body =>
+      simp only [betaReduceRedexesFuel, getOps]
+      exact ih body
+    | quant m qk n t tr body =>
+      simp only [betaReduceRedexesFuel, getOps]
+      exact List.append_subset_append (ih tr) (ih body)
+    | ite m c t f =>
+      simp only [betaReduceRedexesFuel, getOps]
+      exact List.append_subset_append
+        (List.append_subset_append (ih c) (ih t)) (ih f)
+    | eq m a b =>
+      simp only [betaReduceRedexesFuel, getOps]
+      exact List.append_subset_append (ih a) (ih b)
+    | app m fn arg =>
+      simp only [betaReduceRedexesFuel]
+      split
+      · rename_i mAbs n t body hfn
+        have hfnbody : getOps fn ⊆ getOps body := by
+          have hf := ih fn; rw [hfn] at hf; simpa only [getOps] using hf
+        split
+        · simp only [getOps]
+          exact List.append_subset_append hfnbody (ih arg)
+        · rename_i hcond
+          have hbv : bvarUsed 0 body = true := by
+            cases hb : bvarUsed 0 body with
+            | true => rfl
+            | false => rw [hb] at hcond; simp at hcond
+          simp only [getOps]
+          refine List.Subset.trans ?_
+            (ih (betaReduce (betaReduceRedexesFuel true fuel arg) body))
+          intro x hx
+          rcases List.mem_append.mp hx with h | h
+          · exact List.Subset.trans hfnbody
+              (getOps_body_subset_betaReduce (betaReduceRedexesFuel true fuel arg) body) h
+          · exact List.Subset.trans (ih arg)
+              (getOps_arg_subset_betaReduce (betaReduceRedexesFuel true fuel arg) body hbv) h
+      · simp only [getOps]
+        exact List.append_subset_append (ih fn) (ih arg)
+
+/-- Whole-function call-preservation for `betaReduceRedexesPreservingArgs`: it
+never drops an operator occurrence (call head) of its input, so every call in
+the original term is still present in the reduced term. -/
+theorem getOps_subset_betaReduceRedexesPreservingArgs {T : LExprParamsT}
+    (e : LExpr T) :
+    getOps e ⊆ getOps (betaReduceRedexesPreservingArgs e) := by
+  unfold betaReduceRedexesPreservingArgs
+  exact getOps_subset_betaReduceRedexesFuel (sizeOf e * (maxBvarMultiplicity e + 1)) e
+
+end LExpr
+
+end
+
 
 end Lambda

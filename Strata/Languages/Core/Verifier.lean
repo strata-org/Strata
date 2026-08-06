@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
@@ -29,6 +30,15 @@ import Strata.Languages.Core.ProgramType
 import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
+
+/-- The obligation's managed names — every define-fun/declare-fun name from its
+    variable definitions and declarations — as a hash set for O(1) membership.
+    Defined at the root namespace so it is visible unqualified from both the
+    `Strata.SMT.Encoder` and `Core` namespaces. -/
+private def managedNameSet (varDefinitions : List Core.VarDefinition)
+    (varDeclarations : List Core.VarDeclaration) : Std.HashSet String :=
+  varDeclarations.foldl (fun s d => s.insert d.name)
+    (varDefinitions.foldl (fun s d => s.insert d.name) ∅)
 
 ---------------------------------------------------------------------
 
@@ -328,9 +338,7 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
   let preDeclaredNames := ctx.preDeclaredNames
   let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
-  let varDefNames := varDefinitions.map (·.name)
-  let varDeclNames := varDeclarations.map (·.name)
-  let managedNames := varDefNames ++ varDeclNames
+  let managedNames := managedNameSet varDefinitions varDeclarations
   -- Filter out managed variables from UF declarations (they will be emitted separately)
   let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
     else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
@@ -390,9 +398,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
   phase "writeSorts" do
     let _ ← ctx.sorts.toArray.mapM (fun s => Solver.declareSort s.name s.arity)
     ctx.emitDatatypes
-  let varDefNames := varDefinitions.map (·.name)
-  let varDeclNames := varDeclarations.map (·.name)
-  let managedNames := varDefNames ++ varDeclNames
+  let managedNames := managedNameSet varDefinitions varDeclarations
 
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
   let preDeclaredNames := ctx.preDeclaredNames
@@ -1523,7 +1529,7 @@ def corePipelinePhases (procs : Option (List String) := none)
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
-  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, commonSubexprElimPhase]
+  transformPipelinePhases procs ++ [typeCheckPhase, symbolicEvalPhase, betaReducePipelinePhase, commonSubexprElimPhase]
 
 /-- The abstracted phases derived from the Core pipeline phases. -/
 def coreAbstractedPhases (procs : Option (List String) := none)
@@ -1867,7 +1873,7 @@ def verifySingleEnv (oblProgram : Program)
         -- Filter out managed variables (they are emitted as define-fun/declare-fun, not via UF declarations)
         let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
           let vars := ProofObligation.getVars obligation
-          let managedNames := (varDefs.map (·.name)) ++ (varDecls.map (·.name))
+          let managedNames := managedNameSet varDefs varDecls
           vars.filter fun (v, _) => !managedNames.contains v.name
         let typedVarsInObligation ← varsInObligation.mapM
           (fun (v,ty) => do
