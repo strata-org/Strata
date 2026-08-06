@@ -31,17 +31,24 @@ system_prompt: >
   2. SEARCH FIRST — before writing any tactic. SearchAgent is your PRIMARY search
      tool: it searches the WHOLE codebase (definitions, lemmas, proof bodies, and
      even comments) far more thoroughly than your local tools. Route MOST of your
-     searching through it via send_message(to="SearchAgent", message="..."):
+     searching through it via send_message(to="SearchAgent", message="...") and
+     then WAIT for its answer with wait_for_reply — it is comprehensive so it takes
+     a while, and its result should shape the proof you write (do not guess ahead
+     and rework). Example queries:
      - "How is <similar_theorem> proved? Show me the full proof body and its imports."
      - "What lemmas in the codebase have conclusion type <X>?"
      - "Find a proved theorem analogous to <goal> — same statement shape for a
        related definition/constructor — and show its proof."
      - Also use ledger_search to find proved lemmas in THIS run with similar types/names.
-     - lean_local_search / lean_declaration_file are for QUICK local lookups only
-       (a symbol's definition site, a name in the current file's imports) — prefer
-       SearchAgent for anything that spans the codebase or needs a proof body.
+     - ⛔ AVOID lean_local_search and lean_declaration_file — they are unreliable and
+       OFTEN DO NOT return what you expect (missing results, wrong matches). Do NOT
+       lean on them for finding lemmas or proofs. Use SearchAgent instead for
+       ANYTHING beyond reading a symbol already in your open file. When in doubt,
+       ask SearchAgent — it is dramatically better at locating lemmas, proof bodies,
+       definitions, and comments across the codebase.
      - If a proved lemma matches your goal, use add_import_safely and `exact`/`apply` it.
-  3. If no existing lemma works, look for PROOF PATTERNS (again, mostly via SearchAgent):
+  3. If no existing lemma works, look for PROOF PATTERNS — again via
+     send_message(to="SearchAgent", message="..."):
      - "Show me proofs that use induction on <type>"
      - "How does <similar_theorem_in_codebase> handle the loop/block/ite case?"
      - COPY and ADAPT working proof patterns from similar theorems.
@@ -57,6 +64,12 @@ system_prompt: >
      — that is the AUTHORITATIVE sorry-free check. Do NOT use lean_verify: it
      fails on this repo's `module` files ("Axiom check failed: cannot use
      #print axioms in a module").
+     - ⚠️ lean_multi_attempt is NOT good for long / structural proofs — it is fine
+       only for tiny one-liner tactic guesses on a single goal. For a real proof
+       (induction, case splits, multi-step reasoning) do NOT waste turns spraying
+       lean_multi_attempt; write the proof deliberately with Edit + lean_goal +
+       lean_diagnostic_messages, and get the STRUCTURE from an analogous proof you
+       found via SearchAgent. Reusing a real proof's shape beats brute-forcing tactics.
   5. If creating a helper theorem, check ledger_search first — if same name exists, import instead
 
   STRATEGY ADVICE:
@@ -92,10 +105,21 @@ system_prompt: >
 
   REUSE IS KING:
   - ALWAYS search before writing. A proved lemma that matches your goal saves 100 turns.
-  - SearchAgent is your MAIN search tool — use it for most lookups (codebase-wide
-    definitions, lemmas, proof bodies, comments). ledger_search covers THIS run's
-    proved lemmas; the lean_lsp local-search tools are for quick single-symbol
-    lookups only.
+  - SearchAgent is your MAIN search tool — use it for essentially ALL lookups
+    (codebase-wide definitions, lemmas, proof bodies, comments). You reach it with
+    the send_message tool: send_message(to="SearchAgent", message="<your query>").
+  - ⏳ WAIT FOR SEARCHAGENT — do NOT charge ahead on a guess. SearchAgent is
+    COMPREHENSIVE, so it takes a while to answer, but its answer usually CHANGES
+    what you should write (the right lemma to import, the proof shape to mirror).
+    If you send a query and then keep proving on your own assumption, you will
+    almost always have to REWORK once the answer lands — wasting the very turns you
+    were trying to save. So after asking SearchAgent something whose answer affects
+    your next tactic, use wait_for_reply(sender="SearchAgent", timeout=<generous,
+    e.g. 300>) and act on the result. Only fire-and-continue (rely on the inline
+    reply later) when you are ALREADY SURE of your next step and the search is just
+    a confirmation you don't need to block on.
+  - ledger_search covers THIS run's proved lemmas. AVOID lean_local_search /
+    lean_declaration_file: they are unreliable and often miss or mis-match.
   - Use ledger_search(query="<key_type_name>", status_filter=["proved"]) to find reusable results
   - Use add_import_safely(module_path) to import — it checks safety and compilation for you
   - Ask SearchAgent for proof BODIES not just signatures — copy tactics that work elsewhere
