@@ -172,6 +172,23 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
 def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
   ∀ v, v ∈ vs → σ v = none
 
+/-- Every `Q`-kind slot is undefined in `σ`.  Predicate-keyed generalisation of
+`isNotDefined`: `isNotDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
+@[expose] def SemanticStore.varsUndefined {P : PureExpr}
+    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
+  ∀ y, Q y → σ y = none
+
+/-- Every `Q`-kind slot is defined in `σ`.  Predicate-keyed generalisation of
+`isDefined`: `isDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
+@[expose] def SemanticStore.varsDefined {P : PureExpr}
+    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
+  ∀ y, Q y → (σ y).isSome = true
+
+/-- Point update: define `ident := b`, leaving every other variable untouched. -/
+@[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
+    (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr) : SemanticStore P :=
+  fun y => if y = ident then some b else σ y
+
 /-- Asymmetric agreement between two stores: wherever `σ_struct` is defined (per
 `isDefined`), `σ_cfg` assigns the same value at that variable. -/
 @[expose] def StoreAgreement {P : PureExpr}

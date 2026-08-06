@@ -117,8 +117,7 @@ def callElimCmd (s : Statement)
           | none => throw (Strata.Message.fromFormat f!"failed to find type for {Std.format param}")
         let oldTripsRaw := (genOldIdents.zip oldTys).zip oldVars
         let oldGVars := oldParams.map (fun p => CoreIdent.mkOld p.name)
-        let oldTrips := oldTripsRaw.zip oldGVars |>.map fun (((fresh, ty), _orig), oldG) =>
-          ((fresh, ty), oldG)
+        let oldTrips := (genOldIdents.zip oldTys).zip oldGVars
 
         -- initialize/declare the newly generated variables
         let argInit := createInits argTrips md

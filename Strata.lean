@@ -39,6 +39,7 @@ import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.NondetElim
+import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
 
 /- Strata Languages — additional -/
@@ -85,6 +86,7 @@ import Strata.Cli.VerifyOptions
 
 -- noimport:
 import Strata.DL.Imperative.CFGSemantics
+import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
@@ -101,6 +103,10 @@ import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Util.HList
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
+import Strata.DL.Lambda.DatatypeWF
+import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.DatatypeTypeSpec
+import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Dyn.DDMTransform.Parse
 import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
