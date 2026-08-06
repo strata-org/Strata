@@ -170,6 +170,13 @@ structure VerifyOptions where
   /-- How many checks to run per VC and how detailed the
       messages should be. -/
   checkLevel : CheckLevel
+  /-- Skip the common-subexpression-elimination phase that runs on proof
+      obligations after symbolic evaluation. CSE is model-preserving (it only
+      introduces definitional equalities), so flipping this option cannot make
+      verification unsound. It does change the shape of the SMT encoding,
+      so individual obligations may still flip between conclusive and
+      `unknown` (or hit different solver timeouts). -/
+  disableCSE : Bool := false
   /-- Overflow check configuration: which arithmetic overflow checks to enable. -/
   overflowChecks : OverflowChecks := {}
   /-- Maximum number of continuing symbolic-evaluation paths allowed
@@ -237,6 +244,7 @@ def VerifyOptions.default : VerifyOptions := {
   pathCap := .none
   parallelWorkers := 1
   keepAllFilesPrefix := none
+  disableCSE := false
 }
 
 instance : Inhabited VerifyOptions where

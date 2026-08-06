@@ -160,7 +160,7 @@ def monomorphizeProcedures (p : Program) : CoreTransformM (Bool × Program) := d
     opaque type is universal generalization (∀-introduction), which preserves
     the proof obligation and introduces no spurious models. -/
 def monomorphizeProceduresPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "MonomorphizeProcedures" fun prog =>
+  modelPreservingPipelinePhase "monomorphizeProcedures" fun prog =>
     monomorphizeProcedures prog
 
 end Core

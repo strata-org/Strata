@@ -416,7 +416,7 @@ def liftInternalFuncDecls (p : Program) : CoreTransformM (Bool × Program) := do
     only how functions are represented (local → closed top-level), not the
     program's meaning. -/
 def liftInternalFuncDeclsPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "LiftInternalFuncDecls" fun prog =>
+  modelPreservingPipelinePhase "liftInternalFuncDecls" fun prog =>
     liftInternalFuncDecls prog
 
 end Core

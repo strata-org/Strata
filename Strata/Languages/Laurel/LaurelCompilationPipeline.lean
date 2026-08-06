@@ -430,6 +430,13 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
   let (core, diags, _, _) ← translateWithLaurel options program
   return (core, diags)
 
+/-- The effective `Core.VerifyOptions` that `runVerify` actually runs with
+    (the caller's options plus Laurel's fixed adjustments). -/
+private def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+  { options.verifyOptions with
+    removeIrrelevantAxioms := .Precise
+    keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
+
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase
     failure as a **structured** `Message` value (via `.toBaseIO`) rather
     than throwing it, so callers can render it file-relative.
@@ -439,14 +446,12 @@ def translate (options : LaurelTranslateOptions) (program : Program) : IO Transl
     `Except` here is the single point where that structure is preserved, so the
     throwing (`verifyToVcResults`) and capturing
     (`verifyToMessagesCapturing`) entry points can't drift apart: both
-    share this verify setup (the `removeIrrelevantAxioms := .Precise` option and
+    share this verify setup (the `effectiveCoreVerifyOptions` adjustments and
     the `vcDirectory` temp-dir handling) and only differ in how they treat the
     `.error` case. -/
 private def runVerify (coreProgram : Core.Program) (options : LaurelVerifyOptions)
     : IO (Except Message VCResults) := do
-  let verifyOptions := { options.verifyOptions with
-    removeIrrelevantAxioms := .Precise
-    keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
+  let verifyOptions := effectiveCoreVerifyOptions options
   let runner tempDir : IO (Except Message VCResults) :=
     (_root_.Core.verify coreProgram tempDir (proceduresToVerify := none) verifyOptions).toBaseIO
   match verifyOptions.vcDirectory with
@@ -515,7 +520,7 @@ def verifyToMergedResults (program : Program)
 def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program)
     (options : LaurelVerifyOptions := default) : IO (Array Diagnostic) := do
   let results ← verifyToMergedResults program options
-  let phases := Core.coreAbstractedPhases
+  let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
   let translationDiags := results.snd.map (fun dm => dm.toDiagnostic files)
   let vcDiags := match results.fst with
   | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => Core.VCResult.toDiagnostic files vcr phases)
@@ -525,7 +530,7 @@ def verifyToDiagnostics (files : Map Strata.Uri Lean.FileMap) (program : Program
 def verifyToMessages (program : Program) (options : LaurelVerifyOptions := default)
     : IO (Array Message) := do
   let results ← verifyToMergedResults program options
-  let phases := Core.coreAbstractedPhases
+  let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
   let vcDiags := match results.fst with
   | none => []
   | some vcResults => vcResults.toList.filterMap (fun (vcr : VCResult) => toMessage vcr phases)
@@ -553,7 +558,7 @@ def verifyToMessagesCapturing (program : Program)
     match ← runVerify coreProgram options with
     | .error dm => return (translateDiags ++ [dm]).toArray
     | .ok results =>
-      let phases := Core.coreAbstractedPhases
+      let phases := Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
       let vcDiags := results.mergeByAssertion.toList.filterMap (toMessage · phases)
       return (translateDiags ++ vcDiags).toArray
 

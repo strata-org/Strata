@@ -76,7 +76,7 @@ end IrrelevantAxioms
     If the user of this pass removes further axioms because e.g., it is in the
     'aggressive' mode, it will have to validate the model by itself. -/
 def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
-  modelPreservingPipelinePhase "RemoveIrrelevantAxioms" fun prog => do
+  modelPreservingPipelinePhase "removeIrrelevantAxioms" fun prog => do
     let pruned ← IrrelevantAxioms.run prog functions
     return (true, pruned)
 

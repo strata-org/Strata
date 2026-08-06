@@ -202,7 +202,7 @@ end CallElim
     contract, which is an over-approximation. -/
 def callElimPipelinePhase : PipelinePhase where
   transform := CallElim.callElim'
-  phase.name := "CallElim"
+  phase.name := "callElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)

@@ -331,7 +331,7 @@ def procedureInliningPipelinePhase
     (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
-  modelPreservingPipelinePhase "ProcedureInlining" fun prog =>
+  modelPreservingPipelinePhase "inlineProcedures" fun prog =>
     runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
 
 end Core

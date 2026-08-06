@@ -147,7 +147,7 @@ def loopElim (p : Program) : Transform.CoreTransformM (Bool × Program) :=
     encoding. -/
 def loopElimPipelinePhase : PipelinePhase where
   transform := loopElim
-  phase.name := "LoopElim"
+  phase.name := "loopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then
       .modelToValidate (fun _ => /- TODO -/ false)

@@ -484,7 +484,7 @@ end PrecondElim
     partial-function preconditions. Model-preserving because it only adds
     new assertions and procedures without abstracting existing ones. -/
 def precondElimPipelinePhase : PipelinePhase :=
-  modelPreservingPipelinePhase "PrecondElim" fun prog => do
+  modelPreservingPipelinePhase "precondElim" fun prog => do
     PrecondElim.precondElim prog
 
 end Core
