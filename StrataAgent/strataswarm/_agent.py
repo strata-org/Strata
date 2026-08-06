@@ -54,7 +54,7 @@ def _env_float(name: str, default: float) -> float:
 # lowering this makes agents rotate their context much sooner, which is one of the
 # knobs used to drive BigSur end-to-end (see tests/ Layer 3): frequent rotation
 # churns proofs and provokes the give-ups that escalate to the repair agent.
-CONTEXT_COMPACT_THRESHOLD = _env_float("STRATA_CONTEXT_COMPACT_PCT", 70.0)
+CONTEXT_COMPACT_THRESHOLD = _env_float("STRATA_CONTEXT_COMPACT_PCT", 80.0)
 
 
 def parse_checkpoint_state(checkpoint_md: str) -> dict | None:
