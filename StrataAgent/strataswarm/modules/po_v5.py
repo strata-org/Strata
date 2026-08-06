@@ -281,7 +281,10 @@ _GUIDE_DECISION_BLOCK = ["send_message", "wait_for_reply"]
 _GUIDE_DECISION_NO_MSG = (
     "⚠️ ANSWER INLINE ONLY. Your reply text below is delivered to the writer "
     "automatically — do NOT call send_message or wait_for_reply in this response "
-    "(they are disabled for this turn). Just write your answer.\n\n"
+    "(they are disabled for this turn). You MAY still READ your mailbox first "
+    "(get_messages_by_sender / get_thread / list_recent_messages / "
+    "list_all_unread_mail) if you need to recall what you and the writer agreed — "
+    "reading is fine; only sending is disabled. Then write your answer.\n\n"
 )
 
 
@@ -1444,7 +1447,18 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"stuck AND runway is GETTING FULL/FULL. Never split a mutually-recursive "
                 f"goal into separate files (keep it in one `mutual` block).\n"
                 f"- fresh_start: Current approach exhausted, start over.\n"
-                f"- give_up: Statement is false."
+                f"- give_up: The goal AS STATED cannot be proved here — it is false, OR "
+                f"it needs a SIGNATURE CHANGE you are not allowed to make (a hypothesis "
+                f"threaded from an ancestor, a strengthened contract). BEFORE you keep "
+                f"choosing `continue` on a stalled lemma, CHECK YOUR MAILBOX from the "
+                f"writer (get_messages_by_sender / get_thread / list_recent_messages): if "
+                f"you and the writer already AGREED that closing this needs the "
+                f"theorem's/helper's signature strengthened (added hypotheses, a fact "
+                f"the current statement lacks), that is NOT a `continue` situation — the "
+                f"writer proves it AS STATED and cannot change signatures. Choose "
+                f"`give_up` and put the required signature change in REASON. That routes "
+                f"it to the repair path (BigSur) which CAN rewrite contracts. Do NOT "
+                f"loop `continue` on an obligation you both know is unprovable as stated.\n"
                 f"{stuck_hint}"
             ),
             post_prompt=(
@@ -1667,7 +1681,15 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
                 f"left — NOT that it is exhausted. Prefer continue while runway is HEALTHY.)\n"
                 f"- continue: Keep trying.\n"
                 f"- fresh_start: Current approach exhausted, try new strategy.\n"
-                f"- give_up: Cannot be proved."
+                f"- give_up: Cannot be proved AS STATED — either false, OR it needs a "
+                f"SIGNATURE CHANGE the writer may not make (a hypothesis from an ancestor, "
+                f"a strengthened contract). You are at MAX DEPTH — there is no decompose "
+                f"escape here, so a contract problem MUST be given up (it routes to the "
+                f"BigSur repair path, which can rewrite the signature). Before looping "
+                f"`continue` on a stalled obligation, CHECK YOUR MAILBOX from the writer "
+                f"(get_messages_by_sender / get_thread): if you both agreed it needs added "
+                f"hypotheses / a strengthened signature, choose `give_up` and put the "
+                f"required change in REASON — do NOT keep looping `continue`."
             ),
             post_prompt=f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)",
             post_prompt_parser=_parse_turns_deep,

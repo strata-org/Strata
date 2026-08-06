@@ -211,7 +211,22 @@ system_prompt: >
     of room left — it is the opposite of a reason to decompose. Never split a
     mutually-recursive goal into separate files (see rule 3).
   - fresh_start: Current approach is fundamentally wrong — need a completely new strategy
-  - give_up: Statement is mathematically false or provably unreachable from available context
+  - give_up: The goal AS STATED cannot be proved HERE. Two cases: (a) it is
+    mathematically false / unreachable from available context; OR (b) closing it
+    requires a SIGNATURE CHANGE that the writer is forbidden to make — a hypothesis
+    that must be threaded down from an ancestor, or a strengthened contract on this
+    lemma or a helper. Case (b) is easy to miss and leads to endless `continue`
+    looping, so: BEFORE choosing `continue` on a lemma that has stalled (several
+    chunks, no sorry reduction), CHECK YOUR MAILBOX from the writer
+    (get_messages_by_sender / get_thread / list_recent_messages). If you and the
+    writer already AGREED that this obligation needs added hypotheses / a
+    strengthened signature to close — and you keep confirming it can't be closed
+    as stated — do NOT loop `continue`. Choose `give_up` and state the exact
+    required signature change in REASON. That escalates to the repair path (BigSur),
+    which CAN rewrite contracts; `continue` cannot, because the writer must prove
+    the statement exactly as given. A repeatedly-relocated `sorry` (moving the same
+    obligation between a child and its parent without ever eliminating it) is the
+    classic signature of case (b) — give_up, don't keep looping.
 
   READING THE RUNWAY SIGNAL: the prompt reports "Writer runway" as context USED
   (e.g. "5% of context USED, 95% free"). LOW usage = lots of runway = keep going.
