@@ -4,6 +4,8 @@ defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
+moreLeancArgs = ["-fbracket-depth=4096"]
+
 [leanOptions]
 warningAsError = true
 
