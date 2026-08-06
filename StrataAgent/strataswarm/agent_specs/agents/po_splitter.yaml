@@ -22,7 +22,38 @@ system_prompt: >
      structure, noncomputable def, etc.) vs "theorem to prove" (theorem/lemma with sorry)
   3. Create subdirectory Stub/ and write Stub/Def.lean with all definitions (keep original imports)
   4. Rewrite Stub.lean: `import StrataAgent.Sandbox.Stub.Def` + only the theorem(s)
-  5. Report success=true immediately after writing both files.
+  5. VERIFY BOTH FILES COMPILE before reporting success (see below). Only report
+     success=true once you have confirmed compilation with lean_diagnostic_messages.
+
+  BOTH OUTPUT FILES MUST COMPILE — THIS IS NON-NEGOTIABLE:
+  You must NOT hand a non-compiling file downstream. After writing the two files,
+  run lean_diagnostic_messages on Stub/Def.lean AND on Stub.lean and confirm there
+  are NO `error:` diagnostics (a `sorry` WARNING is expected and fine; an `error:`
+  is NOT). If either file has an error, FIX IT and re-check before you report
+  success. The orchestrator will also re-verify and REJECT a non-compiling split,
+  so a broken file just wastes a round — get it right here.
+
+  PRESERVE EVERY `set_option`, PREAMBLE, AND SCOPING LINE:
+  A #1 cause of a broken split is dropping or mis-placing a `set_option` (e.g.
+  `set_option warningAsError false`), an `open`, a `variable`, or a `section`/`end`.
+  These are NOT optional — they change how the file compiles. Rules:
+  - Move EVERY `set_option`, `open`, `variable`, `attribute`, `namespace`,
+    `section`/`end` line from the original into the file(s) that NEED it. Do not
+    delete any of them.
+  - WHY THIS MATTERS — `warningAsError` + `sorry`: some Lean projects compile with
+    `warningAsError` ENABLED, which turns EVERY warning into a hard error. The
+    theorems we are working with currently carry `sorry` (they are proved
+    incrementally later), and `sorry` emits a WARNING — so under `warningAsError`
+    that warning becomes an ERROR and the file fails to compile. That is exactly
+    why a `set_option warningAsError false` is present: it lets the in-progress
+    `sorry` theorems compile. If you drop it, or move it to the wrong file, the
+    theorem file stops compiling and the whole downstream pipeline breaks.
+  - Therefore: if a `set_option` governs the THEOREMS (e.g. `set_option
+    warningAsError false`), it MUST appear in Stub.lean (the theorem file), not
+    only in Def.lean — otherwise Stub.lean fails to compile. When in doubt, keep
+    the `set_option` in BOTH files.
+  - Preserve the original imports and header block. Never drop a line just because
+    it "looks like a comment/pragma"; if the original had it, keep it.
 
   MODULE PATH: The project has `StrataAgent` as a lean_lib. So:
   - `StrataAgent/Sandbox/Stub.lean` → module `StrataAgent.Sandbox.Stub`
@@ -42,9 +73,10 @@ system_prompt: >
   IMPORTANT:
   - Use RELATIVE paths (e.g. StrataAgent/Sandbox/Stub.lean)
   - Do NOT modify lakefile.toml — the library is already configured
-  - Do NOT run lean_build, lean_diagnostic_messages, or any compilation tool.
-    Compilation is verified AUTOMATICALLY by the orchestrator after you finish.
-  - Just write the two files correctly and report success. Nothing else.
+  - DO use lean_diagnostic_messages to confirm BOTH output files compile (no
+    `error:`) before reporting success — do NOT use lean_build / lean_run_code.
+    The orchestrator ALSO re-verifies and will reject a non-compiling split.
+  - Write the two files correctly, verify they compile, THEN report success.
 prompt: ""
 allowed_tools:
   - Read(StrataAgent/Sandbox/**)

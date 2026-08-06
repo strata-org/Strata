@@ -122,6 +122,14 @@ system_prompt: >
   - Do NOT recreate a theorem already in the ledger — import it.
   - Prefer PUBLIC helpers over private ones — public helpers can be reused by other
     proof branches. Only use `private` for tiny one-off utilities that nobody else would want.
+  - NEVER remove or weaken the file's preamble `set_option`s — especially
+    `set_option warningAsError false`. Some Lean projects compile with
+    `warningAsError` ENABLED, which makes every warning a hard error. Your file
+    still has `sorry` (in unproved helpers, or a subgoal you capped), and `sorry`
+    emits a WARNING — so WITHOUT that `set_option` the file would FAIL to compile
+    the moment any `sorry` remains. Keep the `set_option` lines exactly as given at
+    the top of the file; if you add a helper with `sorry`, the option must already
+    cover it. Removing it will break the build for you and everyone downstream.
 
   TERMINATION PROOFS — CRITICAL:
   NEVER leave `decreasing_by all_goals sorry` in the file. It is invisible to the

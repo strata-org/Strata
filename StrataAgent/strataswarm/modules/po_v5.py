@@ -876,7 +876,23 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
         _sweep_decomposed_old(cwd)
 
         if not (cwd / workspace_rel / "Stub" / "Def.lean").exists():
-            await run_splitter(agent, workspace_rel, stub_rel)
+            split_outcome = await run_splitter(agent, workspace_rel, stub_rel)
+            # HARD GATE: a split that does not verify (e.g. a dropped `set_option
+            # warningAsError false` so Stub.lean no longer compiles) must NOT flow
+            # downstream — every later phase assumes a compiling Stub, and we are
+            # about to snapshot Stub.lean into the pristine Stub.clean.lean below.
+            # Refuse to proceed on a broken split rather than corrupt the reference.
+            if split_outcome is not None and not split_outcome.success:
+                err = getattr(split_outcome, "last_error", "") or "split did not verify"
+                await agent._emit("message",
+                    f"[PO5] ⛔ INIT split FAILED to produce compiling files ({err}). "
+                    f"Refusing to proceed — a non-compiling Stub would poison every "
+                    f"downstream phase and Stub.clean.lean.")
+                state.stage = "failed"
+                _save_state(cwd, state)
+                return AgentResult(name=agent.spec.name, status=AgentStatus.FAILED,
+                                   output={"phase": "failed",
+                                           "error": f"splitter produced non-compiling files: {err}"})
 
         stub_clean = cwd / workspace_rel / "Stub.clean.lean"
         if not stub_clean.exists():
