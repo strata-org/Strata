@@ -217,6 +217,40 @@ def search_agent_hooks() -> dict:
     return make_hook(enforce)
 
 
+# ─── ProofResearcher: read anywhere, WRITE only into the reports dir ──────────
+
+_RESEARCH_WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def research_workspace_hooks(reports_dir: str) -> dict:
+    """Asymmetric scope for the ProofResearcher.
+
+    The researcher READS freely across the whole codebase (that is the point — it
+    hunts proof patterns and counterexamples wherever they live). But it must NOT
+    modify any proof file: its ONLY writable surface is the reports directory it
+    dumps its findings into. So we deny Write/Edit/MultiEdit whose path is outside
+    `reports_dir`, and leave every read/grep/glob untouched.
+
+    Args:
+        reports_dir: relative path (under the Sandbox) of the per-lemma reports
+                     folder, e.g. "StrataAgent/Sandbox/decomposed/lemma_x/reports".
+    """
+    allowed_write = [f"{reports_dir}/**", reports_dir]
+
+    async def enforce(tool_name, tool_input, rel_paths, cwd):
+        if tool_name not in _RESEARCH_WRITE_TOOLS:
+            return None  # reads / greps / globs / lean eval — unrestricted
+        for path in rel_paths:
+            if not matches_any(path, allowed_write):
+                return deny(path,
+                    f"'{path}' is outside your reports directory. You are a "
+                    f"RESEARCHER — you do NOT edit proof files. Write your findings "
+                    f"only under: {reports_dir}/")
+        return None
+
+    return make_hook(enforce)
+
+
 # ─── Decomposer: redirect Write/Edit to write_decomposed_lemma ───────────────
 
 def decomposer_hooks() -> dict:

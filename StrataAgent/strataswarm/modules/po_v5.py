@@ -89,6 +89,14 @@ BIGSUR_MAX_INVOCATIONS = 100
 # real repair reads many files and edits several — but bounded so a wedged pass is
 # eventually reaped and the decision loop takes over.
 BIGSUR_INITIAL_TURNS = 200
+# ProofResearcher — a deep-research pass the guide can request (the `research`
+# decision) when a lemma is genuinely stuck. It reads the whole codebase for
+# primitives/patterns/counterexamples and writes a findings report the writer and
+# guide then read. RESEARCHER_TURNS bounds its initial free-form dig;
+# RESEARCHER_DECISION_ROUNDS bounds the "have you finished the report?" loop that
+# keeps it working until it attests done (like BigSur's decision loop).
+RESEARCHER_TURNS = 120
+RESEARCHER_DECISION_ROUNDS = 4
 
 
 def _env_float(name: str, default: float) -> float:
@@ -678,6 +686,117 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
     await _cleanup_all_agents(agent)
     await agent._emit("message",
         f"[PO5] BigSur repair complete; resuming proof search against corrected contracts.")
+
+
+async def _run_researcher(agent, state: PO5State, ledger: LemmaLedger,
+                          entry: LemmaEntry, cwd: Path, stub_rel: str,
+                          reason: str) -> str | None:
+    """Spawn a ProofResearcher for a stuck lemma. It reads the whole codebase for
+    primitives/patterns/counterexamples and writes ONE findings report into
+    <workspace>/reports/, which the writer + guide then read. It does NOT prove and
+    can Write/Edit ONLY inside that reports dir (asymmetric hook). Returns the
+    workspace-relative report path, or None if no report was produced.
+
+    Runs like BigSur: an initial free-form dig (RESEARCHER_TURNS), then a decision
+    loop that keeps it working until it attests the report is COMPLETE (done) or we
+    exhaust RESEARCHER_DECISION_ROUNDS — so a shallow first pass gets pushed to
+    finish (verify a skeleton, reach a clear PROCEED/GIVE_UP recommendation) rather
+    than stopping half-done.
+    """
+    workspace = entry.workspace
+    reports_dir_rel = f"{workspace}/reports"
+    (cwd / reports_dir_rel).mkdir(parents=True, exist_ok=True)  # create on the fly
+    report_name = f"{entry.name}.md"
+    report_rel = f"{reports_dir_rel}/{report_name}"
+
+    # Show the guide's live review of the current sorry state so the researcher
+    # targets the actual open goals.
+    tools = get_lean_tools()
+    try:
+        goal_note = _format_sorry_map(
+            tools.transitive_sorry_map(stub_rel, []), set(), set()) or ""
+    except Exception:
+        goal_note = ""
+
+    briefing = (
+        f"A lemma is STUCK and the guide wants deep research before the writer tries again.\n\n"
+        f"TARGET LEMMA: {entry.name}\n"
+        f"FILE: {stub_rel}\n"
+        f"WHY STUCK (guide): {reason}\n\n"
+        f"{goal_note}\n\n"
+        f"Investigate across the WHOLE codebase (Read/grep anywhere — do NOT rely on "
+        f"SearchAgent alone): find the primitives, the proof pattern / induction shape, "
+        f"and check feasibility (look for a counterexample or missing hypothesis). You "
+        f"MAY scratch-verify a candidate skeleton with lean_run_code, but do NOT prove "
+        f"the lemma and do NOT edit any proof file.\n\n"
+        f"Write your findings report to EXACTLY this path (your only writable location): "
+        f"{report_rel}\n"
+        f"Follow the report structure in your instructions. Be concrete and concise."
+    )
+
+    from .hooks import research_workspace_hooks
+    research_hooks = research_workspace_hooks(reports_dir_rel)
+
+    await agent._emit("message",
+        f"[PO5] 🔬 Spawning ProofResearcher for '{entry.name}' → report at {report_rel}")
+
+    async with swarm_agent(
+        "proof_researcher", swarm=agent.swarm, cwd=agent._cwd,
+        can_see=["SearchAgent"],
+        extra_hooks=research_hooks,
+        # Auto-compaction ENABLED: a deep dig reads many library files over the
+        # turn budget, so its context fills up; compaction lets it keep going.
+        disable_compaction=False,
+    ) as researcher:
+        # Initial free-form dig.
+        await researcher.run_ai(inp=briefing, max_turns=RESEARCHER_TURNS)
+
+        # Decision loop: keep it working until the report is COMPLETE (like BigSur).
+        for round_i in range(RESEARCHER_DECISION_ROUNDS):
+            prompt = (
+                "Report check. Answer EXACTLY:\n"
+                "DECISION: <done | not_done>\n"
+                "REASON: <one sentence>\n\n"
+                f"- done: you have WRITTEN the report to {report_rel} and it is "
+                "COMPLETE — it names the concrete primitives (with locations), the "
+                "recommended proof shape, any counterexample/missing-hypothesis you "
+                "found, and it ends with a clear RECOMMENDATION line (PROCEED or "
+                "GIVE_UP). If you claimed a scratch-verified skeleton, you actually "
+                "ran it through lean_run_code. Do NOT say done on an empty or "
+                "half-written report.\n"
+                "- not_done: more digging needed; you will continue after answering."
+            )
+            result = await researcher.run_ai(inp=prompt, max_turns=40)
+            raw = result.raw_result or ""
+            m = re.search(r'DECISION:\s*(done|not_done)', raw, re.IGNORECASE)
+            rdecision = m.group(1).lower() if m else "not_done"
+            rm = re.search(r'REASON:\s*(.+)', raw)
+            rreason = rm.group(1).strip() if rm else ""
+            if rdecision == "done":
+                await agent._emit("message",
+                    f"[PO5] ProofResearcher attests report complete: {rreason}")
+                break
+            await agent._emit("message",
+                f"[PO5] ProofResearcher round {round_i+1}/{RESEARCHER_DECISION_ROUNDS}: "
+                f"not done — {rreason}")
+            await researcher.run_ai(
+                inp=(f"Keep digging and finish the report at {report_rel} — reach a "
+                     f"concrete PROCEED/GIVE_UP recommendation with named primitives "
+                     f"and, if you claim one, a scratch-verified skeleton. Then I will re-check."),
+                max_turns=RESEARCHER_TURNS)
+        else:
+            await agent._emit("message",
+                f"[PO5] ProofResearcher exhausted {RESEARCHER_DECISION_ROUNDS} rounds "
+                f"without attesting done — using whatever report it produced.")
+
+    # Verify a report was actually written.
+    if (cwd / report_rel).exists() and (cwd / report_rel).read_text().strip():
+        await agent._emit("message",
+            f"[PO5] ProofResearcher report ready: {report_rel}")
+        return report_rel
+    await agent._emit("message",
+        f"[PO5] ProofResearcher produced no report; continuing without one.")
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1450,7 +1569,7 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
 
         decision, reason, extras = await _consult_guide_decide(
             agent, state, ledger, entry, cwd,
-            options=["continue", "decompose", "fresh_start", "give_up"],
+            options=["continue", "decompose", "research", "fresh_start", "give_up"],
             task=(
                 f"{_runway_note(writer_pct)}\n"
                 f"(Runway is a USAGE figure: a LOW % means the writer has LOTS of room "
@@ -1459,6 +1578,12 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"- decompose: Split into helper files — ONLY when the writer is genuinely "
                 f"stuck AND runway is GETTING FULL/FULL. Never split a mutually-recursive "
                 f"goal into separate files (keep it in one `mutual` block).\n"
+                f"- research: Spawn a deep ProofResearcher that reads the WHOLE codebase for "
+                f"the primitives / proof patterns / counterexamples this lemma needs and writes "
+                f"a findings report you and the writer then read. Use CAUTIOUSLY — only when the "
+                f"writer is genuinely STUCK on HOW to prove a hard goal (missing the right lemma "
+                f"or induction shape), not for routine progress. It costs a research pass, so "
+                f"don't spend it on a lemma that's merely slow.\n"
                 f"- fresh_start: Current approach exhausted, start over.\n"
                 f"- give_up: The goal cannot be closed HERE by the writer. THREE cases, all "
                 f"→ give_up (which routes to the BigSur repair agent — the ONLY actor that "
@@ -1548,6 +1673,56 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 ))
             turns_match = re.search(r'TURNS:\s*(\d+)', advice)
             chunk_budget = max(MIN_CHUNK_TURNS, min(MAX_CHUNK_TURNS, int(turns_match.group(1)))) if turns_match else CHUNK_TURNS
+            continue
+        elif decision == "research":
+            await agent._emit("message", f"[PO5] Research requested: {reason}")
+            # Deep research pass: reads the whole codebase for primitives/patterns/
+            # counterexamples and writes a report ending with a RECOMMENDATION.
+            # Best-effort — a research failure must not sink the lemma.
+            try:
+                report_rel = await _run_researcher(
+                    agent, state, ledger, entry, cwd, stub_rel, reason)
+            except Exception as e:
+                await agent._emit("message",
+                    f"[PO5] Researcher failed ({type(e).__name__}: {e}); continuing without report.")
+                report_rel = None
+            if not report_rel:
+                continue  # no report — just re-enter the loop
+            # THE GUIDE READS THE REPORT AND DECIDES. The researcher only advises;
+            # the guide owns the call. If the report shows the goal is
+            # false/unprovable-as-stated or needs a signature change, the guide
+            # gives up now (→ BigSur) instead of handing the writer a doomed task.
+            r_decision, r_reason, _rx = await _consult_guide_decide(
+                agent, state, ledger, entry, cwd,
+                options=["proceed", "give_up"],
+                task=(
+                    f"The ProofResearcher wrote its findings to {report_rel}. READ IT "
+                    f"(Read {report_rel}) and decide:\n"
+                    f"- proceed: the report found a viable proof shape / the needed "
+                    f"primitives — steer the writer to follow it (put the concrete "
+                    f"shape + primitives + report path in REASON so the writer acts on it).\n"
+                    f"- give_up: the report shows the goal is FALSE / unprovable AS "
+                    f"STATED, needs a SIGNATURE CHANGE the writer cannot make, or the "
+                    f"required substrate is beyond reach here — route to BigSur. Put the "
+                    f"report's finding (counterexample / missing hypothesis / needed "
+                    f"substrate) in REASON.\n"
+                    f"Base this on what the report ACTUALLY concluded, not a guess."
+                ))
+            if r_decision == "give_up":
+                await agent._emit("message", f"[PO5] Guide gives up after research: {r_reason}")
+                ctx.failure_context = f"Guide gave up (post-research): {r_reason}"
+                ledger.mark_failed(entry.id, f"Guide gave up (post-research): {r_reason}")
+                _record_give_up(state, entry, f"Post-research give-up: {r_reason}")
+                await _ask_guide_user_fix(agent, state, ledger, entry, cwd,
+                                          f"Post-research give-up: {r_reason}")
+                await _propagate_failure_to_parent(agent, state, ledger, entry, cwd,
+                                                   f"Child '{entry.name}' gave up after research: {r_reason}")
+                return "failed"
+            # proceed: fold the guide's report-informed steer into the writer's next task.
+            ctx.failure_context = (
+                (ctx.failure_context + "\n" if ctx.failure_context else "")
+                + f"ProofResearcher report at {report_rel}. Guide's directive: {r_reason}\n"
+                f"READ the report and follow its recommended proof shape / primitives.")
             continue
         else:
             if "turns" in extras:
