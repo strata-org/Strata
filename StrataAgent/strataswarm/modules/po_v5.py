@@ -83,7 +83,7 @@ ENDGAME_GRACE_CHUNKS = 4
 # BIGSUR_MAX_INVOCATIONS bounds how many times BigSur may be invoked across the whole
 # run (a global backstop against a repair ↔ re-fail loop).
 BIGSUR_DECISION_ROUNDS = 6
-BIGSUR_MAX_INVOCATIONS = 4
+BIGSUR_MAX_INVOCATIONS = 100
 # Turn budget for BigSur's initial free-form repair pass (the run_ai that reads the
 # briefing + impact report and rewrites contracts/ledger/snapshots). Generous — a
 # real repair reads many files and edits several — but bounded so a wedged pass is
