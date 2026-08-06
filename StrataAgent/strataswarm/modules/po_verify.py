@@ -28,15 +28,30 @@ def verify_split_complete(cwd: Path, workspace_rel: str) -> bool:
 
 
 def verify_stub_imports_def(cwd: Path, workspace_rel: str) -> bool:
-    """Check that Stub.lean imports Stub.Def (via Lean RPC)."""
+    """Check that Stub.lean imports Stub.Def.
+
+    Reads the file TEXT directly rather than the Lean `check__imports_` RPC: that
+    RPC does not recognize the module-system `public import` / `import all` forms
+    (it returns an empty import list for a `module` file), so an RPC-based check
+    wrongly reports a perfectly valid `public import ...Stub.Def` as missing — which
+    then fails an otherwise-compiling split. A text scan sees every import form."""
     stub_rel = f"{workspace_rel}/Stub.lean"
-    if not (cwd / stub_rel).exists():
+    stub = cwd / stub_rel
+    if not stub.exists():
         return False
-    tools = get_lean_tools()
-    result = tools.check_imports(stub_rel)
-    if result.error:
+    try:
+        lines = stub.read_text().splitlines()
+    except OSError:
         return False
-    return any("Stub.Def" in imp for imp in result.imports)
+    for line in lines:
+        s = line.strip()
+        # Match `import X`, `public import X`, `import all X`, `private import X`.
+        if "import" not in s:
+            continue
+        head = s.split("--", 1)[0]  # ignore trailing line comments
+        if ("import" in head.split()) and "Stub.Def" in head:
+            return True
+    return False
 
 
 # ─── Sorry checks (via Lean RPC — comment-aware, definitive) ────────────────
