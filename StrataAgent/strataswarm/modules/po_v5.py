@@ -540,6 +540,14 @@ async def _run_bigsur(agent, state: PO5State, ledger: LemmaLedger,
         f"Its pristine signature lives in {root_ws}/Stub.clean.lean — NEVER edit "
         f"that file.\n\n"
         f"GUIDE'S IMPACT REPORT:\n{impact_report or '(none — scan the ancestry yourself)'}\n\n"
+        f"NOTE: the give-up may be a BUILD / OLEAN-CACHE blocker rather than a contract "
+        f"defect — e.g. 'imports are out of date / must be rebuilt', a repeated identical "
+        f"build failure (4294967294 / 'no such file'), or a stale-subtree olean gate that "
+        f"the writer (which has no build tool) could not clear even on a byte-clean file. "
+        f"If so, your FIRST move is to RUN THE BUILD: use `lake_build_check` on the named "
+        f"module/subtree (build the dependencies bottom-up — children before parents) to "
+        f"rebuild the stale oleans. That alone may clear the blocker with no contract change "
+        f"needed; only rewrite contracts if the build then surfaces a real error.\n\n"
         f"Make the whole Sandbox self-consistent: strengthen the contracts that need "
         f"the missing hypotheses threaded down from the right ancestor, update the "
         f"corresponding ledger entries (ledger_update_signature / ledger_reset_to_pending "
@@ -742,6 +750,11 @@ async def run_workflow(agent, inp: Any, result_type: type[T] | None = None):
     if state.stage == "init":
         await agent._emit("message", "[PO5] Phase: INIT")
         stub_rel = f"{workspace_rel}/Stub.lean"
+
+        # Sweep any leftover decomposed_old_* dirs from prior runs (the retired
+        # rotation). New runs never create them, but stale ones on disk confuse
+        # list_theorems / oracle scans, so clear them at startup.
+        _sweep_decomposed_old(cwd)
 
         if not (cwd / workspace_rel / "Stub" / "Def.lean").exists():
             await run_splitter(agent, workspace_rel, stub_rel)
@@ -1447,18 +1460,26 @@ async def _attempt_prove(agent, state: PO5State, ledger: LemmaLedger,
                 f"stuck AND runway is GETTING FULL/FULL. Never split a mutually-recursive "
                 f"goal into separate files (keep it in one `mutual` block).\n"
                 f"- fresh_start: Current approach exhausted, start over.\n"
-                f"- give_up: The goal AS STATED cannot be proved here — it is false, OR "
-                f"it needs a SIGNATURE CHANGE you are not allowed to make (a hypothesis "
-                f"threaded from an ancestor, a strengthened contract). BEFORE you keep "
-                f"choosing `continue` on a stalled lemma, CHECK YOUR MAILBOX from the "
-                f"writer (get_messages_by_sender / get_thread / list_recent_messages): if "
-                f"you and the writer already AGREED that closing this needs the "
-                f"theorem's/helper's signature strengthened (added hypotheses, a fact "
-                f"the current statement lacks), that is NOT a `continue` situation — the "
-                f"writer proves it AS STATED and cannot change signatures. Choose "
-                f"`give_up` and put the required signature change in REASON. That routes "
-                f"it to the repair path (BigSur) which CAN rewrite contracts. Do NOT "
-                f"loop `continue` on an obligation you both know is unprovable as stated.\n"
+                f"- give_up: The goal cannot be closed HERE by the writer. THREE cases, all "
+                f"→ give_up (which routes to the BigSur repair agent — the ONLY actor that "
+                f"can change contracts OR run a build):\n"
+                f"    (a) it is false / unreachable from available context;\n"
+                f"    (b) it needs a SIGNATURE CHANGE the writer may not make — a hypothesis "
+                f"threaded from an ancestor, a strengthened contract. CHECK YOUR MAILBOX "
+                f"(get_messages_by_sender / get_thread / list_recent_messages): if you and "
+                f"the writer already AGREED the fix is added hypotheses / a strengthened "
+                f"signature, that is NOT `continue`. Put the required signature change in REASON;\n"
+                f"    (c) a BUILD / OLEAN-CACHE blocker you and the writer canNOT fix from "
+                f"inside the file: e.g. 'imports are out of date / must be rebuilt', repeated "
+                f"identical build failures (the 4294967294 / 'no such file' family), a "
+                f"whole-subtree stale-olean gate, or an error that reproduces even on a "
+                f"byte-clean file with only its one intended sorry. The writer has NO build "
+                f"tool and CANNOT rebuild oleans — looping `continue` on this will NEVER "
+                f"clear it. give_up and describe the exact build error + which module/subtree "
+                f"needs rebuilding in REASON; BigSur has a real `lake build` tool and can "
+                f"rebuild/repair the subtree. A byte-clean file that stalls for several "
+                f"chunks with an unchanging BUILD error (not a proof error) is case (c) — "
+                f"do NOT keep choosing `continue`.\n"
                 f"{stuck_hint}"
             ),
             post_prompt=(
@@ -1681,15 +1702,21 @@ async def _prove_at_max_depth(agent, state, ledger, entry, cwd,
                 f"left — NOT that it is exhausted. Prefer continue while runway is HEALTHY.)\n"
                 f"- continue: Keep trying.\n"
                 f"- fresh_start: Current approach exhausted, try new strategy.\n"
-                f"- give_up: Cannot be proved AS STATED — either false, OR it needs a "
-                f"SIGNATURE CHANGE the writer may not make (a hypothesis from an ancestor, "
-                f"a strengthened contract). You are at MAX DEPTH — there is no decompose "
-                f"escape here, so a contract problem MUST be given up (it routes to the "
-                f"BigSur repair path, which can rewrite the signature). Before looping "
-                f"`continue` on a stalled obligation, CHECK YOUR MAILBOX from the writer "
-                f"(get_messages_by_sender / get_thread): if you both agreed it needs added "
-                f"hypotheses / a strengthened signature, choose `give_up` and put the "
-                f"required change in REASON — do NOT keep looping `continue`."
+                f"- give_up: Cannot be closed HERE by the writer. You are at MAX DEPTH — "
+                f"there is NO decompose escape, so anything the writer can't fix in-file "
+                f"MUST be given up (it routes to BigSur, the only actor that can change "
+                f"contracts or run a build). THREE cases: (a) false / unreachable; (b) needs "
+                f"a SIGNATURE CHANGE the writer may not make (a hypothesis from an ancestor, "
+                f"a strengthened contract) — CHECK YOUR MAILBOX (get_messages_by_sender / "
+                f"get_thread): if you both agreed it needs added hypotheses / a strengthened "
+                f"signature, give_up with the change in REASON; (c) a BUILD / OLEAN-CACHE "
+                f"blocker the writer cannot fix — 'imports out of date / must be rebuilt', "
+                f"repeated identical build failures (4294967294 / 'no such file' family), a "
+                f"stale-subtree olean gate, or an error reproducing on a byte-clean file with "
+                f"only its intended sorry. The writer has NO build tool; `continue` will "
+                f"NEVER clear it. give_up and put the exact build error + the module/subtree "
+                f"needing a rebuild in REASON — BigSur has a real `lake build` tool. Do NOT "
+                f"loop `continue` on an unchanging BUILD error (as opposed to a proof error)."
             ),
             post_prompt=f"TURNS: <{MIN_CHUNK_TURNS}-{MAX_CHUNK_TURNS}> (how many turns for writer next, if continue)",
             post_prompt_parser=_parse_turns_deep,
@@ -2702,15 +2729,41 @@ async def _run_detection(agent, state, ledger, entry, cwd) -> tuple[str, list[De
         shutil.rmtree(new_decomp_dir)
         return "rejected", []
 
-    # Commit: rename new_decomposition/ → decomposed/
+    # Commit: UNION-MERGE new_decomposition/ into decomposed/.
+    #
+    # We do NOT rotate the old decomposed/ aside to decomposed_old_N (the legacy
+    # behavior). That rotation ORPHANED IMPORTS: a re-extraction on this file
+    # rebuilds new_decomposition/ from the CURRENT blocks only, so any already-
+    # proved helper that a sibling still imports (e.g. bd_shape.lean importing the
+    # bd_* leaves) was shoved into decomposed_old_N and its import path
+    # (.../decomposed/lemma_helper_bd_*) went dangling → "bad import" build gate
+    # that neither writer nor guide can fix. Nothing ever read decomposed_old_N.
+    #
+    # Union-merge instead: copy every new file into the existing decomposed/,
+    # OVERWRITING same-named files with the fresh version and KEEPING all others.
+    # Referenced-but-not-regenerated helpers stay in place, so imports keep
+    # resolving. Genuinely-dead files that linger are BigSur's to prune later —
+    # decomposition repair is BigSur's job, not a blind directory swap's.
     decomposed_dir = cwd / entry.workspace / "decomposed"
     if decomposed_dir.exists():
-        idx = 0
-        while (cwd / entry.workspace / f"decomposed_old_{idx}").exists():
-            idx += 1
-        decomposed_dir.rename(cwd / entry.workspace / f"decomposed_old_{idx}")
-    new_decomp_dir.rename(decomposed_dir)
+        shutil.copytree(new_decomp_dir, decomposed_dir, dirs_exist_ok=True)
+        shutil.rmtree(new_decomp_dir)
+    else:
+        new_decomp_dir.rename(decomposed_dir)
+    # Rewrite new_decomposition→decomposed module refs in the merged-in files
+    # (and Stub.lean). rglob over decomposed/ covers both old and just-copied files.
     _rewrite_imports(cwd, entry.workspace, "new_decomposition", "decomposed")
+
+    # Guard the exact failure the rotation used to cause: after committing, no file
+    # in decomposed/ should import a module that doesn't exist on disk. A dangling
+    # import is a DAG inconsistency only BigSur can repair — surface it loudly here
+    # instead of letting it become a silent, unfixable build gate the writer loops on.
+    dangling = _find_dangling_imports(cwd, entry.workspace)
+    if dangling:
+        await agent._emit("message",
+            f"[PO5] ⚠️ Decomposition has {len(dangling)} DANGLING import(s) after commit "
+            f"(module imported but file missing) — a build gate the writer cannot fix; "
+            f"BigSur repair territory: {dangling[:5]}")
 
     for v in verdicts:
         v.file_path = v.file_path.replace("/new_decomposition/", "/decomposed/")
@@ -3367,6 +3420,62 @@ def _rewrite_imports(cwd: Path, workspace: str, old_name: str, new_name: str):
             content = f.read_text()
             if old_mod in content:
                 f.write_text(content.replace(old_mod, new_mod))
+
+
+def _sweep_decomposed_old(cwd: Path) -> int:
+    """Remove any leftover `decomposed_old_*` dirs anywhere under the workspace.
+
+    These are artifacts of the RETIRED decomposition-commit rotation (which
+    orphaned imports); nothing reads them. New runs never create them, but a dir
+    left by an older run would still be picked up by list_theorems / oracle scans,
+    so we clear them once at startup. Returns the count removed."""
+    removed = 0
+    for d in cwd.rglob("decomposed_old_*"):
+        if d.is_dir():
+            try:
+                shutil.rmtree(d)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
+def _find_dangling_imports(cwd: Path, workspace: str) -> list[str]:
+    """Return `import` statements in decomposed/**/*.lean that reference a
+    WORKSPACE-LOCAL module whose .lean file does not exist on disk.
+
+    A workspace-local module is one whose dotted name maps to a path under
+    `cwd/<workspace>` (i.e. a Sandbox decomposition module) — we only check those,
+    so external library imports (Strata.*, Mathlib, …) are never false-flagged.
+    A dangling local import is the orphaned-import signature the old
+    decomposed_old rotation produced: the module is imported but its file was
+    moved/removed, giving a "bad import" / "no such file" build gate. Each result
+    is 'file.lean → missing.module' for a human-readable log."""
+    decomposed = cwd / workspace / "decomposed"
+    if not decomposed.exists():
+        return []
+    ws_prefix = workspace.replace("/", ".") + "."  # e.g. "StrataAgent.Sandbox."
+    dangling: list[str] = []
+    for f in decomposed.rglob("*.lean"):
+        try:
+            lines = f.read_text().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            s = line.strip()
+            if not (s.startswith("import ") or s.startswith("public import ")):
+                continue
+            mod = s.split("import", 1)[1].strip().split()[0] if s.split("import", 1)[1].strip() else ""
+            if not mod.startswith(ws_prefix):
+                continue  # external / non-local import — not ours to check
+            target = cwd / (mod.replace(".", "/") + ".lean")
+            if not target.exists():
+                try:
+                    rel = f.relative_to(cwd)
+                except ValueError:
+                    rel = f
+                dangling.append(f"{rel} → {mod}")
+    return dangling
 
 
 def _resolve_import_dependencies(ledger: LemmaLedger, cwd: Path):

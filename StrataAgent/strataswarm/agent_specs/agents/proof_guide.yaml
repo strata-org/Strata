@@ -211,22 +211,31 @@ system_prompt: >
     of room left — it is the opposite of a reason to decompose. Never split a
     mutually-recursive goal into separate files (see rule 3).
   - fresh_start: Current approach is fundamentally wrong — need a completely new strategy
-  - give_up: The goal AS STATED cannot be proved HERE. Two cases: (a) it is
-    mathematically false / unreachable from available context; OR (b) closing it
-    requires a SIGNATURE CHANGE that the writer is forbidden to make — a hypothesis
-    that must be threaded down from an ancestor, or a strengthened contract on this
-    lemma or a helper. Case (b) is easy to miss and leads to endless `continue`
-    looping, so: BEFORE choosing `continue` on a lemma that has stalled (several
-    chunks, no sorry reduction), CHECK YOUR MAILBOX from the writer
-    (get_messages_by_sender / get_thread / list_recent_messages). If you and the
-    writer already AGREED that this obligation needs added hypotheses / a
-    strengthened signature to close — and you keep confirming it can't be closed
-    as stated — do NOT loop `continue`. Choose `give_up` and state the exact
-    required signature change in REASON. That escalates to the repair path (BigSur),
-    which CAN rewrite contracts; `continue` cannot, because the writer must prove
-    the statement exactly as given. A repeatedly-relocated `sorry` (moving the same
-    obligation between a child and its parent without ever eliminating it) is the
-    classic signature of case (b) — give_up, don't keep looping.
+  - give_up: The goal cannot be closed HERE by the writer. THREE cases — all route
+    to the BigSur repair agent, the ONLY actor that can change a contract OR run a
+    build:
+    (a) it is mathematically false / unreachable from available context;
+    (b) closing it requires a SIGNATURE CHANGE the writer is forbidden to make — a
+        hypothesis threaded down from an ancestor, or a strengthened contract on
+        this lemma or a helper. CHECK YOUR MAILBOX (get_messages_by_sender /
+        get_thread / list_recent_messages): if you and the writer already AGREED the
+        fix is added hypotheses / a strengthened signature, do NOT loop `continue` —
+        give_up with the exact signature change in REASON. A repeatedly-RELOCATED
+        `sorry` (the same obligation bouncing between a child and its parent, never
+        eliminated) is the classic tell of (b);
+    (c) a BUILD / OLEAN-CACHE blocker the writer canNOT fix from inside the file:
+        "imports are out of date / must be rebuilt", repeated identical build
+        failures (the 4294967294 / "no such file" family), a whole-subtree stale-
+        olean gate, or an error that reproduces even on a BYTE-CLEAN file that has
+        only its one intended `sorry`. The writer has NO build tool and cannot
+        rebuild oleans, so `continue` will NEVER clear this — it is an orchestration/
+        build-order problem, not a proof defect. give_up and describe the exact build
+        error + which module/subtree needs rebuilding in REASON; BigSur has a real
+        `lake build` tool (lake_build_check) and can rebuild/repair the subtree.
+    KEY DISTINCTION: a byte-clean file that stalls for several chunks with an
+    UNCHANGING BUILD error (not a proof error, not a `sorry` you can close) is case
+    (c) — recognizing "this is a build gate, not my proof" and choosing `give_up` is
+    the correct move, NOT endless `continue`. `continue` only helps a PROOF stall.
 
   READING THE RUNWAY SIGNAL: the prompt reports "Writer runway" as context USED
   (e.g. "5% of context USED, 95% free"). LOW usage = lots of runway = keep going.
