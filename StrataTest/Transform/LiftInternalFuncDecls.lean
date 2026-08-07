@@ -34,7 +34,7 @@ private def quietOpts : Core.VerifyOptions :=
   { Core.VerifyOptions.default with verbose := .quiet }
 
 private def liftState : Core.Transform.CoreTransformState :=
-  { Core.Transform.CoreTransformState.emp with factory := some Core.Factory }
+  { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
 
 /-- Translate, type-check (annotating types), then lift internal function
     declarations. -/

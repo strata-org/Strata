@@ -31,12 +31,25 @@ def translate (t : StrataDDM.Program) : Core.Program :=
 
 def transformProgram (t : StrataDDM.Program) : Core.Program :=
   let program := translate t
-  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .error e => panic! s!"PrecondElim failed: {e}"
   | .ok (_changed, program) =>
     match Core.typeCheck Core.VerifyOptions.default program with
     | .error e => panic! s!"Type check failed: {Std.format e}"
     | .ok program => program.stripMetaData
+
+/-- Run `precondElim` and report whether the output `CoreTransformState.factory`
+    still matches the input factory.
+
+    Note: `LFunc` carries a function-valued `concreteEval` field, which has no
+    `BEq`/`DecidableEq`, so the whole `LFunc` cannot be compared structurally.
+    We compare the base `Func` projection (`.toFunc`) instead — that is every
+    field of `LFunc` except `concreteEval` — via decidable equality. -/
+def factoryRestored (t : StrataDDM.Program) : Bool :=
+  let program := translate t
+  let initState := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+  let (_result, finalState) := Core.Transform.runWith program PrecondElim.precondElim initState
+  decide (finalState.factory.toArray.map (·.toFunc) = initState.factory.toArray.map (·.toFunc))
 
 /-! ### Test 1: Procedure body with div call gets assert for y != 0 -/
 
@@ -107,6 +120,13 @@ function foo (x : int, y : int) : int {
 -/
 #guard_msgs in
 #eval (Std.format (transformProgram funcWithPrecondPgm))
+
+/- Regression test for the factory save/restore invariant: `precondElim`
+   accumulates `safeMod`/`foo` into the factory while collecting WF obligations,
+   but the output state's factory must be identical to the input (built-in)
+   factory. If a future edit drops the `setFactory savedF` restore in
+   `PrecondElim.precondElim`, this `#guard` fails at elaboration time. -/
+#guard factoryRestored funcWithPrecondPgm
 
 /-! ### Test 3: Procedure with ADT destructor (has implicit precondition) in requires -/
 
@@ -554,7 +574,7 @@ preconditions. -/
     errors). -/
 private def transformChanged (t : StrataDDM.Program) : Option Bool :=
   let program := translate t
-  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+  match Core.Transform.run program PrecondElim.precondElim { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .error _ => none
   | .ok (changed, _program) => some changed
 

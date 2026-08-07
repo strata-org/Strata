@@ -215,7 +215,7 @@ private def gen12Oblig : Core.Program :=
 /-- Run CSE on the obligation program. -/
 private def gen12Cse : Bool × Core.Program :=
   match Core.Transform.run gen12Oblig Core.CSE.runCSE
-      { Core.Transform.CoreTransformState.emp with factory := some Core.Factory } with
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
   | .ok res => res
   | .error e => panic! s!"CSE failed: {e}"
 

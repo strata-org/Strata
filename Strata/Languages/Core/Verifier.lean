@@ -697,10 +697,9 @@ def formatProofObligations (obs : Array (Imperative.ProofObligation Expression))
     distinct constraints, and local function declarations from procedure
     bodies into the factory (needed for SMT encoding). -/
 def buildEnv (options : VerifyOptions) (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (factory : Lambda.Factory CoreLParams)
     (registerCustomFunctions : Bool := false) :
     Except Message (Env × Statistics) := do
-  let factory ← Core.Factory.addFactory moreFns
   let σ ← (Lambda.LState.init).addFactory factory
   let datatypes := program.decls.filterMap fun decl =>
     match decl with | .type (.data d) _ => some d | _ => none
@@ -780,7 +779,8 @@ def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
 def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
-  let (E, declStats) ← buildEnv options program moreFns
+  let factory ← Core.Factory.addFactory moreFns
+  let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   -- Note: all .program fields in pEs will have identical values, because
   -- Program.eval does not modify the program. The Program field is
@@ -863,7 +863,8 @@ def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message ((List Env) × Statistics) := do
   let program ← typeCheck options program moreFns
-  let (E, declStats) ← buildEnv options program moreFns
+  let factory ← Core.Factory.addFactory moreFns
+  let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   let stats := declStats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
@@ -1510,8 +1511,6 @@ def transformPipelinePhases (procs : Option (List String) := none) : List Pipeli
       let targets := ps ++ ps.map PrecondElim.wfProcName ++ ps.map TermCheck.termProcName
       [filterProceduresPipelinePhase targets (respectNoFilter := false)]
     | none => []
-  -- precondElimPipelinePhase will immediately return if there is no Factory
-  -- set up at CoreTransformState.
   filterPhases ++ [liftInternalFuncDeclsPipelinePhase, callElimPipelinePhase,
       termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
@@ -1578,12 +1577,14 @@ abbrev DischargeFn :=
     parallel solver that dispatches obligations concurrently, or an incremental
     solver that shares path-condition state across assertions.
 
-    The solver receives the factory extensions (custom functions from external
-    phases, e.g. `RuntimeFactory`) and the obligation program (in CoreSMT format
-    after all pipeline transformations), and returns verification results
-    together with statistics. The factory parameter ensures custom solvers
-    can build the environment with the same function definitions as the
-    default solver. -/
+    The solver receives the fully-built factory (Core's built-ins plus any
+    custom functions from external phases, e.g. `RuntimeFactory`, already
+    threaded through the transformation pipeline) and the obligation program
+    (in CoreSMT format after all pipeline transformations), and returns
+    verification results together with statistics. Because the factory is
+    already complete, a custom solver must pass it to `buildEnv` as-is and must
+    NOT call `Core.Factory.addFactory` on it — doing so would re-add Core's
+    built-ins and fail with duplicate-function errors. -/
 abbrev CoreSMTSolver :=
   @Lambda.Factory CoreLParams → Program → EIO Message (VCResults × Statistics)
 
@@ -1780,7 +1781,7 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
 
 private
 def verifySingleEnv (oblProgram : Program)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
+    (factory : @Lambda.Factory CoreLParams)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
@@ -1796,7 +1797,7 @@ def verifySingleEnv (oblProgram : Program)
     (pctx : PipelineContext) :
     EIO Message (VCResults × Statistics) := do
   -- Build SMT encoding context from the obligations program itself
-  let E ← EIO.ofExcept (Core.buildEnv options oblProgram moreFns (registerCustomFunctions := true) |>.map (·.1))
+  let E ← EIO.ofExcept (Core.buildEnv options oblProgram factory (registerCustomFunctions := true) |>.map (·.1))
   let p := E.program
   -- Extract obligations from the obligations program via ObligationExtraction
   let obligations ← match Core.ObligationExtraction.extractObligations oblProgram with
@@ -1954,8 +1955,8 @@ def mkDefaultCoreSMTSolver
     (mkDischarge : MkDischargeFn := mkDischargeFn)
     (pctx : PipelineContext) :
     CoreSMTSolver :=
-  fun moreFns oblProgram =>
-    verifySingleEnv oblProgram moreFns options counter tempDir axiomCache
+  fun factory oblProgram =>
+    verifySingleEnv oblProgram factory options counter tempDir axiomCache
       axiomNames axiomProgram externalPhases corePhases
       (mkDischarge := mkDischarge) pctx
 
@@ -1992,12 +1993,12 @@ def verify (program : Program)
   let factory ← EIO.ofExcept (Core.Factory.addFactory moreFns)
   let pipelinePhases := prefixPhases ++ corePipelinePhases (procs := proceduresToVerify) (options := options) (moreFns := moreFns)
   let phases := pipelinePhases.map (·.phase)
-  let (oblProgram, pipelineStats) ← pctx.withPhase "programTransformations" do
+  let (oblProgram, factory, pipelineStats) ← pctx.withPhase "programTransformations" do
     let (prog, state) ← runTransforms program pipelinePhases
-      (initState := { Transform.CoreTransformState.emp with factory := some factory })
+      (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)
-    pure (prog, state.statistics)
+    pure (prog, state.factory, state.statistics)
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
@@ -2013,7 +2014,7 @@ def verify (program : Program)
         (mkDefaultCoreSMTSolver options counter tempDir axiomCache?
           axiomNames (axiomProgram := program) externalPhases phases
           (mkDischarge := mkDischarge) pctx)
-      pure [← coreSMTSolver moreFns oblProgram]
+      pure [← coreSMTSolver factory oblProgram]
   let allStats := VCss.foldl (fun acc (_, s) => acc.merge s) allStats
   if profile then
     let _ ← (IO.println allStats.format |>.toBaseIO)

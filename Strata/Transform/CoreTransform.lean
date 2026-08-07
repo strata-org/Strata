@@ -135,30 +135,33 @@ def CachedAnalyses.emp : CachedAnalyses := {}
 -/
 structure CoreTransformState where
   genState: CoreGenState
-  -- The program that is being transformed.
+  -- The program that is being transformed. This is handy for statement-level
+  -- transforms which need to get information about the transforming top-level program.
   -- The definition of "current" may vary depending on the transformation.
   -- If the transformation is implemented with runProgram or runProgramUntil,
   -- the currentProgram field will store the latest versions of finished
   -- procedures, but the procedure that is being updated might have stale
   -- statements.
-  -- When a transformation is finished, currentProgram must contain the
+  -- When a program-level transformation is finished, currentProgram must contain the
   -- program that is fully updated (or it has to be .none).
   -- Using runProgram/runProgramUntil enforces that currentProgram of this
   -- CoreTransformState is updated to be the updated program.
   currentProgram: Option Program
   currentProcedureName: Option String -- TOOD: currentFunctionName, etc?
   cachedAnalyses: CachedAnalyses
-  -- Optional factory for transformations that need to track function
-  -- declarations (e.g., PrecondElim). The factory grows as function
-  -- declarations are encountered during traversal.
-  factory: Option (@Lambda.Factory CoreLParams) := .none
+  -- Factory for transformations. This should not include any function that is
+  -- directly defined in the input program or derived from the datatype defined in
+  -- the input program.
+  -- This can diverge from Core's built-in Factory after transformations.
+  factory: @Lambda.Factory CoreLParams
   -- Per-transform statistics counters, keyed by string names.
   statistics: Statistics := {}
 
 @[simp]
 def CoreTransformState.emp : CoreTransformState :=
   { genState := .emp, currentProgram := .none,
-    currentProcedureName := .none, cachedAnalyses := .emp }
+    currentProcedureName := .none, cachedAnalyses := .emp,
+    factory := Lambda.Factory.default }
 
 @[expose]
 abbrev Err := Strata.Message
@@ -187,15 +190,13 @@ def liftDiag {α : Type} (e : Except Strata.Message α) : CoreTransformM α :=
   | .ok a => pure a
   | .error dm => throw dm
 
-/-- Get the factory from state, throwing if not set. -/
+/-- Get the factory from state. -/
 def getFactory : CoreTransformM (@Lambda.Factory CoreLParams) := do
-  match (← get).factory with
-  | some F => pure F
-  | none => throw (Strata.Message.fromString "factory not set in CoreTransformState")
+  return (← get).factory
 
 /-- Update the factory in state. -/
 def setFactory (F : @Lambda.Factory CoreLParams) : CoreTransformM Unit :=
-  modify fun σ => { σ with factory := some F }
+  modify fun σ => { σ with factory := F }
 
 /-- Increment a statistics counter by `n` (default 1), initializing if absent. -/
 def incrementStat (key : String) (n : Nat := 1) : CoreTransformM Unit :=
@@ -312,7 +313,20 @@ For each statement `s`, `f s` is applied exactly once:
   traverses into its sub-statements (block/ite/loop bodies), giving `f` a
   chance to act on nested statements.
 
-To visit a statement without modifying it, `f` should return `none`.
+Requirements on `f`:
+- `f s` should return `.none` if it confirmed that `s` is not a target of
+  its transformation. This will help `runProgramUntil` converge.
+- `f s` should return `.some [s]` even if it didn't transform `s` at all,
+  if it modified `factory` of `CoreTransformState`. Otherwise, the updated
+  `factory` can be silently skipped by `runProgramUntil`.
+- `f s` can return `.none` if the `s` wasn't transformed and `factory` wasn't
+  modified, even when it modified generator or analysis cache of `CoreTransformState`.
+
+Returned value:
+- The returned boolean value is true if `f` has been applied at least once.
+  It returns true even if `f s` returned an identical statement `.some [s]`,
+  and didn't modify `CoreTransformState.factory`, to avoid expensive comparison.
+- Then returned statement list is a concat map of `f` to the input `ss`.
 
 NOTE: please use runProgram if possible since CoreTransformState might result
 in an inconsistent state. This function is for partial implementation.
@@ -357,6 +371,16 @@ Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
 If targetProcList is .some l, apply f to statements that are in procedures
 listed in l only.
+
+The returned boolean is false if `f` has been never applied to any procedure
+which is in program `p` and a member of `targetProcList` (if it is `.some ..`).
+The requirement on `f` is exactly equivalent to the requirement on `f` of
+`runStmtsRec`.
+If the returned boolean value of `runProgram` is `false`, the returned `Program`
+and `CoreTransformState.factory` is exactly identical to the input `p` and
+that of the input state.
+However, `runProgram` can still conservatively return `true` if `f` was
+conservatively implemented in that way.
 -/
 def runProgram
     (f : Statement → CoreTransformM (Option (List Statement)))
@@ -403,7 +427,11 @@ def runProgram
 /-- Repeatedly apply a statement-level transformation until no more changes occur
     or the iteration limit is reached.
     - `maxIters = none`: repeat until a fixed point (no changes).
-    - `maxIters = some n`: run up to `n` iterations, stopping early if no change. -/
+    - `maxIters = some n`: run up to `n` iterations, stopping early if no change.
+
+    The requirement on `f` and meaning of returned boolean value is exactly
+    same as `runProgram`.
+-/
 def runProgramUntil
     (f : Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
