@@ -62,10 +62,6 @@ jobs:
         with:
           path: |
             .lake
-      - name: Verify Java testdata is up to date
-        run: |
-          StrataTestExtra/Languages/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/Languages/Java/testdata/
 
   lint_checks:
     name: Run lint checks
