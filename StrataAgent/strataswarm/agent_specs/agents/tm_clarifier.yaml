@@ -19,10 +19,29 @@ system_prompt: >
      `SendMessage`. Only `send_message` can reach swarm agents like SearchAgent;
      `SendMessage` targets spawned sub-agents and will report SearchAgent as "not
      reachable" even though it is running.
-     send_message(to="SearchAgent", "Does file X exist? List theorems with sorry.")
+     send_message(to="SearchAgent", "Does file X exist? Is it a `module` file
+     (first non-comment line is `module`)? List its theorems that have `sorry`,
+     and for EACH say whether it is declared `public` (i.e. `public theorem`, or
+     under a `public section`).")
      Then wait_for_reply(sender="SearchAgent", timeout=60) to get the answer —
      it returns as soon as SearchAgent replies (or immediately if a reply is
      already waiting), and only burns the full timeout if no reply arrives.
+  2b. MODULE + PUBLIC GATE — check BEFORE proceeding:
+     If the file is a `module` file, the sorry-theorems we intend to prove MUST be
+     `public`. The soundness oracle (`verify_no_sorry` / `#print axioms`) probes
+     from a non-module scratch that can ONLY see the module's PUBLIC scope — a
+     non-public theorem can never be verified sorry-free, so proving it is futile.
+     - If it IS a module and NONE of the sorry-theorems we would prove (the user's
+       named ones, or ALL sorry-theorems if none named) are `public`, DO NOT proceed.
+       Set blocked=true and put in blocked_reason a clear message like: "No public
+       theorem to prove: <file> is a `module` file but its sorry-theorem(s)
+       [<names>] are not `public`. The soundness oracle cannot verify a non-public
+       theorem in a module, so proving is skipped. Make the target theorem(s)
+       `public` (e.g. `public theorem`, or place them under a `public section`),
+       then retry." Leave theorem_names empty. Do NOT attempt the proof.
+     - If the file is a module and SOME but not all targets are public, proceed with
+       only the public ones and note the skipped non-public names in your summary.
+     - If the file is NOT a module, this gate does not apply — proceed normally.
   3. Produce your structured response:
      - theorem_names = the SPECIFIC theorems the user asked for, if they named any.
      - If the user did NOT name specific theorems (e.g. "prove this file"), leave

@@ -158,6 +158,11 @@ class ClarifierResponse:
     cheat_sheet_path: str | None = None
     needs_user_input: bool = False
     question_for_user: str | None = None
+    # Hard stop: the request cannot/should not be proved as-is (e.g. a `module` file
+    # whose sorry-theorems are not `public`, so the soundness oracle could never
+    # verify them). blocked_reason is surfaced to the user and NO prover is dispatched.
+    blocked: bool = False
+    blocked_reason: str | None = None
     summary: str = ""
 
 
@@ -757,6 +762,17 @@ async def _delegate(state: WorkflowState, agent, handler_name: Handler) -> tuple
         result = await internal_agent.run_ai(inp=delegate_query, result_type=ClarifierResponse, max_turns=THINKING_MAX_TURNS)
         out = result.output
         if out and isinstance(out, ClarifierResponse):
+            # Hard block: request cannot be proved as-is (e.g. non-public theorems
+            # in a `module` — the soundness oracle can never verify them). Flag the
+            # reason to the user and do NOT dispatch a prover (RESPOND, not NEW_TASK).
+            if out.blocked:
+                msg = out.blocked_reason or out.summary or (
+                    "Cannot prove: no public theorem found in the module file.")
+                await _send_to_user(agent, msg)
+                await agent._emit("message", f"[TM → user]: ⛔ BLOCKED — {msg}")
+                state.mode = WorkflowMode.CLARIFYING
+                return msg, Transition.RESPOND
+
             if out.needs_user_input:
                 question = out.question_for_user or out.summary
                 await _send_to_user(agent, question)

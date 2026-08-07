@@ -362,10 +362,15 @@ class AxiomSorryResult:
     build_ok is False iff `lake build <module>` failed (real compile error) — in
     that case NO name is confirmed (we couldn't check), which is distinct from a
     genuine "depends on sorry" verdict.
+    not_found_by_name[name] is a human-readable reason the probe produced NO verdict
+    for that name (e.g. it is not `public`, so `#print axioms` in the non-module
+    scratch cannot name it). Empty/absent means the name WAS resolved. A not-found
+    name is INCONCLUSIVE — NOT proven and NOT a genuine sorry.
     warnings mirrors lean_verify's source-pattern scan."""
     sorry_by_name: dict[str, bool] = field(default_factory=dict)
     ok_by_name: dict[str, bool] = field(default_factory=dict)
     axioms_by_name: dict[str, list[str]] = field(default_factory=dict)
+    not_found_by_name: dict[str, str] = field(default_factory=dict)
     warnings: list[SourceWarning] = field(default_factory=list)
     build_ok: bool = True
     build_error: str | None = None
@@ -1516,7 +1521,32 @@ class SwarmLeanTools:
         else:
             qualified_by_name = {n: n for n in names}
 
-        open_lines = "".join(f"open {ns}\n" for ns in sorted(namespaces))
+        # Reproduce the file's OWN top-level `open` directives in the scratch. The
+        # file may `open Strata.SMT` and then declare `Factory.quant_correct` — whose
+        # true full name is `Strata.SMT.Factory.quant_correct`. split_theorems records
+        # the WRITTEN name (`Factory.quant_correct`), so without the file's `open` the
+        # scratch's `#print axioms Factory.quant_correct` hits "unknown constant" and
+        # the theorem is wrongly reported not-found. Replaying the file's `open`s (in
+        # addition to the per-block namespaces) lets the same short names resolve.
+        file_opens: list[str] = []
+        try:
+            for line in (self._root / file_path).read_text().splitlines():
+                st = line.strip()
+                # `open Foo Bar`, `open scoped Foo`, `public open Foo` → keep the directive.
+                if st.startswith("open ") or st.startswith("public open ") \
+                        or st.startswith("open scoped "):
+                    file_opens.append(st.split("--", 1)[0].strip())
+        except OSError:
+            pass
+        open_from_ns = [f"open {ns}" for ns in sorted(namespaces)]
+        # Dedup while preserving order; file opens first (they set up the short names).
+        seen_open: set[str] = set()
+        open_directives = []
+        for o in file_opens + open_from_ns:
+            if o and o not in seen_open:
+                seen_open.add(o)
+                open_directives.append(o)
+        open_lines = "".join(o + "\n" for o in open_directives)
         print_cmds = "\n".join(f"#print axioms {qualified_by_name[n]}" for n in names)
         scratch_content = f"import {module_name}\n{open_lines}\n{print_cmds}\n"
         scratch_rel = f"_mcp_axprobe_{os.getpid()}_{int(time.time() * 1000) % 100000}.lean"
@@ -1555,6 +1585,7 @@ class SwarmLeanTools:
         sorry_by_name: dict[str, bool] = {}
         ok_by_name: dict[str, bool] = {}
         axioms_by_name: dict[str, list[str]] = {}
+        not_found_by_name: dict[str, str] = {}
         # Collapse to single line per verdict; messages can wrap.
         flat = output.replace("\n", " ")
         # Only the VERDICT tail is ASCII and safe to regex; the declaration name is
@@ -1593,14 +1624,39 @@ class SwarmLeanTools:
                     break
                 search_from = idx + len(key)
             if not found:
+                # No `#print axioms` verdict for this name. This is INCONCLUSIVE, not
+                # a sorry: the most common cause in this repo's `module` files is that
+                # the theorem is NOT `public`, so the non-module scratch's plain
+                # `import` cannot name it (`import all` — which would expose it —
+                # requires the scratch itself be a `module`, but `#print axioms` is
+                # illegal in a `module`). We record WHY so callers surface a hint
+                # instead of silently treating a proved-but-private theorem as sorried.
                 ok_by_name[n] = False
-                sorry_by_name[n] = True
+                sorry_by_name[n] = False  # NOT a genuine sorry — inconclusive
                 axioms_by_name[n] = []
+                in_file = n in {b.name for b in split.blocks} or \
+                          n in {b.qualified_name for b in split.blocks} \
+                          if not split.error else False
+                if in_file:
+                    not_found_by_name[n] = (
+                        f"'{n}' is declared in the file but the axiom probe could not "
+                        f"resolve it — it is almost certainly NOT `public`. `#print "
+                        f"axioms` runs in a non-module scratch that can only see the "
+                        f"module's PUBLIC scope, so verify_no_sorry cannot verify a "
+                        f"non-public theorem. Mark it `public` (e.g. put it under a "
+                        f"`public section`) so it can be verified. INCONCLUSIVE — not "
+                        f"confirmed sorry-free, but NOT a sorry either.")
+                else:
+                    not_found_by_name[n] = (
+                        f"'{n}' produced no `#print axioms` verdict (name not found in "
+                        f"the built module — check spelling/qualification, or it is not "
+                        f"`public`). INCONCLUSIVE — not verified, not a sorry.")
 
         return AxiomSorryResult(
             sorry_by_name=sorry_by_name,
             ok_by_name=ok_by_name,
             axioms_by_name=axioms_by_name,
+            not_found_by_name=not_found_by_name,
             warnings=warnings,
             build_ok=True,
         )

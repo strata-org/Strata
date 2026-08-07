@@ -144,8 +144,46 @@ async def test_delegate_status_check_default_when_no_input():
     print("  test_delegate_status_check_default_when_no_input OK")
 
 
+async def test_delegate_clarifier_blocked_does_not_dispatch():
+    """A `module` file whose target theorems are not `public` is unverifiable by the
+    soundness oracle. The clarifier returns blocked=True + blocked_reason; _delegate
+    must surface the reason to the user and RETURN Transition.RESPOND (NOT NEW_TASK),
+    so NO prover is dispatched and state.task is not set to a new proof job."""
+    agent = _FakeAgent()
+    reason = ("No public theorem to prove: Foo.lean is a `module` file but its "
+              "sorry-theorem(s) [bar] are not `public`.")
+    internal = _FakeInternalAgent(
+        "tm_clarifier_1",
+        ClarifierResponse(file_path="Foo.lean", theorem_names=[],
+                          blocked=True, blocked_reason=reason),
+    )
+    orig = tm._get_internal_agent
+    async def _fake_get(state, ag, which):
+        return internal
+    tm._get_internal_agent = _fake_get
+    try:
+        state = WorkflowState()
+        state.sender = "user"
+        state.raw_input = "prove Foo.lean"
+        task_before = state.task
+        _resp, transition = await tm._delegate(state, agent, Handler.CLARIFIER)
+    finally:
+        tm._get_internal_agent = orig
+
+    assert transition == tm.Transition.RESPOND, (
+        f"blocked request must NOT dispatch a prover (expected RESPOND, got {transition})")
+    assert transition != tm.Transition.NEW_TASK
+    # The block reason was surfaced to the user.
+    assert any("not `public`" in str(p) for _, _, p in agent.channel_bus.sent), \
+        "block reason not sent to user"
+    # No new proof task was set up.
+    assert state.task is task_before, "blocked request should not set a proof task"
+    print("  test_delegate_clarifier_blocked_does_not_dispatch OK")
+
+
 if __name__ == "__main__":
     asyncio.run(test_delegate_clarifier_passes_content_as_inp())
     asyncio.run(test_delegate_chat_branch_passes_content_as_inp())
     asyncio.run(test_delegate_status_check_default_when_no_input())
+    asyncio.run(test_delegate_clarifier_blocked_does_not_dispatch())
     print("ALL TM DELEGATE TESTS PASSED")

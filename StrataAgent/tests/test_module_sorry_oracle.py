@@ -108,6 +108,15 @@ FIXTURES: dict[str, str] = {
         "public theorem oracle_fixture_error_mentions_sorry (n : Nat) : n = n := by\n"
         "  exact my_sorry_lemma n\n"
     ),
+    "NonPublicProven": (
+        "module\n\n"
+        "/-- A genuinely-PROVEN theorem that is NOT `public`. The out-of-module probe\n"
+        "    (`import` in a non-module scratch) can only see the PUBLIC scope, so it\n"
+        "    cannot name this theorem → NO `#print axioms` verdict. The oracle must report\n"
+        "    it as NOT-FOUND (inconclusive, with a `public` hint), NOT as a sorry. -/\n"
+        "theorem oracle_fixture_nonpublic (a b : Nat) : a + b = b + a := by\n"
+        "  omega\n"
+    ),
 }
 
 
@@ -298,6 +307,25 @@ def test_in_module_print_axioms_is_illegal():
     print("✓ test_in_module_print_axioms_is_illegal")
 
 
+# ── Non-public proven theorem → NOT-FOUND (inconclusive), never a sorry ───────
+def test_nonpublic_proven_reported_not_found_not_sorry():
+    """A proven-but-non-`public` theorem is invisible to the out-of-module probe.
+    The oracle must report it not-found (inconclusive, with a `public` hint), and
+    must NOT mark it as a sorry or as proven. This was the false-give-up bug: the
+    guide saw a proved theorem reported as unproven and escalated/gave up."""
+    t = get_lean_tools()
+    r = t.axioms_by_theorem(_rel("NonPublicProven"), ["oracle_fixture_nonpublic"])
+    assert r.build_ok, f"expected build_ok, got build_error={r.build_error}"
+    # Not confirmed proven (we genuinely couldn't verify it)...
+    assert not r.is_proven("oracle_fixture_nonpublic")
+    # ...but NOT reported as a sorry (that was the bug), and flagged not-found.
+    assert r.sorry_by_name.get("oracle_fixture_nonpublic") is False
+    assert "oracle_fixture_nonpublic" in r.not_found_by_name
+    msg = r.not_found_by_name["oracle_fixture_nonpublic"].lower()
+    assert "public" in msg, f"not-found message should hint at `public`: {msg}"
+    print("✓ test_nonpublic_proven_reported_not_found_not_sorry")
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("test_module_sorry_oracle (real Lean builds)")
@@ -314,6 +342,7 @@ if __name__ == "__main__":
         test_check_compiles_clean_proof()
         test_list_theorems_finds_public_module_decls()
         test_in_module_print_axioms_is_illegal()
+        test_nonpublic_proven_reported_not_found_not_sorry()
     finally:
         teardown()
     print("\n✅ All module-sorry-oracle tests passed!")

@@ -330,21 +330,39 @@ def create_lean_tools_server(workspace: str | None = None):
         per_name = {
             n: {
                 "proven": result.is_proven(n),
-                "has_sorry": result.sorry_by_name.get(n, True),
+                "has_sorry": result.sorry_by_name.get(n, False),
                 "found": result.ok_by_name.get(n, False),
                 "axioms": result.axioms_by_name.get(n, []),
+                # Per-lemma error when the probe produced NO verdict (INCONCLUSIVE,
+                # NOT a sorry) — usually "the theorem is not `public`". Absent/empty
+                # when the name resolved cleanly.
+                "error": result.not_found_by_name.get(n),
             }
             for n in names
         }
+        # Names the probe could not verify (not found / not public). These are
+        # inconclusive — surfaced explicitly so the caller fixes visibility (make
+        # the theorem `public`) rather than mistaking a proved lemma for sorried.
+        not_found = [n for n in names if n in result.not_found_by_name]
         all_proven = result.build_ok and all(result.is_proven(n) for n in names)
-        return {"content": [{"type": "text", "text": json.dumps({
+        payload = {
             "all_proven": all_proven,
             "build_ok": result.build_ok,
             "build_error": result.build_error,
             "results": per_name,
+            "not_found": not_found,
             "warnings": [{"line": w.line, "pattern": w.pattern} for w in result.warnings],
             "error": result.error,
-        }, indent=2)}]}
+        }
+        if not_found:
+            payload["hint"] = (
+                "Some theorems produced NO axiom verdict — this is INCONCLUSIVE, not a "
+                "sorry. In this repo's `module` files the usual cause is that the "
+                "theorem is not `public`: verify_no_sorry probes `#print axioms` from a "
+                "non-module scratch that can only see the module's PUBLIC scope. Mark "
+                "the listed theorems `public` (e.g. under a `public section`) so they "
+                "can be verified. See each result's `error` for details.")
+        return {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}
 
     @tool(
         name="collect_progress",

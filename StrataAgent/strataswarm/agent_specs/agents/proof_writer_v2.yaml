@@ -55,6 +55,13 @@ system_prompt: >
   4. When you believe it is fully proved, run verify_no_sorry(file_path,
      theorem_names=[...]) — the AUTHORITATIVE sorry-free check. Do NOT use
      lean_verify (it fails on this repo's `module` files).
+     - If a theorem shows up under `not_found` (or its result has an `error` about
+       not being `public`), that is NOT a sorry — the checker simply cannot SEE it.
+       verify_no_sorry probes `#print axioms` from a non-module scratch that only
+       sees the module's PUBLIC scope. FIX: make that theorem `public` (e.g. put
+       your theorems under a `public section`, or mark it `public theorem`), then
+       re-run. Do NOT add tactics or "reprove" it — it is already proved; it just
+       needs to be public to be verifiable.
   5. If creating a helper theorem, ledger_search first — if the name exists, import instead.
 
   STRATEGY ADVICE:
