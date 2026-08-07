@@ -336,7 +336,10 @@ def transformStmt (s : Statement)
       -- Add init statements for function parameters so they're in scope
       let paramInits := decl.inputs.toList.map fun (name, ty) =>
         Statement.init name ty .nondet md
-      return (hasPreconds, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
+      -- A `$$wf` block is always emitted here, so the program changed even when
+      -- the function itself had no preconditions (its body still calls a
+      -- precondition-carrying function).
+      return (true, [.block s!"{funcName}{wfSuffix}" (paramInits ++ wfStmts) md, .funcDecl decl' md])
   | .typeDecl _ _ =>
     return (false, [s])  -- Type declarations pass through unchanged
   termination_by s.sizeOf
