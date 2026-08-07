@@ -433,6 +433,60 @@ where
       simp_all
       omega)
 
+/-- Check if `p` is a composite (heap-reference) parameter. -/
+private def isCompositeParam (model : SemanticModel) (p : Parameter) : Bool :=
+  match p.type.val with
+  | .UserDefined name => !isDatatype model name
+  | _ => false
+
+/-! Heap well-formedness conditions below are emitted `free`:
+    assumed for reference values appearing *directly* as  parameters/outputs,
+    but not for indirectly reachable references (composite fields, set elements).
+    Closing that gap needs axioms over custom types. -/
+
+/-- For each composite parameter `p`, the free precondition
+    `Composite..ref!(p) < Heap..nextReference!(heapVar)` (`p` is allocated) -/
+private def heapWellFormednessPreconds (model : SemanticModel)
+    (inputs : List Parameter) (heapVar : Identifier) : List Condition :=
+  inputs.filterMap fun p =>
+    if isCompositeParam model p then
+      let src := p.name.source
+      let pRead := { val := .Var (.Local p.name), source := src }
+      let pRef := { val := .StaticCall "Composite..ref!" [pRead], source := src }
+      let heapRead := { val := .Var (.Local heapVar), source := src }
+      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      let allocated := { val := .StaticCall "$intLt" [pRef, counter], source := src }
+      some { condition := allocated, summary := some "input is allocated on the heap", mode := .Assume }
+    else none
+
+/-- The free postcondition
+    `Heap..nextReference!($heap_in) <= Heap..nextReference!($heap)` -
+    the top of heap pointer never decreases. -/
+private def heapMonotonicityPostcond (source : FileRange)
+    (heapVar : Identifier) : Condition :=
+  let heapRead := { val := .Var (.Local heapVar), source }
+  let nextRef := { val := .StaticCall "Heap..nextReference!" [heapRead], source }
+  let inCounter := { val := .Old nextRef, source }
+  let outCounter := nextRef
+  { condition := { val := .StaticCall "$intLe" [inCounter, outCounter], source },
+    summary := some "monotonic heap pointer", mode := .Assume }
+
+/-- For each composite output `o`, the free postcondition
+    `Composite..ref!(o) < Heap..nextReference!($heap)` - a returned
+    composite is allocated in the output heap. -/
+private def heapOutputAllocationPostconds (model : SemanticModel)
+    (outputs : List Parameter) (heapOutVar : Identifier) : List Condition :=
+  outputs.filterMap fun o =>
+    if isCompositeParam model o then
+      let src := o.name.source
+      let oRead := { val := .Var (.Local o.name), source := src }
+      let oRef := { val := .StaticCall "Composite..ref!" [oRead], source := src }
+      let heapRead := { val := .Var (.Local heapOutVar), source := src }
+      let counter := { val := .StaticCall "Heap..nextReference!" [heapRead], source := src }
+      some { condition := { val := .StaticCall "$intLt" [oRef, counter], source := src },
+             summary := some "output is allocated on the heap", mode := .Assume }
+    else none
+
 /-- Heap-transform a pure specification expression without introducing
 heap-threading assignments for calls to heap-writing procedures. -/
 def heapTransformSpecificationExpr (heapName : Identifier) (model : SemanticModel)
@@ -475,7 +529,18 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     let inputs' := proc.inputs ++ [heapParam]
     let outputs' := heapParam :: proc.outputs
 
+    -- `proc` already had its specification expressions (preconditions,
+    -- relies/guarantees) heap-transformed at the top of this function. Prepend
+    -- the free heap-well-formedness preconditions (subjects are the original,
+    -- untransformed composite inputs).
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
+
     let bodyValueIsUsed := !proc.outputs.isEmpty
+    -- Synthesized postconditions: allocation counter is monotone, and every
+    -- composite output is allocated in the output heap.
+    let wfPostconditions :=
+      heapMonotonicityPostcond proc.name.source heapName
+        :: heapOutputAllocationPostconds model proc.outputs heapName
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
           let bodyExpr' ← heapTransformSpecificationExpr heapName model bodyExpr
@@ -488,10 +553,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 pure (some implExpr')
             | none => pure none
           let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
-          pure (.Opaque postconds' impl' modif')
+          pure (.Opaque (wfPostconditions ++ postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
-          pure (.Abstract postconds')
+          pure (.Abstract (wfPostconditions ++ postconds'))
       | .External => pure .External
 
     -- `EliminateExceptions` runs before this pass, so each `throwsOn` case's
@@ -518,6 +583,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     return { proc with
       inputs := inputs',
       outputs := outputs',
+      preconditions := preconditions',
       throwsOn := throwsOn',
       body := body' }
 
@@ -527,6 +593,10 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- writes-heap branch above for rationale).
     let heapParam : Parameter := { name := heapName, type := ⟨.UserDefined "Heap", proc.name.source⟩ }
     let inputs' := proc.inputs ++ [heapParam]
+
+    -- Specifications were heap-transformed at the top of this function; prepend
+    -- the free heap-well-formedness preconditions over the original inputs.
+    let preconditions' := heapWellFormednessPreconds model proc.inputs heapName ++ proc.preconditions
 
     let body' ← match proc.body with
       | .Transparent bodyExpr =>
@@ -547,6 +617,7 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
     -- a `throwsOn` case's guard and postconditions, so there is no exceptional contract to transform here.
     return { proc with
       inputs := inputs',
+      preconditions := preconditions',
       body := body' }
 
   else
