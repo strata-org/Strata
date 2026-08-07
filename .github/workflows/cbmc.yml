@@ -17,7 +17,7 @@ jobs:
       - name: Install z3
         uses: ./.github/actions/install-z3
       - name: Prepare ccache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           save-always: true
           path: .ccache
