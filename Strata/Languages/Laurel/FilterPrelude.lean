@@ -116,7 +116,9 @@ private def collectBodyNames (body : Body) : CollectM Unit := do
   | .Opaque posts impl modifies =>
     posts.forM (collectExprNames ·.condition)
     impl.forM collectExprNames
-    modifies.forM collectExprNames
+    modifies.forM fun g => do
+      g.targets.forM collectExprNames
+      g.guard.forM collectExprNames
   | .Abstract posts => posts.forM (collectExprNames ·.condition)
   | .External => pure ()
 

@@ -550,25 +550,40 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
     · simp only [hheap]
       exact postM_bind_any fun _ => postM_pure (by simp)
 
+/-- Group cleanliness: every target and the guard (when present) are Clean. -/
+def CleanModifiesGroup (g : ModifiesGroup) : Prop :=
+  (∀ e ∈ g.targets, Clean e) ∧ (∀ c ∈ g.guard, Clean c)
+
 /-- Body cleanliness: every StmtExpr tree in the body is Clean. -/
 def CleanBody (b : Body) : Prop :=
   match b with
   | .Transparent e => Clean e
   | .Opaque posts impl mods =>
-    (∀ p ∈ posts, Clean p.condition) ∧ (∀ e ∈ impl, Clean e) ∧ (∀ e ∈ mods, Clean e)
+    (∀ p ∈ posts, Clean p.condition) ∧ (∀ e ∈ impl, Clean e)
+      ∧ (∀ g ∈ mods, CleanModifiesGroup g)
   | .Abstract posts => ∀ p ∈ posts, Clean p.condition
   | .External => True
 
 include masterSynth in
 omit masterCheck in
-theorem resolveModifies_clean (mods : List StmtExprMd) :
-    PostM (Strata.Laurel.resolveModifies mods) (fun ms => ∀ e ∈ ms, Clean e) := by
-  unfold Strata.Laurel.resolveModifies
+private theorem resolveModifiesTargets_clean (mods : List StmtExprMd) :
+    PostM (Strata.Laurel.resolveModifiesTargets mods) (fun ms => ∀ e ∈ ms, Clean e) := by
+  unfold Strata.Laurel.resolveModifiesTargets
   refine postM_bind (postM_mapM mods _ (fun x _ => resolveModifiesEntry_clean masterSynth x))
     fun rs hrs => postM_pure ?_
   intro e he
   obtain ⟨o, ho, hoe⟩ := List.mem_filterMap.mp he
   exact hrs o ho e hoe
+
+include masterSynth masterCheck in
+theorem resolveModifies_clean (mods : List ModifiesGroup) :
+    PostM (Strata.Laurel.resolveModifies mods) (fun gs => ∀ g ∈ gs, CleanModifiesGroup g) := by
+  unfold Strata.Laurel.resolveModifies
+  refine postM_mapM (P := CleanModifiesGroup) mods _ (fun g _ => ?_)
+  refine postM_bind (resolveModifiesTargets_clean masterSynth _) fun ts hts => ?_
+  refine postM_bind (postM_option_mapM _ _ (fun c =>
+      masterCheck c { val := .TBool, source := c.source })) fun gd hgd => postM_pure ?_
+  exact ⟨hts, hgd⟩
 
 include masterSynth masterCheck in
 theorem resolveBody_clean (body : Body) :
@@ -584,7 +599,7 @@ theorem resolveBody_clean (body : Body) :
       fun posts' hposts => ?_
     refine postM_bind (postM_option_mapM _ _ (fun e => masterSynth e))
       fun impl' himpl => ?_
-    refine postM_bind (resolveModifies_clean masterSynth _)
+    refine postM_bind (resolveModifies_clean masterSynth masterCheck _)
       fun mods' hmods => postM_pure ?_
     refine ⟨fun p hp => hposts p hp, ?_, hmods⟩
     intro e he
@@ -816,13 +831,19 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
         <;> rw [hb] at hbody <;> unfold CleanBody at hbody <;> simp only [] at hbody
       · exact keeps_bind (keeps_visitor _ hbody) (fun _ => keeps_pure _)
       · obtain ⟨hposts, himpl, hmods⟩ := hbody
+        dsimp only
         apply keeps_bind (keeps_mapM _ _ (fun c hc =>
           keeps_condition_mapM c _ (keeps_visitor _ (hposts c hc))))
         intro posts'
         apply keeps_bind (keeps_option_mapM _ _ (fun e he =>
           keeps_visitor _ (himpl e he)))
         intro impl'
-        apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hmods e he)))
+        -- Each modifies group walks its targets, then its optional guard.
+        apply keeps_bind (keeps_mapM _ _ (fun g hg =>
+          keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ ((hmods g hg).1 e he)))
+            (fun targets' => keeps_bind (keeps_option_mapM _ _ (fun c hc =>
+              keeps_visitor _ ((hmods g hg).2 c hc)))
+              (fun guard' => keeps_pure _))))
         intro mods'
         exact keeps_pure _
       · apply keeps_bind (keeps_mapM _ _ (fun c hc =>

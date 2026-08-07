@@ -192,7 +192,7 @@ private def withSpecifications (body : Body) : Procedure :=
     (withSpecifications (.Opaque
       [{ condition := testMd (.LiteralInt 1) }]
       (some (testMd (.LiteralInt 2)))
-      [testMd (.LiteralInt 3), testMd (.LiteralInt 4)])) ==
+      [{ targets := [testMd (.LiteralInt 3), testMd (.LiteralInt 4)] }])) ==
   [1, 2, 3, 4, 5, 6, 7, 8]
 
 #guard procedureExpressionOrder

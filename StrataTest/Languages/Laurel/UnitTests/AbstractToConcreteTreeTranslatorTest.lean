@@ -384,6 +384,36 @@ procedure modify(c: Container)
 { c#value := c#value + 1; true };
 #end)
 
+-- A guarded group — `modifies <refs> when <guard>` — is pass-generated
+-- (`EliminateExceptions` guards frames on the `Result` carrier), but it must
+-- survive print → parse because between-pass output is re-parsed: the printer
+-- renders the guard via `modifiesWhenClause` and the parser reads it back as
+-- a guarded `ModifiesGroup`. The `roundtrip` harness checks convergence, so a
+-- desync between the two translators fails here rather than mid-pipeline.
+/--
+info: composite Container { var value: int }
+
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{
+  c#value := c#value + 1;
+  true
+};
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+composite Container { var value: int }
+procedure modifyWhen(c: Container, flag: bool)
+  opaque
+  ensures true
+  modifies c when flag
+{ c#value := c#value + 1; true };
+#end)
+
 -- Additional coverage: nondeterministic holes
 
 /--

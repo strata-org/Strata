@@ -236,6 +236,10 @@ op checkedEnsuresClause(cond: StmtExpr, errorMessage: Option ErrorSummary): Ensu
 category ModifiesClause;
 op modifiesClause(refs: CommaSepBy StmtExpr): ModifiesClause => "\n  modifies " refs:0;
 op modifiesWildcard: ModifiesClause => "\n  modifies *";
+// Internal (pass-generated) form: a frame that applies only when its guard holds.
+// `EliminateExceptions` emits these when consuming `throwsOn` blocks; users write
+// plain `modifies`, which is a single unguarded frame.
+op modifiesWhenClause(refs: CommaSepBy StmtExpr, guard: StmtExpr): ModifiesClause => "\n  modifies " refs:0 " when " guard:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  returns " "(" parameters ")";

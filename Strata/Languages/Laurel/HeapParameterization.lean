@@ -581,7 +581,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
                 let implExpr' ← heapTransformExpr heapName model implExpr bodyValueIsUsed
                 pure (some implExpr')
             | none => pure none
-          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
+          -- Targets keep field refs symbolic (structural matching in `ModifiesClauses`);
+          -- a guard is an ordinary pre-state predicate and transforms like one.
+          let modif' ← modif.mapM (fun g => do
+            let targets' ← g.targets.mapM (heapTransformModifiesEntry heapName model ·)
+            let guard' ← g.guard.mapM (heapTransformSpecificationExpr heapName model ·)
+            pure ({ g with targets := targets', guard := guard' } : ModifiesGroup))
           pure (.Opaque (wfPostconditions ++ postconds') impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
@@ -634,7 +639,12 @@ def heapTransformProcedure (model: SemanticModel) (proc : Procedure) : Transform
       | .Opaque postconds impl modif =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))
           let impl' ← impl.mapM (heapTransformExpr heapName model ·)
-          let modif' ← modif.mapM (heapTransformModifiesEntry heapName model ·)
+          -- Targets keep field refs symbolic (structural matching in `ModifiesClauses`);
+          -- a guard is an ordinary pre-state predicate and transforms like one.
+          let modif' ← modif.mapM (fun g => do
+            let targets' ← g.targets.mapM (heapTransformModifiesEntry heapName model ·)
+            let guard' ← g.guard.mapM (heapTransformSpecificationExpr heapName model ·)
+            pure ({ g with targets := targets', guard := guard' } : ModifiesGroup))
           pure (.Opaque postconds' impl' modif')
       | .Abstract postconds =>
           let postconds' ← postconds.mapM (·.mapM (heapTransformSpecificationExpr heapName model))

@@ -276,12 +276,26 @@ private def ensuresClauseToArg (c : Condition) : Arg :=
   laurelOp (clauseOpName "ensuresClause" c.mode)
     #[stmtExprToArg c.condition, errorSummaryToArg c.summary]
 
-private def modifiesClausesToArgs (modifies : List StmtExprMd) : Array Arg :=
-  let (wildcards, specific) := modifies.partition StmtExprMd.isWildcard
+private def modifiesTargetsToArgs (targets : List StmtExprMd) : Array Arg :=
+  let (wildcards, specific) := targets.partition StmtExprMd.isWildcard
   let wildcardArgs := wildcards.map (fun _ => laurelOp "modifiesWildcard" #[]) |>.toArray
   let specificArgs := if specific.isEmpty then #[]
     else #[laurelOp "modifiesClause" #[commaSep (specific.map stmtExprToArg |>.toArray)]]
   wildcardArgs ++ specificArgs
+
+/-- Guards have no *authored* syntax (only passes create them), so a guarded
+    group prints its guard as a `when`-suffixed clause via `modifiesWhenClause`.
+    The clause is a real grammar op that `ConcreteToAbstractTreeTranslator`
+    parses back — the round-trip is deliberate, so between-pass output stays
+    loadable; do not drop either side. An unguarded group prints exactly as
+    before. -/
+private def modifiesClausesToArgs (groups : List ModifiesGroup) : Array Arg :=
+  groups.foldl (init := #[]) fun acc g =>
+    match g.guard with
+    | none => acc ++ modifiesTargetsToArgs g.targets
+    | some guard =>
+      acc.push (laurelOp "modifiesWhenClause"
+        #[commaSep (g.targets.map stmtExprToArg |>.toArray), stmtExprToArg guard])
 
 private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   let params := proc.inputs.map parameterToArg |>.toArray

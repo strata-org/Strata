@@ -75,8 +75,8 @@ private def authoredAssume : Program :=
 -- The emitted postconditions, in order, are: the derived `isBad ==> err is T` (no
 -- summary), the case's forcing claim, then the authored `ensures`. Only the last is
 -- authored, so only the last should carry a mode the pass did not compute.
-/-- info: modes in order: Both, Both, Assume
-authored ensures (last): Assume -/
+/-- info: modes in order: Both, Both, Assume, Both
+authored ensures (third): Assume -/
 #guard_msgs in
 #eval do
   let (prog, _) := eliminateExceptionsTransform emptyModel authoredAssume
@@ -85,28 +85,59 @@ authored ensures (last): Assume -/
     match p.body with
     | .Opaque posts _ _ =>
       IO.println s!"modes in order: {", ".intercalate (posts.map (fun (c : Condition) => modeName c.mode))}"
-      match posts.reverse with
-      | authored :: _ => IO.println s!"authored ensures (last): {modeName authored.mode}"
-      | [] => IO.println "no postconditions emitted"
+      -- The order is: derived `isBad ==> err is T`, the forcing claim, the
+      -- authored `ensures`, then the exhaustiveness claim over the guards.
+      match posts[2]? with
+      | some authored => IO.println s!"authored ensures (third): {modeName authored.mode}"
+      | none => IO.println "fewer than three postconditions emitted"
     | _ => IO.println "unexpected body kind"
   | ps => IO.println s!"unexpected procedure count: {ps.length}"
 
-/-! ## 2. A wildcard case frame contributes no frame -/
+/-! ## 2. A wildcard case frame contributes no guarded group -/
 
-private def blockWith (mods : List StmtExprMd) : ThrowsOnBlock :=
-  { guard := call "g", postconditions := [], modifies := mods }
+/-- A throwing procedure whose single case carries the given frame targets. -/
+private def procWithCaseFrame (mods : List StmtExprMd) : Program :=
+  { staticProcedures := [
+      { name := mkId "caseFrame"
+        inputs := []
+        outputs := []
+        preconditions := []
+        decreases := none
+        throwsType := some (mkTy (.UserDefined (mkId "Err")))
+        throwsBinding := some (mkId "e")
+        throwsOn := [{ guard := call "g", postconditions := [], modifies := mods }]
+        body := .Transparent ⟨.Block [] none, .unknown⟩ }
+    ]
+    staticFields := []
+    types := [] }
 
-/-- info: no targets: false
-one named target: true
-wildcard alone: false
-wildcard beside a named target: false -/
+/-- How many *guarded* modifies groups the lowering left on the procedure. The
+    case's frame is the only source of one here: the procedure declares no normal
+    `modifies`, and a `.Transparent` body carries no group to re-guard. -/
+private def guardedGroupCount (mods : List StmtExprMd) : Nat :=
+  let (prog, _) := eliminateExceptionsTransform emptyModel (procWithCaseFrame mods)
+  match prog.staticProcedures with
+  | [p] =>
+    match p.body with
+    | .Opaque _ _ groups => (groups.filter (fun (g : ModifiesGroup) => g.guard.isSome)).length
+    | _ => 0
+  | _ => 0
+
+-- A wildcard frame means "may change anything": the absence of a frame. A group
+-- emitted for it would reach the frame builder as an empty entry list, which
+-- encodes "nothing changed" — the inverse — and on a bodiless procedure that is
+-- assumed rather than checked. An empty frame list likewise constrains nothing.
+/-- info: no targets: 0
+one named target: 1
+wildcard alone: 0
+wildcard beside a named target: 0 -/
 #guard_msgs in
 #eval do
   let wildcard : StmtExprMd := ⟨.All, .unknown⟩
-  IO.println s!"no targets: {caseContributesFrame (blockWith [])}"
-  IO.println s!"one named target: {caseContributesFrame (blockWith [call "logCell"])}"
-  IO.println s!"wildcard alone: {caseContributesFrame (blockWith [wildcard])}"
-  IO.println s!"wildcard beside a named target: {caseContributesFrame (blockWith [wildcard, call "logCell"])}"
+  IO.println s!"no targets: {guardedGroupCount []}"
+  IO.println s!"one named target: {guardedGroupCount [call "logCell"]}"
+  IO.println s!"wildcard alone: {guardedGroupCount [wildcard]}"
+  IO.println s!"wildcard beside a named target: {guardedGroupCount [wildcard, call "logCell"]}"
 
 /-! ## 3. A rejected shape is left unlowered, with no backstop cascade -/
 

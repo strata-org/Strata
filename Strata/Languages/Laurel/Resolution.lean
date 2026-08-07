@@ -3539,9 +3539,23 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
 
 /-- Resolve the modifies entries of an `Opaque` body, dropping the
     non-heap-relevant ones via `resolveModifiesEntry`. -/
-private def resolveModifies (mods : List StmtExprMd) : ResolveM (List StmtExprMd) := do
+private def resolveModifiesTargets (mods : List StmtExprMd) : ResolveM (List StmtExprMd) := do
   let resolved ← mods.mapM resolveModifiesEntry
   return resolved.filterMap id
+
+/-- Resolve the modifies groups of an `Opaque` body: each group's targets go
+    through `resolveModifiesTargets`, its guard (pass-generated; `none` for user
+    syntax) is checked at `TBool`. Groups are never dropped: a group with no
+    targets (authored, or emptied because none were heap-relevant) still claims
+    "nothing changes" — under its guard, or unconditionally — which is a frame,
+    not a no-op. Opaque procedures with no `modifies` clause rely on exactly
+    that group for their default frame. -/
+private def resolveModifies (mods : List ModifiesGroup) : ResolveM (List ModifiesGroup) := do
+  mods.mapM fun g => do
+    let targets' ← resolveModifiesTargets g.targets
+    let guard' ← g.guard.mapM (fun c =>
+      Check.resolveStmtExpr c { val := .TBool, source := c.source })
+    pure ({ g with targets := targets', guard := guard' } : ModifiesGroup)
 
 /-- Resolve a parameter: assign a fresh ID and add to scope. -/
 def resolveParameter (param : Parameter) : ResolveM Parameter := do
@@ -3916,7 +3930,9 @@ private def collectBody (map : Std.HashMap Nat ResolvedNode) (body : Body)
   | .Opaque posts impl mods =>
     let map := posts.foldl (fun map c => collectStmtExpr map c.condition) map
     let map := match impl with | some i => collectStmtExpr map i | none => map
-    mods.foldl collectStmtExpr map
+    mods.foldl (fun map g =>
+      let map := g.targets.foldl collectStmtExpr map
+      match g.guard with | some c => collectStmtExpr map c | none => map) map
   | .Abstract posts => posts.foldl (fun map c => collectStmtExpr map c.condition) map
   | .External => map
 
@@ -5144,7 +5160,9 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
 private def contractExpressions (proc : Procedure) : List StmtExprMd :=
   proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
     proc.invokeOn.toList ++ proc.axioms ++ match proc.body with
-    | .Opaque postconditions _ modifies => postconditions.map (·.condition) ++ modifies
+    | .Opaque postconditions _ modifies =>
+      postconditions.map (·.condition) ++
+        modifies.flatMap (fun g => g.targets ++ g.guard.toList)
     | .Abstract postconditions => postconditions.map (·.condition)
     | .Transparent _ | .External => []
 

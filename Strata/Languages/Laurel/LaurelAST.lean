@@ -437,6 +437,36 @@ structure ThrowsOnBlock where
   modifies : List (AstNode StmtExpr)
 
 /--
+One frame of a procedure's `modifies` specification: when `guard` holds (or
+unconditionally, when it is `none`), only `targets` may change.
+
+Each group lowers to its own frame condition, so the grouping is semantic, not
+cosmetic: targets in one group *union* (any of them may change), while separate
+groups *conjoin* (each group's frame must hold whenever its guard does).
+
+User syntax produces exactly one unguarded group — the plain `modifies` list.
+Guards exist for the compilation passes: `EliminateExceptions` consumes a
+`throwsOn` block by appending a group guarded on that case
+(`Result..isBad(<carrier>) && C`), and re-guards the user's group on the normal
+path (`Result..isGood(<carrier>)`). This is what lets the downstream frame
+lowering (`ModifiesClauses`) stay agnostic to exceptions: it sees only
+"guard implies frame", never a `throwsOn`. There is no *authored* syntax for a
+guard — users never write one — but the pass-generated form round-trips: the
+printer renders a guarded group as `modifies <targets> when <guard>`
+(`modifiesWhenClause`), and the parser reads it back, so between-pass output
+stays loadable as well as readable.
+-/
+structure ModifiesGroup where
+  /-- The frame's targets: references (or `*`) that may change. -/
+  targets : List (AstNode StmtExpr)
+  /-- When the frame applies; `none` means always. -/
+  guard : Option (AstNode StmtExpr) := none
+  /-- Diagnostic summary for the frame this group lowers to. Set by the pass that
+      created a guarded group, so a failed frame is reported in the vocabulary the
+      author wrote (`throwsOn modifies clause`), not the pass's. -/
+  summary : Option String := none
+
+/--
 The body of a procedure. A body can be transparent (with a visible
 implementation), opaque (with a postcondition and optional implementation),
 or abstract (requiring overriding in extending types).
@@ -461,7 +491,7 @@ inductive Body where
       (postconditions : List Condition)
       (implementation : Option (AstNode StmtExpr))
       -- See the constructor doc above for the allowed `modifies` forms.
-      (modifies : List (AstNode StmtExpr))
+      (modifies : List ModifiesGroup)
       -- TODO: add back non-determinism together with an implementation
       -- deterministic : Bool
   /-- An abstract body that must be overridden in extending types. A type containing any members with abstract bodies cannot be instantiated. -/
@@ -670,12 +700,21 @@ def bodyLabel : String := "$body"
 
 `EliminateExceptions` encodes a throwing procedure's two outcomes as a
 `Result<Val, Err>` datatype (defined in `CoreDefinitionsForLaurel`, injected only
-into programs that use exceptions). The pass *builds* that encoding and
-`ModifiesClauses` *consumes* it — it guards the normal frame with
-`Result..isGood($result)` and the exceptional one with `Result..isBad($result)` —
-so both need the same spellings. They live here, next to `bodyLabel` and
-`resultOutputName`, for the same reason: a rename that reached only one of the
-two passes would desync them silently.
+into programs that use exceptions). The pass *builds* that encoding, and every
+downstream consumer meets it only through expressions the pass itself constructed
+(`Result..isGood(<carrier>) ==> …` postconditions and `ModifiesGroup` guards), so
+the member names live here for the passes that *print* or *inspect* datatype
+members generally, not as a cross-pass contract about the carrier.
+
+The carrier *output* is not named here at all. Its name is private to
+`EliminateExceptions`, which references the carrier directly in everything it
+emits — no downstream pass reconstructs it, so none can misread an unrelated
+output that happens to be spelled the same way. It does have to stay distinct
+from `resultOutputName`, the output the short `: T` return form mints for every
+procedure: were they equal, both would claim one identifier in a throwing
+procedure written `: T`, and the signature's `Result<…>` would contradict the
+value type the body assigns; the pass freshens past taken names for exactly that
+reason.
 
 The member names are derived from the datatype, constructor, and field names
 below, following the same convention as `DatatypeDefinition.testerName` and

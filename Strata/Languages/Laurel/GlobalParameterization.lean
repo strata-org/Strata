@@ -290,7 +290,9 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
           pure (.Transparent (wrap (← globalTransformExpr model expression false)))
       | .Opaque postconditions implementation modifies => do
           let postconditions ← postconditions.mapM (·.mapM transformValue)
-          let modifies ← modifies.mapM transformValue
+          let modifies ← modifies.mapM fun g => do
+            pure { g with targets := ← g.targets.mapM transformValue,
+                          guard := ← g.guard.mapM transformValue }
           match implementation with
           | some expression =>
             pure (.Opaque postconditions
@@ -320,7 +322,9 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
         pure (.Opaque
           (← postconditions.mapM (·.mapM transformValue))
           (← implementation.mapM (fun expr => globalTransformExpr model expr false))
-          (← modifies.mapM transformValue))
+          (← modifies.mapM fun g => do
+            pure { g with targets := ← g.targets.mapM transformValue,
+                          guard := ← g.guard.mapM transformValue }))
     | .Abstract postconditions =>
         pure (.Abstract (← postconditions.mapM (·.mapM transformValue)))
     | .External => pure .External

@@ -588,23 +588,36 @@ def translateModifiesExprs (arg : Arg) : TransM (List StmtExprMd) := do
     args.toList.mapM translateStmtExpr
   | _ => pure []
 
-def translateModifiesClauses (arg : Arg) : TransM (List StmtExprMd) := do
+/-- User `modifies` clauses fold into a single unguarded `ModifiesGroup` — one
+    frame, exactly the pre-guard semantics. A `modifiesWhenClause` (pass-generated,
+    but parsed here so printed output round-trips) contributes its own guarded
+    group. -/
+def translateModifiesClauses (arg : Arg) : TransM (List ModifiesGroup) := do
   match arg with
   | .seq _ _ args => do
-    let mut allModifies : List StmtExprMd := []
+    let mut plainTargets : List StmtExprMd := []
+    let mut guardedGroups : List ModifiesGroup := []
     for clauseArg in args do
       match clauseArg with
       | .op clauseOp => match clauseOp.name, clauseOp.args with
         | q`Laurel.modifiesClause, #[refsArg] =>
           let refs ← translateModifiesExprs refsArg
-          allModifies := allModifies ++ refs
+          plainTargets := plainTargets ++ refs
         | q`Laurel.modifiesWildcard, #[] =>
           let src := SourceRange.toFileRange (← get).uri clauseOp.ann
-          allModifies := allModifies ++ [mkStmtExprMd .All src]
+          plainTargets := plainTargets ++ [mkStmtExprMd .All src]
+        | q`Laurel.modifiesWhenClause, #[refsArg, guardArg] =>
+          let refs ← translateModifiesExprs refsArg
+          let guard ← translateStmtExpr guardArg
+          guardedGroups := guardedGroups ++ [{ targets := refs, guard := some guard }]
         | _, _ => TransM.error s!"Expected modifiesClause operation, got {repr clauseOp.name}"
       | _ => TransM.error s!"Expected modifiesClause operation in modifies sequence"
-    pure allModifies
-  | _ => pure []
+    -- The plain group exists even with no clauses: for an opaque procedure, an
+    -- absent `modifies` means "nothing may change", which is the empty frame —
+    -- not the absence of one. (This function is only reached from an
+    -- `opaqueSpec`, so the group never lands on a transparent body.)
+    pure ({ targets := plainTargets : ModifiesGroup } :: guardedGroups)
+  | _ => pure [{ targets := [] : ModifiesGroup }]
 
 /-- Translate the optional `summary "..."` argument of a clause. -/
 private def translateErrorSummary (errMsgArg : Arg) : TransM (Option String) := do

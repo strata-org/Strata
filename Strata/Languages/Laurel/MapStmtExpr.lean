@@ -502,7 +502,15 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   match proc.body with
   | .Transparent b => return { proc with body := .Transparent (← f b) }
   | .Opaque posts impl mods =>
-    return { proc with body := .Opaque (← posts.mapM (·.mapM f)) (← impl.mapM f) (← mods.mapM f) }
+    let posts' ← posts.mapM (·.mapM f)
+    let impl' ← impl.mapM f
+    -- Groups keep the documented order: postconditions, implementation, then the
+    -- modifies entries — each group's targets before its guard.
+    let mods' ← mods.mapM fun g => do
+      let targets' ← g.targets.mapM f
+      let guard' ← g.guard.mapM f
+      pure { g with targets := targets', guard := guard' }
+    return { proc with body := .Opaque posts' impl' mods' }
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
@@ -531,7 +539,9 @@ def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure)
   | .Opaque postconditions implementation modifies =>
     postconditions.forM (visit ·.condition)
     implementation.forM visit
-    modifies.forM visit
+    modifies.forM fun g => do
+      g.targets.forM visit
+      g.guard.forM visit
   | .Abstract postconditions => postconditions.forM (visit ·.condition)
   | .External => pure ()
   procedureSpecificationExprs proc |>.forM visit
