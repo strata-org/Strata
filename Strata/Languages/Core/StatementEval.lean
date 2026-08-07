@@ -841,7 +841,7 @@ def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   | .cmd c =>
     Imperative.Cmd.run E c
   | .call pname args _md =>
-    Command.runCall (CallArg.getLhs args) pname (CallArg.getInArgs args) fuel E
+    Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end
 

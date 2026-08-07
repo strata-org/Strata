@@ -417,15 +417,24 @@ private def procedureCommandOp (proc : Procedure) : StrataDDM.Operation :=
     name := { dialect := "Laurel", name := "procedureCommand" }
     args := #[.op (procedureToOp proc)] }
 
+private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
+  { ann := sr
+    name := { dialect := "Laurel", name := "globalVarCommand" }
+    args := #[ident f.name.text, highTypeToArg f.type,
+              optionArg (f.initializer.map fun value =>
+                laurelOp "initializer" #[stmtExprToArg value])] }
+
 /-- Convert a Laurel.Program to a StrataDDM.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
-    Note: `staticFields` and `constants` are not emitted because the Laurel
-    grammar has no top-level commands for them. -/
+    Note: `constants` are not emitted because the Laurel grammar has no
+    top-level command for them. `staticFields` are emitted as `globalVarCommand`s
+    so that a program with globals round-trips through source. -/
 def programToStrata (prog : Laurel.Program) : StrataDDM.Program :=
+  let fieldOps := prog.staticFields.map globalVarCommandOp |>.toArray
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := prog.staticProcedures.map procedureCommandOp |>.toArray
-  StrataDDM.Program.create Laurel_map "Laurel" (typeOps ++ procOps)
+  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/

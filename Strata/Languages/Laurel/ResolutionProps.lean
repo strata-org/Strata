@@ -474,7 +474,6 @@ variable
   (masterSynth : ∀ e, PostM (Synth.resolveStmtExpr e) (fun r => Clean r.1))
   (masterCheck : ∀ e ty, PostM (Check.resolveStmtExpr e ty) Clean)
 
-/-- validateFullyAnnotated decomposes into per-procedure/type/constant parts. -/
 theorem validate_decompose (program : Program) :
     validateFullyAnnotated program =
       (program.staticProcedures ++ program.types.flatMap fun
@@ -489,7 +488,9 @@ theorem validate_decompose (program : Program) :
             ++ collectStmtExprList unannotatedDeclares ct.witness
         | _ => [])
       ++ program.constants.flatMap (fun c =>
-          c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)) := by
+          c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares))
+      ++ program.staticFields.flatMap (fun f =>
+          f.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)) := by
   rfl
 
 include masterSynth in
@@ -946,20 +947,34 @@ theorem resolveConstant_clean (c : Constant) :
     fun init' hinit => ?_
   exact postM_bind_any fun name' => postM_pure hinit
 
+include masterCheck in
+omit masterSynth in
+theorem resolveField_clean (ownerName : Identifier) (f : Field) :
+    PostM (resolveField ownerName f) (fun f' => ∀ e ∈ f'.initializer, Clean e) := by
+  unfold resolveField
+  refine postM_bind_any fun ty' => ?_
+  refine postM_bind_any fun (_ : Unit) => ?_
+  refine postM_bind_any fun resolved => ?_
+  refine postM_bind (postM_option_mapM _ _ (fun e => masterCheck e ty'))
+    fun init' hinit => ?_
+  exact postM_pure hinit
+
 /-! Final assembly -/
 
 /-- A program is Clean when every tree the validator walks is Clean. -/
 def CleanProgram (program : Program) : Prop :=
   (∀ proc ∈ program.staticProcedures, CleanProcFields proc) ∧
   (∀ td ∈ program.types, CleanTypeDef td) ∧
-  (∀ c ∈ program.constants, ∀ e ∈ c.initializer, Clean e)
+  (∀ c ∈ program.constants, ∀ e ∈ c.initializer, Clean e) ∧
+  (∀ f ∈ program.staticFields, ∀ e ∈ f.initializer, Clean e)
 
 open CollectEmits in
 theorem validate_nil_of_cleanProgram (program : Program)
     (h : CleanProgram program) : validateFullyAnnotated program = [] := by
-  obtain ⟨hprocs, htypes, hconsts⟩ := h
+  obtain ⟨hprocs, htypes, hconsts, hfields⟩ := h
   rw [validate_decompose]
-  refine List.append_eq_nil_iff.mpr ⟨List.append_eq_nil_iff.mpr ⟨?_, ?_⟩, ?_⟩
+  refine List.append_eq_nil_iff.mpr
+    ⟨List.append_eq_nil_iff.mpr ⟨List.append_eq_nil_iff.mpr ⟨?_, ?_⟩, ?_⟩, ?_⟩
   · -- procedures: static ++ instance
     rw [List.flatMap_eq_nil_iff]
     intro proc hp
@@ -994,6 +1009,12 @@ theorem validate_nil_of_cleanProgram (program : Program)
     rw [List.flatMap_eq_nil_iff]
     intro e he
     exact hconsts c hc e (Option.mem_toList.mp (by simpa using he))
+  · -- file-scope globals
+    rw [List.flatMap_eq_nil_iff]
+    intro f hf
+    rw [List.flatMap_eq_nil_iff]
+    intro e he
+    exact hfields f hf e (Option.mem_toList.mp (by simpa using he))
 
 include masterSynth masterCheck in
 theorem phase1_clean (program : Program) :
@@ -1011,10 +1032,11 @@ theorem phase1_clean (program : Program) :
       resolveTypeDefinition_clean masterSynth masterCheck td)) fun types' htypes => ?_
   refine postM_bind (postM_mapM _ _ (fun c _ =>
       resolveConstant_clean masterCheck c)) fun constants' hconsts => ?_
-  refine postM_bind_any fun staticFields' => ?_
+  refine postM_bind (postM_mapM _ _ (fun f _ =>
+      resolveField_clean masterCheck "$static" f)) fun staticFields' hfields => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticProcs' hprocs => ?_
-  exact postM_pure ⟨hprocs, htypes, hconsts⟩
+  exact postM_pure ⟨hprocs, htypes, hconsts, hfields⟩
 
 include masterSynth masterCheck in
 /-- **Resolution establishes the fully-annotated invariant**, conditional on

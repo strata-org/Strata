@@ -11,6 +11,8 @@ import StrataDDM.BuiltinDialects.Init
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.Resolution
+import Strata.Languages.Laurel.EliminateValueInReturns
+import Strata.Languages.Laurel.GlobalParameterization
 import Strata.Languages.Laurel.LaurelCompilationPipeline
 import Strata.Languages.Laurel
 import Strata.Languages.Core.ProgramEval
@@ -45,6 +47,34 @@ def withBuiltins (program : Laurel.Program) : Laurel.Program :=
     staticProcedures :=
       Laurel.coreDefinitionsForLaurel.staticProcedures ++ program.staticProcedures,
     types := Laurel.coreDefinitionsForLaurel.types ++ program.types }
+
+def printGlobalParameterization (includeStaticFieldCount : Bool)
+    (program : StrataDDM.Program) : IO Unit := do
+  let parsed ← translateLaurel program
+  let builtinNames := Laurel.coreDefinitionsForLaurel.staticProcedures.map (·.name.text)
+  let laurelProgram := withBuiltins parsed
+  let first := Laurel.resolve laurelProgram
+  for diagnostic in first.errors do
+    IO.println s!"initial diagnostic: {diagnostic.message}"
+  let prepared := Laurel.eliminateValueInReturnsTransform first.program
+  let preparedResult := Laurel.resolve prepared (some first.model)
+  for diagnostic in preparedResult.errors do
+    IO.println s!"pre-lowering diagnostic: {diagnostic.message}"
+  let (lowered, diagnostics, _) :=
+    Laurel.globalParameterizationPass.run {} preparedResult.program preparedResult.model
+  for diagnostic in diagnostics do
+    IO.println s!"lowering diagnostic: {diagnostic.message}"
+  let second := Laurel.resolve lowered (some preparedResult.model)
+  for diagnostic in second.errors do
+    IO.println s!"post-lowering diagnostic: {diagnostic.message}"
+  if includeStaticFieldCount then
+    IO.println s!"staticFields: {lowered.staticFields.length}"
+  for proc in lowered.staticProcedures do
+    unless builtinNames.contains proc.name.text do
+      let rendered := toString (Std.Format.pretty
+        (Laurel.formatProgram
+          { staticProcedures := [proc], staticFields := [], types := [] }))
+      IO.println (rendered.replace "return \n" "return\n")
 
 /-- Convert pipeline `Message`s (carrying file-global byte offsets in
     their `FileRange`) into `Diagnostic`s with snippet-local line/col, by

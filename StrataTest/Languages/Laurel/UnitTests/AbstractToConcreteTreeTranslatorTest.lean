@@ -472,6 +472,30 @@ procedure loop()
 };
 #end)
 
+/--
+info: var counter: int := 0
+
+var enabled: bool := false
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 0
+var enabled: bool := false
+#end)
+
+/--
+info: var counter: int := 1 + 2 * 3
+-/
+#guard_msgs in
+#eval do IO.println (← roundtrip
+#strata
+program Laurel;
+var counter: int := 1 + 2 * 3
+#end)
+
+
 -- Generic datatype: the `<T>` type-parameter list survives Abstract→Concrete→Abstract.
 /--
 info: datatype Option<T> { Nothing, Some(value: T) }

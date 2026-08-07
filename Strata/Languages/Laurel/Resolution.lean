@@ -14,6 +14,7 @@ public import Strata.Languages.Laurel.SemanticModel
 public import Strata.Languages.Laurel.LaurelTypes
 import Strata.Languages.Laurel.Grammar.AbstractToConcreteTreeTranslator
 import Strata.Languages.Laurel.HeapAnalysis
+import Strata.Languages.Laurel.GlobalVarAnalysis
 import Strata.Languages.Laurel.MapStmtExpr
 import Strata.Languages.Laurel.PushOldInward
 
@@ -3684,31 +3685,25 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
              throwsOn := throwsOn',
              body := body' }
 
-/-- Resolve a field: define its name under the qualified key (OwnerType.fieldName) and resolve its type. -/
-def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
-  let ty' ← resolveHighType field.type
-  -- Heap parameterization boxes every composite field value into the generated
-  -- `Box` datatype, which has one variant per field type and no variant for a
-  -- generic datatype instantiation: a field typed `Option<int>` reaches
-  -- `boxConstructorName` and aborts with an internal error. Reject it here with a
-  -- real diagnostic instead. (Keying the box variant on the base name alone does
-  -- not work — two instantiations in one program, `Option<int>` and
-  -- `Option<bool>`, would claim the same variant with different payload types —
-  -- so supporting this needs per-instantiation box variants, deliberately left
-  -- out of scope here.)
+private def rejectGenericFieldType (field : Field) (ty' : HighTypeMd) : ResolveM Unit :=
   match ty'.val with
   | .Applied base _ =>
     let baseName := match base.val with | .UserDefined n => n.text | _ => "?"
     modify fun s => { s with errors := s.errors.push (diagnosticFromSource field.type.source
       s!"a generic datatype instantiation ('{baseName}<…>') is not yet supported as a composite field type") }
   | _ => pure ()
+
+def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
+  let ty' ← resolveHighType field.type
+  let _ ← rejectGenericFieldType field ty'
   let qualifiedName := ownerName.text ++ "." ++ field.name.text
   let resolved ← resolveRef qualifiedName
   -- Keep the original field name text; only take the uniqueId from resolution.
   -- resolveRef returns text = "Owner.field" (the qualified lookup key), but the
   -- field's own name should stay unqualified.
   let name' := { field.name with uniqueId := resolved.uniqueId }
-  return { name := name', isMutable := field.isMutable, type := ty' }
+  let init' ← field.initializer.mapM (Check.resolveStmtExpr · ty')
+  return { name := name', isMutable := field.isMutable, type := ty', initializer := init' }
 
 /-- Resolve an instance procedure on a composite type. -/
 def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : ResolveM Procedure := do
@@ -4111,7 +4106,8 @@ private def placeholderNode : ResolvedNode :=
     - Constant names
     - Static procedure names -/
 private def preRegisterDefinitions (types : List TypeDefinition)
-    (constants : List Constant) (procs : List Procedure) : ResolveM Unit := do
+    (constants : List Constant) (staticFields : List Field)
+    (procs : List Procedure) : ResolveM Unit := do
   for td in types do
     match td with
     | .Composite ct =>
@@ -4139,11 +4135,19 @@ private def preRegisterDefinitions (types : List TypeDefinition)
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
   for c in constants do
     let _ ← defineNameCheckDup c.name (.constant c)
+  -- Register both lookup forms for each file-scope global with one definition ID.
+  -- Only the user-facing bare name participates in duplicate diagnostics.
+  for field in staticFields do
+    let qualifiedName := "$static." ++ field.name.text
+    let fieldName ← defineNameCheckDup field.name (.field "$static" field)
+    if !(← get).currentScopeNames.contains qualifiedName then
+      let _ ← defineNameCheckDup fieldName (.field "$static" field) (some qualifiedName)
   for proc in procs do
     preRegisterStaticProcedure proc
 
 private def preRegisterTopLevel (program : Program) : ResolveM Unit :=
-  preRegisterDefinitions program.types program.constants program.staticProcedures
+  preRegisterDefinitions program.types program.constants program.staticFields
+    program.staticProcedures
 
 /-! ## Exception-escape enforcement
 
@@ -4561,6 +4565,12 @@ private def validateExceptionalClausesNeedThrows
             MessageKind.userError
     needsThrows ++ valueOutputRefs
 
+/-- Test membership by resolved procedure identity. -/
+private def containsProcId (ids : Std.HashSet Nat) (name : Identifier) : Bool :=
+  match name.uniqueId with
+  | some id => ids.contains id
+  | none => false
+
 /-- True when `e` reads heap state, reusing the shared heap-effect analysis so
     this stays consistent with how `HeapParameterization` classifies expressions.
     An expression reads the heap when it either accesses a composite field
@@ -4719,6 +4729,601 @@ def validateOldUsage (model : SemanticModel) (program : Program) : List Message 
       | none => false
     oldWarningsForProc model.heapReaders writesHeap proc
 
+private structure InitialEffectAnalysis where
+  allProcs : List Procedure
+  globals : GlobalEffectsByProcId
+
+private def analyzeInitialEffects (model : SemanticModel)
+    (program : Program) : InitialEffectAnalysis :=
+  let instanceProcs := program.types.flatMap fun
+    | .Composite ct => ct.instanceProcedures
+    | _ => []
+  let allProcs := program.staticProcedures ++ instanceProcs
+  { allProcs
+    globals := computeGlobalEffectsByProcId model allProcs program.staticFields }
+
+/-- Names containing `$` are reserved for compiler-generated variables used
+    by later lowering passes. Reject them at the source boundary rather than
+    risking capture or silent state corruption. -/
+private def resolvedNodeName? : ResolvedNode → Option Identifier
+  | .var name _ | .quantifierVar name _ | .typeParameter name => some name
+  | .parameter parameter | .datatypeDestructor _ parameter => some parameter.name
+  | .staticProcedure proc | .instanceProcedure _ proc => some proc.name
+  | .field _ field => some field.name
+  | .compositeType type => some type.name
+  | .constrainedType type => some type.name
+  | .datatypeDefinition type => some type.name
+  | .datatypeConstructor _ constructor => some constructor.name
+  | .typeAlias alias => some alias.name
+  | .constant constant => some constant.name
+  | .unresolved _ => none
+
+/-- Names in compiler-generated namespaces cannot be user binders: generated
+    qualified global references are re-resolved after constrained-type lowering. -/
+private def validateGlobalNames (program : Program) : List Message :=
+  let globalErrors := program.staticFields.filterMap fun field =>
+    if field.name.text.contains '$' then
+      some (diagnosticFromSource field.name.source
+        s!"file-scope global name '{field.name.text}' is reserved for compiler-generated variables"
+        MessageKind.userError)
+    else none
+  let staticOwnerErrors := program.types.filterMap fun type =>
+    if type.name.text == "$static" then
+      some (diagnosticFromSource type.name.source
+        "type name '$static' is reserved for file-scope global variables"
+        MessageKind.userError)
+    else none
+  let binderErrors := (buildRefToDef program).toList.filterMap fun (_, node) => do
+    let name ← resolvedNodeName? node
+    if !name.text.startsWith "$static." then none
+    else if let .field owner _ := node then
+      if owner.text == "$static" then none else some (diagnosticFromSource name.source
+        s!"name '{name.text}' is reserved for compiler-generated variables"
+        MessageKind.userError)
+    else some (diagnosticFromSource name.source
+      s!"name '{name.text}' is reserved for compiler-generated variables"
+      MessageKind.userError)
+  let constrainedBinderErrors := program.types.filterMap fun
+    | .Constrained type =>
+        if type.valueName.text.startsWith "$static." then
+          some (diagnosticFromSource type.valueName.source
+            s!"name '{type.valueName.text}' is reserved for compiler-generated variables"
+            MessageKind.userError)
+        else none
+    | _ => none
+  globalErrors ++ staticOwnerErrors ++ binderErrors ++ constrainedBinderErrors
+
+
+private def globalEffectIdsFor (effects : Std.HashMap Nat (Std.HashSet Nat))
+    (field : Field) : Std.HashSet Nat :=
+  match field.name.uniqueId with
+  | some id => effects.getD id {}
+  | none => {}
+
+private def globalReaderIds (program : Program) (analysis : InitialEffectAnalysis)
+    : Std.HashSet Nat :=
+  program.staticFields.foldl (init := {}) fun ids field =>
+    ids.union (globalEffectIdsFor analysis.globals.readers field)
+
+private def globalWriterIds (program : Program) (analysis : InitialEffectAnalysis)
+    : Std.HashSet Nat :=
+  program.staticFields.foldl (init := {}) fun ids field =>
+    ids.union (globalEffectIdsFor analysis.globals.writers field)
+
+private def calleeProcedure (model : SemanticModel) (callee : Identifier)
+    : Option Procedure :=
+  match model.get? callee with
+  | some (.staticProcedure proc) | some (.instanceProcedure _ proc) => some proc
+  | _ => none
+
+private def parameterIsInout (proc : Procedure) (parameter : Parameter) : Bool :=
+  parameter.name.uniqueId.isSome &&
+    proc.inputs.any (·.name.uniqueId == parameter.name.uniqueId) &&
+    proc.outputs.any (·.name.uniqueId == parameter.name.uniqueId)
+
+private def hasExplicitInout (model : SemanticModel) (callee : Identifier) : Bool :=
+  (calleeProcedure model callee).any fun proc => proc.inputs.any (parameterIsInout proc)
+
+private def ordinaryOutputCount (model : SemanticModel) (callee : Identifier) : Nat :=
+  (calleeProcedure model callee).map (fun proc =>
+    proc.outputs.countP fun output => !parameterIsInout proc output) |>.getD 0
+
+private def isGlobalRef (model : SemanticModel) (expr : StmtExprMd) : Bool :=
+  match expr.val with
+  | .Var (.Local name) => match model.get? name with
+      | some (.field owner _) => owner.text == "$static"
+      | _ => false
+  | _ => false
+
+private def containsGlobalRef (model : SemanticModel) (expr : StmtExprMd) : Bool :=
+  anyStmtExpr (isGlobalRef model) expr
+
+private def isGlobalTarget (model : SemanticModel) (target : VariableMd) : Bool :=
+  match target.val with
+  | .Local name => match model.get? name with
+      | some (.field owner _) => owner.text == "$static"
+      | _ => false
+  | .Field _ _ | .Declare _ => false
+
+
+private def globalDependentIds (program : Program) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
+  (globalReaderIds program analysis).union (globalWriterIds program analysis)
+
+private def isGlobalUse (model : SemanticModel) (dependentIds : Std.HashSet Nat)
+    (expr : StmtExprMd) : Bool :=
+  match expr.val with
+  | .Var _ => isGlobalRef model expr
+  | .Assign targets _ => targets.any (isGlobalTarget model)
+  | .IncrDecr _ _ target | .CompoundAssign _ target _ => isGlobalTarget model target
+  | .StaticCall callee _ | .InstanceCall _ callee _ => containsProcId dependentIds callee
+  | _ => false
+
+private def firstGlobalUseSource (model : SemanticModel) (dependentIds : Std.HashSet Nat)
+    (expr : StmtExprMd) : Option FileRange :=
+  (foldStmtExprM (m := StateM (Option FileRange)) (fun node => do
+    if (← get).isNone && isGlobalUse model dependentIds node then
+      set (some node.source)) expr |>.run none).2
+/-- Constrained predicates and witnesses are compiled into helper procedures
+    before global lowering; those helpers cannot acquire hidden global state. -/
+private def validateConstrainedTypeGlobalUse (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  let errorsIn (expr : StmtExprMd) : List Message :=
+    match firstGlobalUseSource model dependentIds expr with
+    | some source => [diagnosticFromSource source
+        "file-scope globals are not yet supported in constrained type predicates or witnesses"
+        MessageKind.userError]
+    | none => []
+  program.types.flatMap fun
+    | .Constrained ct => errorsIn ct.constraint ++ errorsIn ct.witness
+    | _ => []
+
+/-- Constants have no procedure context through which global lowering can thread
+    hidden state, so any direct or transitive global dependency is unsupported. -/
+private def validateConstantInitializerGlobalUse (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  program.constants.filterMap fun constant => do
+    let initializer ← constant.initializer
+    let source ← firstGlobalUseSource model dependentIds initializer
+    some (diagnosticFromSource source
+      s!"constant initializer '{constant.name.text}' cannot depend on file-scope globals"
+      MessageKind.userError)
+
+
+/-- Visit each expression node exactly once while tracking whether it occurs in
+    a contract-like context. Loop conditions and annotations, quantifiers, and
+    `old` operands become restricted; ordinary loop bodies retain their
+    surrounding context. -/
+private def foldRestrictedStmtExprM [Monad m]
+    (f : Bool → StmtExprMd → m Unit) (restricted : Bool)
+    (expr : StmtExprMd) : m Unit := do
+  f restricted expr
+  match _h : expr.val with
+  | .IfThenElse cond th el =>
+    foldRestrictedStmtExprM f restricted cond; foldRestrictedStmtExprM f restricted th
+    el.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .Block stmts _ =>
+    stmts.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .While cond invs dec body _ =>
+    foldRestrictedStmtExprM f true cond
+    invs.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
+    dec.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
+    foldRestrictedStmtExprM f restricted body
+  | .Return value => value.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .Assign targets value =>
+    targets.attach.forM fun ⟨target, _⟩ => match target with
+      | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    foldRestrictedStmtExprM f restricted value
+  | .Var (.Field target _) => foldRestrictedStmtExprM f restricted target
+  | .IncrDecr _ _ target => match target with
+    | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+  | .CompoundAssign _ target rhs =>
+    match target with
+    | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    foldRestrictedStmtExprM f restricted rhs
+  | .PureFieldUpdate target _ value => foldRestrictedStmtExprM f restricted target; foldRestrictedStmtExprM f restricted value
+  | .StaticCall _ args =>
+    args.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .ReferenceEquals lhs rhs => foldRestrictedStmtExprM f restricted lhs; foldRestrictedStmtExprM f restricted rhs
+  | .AsType target _ => foldRestrictedStmtExprM f restricted target
+  | .IsType target _ => foldRestrictedStmtExprM f restricted target
+  | .InstanceCall target _ args =>
+    foldRestrictedStmtExprM f restricted target
+    args.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
+  | .Quantifier _ _ trigger body =>
+    trigger.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
+    foldRestrictedStmtExprM f true body
+  | .Assigned name => foldRestrictedStmtExprM f restricted name
+  | .Fresh name => foldRestrictedStmtExprM f restricted name
+  | .Old value => foldRestrictedStmtExprM f true value
+  | .Assert cond _ => foldRestrictedStmtExprM f true cond
+  | .Assume cond => foldRestrictedStmtExprM f true cond
+  | .Throw value => foldRestrictedStmtExprM f restricted value
+  | .Try body catches finally? =>
+    foldRestrictedStmtExprM f restricted body
+    catches.attach.forM fun ⟨clause, _⟩ => do
+      clause.predicate.attach.forM fun ⟨predicate, _⟩ =>
+        foldRestrictedStmtExprM f true predicate
+      foldRestrictedStmtExprM f restricted clause.body
+    finally?.attach.forM fun ⟨body, _⟩ => foldRestrictedStmtExprM f restricted body
+  | .ProveBy value proof =>
+    foldRestrictedStmtExprM f restricted value
+    foldRestrictedStmtExprM f true proof
+  | .ContractOf _ func => foldRestrictedStmtExprM f restricted func
+  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _)
+  | .Var (.Declare _) | .New _ | .This | .Abstract | .All | .Hole .. => pure ()
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
+  all_goals (try term_by_mem)
+  all_goals (revert expr; intro x; cases x; simp_all; omega)
+
+/-- Collect values from nodes on expression result paths. Discarded block
+    prefixes, conditions, triggers, and proof expressions are not result paths. -/
+private def collectResultPathStmtExprList {β : Type} (f : StmtExprMd → List β)
+    (expr : StmtExprMd) : List β :=
+  match _h : expr.val with
+  | .Block stmts _ =>
+      match stmts.attach.getLast? with
+      | some ⟨result, _hmem⟩ => collectResultPathStmtExprList f result
+      | none => []
+  | .IfThenElse _ thenBranch elseBranch =>
+      let thenResults := collectResultPathStmtExprList f thenBranch
+      match elseBranch with
+      | some elseExpr => thenResults ++ collectResultPathStmtExprList f elseExpr
+      | none => thenResults
+  | .ProveBy value _ => collectResultPathStmtExprList f value
+  | .Old value => collectResultPathStmtExprList f value
+  | .Fresh value => collectResultPathStmtExprList f value
+  | .Assigned value => collectResultPathStmtExprList f value
+  | .AsType value _ => collectResultPathStmtExprList f value
+  | .Assign _ value | .CompoundAssign _ _ value | .Throw value =>
+      collectResultPathStmtExprList f value
+  | .Try body catches _ =>
+      collectResultPathStmtExprList f body ++ catches.attach.flatMap fun ⟨clause, _⟩ =>
+        collectResultPathStmtExprList f clause.body
+  | _ => f expr
+termination_by sizeOf expr
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := AstNode.sizeOf_val_lt expr)
+  all_goals (try have := Condition.sizeOf_condition_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
+  all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
+  all_goals (try term_by_mem)
+  all_goals (revert expr; intro x; cases x; simp_all; omega)
+
+private structure GlobalCallValidationContext where
+  model : SemanticModel
+  writerIds : Std.HashSet Nat
+  dependentIds : Std.HashSet Nat
+
+private def containsArgumentMutation (ctx : GlobalCallValidationContext)
+    (expr : StmtExprMd) : Bool :=
+  anyStmtExpr (fun node => match node.val with
+    | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _ => true
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+        containsProcId ctx.writerIds callee || hasExplicitInout ctx.model callee
+    | _ => false) expr
+
+private def passesGlobalToInout (ctx : GlobalCallValidationContext)
+    (callee : Identifier) (args : List StmtExprMd) : Bool :=
+  (calleeProcedure ctx.model callee).any fun proc =>
+    (proc.inputs.zip args).any fun (parameter, arg) =>
+      parameterIsInout proc parameter && containsGlobalRef ctx.model arg
+
+private def isVariableActual (expr : StmtExprMd) : Bool :=
+  match expr.val with
+  | .Var (.Local _) | .Block [⟨.Var (.Local _), _⟩] _ => true
+  | _ => false
+
+private def hasInvalidInoutActual (ctx : GlobalCallValidationContext)
+    (callee : Identifier) (args : List StmtExprMd) : Bool :=
+  (calleeProcedure ctx.model callee).any fun proc =>
+    (proc.inputs.zip args).any fun (parameter, arg) =>
+      parameterIsInout proc parameter && !isVariableActual arg
+
+private abbrev GlobalValidationM := StateM (List Message)
+
+private def validateGlobalCall (ctx : GlobalCallValidationContext) (restricted : Bool)
+    (callee : Identifier) (args : List StmtExprMd) : GlobalValidationM Unit := do
+  let dependsOnGlobal := containsProcId ctx.dependentIds callee
+  let writesGlobal := containsProcId ctx.writerIds callee
+  let explicitInout := hasExplicitInout ctx.model callee
+  let mutatingGlobalInout :=
+    !writesGlobal && dependsOnGlobal && explicitInout && args.any (containsArgumentMutation ctx)
+  if dependsOnGlobal && hasInvalidInoutActual ctx callee args && !mutatingGlobalInout then
+    modify (· ++ [diagnosticFromSource callee.source
+      s!"explicit inout arguments to '{callee.text}' must be variable references"
+      MessageKind.userError])
+  if passesGlobalToInout ctx callee args then
+    modify (· ++ [diagnosticFromSource callee.source
+      s!"passing file-scope globals to explicit inout parameters of '{callee.text}' is not yet supported"
+      MessageKind.userError])
+  if writesGlobal then
+    if explicitInout then
+      modify (· ++ [diagnosticFromSource callee.source
+        s!"calls to global-writing procedure '{callee.text}' with explicit inout outputs are not yet supported"
+        MessageKind.userError])
+    else if restricted then
+      modify (· ++ [diagnosticFromSource callee.source
+        s!"calls to global-writing procedure '{callee.text}' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions"
+        MessageKind.userError])
+  if mutatingGlobalInout then
+    modify (· ++ [diagnosticFromSource callee.source
+      s!"mutating arguments to global-dependent procedure '{callee.text}' with explicit inout outputs are not yet supported"
+      MessageKind.userError])
+
+private def blockTupleCall (ctx : GlobalCallValidationContext)
+    (expr : StmtExprMd) : Option Identifier :=
+  match expr.val with
+  | .Block _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ | .Fresh _
+  | .Assigned _ | .AsType _ _ | .Assign _ _ | .CompoundAssign _ _ _ =>
+      (collectResultPathStmtExprList (fun node => match node.val with
+        | .StaticCall callee _ | .InstanceCall _ callee _ => [callee]
+        | _ => []) expr).find? fun callee =>
+          containsProcId ctx.dependentIds callee &&
+            ordinaryOutputCount ctx.model callee > 1
+  | _ => none
+
+private def effectfulTupleCall (ctx : GlobalCallValidationContext)
+    (expr : StmtExprMd) : Option Identifier :=
+  let candidate := match expr.val with
+    | .StaticCall callee args => some (callee, args)
+    | .InstanceCall target callee args => some (callee, target :: args)
+    | _ => none
+  candidate.bind fun (callee, args) =>
+    if containsProcId ctx.dependentIds callee &&
+        ordinaryOutputCount ctx.model callee > 1 &&
+        args.any (containsArgumentMutation ctx)
+    then some callee else none
+
+private def tupleCallNeedingBlock (ctx : GlobalCallValidationContext)
+    (expr : StmtExprMd) : Option Identifier :=
+  (blockTupleCall ctx expr).orElse fun _ => effectfulTupleCall ctx expr
+
+private def globalCallErrors (ctx : GlobalCallValidationContext)
+    (initialRestricted : Bool) (expr : StmtExprMd) : List Message :=
+  let mutationError (source : FileRange) : GlobalValidationM Unit :=
+    modify (· ++ [diagnosticFromSource source
+      "global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions"
+      MessageKind.userError])
+  (foldRestrictedStmtExprM (m := GlobalValidationM)
+    (fun restricted node => do
+      match node.val with
+      | .StaticCall callee args => validateGlobalCall ctx restricted callee args
+      | .InstanceCall target callee args =>
+          validateGlobalCall ctx restricted callee (target :: args)
+      | .Assign targets rhs => do
+          if targets.length > 1 then
+            if let some callee := tupleCallNeedingBlock ctx rhs then
+              modify (· ++ [diagnosticFromSource callee.source
+                s!"multi-output calls to global-dependent procedure '{callee.text}' that require block-valued lowering are not yet supported"
+                MessageKind.userError])
+          if restricted && targets.any (isGlobalTarget ctx.model) then mutationError node.source
+      | .IncrDecr _ _ target | .CompoundAssign _ target _ =>
+          if restricted && isGlobalTarget ctx.model target then mutationError node.source
+      | _ => pure ()) initialRestricted expr |>.run []).2
+
+private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
+    (expr : StmtExprMd) : List Message :=
+  let tupleLocations := collectStmtExprList (fun node => match node.val with
+    | .Assign targets rhs =>
+        if targets.length > 1 then
+          match tupleCallNeedingBlock ctx rhs with
+          | some callee => if containsProcId ctx.writerIds callee then [callee.source] else []
+          | none => []
+        else []
+    | _ => []) expr
+  (mapStmtExprUsedM (m := GlobalValidationM) (fun resultUsed node => do
+    match node.val with
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+        if resultUsed then
+          if containsProcId ctx.writerIds callee &&
+              ordinaryOutputCount ctx.model callee > 1 &&
+              !tupleLocations.contains callee.source then
+            modify (· ++ [diagnosticFromSource callee.source
+              s!"calls to global-writing procedure '{callee.text}' with more than one ordinary output are not yet supported"
+              MessageKind.userError])
+        else if containsProcId ctx.dependentIds callee && hasExplicitInout ctx.model callee then
+          modify (· ++ [diagnosticFromSource callee.source
+            s!"bare calls to global-dependent procedure '{callee.text}' with explicit inout outputs are not yet supported"
+            MessageKind.userError])
+    | _ => pure ()
+    return node) false expr |>.run []).2
+
+private def contractExpressions (proc : Procedure) : List StmtExprMd :=
+  proc.preconditions.map (·.condition) ++ proc.decreases.toList ++
+    proc.invokeOn.toList ++ proc.axioms ++ match proc.body with
+    | .Opaque postconditions _ modifies => postconditions.map (·.condition) ++ modifies
+    | .Abstract postconditions => postconditions.map (·.condition)
+    | .Transparent _ | .External => []
+
+private def bodyExpressions (proc : Procedure) : List StmtExprMd :=
+  match proc.body with
+  | .Transparent body => [body]
+  | .Opaque _ implementation _ => implementation.toList
+  | .Abstract _ | .External => []
+
+/-- Reject `old(...)` operands that directly or transitively depend on globals. -/
+private def oldGlobalErrorsInExpr (model : SemanticModel)
+    (dependentIds : Std.HashSet Nat) (expr : StmtExprMd) : List Message :=
+  let visit (node : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
+    if let .Old operand := node.val then
+      if let some source := firstGlobalUseSource model dependentIds operand then
+        modify (· ++ [diagnosticFromSource source
+          "file-scope globals are not yet supported inside `old(...)`"
+          MessageKind.userError])
+      return some node
+    return none
+  (mapStmtExprPrePostM (m := StateM (List Message)) visit pure expr |>.run []).2
+
+/-- Reject call shapes that cannot preserve global state and source evaluation
+    order during parameterization. -/
+private def validateUnsupportedGlobalCalls (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let writerIds := globalWriterIds program analysis
+  let dependentIds := writerIds.union (globalReaderIds program analysis)
+  let ctx : GlobalCallValidationContext := { model, writerIds, dependentIds }
+  let errorsIn (restricted checkUsedResults : Bool) (expr : StmtExprMd) :=
+    let oldErrors := oldGlobalErrorsInExpr model dependentIds expr
+    if !oldErrors.isEmpty then oldErrors
+    else globalCallErrors ctx restricted expr ++
+      if checkUsedResults then resultUseGlobalCallErrors ctx expr else []
+  analysis.allProcs.flatMap fun proc =>
+    (contractExpressions proc).flatMap (errorsIn true false) ++
+      (bodyExpressions proc).flatMap (errorsIn false true)
+
+
+/-- Without an implementation there is no source statement from which to infer
+    whether a postcondition's global denotes a write. Reject that ambiguous
+    post-state contract instead of silently lowering it as an input-only read. -/
+private def validateBodilessGlobalPostconditions (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  let usesGlobal (expr : StmtExprMd) : Bool :=
+    anyStmtExpr (fun node => match node.val with
+      | .Var _ => isGlobalRef model node
+      | .StaticCall callee _ | .InstanceCall _ callee _ =>
+          containsProcId dependentIds callee
+      | _ => false) expr
+  let isOutputRef (proc : Procedure) (expr : StmtExprMd) : Bool :=
+    match expr.val with
+    | .Var (.Local name) => proc.outputs.any (·.name.uniqueId == name.uniqueId)
+    | _ => false
+  let containsOutputRef (proc : Procedure) (expr : StmtExprMd) : Bool :=
+    anyStmtExpr (fun node => isOutputRef proc node) expr
+  let definesOutputFromGlobal (proc : Procedure) (expr : StmtExprMd) : Bool :=
+    match expr.val with
+    | .StaticCall callee [lhs, rhs] =>
+        callee.text == Operation.Eq.procName &&
+          ((isOutputRef proc lhs && usesGlobal rhs && !containsOutputRef proc rhs) ||
+           (isOutputRef proc rhs && usesGlobal lhs && !containsOutputRef proc lhs))
+    | _ => false
+  let writerIds := program.staticFields.foldl (init := {}) fun ids field =>
+    ids.union (globalEffectIdsFor analysis.globals.writers field)
+  let hasWriterCall (expr : StmtExprMd) : Bool :=
+    anyStmtExpr (fun node => match node.val with
+      | .StaticCall callee _ | .InstanceCall _ callee _ =>
+          containsProcId writerIds callee
+      | _ => false) expr
+  analysis.allProcs.filterMap fun proc =>
+    let postconditions := match proc.body with
+      | .Opaque posts none _ => posts
+      | .Abstract posts => posts
+      | .Opaque _ (some _) _ | .Transparent _ | .External => []
+    postconditions.find? (fun post =>
+      usesGlobal post.condition && !definesOutputFromGlobal proc post.condition &&
+        !hasWriterCall post.condition) |>.map fun post =>
+      diagnosticFromSource post.condition.source
+        s!"global references in postconditions of procedure '{proc.name.text}' without an implementation are not yet supported"
+        MessageKind.userError
+
+private def firstInitializerEffectSource (model : SemanticModel)
+    (expr : StmtExprMd) : Option FileRange :=
+  let isEffect (node : StmtExprMd) : Bool :=
+    match node.val with
+    | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _
+    | .Var (.Declare _) => true
+    | .StaticCall callee _ | .InstanceCall _ callee _ =>
+        containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
+    | _ => false
+  (foldStmtExprM (m := StateM (Option FileRange)) (fun node => do
+    if (← get).isNone && isEffect node then
+      set (some node.source)) expr |>.run none).2
+
+private def validateGlobalInitializers (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  program.staticFields.flatMap fun field =>
+    match field.initializer with
+    | none => [diagnosticFromSource field.name.source
+        s!"file-scope global '{field.name.text}' must declare an initializer: 'var {field.name.text}: <type> := <value>'"
+        MessageKind.userError]
+    | some initializer =>
+      (match firstGlobalUseSource model dependentIds initializer with
+        | some source => [diagnosticFromSource source
+            s!"the initializer of file-scope global '{field.name.text}' cannot depend on file-scope globals"
+            MessageKind.userError]
+        | none => []) ++
+      (match firstInitializerEffectSource model initializer with
+        | some source => [diagnosticFromSource source
+            s!"the initializer of file-scope global '{field.name.text}' must be effect-free (no assignments or declarations, and no calls to heap-reading or heap-writing procedures)"
+            MessageKind.userError]
+        | none => [])
+
+private def entryUsedGlobals (program : Program) (analysis : InitialEffectAnalysis)
+    (proc : Procedure) : List Field :=
+  program.staticFields.filter fun field =>
+    containsProcId (globalEffectIdsFor analysis.globals.readers field) proc.name ||
+    containsProcId (globalEffectIdsFor analysis.globals.writers field) proc.name
+
+private def entryContractExpressions (proc : Procedure) : List StmtExprMd :=
+  contractExpressions proc ++ proc.throwsOn.flatMap fun blk =>
+    blk.guard :: (blk.postconditions.map (·.condition) ++ blk.modifies)
+
+private def validateEntryContractGlobalUse (model : SemanticModel)
+    (program : Program) (analysis : InitialEffectAnalysis) : List Message :=
+  let dependentIds := globalDependentIds program analysis
+  analysis.allProcs.flatMap fun proc =>
+    if !proc.isInterpretEntry then [] else
+    (entryContractExpressions proc).filterMap fun expr => do
+      let source ← firstGlobalUseSource model dependentIds expr
+      some (diagnosticFromSource source
+        s!"the contract of entry procedure '{proc.name.text}' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see"
+        MessageKind.userError)
+
+private def validateCallsToGlobalEntryProcedures (program : Program)
+    (analysis : InitialEffectAnalysis) : List Message :=
+  let globalEntryIds : Std.HashSet Nat :=
+    analysis.allProcs.foldl (init := {}) fun ids proc =>
+      if proc.isInterpretEntry && !(entryUsedGlobals program analysis proc).isEmpty then
+        match proc.name.uniqueId with
+        | some id => ids.insert id
+        | none => ids
+      else ids
+  if globalEntryIds.isEmpty then [] else
+  let errorsIn (expr : StmtExprMd) : List Message :=
+    collectStmtExprList (fun node => match node.val with
+      | .StaticCall callee _ | .InstanceCall _ callee _ =>
+        if containsProcId globalEntryIds callee then
+          [diagnosticFromSource node.source
+            s!"entry procedure '{callee.text}' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass"
+            MessageKind.userError]
+        else []
+      | _ => []) expr
+  analysis.allProcs.flatMap fun proc =>
+    (entryContractExpressions proc ++ bodyExpressions proc).flatMap errorsIn
+
+private def validateEntryConstrainedGlobalUse (program : Program)
+    (analysis : InitialEffectAnalysis) : List Message :=
+  let constrainedNames : Std.HashSet String :=
+    program.types.foldl (init := {}) fun names td =>
+      match td with
+      | .Constrained ct => names.insert ct.name.text
+      | _ => names
+  if constrainedNames.isEmpty then [] else
+  let isConstrained (field : Field) : Bool :=
+    match field.type.val with
+    | .UserDefined name => constrainedNames.contains name.text
+    | _ => false
+  analysis.allProcs.filterMap fun proc =>
+    if !proc.isInterpretEntry then none else
+    let constrained := (entryUsedGlobals program analysis proc).filter isConstrained
+    constrained.head?.map fun field =>
+      diagnosticFromSource proc.name.source
+        s!"entry procedure '{proc.name.text}' cannot use constrained-typed global '{field.name.text}': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive"
+        MessageKind.userError
+
 /-- An `invokeOn` procedure may not declare outputs: the auto-invocation axiom
     `ContractPass` generates is quantified over the procedure's inputs only, so an
     output would be unbound. Reported here so resolution stays the single source
@@ -4739,9 +5344,9 @@ def validateInvokeOnOutputRefs (program : Program) : List Message :=
     else none
 
 /-- Effective output count of a procedure, counting the implicit heap output a
-    heap-writing procedure gains during heap parameterization: a writer has
-    `$heap` prepended to its outputs (`HeapParameterization`:
-    `outputs' := heapParam :: proc.outputs`), so its effective output count is
+    heap-writing procedure gains during heap parameterization: a writer gains a
+    `$heap` output (`HeapParameterization` inserts it after existing inouts), so
+    its effective output count is
     one more than declared. A procedure is "multi-output" when this count is
     ≥ 2 — which is exactly when it cannot be lowered to a single-output Core
     *function* and so cannot (yet) be called from a transparent body or a
@@ -4886,8 +5491,27 @@ def validateFullyAnnotated (program : Program) : List Message :=
     | _ => []
   let constantDiags := program.constants.flatMap fun c =>
     c.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
+  let staticFieldDiags := program.staticFields.flatMap fun f =>
+    f.initializer.toList.flatMap (collectStmtExprList unannotatedDeclares)
   (program.staticProcedures ++ instanceProcs).flatMap procDiags
-    ++ typeDiags ++ constantDiags
+    ++ typeDiags ++ constantDiags ++ staticFieldDiags
+
+/-- A global-writing `invokeOn` needs an unbound hidden output unless its trigger
+    already invokes a writer, which source validation rejects separately. -/
+private def validateInvokeOnGlobalWrites (program : Program)
+    (analysis : InitialEffectAnalysis) : List Message :=
+  let writerIds := globalWriterIds program analysis
+  let invokeOnCallsWriter (proc : Procedure) : Bool := proc.invokeOn.any fun trigger =>
+    anyStmtExpr (fun node => match node.val with
+      | .StaticCall callee _ | .InstanceCall _ callee _ => containsProcId writerIds callee
+      | _ => false) trigger
+  analysis.allProcs.filterMap fun proc =>
+    if proc.invokeOn.isNone || !proc.outputs.isEmpty || invokeOnCallsWriter proc then none
+    else if containsProcId writerIds proc.name then
+      some (diagnosticFromSource proc.name.source
+        s!"global-writing 'invokeOn' procedure '{proc.name.text}' is not yet supported because its generated axiom cannot bind the hidden global output state"
+        MessageKind.userError)
+    else none
 
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : Program) (existingModel: Option SemanticModel := none)
@@ -4935,15 +5559,38 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
       | .error e => #[Message.fromString s!"Internal error: computeWritesHeap: {e}" .strataBug]
       | .ok _ => #[])
   let diamondErrors := validateDiamondFieldAccesses semanticModel program'
-  -- No-op `old(...)` warnings (see `validateOldUsage`). Only on the initial
-  -- resolution: later passes (and their re-resolutions) deliberately rewrite
-  -- `old` into the heap-parameterized form this check is phrased against.
+  let initialAnalysis :=
+    if existingModel.isNone then some (analyzeInitialEffects semanticModel program') else none
+  -- No-op `old(...)` warnings only model heap and explicit inout state. Global
+  -- dependencies are rejected separately by `validateUnsupportedGlobalCalls`.
   let oldUsageWarnings :=
-    if existingModel.isNone then validateOldUsage semanticModel program' else []
+    if existingModel.isNone && program'.staticFields.isEmpty then
+      validateOldUsage semanticModel program'
+    else []
+  let globalNameErrors :=
+    if existingModel.isNone then validateGlobalNames program' else []
+  let constrainedGlobalErrors :=
+    initialAnalysis.map (validateConstrainedTypeGlobalUse semanticModel program') |>.getD []
+  let constantGlobalErrors :=
+    initialAnalysis.map (validateConstantInitializerGlobalUse semanticModel program') |>.getD []
+  let globalCallErrors :=
+    initialAnalysis.map (validateUnsupportedGlobalCalls semanticModel program') |>.getD []
+  let bodilessGlobalErrors :=
+    initialAnalysis.map (validateBodilessGlobalPostconditions semanticModel program') |>.getD []
+  let globalInitializerErrors :=
+    initialAnalysis.map (validateGlobalInitializers semanticModel program') |>.getD []
+  let entryGlobalErrors :=
+    initialAnalysis.map (fun analysis =>
+      validateEntryContractGlobalUse semanticModel program' analysis ++
+      validateCallsToGlobalEntryProcedures program' analysis ++
+      validateEntryConstrainedGlobalUse program' analysis) |>.getD []
   -- `invokeOn` procedures may not declare outputs (see `validateInvokeOnOutputRefs`).
   -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
-  let invokeOnErrors :=
-    if existingModel.isNone then validateInvokeOnOutputRefs program' else []
+  let invokeOnErrors : Array Message :=
+    match initialAnalysis with
+    | some analysis => (validateInvokeOnOutputRefs program' ++
+        validateInvokeOnGlobalWrites program' analysis).toArray
+    | none => #[]
   -- Multi-output procedures cannot (yet) be called from a transparent body or a
   -- contract (see `validateMultiOutputCallContexts`). This is a property of the
   -- user's *source* program, phrased against the pre-lowering shape (transparent
@@ -4981,7 +5628,10 @@ public def resolve (program : Program) (existingModel: Option SemanticModel := n
   { program := program',
     model := semanticModel,
     errors := finalState.errors ++ heapAnalysisErrors ++ diamondErrors ++ oldUsageWarnings ++
-      invokeOnErrors ++ multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
+      globalNameErrors ++ constrainedGlobalErrors ++ constantGlobalErrors ++
+      globalInitializerErrors ++
+      globalCallErrors ++ bodilessGlobalErrors ++ entryGlobalErrors ++ invokeOnErrors ++
+      multiOutputCallErrors ++ exceptionErrors ++ annotationBugs
   }
 
 -- `resolve` establishes the invariant that every `Declare` in its output is
@@ -5011,6 +5661,7 @@ public def resolveUnorderedCore (uc : UnorderedCoreWithLaurelTypes)
     preRegisterDefinitions
       (additionalTypes ++ uc.datatypes.map .Datatype)
       uc.constants
+      []
       (uc.functions ++ uc.coreProcedures)
 
     -- Build type scopes for additional composite types (for field resolution)

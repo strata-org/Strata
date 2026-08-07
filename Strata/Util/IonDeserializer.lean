@@ -110,6 +110,11 @@ def lookupField (tbl : SymbolTable) (fields : Array (SymbolId × Ion SymbolId))
     | none => pure ()
   .error f!"Missing field '{name}'"
 
+def lookupField? (tbl : SymbolTable) (fields : Array (SymbolId × Ion SymbolId))
+    (name : String) : Option (Ion SymbolId) :=
+  fields.findSome? fun (sym, val) =>
+    tbl[sym]?.bind fun fieldName => if fieldName == name then some val else none
+
 def asStruct (v : Ion SymbolId) : Except Std.Format (Array (SymbolId × Ion SymbolId)) :=
   match v.app with
   | .struct fields => .ok fields
@@ -210,9 +215,17 @@ Supports leaf types and nested inductive/structure types.
 -/
 private meta def mkFieldRead (fieldType : Expr) (fieldNameLit : TSyntax `str) :
     TermElabM (TSyntax `term) := do
-  let valExpr ← `(_fv)
-  let readExpr ← mkValueRead fieldType valExpr
-  `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>= (fun _fv => $readExpr))
+  let fieldType' ← whnf fieldType
+  if fieldType'.getAppFn.constName? == some ``Option then
+    let valExpr ← `(_fv)
+    let readExpr ← mkValueRead fieldType valExpr
+    `(match Strata.Util.IonDeserializer.lookupField? tbl fields $fieldNameLit with
+      | none => .ok none
+      | some _fv => $readExpr)
+  else
+    let valExpr ← `(_fv)
+    let readExpr ← mkValueRead fieldType valExpr
+    `(Strata.Util.IonDeserializer.lookupField tbl fields $fieldNameLit >>= (fun _fv => $readExpr))
 
 /--
 Generate a read expression for a field accessed by index (sexp context).

@@ -624,6 +624,24 @@ procedure Test(x : int, out output : int)
 #guard_msgs in
 #eval runProc chainedCallPgm "Test" [.intConst () 5]
 
+private def inoutCallPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Bump(inout n : int, k : int)
+{
+  n := int.add(n, k);
+};
+procedure Test(out n : int)
+{
+  n := 5;
+  call Bump(inout n, 3);
+};
+#end
+
+/-- info: n = (some 8) -/
+#guard_msgs in
+#eval runProc inoutCallPgm "Test"
+
 -- Loop (sum of 0..n-1)
 private def loopPgm : StrataDDM.Program :=
 #strata

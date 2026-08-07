@@ -9,6 +9,8 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Laurel.Resolution
 public import Strata.Languages.Laurel.LaurelPass
 import Strata.Languages.Laurel.MapStmtExpr
+import Strata.Languages.Laurel.GlobalVarAnalysis
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.Util.Tactics
 
 /-!
@@ -217,10 +219,49 @@ private def mkWitnessProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : 
     definitions from the program. Any reference to a constrained type left inside
     a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
     resolve in later passes and the final Core translation. -/
-def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (ct : CompositeType) : CompositeType :=
+def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+    (ct : CompositeType) (prepare : Procedure → Procedure := id) : CompositeType :=
   { ct with
     fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model) }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model ∘ prepare) }
+
+private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
+  proc.name.uniqueId.any ids.contains
+
+/-- Preserve constrained-global invariants while globals are still represented
+    as fields. Readers require a valid incoming value; writers additionally
+    guarantee a valid outgoing value. -/
+private def addConstrainedGlobalConditions (ptMap : ConstrainedTypeMap)
+    (effects : GlobalEffectsByProcId) (fields : List Field)
+    (proc : Procedure) : Procedure :=
+  let (requires, ensures) := fields.foldl (init := ([], []))
+    fun (requires, ensures) field =>
+      let isConstrained := match field.type.val with
+        | .UserDefined name => ptMap.contains name.text
+        | _ => false
+      if !isConstrained then (requires, ensures) else
+      let qualifiedName := { field.name with text := s!"$static.{field.name.text}" }
+      let reference : StmtExprMd := ⟨.Var (.Local qualifiedName), field.name.source⟩
+      let condition := (constraintCallForExpr ptMap field.type.val reference
+        (src := field.type.source)).map fun call => ({ condition := call } : Condition)
+      let readers := match field.name.uniqueId with
+        | some id => effects.readers.getD id {}
+        | none => {}
+      let writers := match field.name.uniqueId with
+        | some id => effects.writers.getD id {}
+        | none => {}
+      let requires := if procedureHasEffect readers proc || procedureHasEffect writers proc then
+        requires ++ condition.toList else requires
+      let ensures := if procedureHasEffect writers proc then
+        ensures ++ condition.toList else ensures
+      (requires, ensures)
+  let body := if ensures.isEmpty then proc.body else match proc.body with
+    | .Transparent implementation => .Opaque ensures (some implementation) []
+    | .Opaque posts implementation modifies =>
+        .Opaque (posts ++ ensures) implementation modifies
+    | .Abstract posts => .Abstract (posts ++ ensures)
+    | .External => .External
+  { proc with preconditions := requires ++ proc.preconditions, body }
 
 public def constrainedTypeElim (model : SemanticModel) (program : Program)
     : Program × List Message :=
@@ -230,12 +271,25 @@ public def constrainedTypeElim (model : SemanticModel) (program : Program)
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc ptMap ct) | _ => none
+  let instanceProcedures := program.types.flatMap fun
+    | .Composite composite => composite.instanceProcedures
+    | _ => []
+  let allProcedures := program.staticProcedures ++ instanceProcedures
+  let effects := computeGlobalEffectsByProcId model allProcedures program.staticFields
+  let addGlobalConditions :=
+    addConstrainedGlobalConditions ptMap effects program.staticFields
   ({ program with
-    staticProcedures := constraintProcs ++ program.staticProcedures.map (elimProc ptMap model)
+    staticProcedures := constraintProcs ++
+      program.staticProcedures.map (elimProc ptMap model ∘ addGlobalConditions)
                         ++ witnessProcedures
+    staticFields := program.staticFields.map fun field =>
+      { field with
+        type := resolveType ptMap field.type
+        initializer := field.initializer.map (mapStmtExpr (resolveExprNode ptMap)) }
     types := program.types.filterMap fun
       | .Constrained _ => none
-      | .Composite ct => some (.Composite (elimCompositeType ptMap model ct))
+      | .Composite ct =>
+          some (.Composite (elimCompositeType ptMap model ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained
@@ -260,5 +314,8 @@ public def constrainedTypeElimPass : LoweringPass where
   run := fun _ p m =>
     let (p', diags) := constrainedTypeElim m p
     (p', diags, {})
+  comesBefore :=
+    [⟨ heapParameterizationPass.meta,
+       "constrained types must be reduced to their base types before heap values are boxed." ⟩]
 
 end Strata.Laurel

@@ -17,6 +17,7 @@ module
 -- NOTE: Changes to LaurelGrammar.st are not automatically tracked by the build system.
 -- Update this file (e.g. the token below) to trigger a recompile after modifying LaurelGrammar.st.
 -- Rebuild trigger token: exceptions-throwsOn-blocks
+-- Rebuild trigger: file-scope global declarations.
 public import StrataDDM.AST
 import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands

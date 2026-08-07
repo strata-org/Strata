@@ -226,4 +226,52 @@ private def highTypeTraversalOrder : List String :=
 
 end ProcedureTraversalCoverage
 
+section ResultUseCoverage
+
+private def resultCall (name : String) : StmtExprMd :=
+  ⟨.StaticCall (mkId name) [], default⟩
+
+private def exposeResultUsed (used : Bool) (node : StmtExprMd) : StmtExprMd :=
+  match node.val with
+  | .StaticCall _ _ => ⟨.LiteralBool used, node.source⟩
+  | _ => node
+
+private def assignedOperandIsIgnored : Bool :=
+  match (mapStmtExprUsed exposeResultUsed true
+      ⟨.Assigned (resultCall "ignored"), default⟩).val with
+  | .Assigned ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard assignedOperandIsIgnored
+
+private def proveByProofIsIgnored : Bool :=
+  match (mapStmtExprUsed exposeResultUsed true
+      ⟨.ProveBy (resultCall "value") (resultCall "proof"), default⟩).val with
+  | .ProveBy ⟨.LiteralBool true, _⟩ ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard proveByProofIsIgnored
+
+private def exposeFlattenResultUsed (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExprFlattenM (m := Id)
+    (fun _ _ => none)
+    (fun used node => [exposeResultUsed used node]) true expr
+
+private def flattenAssignedOperandIsIgnored : Bool :=
+  match (exposeFlattenResultUsed ⟨.Assigned (resultCall "ignored"), default⟩).val with
+  | .Assigned ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard flattenAssignedOperandIsIgnored
+
+private def flattenProveByProofIsIgnored : Bool :=
+  match (exposeFlattenResultUsed
+      ⟨.ProveBy (resultCall "value") (resultCall "proof"), default⟩).val with
+  | .ProveBy ⟨.LiteralBool true, _⟩ ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard flattenProveByProofIsIgnored
+
+end ResultUseCoverage
+
 end Strata.Laurel

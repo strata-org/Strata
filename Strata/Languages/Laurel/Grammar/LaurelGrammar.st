@@ -299,6 +299,8 @@ op constrainedType (name: Ident, valueName: Ident, base: LaurelType,
                     constraint: StmtExpr, witness: StmtExpr): ConstrainedType
   => "constrained " name " = " valueName ": " base " where " constraint:0 " witness " witness:0;
 
+op globalVarCommand (name: Ident, varType: LaurelType, init: Option Initializer): Command => @[prec(0)] "var " name ": " varType init;
+
 op compositeCommand(composite: Composite): Command => composite;
 op procedureCommand(procedure: Procedure): Command => procedure;
 op datatypeCommand(datatype: Datatype): Command => datatype;

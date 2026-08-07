@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.MergeAndLiftReturns
 import Strata.Languages.Laurel.EliminateValueInReturns
 import Strata.Languages.Laurel.ModifiesClauses
 import Strata.Languages.Laurel.HeapParameterization
+import Strata.Languages.Laurel.GlobalParameterization
 import Strata.Languages.Laurel.TypeHierarchy
 import Strata.Languages.Laurel.InferHoleTypes
 import Strata.Languages.Laurel.EliminateDeterministicHoles
@@ -110,32 +111,9 @@ def laurelPipeline : Array LoweringPass := #[
   constrainedTypeElimPass,
   mergeAndLiftReturnsPass,
   liftInstanceProceduresPass,
-  -- Note: the exception contract checks (catch-or-declare, plus the
-  -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
-  -- properties of the authored program, so `resolve` runs them on the initial
-  -- resolution only — see `validateExceptionEscapes` /
-  -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateValueInReturnsPass,
-  -- Lower the exceptional channel (throw/try/catch/finally, and the
-  -- throws + throwsOn contract) into ordinary
-  -- Laurel (labeled blocks, exits, Result construction, and
-  -- postconditions over `$result`). Placed *before* heap parameterization so the
-  -- in-flight exception local `$exc_<i>` can be typed at each `try`'s
-  -- least-common-ancestor exception type (read from the resolved `catch`
-  -- binding) rather than the erased heap `Composite`; a `catch` handler's
-  -- `e#field` then type-checks against that supertype without a downcast.
-  -- Runs after `eliminateValueInReturns` (so `return` payloads are
-  -- already gone). Because it erases the
-  -- exceptional-channel constructs (`throw`/`try`, `throwsOn`), those never
-  -- reach heap parameterization; the heap `modifies` frames — the normal
-  -- `Result..isGood`-guarded frame and the exceptional `Result..isBad`-guarded
-  -- ones (a case's `modifies`) — are built later by `ModifiesClauses`, which runs
-  -- after heap parameterization where `$heap` exists. Its remaining ordering
-  -- constraints — after `eliminateValueInReturns`, before `eliminateReturnStatements`
-  -- and `contractPass` — are declared on the pass itself and enforced by
-  -- `orderingRespected`, so they are not restated here. Needs a re-resolve so the
-  -- synthesized `$thrown`/`$exc_<i>`/`$result` locals get uniqueIds.
   eliminateExceptionsPass,
+  globalParameterizationPass,
   heapParameterizationPass,
   typeHierarchyTransformPass,
   modifiesClausesTransformPass,
@@ -148,6 +126,11 @@ def laurelPipeline : Array LoweringPass := #[
   loopInvariantWellFormednessPass,
   contractPass
 ]
+
+def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
+    (diagsSoFar : List Message) (postPassDiags : Array Message) : Array Message :=
+  if diagsSoFar.any (·.kind != .warning) then #[]
+  else postPassDiags.filter fun e => e.kind != .warning && !initialDiags.contains e
 
 /--
 Run all Laurel-to-Laurel lowering passes on a program, returning the lowered
@@ -185,6 +168,9 @@ private def runLaurelPasses
   let mut allDiags : List Message := result.errors.toList
   let mut allStats : Statistics := {}
 
+  if result.errors.any (·.kind != .warning) then
+    return (program, model, allDiags, allStats)
+
   for pass in laurelPipeline do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
@@ -194,15 +180,7 @@ private def runLaurelPasses
     if pass.needsResolves then
       let result := resolve program (some model) (gradualTypes := options.gradualTypes)
                       (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
-      -- Only treat *new* post-pass resolution errors as an internal bug when the
-      -- program was well-formed to begin with. If initial resolution already
-      -- failed, or an earlier pass reported a real diagnostic (e.g.
-      -- `EliminateExceptions` rejecting a `throws` procedure with two value
-      -- outputs), the program is invalid and translation is skipped regardless —
-      -- so a lowering pass rewriting the ill-typed fragment must not cascade a
-      -- confusing `StrataBug` on top of the actual message.
-      let hadErrors := !resolutionErrors.isEmpty || allDiags.any (fun d => d.kind != .warning)
-      let newErrors := if hadErrors then #[] else result.errors.filter fun e => !resolutionErrors.contains e
+      let newErrors := newPostPassResolutionErrors resolutionErrors allDiags result.errors
       if !newErrors.isEmpty then
         let newDiags := newErrors.toList.map fun d =>
           { d with
@@ -255,6 +233,9 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
   runPipelineM options.keepAllFilesPrefix do
   let (program, model, passDiags, stats) ← runLaurelPasses options pctx program
 
+  if passDiags.any (·.kind != .warning) then
+    return (none, passDiags, program, stats)
+
   -- Sanity check: `LiftInstanceProcedures` should have cleared every
   -- composite's `instanceProcedures` list.
   let mut passDiags := passDiags
@@ -265,10 +246,6 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : Program)
           s!"Instance procedure '{proc.name.text}' on composite type '{ct.name.text}' was not lifted before Core translation (pipeline-ordering bug)"
           MessageKind.strataBug]
 
-  -- This early return is a simple way to protect against duplicative errors. Without this return,
-  -- resolution errors reported by Laurel would also be reported by Core.
-  -- There might be better solution that allows getting some resolution errors from Laurel and some verification errors from Core,
-  -- but that would need more consideration.
   if passDiags.any (·.kind != .warning) then
     return (none, passDiags, program, stats)
 

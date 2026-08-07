@@ -1232,7 +1232,9 @@ def Body.isTransparent : Body → Bool
 def HighTypeMd.isBool (t : HighTypeMd) : Bool := t.val.isBool
 
 /--
-A field in a composite type. Fields declare their name, mutability, and type.
+A field in a composite type, also used for file-scope globals (which resolution
+registers as fields of the reserved `$static` owner). Fields declare their
+name, mutability, and type.
 Mutability affects what permissions are needed to access the field.
 -/
 structure Field where
@@ -1242,6 +1244,7 @@ structure Field where
   isMutable : Bool
   /-- The field's type. -/
   type : HighTypeMd
+  initializer : Option StmtExprMd := none
 
 /--
 A composite defines a type with fields and instance procedures.
